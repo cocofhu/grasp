@@ -10,23 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
-	"github.com/cocofhu/grasp/internal/objectstore"
 	"github.com/google/uuid"
 )
 
 // LocalFS stores blobs under Root as <aa>/<id>/blob + meta.json.
 type LocalFS struct {
-	Root   string
-	mu     sync.Mutex
-	closed bool
-}
-
-func (s *LocalFS) Close() {
-	s.mu.Lock()
-	s.closed = true
-	s.mu.Unlock()
+	Root string
 }
 
 // NewLocalFS creates the root directory if needed.
@@ -50,12 +40,6 @@ func (s *LocalFS) dirFor(id string) string {
 }
 
 func (s *LocalFS) Put(ctx context.Context, r io.Reader, meta Meta) (Ref, error) {
-	s.mu.Lock()
-	closed := s.closed
-	s.mu.Unlock()
-	if closed {
-		return "", objectstore.ErrClosed
-	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -90,12 +74,6 @@ func (s *LocalFS) Put(ctx context.Context, r io.Reader, meta Meta) (Ref, error) 
 		_ = os.RemoveAll(dir)
 		return "", err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		_ = os.RemoveAll(dir)
-		return "", objectstore.ErrClosed
-	}
 	if err := os.WriteFile(filepath.Join(dir, "meta.json"), raw, 0o644); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", err
@@ -128,11 +106,6 @@ func (s *LocalFS) Open(ctx context.Context, ref Ref) (io.ReadCloser, Meta, error
 }
 
 func (s *LocalFS) Delete(ctx context.Context, ref Ref) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return objectstore.ErrClosed
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

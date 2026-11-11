@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
-import { startVisiblePolling } from '@/lib/composables/useVisiblePolling'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
-import { computed, nextTick, onBeforeUnmount, ref, shallowReactive, toRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import AppDrawer from '@/components/ui/AppDrawer.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
@@ -27,12 +25,8 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
-import SoloWorkflowPanel from './SoloWorkflowPanel.vue'
-import SoloWorkspaceSnapshots from './SoloWorkspaceSnapshots.vue'
-import SoloEnvironmentRelease, { type EnvironmentReleaseDraft } from './SoloEnvironmentRelease.vue'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
-import { soloImageBase } from '@/lib/api/clients/soloClient'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import { inlineReferences, referenceLabel } from '@/lib/solo/referenceTokens'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -41,7 +35,6 @@ import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
-import { timelineFolds } from '@/lib/run/acpTools'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
@@ -52,13 +45,14 @@ import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 
-const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient>; workspaceIntent?: string }>()
-const emit = defineEmits<{ back: []; ready: []; workspaceOpened: [] }>()
+const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient> }>()
+const emit = defineEmits<{ back: []; ready: [] }>()
 const { t, te, locale } = useI18n()
 const { worktreeMode } = useExecutionMode()
+const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, pendingConfirmation, retryingSend, retryPendingSend, stopLocalRetry, status, closing, stopPending, environmentStopping, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -133,35 +127,13 @@ function transcriptImageSrc(image: ClarifyImage) {
 }
 
 const { scroller, followBottom, onScroll, scrollDown } = useChatTailScroll()
-async function loadEarlier() {
-  const top = scroller.value?.scrollTop || 0
-  const height = scroller.value?.scrollHeight || 0
-  followBottom.value = false
-  await chat.loadEarlier()
-  await nextTick()
-  if (scroller.value) scroller.value.scrollTop = top + scroller.value.scrollHeight - height
-}
+const confirmClose = ref(false)
+const confirmDelete = ref(false)
+const moreOpen = ref(false)
 const limitOpen = ref(false)
-const environmentBusy = ref(false)
-const stoppedEnvironment = computed(() => status.value === 'stopped')
-async function resumeEnvironment() {
-  if (environmentBusy.value) return
-  environmentBusy.value = true
-  actionError.value = ''
-  try {
-    const value = await api.resumeSoloEnvironment(props.sessionId)
-    store.upsert(value)
-    await chat.load()
-  } catch (cause) {
-    actionError.value = soloErrorText(cause, t, te, locale.value)
-  } finally { environmentBusy.value = false }
-}
+const closing = ref(false)
 const restarting = ref(false)
 const resources = ref<SoloResources>()
-const workspaceSnapshotsOpen = ref(false)
-const environmentReleaseOpen = ref(false)
-const environmentReleaseDraft = ref<EnvironmentReleaseDraft | null>(null)
-const workspaceViewKey = ref(0)
 
 watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
 watch(canSend, (ready) => { if (ready) emit('ready') })
@@ -183,12 +155,6 @@ const editTargets = computed(() => {
   return out
 })
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
-watch([() => props.workspaceIntent, session], ([intent, current]) => {
-  if (!intent || !current || props.embedded || worktreeMode.value) return
-  if (intent === 'snapshots') workspaceSnapshotsOpen.value = true
-  else if (intent === 'release' && current.status === 'closed' && sandboxId.value) environmentReleaseOpen.value = true
-  emit('workspaceOpened')
-}, { immediate: true })
 const sandboxResource = computed(() => {
   const source = session.value?.sandbox
   const id = Number(source?.id || session.value?.sandboxId || 0)
@@ -252,10 +218,10 @@ watch(
       }
     }
     void refresh()
-    const stop = currentStatus === 'closed' ? undefined : startVisiblePolling(refresh, 2500)
+    const timer = currentStatus === 'closed' ? undefined : window.setInterval(refresh, 2500)
     onCleanup(() => {
       controller.abort()
-      stop?.()
+      window.clearInterval(timer)
     })
   },
   { immediate: true },
@@ -269,13 +235,11 @@ function asideReferences(turn: { text?: string; references?: MessageReference[] 
   if (!refs.length || !turn.text) return refs
   return inlineReferences(turn.text, refs, (r) => referenceLabel(r, defaultRepo.value)).rest
 }
-/** Preview elements one Solo message can carry. */
-const MAX_PICKS = 8
 const picks = ref<ReactAnnotation[]>([])
 const canSubmit = computed(() => !!input.value.trim() || !!attach.attachments.value.length || !!mention.refs.value.length || !!picks.value.length)
 
 function addPick(payload: AppPreviewPickPayload) {
-  appendPreviewPick(picks.value, payload, MAX_PICKS)
+  appendPreviewPick(picks.value, payload, 8)
 }
 defineExpose({ addPick })
 
@@ -292,10 +256,10 @@ async function send() {
   followBottom.value = true
   picks.value = []
   const ok = await chat.send(text, images, refs, selected)
-  if (!ok && !pendingConfirmation?.value.length) {
+  if (!ok) {
     restore()
     attach.attachments.value = images
-    picks.value = [...selected, ...picks.value].slice(0, MAX_PICKS)
+    picks.value = [...selected, ...picks.value].slice(0, 8)
   }
   scrollDown(true)
 }
@@ -329,13 +293,27 @@ async function editQueued(index: number) {
     const itemMessage = readPreviewMessage(item.text, item.annotations)
     const draft = input.value.trim()
     const text = [itemMessage.text, draft].filter(Boolean).join('\n')
-    picks.value = [...itemMessage.annotations, ...picks.value].slice(0, MAX_PICKS)
+    picks.value = [...itemMessage.annotations, ...picks.value].slice(0, 8)
     mention.load(text, [...(item.references || []), ...mention.refs.value])
     attach.attachments.value = [...item.images, ...attach.attachments.value]
     void nextTick(() => textareaComponent.value?.resize())
   } finally {
     editingQueued = false
   }
+}
+
+async function doClose() {
+  closing.value = true
+  const ok = await chat.close()
+  closing.value = false
+  if (ok) confirmClose.value = false
+}
+
+async function pushThenStay() {
+  confirmClose.value = false
+  mention.clear()
+  await chat.send(t('pages.solo.close.pushPrompt'))
+  scrollDown(true)
 }
 
 async function doRestart() {
@@ -354,6 +332,24 @@ async function doRestart() {
     restarting.value = false
   }
 }
+
+async function doDelete() {
+  confirmDelete.value = false
+  try {
+    await api.deleteSoloSession(props.sessionId)
+    store.remove(props.sessionId)
+    void router.push('/dashboard')
+  } catch (e) {
+    actionError.value = soloErrorText(e, t, te, locale.value)
+  }
+}
+
+function onDocPointer(e: Event) {
+  const el = e.target as HTMLElement
+  if (moreOpen.value && !el.closest?.('[data-solo-more]')) moreOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', onDocPointer))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
 
 function turnInterrupted(turn: { status?: string; error?: string; streaming: boolean }) {
   return !turn.streaming && (turn.status === 'stopped' || turn.status === 'failed' || !!turn.error)
@@ -380,18 +376,15 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       split-drawer
       remember-artifact-panel
       :panel-memory-key="`solo:${props.sessionId}`"
-      :drawer-key="`solo:${props.sessionId}`"
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
       <template #stage>
         <ReactArtifactStage
-          :key="`${props.sessionId}:${workspaceViewKey}`"
           :artifacts="resources?.artifacts || []"
           :preview-artifact="resources?.previewArtifact"
           :registered-previews="status === 'running' ? resources?.ports || [] : []"
           :solo-session-id="props.sessionId"
           :run-id="session.artifactRunId || ''"
-          :drawer-key="`solo:${props.sessionId}`"
           node-id="solo"
           :sandbox="sandboxResource"
           :sandbox-loading="sandboxResourceLoading"
@@ -416,7 +409,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div ref="scroller" class="chat-pane-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="chat-pane-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
-          <SoloWorkflowPanel v-if="!embedded" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" />
 
           <div v-if="status === 'error'" class="solo-errcard" data-testid="solo-error-card">
             <div class="flex items-start gap-2">
@@ -444,10 +436,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
           </div>
 
-          <div v-if="chat.hasEarlier.value" class="flex justify-center py-2">
-            <AppButton size="sm" variant="ghost" icon="history" :loading="chat.loadingEarlier.value" data-testid="solo-load-earlier" @click="loadEarlier">{{ t('pages.solo.chat.loadEarlier') }}</AppButton>
-          </div>
-          <p v-if="chat.earlierError.value" class="text-xs text-err" role="alert">{{ chat.earlierError.value }}</p>
           <template v-for="turn in turns" :key="turn.id">
             <div v-if="turn.role === 'system'" class="solo-system">
               <span>{{ turn.text }}</span>
@@ -482,31 +470,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 :streaming="turn.streaming"
                 :completed="!turn.streaming && !turnInterrupted(turn)"
                 :interrupted="turnInterrupted(turn)"
-                :process-available="turn.processAvailable"
                 :started-at="turn.startedAt"
                 :ended-at="turn.endedAt"
                 :metadata="turn"
-                :image-base="embedded ? undefined : soloImageBase(sessionId)"
                 quiet-thought
                 message-test-id="solo-agent-message"
-                @process-open="turn.historyMessageId && !chat.processPages.value[turn.historyMessageId] && chat.loadProcess(turn)"
-              >
-                <template v-if="turn.historyMessageId && turn.processAvailable" #process>
-                  <div class="space-y-1" data-testid="solo-process-status">
-                    <p v-if="chat.processPages.value[turn.historyMessageId]?.loading && (chat.processPages.value[turn.historyMessageId]?.next ?? -1) < 0" class="chat-meta" role="status">{{ t('common.loading.inProgress') }}</p>
-                    <AppButton
-                      v-if="chat.processPages.value[turn.historyMessageId]?.error || ((chat.processPages.value[turn.historyMessageId]?.next ?? -1) >= 0 && chat.processPages.value[turn.historyMessageId]?.hasMore !== false)"
-                      size="sm" variant="ghost"
-                      :loading="chat.processPages.value[turn.historyMessageId]?.loading"
-                      data-testid="solo-load-process"
-                      @click="chat.loadProcess(turn)"
-                    >{{ t(chat.processPages.value[turn.historyMessageId]?.error ? 'common.loading.retry' : 'pages.solo.chat.loadMoreProcess') }}</AppButton>
-                    <p v-if="chat.processPages.value[turn.historyMessageId]?.error" class="text-xs text-err" role="alert">{{ chat.processPages.value[turn.historyMessageId]!.error }}</p>
-                    <p v-if="chat.processPages.value[turn.historyMessageId]?.legacyIncomplete" class="chat-meta">{{ t('pages.solo.chat.legacyIncomplete') }}</p>
-                    <p v-else-if="turn.processComplete && !timelineFolds(partsOf(turn))" class="chat-meta" data-testid="solo-process-empty">{{ t('pages.solo.chat.noAdditionalProcess') }}</p>
-                  </div>
-                </template>
-              </AgentTimeline>
+              />
               <ArtifactFileAttachments :files="turn.files" />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
@@ -521,7 +490,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 data-testid="solo-agent-activity"
                 role="status"
               >
-                <ThinkingBusyCue :label="pendingConfirmation?.includes(turn.id.replace(/^live:/, '')) ? t('pages.solo.phase.confirming') : phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
+                <ThinkingBusyCue :label="phase === 'preparing' && !turn.steps.length ? t('pages.solo.phase.preparing') : t('pages.solo.phase.running')" />
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>
               <div v-else-if="turn.error || turn.status === 'failed'" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error || t('pages.solo.chat.turnFailed') }}</div>
@@ -551,19 +520,16 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       </div>
 
       <!-- composer / closed bar -->
-      <div v-if="closing || environmentStopping || stopPending || closed || stoppedEnvironment" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
+      <div v-if="closed" class="chat-pane-composer py-3" data-testid="solo-closed-bar">
         <div class="chat-pane-column solo-closed">
-          <Icon :name="closing || environmentStopping || stopPending ? 'spinner' : 'lock'" :size="15" class="mt-0.5 shrink-0 text-txt3" />
-          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2" :role="closing || environmentStopping || stopPending ? 'status' : undefined">{{ t(closing ? 'pages.solo.close.progress' : environmentStopping ? 'pages.solo.environment.stoppingNotice' : stopPending ? 'pages.solo.close.confirmingStop' : stoppedEnvironment ? 'pages.solo.environment.stopped' : 'pages.solo.closedBar.text') }}</p>
-          <AppButton v-if="!embedded && !closing && !environmentStopping && !stopPending" size="sm" variant="primary" icon="refresh" :loading="restarting || environmentBusy" @click="stoppedEnvironment ? resumeEnvironment() : doRestart()">{{ t(stoppedEnvironment ? 'pages.solo.environment.resume' : 'pages.solo.closedBar.restart') }}</AppButton>
+          <Icon name="lock" :size="15" class="mt-0.5 shrink-0 text-txt3" />
+          <p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.solo.closedBar.text') }}</p>
+          <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.closedBar.restart') }}</AppButton>
         </div>
-        <p v-if="actionError" class="chat-pane-column mt-2 text-xs text-err" role="alert">{{ actionError }}</p>
       </div>
       <div v-else class="chat-pane-composer shrink-0 py-3">
         <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
-          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="outline" icon="refresh" class="mb-2" :loading="retryingSend" data-testid="solo-retry-unconfirmed" @click="retryPendingSend">{{ t('pages.solo.retryUnconfirmed') }}</AppButton>
-          <AppButton v-if="pendingConfirmation?.length" size="sm" variant="ghost" class="mb-2 ml-2" :disabled="retryingSend" :title="t('pages.solo.stopLocalRetryHint')" data-testid="solo-stop-local-retry" @click="stopLocalRetry">{{ t('pages.solo.stopLocalRetry') }}</AppButton>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <ChatComposer
@@ -613,8 +579,41 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </div>
       </div>
 
-      <AppModal :open="workspaceSnapshotsOpen" :title="t('workspaceSnapshots.title')" :width="560" :close-label="t('common.buttons.close')" close-on-esc trap-focus @close="workspaceSnapshotsOpen = false"><SoloWorkspaceSnapshots v-if="workspaceSnapshotsOpen" :key="props.sessionId" :session-id="props.sessionId" :sandbox-id="sandboxId" :busy="busy || queued.length > 0" @changed="chat.refreshSession()" @binding-changed="workspaceViewKey++" /></AppModal>
-      <AppDrawer :open="environmentReleaseOpen" :title="t('workspaceRelease.title')" :width="480" @close="environmentReleaseOpen = false"><SoloEnvironmentRelease v-if="environmentReleaseOpen" :key="props.sessionId" v-model:draft="environmentReleaseDraft" :session-id="props.sessionId" @changed="chat.load()" /></AppDrawer>
+      <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
+        <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">
+          <div class="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
+            <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />
+            <span>{{ t('pages.solo.close.body') }}</span>
+          </div>
+          <p v-if="busy">{{ t('pages.solo.close.busy') }}</p>
+          <button
+            v-if="repos.length && status === 'running'"
+            type="button"
+            class="solo-push-hint"
+            data-testid="solo-close-push"
+            @click="pushThenStay"
+          >
+            <Icon name="git" :size="15" class="shrink-0 text-accent" />
+            <span class="min-w-0 flex-1 text-left">
+              <span class="block font-medium text-txt">{{ t('pages.solo.close.pushFirst') }}</span>
+              <span class="block text-[11.5px] text-txt3">{{ t('pages.solo.close.pushFirstHint') }}</span>
+            </span>
+            <Icon name="chevron-right" :size="14" class="shrink-0 text-txt3" />
+          </button>
+        </div>
+        <template #footer>
+          <AppButton variant="ghost" @click="confirmClose = false">{{ t('common.buttons.cancel') }}</AppButton>
+          <AppButton variant="danger" icon="stop" :loading="closing" data-testid="solo-close-confirm" @click="doClose">{{ t('pages.solo.close.confirm') }}</AppButton>
+        </template>
+      </AppModal>
+
+      <AppModal :open="confirmDelete" :title="t('pages.solo.delete.title')" :width="420" close-on-esc @close="confirmDelete = false">
+        <p class="text-[13px] text-txt2">{{ closed ? t('pages.solo.delete.body') : t('pages.solo.delete.bodyActive') }}</p>
+        <template #footer>
+          <AppButton variant="ghost" @click="confirmDelete = false">{{ t('common.buttons.cancel') }}</AppButton>
+          <AppButton variant="danger" icon="trash" data-testid="solo-delete-confirm" @click="doDelete">{{ t('pages.solo.delete.confirm') }}</AppButton>
+        </template>
+      </AppModal>
 
       <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; doRestart()" />
       <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" @close="closeChatImagePreview" />
@@ -682,5 +681,19 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   border: 1px dashed rgb(var(--c-line));
   border-radius: 12px;
   padding: 12px 14px;
+}
+.solo-push-hint {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.solo-push-hint:hover {
+  border-color: rgb(var(--c-accent) / 0.4);
+  background: rgb(var(--c-accent) / 0.05);
 }
 </style>

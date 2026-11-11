@@ -19,11 +19,6 @@ import (
 // chatting: the first LLM turn is the user's first message, injected in
 // ReactReply together with the opening contract.
 func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{SetupErr: executionErr, Err: executionErr}
-	}
-	defer stopExecution()
 	defer c.drainCarriedUsage(reactKey(req), &out)
 	c.resetNodeBudget(req)
 	n := c.sandboxAttempts()
@@ -53,11 +48,6 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn
 // ReactResume opens a dialogue carried over from an interrupted visit: a fresh
 // sandbox primed with the earlier Q&A, then parked for the next human reply.
 func (c *acpProvider) ReactResume(ctx context.Context, req NodeReq, history []models.ReactMessage) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{SetupErr: executionErr, Err: executionErr}
-	}
-	defer stopExecution()
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	defer c.drainCarriedUsage(reactKey(req), &out)
 	c.resetNodeBudget(req)
@@ -126,11 +116,6 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 // under force/max_rounds). Only then is the produces contract ensured (with
 // re-prompting) and the sandbox torn down.
 func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{Err: executionErr}
-	}
-	defer stopExecution()
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	started := time.Now()
 	var chatOp string
@@ -315,11 +300,6 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 // producer's parked session). A dead/lost session is rebuilt from the
 // transcript, mirroring ReactReply.
 func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{Err: executionErr}
-	}
-	defer stopExecution()
 	started := time.Now()
 	var chatOp string
 	defer func() {

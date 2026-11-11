@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -250,7 +249,7 @@ func (e *Engine) syncWriterOutputs(c *execCtx, writer string, norm mcp.HumanArti
 	}
 	applyHumanArtifactOutputs(outs, norm)
 	sr.Outputs = outs
-	logDB(e.executionSave(context.Background(), c.run.ID, &sr, stateRunTakeoverCols...), c.run.ID, "sync writer outputs after human artifact edit")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "sync writer outputs after human artifact edit")
 	c.nodeOutputs[writer] = outs
 }
 

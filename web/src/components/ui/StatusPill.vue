@@ -7,9 +7,6 @@ const props = defineProps<{ status: string; size?: 'sm' | 'md' }>()
 const { t } = useI18n()
 
 const map: Record<string, { labelKey: string; cls: string; icon: string; spin?: boolean }> = {
-  paused: { labelKey: 'common.status.paused', cls: 'text-txt2 bg-elevated border-line', icon: 'pause' },
-  saving: { labelKey: 'common.status.saving', cls: 'text-info bg-info/10 border-info/30', icon: 'breath-dot', spin: true },
-  save_failed: { labelKey: 'common.status.save_failed', cls: 'text-err bg-err/10 border-err/30', icon: 'alert' },
   running: { labelKey: 'common.status.running', cls: 'text-info bg-info/10 border-info/30', icon: 'breath-dot', spin: true },
   queued: { labelKey: 'common.status.queued', cls: 'text-txt2 bg-elevated border-line', icon: 'clock' },
   pending: { labelKey: 'common.status.pending', cls: 'text-txt3 bg-elevated border-line', icon: 'dot' },

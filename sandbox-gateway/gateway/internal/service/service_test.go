@@ -412,7 +412,7 @@ func TestSweepOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("retained=%d want 1", n)
+		t.Fatalf("removed=%d want 1", n)
 	}
 	live, err := drv.List(context.Background())
 	if err != nil {
@@ -425,8 +425,8 @@ func TestSweepOrphans(t *testing.T) {
 	if !ids[sb.ID] {
 		t.Fatal("tracked sandbox must remain")
 	}
-	if !ids["orphan-old"] {
-		t.Fatal("lost store records must not authorize deletion of the only file copy")
+	if ids["orphan-old"] {
+		t.Fatal("old orphan should be destroyed")
 	}
 	if !ids["orphan-young"] {
 		t.Fatal("young orphan should be kept")
@@ -437,8 +437,8 @@ func TestSweepOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("second sweep retained=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("second sweep removed=%d want 1", n)
 	}
 }
 
@@ -717,75 +717,6 @@ func TestFinalizeLBWaitFailure(t *testing.T) {
 	msg := waitSvcError(t, svc, sb.ID)
 	if !strings.Contains(msg, "wait loadbalancer ip") {
 		t.Fatalf("error=%q", msg)
-	}
-}
-
-type restoreFake struct {
-	*fake.Driver
-	delay     time.Duration
-	err       error
-	withdrawn bool
-}
-
-func (r *restoreFake) WaitVolumeRestored(ctx context.Context, id string) (bool, error) {
-	time.Sleep(r.delay)
-	return !r.withdrawn && r.err == nil, r.err
-}
-
-func TestFinalizeWaitsForVolumeRestoreBeyondFinalizeTimeout(t *testing.T) {
-	st := testDB(t)
-	drv := &restoreFake{Driver: fake.New(), delay: 700 * time.Millisecond}
-	if err := drv.WithSessionListener(8765); err != nil {
-		t.Fatalf("session listener: %v", err)
-	}
-	t.Cleanup(drv.Close)
-	svc := New(drv, st, Config{
-		Image: "i", Ports: []int{8765}, SessionPort: 8765,
-		FinalizeTimeout: 500 * time.Millisecond, Resources: testResources(),
-	})
-	sb, err := svc.Create(context.Background(), CreateRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitSvcRunning(t, svc, sb.ID)
-}
-
-func TestFinalizeVolumeRestoreFailure(t *testing.T) {
-	st := testDB(t)
-	drv := &restoreFake{Driver: fake.New(), err: errors.New("archive retained")}
-	svc := New(drv, st, Config{
-		Image: "i", Ports: []int{8765}, SessionPort: 8765,
-		FinalizeTimeout: 500 * time.Millisecond, Resources: testResources(),
-	})
-	sb, err := svc.Create(context.Background(), CreateRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	msg := waitSvcError(t, svc, sb.ID)
-	if !strings.Contains(msg, "restore volume") {
-		t.Fatalf("error=%q", msg)
-	}
-}
-
-func TestFinalizeStopsQuietlyWhenRestoreStartIsWithdrawn(t *testing.T) {
-	st := testDB(t)
-	drv := &restoreFake{Driver: fake.New(), withdrawn: true}
-	svc := New(drv, st, Config{
-		Image: "i", Ports: []int{8765}, SessionPort: 8765,
-		FinalizeTimeout: 100 * time.Millisecond, Resources: testResources(),
-	})
-	sb, err := svc.Create(context.Background(), CreateRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Without a session listener, a finalize that kept going would fail here.
-	time.Sleep(400 * time.Millisecond)
-	cur, err := svc.Get(sb.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cur.Status == "error" || cur.Status == "running" {
-		t.Fatalf("withdrawn start finalized as %s (%s)", cur.Status, cur.Error)
 	}
 }
 

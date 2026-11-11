@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,8 +129,8 @@ func TestLegacyMigrationPreservesVersionsAndRawImageBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var before models.Artifact
-	if err := db.First(&before, "id = ?", "image").Error; !errors.Is(err, filestore.ErrNonCanonicalPayload) {
-		t.Fatalf("runtime read unconverted image content: %+v err=%v", before, err)
+	if err := db.First(&before, "id = ?", "image").Error; err != nil || before.Content != encoded {
+		t.Fatalf("legacy read=%+v err=%v", before, err)
 	}
 	r, err := filestore.Migrate(context.Background(), db, &models.Artifact{}, &models.ArtifactVersion{})
 	if err != nil || r.Migrated != 2 || len(r.Failures) != 0 {

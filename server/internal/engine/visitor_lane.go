@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cocofhu/grasp/internal/executionlineage"
 	"strings"
 	"time"
 
@@ -239,10 +238,8 @@ func (e *Engine) retireVisitorLane(st *visitorLaneState) {
 	if vp, ok := e.provider.(runtime.VisitorLaneProvider); ok {
 		vp.RetireVisitorLane(st.runID, st.producerID, st.lane)
 	}
-	logDB(e.executionMutation(context.Background(), st.runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.GateShareVisitorConversation{}).
-			Where("link_id = ? AND lane = ?", st.linkID, st.lane).Update("chat_id", "")
-	}),
+	logDB(e.db.Model(&models.GateShareVisitorConversation{}).
+		Where("link_id = ? AND lane = ?", st.linkID, st.lane).Update("chat_id", ""),
 		st.runID, "clear retired visitor chat id")
 }
 
@@ -324,7 +321,7 @@ func (e *Engine) loadOrSeedVisitorConversation(s *reviewSession) (*models.GateSh
 		Messages: append([]models.ReactMessage(nil), history...), HistoryLen: len(history),
 		LastActiveAt: time.Now(),
 	}
-	if err := e.executionCreate(context.Background(), s.runID, &row).Error; err != nil {
+	if err := e.db.Create(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
@@ -335,9 +332,6 @@ func (e *Engine) loadOrSeedVisitorConversation(s *reviewSession) (*models.GateSh
 // state and Live sessions are never touched; product edits land in the shared
 // workspace and refresh outputs like a review turn.
 func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item *reviewQueueItem) (interrupted bool, err error) {
-	if err := e.executionCheck(ctx, s.runID, executionlineage.Entity{Kind: executionlineage.EntityLegacyPending, ID: item.ID}); err != nil {
-		return false, err
-	}
 	vp, ok := e.provider.(runtime.VisitorLaneProvider)
 	if !ok {
 		return false, errors.New("当前执行后端不支持访客对话")
@@ -361,7 +355,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 		TurnID: item.ID, ClientMessageID: item.ClientMessageID,
 	})
 	conv.LastActiveAt = time.Now()
-	logDB(e.executionSave(context.Background(), s.runID, conv), s.runID, "save visitor human turn")
+	logDB(e.db.Save(conv), s.runID, "save visitor human turn")
 	e.touchVisitorLane(s.runID, s.producerID, s.lane)
 	e.dialogueChangedLane(s.runID, s.producerID, s.lane, true)
 
@@ -398,7 +392,7 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	if ci, ok := e.provider.(visitorChatIDs); ok {
 		conv.ChatID = ci.VisitorChatID(s.runID, s.producerID, s.lane)
 	}
-	logDB(e.executionSave(context.Background(), s.runID, conv), s.runID, "save visitor agent turn")
+	logDB(e.db.Save(conv), s.runID, "save visitor agent turn")
 	e.touchVisitorLane(s.runID, s.producerID, s.lane)
 	e.dialogueChangedLane(s.runID, s.producerID, s.lane, true)
 

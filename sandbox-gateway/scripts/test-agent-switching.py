@@ -19,7 +19,6 @@ import subprocess
 import tempfile
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -89,75 +88,6 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
-def process_identity(pid, executable_name=None):
-    """Read ownership metadata only; command lines and environments contain keys."""
-    proc = Path('/proc')/str(pid)
-    try:
-        uid = proc.stat().st_uid
-        if uid != os.getuid():
-            return None
-        command, raw = (proc/'stat').read_text().rsplit(')', 1)
-        # The native Go backend keeps its executable name. Exclude unrelated
-        # processes before protected exe/cwd reads: even another process of
-        # this UID may be a non-dumpable browser/runner helper. This is only a
-        # negative filter; all ownership fields below are still required.
-        if executable_name is not None and command.split('(', 1)[1] != executable_name[:15]:
-            return None
-        fields = raw.split()
-        if fields[0] == 'Z':
-            return None
-        return {'pid': pid, 'uid': uid, 'group': int(fields[2]),
-                'start': fields[19], 'exe': os.readlink(proc/'exe'),
-                'cwd': os.readlink(proc/'cwd').removesuffix(' (deleted)')}
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-
-
-def owned_backend_processes(data, runtime):
-    """Only the exact backend in this run's private worktrees may be signalled."""
-    binary, worktrees = str((Path(runtime)/'bin/backend').resolve()), (data/'launches').resolve()
-    owned = []
-    for proc in Path('/proc').iterdir():
-        if not proc.name.isdigit():
-            continue
-        identity = process_identity(int(proc.name), executable_name=Path(binary).name)
-        if not identity or identity['uid'] != os.getuid() or identity['exe'] != binary:
-            continue
-        if not Path(identity['cwd']).is_relative_to(worktrees):
-            continue
-        if identity['group'] != identity['pid']:
-            raise AssertionError('owned local backend is not its process group leader')
-        owned.append(identity)
-    return owned
-
-
-def signal_owned_backend(identity, sig):
-    # A process may exit between discovery and signalling. Never grant a reused
-    # PID permission merely because it has the same executable or workspace.
-    current = process_identity(identity['pid'])
-    if current is None:
-        return
-    if current != identity:
-        raise AssertionError('owned local backend process identity changed before cleanup')
-    try:
-        os.killpg(identity['group'], sig)
-    except ProcessLookupError:
-        pass
-
-
-def process_group_alive(group):
-    for proc in Path('/proc').iterdir():
-        if not proc.name.isdigit():
-            continue
-        try:
-            fields = (proc/'stat').read_text().rsplit(')', 1)[1].split()
-            if int(fields[2]) == group and fields[0] != 'Z':
-                return True
-        except (FileNotFoundError, ProcessLookupError):
-            pass
-    return False
-
-
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -173,28 +103,18 @@ class E2E:
         self.run = 'switch-'+secrets.token_hex(6)
         self.nonce = 'task-'+secrets.token_hex(12)
         self.marker = 'checkpoint.txt'
-        # Filled by close after verifying the retained local worktree.
-        self.cleanup = []
-        self.fixture_cleanup = []
 
     def request(self, path, body=None, method=None, base=None):
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request((base or self.base)+path, data, {'Content-Type': 'application/json'}, method=method or ('POST' if body is not None else 'GET'))
         try:
             with self.client.open(req, timeout=20) as response:
-                raw = response.read(8_000_001)
-                if len(raw) > 8_000_000:
-                    raise AssertionError('fixture HTTP response exceeds the 8MB read limit')
+                raw = response.read(8_000_000)
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as error:
             # Endpoints and all credentials in this isolated suite are
             # synthetic. Keep the server's stable error code for diagnosis.
             detail = error.read(1500).decode(errors='replace')
-            try:
-                parsed = json.loads(detail)
-                error.grasp_response = parsed if isinstance(parsed, dict) else {}
-            except ValueError:
-                error.grasp_response = {}
             error.msg = str(error.msg)+' '+path+' '+detail
             raise
 
@@ -270,7 +190,7 @@ sys.exit(child.wait())
                     wrapper.chmod(0o755)
         env.update({'PATH': os.pathsep.join([str(native_bin), str(fixture_bin), env['PATH']]), 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
         port = int(self.base.rsplit(':', 1)[1])
-        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'sql/grasp.db')}, 'storage': {'driver': 'local', 'blobs_root': str(self.data/'blobs')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
+        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
         config_path.write_text(json.dumps(config)); config_path.chmod(0o600)
         self.launch([str(Path(self.args.server).resolve()), str(config_path)], env, 'server')
@@ -329,76 +249,9 @@ sys.exit(child.wait())
             step.update({'id': turn_id, 'reply': reply})
         self.request('/__mock/scenarios', {'id': self.run, 'turns': turns}, base=self.model)
 
-    def messages(self, session_id):
-        """Read the complete transcript metadata without copying all journals."""
-        pages, before, seen_cursors, seen_ids = [], '', set(), set()
-        # This isolated matrix creates one user and assistant per planned turn.
-        # Extra/duplicate records must fail instead of growing an unbounded read.
-        bound = 2*len(self.plan)
-        if bound < 1:
-            raise AssertionError('message read requires the complete matrix plan')
-        for _ in range(bound+1):
-            path = '/api/solo/sessions/'+session_id+'/messages?limit=200'
-            if before:
-                path += '&before='+urllib.parse.quote(before, safe='')
-            page = self.request(path)
-            if not isinstance(page, dict) or not isinstance(page.get('items'), list) or type(page.get('hasMore')) is not bool:
-                raise AssertionError('invalid message metadata page')
-            for message in page['items']:
-                if not isinstance(message, dict) or not isinstance(message.get('id'), str) or not message['id'] or message.get('sessionId') != session_id:
-                    raise AssertionError('message page escaped the original session')
-                if message['id'] in seen_ids:
-                    raise AssertionError('duplicate message in paged transcript')
-                seen_ids.add(message['id'])
-            if len(seen_ids) > bound:
-                raise AssertionError('transcript exceeds the matrix message bound')
-            pages.append(page['items'])
-            if not page['hasMore']:
-                return [message for chunk in reversed(pages) for message in chunk]
-            cursor = page.get('before')
-            if not page['items'] or not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
-                raise AssertionError('message cursor did not progress')
-            seen_cursors.add(cursor)
-            before = cursor
-        raise AssertionError('message pagination did not terminate')
-
-    def message_events(self, session_id, message):
-        """Load only this completed reply's exact native event range."""
-        pointer = message.get('eventLog')
-        if not isinstance(pointer, dict) or pointer.get('version') != 1 or pointer.get('legacy') is not None:
-            raise AssertionError('completed matrix reply lacks a native journal pointer')
-        first, through, count, generation = (pointer.get(key) for key in ('from', 'through', 'count', 'generation'))
-        if any(type(value) is not int for value in (first, through, count, generation)) or first < 0 or through < first or count < 1 or count > through-first+1 or generation < 1 or not isinstance(message.get('turnId'), str) or not message['turnId'] or message.get('sessionId') != session_id:
-            raise AssertionError('invalid native message journal range')
-        events, after, last = [], -1, first-1
-        # Control-only pages still advance the cursor. The immutable sequence
-        # range bounds the number of reads even when they contain no ACP data.
-        for _ in range(through-first+2):
-            path = '/api/solo/sessions/'+session_id+'/messages/'+urllib.parse.quote(message['id'], safe='')+'/events?after='+str(after)
-            page = self.request(path)
-            if not isinstance(page, dict) or not isinstance(page.get('items'), list) or type(page.get('hasMore')) is not bool or type(page.get('next')) is not int:
-                raise AssertionError('invalid native journal page')
-            requested_after = first-1 if after == -1 else after
-            for entry in page['items']:
-                if not isinstance(entry, dict) or type(entry.get('seq')) is not int or entry['seq'] <= requested_after or entry['seq'] <= last or not first <= entry['seq'] <= through or entry.get('type') != 'acp' or entry.get('turnId') != message['turnId'] or type(entry.get('generation')) is not int or entry['generation'] != generation or not isinstance(entry.get('data'), dict):
-                    raise AssertionError('native journal entry escaped its message range')
-                events.append(entry['data'])
-                last = entry['seq']
-            if len(events) > count:
-                raise AssertionError('native journal exceeds the recorded event count')
-            next_cursor = page['next']
-            if next_cursor <= requested_after or next_cursor < last or next_cursor > through:
-                raise AssertionError('native journal cursor did not progress within its range')
-            if not page['hasMore']:
-                if next_cursor != through or len(events) != count:
-                    raise AssertionError('native journal ended before its complete recorded range')
-                return events
-            after = next_cursor
-        raise AssertionError('native journal pagination did not terminate')
-
     def completed(self, session_id, expected):
         state = self.request('/api/solo/sessions/'+session_id)
-        messages = self.messages(session_id)
+        messages = self.request('/api/solo/sessions/'+session_id+'/messages')
         self.last_messages = messages
         if state.get('status') == 'error':
             raise AssertionError(f'Grasp session failed: {state.get("error")}')
@@ -408,7 +261,6 @@ sys.exit(child.wait())
         assistants = [message for message in messages if message['role'] == 'assistant']
         if state.get('busy') or len(assistants) < expected:
             return None
-        assistants[-1]['events'] = self.message_events(session_id, assistants[-1])
         return state, assistants[-1]
 
     def resolved_effort(self, step):
@@ -495,7 +347,7 @@ sys.exit(child.wait())
             elif step['backend'] == 'kimi_code' and any(any(key in (request.get('reasoning') or {}) for key in ['thinking_effort', 'reasoning_effort', 'effort', 'output_effort']) for request in main_requests):
                 raise AssertionError('unsupported Kimi model received a reasoning strength')
         self.check_efforts(session_id)
-        persisted = [message for message in self.messages(session_id) if message['role'] == 'assistant']
+        persisted = [message for message in self.request('/api/solo/sessions/'+session_id+'/messages') if message['role'] == 'assistant']
         if len(persisted) != len(self.plan):
             raise AssertionError('assistant replies were dropped or duplicated')
         for message, step in zip(persisted, self.plan):
@@ -543,76 +395,20 @@ sys.exit(child.wait())
             raise AssertionError(f'native token accounting mismatch for {step["backend"]}/{step["id"]}: upstream={upstream}, recorded={recorded}')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'cleanup': self.cleanup, 'fixtureCleanup': self.fixture_cleanup, 'temporaryDataRetained': str(self.data) if self.data.exists() else None, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the
             # failing CLI's native event evidence, never its environment/config.
             (self.output/'failure-messages.json').write_text(json.dumps(self.last_messages[-4:], indent=2))
 
-    def workspace_markers(self):
-        root = (self.data/'launches').resolve()
-        markers = {}
-        for path in root.rglob(self.marker):
-            if path.is_symlink() or not path.resolve().is_relative_to(root):
-                raise AssertionError('native workspace marker escaped the owned worktree')
-            markers[path] = path.read_bytes()
-        return markers
-
-    def close_session(self, session):
-        path = '/api/solo/sessions/'+session
-        before = self.request(path)
-        markers = self.workspace_markers()
-        if before.get('id') != session or type(before.get('sandboxId')) is not int or before['sandboxId'] <= 0 or not markers:
-            raise AssertionError('missing original session, environment or native workspace marker before close')
-        stop_confirmed = True
-        try:
-            self.request(path+'/close', {})
-        except urllib.error.HTTPError as error:
-            response = getattr(error, 'grasp_response', None)
-            if error.code != 409 or not isinstance(response, dict) or response.get('code') != 'environment_stop_pending':
-                raise
-            # Local keep-root shutdown is not implemented. Accepted closed
-            # intent plus retained files is useful evidence, never a stop proof.
-            stop_confirmed = False
-        result = self.request(path)
-        if result.get('id') != session or result.get('status') != 'closed' or result.get('sandboxId') != before['sandboxId']:
-            raise AssertionError('close did not retain the closed session and original environment')
-        if self.workspace_markers() != markers:
-            raise AssertionError('close changed the retained native workspace')
-        sandbox = result.get('sandbox') or {}
-        if stop_confirmed and (sandbox.get('id') != before['sandboxId'] or sandbox.get('status') != 'stopped' or sandbox.get('desiredState') != 'stopped'):
-            raise AssertionError('successful close did not confirm the original environment stopped')
-        self.cleanup.append({'sessionId': session, 'sandboxId': before['sandboxId'],
-                             'status': 'closed_workspace_retained' if stop_confirmed else 'closed_stop_pending_workspace_retained',
-                             'workspacePreserved': True, 'providerStopConfirmed': stop_confirmed})
-
-    def close_backends(self):
-        # The local provider deliberately launches backend in its own process
-        # group, outside the test server's group. Reclaim only this fixture's
-        # processes AFTER proving Close preserved its files and binding.
-        for identity in owned_backend_processes(self.data, self.args.runtime):
-            signal_owned_backend(identity, signal.SIGTERM)
-            deadline = time.monotonic()+8
-            while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
-                time.sleep(0.05)
-            if process_identity(identity['pid']) is not None:
-                signal_owned_backend(identity, signal.SIGKILL)
-                deadline = time.monotonic()+8
-                while process_identity(identity['pid']) is not None and time.monotonic() < deadline:
-                    time.sleep(0.05)
-            if process_identity(identity['pid']) is not None or process_group_alive(identity['group']):
-                raise AssertionError('owned local backend group did not exit after fixture cleanup')
-            self.fixture_cleanup.append({'kind': 'owned_local_backend_group', 'pid': identity['pid'],
-                                         'processGroup': identity['group'], 'exited': True})
-        if owned_backend_processes(self.data, self.args.runtime):
-            raise AssertionError('owned local backend remained after fixture cleanup')
-
     def close(self):
         errors = []
         for session in self.sessions:
             try:
-                self.close_session(session)
+                result = self.request('/api/solo/sessions/'+session+'/close', {})
+                if result.get('status') != 'closed':
+                    errors.append('session did not close: '+session)
             except Exception as error:
                 errors.append('session cleanup failed: '+str(error))
         for proc in reversed(self.processes):
@@ -629,13 +425,9 @@ sys.exit(child.wait())
                     except ProcessLookupError:
                         pass
                     proc.wait()
-        try:
-            self.close_backends()
-        except Exception as error:
-            errors.append('fixture backend cleanup failed: '+str(error))
         for handle in self.handles:
             handle.close()
-        if not self.args.keep_data and not errors:
+        if not self.args.keep_data:
             shutil.rmtree(self.data)
         if errors:
             raise AssertionError('; '.join(errors))
@@ -644,7 +436,6 @@ sys.exit(child.wait())
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', required=True, help='built Grasp server executable')
-    parser.add_argument('--storage-admin', help='matching offline storage tool; built from the same source when omitted')
     parser.add_argument('--runtime', required=True, help='extracted runtime directory with bin/backend')
     parser.add_argument('--output', default='agent-e2e-artifacts')
     parser.add_argument('--tools', help='local debugging subset only; CI always uses all tools')

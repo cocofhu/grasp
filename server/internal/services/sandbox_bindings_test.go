@@ -11,7 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
-func boundSandboxFixture(t *testing.T, purpose string, git bool, setup ...func(*SandboxService, *ModelConnectionService, *ModelConfigurationService, modelrouting.Connection, modelrouting.Configuration)) (*SandboxService, *models.Sandbox, *ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
+func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxService, *models.Sandbox, *ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
 	t.Helper()
 	connections, configurations, key, connection, configuration := newModelConfigurationFixture(t)
 	acp, port := fakeACPServer(t)
@@ -25,54 +25,24 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool, setup ...func(*
 	if git {
 		s.gitCredential = serviceGitValue
 		agent.GitBindings = serviceGitSelection("gh", "gl")
-		for _, credential := range []models.Credential{
-			{ID: "gh", Name: "Synthetic GitHub", Purpose: "git", Issuer: "github", Type: "git", EnvKey: "GITHUB_TOKEN", Host: "https://github.com", SecretKind: "api_key", SecretRevision: 1, Enabled: true},
-			{ID: "gl", Name: "Synthetic GitLab", Purpose: "git", Issuer: "gitlab", Type: "git", EnvKey: "GITLAB_TOKEN", Host: "https://gitlab.com", SecretKind: "api_key", SecretRevision: 1, Enabled: true},
-		} {
-			if err := s.db.Create(&credential).Error; err != nil {
-				t.Fatal(err)
-			}
-		}
 	}
 	if err := s.skills.Save(agent); err != nil {
 		t.Fatal(err)
 	}
-	for _, configure := range setup {
-		configure(s, connections, configurations, connection, configuration)
-	}
 	agent, _ = s.skills.Get(agent.Name)
-	agent = s.effectiveAgent(agent)
 	row := &models.Sandbox{Name: "bound-live-" + purpose, Profile: agent.Name, Purpose: purpose, ThreadID: "bound-thread", Status: "creating", Token: "test-password"}
-	if purpose == SandboxPurposeSolo {
-		// Exercise the product admission path: it freezes the effective route,
-		// binds a real owning session, and records proof only after native apply.
-		solo := NewSoloService(s.db, s, s.skills, NewProjectService(s.db))
-		view, err := solo.Create(context.Background(), "fixture-user", SoloCreateInput{AgentName: agent.Name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		waitFor(t, "bound resident ready", func() bool {
-			current, err := solo.Require(view.ID, "fixture-user")
-			return err == nil && current.Status == models.SoloStatusRunning
-		})
-		if err := s.db.First(row, view.SandboxID).Error; err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _, _ = solo.Close(context.Background(), view.ID, "fixture-user") })
+	if err := s.db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if purpose == "test" {
+		s.startContainer(row.ID, row.Name, agent.Name, "bound-run", row.Token, nil, agent, "")
 	} else {
-		if err := s.db.Create(row).Error; err != nil {
-			t.Fatal(err)
-		}
-		if purpose == "test" {
-			s.startContainer(row.ID, row.Name, agent.Name, "bound-run", row.Token, nil, agent, "")
-		} else {
-			s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{})
-		}
-		t.Cleanup(func() { _ = s.Destroy(context.Background(), row.ID) })
+		s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{Resident: purpose == SandboxPurposeSolo})
 	}
 	if err := s.db.First(row, row.ID).Error; err != nil || row.Status != "running" {
 		t.Fatalf("start failed: %v status=%s error=%s", err, row.Status, row.Error)
 	}
+	t.Cleanup(func() { _ = s.Destroy(context.Background(), row.ID) })
 	if len(row.ModelBindingFingerprint) != 64 || (git && row.GitBindingsFingerprint == "") {
 		t.Fatal("applied binding fingerprints were not persisted")
 	}
@@ -198,9 +168,7 @@ func TestSandboxCreationRequiresSelectedModelConfiguration(t *testing.T) {
 			case SandboxPurposeSolo:
 				_, err = s.OpenSoloSandbox(context.Background(), SoloSandboxOpts{Profile: "agentA", SessionID: "missing-model"})
 			}
-			if purpose == SandboxPurposeSolo {
-				requireSoloFailure(t, err, "model_not_in_configuration")
-			} else if err == nil || !strings.Contains(err.Error(), "模型配置") {
+			if err == nil || !strings.Contains(err.Error(), "模型配置") {
 				t.Fatalf("an unconfigured Agent started: %v", err)
 			}
 			var count int64

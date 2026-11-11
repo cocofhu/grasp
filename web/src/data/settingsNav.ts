@@ -24,7 +24,6 @@ export const settingsNavItems: SettingsNavItem[] = [
 ]
 
 export const SETTINGS_CHROME_PREFIXES = [
-  '/workflows',
   '/notifications',
   '/artifacts',
   '/agents',

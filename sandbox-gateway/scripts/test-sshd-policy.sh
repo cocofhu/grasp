@@ -44,21 +44,6 @@ cmp "$work/once" "$work/sshd_config"
 [ "$(find "$work" -name '*.grasp.*' | wc -l)" = 0 ]
 echo 'OK: OpenSSH rejects empty-password probes, retains key/password/PAM auth and applies policy idempotently'
 
-sed -n '/^persist_session_path() {/,/^}/p' "$startup" >"$work/session-path.sh"
-# shellcheck disable=SC1091
-source "$work/session-path.sh"
-printf 'LANG=C.UTF-8\nPATH="/usr/bin:/bin"\n' >"$work/environment"
-PATH="/root/.local/bin:$PATH" persist_session_path "$work/environment"
-cp "$work/environment" "$work/environment.once"
-PATH="/root/.local/bin:$PATH" persist_session_path "$work/environment"
-cmp "$work/environment.once" "$work/environment"
-grep -qx 'LANG=C.UTF-8' "$work/environment"
-[ "$(grep -c '^PATH=' "$work/environment")" = 1 ]
-grep -q '^PATH="/root/.local/bin:' "$work/environment"
-[ "$(stat -c %a "$work/environment")" = 644 ]
-[ "$(find "$work" -name '*.grasp.*' | wc -l)" = 0 ]
-echo 'OK: SSH session PATH is persisted to /etc/environment idempotently'
-
 # The runtime E2E image has a known test-only root password set by startup.
 # A separate loopback daemon tests real auth without changing its main sshd or
 # authorized_keys. Local config-only runs never change a host account.
@@ -98,12 +83,4 @@ EOF
     exit 1
   fi
   echo 'OK: real OpenSSH public-key login and password fallback succeed; unknown key is rejected'
-  # /proc/$$/environ is what sshd handed the session, before any rc file ran.
-  session_path="$(ssh "${ssh_args[@]}" -o BatchMode=yes -o IdentitiesOnly=yes -i "$work/key" root@127.0.0.1 \
-    'tr "\0" "\n" </proc/$$/environ | sed -n "s/^PATH=//p"')"
-  case ":$session_path:" in
-    *:/root/.local/bin:*) ;;
-    *) echo "FAIL: SSH session PATH lacks /root/.local/bin: $session_path" >&2; exit 1 ;;
-  esac
-  echo 'OK: SSH sessions start with /root/.local/bin on PATH'
 fi

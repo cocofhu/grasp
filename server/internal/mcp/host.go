@@ -116,9 +116,6 @@ type Host struct {
 	// finished / server restarted) for exactly as long as a sandbox for the run
 	// exists — i.e. token lifetime tracks sandbox lifetime. Nil ⇒ no fallback.
 	tokenSrc RunTokenSource
-	// currentAuthorization is consulted even for an already cached token. It
-	// lets resident namespaces reject grants revoked since their last call.
-	currentAuthorization func(string) bool
 	// activeSrc is the persistence-backed fallback for ActiveNode/ActiveCaps:
 	// given a runID it resolves the run's current node id + capabilities from
 	// the DB. It mirrors tokenSrc for the capability gate: when the in-memory
@@ -241,12 +238,6 @@ func (h *Host) SetHistoryProvider(p HistoryProvider) { h.history = p }
 // SetRunTokenSource wires the persistence-backed authorize fallback (see
 // RunTokenSource / authorize).
 func (h *Host) SetRunTokenSource(src RunTokenSource) { h.tokenSrc = src }
-
-func (h *Host) SetCurrentAuthorization(check func(string) bool) {
-	h.mu.Lock()
-	h.currentAuthorization = check
-	h.mu.Unlock()
-}
 
 // SetActiveNodeSource wires the persistence-backed ActiveNode/ActiveCaps
 // fallback (see ActiveNodeSource / ActiveCaps).
@@ -546,20 +537,12 @@ func (h *Host) authorize(runID, token string) bool {
 	h.mu.RLock()
 	want, ok := h.tokens[runID]
 	src := h.tokenSrc
-	current := h.currentAuthorization
 	h.mu.RUnlock()
 	if ok && want == token {
-		if current != nil && !current(runID) {
-			h.UnregisterRun(runID)
-			return false
-		}
 		return true
 	}
 	if src != nil {
 		if persisted, alive, ok := src(runID); ok && alive && persisted != "" && persisted == token {
-			if current != nil && !current(runID) {
-				return false
-			}
 			h.mu.Lock()
 			h.tokens[runID] = persisted
 			h.mu.Unlock()

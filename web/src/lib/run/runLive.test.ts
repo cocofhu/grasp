@@ -36,9 +36,6 @@ describe('decideLive (server currentNode)', () => {
     expect(decideLive(run('running'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
     expect(decideLive(run('waiting_human'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
     expect(decideLive(run('queued'), '')).toEqual({ kind: 'detail' })
-    // The engine pauses between nodes while it saves the finished node's workspace.
-    expect(decideLive(run('paused'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
-    expect(decideLive(run('paused'), 'impl')).toEqual({ kind: 'wait', nodeId: 'impl', label: '' })
   })
   it('runningAutoNode is only an auto agent that is running', () => {
     expect(runningAutoNode(run('running', cur('impl', 'agent', 'running')))?.id).toBe('impl')

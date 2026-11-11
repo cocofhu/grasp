@@ -60,11 +60,11 @@ describe('sidebar navigation context', () => {
     expect(navigation.settingsToggleTo.value).toBe('/stats?window=7d')
   })
   it('returns to the workspace even when a shared settings tool already has the same address', async () => {
-    const { router, navigation } = await setup('/board')
+    const { router, navigation } = await setup('/workflows')
     await router.push('/settings')
-    await router.push('/board')
+    await router.push('/workflows')
     expect(navigation.settingsChrome.value).toBe(true)
-    expect(navigation.settingsToggleTo.value).toBe('/board')
+    expect(navigation.settingsToggleTo.value).toBe('/workflows')
     navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'workspace')
     await router.push(navigation.settingsToggleTo.value)
     expect(navigation.settingsChrome.value).toBe(false)
@@ -78,9 +78,9 @@ describe('sidebar navigation context', () => {
     expect(navigation.settingsChrome.value).toBe(true)
     expect(navigation.settingsToggleTo.value).toBe('/runs?status=completed')
   })
-  it('opens direct workflow definitions in settings and explicitly returns home', async () => {
+  it('leaves direct workflow visits in workspace mode and explicitly returns home', async () => {
     const { router, navigation } = await setup('/workflows')
-    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsChrome.value).toBe(false)
     await router.push('/settings')
     expect(navigation.settingsChrome.value).toBe(true)
     navigation.requestMode(new MouseEvent('click'), '/dashboard', 'workspace')
@@ -124,13 +124,13 @@ describe('sidebar navigation context', () => {
     { altKey: true },
     { button: 1 },
   ])('does not toggle shared-route context for a modified click: %j', async (options) => {
-    const { router, navigation } = await setup('/board')
+    const { router, navigation } = await setup('/workflows')
     await router.push('/settings')
-    await router.push('/board')
+    await router.push('/workflows')
     navigation.requestMode(new MouseEvent('click', options), navigation.settingsToggleTo.value, 'workspace')
-    await router.push('/board')
+    await router.push('/workflows')
     expect(navigation.settingsChrome.value).toBe(true)
-    expect(navigation.settingsToggleTo.value).toBe('/board')
+    expect(navigation.settingsToggleTo.value).toBe('/workflows')
   })
   it('keeps /stats in workspace mode on a direct visit, a later jump, and an account switch', async () => {
     const { router, navigation } = await setup('/stats')
@@ -151,7 +151,7 @@ describe('sidebar navigation context', () => {
   })
   it('resets navigation context when accounts change', async () => {
     const { router, navigation } = await setup()
-    await router.push('/board')
+    await router.push('/workflows')
     useAuth().setUser({ username: 'another-user', expiresAt: '2099-01-01T00:00:00Z' })
     await nextTick()
     expect(navigation.settingsChrome.value).toBe(false)

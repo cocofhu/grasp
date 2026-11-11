@@ -53,52 +53,25 @@ RUN set -eu; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
-# Docker Engine + CLI + Buildx + Compose 插件。
-# 清华 docker-ce 会对部分云厂商 IP / curl UA / IPv6 路径返回 403；国内多源回退，官方源垫底。
+# Docker Engine + CLI + Buildx + Compose 插件（true → 清华；false → download.docker.com）
 RUN set -eu; \
-    arch="$(dpkg --print-architecture)"; \
-    codename="$(lsb_release -cs)"; \
-    key=/usr/share/keyrings/docker-archive-keyring.gpg; \
-    list=/etc/apt/sources.list.d/docker.list; \
-    curl_gpg() { \
-      local url="$1"; \
-      rm -f /tmp/docker.gpg; \
-      curl -fsSL --http1.1 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 45 \
-        "$url" -o /tmp/docker.gpg \
-      || curl -fsSL -4 --http1.1 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 45 \
-        "$url" -o /tmp/docker.gpg; \
-    }; \
-    try_docker_repo() { \
-      local repo="$1" i; \
-      rm -f "$key" /tmp/docker.gpg; \
-      curl_gpg "${repo}/gpg" || return 1; \
-      gpg --batch --yes --dearmor -o "$key" /tmp/docker.gpg || return 1; \
-      echo "deb [arch=${arch} signed-by=${key}] ${repo} ${codename} stable" > "$list"; \
-      for i in 1 2 3; do \
-        if apt-get update && apt-get install -y \
-          docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then \
-          echo "docker-ce installed from ${repo}"; \
-          return 0; \
-        fi; \
-        echo "docker-ce apt ${repo} attempt $i failed; waiting..."; \
-        sleep 10; \
-      done; \
-      return 1; \
-    }; \
-    ok=0; \
     if [ "$USE_CN_MIRROR" = "true" ]; then \
-      for repo in \
-        https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu \
-        https://mirrors.aliyun.com/docker-ce/linux/ubuntu \
-        https://mirrors.ustc.edu.cn/docker-ce/linux/ubuntu; do \
-        if try_docker_repo "$repo"; then ok=1; break; fi; \
-        echo "docker-ce ${repo} failed; trying next mirror..."; \
-      done; \
+      curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list; \
+    else \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list; \
     fi; \
-    if [ "$ok" != 1 ]; then \
-      if try_docker_repo https://download.docker.com/linux/ubuntu; then ok=1; fi; \
-    fi; \
-    rm -f /tmp/docker.gpg; \
+    ok=0; \
+    for i in 1 2 3 4 5; do \
+      if apt-get update && apt-get install -y \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin; then ok=1; break; fi; \
+      echo "apt install attempt $i failed; waiting for mirror re-sync..."; sleep 20; \
+    done; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
@@ -178,8 +151,7 @@ ENV PATH=$PATH:/usr/local/mongocli/bin
 # 便于 Cursor Server / SSH 等非 entrypoint 进程也能找到命令。具体 CLI 由末尾的 agent 安装层
 # 按 AGENT_PROVIDERS 装入（见 scripts/install-agent.sh）。
 RUN mkdir -p /root/.local/bin && \
-    echo 'case ":$PATH:" in *:/root/.local/bin:*) ;; *) export PATH="/root/.local/bin:$PATH" ;; esac' > /etc/profile.d/agent-path.sh && \
-    echo '[ -f /etc/profile.d/agent-path.sh ] && . /etc/profile.d/agent-path.sh' >> /root/.bashrc
+    echo 'export PATH="/root/.local/bin:$PATH"' > /etc/profile.d/agent-path.sh
 ENV PATH=/root/.local/bin:$PATH
 
 # GitLab CLI（与 startup.sh 中 GITLAB_TOKEN 自动执行 glab auth login 配合）
@@ -225,13 +197,7 @@ RUN curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30
     rm /tmp/node.tar.xz && \
     node --version && npm --version
 
-# npm package registry can be selected independently of the apt/binary mirrors.
-# Prefer the official registry: a mirror outage must not pin CI to that service.
-ARG NPM_REGISTRY=https://registry.npmjs.org
-RUN npm config set registry "${NPM_REGISTRY}" && \
-    npm config set fetch-retries 2 && \
-    npm config set fetch-retry-maxtimeout 30000 && \
-    npm config set fetch-timeout 120000
+RUN npm config set registry https://registry.npmmirror.com
 RUN npm install -g yarn pnpm typescript ts-node
 
 # Playwright 浏览器 E2E + noVNC 预览栈：预装 Chromium + Playwright 系统依赖，落到共享目录
@@ -253,7 +219,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Go (阿里云优先；golang.google.cn 会回源 dl.google.com，国内 CI 易超时)
-ENV GO_VERSION=1.26.11
+ENV GO_VERSION=1.26.10
 ENV GO_ARCH=amd64
 RUN set -eux; \
     file="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \

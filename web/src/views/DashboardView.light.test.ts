@@ -106,6 +106,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
 
     const targets: { className: string; body: RegExp }[] = [
       { className: '.home-composer__send', body: /#fff/ },
+      { className: '.home-shell__card-top', body: /^\s*background:\s*rgb\(var\(--c-surface\)\);?\s*$/ },
       { className: '.home-composer__toolbar', body: /^\s*background:\s*rgb\(var\(--c-surface\)\);?\s*$/ },
     ]
     for (const target of targets) {
@@ -122,6 +123,32 @@ describe('DashboardView light selectors survive scoped compile', () => {
       }
     }
 
+    const lightCardTops = rules.filter(
+      (rule) => rule.selector.includes('html.light') && hasClass(rule.selector, '.home-shell__card-top'),
+    )
+    for (const rule of lightCardTops) expect(rule.body).not.toMatch(/244,\s*244,\s*245/)
+    expect(
+      lightCardTops.some(
+        (rule) => rule.selector.includes('.home-shell__card--selected') && /--c-accent\)\s*\/\s*0\.055/.test(rule.body),
+      ),
+    ).toBe(true)
+
+    const toolbarBase = rules.find(
+      (rule) => !rule.selector.includes('html.light') && hasClass(rule.selector, '.home-composer__toolbar'),
+    )
+    expect(toolbarBase?.body).toMatch(/border-color:\s*rgb\(var\(--c-line\)\s*\/\s*0\.55\)/)
+    expect(toolbarBase?.body).toMatch(/color-mix\(in srgb, rgb\(var\(--c-base\)\) 35%, rgb\(var\(--c-surface\)\)\)/)
+
+    const sharedSurfaces = rules.filter(
+      (rule) =>
+        !rule.selector.includes('html.light') &&
+        (hasClass(rule.selector, '.home-composer') ||
+          hasClass(rule.selector, '.home-composer__send') ||
+          hasClass(rule.selector, '.home-shell__card') ||
+          hasClass(rule.selector, '.home-shell__card-top')) &&
+        /--c-surface|--c-txt|--c-elevated/.test(rule.body),
+    )
+    expect(sharedSurfaces.length).toBeGreaterThan(0)
   })
 
   it('reduced-motion send button none beats the hover lift and press scale', () => {
@@ -151,10 +178,10 @@ describe('DashboardView light selectors survive scoped compile', () => {
     expect(press).toBeTruthy()
     expect(reduced.length).toBeGreaterThan(0)
 
-    const reducedHover = reduced.filter(rule => rule.selector.includes(':hover'))
+    const reducedHover = reduced
       .map((rule) => partMatching(rule.selector, /\.home-composer__send[^{]*:hover/))
       .find((selector) => selector.includes(':not(') && selector.includes(':disabled'))
-    const reducedActive = reduced.filter(rule => rule.selector.includes(':active'))
+    const reducedActive = reduced
       .map((rule) => partMatching(rule.selector, /\.home-composer__send[^{]*:active/))
       .find((selector) => selector.includes(':not(') && selector.includes(':disabled'))
     expect(reducedHover, 'reduced hover selector').toBeTruthy()

@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SoloSessionPane from '@/components/solo/SoloSessionPane.vue'
 import SoloCreateModal from '@/components/solo/SoloCreateModal.vue'
-import SoloSessionList from '@/components/solo/SoloSessionList.vue'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { soloPrefs } from '@/lib/solo/soloPrefs'
 
@@ -16,12 +15,6 @@ const presetAgent = ref('')
 const presetProject = ref('')
 
 const sessionId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
-const workspaceIntent = computed(() => typeof route.query.workspace === 'string' ? route.query.workspace : undefined)
-function workspaceOpened() {
-  const query = { ...route.query }
-  delete query.workspace
-  void router.replace({ path: route.path, query })
-}
 
 // ?new=1&agent=x&project=y opens the dialog prefilled (Agent Studio, project list).
 watch(
@@ -41,11 +34,20 @@ function goHome() {
   void router.replace('/dashboard')
 }
 
-function openCreate() {
-  presetAgent.value = ''
-  presetProject.value = ''
-  createOpen.value = true
-}
+// Solo starts from Home. /solo without a session redirects to the first
+// available conversation or back to Home.
+watch(
+  () => [store.loaded.value, sessionId.value, createOpen.value, route.query.new] as const,
+  ([ok, id, creating, newFlag]) => {
+    if (!ok || id || creating || newFlag === '1') return
+    const first = store.active.value[0] ?? store.sessions.value[0]
+    if (first) {
+      void router.replace(`/solo/${first.id}`)
+      return
+    }
+    goHome()
+  },
+)
 
 onMounted(() => void store.refresh())
 </script>
@@ -53,10 +55,7 @@ onMounted(() => void store.refresh())
 <template>
   <div class="solo-view flex h-full min-h-0" data-testid="solo-view">
     <main class="solo-main min-h-0 min-w-0 flex-1">
-      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" :workspace-intent="workspaceIntent" @back="goHome" @workspace-opened="workspaceOpened" />
-      <div v-else class="min-h-0 flex-1 overflow-y-auto">
-        <SoloSessionList @create="openCreate" />
-      </div>
+      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" @back="goHome" />
     </main>
 
     <SoloCreateModal :open="createOpen" :preset-agent="presetAgent" :preset-project="presetProject" @close="createOpen = false" />

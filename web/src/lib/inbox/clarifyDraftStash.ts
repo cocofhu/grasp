@@ -1,5 +1,4 @@
 import { getAuthState } from '@/lib/composables/useAuth'
-import { randomUuid } from '@/lib/shared/randomUuid'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 
 /**
@@ -440,8 +439,28 @@ export function resetClarifyTabForTest(opts: { checked?: boolean } = {}): void {
 
 /* ---------------- outbox (per tab) ---------------- */
 
-/** A fresh UUID for one clarify send, echoed back by clarify_visit_ended frames. */
-export const newClientMessageId = randomUuid
+/**
+ * A fresh UUID (v4) for one clarify send, echoed back by clarify_visit_ended
+ * frames. The server rejects non-UUID ids, and crypto.randomUUID is missing on
+ * plain-http (non-secure) origins, so build one from getRandomValues there.
+ */
+export function newClientMessageId(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined
+  if (c && typeof c.randomUUID === 'function') {
+    try {
+      return c.randomUUID()
+    } catch {
+      /* fall through */
+    }
+  }
+  const b = new Uint8Array(16)
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b)
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
 
 function readOutbox(runId: string, nodeId: string): Record<string, Stored> {
   const store = storage('session')

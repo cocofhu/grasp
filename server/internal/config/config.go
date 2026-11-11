@@ -38,21 +38,9 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
-	// ExecutionControl is read only by grasp-storage-admin offline modes; the
-	// server binds execution to the SQL dataset and ignores this section.
-	ExecutionControl    *StorageConfig            `yaml:"execution_control"`
-	WorkspaceOperations WorkspaceOperationsConfig `yaml:"workspace_operations"`
-	Features            FeatureConfig             `yaml:"features"`
-	GitHub              GitHubConfig              `yaml:"github"`
+	GitHub   GitHubConfig   `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
-}
-
-type FeatureConfig struct {
-	// Nil preserves existing installations' workflow support.
-	WorkflowsEnabled *bool `yaml:"workflows_enabled"`
-	// Bounds the accepted backlog, independently of concurrent execution slots.
-	MaxActiveWorkflows int `yaml:"max_active_workflows"`
 }
 
 // CodexLoginConfig controls how the platform renews Codex ChatGPT logins. The
@@ -108,28 +96,14 @@ func (c *Config) GitHubOAuthClientID() string {
 	return strings.TrimSpace(c.GitHub.OAuthClientID)
 }
 
-// StorageConfig selects how persistent payloads and attachment bytes are stored.
+// StorageConfig selects how attachment bytes are persisted (DB keeps refs only).
 type StorageConfig struct {
-	// Driver is local, s3, or cos (the COS S3-compatible preset).
-	Driver string          `yaml:"driver"`
-	S3     S3StorageConfig `yaml:"s3"`
+	// Driver is "local" (default) or "cos" (reserved; not implemented yet).
+	Driver string `yaml:"driver"`
 	// BlobsRoot is the LocalFS directory for blob:{id} objects.
 	BlobsRoot string `yaml:"blobs_root"`
 	// MaxFileBytes limits one Agent file import (default 128 MiB).
 	MaxFileBytes int64 `yaml:"max_file_bytes"`
-}
-
-// S3StorageConfig covers the portable object-storage API. Credentials stay in
-// server configuration/Secret environment variables, never in object references.
-type S3StorageConfig struct {
-	Endpoint        string `yaml:"endpoint"`
-	Region          string `yaml:"region"`
-	Bucket          string `yaml:"bucket"`
-	Prefix          string `yaml:"prefix"`
-	AccessKeyID     string `yaml:"access_key_id" json:"-"`
-	SecretAccessKey string `yaml:"secret_access_key" json:"-"`
-	SessionToken    string `yaml:"session_token" json:"-"`
-	PathStyle       *bool  `yaml:"path_style"`
 }
 
 // SecurityConfig holds cross-cutting secrets. SecretsKey is the master key used
@@ -520,16 +494,6 @@ func rejectSandboxSecretEnv(c *Config) error {
 // applyEnvOverrides lets explicit env vars win over the file. Secrets such as
 // gateway_api_key are injected here from K8s Secret-backed env.
 func applyEnvOverrides(c *Config) {
-	applyExecutionControlEnv(c)
-	applyWorkspaceOperationsEnv(c)
-	if v := env("GRASP_WORKFLOWS_ENABLED"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			c.Features.WorkflowsEnabled = &enabled
-		}
-	}
-	if v := envInt("GRASP_MAX_ACTIVE_WORKFLOWS"); v > 0 {
-		c.Features.MaxActiveWorkflows = v
-	}
 	if v := envInt("GRASP_PORT"); v != 0 {
 		c.Server.Port = v
 	}
@@ -633,25 +597,6 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_STORAGE_DRIVER"); v != "" {
 		c.Storage.Driver = v
 	}
-	for name, target := range map[string]*string{
-		"GRASP_S3_ENDPOINT":          &c.Storage.S3.Endpoint,
-		"GRASP_S3_REGION":            &c.Storage.S3.Region,
-		"GRASP_S3_BUCKET":            &c.Storage.S3.Bucket,
-		"GRASP_S3_PREFIX":            &c.Storage.S3.Prefix,
-		"GRASP_S3_ACCESS_KEY_ID":     &c.Storage.S3.AccessKeyID,
-		"GRASP_S3_SECRET_ACCESS_KEY": &c.Storage.S3.SecretAccessKey,
-		"GRASP_S3_SESSION_TOKEN":     &c.Storage.S3.SessionToken,
-	} {
-		if v := env(name); v != "" {
-			*target = v
-		}
-	}
-	if v := env("GRASP_S3_PATH_STYLE"); v != "" {
-		value, err := strconv.ParseBool(v)
-		if err == nil {
-			c.Storage.S3.PathStyle = &value
-		}
-	}
 	if v := env("GRASP_BLOBS_ROOT"); v != "" {
 		c.Storage.BlobsRoot = v
 	}
@@ -705,13 +650,6 @@ func setDefaults(c *Config) {
 		c.Storage.Driver = "local"
 	}
 	c.Storage.Driver = strings.ToLower(strings.TrimSpace(c.Storage.Driver))
-	if c.Storage.S3.Region == "" {
-		c.Storage.S3.Region = "us-east-1"
-	}
-	if c.Storage.S3.PathStyle == nil {
-		pathStyle := c.Storage.Driver != "cos"
-		c.Storage.S3.PathStyle = &pathStyle
-	}
 	if c.Storage.BlobsRoot == "" {
 		c.Storage.BlobsRoot = "data/blobs"
 	}

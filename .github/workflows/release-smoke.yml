@@ -30,7 +30,7 @@ jobs:
           test -n "$SANDBOX_GATEWAY_IMAGE"
           test -n "$SANDBOX_IMAGE"
           export GRASP_IMAGE SANDBOX_GATEWAY_IMAGE SANDBOX_IMAGE
-          sudo --preserve-env=GRASP_IMAGE,SANDBOX_GATEWAY_IMAGE,SANDBOX_IMAGE ./release-smoke.sh
+          ./release-smoke.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with:

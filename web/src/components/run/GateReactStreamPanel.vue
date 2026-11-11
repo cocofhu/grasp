@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * Shared busy stream for GateApproval / ReviewComposer(gate):
- * placeholder → collapsible thought → thinking tail while the body streams
- * (shimmer caret stays on the message) → restrained done.
+ * Shared four-phase busy stream for GateApproval / ReviewComposer(gate):
+ * placeholder → collapsible thought → outputting (shimmer+caret) → restrained done.
  * Smooth catch-up reveal + ThoughtSummaryStatus aligned with ClarifyChat / Demo.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -203,11 +202,18 @@ function onThoughtToggle(e: Event) {
       <ThinkingBusyCue :label="t('pages.clarify.thinkingBusy')" />
     </div>
     <div
-      v-else-if="streaming"
+      v-else-if="streaming && hasThought && !hasMessage"
       class="chat-meta inline-flex items-center gap-2"
       data-testid="gate-busy-status"
     >
       <ThinkingBusyCue :label="t('pages.clarify.thinkingBusy')" />
+    </div>
+    <div
+      v-else-if="streaming && hasMessage"
+      class="chat-meta"
+      data-testid="gate-busy-status"
+    >
+      <span class="text-accent-2">{{ t('pages.clarify.outputting') }}</span>
     </div>
 
     <details

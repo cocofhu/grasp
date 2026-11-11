@@ -63,7 +63,7 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(mocks.listRuns).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc' }),
     )
-    expect(wrapper.get('[data-testid="sidebar-recent-heading"]').text()).toBe('历史执行')
+    expect(wrapper.get('[data-testid="sidebar-recent"] h3').text()).toBe('历史执行')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
     expect(order(wrapper)).toEqual(['c', 'd', 'e'])
     expect(rows[0].attributes('href')).toBe('/runs/c')
@@ -97,10 +97,11 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(rows[1].classes()).not.toContain('is-active')
     expect(rows[1].attributes('aria-current')).toBeUndefined()
     expect(listSrc).toMatch(/<RouterLink\s+v-hover-ink\b/)
-    expect(listSrc).not.toMatch(/nav-pending-pin|beginRename/)
+    expect(listSrc).not.toMatch(/contextmenu|nav-pending-pin|beginRename/)
     expect(rows[0].classes()).toContain('hover-ink-host')
     expect(rows[0].find('.hover-ink').exists()).toBe(true)
     expect(rows[0].element.firstElementChild?.classList.contains('hover-ink')).toBe(true)
+    expect(styleBlock('\\.workspace-list-heading')).toContain('color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))))')
     const row = styleBlock('\\.workspace-recent-row')
     expect(row).toContain('color: light-dark(#27272a, rgb(var(--c-txt2)))')
     expect(row).toContain('min-height: 36px')

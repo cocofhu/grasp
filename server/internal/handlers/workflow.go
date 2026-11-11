@@ -262,7 +262,7 @@ func (h *Handlers) WorkflowVersionGraph(c *gin.Context) {
 func (h *Handlers) ImportWorkflow(c *gin.Context) {
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request_body", "error": "无法读取请求体"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取请求体"})
 		return
 	}
 	wf, err := h.WF.Import(raw)

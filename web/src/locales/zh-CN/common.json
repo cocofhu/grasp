@@ -30,10 +30,7 @@
       "cancelling": "取消中",
       "skipped": "已跳过",
       "published": "已发布",
-      "draft": "草稿",
-      "paused": "已暂停",
-      "saving": "保存工作区中",
-      "save_failed": "保存失败"
+      "draft": "草稿"
     },
     "priority": {
       "label": "优先级",
@@ -364,42 +361,6 @@
     },
     "errors": {
       "secretsKeyMissing": "服务器尚未配置加密密钥，暂时无法保存凭据。请让管理员用启动脚本重新启动服务。"
-    },
-    "apiErrors": {
-      "agent_data_clear_failed": "清除 Agent 工作区数据失败",
-      "agent_data_rename_failed": "重命名 Agent 数据失败",
-      "agent_not_found": "Agent 不存在",
-      "already_done": "会话已结束",
-      "audit_required": "请填写姓名与意见后再提交",
-      "csrf": "请求未通过安全校验",
-      "empty_reply": "请填写修订意见或标注后再发送",
-      "instruction_not_persisted": "补充要求未能持久化，请保留草稿后重试",
-      "invalid_attachment": "附件内容或引用无效，请修改后重新发送",
-      "invalid_client_message_id": "消息必须包含稳定标识",
-      "invalid_creation_identity": "创建请求必须包含稳定标识",
-      "invalid_request_body": "无法读取请求体",
-      "invalid_workspace_import": "导入内容无效",
-      "invalid_workspace_source": "工作区来源无效",
-      "live_unsupported": "当前链接不支持 Live 变体",
-      "message_not_confirmed": "消息尚未确认接收，请使用原消息身份重试",
-      "nonce": "请求未通过安全校验",
-      "permission_denied": "当前链接权限不允许此操作",
-      "port_not_registered": "预览端口未注册",
-      "rate_limited": "请求过于频繁，请稍后再试",
-      "review_busy": "复审进行中，请稍后再试",
-      "review_session_unavailable": "上游复审会话不可用",
-      "review_validation_failed": "产物校验未通过，链接仍有效，请稍后重试",
-      "run_not_found": "工作流执行不存在",
-      "run_read_failed": "读取运行记录失败",
-      "session_cold": "会话已结束",
-      "unsupported": "当前分享链不支持此功能",
-      "unsupported_action": "复审公开页仅支持确认并流转",
-      "visitor_required": "缺少访客标识，请刷新页面后重试",
-      "visitors_full": "同时对话的访客已满，请稍后再试",
-      "workflow_reference_rename_failed": "重命名工作流引用失败",
-      "workflow_version_required": "请重新选择已发布的工作流",
-      "workspace_import_forbidden": "请在 Solo 会话中导入代码",
-      "workspace_import_unavailable": "工作区导入暂不可用"
     }
   }
 }

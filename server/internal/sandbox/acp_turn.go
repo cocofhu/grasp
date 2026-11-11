@@ -196,14 +196,6 @@ func (c *ACPClient) belongsTo(f turnFrame, opID string) bool {
 // returned with Interrupted set and the reason in ErrorText.
 func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.PromptImage,
 	onEvent func(json.RawMessage), onProgress func(*ChatResult)) (*ChatResult, error) {
-	return c.runTurnID(ctx, newTurnOpID(), text, images, onEvent, onProgress)
-}
-
-func (c *ACPClient) runTurnID(ctx context.Context, opID, text string, images []models.PromptImage,
-	onEvent func(json.RawMessage), onProgress func(*ChatResult)) (*ChatResult, error) {
-	if c.attachOperation != nil && !c.attachedComplete.Load() {
-		return nil, ErrOperationUnconfirmed
-	}
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("%w: not connected", ErrConnClosed)
 	}
@@ -215,6 +207,7 @@ func (c *ACPClient) runTurnID(ctx context.Context, opID, text string, images []m
 	release := c.acquireReader()
 	defer release()
 	c.drainEvents()
+	opID := newTurnOpID()
 	c.turnOpID.Store(opID)
 	defer c.turnOpID.Store("")
 	idle := c.agentIdle()

@@ -96,7 +96,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   apiState.checked = true
 
   if (!res.ok) {
-    let parsedError: unknown
     if (res.status === 401 && !AUTH_WHITELIST.has(path)) {
       redirectToLogin()
       throw new Error('unauthorized')
@@ -105,7 +104,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       let body: { status?: string; message?: string; error?: string } | null = null
       try {
         body = await res.json()
-        parsedError = body
       } catch {
         // non-JSON 503 body
       }
@@ -129,7 +127,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       field?: string
     } = {}
     try {
-      const body = parsedError ?? await res.json()
+      const body = await res.json()
       if (body?.error) msg = body.error
       if (typeof body?.code === 'string') extra.code = body.code
       if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId
@@ -145,7 +143,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       // non-JSON error body; keep the status line
     }
     if (extra.code === 'secrets_key_missing') msg = i18n.global.t('common.errors.secretsKeyMissing')
-    else msg = localizedErrorText(extra.code, msg)
     throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true
@@ -153,16 +150,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (writesWorkflowCatalog(method, path)) invalidateWorkflowCatalog()
   if (isMutationMethod(method) && /^(?:\/workspace\/(?:model-configurations|model-connections|credentials)(?:\/|$)|\/workspace\/(?:shared-agent-config|bootstrap-onboarding)$|\/agents(?:$|\/[^/]+$|\/[^/]+\/rename$)|\/agent-teams\/bootstrap$)/.test(path)) invalidateModelCatalog()
   return result
-}
-
-/**
- * Server error copy is Chinese and often more specific, so the Chinese UI keeps
- * it; other locales show the translation for a known error code.
- */
-export function localizedErrorText(code: string | undefined, serverText: string): string {
-  if (!code || i18n.global.locale.value === 'zh-CN') return serverText
-  const key = `common.apiErrors.${code}`
-  return i18n.global.te(key) ? i18n.global.t(key) : serverText
 }
 
 /** Successful writes that publish or change the workflow directory. */

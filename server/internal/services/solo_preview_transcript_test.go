@@ -16,10 +16,6 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 	defer acp.Close()
 	solo, _, _, db := newSoloFixture(t, port, 3)
 	gate := newGateChat(true)
-	gate.initialEvents = []json.RawMessage{
-		json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Thinking before a reply"}}}`),
-		json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"read-1","title":"read_file","status":"in_progress"}}`),
-	}
 	solo.SetChatterForTest(gate)
 	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
 	if err != nil {
@@ -30,10 +26,9 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "active preview turn", func() bool { return gate.count() == 1 })
-	waitFor(t, "committed preview events", func() bool {
-		reply, _ := solo.PreviewLiveReply(view.ID)
-		return reply != nil && len(reply.Events) == 2
-	})
+	chat := solo.lookup(view.ID)
+	chat.onAcp(json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Thinking before a reply"}}}`))
+	chat.onAcp(json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"read-1","title":"read_file","status":"in_progress"}}`))
 	if _, err := solo.Send(view.ID, "alice", "queued", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +46,7 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 		t.Fatal("snapshot mutated the active turn")
 	}
 	var queries atomic.Int32
-	if err := db.Callback().Query().After("gorm:query").Register("preview-live-query-count", func(tx *gorm.DB) {
-		if tx.Statement.Table == "solo_messages" {
-			queries.Add(1)
-		}
-	}); err != nil {
+	if err := db.Callback().Query().After("gorm:query").Register("preview-live-query-count", func(*gorm.DB) { queries.Add(1) }); err != nil {
 		t.Fatal(err)
 	}
 	live, active := solo.PreviewLiveReply(view.ID)

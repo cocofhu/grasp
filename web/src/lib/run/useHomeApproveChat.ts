@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
@@ -111,18 +111,11 @@ function writeLaunchMemory(workflowId: string, memory: LaunchMemory) {
   }
 }
 
-/** A host composer shared with other home modes; the host then owns draft persistence. */
-export interface HomeApproveComposer {
-  draft: Ref<string>
-  attach: ReturnType<typeof useImageAttachments>
-}
-
-export function useHomeApproveChat(composer?: HomeApproveComposer) {
+export function useHomeApproveChat() {
   const router = useRouter()
   const toast = useToast()
   const { t } = useI18n()
-  const attach = composer?.attach ?? useImageAttachments()
-  const ownsDraft = !composer
+  const attach = useImageAttachments()
 
   const workflows = ref<Workflow[]>([])
   const workflowsLoaded = ref(false)
@@ -136,7 +129,7 @@ export function useHomeApproveChat(composer?: HomeApproveComposer) {
   const launchModelTouched = ref(false)
   const launchModelForModal = ref<HomeLaunchModel | null>(null)
   let launchResetAnnounced = ''
-  const draft = composer?.draft ?? ref('')
+  const draft = ref('')
   const sending = ref(false)
   const hidingWorkflowId = ref<string | null>(null)
   const pendingText = ref('')
@@ -201,7 +194,7 @@ export function useHomeApproveChat(composer?: HomeApproveComposer) {
   const canSend = computed(() => !!draft.value.trim() || attach.attachments.value.length > 0)
 
   async function flushComposerDraftSave() {
-    if (suppressSave || !ownsDraft) return
+    if (suppressSave) return
     const result = await saveHomeComposerDraft(
       draft.value,
       attach.attachments.value,
@@ -219,7 +212,7 @@ export function useHomeApproveChat(composer?: HomeApproveComposer) {
   }
 
   function scheduleComposerDraftSave() {
-    if (suppressSave || !ownsDraft) return
+    if (suppressSave) return
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = null
@@ -232,7 +225,7 @@ export function useHomeApproveChat(composer?: HomeApproveComposer) {
       clearTimeout(saveTimer)
       saveTimer = null
     }
-    if (ownsDraft) void clearHomeComposerDraft()
+    void clearHomeComposerDraft()
     preferredDraftWorkflowId = ''
   }
 
@@ -586,7 +579,7 @@ export function useHomeApproveChat(composer?: HomeApproveComposer) {
   onMounted(() => {
     // Hydrate first so draft preference is set before the workflow list settles (plan g2.4).
     void (async () => {
-      if (ownsDraft) await hydrateComposerDraft()
+      await hydrateComposerDraft()
       await load()
     })()
   })

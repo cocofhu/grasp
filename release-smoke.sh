@@ -22,16 +22,6 @@ require_digest GRASP_IMAGE
 require_digest SANDBOX_GATEWAY_IMAGE
 require_digest SANDBOX_IMAGE
 
-# A release smoke owns a fresh directory and a unique Compose project. Never
-# remove or stop an existing installation if initialization is refused.
-if ! mkdir .localdata 2>/dev/null; then
-  printf 'release smoke requires absent .localdata; use a clean checkout, never an existing installation\n' >&2
-  exit 2
-fi
-SMOKE_DATA_ID="$(stat -c '%d:%i' .localdata)"
-COMPOSE_PROJECT_NAME="grasp-release-smoke-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
-export COMPOSE_PROJECT_NAME
-
 # Smoke keeps digest-pinned global force (doctor demo uses a single sandbox image).
 export GRASP_SANDBOX_IMAGE="${GRASP_SANDBOX_IMAGE:-$SANDBOX_IMAGE}"
 
@@ -43,14 +33,10 @@ SANDBOX_GATEWAY_API_KEY="${SANDBOX_GATEWAY_API_KEY:-grasp-local-demo}"
 export SANDBOX_GATEWAY_API_KEY
 export GRASP_SANDBOX_GATEWAY_API_KEY="${GRASP_SANDBOX_GATEWAY_API_KEY:-$SANDBOX_GATEWAY_API_KEY}"
 export SBGW_API_KEYS="${SBGW_API_KEYS:-$SANDBOX_GATEWAY_API_KEY}"
-GRASP_SECRETS_KEY="${GRASP_SECRETS_KEY:-$(head -c 32 /dev/urandom | base64 | tr -d '\n')}"
-export GRASP_SECRETS_KEY
 
 cleanup() {
   docker compose -f "$COMPOSE_FILE" down --volumes --remove-orphans >>"$LOG" 2>&1 || true
-  if [ ! -L .localdata ] && [ "$(stat -c '%d:%i' .localdata 2>/dev/null || true)" = "$SMOKE_DATA_ID" ]; then
-    rm -rf .localdata
-  fi
+  rm -rf .localdata
 }
 trap cleanup EXIT INT TERM
 

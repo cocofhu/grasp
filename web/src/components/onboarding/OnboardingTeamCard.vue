@@ -15,8 +15,6 @@ const props = defineProps<{
   summary?: string
   namePlaceholder?: string
   modelPlaceholder: string
-  /** Backend of the wizard-wide model that the empty option inherits. */
-  defaultModelBackend?: string
   modelConfigurations: ModelConfiguration[]
   issue?: TeamNameIssue
   /** Position in the workflow, 0-based. */
@@ -35,10 +33,6 @@ const title = computed(() => t(`${keyBase.value}.title`))
 const requiredWrites = computed(() => caps.value?.writes.filter((w) => w.required) ?? [])
 const optionalWrites = computed(() => caps.value?.writes.filter((w) => !w.required) ?? [])
 const desc = computed(() => (te(`${keyBase.value}.desc`) ? t(`${keyBase.value}.desc`) : props.summary || ''))
-
-function backendOf(id: string) {
-  return id ? props.modelConfigurations.find((row) => row.id === id)?.backend : props.defaultModelBackend
-}
 
 function schemaLabel(schema: string, fallback: string) {
   const key = `pages.onboarding.team.schemaNames.${schema}`
@@ -105,26 +99,7 @@ function schemaLabel(schema: string, fallback: string) {
       </p>
       <label class="team-field">
         <span class="team-field-label">{{ t('pages.onboarding.team.modelLabel') }}</span>
-        <AppSelect
-          class="team-select"
-          :title="modelConfigurations.find((row) => row.id === member.modelConfigurationId)?.name || modelPlaceholder"
-          :model-value="member.modelConfigurationId"
-          :options="[{ value: '', label: modelPlaceholder }, ...modelConfigurations.filter((row) => row.state === 'active').map((row) => ({ value: row.id, label: row.name }))]"
-          :aria-label="t('pages.onboarding.team.modelLabel')"
-          searchable
-          variant="ghost"
-          size="sm"
-          :menu-min-width="240"
-          :data-testid="`onboarding-team-model-${member.templateId}`"
-          @update:model-value="emit('update:model', $event)"
-        >
-          <template #leading>
-            <CredentialProviderLogo v-if="backendOf(member.modelConfigurationId)" :provider="backendOf(member.modelConfigurationId)" match="provider" class="!h-4 !w-4 !rounded !border-0 !bg-transparent [&>img]:!h-4 [&>img]:!w-4" aria-hidden="true" />
-          </template>
-          <template #option-leading="{ option }">
-            <CredentialProviderLogo v-if="backendOf(option.value)" :provider="backendOf(option.value)" match="provider" class="!h-5 !w-5 !rounded !border-0 !bg-transparent" aria-hidden="true" />
-          </template>
-        </AppSelect>
+        <AppSelect :model-value="member.modelConfigurationId" :options="[{ value: '', label: modelPlaceholder }, ...modelConfigurations.filter((row) => row.state === 'active').map((row) => ({ value: row.id, label: row.name }))]" :aria-label="t('pages.onboarding.team.modelLabel')" searchable :data-testid="`onboarding-team-model-${member.templateId}`" @update:model-value="emit('update:model', $event)"><template #leading><CredentialProviderLogo v-if="member.modelConfigurationId" :provider="modelConfigurations.find((row) => row.id === member.modelConfigurationId)?.backend" match="provider" /></template><template #option-leading="{ option }"><CredentialProviderLogo v-if="option.value" :provider="modelConfigurations.find((row) => row.id === option.value)?.backend" match="provider" /></template></AppSelect>
       </label>
     </div>
     <p v-else class="team-off">{{ t('pages.onboarding.team.offNote') }}</p>
@@ -286,24 +261,6 @@ function schemaLabel(schema: string, fallback: string) {
   font-size: 12.5px;
   color: rgb(var(--c-txt));
   outline: none;
-}
-.team-select {
-  flex: 1;
-  min-width: 0;
-  align-self: stretch;
-}
-.team-field .team-select :deep(.app-select-trigger),
-.team-field .team-select :deep(.app-select-trigger:focus-visible) {
-  height: 100%;
-  min-height: 0;
-  gap: 6px;
-  padding-inline: 8px;
-  border: 0;
-  border-radius: 0 8px 8px 0;
-  background: transparent;
-  box-shadow: none;
-  font-size: 12.5px;
-  color: rgb(var(--c-txt));
 }
 .team-field input::placeholder {
   font-family: theme('fontFamily.sans');

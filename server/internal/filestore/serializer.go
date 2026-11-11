@@ -177,24 +177,11 @@ func (p payloadSerializer) Scan(ctx context.Context, field *schema.Field, dst re
 		return err
 	}
 	if IsRef(raw) {
-		encoding, _, _ := Parse(raw)
-		expected := Text
-		if p.json {
-			expected = JSON
-		} else if p.bytes {
-			expected = Bytes
-		}
-		artifact := field.Schema.Table == "artifacts" || field.Schema.Table == "artifact_versions"
-		kind := recordKind(dst)
-		image := artifact && expected == Text && kind == "image" && encoding == Image
-		binary := artifact && expected == Text && (kind == "file" || kind == "pdf" || kind == "audio" || kind == "video") && encoding == Binary
-		if encoding != expected && !image && !binary {
-			return errors.New("stored payload encoding disagrees with its owner")
-		}
 		s, err := fromContext(ctx)
 		if err != nil {
 			return err
 		}
+		encoding, _, _ := Parse(raw)
 		setRef(dst, raw)
 		if encoding == Binary {
 			return field.Set(ctx, dst, raw)
@@ -210,8 +197,6 @@ func (p payloadSerializer) Scan(ctx context.Context, field *schema.Field, dst re
 		}
 	} else if strings.HasPrefix(raw, Prefix) {
 		return errors.New("invalid stored file reference")
-	} else if raw != "" && !(p.json && raw == "null") {
-		return ErrNonCanonicalPayload
 	}
 	if p.bytes {
 		return field.Set(ctx, dst, []byte(raw))

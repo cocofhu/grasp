@@ -48,10 +48,6 @@ type FakeGateway struct {
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
-	FailStop   bool // POST /sandboxes/:id/stop returns 500 without stopping compute
-	// BeforeInfo runs for gateway discovery before the handler answers.
-	// Stop records its intent before this call; tests block here to send concurrently.
-	BeforeInfo func()
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
 
@@ -184,16 +180,6 @@ func (fg *FakeGateway) SetEndpoints(id string, endpoints map[string]string) {
 }
 
 func (fg *FakeGateway) handle(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/info" || r.URL.Path == "/api/v2/info" {
-		fg.mu.Lock()
-		hook := fg.BeforeInfo
-		fg.mu.Unlock()
-		if hook != nil {
-			hook()
-		}
-		http.NotFound(w, r)
-		return
-	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/sandboxes"), "/"), "/")
 	// parts: [] for collection, [id], [id, "status"], [id, "stop"|"start"],
 	// [id, "hosts", port].
@@ -302,10 +288,6 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
-	if action == "stop" && fg.FailStop {
-		http.Error(w, "stop failed", http.StatusInternalServerError)
-		return
-	}
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
 		return

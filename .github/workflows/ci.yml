@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  GO_VERSION: "1.26.11"
+  GO_VERSION: "1.26.10"
   # Pipe also falls back on proxy transport / 5xx errors; comma only does on 404/410.
   GOPROXY: https://proxy.golang.org|direct
 
@@ -48,8 +48,6 @@ jobs:
         run: ./.github/scripts/shellcheck-error.sh
       - name: Docs publish transport regressions
         run: python3 .github/scripts/test-publish-pages.py
-      - name: Local object storage regressions
-        run: python3 scripts/test-local-objectstore.py
 
   changes:
     runs-on: ubuntu-latest

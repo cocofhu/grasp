@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -16,8 +15,8 @@ const (
 	pendingSurfaceClarify = "workflow.clarify"
 	pendingSurfaceReview  = "workflow.review"
 
-	clarifyRestartStopped = "澄清回复失败：服务重启，执行结果尚未确认；请先核对工作区后决定是否重试"
-	reviewRestartStopped  = "复审修改失败：服务重启，执行结果尚未确认；请先核对工作区后决定是否重试"
+	clarifyRestartStopped = "澄清回复失败：服务重启，本轮回复已中断，请重试"
+	reviewRestartStopped  = "复审修改失败：服务重启，本轮修改已中断，请重试"
 )
 
 func pendingSurface(kind sessionKind) string {
@@ -57,11 +56,7 @@ func (e *Engine) restoreReviewSession(kind sessionKind, key string, stored []cha
 			log.Warn().Err(err).Str("session", key).Str("turn", t.ID).Msg("unreadable queued dialogue turn skipped")
 			continue
 		}
-		if t.Started {
-			if !e.settleInterruptedReviewTurn(runID, producerID, kind, &it, t.EnqueuedAt) {
-				log.Warn().Str("session", key).Str("turn", t.ID).Msg("dispatched dialogue result is unknown; retaining receipt without replay")
-				return
-			}
+		if t.Started && e.settleInterruptedReviewTurn(runID, producerID, kind, &it, t.EnqueuedAt) {
 			continue
 		}
 		if it.Live != nil {
@@ -93,9 +88,8 @@ func (e *Engine) restoreReviewSession(kind sessionKind, key string, stored []cha
 }
 
 // settleInterruptedReviewTurn closes a turn the restart cut off with a
-// unknown-result reply. A Started receipt proves possible dispatch even if
-// the human message never reached the transcript; it must never be replayed.
-// If publication cannot complete, the original receipt remains stored.
+// retryable failure reply. It reports false when the turn's human message
+// never reached the transcript, so it can simply run again.
 func (e *Engine) settleInterruptedReviewTurn(runID, producerID string, kind sessionKind, it *reviewQueueItem, enqueuedAt time.Time) bool {
 	var conv models.ReactConversation
 	if err := e.db.Where("run_id = ? AND node_id = ?", runID, producerID).
@@ -104,15 +98,7 @@ func (e *Engine) settleInterruptedReviewTurn(runID, producerID string, kind sess
 	}
 	idx := landedHumanIndex(conv.Messages, it, enqueuedAt)
 	if idx < 0 {
-		if conv.Done {
-			return false
-		}
-		at := enqueuedAt
-		if at.IsZero() {
-			at = time.Now()
-		}
-		conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: it.Text, At: at.Format(time.RFC3339), TurnID: it.ID, ClientMessageID: it.ClientMessageID, GateNodeID: it.GateNodeID, Images: it.Images, Annotations: it.Annotations, References: it.References})
-		idx = len(conv.Messages) - 1
+		return false
 	}
 	if idx == len(conv.Messages)-1 && !conv.Done {
 		human := conv.Messages[idx]
@@ -122,10 +108,7 @@ func (e *Engine) settleInterruptedReviewTurn(runID, producerID string, kind sess
 		}
 		conv.Messages = append(conv.Messages, models.ReactMessage{Role: "agent", Text: text,
 			At: time.Now().Format(time.RFC3339), ClientMessageID: human.ClientMessageID, GateNodeID: human.GateNodeID})
-		if result := e.executionSave(context.Background(), runID, &conv); result.Error != nil {
-			logDB(result, runID, "settle dialogue turn interrupted by restart")
-			return false
-		}
+		logDB(e.db.Save(&conv), runID, "settle dialogue turn interrupted by restart")
 		e.broker.Publish(runID, jsonMsg("react", runID, producerID))
 	}
 	if it.Live != nil {

@@ -126,7 +126,7 @@ async function setup(page: Page) {
   return { state, send, navs, quiet, push, observe }
 }
 
-const busy = (page: Page) => page.locator('text=/^(思考中…|生成中…)$/ >> visible=true')
+const busy = (page: Page) => page.locator('text=/^(输出中|思考中…|生成中…)$/ >> visible=true')
 type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; title: string; status: string; input?: string; output?: string }
 /** An observed automatic visit: one reply row of the latest thought / message and every step, in turn auto:1. */
 function observed(steps: Step[], running = true): FakeDialogue {
@@ -149,102 +149,6 @@ const T1: Step = { kind: 'thought', text: '先读一下改动和测试说明。'
 const M1: Step = { kind: 'message', text: '开始验证：先跑单元测试。' }
 const tool = (title: string, status = 'completed'): Step => ({ kind: 'tool', title, status })
 const M2: Step = { kind: 'message', text: '验证完成：登录页改版无回归。' }
-
-type HistoryRun = { id: string; status: 'completed' | 'failed' | 'cancelled'; body?: string }
-
-async function setupHistory(page: Page, histories: HistoryRun[]) {
-  const writes: string[] = []
-  const reads: string[] = []
-  await page.routeWebSocket(/\/api\/runs\/[^/]+\/events/, () => {})
-  await page.route(url => url.pathname.startsWith('/api/'), async route => {
-    const request = route.request()
-    const path = new URL(request.url()).pathname
-    if (request.method() !== 'GET') {
-      writes.push(`${request.method()} ${path}`)
-      await route.fulfill({ status: 409, json: { error: 'History must not start a new execution' } })
-      return
-    }
-    reads.push(path)
-    const history = histories.find(row => path.startsWith(`/api/runs/${row.id}`))
-    if (!history) { await route.fulfill({ json: {} }); return }
-    const { id, status, body } = history
-    const steps: Step[] = body ? [{ kind: 'message', text: body }] : []
-    const events = flat(steps)
-    const execution = { nodeId: 'impl', iteration: 1, status, startedAt: at(1), finishedAt: at(13), durationSec: 12, events, varsSnapshot: {}, outputs: {} }
-    const dialogue = createDialogueServer(id, 'impl', { ...observed(steps, false), done: true })
-    let response: unknown = {}
-    if (path === `/api/runs/${id}/chat`) response = { soloId: '', title: `历史任务 ${id}`, status }
-    else if (path === `/api/runs/${id}`) response = {
-      ...runFor('done'), id, title: `历史任务 ${id}`, status,
-      nodeRuns: body ? { impl: execution } : {}, nodeExecutions: body ? { impl: [execution] } : {},
-      dialogueByNode: body ? dialogue.byNode() : {},
-    }
-    else if (path === `/api/runs/${id}/conversation-chain`) response = {
-      runId: id, status, segments: body ? [{
-        nodeId: 'impl', iteration: 1, name: '实现', kind: 'agent', mode: 'auto', status,
-        startedAt: at(1), endedAt: at(13), eventCount: events.length, task: `处理历史任务 ${id}`,
-      }] : [],
-    }
-    else if (path === `/api/runs/${id}/nodes/impl/events`) response = { events, live: false }
-    else if (path === `/api/runs/${id}/nodes/impl/dialogue`) response = dialogue.frame()
-    await route.fulfill({ json: response })
-  })
-  await page.goto(`/run-live-continue.html?run=${histories[0]!.id}&history=1`)
-  await page.waitForFunction(() => !!(window as unknown as { __router?: unknown }).__router)
-  return { writes, reads }
-}
-
-for (const [status, ended] of [['completed', '运行已完成'], ['failed', '运行失败'], ['cancelled', '运行已取消']] as const) {
-  test(`default Run history: ${status} without a Solo renders its conversation without starting an environment`, async ({ page }) => {
-    const id = `history-${status}`
-    const body = `历史输出 ${status}：保留原执行对话。`
-    const { writes, reads } = await setupHistory(page, [{ id, status, body }])
-    await expect(page.getByTestId('run-chat-view')).toBeVisible()
-    await expect(page.getByTestId('run-live-view')).toBeVisible()
-    await expect(page.getByTestId('clarify-prior-summary')).toBeVisible()
-    await page.getByTestId('clarify-prior-summary').click()
-    await expect(page.getByText(body, { exact: true })).toBeVisible()
-    await expect(page.getByTestId('clarify-done-note')).toHaveText(ended)
-    await expect(page.getByText('加载运行…', { exact: true })).toHaveCount(0)
-    await expect(page.getByTestId('run-detail-root')).toHaveCount(0)
-    await expect(page.getByTestId('run-chat-continue')).toBeVisible()
-    expect(await page.evaluate(() => (window as unknown as { __router: { currentRoute: { value: { fullPath: string } } } }).__router.currentRoute.value.fullPath)).toBe(`/runs/${id}`)
-    expect(reads).toContain(`/api/runs/${id}/conversation-chain`)
-    expect(writes).toEqual([])
-  })
-}
-
-test('default Run history: an empty terminal execution shows its end state instead of a loading spinner', async ({ page }) => {
-  const { writes } = await setupHistory(page, [{ id: 'history-empty', status: 'completed' }])
-  await expect(page.getByTestId('run-chat-view')).toBeVisible()
-  await expect(page.getByText('运行已完成', { exact: true })).toBeVisible()
-  await expect(page.getByText('加载运行…', { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('run-detail-root')).toHaveCount(0)
-  await expect(page.getByTestId('run-chat-continue')).toBeVisible()
-  expect(writes).toEqual([])
-})
-
-test('default Run history: switching between terminal Runs does not retain the previous conversation', async ({ page }) => {
-  const A = { id: 'history-first', status: 'completed' as const, body: '第一条历史独有内容：目录服务已经整理。' }
-  const B = { id: 'history-second', status: 'cancelled' as const, body: '第二条历史独有内容：通知列表保留取消前输出。' }
-  const { writes } = await setupHistory(page, [A, B])
-  await expect(page.getByTestId('clarify-prior-summary')).toBeVisible()
-  await page.getByTestId('clarify-prior-summary').click()
-  await expect(page.getByText(A.body, { exact: true })).toBeVisible()
-  await page.evaluate(async id => {
-    await (window as unknown as { __router: { push: (path: string) => Promise<unknown> } }).__router.push(`/runs/${id}`)
-  }, B.id)
-  await expect(page.getByText(A.body, { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('clarify-prior-summary')).toBeVisible()
-  await page.getByTestId('clarify-prior-summary').click()
-  await expect(page.getByText(B.body, { exact: true })).toBeVisible()
-  await expect(page.getByText(A.body, { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('clarify-done-note')).toHaveText('运行已取消')
-  await expect(page.getByTestId('run-live-detail')).toHaveAttribute('data-run-id', B.id)
-  await expect(page.getByText('加载运行…', { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('run-detail-root')).toHaveCount(0)
-  expect(writes).toEqual([])
-})
 
 for (const theme of ['light', 'dark'] as const) {
   test(`live page: 实现 → 验证 (auto → auto) continues in place and keeps the stream (${theme})`, async ({ page }) => {
@@ -274,7 +178,7 @@ for (const theme of ['light', 'dark'] as const) {
     observe('verify', [T1, M1, tool('运行测试 npm test'), M2])
     await expect(page.getByText('验证完成：登录页改版无回归。')).toHaveCount(1)
     // Let the background poll run (it still reads 「follow 验证」 from the opened URL):
-    // the stream must not be re-seeded into a new thinking row.
+    // the stream must not be re-seeded into a new 「输出中」 row.
     await page.waitForTimeout(4600)
     await expect(page.getByText('Agent', { exact: true })).toHaveCount(1)
     // Streamed text is kept (not replaced by a fresh empty row per frame).

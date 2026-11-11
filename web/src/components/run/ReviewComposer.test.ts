@@ -119,20 +119,17 @@ describe('ReviewComposer gate busy status (C-tier)', () => {
     wrapper.unmount()
   })
 
-  it('message streaming stays on 思考中…, collapses thought, shows caret', async () => {
+  it('message switches status to 输出中, collapses thought, shows caret', async () => {
     const wrapper = mountGate({
       thinking: true,
       streamThought: '旁路思考',
       streamText: '旁路正文流',
     })
     await flushPromises()
-    const status = wrapper.find('[data-testid="gate-busy-status"]')
-    expect(status.text()).toContain('思考中')
-    expect(status.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-    expect(status.text()).not.toContain('输出中')
+    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).toContain('输出中')
     expect(wrapper.find('[data-testid="gate-react-thought"]').text()).toContain('旁路思考')
     expect(wrapper.find('[data-testid="gate-react-thought"]').attributes('open')).toBeUndefined()
-    // Message streaming — summary stays generating (not done).
+    // Message outputting — summary stays generating (not done).
     expect(wrapper.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe(
       'streaming',
     )

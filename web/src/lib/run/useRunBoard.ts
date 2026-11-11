@@ -8,7 +8,6 @@ import {
   type RefreshIntent,
 } from '@/lib/shared/loadingTypes'
 import { sortRunsByStartedAtDesc } from '@/lib/run/runBoard'
-import { isWorkingWaitingRun } from '@/lib/run/recentRuns'
 import type { Run } from '@/lib/shared/types'
 
 export type BoardColumnKey =
@@ -80,30 +79,6 @@ async function fetchColumn(
     hasMore,
     truncated: total > items.length || hasMore,
     error: null,
-  }
-}
-
-/**
- * A waiting_human run whose session is replying belongs in「运行中」, not
- * 「等待人工」. Only fetched rows can move, so totals shift by what was seen.
- */
-function moveWorkingToRunning(cols: Record<string, BoardColumnState>) {
-  const running = cols.running
-  const waiting = cols.waiting_human
-  if (!running || !waiting || running.error || waiting.error) return
-  const moved = waiting.items.filter(isWorkingWaitingRun)
-  if (!moved.length) return
-  const remaining = waiting.items.filter((r) => !isWorkingWaitingRun(r))
-  cols.running = {
-    ...running,
-    items: sortRunsByStartedAtDesc([...running.items, ...moved]),
-    total: running.total + moved.length,
-  }
-  cols.waiting_human = {
-    ...waiting,
-    items: remaining,
-    total: Math.max(remaining.length, waiting.total - moved.length),
-    truncated: waiting.total - moved.length > remaining.length || waiting.hasMore,
   }
 }
 
@@ -188,7 +163,6 @@ export function useRunBoard(options: UseRunBoardOptions) {
         next[col.key] = col
         if (col.error) failed.push(col.key)
       }
-      moveWorkingToRunning(next)
       columns.value = next
       error.value = failed.length ? failed.join(',') : null
       hasLoaded.value = true

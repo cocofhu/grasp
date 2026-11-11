@@ -66,14 +66,4 @@ describe('createWsReconnectController', () => {
     expect(ctrl.attempt).toBe(2)
     expect(schedule).toHaveBeenCalledTimes(2)
   })
-
-  it('uses a custom delay schedule when provided', () => {
-    const schedule = vi.fn((_fn: () => void, _ms: number) => 1 as unknown as ReturnType<typeof setTimeout>)
-    const ctrl = createWsReconnectController({
-      connect: vi.fn(), shouldReconnect: () => true, delayFor: (n) => (n + 1) * 1000, schedule, clearSchedule: vi.fn(),
-    })
-    ctrl.onClose()
-    ctrl.onClose()
-    expect(schedule.mock.calls.map((c) => c[1])).toEqual([1000, 2000])
-  })
 })

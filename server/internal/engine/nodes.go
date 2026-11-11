@@ -30,9 +30,6 @@ type nodeOutcome struct {
 	// sandboxSetup marks a react node's sandbox/ACP infrastructure failure
 	// (distinct from a normal clarify pause or agent execution fault).
 	sandboxSetup bool
-	// providerUnknown preserves a write-ahead-dispatched native operation whose
-	// result cannot be proved. It must not enter failure/rollback retry routing.
-	providerUnknown bool
 	// retryable marks a failure the engine may auto-retry from the failure
 	// position (see isAutoRetryable / tryAutoRetry). Zero value false means
 	// not auto-retryable; only failure construction sites that opt in set true.

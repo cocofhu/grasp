@@ -21,7 +21,7 @@
 
 </div>
 
-新安装使用空数据库和空的数据目录。已有 v3.2 数据须先按照[停写、校验的升级流程](server/UPGRADING.md)完成迁移，再启动本版本。
+当前版本需要全新安装：使用空数据库和空的数据目录。
 
 ## 为什么做 Grasp
 
@@ -73,7 +73,6 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 ```bash
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
-cp .env.example .env
 ./start.sh -d
 ```
 
@@ -85,15 +84,12 @@ cp .env.example .env
 
 默认演示账号为 `admin` / `demo1234`（仅限本地试用，共享或生产环境请配置独立账号）。沙箱镜像会在首次创建沙箱时按需拉取，也可执行 `./start.sh pull` 提前拉取。
 
-已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。
-
 ### 跑通第一个工作流
 
 1. 使用演示账号登录。首次进入工作区会打开安装向导。
 2. 在向导（或「设置 → 凭据」）中选择 `cursor`、`claude_code`、`codebuddy`、`trae`、`opencode` 或 `codex`，填入对应 API Key（Codex 粘贴 `~/.codex/auth.json` 登录文件，无需 API Key；Git 凭据可跳过）。完成后会自动创建默认团队并发布「默认工作流」（需求澄清 → 实现 → 测试评审）。
-3. 从首页开始 Solo 对话。输入 `/workflow` 选择已发布的工作流，并由你点击启动；工作流定义和画布位于设置中，Solo 不会自行启动工作流。
-4. 在当前 Solo 的任务卡片中管理独立工作流。打开节点可澄清、审批，或提交补充要求，排队到当前聊天轮次结束后处理；要求绑定所见节点、轮次与执行尝试，并保留等待、已处理、过期或结果待核对状态。结果自动回到 Solo，历史执行默认打开聊天，另可查看执行详情。
-5. 设置中关闭工作流后，使用纯 Solo 形态；已有任务仍可管理，API 和 PM 在内的所有新工作流启动均关闭。停止/恢复环境保留工作区；Docker/Kubernetes 重启服务，E2B 按原生暂停能力恢复。
+3. 在首页输入需求直接启动，或打开画布调整节点与成功 / 失败 / 回滚连线后再运行。
+4. 流程停在人工门禁时，从收件箱查看澄清结果、预览页面或代码改动，确认后继续流转。
 
 ### 常用命令
 

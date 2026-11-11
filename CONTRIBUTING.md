@@ -208,16 +208,11 @@ set them Public under GitHub → Packages if anonymous pulls are required.
 
 Default tags used by `./start.sh` (overridable in `.env`):
 
-- `ghcr.io/cocofhu/grasp:3.4.0`
-- `ghcr.io/cocofhu/sandbox-gateway:3.4.0`
-- `ghcr.io/cocofhu/universal-sandbox:3.4.0`
+- `ghcr.io/cocofhu/grasp:3.2.0`
+- `ghcr.io/cocofhu/sandbox-gateway:3.2.0`
+- `ghcr.io/cocofhu/universal-sandbox:3.2.0`
   (one image for every `acpBackend`; `SANDBOX_IMAGE` / `GRASP_SANDBOX_IMAGE` pin or override it — used by release-smoke).
-- `ghcr.io/cocofhu/grasp-worktree:3.4.0` (local agents, no sandbox sidecar)
-
-For existing data, follow [`server/UPGRADING.md`](server/UPGRADING.md) before
-starting these images. The migration release is v3.3; v3.2 data must pass
-through it before the v3.4 cleanup release. Keep the initialized execution
-control location and receipts when upgrading from v3.3 to v3.4.
+- `ghcr.io/cocofhu/grasp-worktree:3.2.0` (local agents, no sandbox sidecar)
 
 ### release-smoke (manual; not a PR required check)
 
@@ -303,18 +298,18 @@ cd docs && npm_config_registry=https://registry.npmjs.org npm run audit:check
 
 - `govulncheck` v1.1.4 scans `server`, `sandbox-gateway/gateway`, and
   `sandbox-gateway/sandbox` for called-symbol vulnerabilities. Use Go 1.26.x
-  with a patch of at least 1.26.11 and below 1.27 — the same line that compiles
+  with a patch of at least 1.26.10 and below 1.27 — the same line that compiles
   the binaries. `actions/setup-go` `go-version: "1.26.x"` still resolves to
-  1.26.8 from the actions/go-versions manifest, so CI pins `1.26.11` (an exact
+  1.26.8 from the actions/go-versions manifest, so CI pins `1.26.10` (an exact
   version missing from that manifest is downloaded from go.dev/dl). An older
-  1.26 patch still reports standard-library findings. 1.26.10 still reports GO-2026-6859, fixed in 1.26.11. Called
+  1.26 patch still reports standard-library findings. 1.26.9 still reports GO-2026-6809, fixed in 1.26.10. Called
   findings fail unless listed in `govulncheck-allowlist.json` with `id`,
   `module`, `reason`, and `expires`. Expired entries fail the check. The
   allowlist is empty; do not exempt findings fixed by this toolchain or by
   `golang.org/x/net` v0.60.0 and `golang.org/x/crypto` v0.57.0.
 
 ```bash
-# from repo root, with Go 1.26.11 or a newer 1.26 patch on PATH
+# from repo root, with Go 1.26.10 or a newer 1.26 patch on PATH
 ./.github/scripts/govulncheck-check.sh
 ```
 

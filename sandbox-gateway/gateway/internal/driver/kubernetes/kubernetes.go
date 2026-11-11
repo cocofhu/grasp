@@ -59,9 +59,6 @@ type Options struct {
 	// without a full Spec.
 	PublicPorts   []int
 	InternalPorts []int
-	// VolumeArchive releases data PVCs of long-stopped sandboxes to object
-	// storage and restores them on start.
-	VolumeArchive VolumeArchiveOptions
 }
 
 // Driver provisions sandboxes as Deployments in Kubernetes and exposes them via
@@ -70,7 +67,6 @@ type Driver struct {
 	cs         kubernetes.Interface
 	opts       Options
 	getPodLogs podLogReader
-	exec       podExecutor
 }
 
 // New builds a kubernetes driver from a kubeconfig or in-cluster config.
@@ -84,9 +80,7 @@ func New(o Options) (*Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
 	}
-	d := NewFromClient(cs, o)
-	d.exec = newPodExecutor(cfg, cs)
-	return d, nil
+	return NewFromClient(cs, o), nil
 }
 
 // NewFromClient builds a Driver over an existing client (used by unit tests
@@ -555,7 +549,7 @@ func selectorEqual(a, b map[string]string) bool {
 	return true
 }
 
-func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []int, retainPublished ...bool) error {
+func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []int) error {
 	labels := d.selector(id)
 	wantPorts := servicePorts(ports)
 	svc := &corev1.Service{
@@ -576,12 +570,6 @@ func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []
 	if getErr != nil {
 		return getErr
 	}
-	if len(retainPublished) > 0 && retainPublished[0] {
-		if !d.releaseLabels(id, existing.Spec.Selector) || !d.releaseLabels(id, existing.Labels) {
-			return fmt.Errorf("refuse to retain ports from an unrelated cluster service")
-		}
-		wantPorts = d.convergedServicePorts(existing.Spec.Ports, ports, false)
-	}
 	if samePortSet(existing.Spec.Ports, wantPorts) && selectorEqual(existing.Spec.Selector, labels) {
 		return nil
 	}
@@ -591,12 +579,9 @@ func (d *Driver) ensureClusterIPService(ctx context.Context, id string, ports []
 	return err
 }
 
-func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int, retainPublished ...bool) error {
+func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int) error {
 	labels := d.selector(id)
 	wantPorts := servicePorts(ports)
-	if len(retainPublished) > 0 && retainPublished[0] {
-		wantPorts = d.convergedServicePorts(nil, ports, true)
-	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: d.lbName(id), Namespace: d.opts.Namespace, Labels: labels},
 		Spec: corev1.ServiceSpec{
@@ -616,12 +601,6 @@ func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int,
 	if getErr != nil {
 		return getErr
 	}
-	if len(retainPublished) > 0 && retainPublished[0] {
-		if !d.releaseLabels(id, existing.Spec.Selector) || !d.releaseLabels(id, existing.Labels) {
-			return fmt.Errorf("refuse to retain ports from an unrelated load balancer")
-		}
-		wantPorts = d.convergedServicePorts(existing.Spec.Ports, ports, true)
-	}
 	if existing.Spec.Type == corev1.ServiceTypeLoadBalancer &&
 		samePortSet(existing.Spec.Ports, wantPorts) &&
 		selectorEqual(existing.Spec.Selector, labels) {
@@ -634,9 +613,10 @@ func (d *Driver) ensureLoadBalancer(ctx context.Context, id string, ports []int,
 	return err
 }
 
-// ConvergePublishSurface heals the configured surface while retaining apps
-// already published by this sandbox. Internal ports never survive on the LB.
-// Empty Options remain a no-op for callers without a configured surface.
+// ConvergePublishSurface heals ClusterIP + LoadBalancer Spec.Ports from driver
+// Options (no Spec required). ReconcileOnStartup / Start / Get use this so
+// inventory *-lb drop unauthenticated 9222/6080 after upgrade. Empty Options
+// are a no-op so unit tests without Public/Internal do not wipe Services.
 func (d *Driver) ConvergePublishSurface(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("empty sandbox id")
@@ -647,35 +627,19 @@ func (d *Driver) ConvergePublishSurface(ctx context.Context, id string) error {
 	if len(listen) == 0 {
 		return nil
 	}
-	preview, err := d.retainedPreviewPort(ctx, id)
-	if err != nil {
-		return err
-	}
-	if preview > 0 {
-		public = driver.AppendPort(public, preview)
-		listen = driver.AppendPort(listen, preview)
-	}
-	if err := d.ensureClusterIPService(ctx, id, listen, true); err != nil {
+	if err := d.ensureClusterIPService(ctx, id, listen); err != nil {
 		return fmt.Errorf("converge clusterip: %w", err)
 	}
 	if !d.opts.EnableLoadBalancer || len(public) == 0 {
 		return nil
 	}
-	if err := d.ensureLoadBalancer(ctx, id, public, true); err != nil {
+	if err := d.ensureLoadBalancer(ctx, id, public); err != nil {
 		return fmt.Errorf("converge loadbalancer: %w", err)
 	}
 	return nil
 }
 
 func (d *Driver) Start(ctx context.Context, id string) error {
-	restoring, err := d.prepareStart(ctx, id)
-	if err != nil {
-		return err
-	}
-	if restoring {
-		// The background restore scales up once the PVC is back.
-		return nil
-	}
 	if err := d.scale(ctx, id, 1); err != nil {
 		return err
 	}
@@ -685,12 +649,7 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	}
 	return nil
 }
-func (d *Driver) Stop(ctx context.Context, id string) error {
-	if err := d.scale(ctx, id, 0); err != nil {
-		return err
-	}
-	return d.waitStopped(ctx, id)
-}
+func (d *Driver) Stop(ctx context.Context, id string) error { return d.scale(ctx, id, 0) }
 
 func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	name := d.resourceName(id)
@@ -698,38 +657,9 @@ func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	if err != nil {
 		return err
 	}
-	if replicas > 0 && coldPending(dep) {
-		return driver.ErrColdStartUnknown
-	}
-	a, err := readArchive(dep)
-	if err != nil {
-		return err
-	}
-	cancelled := false
-	if replicas > 0 {
-		if a != nil && a.State != archiveStateArchiving {
-			return ErrVolumeRestoring
-		}
-		// Dropping the record in this write makes an in-flight archive lose
-		// its claim before it can release the PVC.
-		cancelled = a != nil
-		writeArchive(dep, nil)
-		delete(dep.Annotations, stoppedAtAnnotation)
-	} else {
-		stampStopped(dep, time.Now())
-		if a != nil && a.StartAfter {
-			a.StartAfter = false
-			writeArchive(dep, a)
-		}
-	}
 	dep.Spec.Replicas = &replicas
-	if _, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
-		return err
-	}
-	if cancelled {
-		return d.deleteHelper(ctx, id)
-	}
-	return nil
+	_, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	return err
 }
 
 func (d *Driver) Destroy(ctx context.Context, id string) error {
@@ -737,7 +667,6 @@ func (d *Driver) Destroy(ctx context.Context, id string) error {
 	name := d.resourceName(id)
 	fg := metav1.DeletePropagationForeground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &fg}
-	d.dropArchive(ctx, id)
 	// Best effort: NotFound is ignored; other errors are recorded.
 	logging.WarnErr(ignoreNotFound(d.cs.AppsV1().Deployments(ns).Delete(ctx, name, delOpts)), "k8s destroy deployment", map[string]any{"sandbox_id": id, "name": name})
 	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().Services(ns).Delete(ctx, name, delOpts)), "k8s destroy service", map[string]any{"sandbox_id": id, "name": name})
@@ -755,15 +684,6 @@ func (d *Driver) Reinstall(ctx context.Context, spec driver.Spec, preserveData b
 	driver.ApplyK8sPreviewDirect(&spec)
 	res := d.resolveResources(spec.Resources)
 
-	// Deleting the Deployment drops the archive record, so preserved data must
-	// be back on its PVC first.
-	if preserveData {
-		if err := d.requireVolume(ctx, id); ignoreNotFound(err) != nil {
-			return err
-		}
-	} else {
-		d.dropArchive(ctx, id)
-	}
 	if err := d.deleteDeployment(ctx, id); err != nil {
 		return fmt.Errorf("delete deployment: %w", err)
 	}
@@ -998,21 +918,7 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 		}
 		return driver.StatusError, err
 	}
-	status := deploymentStatus(dep)
-	if status == driver.StatusStopped {
-		stopped, err := d.observedStopped(ctx, id, dep)
-		if err != nil {
-			return driver.StatusError, err
-		}
-		if !stopped {
-			return driver.StatusPending, nil
-		}
-		// A start waiting on its volume restore is starting, not stopped.
-		if a, _ := readArchive(dep); a != nil && a.State == archiveStateRestoring && a.StartAfter {
-			return driver.StatusPending, nil
-		}
-	}
-	return status, nil
+	return deploymentStatus(dep), nil
 }
 
 func deploymentStatus(dep *appsv1.Deployment) driver.Status {

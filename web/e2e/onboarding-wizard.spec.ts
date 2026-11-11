@@ -218,26 +218,6 @@ for (const lang of ['zh-CN', 'en']) {
  })
 }
 
-test('team model select stays inside its field and shows full option names', async ({ page }) => {
- await mockOnboardingApi(page)
- await walkToTeam(page)
- const select = page.getByTestId('onboarding-team-model-clarify')
- const field = select.locator('xpath=..')
- const [fieldBox, triggerBox] = await Promise.all([field.boundingBox(), select.locator('[data-test="app-select-trigger"]').boundingBox()])
- expect(triggerBox!.x + triggerBox!.width).toBeLessThanOrEqual(fieldBox!.x + fieldBox!.width)
- expect(triggerBox!.y + triggerBox!.height).toBeLessThanOrEqual(fieldBox!.y + fieldBox!.height)
- await expect(select.locator('[data-test="app-select-trigger"] [data-provider-logo="cursor"]')).toBeVisible()
- await select.locator('[data-test="app-select-trigger"]').click()
- const options = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"]) [role="option"]')
- await expect(options).toHaveCount(2)
- await expect(options.locator('[data-provider-logo="cursor"]')).toHaveCount(2)
- const label = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"]) [data-test="app-select-option-team-model"] span.truncate')
- await expect(label).toBeVisible()
- expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
- await page.waitForTimeout(300)
- await page.screenshot({ path: path.join(OUT, 'team-model-select-open.png') })
-})
-
 async function expectInlineSetup(page: Page) {
  await expect(page.getByRole('dialog')).toHaveCount(1)
  await expect(page.locator('[aria-modal="true"]')).toHaveCount(1)

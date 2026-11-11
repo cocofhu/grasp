@@ -449,11 +449,6 @@ func (b *Bridge) ChatWithDeadline(text, opID, action string, images []PromptImag
 
 // ChatWithLimits 同 ChatWithDeadline；idleTimeout>0 时覆盖本回合的无动作时限。
 func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage, maxDuration, idleTimeout time.Duration) error {
-	root, _, release, err := b.canonicalWorkspace("", "")
-	if err != nil {
-		return err
-	}
-	defer release()
 	t := strings.TrimSpace(text)
 	if t == "" && len(images) == 0 {
 		return errors.New("empty message")
@@ -468,7 +463,7 @@ func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage,
 	b.enqueueMu.Lock()
 
 	b.mu.Lock()
-	ok := sessionUsable(b.sess) && b.workspaceSessionMatches(b.sess, root)
+	ok := sessionUsable(b.sess)
 	b.mu.Unlock()
 	if !ok {
 		b.enqueueMu.Unlock()

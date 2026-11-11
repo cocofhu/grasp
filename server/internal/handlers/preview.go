@@ -84,12 +84,6 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	defer cancel()
 
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
-	closeConsumer, consumerErr := h.Preview.BeginPreviewConsumer(c.Request.Context(), reg)
-	if consumerErr != nil {
-		workspaceBindingError(c, consumerErr)
-		return
-	}
-	defer func() { _ = closeConsumer() }()
 	host, sandboxName := reg.Host, reg.SandboxName
 
 	// When co-located with the sandbox manager, enforce liveness + health and

@@ -3,7 +3,6 @@ import { updateDocumentTitle } from '@/lib/shared/locale'
 import { installAuthGuard } from '@/lib/shared/authGuard'
 import { installRoutePendingGuards } from '@/lib/shared/routePending'
 import { hideSandboxPath, loadBrandSettings } from '@/lib/composables/useBrandSettings'
-import { isRunDetailsQuery } from '@/lib/run/runViewMode'
 import LoginView from '@/views/LoginView.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -76,7 +75,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/runs', name: 'runs', component: () => import('@/views/RunListView.vue'), meta: { titleKey: 'route.runs' } },
   { path: '/runs/:id/live', name: 'run-live', component: () => import('@/views/RunLiveView.vue'), meta: { titleKey: 'route.runLive' } },
   { path: '/runs/:runId/nodes/:nodeId', name: 'gates', component: () => import('@/views/GatesInboxView.vue'), meta: { titleKey: 'route.gates' } },
-  { path: '/runs/:id', name: 'run-detail', component: () => import('@/views/RunView.vue'), meta: { titleKey: 'route.runDetail', full: true } },
+  { path: '/runs/:id', name: 'run-detail', component: () => import('@/views/RunDetailView.vue'), meta: { titleKey: 'route.runDetail', full: true } },
   { path: '/artifacts', name: 'artifacts', component: () => import('@/views/ArtifactsView.vue'), meta: { titleKey: 'route.artifacts' } },
   { path: '/notifications', name: 'notifications', component: () => import('@/views/NotificationsView.vue'), meta: { titleKey: 'route.notifications' } },
   { path: '/agents', name: 'agents', component: () => import('@/views/AgentStudioView.vue'), meta: { titleKey: 'route.agents' } },
@@ -106,10 +105,6 @@ export function createAppRouter(history: RouterHistory = createWebHistory()) {
   installRoutePendingGuards(instance)
   installAuthGuard(instance)
   installWorktreeGuard(instance)
-  // The Run chat uses the same padded page as Solo; only execution details fill the shell.
-  instance.beforeEach((to) => {
-    if (to.name === 'run-detail') to.meta.full = isRunDetailsQuery(to.query)
-  })
   instance.afterEach((to) => updateDocumentTitle(to.meta.titleKey as string | undefined))
   return instance
 }

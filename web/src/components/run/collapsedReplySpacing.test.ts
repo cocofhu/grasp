@@ -307,19 +307,11 @@ describe('rendered timeline gaps', () => {
           </span>
         </div>
         <div
-          class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal clarify-thinking"
+          class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal clarify-outputting"
           id="output-status"
-          data-state="thinking"
+          data-state="outputting"
           role="status"
-        >
-          <span class="thinking-busy" id="output-cue">
-            <span class="thinking-lamp" id="output-lamp" aria-hidden="true">
-              <span class="thinking-lamp-halo"></span>
-              <span class="thinking-lamp-core"></span>
-            </span>
-            <span class="thinking-sheen" id="output-copy">思考中…</span>
-          </span>
-        </div>
+        ><span id="output-copy">输出中</span></div>
         <div class="chat-meta grasp-status-host inline-flex items-center gap-2.5 py-2" id="placeholder-status">
           <span class="thinking-busy" id="placeholder-cue">
             <span class="thinking-lamp" id="placeholder-lamp" aria-hidden="true">
@@ -354,9 +346,7 @@ describe('rendered timeline gaps', () => {
           placeholderGap: getComputedStyle(byId('placeholder-cue')).columnGap,
           placeholderLampDelta: Math.abs(left('placeholder-lamp') - left('timeline')),
           outputPadding: getComputedStyle(byId('output-status')).paddingLeft,
-          outputGap: getComputedStyle(byId('output-cue')).columnGap,
-          outputLampDelta: Math.abs(left('output-lamp') - left('thought-icon')),
-          outputCopyDelta: Math.abs(left('output-copy') - left('thought-copy')),
+          outputCopyDelta: Math.abs(left('output-copy') - left('timeline')),
           outputLampCount: byId('output-status').querySelectorAll('.thinking-lamp').length,
           sharedGap: getComputedStyle(byId('shared-cue')).columnGap,
           sharedLampDelta: Math.abs(left('shared-lamp') - left('timeline')),
@@ -376,11 +366,9 @@ describe('rendered timeline gaps', () => {
         expect(frame.placeholderPadding).toBe('0px')
         expect(frame.placeholderGap).toBe('8px')
         expect(frame.placeholderLampDelta).toBeLessThanOrEqual(1)
-        expect(frame.outputPadding).toBe('4px')
-        expect(frame.outputGap).toBe('6px')
-        expect(frame.outputLampDelta).toBeLessThanOrEqual(1)
+        expect(frame.outputPadding).toBe('0px')
         expect(frame.outputCopyDelta).toBeLessThanOrEqual(1)
-        expect(frame.outputLampCount).toBe(1)
+        expect(frame.outputLampCount).toBe(0)
         expect(frame.sharedGap).toBe('8px')
         expect(frame.sharedLampDelta).toBeLessThanOrEqual(1)
       }

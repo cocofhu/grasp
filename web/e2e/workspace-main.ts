@@ -92,7 +92,6 @@ window.fetch = async (input, init) => {
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
   else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
-  else if (path === '/model-configurations' || path === '/model-connections' || path === '/credentials') data = { items: [] }
   else if (path === '/projects') data = []
   else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 5 }
   else if (path === '/workspace/requirement-drafts') {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
-import { randomUuid } from '@/lib/shared/randomUuid'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import type { ClarifyImage } from '@/lib/shared/types'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
@@ -32,8 +31,6 @@ import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
-import { isPlainEnter } from '@/lib/chat/composerKeys'
-import { createWsReconnectController } from '@/lib/run/wsReconnect'
 
 // `attachId` attaches to an existing sandbox (skips the create flow) — used by
 // the sandbox console's ACP tab. `embedded` hides the internal header/controls
@@ -115,6 +112,8 @@ let activeItemId = ''
 let liveOutputItemId = ''
 let ws: WebSocket | null = null
 let wsSandboxId = 0
+let wsAttempt = 0
+let wsReconnectTimer: number | undefined
 // Frames that arrive before the reused sandbox's history is restored.
 let heldFrames: string[] | null = null
 const sessionStateCursor = createReviewStateCursor()
@@ -286,18 +285,9 @@ async function waitReady(id: number) {
   errorMsg.value = t('pages.agentChatTester.sandboxTimeout')
 }
 
-// The turn keeps running on the server while the socket is down; reconnecting
-// replays it, so a dropped connection only pauses the view.
-const reconnect = createWsReconnectController({
-  connect: () => openWs(wsSandboxId),
-  shouldReconnect: () => !disposed && !!wsSandboxId && !ws,
-  maxDelayMs: 15_000,
-})
-
 function openWs(id: number) {
   const reconcileCurrentSandbox = wsSandboxId === id && turns.value.length > 0
   closeWs()
-  reconnect.markConnecting()
   // A new subscription starts with its own authoritative queue head, including
   // after a server restart where process-local session generations restart.
   sessionStateCursor.reset()
@@ -307,7 +297,7 @@ function openWs(id: number) {
   heldFrames = []
   sock.onopen = () => {
     if (ws !== sock) return
-    reconnect.markOpened()
+    wsAttempt = 0
     status.value = 'ready'
     errorMsg.value = ''
     // Reused sandbox: rebuild the prior transcript so the context is visible,
@@ -325,7 +315,7 @@ function openWs(id: number) {
     if (ws !== sock) return
     ws = null
     if (status.value !== 'error') status.value = 'closed'
-    reconnect.onClose()
+    scheduleReconnect()
   }
   sock.onerror = () => {
     if (ws !== sock) return
@@ -339,13 +329,27 @@ function closeWs() {
   historyPageGen++
   restoring.value = false
   loadingEarlier.value = false
-  reconnect.markIntentionalClose()
+  if (wsReconnectTimer !== undefined) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = undefined
+  }
   const sock = ws
   ws = null
   heldFrames = null
   sock?.close()
 }
 
+// The turn keeps running on the server while the socket is down; reconnecting
+// replays it, so a dropped connection only pauses the view.
+function scheduleReconnect() {
+  if (disposed || !wsSandboxId || wsReconnectTimer !== undefined) return
+  const delay = Math.min(15_000, 1000 * 2 ** wsAttempt)
+  wsAttempt++
+  wsReconnectTimer = window.setTimeout(() => {
+    wsReconnectTimer = undefined
+    if (!disposed && wsSandboxId && !ws) openWs(wsSandboxId)
+  }, delay)
+}
 
 function flushHeldFrames() {
   const held = heldFrames ?? []
@@ -385,12 +389,8 @@ function dropRestoredActiveTurn(active: { id?: string; text?: string }) {
 const canSend = () =>
   !!ws && ws.readyState === WebSocket.OPEN && (status.value === 'ready' || status.value === 'thinking')
 
-const newItemId = randomUuid
-
-function onComposerKeydown(event: KeyboardEvent) {
-  if (!isPlainEnter(event)) return
-  event.preventDefault()
-  send()
+function newItemId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 function send() {
@@ -1008,7 +1008,7 @@ function onTranscriptScroll() {
 function reset() {
   closeWs()
   wsSandboxId = 0
-  reconnect.reset()
+  wsAttempt = 0
   sentItems.clear()
   activeItemId = ''
   sandbox.value = null
@@ -1320,7 +1320,7 @@ onBeforeUnmount(() => {
           :placeholder="t('pages.agentChatTester.inputPlaceholder')"
           class="chat-input tester-composer-input scroll-area max-h-40 min-h-[44px] min-w-0 flex-1 resize-none px-1 py-2 disabled:opacity-50"
           :aria-label="t('pages.agentChatTester.inputPlaceholder')"
-          @keydown="onComposerKeydown"
+          @keydown.enter.exact.prevent="send"
           @paste="onPaste"
         />
         <div class="chat-toolbar flex items-center justify-between gap-2">

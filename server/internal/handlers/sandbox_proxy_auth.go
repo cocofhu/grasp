@@ -317,10 +317,6 @@ func rewriteUpstreamSetCookiePaths(resp *http.Response, mountPrefix string) {
 }
 
 func mergeUpstreamQuery(req *http.Request, clientQuery url.Values) {
-	mergeCanonicalUpstreamQuery(req, clientQuery, "")
-}
-
-func mergeCanonicalUpstreamQuery(req *http.Request, clientQuery url.Values, canonicalFolder string) {
 	outQ := req.URL.Query()
 	for k, vv := range clientQuery {
 		outQ.Del(k)
@@ -330,10 +326,7 @@ func mergeCanonicalUpstreamQuery(req *http.Request, clientQuery url.Values, cano
 	}
 	p := req.URL.Path
 	if p == "/" || p == "" {
-		if canonicalFolder != "" {
-			outQ.Set("folder", canonicalFolder)
-			outQ.Del("workspace")
-		} else if strings.TrimSpace(outQ.Get("folder")) == "" {
+		if strings.TrimSpace(outQ.Get("folder")) == "" {
 			outQ.Set("folder", DefaultCodeServerWorkspaceFolder)
 		}
 	}

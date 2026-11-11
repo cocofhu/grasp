@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -237,74 +236,32 @@ func TestDriverRestoreReservesEndpointsBeforeProviderRequests(t *testing.T) {
 					}
 				}
 			}
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
 			// Simulate a provider HTTP connection taking any still-free local
 			// endpoint. Keep it occupied so the old restore order fails every time.
-			// Only the restored instance uses this observer. Cancelled requests
-			// from the original instance can still reach its HTTP handler after
-			// Close has returned, when its old ports are legitimately free.
 			var stolen []net.Listener
-			var checkMu sync.Mutex
-			checking, checked := true, 0
-			observer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				checkMu.Lock()
-				if checking {
-					checked++
-					for id, endpoints := range expected {
-						for port, address := range endpoints {
-							if listener, err := net.Listen("tcp4", address); err == nil {
-								stolen = append(stolen, listener)
-								t.Errorf("provider request preceded reservation of %s port %d", id, port)
-							}
-						}
-					}
-				}
-				checkMu.Unlock()
-				f.serve(w, r)
-			}))
-			t.Cleanup(observer.Close)
 			t.Cleanup(func() {
-				checkMu.Lock()
-				defer checkMu.Unlock()
+				f.mu.Lock()
+				defer f.mu.Unlock()
 				for _, listener := range stolen {
 					_ = listener.Close()
 				}
 			})
-			// A request to the old origin is outside the restoration window;
-			// those handlers must not be mistaken for the new instance's I/O.
-			// Probe while the old bindings still exist, so this probe's own
-			// ephemeral connection cannot occupy one of the saved endpoints.
-			response, err := f.server.Client().Get(f.server.URL + "/v2/sandboxes")
-			if err != nil {
-				t.Fatal(err)
-			}
-			_ = response.Body.Close()
-			checkMu.Lock()
-			beforeRestore := checked
-			checkMu.Unlock()
-			if beforeRestore != 0 {
-				t.Fatal("observer included a request from the retired instance", beforeRestore)
-			}
-			if err := d.Close(); err != nil {
-				t.Fatal(err)
-			}
-			opts.APIURL, opts.SandboxURL = observer.URL, observer.URL
-			var restored *Driver
-			t.Cleanup(func() {
-				// Drain the assertion section before releasing the endpoints;
-				// a late handler after Close is outside the restoration contract.
-				checkMu.Lock()
-				checking = false
-				checkMu.Unlock()
-				if restored != nil {
-					if err := restored.Close(); err != nil {
-						t.Error(err)
+			f.mu.Lock()
+			f.beforeRequest = func(*http.Request) {
+				for id, endpoints := range expected {
+					for port, address := range endpoints {
+						if listener, err := net.Listen("tcp4", address); err == nil {
+							stolen = append(stolen, listener)
+							t.Errorf("provider request preceded reservation of %s port %d", id, port)
+						}
 					}
 				}
-			})
-			restored, err = New(opts)
-			if err != nil {
-				t.Fatal(err)
 			}
+			f.mu.Unlock()
+			restored := openLifecycleDriver(t, opts)
 			for id, want := range expected {
 				if paused {
 					if err := restored.Start(ctx, id); err != nil {
@@ -315,12 +272,6 @@ func TestDriverRestoreReservesEndpointsBeforeProviderRequests(t *testing.T) {
 				if err != nil || !reflect.DeepEqual(got, want) {
 					t.Fatalf("restart changed %s endpoints: %v, %v", id, got, err)
 				}
-			}
-			checkMu.Lock()
-			requests := checked
-			checkMu.Unlock()
-			if requests < len(expected) {
-				t.Fatal("restored driver did not exercise the provider reservation observer", requests)
 			}
 		})
 	}

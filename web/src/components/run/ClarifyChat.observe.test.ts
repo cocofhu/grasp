@@ -368,17 +368,11 @@ describe('ClarifyChat observe mode: one busy indicator', () => {
     },
   )
 
-  it('observe and interactive stay on 思考中… while message text streams', () => {
-    const observedChat = mountChat({ reviewMode: true, observe: true, turns: outputting })
-    const interactiveChat = mountChat({ reviewMode: true, observe: false, turns: outputting })
-    const observed = busyCopies(observedChat)
-    const interactive = busyCopies(interactiveChat)
+  it('observe: once message text streams, the normal status and time return', () => {
+    const observed = busyCopies(mountChat({ reviewMode: true, observe: true, turns: outputting }))
+    const interactive = busyCopies(mountChat({ reviewMode: true, observe: false, turns: outputting }))
     expect(observed).toEqual(interactive)
-    expect(observed.thinking).toBe(1)
-    expect(observedChat.get('[data-testid="clarify-busy-status"]').find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-    expect(observedChat.get('[data-testid="clarify-agent-message"]').text()).toContain('已改好')
-    expect(observedChat.text()).not.toContain('输出中')
-    expect(interactiveChat.text()).not.toContain('输出中')
+    expect(observed.thinking).toBe(0)
     // Time appears once the turn ends (#851), in both views.
     expect(observed.bottomTime).toBe(0)
   })

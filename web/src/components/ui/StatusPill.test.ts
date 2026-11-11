@@ -24,16 +24,6 @@ describe('StatusPill', () => {
     wrapper.unmount()
   })
 
-  it('labels workspace save states', () => {
-    const saving = mountPill('saving')
-    const failed = mountPill('save_failed')
-    expect(saving.text()).toBe('保存工作区中')
-    expect(failed.text()).toBe('保存失败')
-    expect(failed.find('span').classes()).toContain('text-err')
-    saving.unmount()
-    failed.unmount()
-  })
-
   it('falls back for unknown status', () => {
     const wrapper = mountPill('unknown_xyz')
     expect(wrapper.find('span').exists()).toBe(true)

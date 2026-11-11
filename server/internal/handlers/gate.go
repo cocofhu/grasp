@@ -306,7 +306,7 @@ func (h *Handlers) GateReactQueueRemove(c *gin.Context) {
 	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
 	producerID, alive := h.Eng.GateReactInfo(runID, gateNodeID)
 	if producerID == "" || !alive {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "review_session_unavailable", "error": "上游复审会话不可用"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游复审会话不可用"})
 		return
 	}
 	if err := h.Eng.RemoveQueuedItem(runID, producerID, b.ItemID); err != nil {
@@ -327,7 +327,7 @@ func (h *Handlers) GateReactQueueReorder(c *gin.Context) {
 	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
 	producerID, alive := h.Eng.GateReactInfo(runID, gateNodeID)
 	if producerID == "" || !alive {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "review_session_unavailable", "error": "上游复审会话不可用"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游复审会话不可用"})
 		return
 	}
 	if err := h.Eng.ReorderQueuedItems(runID, producerID, b.ItemIDs); err != nil {
@@ -343,7 +343,7 @@ func (h *Handlers) GateReactCancel(c *gin.Context) {
 	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
 	producerID, alive := h.Eng.GateReactInfo(runID, gateNodeID)
 	if producerID == "" || !alive {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "review_session_unavailable", "error": "上游复审会话不可用"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游复审会话不可用"})
 		return
 	}
 	if err := h.Eng.CancelReviewSession(runID, producerID); err != nil {

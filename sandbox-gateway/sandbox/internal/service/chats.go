@@ -12,7 +12,6 @@ import (
 
 	"backend/internal/correl"
 	"backend/internal/logging"
-	"backend/internal/workspacebinding"
 
 	"github.com/gorilla/websocket"
 )
@@ -44,13 +43,11 @@ type ChatInfo struct {
 // ChatManager 按 chat id 持有多个相互独立的 Bridge（同一 provider，各自的 Agent 会话、
 // 队列、事件日志与 WebSocket 客户端）。会话只存于进程内存，WS 断开不销毁，Delete 才销毁。
 type ChatManager struct {
-	mu               sync.Mutex
-	chats            map[string]*Bridge
-	order            []string
-	maxChats         int
-	defaultModel     string
-	workspace        *workspacebinding.Manager // installed before Agent startup
-	workspaceBlocked bool
+	mu           sync.Mutex
+	chats        map[string]*Bridge
+	order        []string
+	maxChats     int
+	defaultModel string
 }
 
 // NewChatManager 创建只含 default 会话的管理器。

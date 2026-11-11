@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"gorm.io/gorm"
 	"strings"
 	"time"
 
@@ -48,10 +47,8 @@ func firstMessageReferences(msg *models.CompositeText) []models.MessageReference
 // releaseClarifyFirstMessageLatch clears the delivery latch so a cancelled or
 // resumed run can claim FirstMessage again on a fresh clarify visit.
 func (e *Engine) releaseClarifyFirstMessageLatch(runID string) {
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ? AND first_message_delivered_at IS NOT NULL", runID).
-			UpdateColumn("first_message_delivered_at", nil)
-	}), runID, "release clarify first message latch")
+	logDB(e.db.Model(&models.Run{}).Where("id = ? AND first_message_delivered_at IS NOT NULL", runID).
+		UpdateColumn("first_message_delivered_at", nil), runID, "release clarify first message latch")
 }
 
 // visitHumanTurns reports whether the visit's dialogue has a human turn, and
@@ -110,9 +107,9 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node, resume *
 		return
 	}
 	now := time.Now()
-	res := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ? AND first_message_delivered_at IS NULL", runID).Update("first_message_delivered_at", now)
-	})
+	res := e.db.Model(&models.Run{}).
+		Where("id = ? AND first_message_delivered_at IS NULL", runID).
+		Update("first_message_delivered_at", now)
 	if res.Error != nil {
 		log.Warn().Err(res.Error).Str("run_id", runID).Str("node_id", nodeID).
 			Msg("clarify first message: claim failed")

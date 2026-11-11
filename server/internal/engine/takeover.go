@@ -201,9 +201,9 @@ func (e *Engine) TakeoverNode(runID, nodeID string, iteration int) (TakeoverResu
 		return refuse(TakeoverNodeFinishing, "节点正在结算或切换，请刷新后重试")
 	}
 	now := time.Now()
-	upd := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.StateRun{}).Where("id = ? AND status = ? AND (mode = ? OR mode = '' OR mode IS NULL)", sr.ID, "running", models.NodeModeAuto).Updates(map[string]any{"mode": models.NodeModeManual, "taken_over_at": now})
-	})
+	upd := e.db.Model(&models.StateRun{}).
+		Where("id = ? AND status = ? AND (mode = ? OR mode = '' OR mode IS NULL)", sr.ID, "running", models.NodeModeAuto).
+		Updates(map[string]any{"mode": models.NodeModeManual, "taken_over_at": now})
 	if upd.Error != nil || upd.RowsAffected == 0 {
 		e.autoMu.Unlock()
 		if upd.Error != nil {
@@ -316,11 +316,9 @@ func (e *Engine) closeTakeoverConversation(runID, nodeID string, iter int) {
 	if iter < 1 {
 		iter = 1
 	}
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.ReactConversation{}).
-			Where("run_id = ? AND node_id = ? AND iteration = ? AND takeover = ? AND done = ?", runID, nodeID, iter, true, false).
-			Update("done", true)
-	}), runID, "close dropped takeover conversation")
+	logDB(e.db.Model(&models.ReactConversation{}).
+		Where("run_id = ? AND node_id = ? AND iteration = ? AND takeover = ? AND done = ?", runID, nodeID, iter, true, false).
+		Update("done", true), runID, "close dropped takeover conversation")
 }
 
 const takeoverOpening = "已中断自动执行，本节点转为人工接管（不会再自动执行）。可以继续对话让我修改；确认无误后点「确认并流转」进入下一节点。"
@@ -349,7 +347,7 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 		conv.AppliedConfigurationID, conv.AppliedModelID, conv.AppliedReasoningEffort = "", "", ""
 		conv.AppliedModelSet = false
 		conv.ModelNotice = ""
-		logDB(e.executionSave(context.Background(), runID, &conv), runID, "reopen takeover conversation")
+		logDB(e.db.Save(&conv), runID, "reopen takeover conversation")
 		return
 	}
 	auto := autoPhaseEvents(events)
@@ -371,7 +369,7 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 	opening.EndedAt = &end
 	conv = models.ReactConversation{RunID: runID, NodeID: node.ID, Iteration: iter, Takeover: true,
 		Messages: []models.ReactMessage{opening}}
-	logDB(e.executionCreate(context.Background(), runID, &conv), runID, "seed takeover conversation")
+	logDB(e.db.Create(&conv), runID, "seed takeover conversation")
 }
 
 // applyTakeoverCaps makes a taken-over visit behave as a review node for the
@@ -436,13 +434,10 @@ func (e *Engine) reconcileManualVisit(run *models.Run, sr models.StateRun) {
 		}
 		e.seedTakeoverConversation(run.ID, node, sr.Iteration, "", sr.Events, ended)
 	}
-	logDB(e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.StateRun{}).Where("id = ?", sr.ID).
-			Updates(map[string]any{"status": "waiting_human", "output_md": "已转人工接管（控制面重启，沙箱需冷启动）"})
-	}), run.ID, "reconcile manual visit")
-	logDB(e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "running").Updates(map[string]any{"status": "waiting_human", "last_activity_at": time.Now()})
-	}), run.ID, "reconcile manual run")
+	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).
+		Updates(map[string]any{"status": "waiting_human", "output_md": "已转人工接管（控制面重启，沙箱需冷启动）"}), run.ID, "reconcile manual visit")
+	logDB(e.db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "running").
+		Updates(map[string]any{"status": "waiting_human", "last_activity_at": time.Now()}), run.ID, "reconcile manual run")
 	log.Info().Str("run_id", run.ID).Str("node_id", sr.NodeID).
 		Msg("startup reconciliation: taken-over visit parked as manual (cold sandbox)")
 }
@@ -505,9 +500,7 @@ func (e *Engine) touchActivity(runID string, force bool) {
 	t.mu.Lock()
 	t.last[runID] = now
 	t.mu.Unlock()
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ?", runID).UpdateColumn("last_activity_at", now)
-	}), runID, "touch activity")
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).UpdateColumn("last_activity_at", now), runID, "touch activity")
 }
 
 // forgetActivity drops the debounce slot of a finished run.

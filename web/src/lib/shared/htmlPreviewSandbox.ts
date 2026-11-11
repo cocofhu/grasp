@@ -1,5 +1,3 @@
-import { randomUuid } from './randomUuid'
-
 /**
  * Safe sandbox for srcdoc preview iframes — scripts + forms only.
  *
@@ -16,9 +14,15 @@ export const SANDBOX_ATTR = 'allow-scripts allow-forms'
 
 /**
  * Generate a page-unique instance id for HtmlPreview inline resize messaging.
+ * Uses crypto.randomUUID when available (Secure Context); otherwise falls back to
+ * a timestamp + random suffix (aligned with session.js degradation pattern).
  * @internal HtmlPreview call chain only — not part of the public API surface.
  */
-export const createInstanceId = randomUuid
+export function createInstanceId(): string {
+  return typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `hp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
 
 export const INLINE_FALLBACK_HEIGHT = 120
 

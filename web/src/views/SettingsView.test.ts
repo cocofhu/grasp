@@ -516,8 +516,7 @@ describe('SettingsView workspace information on the general page', () => {
     await flushPromises()
     const titles = w.findAll('h2').map((heading) => heading.text())
     expect(titles[0]).toBe('工作区信息')
-    expect(titles.indexOf('品牌文案')).toBeGreaterThan(titles.indexOf('工作区信息'))
-    expect(titles).toContain('工作流')
+    expect(titles[1]).toBe('品牌文案')
     expect(w.text()).toContain('管理工作区信息、品牌文案、运行并发与沙箱资源。')
     expect(w.text()).toContain('使用页底保存')
     expect(w.get('#workspace-meta-name').element).toHaveProperty('value', 'Studio')
@@ -776,6 +775,7 @@ describe('SettingsView execution mode', () => {
   it('does not put an execution-mode switch on home, new session, or start run', () => {
     const dir = dirname(fileURLToPath(import.meta.url))
     for (const rel of [
+      '../components/dashboard/HomeModeSwitch.vue',
       '../components/solo/HomeSoloPanel.vue',
       '../components/workflow/RunLaunchModal.vue',
       'SoloView.vue',

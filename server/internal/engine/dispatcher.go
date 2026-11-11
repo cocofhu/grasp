@@ -1,12 +1,8 @@
 package engine
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"github.com/cocofhu/grasp/internal/filestore"
-	"gorm.io/gorm/clause"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -45,8 +41,6 @@ func (e *Engine) dispatch() {
 // Priority DESC → hasRemainingHumanGate DESC → created_at ASC → id ASC order,
 // then returns (either at capacity or with the queue empty).
 func (e *Engine) drainQueue() {
-	e.reconcileWorkspaceCheckpoints()
-	e.parkWaitingPauses()
 	for {
 		// Hold the halt read lock from the halt check through the claim and
 		// the driver spawn. Once Halt returns, no queued run can be promoted
@@ -92,7 +86,7 @@ func (e *Engine) drainQueue() {
 // the caller fails it outside the halt lock.
 func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRunID string) {
 	var head models.Run
-	if err := e.executableRuns(e.db).Where("status = ?", "queued").
+	if err := e.db.Where("status = ?", "queued").
 		Order("priority desc, created_at asc, id asc").First(&head).Error; err != nil {
 		// ErrRecordNotFound simply means the queue is empty (expected, silent).
 		// Any other error is a transient DB fault: the run stays "queued" and
@@ -105,7 +99,7 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRu
 	}
 
 	var candidates []models.Run
-	if err := e.executableRuns(e.db).Where("status = ? AND priority = ?", "queued", head.Priority).
+	if err := e.db.Where("status = ? AND priority = ?", "queued", head.Priority).
 		Order("created_at asc, id asc").Find(&candidates).Error; err != nil {
 		log.Error().Err(err).Msg("dispatcher: load same-priority queued runs failed (will retry)")
 		return "", "", false, ""
@@ -119,13 +113,8 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRu
 	if run.StartedAt.IsZero() {
 		updates["started_at"] = time.Now()
 	}
-	res := e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-		query := db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "queued")
-		if e.workspaceCheckpoints != nil {
-			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
-		}
-		return query.Updates(updates)
-	})
+	res := e.db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "queued").
+		Updates(updates)
 	if res.Error != nil {
 		log.Error().Str("run_id", run.ID).Err(res.Error).Msg("dispatcher: claim update failed (will retry)")
 		return "", "", false, ""
@@ -231,70 +220,29 @@ func (e *Engine) requeueRun(runID, fromNodeID string) {
 // whether the run was actually queued so callers can skip follow-up work when
 // they lost the race.
 func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	// Read a raw immutable source identity, then hydrate/prepare outside SQL.
-	// Holding the Run lock while its checkpoints reach object storage would
-	// block maintenance, pause and cancellation behind a slow backend.
-	type admissionSource struct {
-		Status, Checkpoints string
-		Attempt             int
-		ControlVersion      uint64
-	}
-	var source admissionSource
-	if err := e.db.WithContext(ctx).Table("runs").Select("status", "checkpoints", "attempt", "control_version").Where("id = ?", runID).Take(&source).Error; err != nil {
-		return false
-	}
-	if requireRunning && source.Status != "running" || source.Status == "paused" {
-		return false
-	}
-	files, err := filestore.FromDB(e.db)
-	if err != nil {
-		return false
-	}
-	data, err := files.Load(ctx, source.Checkpoints, filestore.JSON)
-	if err != nil {
-		return false
-	}
-	checkpoints := map[string]map[string]any{}
-	if len(data) > 0 && string(data) != "null" {
-		if err := json.Unmarshal(data, &checkpoints); err != nil {
-			return false
-		}
-		if checkpoints == nil {
-			checkpoints = map[string]map[string]any{}
-		}
-	}
-	checkpoints[admissionFromCheckpoint] = map[string]any{"node": fromNodeID}
-	data, err = json.Marshal(checkpoints)
-	if err != nil {
-		return false
-	}
-	prepared, err := files.Prepare(ctx, bytes.NewReader(data), filestore.JSON)
-	if err != nil {
-		return false
-	}
 	queued := false
-	err = e.executionTransaction(ctx, runID, func(tx *gorm.DB) error {
-		var current admissionSource
-		if err := tx.Table("runs").Clauses(clause.Locking{Strength: "UPDATE"}).Select("status", "checkpoints", "attempt", "control_version").Where("id = ?", runID).Take(&current).Error; err != nil {
+	err := e.db.Transaction(func(tx *gorm.DB) error {
+		var run models.Run
+		if err := tx.First(&run, "id = ?", runID).Error; err != nil {
 			return err
 		}
-		if current != source {
-			return nil
+		if requireRunning && run.Status != "running" {
+			return nil // lost the race; the run already moved off "running"
 		}
-		if err := e.workflowCheckpointPendingTx(tx, runID); err != nil {
-			return err
+		cp := run.Checkpoints
+		if cp == nil {
+			cp = map[string]map[string]any{}
 		}
-		ref, err := files.PreparedRef(prepared)
-		if err != nil {
-			return err
+		cp[admissionFromCheckpoint] = map[string]any{"node": fromNodeID}
+		q := tx.Model(&models.Run{}).Where("id = ?", runID)
+		if requireRunning {
+			q = q.Where("status = ?", "running")
 		}
-		result := tx.Table("runs").Where("id = ? AND status = ? AND attempt = ? AND control_version = ?", runID, source.Status, source.Attempt, source.ControlVersion).Updates(map[string]any{"status": "queued", "checkpoints": ref})
-		if result.Error != nil {
-			return result.Error
+		res := q.Select("Status", "Checkpoints").Updates(&models.Run{Status: "queued", Checkpoints: cp})
+		if res.Error != nil {
+			return res.Error
 		}
-		queued = result.RowsAffected > 0
+		queued = res.RowsAffected > 0
 		return nil
 	})
 	if err != nil {
@@ -313,13 +261,7 @@ func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
 	if run.StartedAt.IsZero() {
 		updates["started_at"] = time.Now()
 	}
-	res := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		query := db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"})
-		if e.workspaceCheckpoints != nil {
-			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
-		}
-		return query.Updates(updates)
-	})
+	res := e.db.Model(&models.Run{}).Where("id = ? AND status <> ?", runID, "running").Updates(updates)
 	if res.Error != nil || res.RowsAffected == 0 {
 		return false
 	}
@@ -358,8 +300,6 @@ func (e *Engine) clearAdmissionFrom(runID string) {
 		return
 	}
 	delete(run.Checkpoints, admissionFromCheckpoint)
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ?", runID).
-			Select("Checkpoints").Updates(&models.Run{Checkpoints: run.Checkpoints})
-	}), runID, "clear admission from")
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).
+		Select("Checkpoints").Updates(&models.Run{Checkpoints: run.Checkpoints}), runID, "clear admission from")
 }

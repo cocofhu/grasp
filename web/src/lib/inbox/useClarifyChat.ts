@@ -56,7 +56,6 @@ import {
   rejectOptimisticSend,
 } from '@/lib/chat/dialogueStore'
 import { render, type DialogueQueueRow, type DialogueRow, type DialogueVersion } from '@/lib/chat/dialogueState'
-import { isComposingKey } from '@/lib/chat/composerKeys'
 import {
   isSettled, isStopping, pruneQueueOverlay, retryAttemptRows, retryTakenOver, settleRows, visibleOrphan, visibleQueue,
   type QueueOverlay,
@@ -908,7 +907,9 @@ async function sendFromComposer(): Promise<boolean> {
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Enter' || e.shiftKey || isComposingKey(e, composing.value)) return
+  if (e.key !== 'Enter' || e.shiftKey) return
+  // IME: composition Enter / keyCode 229 must not send (prevents double-fire).
+  if (composing.value || e.isComposing || e.keyCode === 229) return
   e.preventDefault()
   send()
 }
@@ -1701,12 +1702,19 @@ function agentHasMessage(t: ClarifyTurn): boolean {
 }
 
 /**
- * A running turn's tail stays on 思考中…. Visible message text stays a
- * message; it does not switch the tail to 输出中. The row is omitted once
- * streaming ends, so this is never true.
+ * Streaming agent whose newest step is message text: tail shows 输出中.
+ * After a tool or thought step (waiting for the model) it shows 思考中….
  */
-function agentTailOutputting(_t: ClarifyTurn): boolean {
-  return false
+function agentTailOutputting(t: ClarifyTurn): boolean {
+  if (t.role !== 'agent' || !t.streaming) return false
+  const parts = t.parts || []
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]!
+    if (p.kind === 'tool') return false
+    if ((p.kind === 'message' || p.kind === 'thought') && p.text?.trim()) return p.kind === 'message'
+  }
+  if (t.tools?.length) return false
+  return agentHasMessage(t)
 }
 
 /** Thought text to show for this agent row. */

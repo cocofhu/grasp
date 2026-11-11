@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // ListMessages returns messages for a thread (oldest first).
@@ -85,10 +84,12 @@ func (s *PmService) AppendMessageSource(threadID, role, content, source string, 
 		Usage: models.CloneTokenUsage(usage), UsageByModel: models.CloneTokenUsageByModel(usageByModel),
 		CreatedAt: time.Now(),
 	}
-	persistence, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := s.appendPreparedMessage(persistence, msg); err != nil {
+	if err := s.db.Create(&msg).Error; err != nil {
 		return models.ChatMessage{}, err
+	}
+	if err := s.db.Model(&models.ChatThread{}).Where("id = ?", threadID).
+		Updates(map[string]any{"updated_at": time.Now()}).Error; err != nil {
+		log.Warn().Err(err).Str("thread", threadID).Msg("bump thread updated_at failed")
 	}
 	// Auto-title from first user message.
 	if role == "user" {
@@ -142,10 +143,8 @@ func (s *PmService) UpdateMessageFailure(threadID, messageID, status, failKind s
 	default:
 		return models.ChatMessage{}, ErrPmMessageInvalidStatus
 	}
-	if err := s.executionTransaction(context.Background(), threadID, func(tx *gorm.DB) error {
-		return tx.Model(&models.ChatMessage{}).Where("id = ? AND thread_id = ?", messageID, threadID).
-			Updates(map[string]any{"status": status, "fail_kind": failKind}).Error
-	}); err != nil {
+	if err := s.db.Model(&models.ChatMessage{}).Where("id = ? AND thread_id = ?", messageID, threadID).
+		Updates(map[string]any{"status": status, "fail_kind": failKind}).Error; err != nil {
 		return models.ChatMessage{}, err
 	}
 	msg.Status = status

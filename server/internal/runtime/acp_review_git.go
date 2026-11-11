@@ -18,11 +18,6 @@ const reviewDirtyFileCap = 80
 // branches. No-op when the node may not commit, no session is parked, or the
 // tree is clean and already pushed. Never fails the node.
 func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{Err: executionErr}
-	}
-	defer stopExecution()
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	if req.Caps == nil || (!req.Caps.CommitsCode() && !(req.Caps.Clarify() && req.LiveEdits)) {
 		// Agents that never commit keep review demos and Live trials in this
@@ -88,11 +83,6 @@ func (c *acpProvider) CheckGit(ctx context.Context, req NodeReq) (out ReactTurn)
 // (and its audit artifact) is cleared first so it cannot be adopted again.
 // No-op without a connected parked session.
 func (c *acpProvider) EnsureHandoff(ctx context.Context, req NodeReq) (out ReactTurn) {
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return ReactTurn{Err: executionErr}
-	}
-	defer stopExecution()
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	c.mu.Lock()
 	sess := c.sessions[reactKey(req)]

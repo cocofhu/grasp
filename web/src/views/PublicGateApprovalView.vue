@@ -29,7 +29,6 @@ import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
 import { clearDialogues, dialogueKey, getDialogue, ingestDialogue, setDialogueFetcher } from '@/lib/chat/dialogueStore'
 import {
-  publicShareErrorText,
   formatRemainingSec,
   getShareVisitorId,
   mergePublicGatePreview,
@@ -1095,7 +1094,7 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
         markLinkInvalid()
         stopPoll()
       }
-      throw new Error(publicShareErrorText(result, t('pages.publicGate.replyFailed')))
+      throw new Error(result.message || result.error || t('pages.publicGate.replyFailed'))
     }
     const responseSession = candidate ? parseLiveSession(result.live) : null
     if (candidate && (!responseSession || responseSession.sid !== candidate.sid)) throw new Error(t('pages.publicGate.replyFailed'))

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/version"
@@ -125,23 +124,5 @@ func (h *Handlers) PlatformStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	st.RunningCount += h.workingWaitingRunCount()
 	c.JSON(http.StatusOK, st)
-}
-
-// workingWaitingRunCount counts waiting_human runs whose current node is not
-// actually waiting: a manual session with a turn running (busy), or a
-// successor visit that already started before the run status caught up. The
-// board and sidebar list these as executing, so the status bar counts them too.
-func (h *Handlers) workingWaitingRunCount() int64 {
-	if h.Runs == nil {
-		return 0
-	}
-	var n int64
-	for _, cn := range h.runCurrentNodes(h.Runs.List([]string{"waiting_human"}, "")) {
-		if cn.State != engine.NodeStateWaitingHuman {
-			n++
-		}
-	}
-	return n
 }

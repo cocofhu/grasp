@@ -152,14 +152,12 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
       timeout: 5_000,
     })
     await expect(page.getByText('竞态恢复的正文续流。继续追加。')).toBeVisible()
-    await expect(page.getByTestId('clarify-busy-status')).toContainText('思考中')
-    await expect(page.getByTestId('clarify-busy-status').getByTestId('thinking-lamp')).toBeVisible()
-    await expect(page.getByTestId('clarify-busy-status')).not.toContainText('输出中')
+    await expect(page.getByTestId('clarify-busy-status')).toContainText('输出中')
     await expect(page.getByTestId('clarify-stream-caret')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '07-clarify-hard-refresh-acp-race.png'), fullPage: true })
   })
 
-  test('四阶段完成态：思考中状态行消失', async ({ page }) => {
+  test('四阶段完成态：输出中三件套消失 + 已完成脚注', async ({ page }) => {
     await page.setViewportSize({ width: 1100, height: 900 })
     await page.goto('/clarify-session-ux.html')
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })

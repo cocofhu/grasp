@@ -79,29 +79,24 @@ describe('ThinkingBusyCue', () => {
     english.unmount()
   })
 
-  it('message streaming keeps the thinking lamp and does not read 输出中', () => {
+  it('clarify outputting drops the lamp and sheen and stays tertiary text', () => {
     const w = mountRow({ variant: 'status', outputting: true })
     const row = w.get('[data-testid="clarify-busy-status"]')
-    expect(row.attributes('data-state')).toBe('thinking')
-    expect(row.classes()).toContain('clarify-thinking')
-    expect(row.classes()).not.toContain('clarify-outputting')
-    expect(row.text()).toBe('思考中…')
-    expectThinkingCue(w, '思考中…')
-    const src = readSrc('ClarifyThinkingRow.vue')
-    expect(src).not.toMatch(/pages\.clarify\.outputting/)
-    expect(src).not.toMatch(/\.clarify-outputting/)
-    const english = mountRow({ variant: 'status', outputting: true }, 'en')
-    expect(english.get('[data-testid="clarify-busy-status"]').text()).toBe('Thinking…')
-    expect(english.text()).not.toContain('Writing')
+    expect(row.attributes('data-state')).toBe('outputting')
+    expect(row.classes()).toContain('clarify-outputting')
+    expect(row.classes()).not.toContain('clarify-thinking')
+    expect(row.text()).toBe('输出中')
+    expect(w.find('[data-testid="thinking-lamp"]').exists()).toBe(false)
+    expect(w.find('[data-testid="thinking-sheen"]').exists()).toBe(false)
+    expect(readSrc('ClarifyThinkingRow.vue')).toMatch(/\.clarify-outputting \{ color: rgb\(var\(--c-txt3\)\); \}/)
     w.unmount()
-    english.unmount()
   })
 
   it('scopes timeline geometry to the thinking tail and keeps the shared 8px default', () => {
     const row = readSrc('ClarifyThinkingRow.vue')
     expect(row).toContain('.clarify-thinking { padding-inline: 4px; }')
     expect(row).toContain('.clarify-thinking :deep(.thinking-busy) { gap: 6px; }')
-    expect(row).not.toMatch(/clarify-outputting/)
+    expect(row).not.toMatch(/\.clarify-outputting[^\n]*padding/)
     expect(row).not.toMatch(/clarify-busy-placeholder[^\n]*clarify-thinking/)
 
     const css = readSrc('ThinkingBusyCue.vue')
@@ -110,7 +105,7 @@ describe('ThinkingBusyCue', () => {
     expect(shared).not.toMatch(/gap:\s*6px/)
   })
 
-  it('gate message streaming keeps the thinking lamp, including after a later tool', async () => {
+  it('gate thinking branches use the same cue, and outputting stays accent text', async () => {
     const waiting = mountGate({ thinking: true })
     expectThinkingCue(waiting, '思考中…')
     expect(waiting.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
@@ -121,28 +116,14 @@ describe('ThinkingBusyCue', () => {
     expectThinkingCue(waiting, '思考中…')
 
     await waiting.setProps({ streamText: '正文开始了' })
-    const streaming = waiting.get('[data-testid="gate-busy-status"]')
-    expect(streaming.text()).toBe('思考中…')
-    expectThinkingCue(waiting, '思考中…')
-    expect(waiting.get('[data-testid="gate-react-message"]').text()).toContain('正文开始了')
-    expect(waiting.get('[data-testid="gate-stream-caret"]').exists()).toBe(true)
-    expect(waiting.get('[data-testid="gate-react-thought"]').attributes('open')).toBeUndefined()
-    expect(waiting.text()).not.toContain('输出中')
-    expect(readSrc('GateReactStreamPanel.vue')).not.toMatch(/pages\.clarify\.outputting/)
+    const outputting = waiting.get('[data-testid="gate-busy-status"]')
+    expect(outputting.text()).toBe('输出中')
+    expect(outputting.find('.text-accent-2').exists()).toBe(true)
+    expect(outputting.find('[data-testid="thinking-lamp"]').exists()).toBe(false)
+    expect(outputting.find('[data-testid="thinking-sheen"]').exists()).toBe(false)
 
-    await waiting.setProps({
-      streamThought: '先看边界\n再查调用',
-      streamTools: [{ title: 'Read', status: 'running' }],
-    })
-    expect(waiting.get('[data-testid="gate-busy-status"]').text()).toBe('思考中…')
-    expect(waiting.get('[data-testid="thinking-lamp"]').exists()).toBe(true)
-    expect(waiting.get('[data-testid="gate-react-message"]').text()).toContain('正文开始了')
-    expect(waiting.text()).not.toContain('输出中')
-
-    const english = mountGate({ thinking: true, streamText: 'Hello' }, 'en')
-    expect(english.get('[data-testid="gate-busy-status"]').text()).toBe('Thinking…')
+    const english = mountGate({ thinking: true }, 'en')
     expectThinkingCue(english, 'Thinking…')
-    expect(english.get('[data-testid="gate-busy-status"]').text()).not.toContain('Writing')
     waiting.unmount()
     english.unmount()
   })

@@ -26,8 +26,6 @@ services:
     environment:
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
-      GRASP_DB_DRIVER: sqlite
-      GRASP_BLOBS_ROOT: /app/data/blobs
       GRASP_PROFILES_ROOT: /app/data/profiles
       # 沙箱镜像:留空则由网关(SBGW_IMAGE / config.local.yaml)选默认镜像;设了值则
       # 作为“每次创建”的镜像覆盖随请求发给网关。团队内网镜像等场景可在 .env 里填。
@@ -43,15 +41,6 @@ services:
       # 渠道凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
       # .env 里设了就会覆盖 YAML;未设则走配置文件。
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}
-      GRASP_STORAGE_DRIVER: ${GRASP_STORAGE_DRIVER:-}
-      GRASP_S3_ENDPOINT: ${GRASP_S3_ENDPOINT:-}
-      GRASP_S3_REGION: ${GRASP_S3_REGION:-}
-      GRASP_S3_BUCKET: ${GRASP_S3_BUCKET:-}
-      GRASP_S3_PREFIX: ${GRASP_S3_PREFIX:-}
-      GRASP_S3_ACCESS_KEY_ID: ${GRASP_S3_ACCESS_KEY_ID:-}
-      GRASP_S3_SECRET_ACCESS_KEY: ${GRASP_S3_SECRET_ACCESS_KEY:-}
-      GRASP_S3_SESSION_TOKEN: ${GRASP_S3_SESSION_TOKEN:-}
-      GRASP_S3_PATH_STYLE: ${GRASP_S3_PATH_STYLE:-}
       # 可选:GitHub OAuth App 的 Client ID(勾选 Enable Device Flow),开启「用 GitHub 登录」。
       GRASP_GITHUB_OAUTH_CLIENT_ID: ${GRASP_GITHUB_OAUTH_CLIENT_ID:-}
       # 应用预览 noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
@@ -129,15 +118,6 @@ services:
       - server
       - gateway
     restart: unless-stopped
-
-  objectstore:
-    extends:
-      file: compose.objectstore.yaml
-      service: objectstore
-    profiles: [local-storage]
-    volumes:
-      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.devdata/objectstore}/data:/data
-      - ${GRASP_LOCAL_OBJECTSTORE_DIR:-./.devdata/objectstore}/iam.json:/etc/grasp-storage/iam.json:ro
 
 volumes:
   go-mod-cache:

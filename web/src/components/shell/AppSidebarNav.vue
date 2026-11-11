@@ -6,7 +6,7 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { isBoardSectionPath, isHomeSectionPath, isRunsSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { isNodeConversationPath, nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
@@ -23,19 +23,20 @@ import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { isAutoProcessNode, keepRowOrder, listSidebarLiveRuns, mergeRunRows, pinRunId, sidebarAutoNodeName, sidebarLandedOnHuman, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
+import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarLandedOnHuman, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
 import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
+  decideSidebarFlight,
   isSidebarConfirmWindowHeld,
   isSidebarRunDismissed,
   readSidebarHandoff,
+  SIDEBAR_FLIGHT_MS,
   sidebarHandoffEpoch,
   sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
-import { notifyRecentActivity, onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -48,10 +49,8 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { isSoloActive, isSoloEnded, useSoloSessions } from '@/lib/solo/useSoloSessions'
-import { soloErrorText } from '@/lib/solo/soloErrors'
+import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { SoloSession } from '@/lib/api/apiTypes'
-import SidebarSectionHeading from './SidebarSectionHeading.vue'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { isSectionCollapsed, toggleSection } from '@/lib/shared/sidebarSections'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
@@ -59,7 +58,7 @@ import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 
-const { t, te, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -80,9 +79,8 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
-const changingSoloEnvironments = soloStore.environmentChanges
-const soloCollapsed = computed(() => isSectionCollapsed('solo'))
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
+const autoCollapsed = computed(() => isSectionCollapsed('auto'))
 const queuedCollapsed = computed(() => isSectionCollapsed('queued'))
 const navRoot = ref<HTMLElement | null>(null)
 
@@ -96,17 +94,8 @@ function pendingNodeLabel(it: InboxItem): string {
   return it.type === 'gate' ? it.title : it.label
 }
 
-function rowSaveLabel(it: InboxItem): string {
-  const run = runningById.value.get(it.runId)
-  if (!run) return ''
-  const display = runDisplayStatus(run)
-  if (display !== 'saving' && display !== 'save_failed') return ''
-  return t(`common.status.${display}`)
-}
 function pendingTooltip(it: InboxItem): string {
   const name = rowTitle(it)
-  const save = rowSaveLabel(it)
-  if (save) return name ? `${name} · ${save}` : save
   const node = pendingNodeLabel(it).trim()
   return node ? `${name} · ${node}` : name
 }
@@ -118,7 +107,7 @@ const pendingItems = computed(() => {
 })
 const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.runId)))
 
-/** Unfinished runs for「工作流」and「排队中」, including a workspace save that has not finished. */
+/** Unfinished runs (queued / running / waiting_human) for「正在执行」「自动过程」「排队中」. */
 const runningRuns = ref<Run[]>([])
 const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
 /** A row is named after its run: the run's own title wins over whatever the pending item carries. */
@@ -165,17 +154,22 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
       dropCarriedRows(controller)
       return
     }
-    // Solo sessions are resident sandboxes; active ones fill「正在执行」.
+    // Solo sessions are resident sandboxes, but active ones belong in the
+    // same「正在执行」section as workflow runs.
     void soloStore.refresh()
-    const items = await listSidebarLiveRuns(
-      (params) => api.listRuns(params),
-      { signal: controller.signal },
-    )
-    if (runningRequest !== controller) {
+    const result = await api.listRuns({
+      page: 1,
+      pageSize: 50,
+      status: RUNNING_RUN_STATUSES,
+      sort: 'last_activity',
+      order: 'desc',
+      signal: controller.signal,
+    })
+    if (runningRequest !== controller || !Array.isArray(result?.items)) {
       dropCarriedRows(controller)
       return
     }
-    runningRuns.value = items
+    runningRuns.value = result.items
     carriedRows.value = []
   } catch {
     // Keep the last unfinished list. Placeholders from a read that did not
@@ -194,7 +188,7 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
 
 /** Run order last shown; see keepRowOrder. */
 let shownRunOrder: string[] = []
-/** Group last painted for each run. A confirm window freezes a row that was waiting on a person. */
+/** Group last painted for each run. A confirm window freezes a row that was in 正在执行. */
 let paintedGroups = new Map<string, SidebarRunGroup>()
 const pendingRows = computed(() => {
   const rows = mergeRunRows(pendingItems.value, runningRuns.value, activeInboxKey.value)
@@ -246,9 +240,9 @@ const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === i
 type RowGroup = 'running' | 'auto' | 'queued' | 'left'
 function rowGroup(runId: string): RowGroup {
   if (isSidebarRunDismissed(runId)) return 'left'
-  // This confirm's window is still up. Keep the row painted as waiting on a person,
-  // even when the handoff or the snapshot already says automatic. A row already
-  // painted as automatic is not this handoff and must not be pulled back.
+  // This confirm's window is still up. Keep the row where it was painted in 正在执行,
+  // even when the handoff or the snapshot already says 自动过程. A row already
+  // painted in 自动过程 is not this handoff and must not be pulled back.
   if (isSidebarConfirmWindowHeld(runId) && paintedGroups.get(runId) !== 'auto') return 'running'
   const run = runningById.value.get(runId)
   if (run?.status === 'queued') return 'queued'
@@ -264,13 +258,14 @@ function autoNodeName(it: InboxItem): string {
   if (rowGroup(it.runId) !== 'auto') return ''
   return sidebarAutoNodeName(runningById.value.get(it.runId), readSidebarHandoff(it.runId))
 }
-const isWorkflowGroup = (group: RowGroup | undefined): group is SidebarRunGroup => group === 'running' || group === 'auto'
-const workflowPendingRows = computed(() => pendingRows.value.filter((it) => isWorkflowGroup(rowGroups.value.get(it.runId))))
+const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
+const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
 const queuedPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'queued'))
-const orderedWorkflowRows = computed(() => orderWithPins(workflowPendingRows.value, (it) => it.runId, runPins.value))
+const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
+const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
 const orderedQueuedRows = computed(() => orderWithPins(queuedPendingRows.value, (it) => it.runId, runPins.value))
 /**
- * Active Solo sandboxes sit in「正在执行」; every executing workflow run, waiting or automatic, sits in「工作流」.
+ * Active Solo sandboxes share the same running section as workflow runs.
  * Ordered by start time (newest first) so activity never reshuffles the rows.
  */
 const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
@@ -280,17 +275,23 @@ const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
   return diff || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }))
 const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
-const soloSectionCount = computed(() => orderedSoloRows.value.length)
-const runningSectionCount = computed(() => orderedWorkflowRows.value.length)
+const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
 
 type SidebarSectionEntry =
   | { kind: 'run'; key: string; row: InboxItem }
   | { kind: 'solo'; key: string; session: SoloSession }
 const runEntry = (row: InboxItem): SidebarSectionEntry => ({ kind: 'run', key: row.runId, row })
 const soloEntry = (session: SoloSession): SidebarSectionEntry => ({ kind: 'solo', key: soloRowKey(session), session })
+/** One pin order across workflow and Solo rows, so a pinned row of either kind sits above every unpinned one. */
+const runningEntries = computed(() => orderWithPins(
+  [...humanPendingRows.value.map(runEntry), ...soloRows.value.map(soloEntry)],
+  (e) => e.key,
+  [...runPins.value, ...soloPins.value],
+))
+const autoSectionCount = computed(() => orderedAutoRows.value.length)
 const queuedSectionCount = computed(() => orderedQueuedRows.value.length)
 
-type RunSectionId = 'solo' | 'running' | 'queued'
+type RunSectionId = 'running' | 'auto' | 'queued'
 const runSections = computed(() => {
   const sections: Array<{
     id: RunSectionId
@@ -299,25 +300,11 @@ const runSections = computed(() => {
     toggleTestId: string
     rowsTestId: string
     labelKey: string
-    icon: 'run-live' | 'workflow' | 'queue'
+    icon: 'run-live' | 'arrow-flow' | 'queue'
     count: number
     collapsed: boolean
     entries: SidebarSectionEntry[]
   }> = []
-  if (soloSectionCount.value > 0) {
-    sections.push({
-      id: 'solo',
-      testId: 'nav-solo-running',
-      headingTestId: 'nav-solo-heading',
-      toggleTestId: 'nav-solo-toggle',
-      rowsTestId: 'nav-solo-rows',
-      labelKey: 'nav.runningRuns',
-      icon: 'run-live',
-      count: soloSectionCount.value,
-      collapsed: soloCollapsed.value,
-      entries: orderedSoloRows.value.map(soloEntry),
-    })
-  }
   if (runningSectionCount.value > 0) {
     sections.push({
       id: 'running',
@@ -325,11 +312,25 @@ const runSections = computed(() => {
       headingTestId: 'nav-running-heading',
       toggleTestId: 'nav-running-toggle',
       rowsTestId: 'nav-running-rows',
-      labelKey: 'nav.workflows',
-      icon: 'workflow',
+      labelKey: 'nav.runningRuns',
+      icon: 'run-live',
       count: runningSectionCount.value,
       collapsed: runningCollapsed.value,
-      entries: orderedWorkflowRows.value.map(runEntry),
+      entries: runningEntries.value,
+    })
+  }
+  if (autoSectionCount.value > 0) {
+    sections.push({
+      id: 'auto',
+      testId: 'nav-auto-process',
+      headingTestId: 'nav-auto-heading',
+      toggleTestId: 'nav-auto-toggle',
+      rowsTestId: 'nav-auto-rows',
+      labelKey: 'nav.autoProcess',
+      icon: 'arrow-flow',
+      count: autoSectionCount.value,
+      collapsed: autoCollapsed.value,
+      entries: orderedAutoRows.value.map(runEntry),
     })
   }
   if (queuedSectionCount.value > 0) {
@@ -358,18 +359,8 @@ function soloRowTitle(session: SoloSession): string {
 }
 
 function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
-  if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return 'spin'
   if (session.status === 'starting') return 'spin'
-  // A stopped environment keeps its place in 正在执行, but the row end is the
-  // stop mark even when the session is still flagged busy.
-  if (session.status === 'stopped') return null
   return session.busy ? 'pulse' : null
-}
-
-/** Stop square only after the environment has settled. Closing, stopping and resuming keep their phase mark. */
-function soloRowShowsStop(session: SoloSession): boolean {
-  if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return false
-  return session.status === 'stopped'
 }
 
 function isSoloRowActive(session: SoloSession): boolean {
@@ -377,7 +368,6 @@ function isSoloRowActive(session: SoloSession): boolean {
 }
 
 function onSoloRow(session: SoloSession) {
-  if (suppressPendingClick.value || editingKey.value) return
   void router.push(`/solo/${encodeURIComponent(session.id)}`)
   onNavigate()
 }
@@ -391,8 +381,6 @@ const MENU_WIDTH_BLOCKED = 280
 const MENU_CHROME = 8
 const MENU_ROW_HEIGHT = 32
 const MENU_MARGIN = 8
-/** Wrapped note under a disabled delete-session item. The menu width is MENU_WIDTH_BLOCKED. */
-const SOLO_DELETE_REASON_HEIGHT = 96
 
 const editingKey = ref<string | null>(null)
 const renameDraft = ref('')
@@ -400,22 +388,9 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 const editEpoch = ref(0)
 const suppressPendingClick = ref(false)
-let rowClickReleaseTimer: number | undefined
-type MenuTarget = { kind: 'run' | 'solo' | 'history-run'; key: string; x: number; y: number }
+type MenuTarget = { kind: 'run' | 'solo'; key: string; x: number; y: number }
 const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
-const menuHistoryRun = ref<Run | null>(null)
-const historyRunById = ref(new Map<string, Run>())
-/** Local title kept until a later history read catches up or brings a newer name. */
-type HistoryTitleOverride = { title: string; previous: string; at: number }
-const historyTitleOverrides = ref<Record<string, HistoryTitleOverride>>({})
-const dismissedHistoryRunIds = ref<string[]>([])
-const dismissedHistorySoloIds = ref<string[]>([])
-const historyRunTitles = computed(() => {
-  const overrides: Record<string, string> = {}
-  for (const [id, item] of Object.entries(historyTitleOverrides.value)) overrides[id] = item.title
-  return { ...pendingRunTitles.value, ...overrides }
-})
 
 type RowPress = { key: string; x: number; y: number; timer: number }
 let rowPress: RowPress | null = null
@@ -428,35 +403,7 @@ const menuItem = computed(() => {
 const menuSolo = computed(() => {
   const key = menu.value?.key
   if (!key || menu.value?.kind !== 'solo') return null
-  return soloStore.sessions.value.find((it) => soloRowKey(it) === key) ?? null
-})
-const menuSoloActive = computed(() => !!menuSolo.value && isSoloActive(menuSolo.value))
-const menuSoloEnded = computed(() => !!menuSolo.value && isSoloEnded(menuSolo.value))
-const menuSoloClosing = computed(() => !!menuSolo.value && soloStore.closing.value.has(menuSolo.value.id))
-const menuSoloBound = computed(() => !!(menuSolo.value?.sandboxId || menuSolo.value?.sandbox?.id))
-const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && menuSoloBound.value)
-/** The local request, or the server still converging on the requested state. */
-function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | null {
-  const local = soloStore.environmentChanges.value.get(session.id)
-  if (local === 'stopping' && (session.status === 'stopped' || session.status === 'closed')) return null
-  if (local) return local
-  const sandbox = session.sandbox
-  if (!sandbox || session.status === 'closed') return null
-  const halted = sandbox.status === 'stopped' || sandbox.status === 'exited'
-  if (sandbox.desiredState === 'stopped' && session.status !== 'stopped' && !halted) return 'stopping'
-  if (sandbox.desiredState === 'running' && session.status === 'starting' && halted) return 'resuming'
-  return null
-}
-const menuSoloEnvironmentDisabled = computed(() => {
-  const session = menuSolo.value
-  return !session || menuSoloClosing.value || soloStore.environmentChanges.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
-})
-const menuSoloEnvironmentLabel = computed(() => {
-  const session = menuSolo.value
-  const local = session && soloStore.environmentChanges.value.get(session.id)
-  if (local) return t(`pages.solo.environment.${local}`)
-  if (session?.status === 'stopped') return t('pages.solo.environment.resume')
-  return t(session?.sandbox?.desiredState === 'stopped' ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop')
+  return soloStore.active.value.find((it) => soloRowKey(it) === key) ?? null
 })
 const menuPinned = computed(() => {
   if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
@@ -469,26 +416,7 @@ function setRenameInput(el: unknown) {
 
 function closeMenu() {
   menu.value = null
-  menuHistoryRun.value = null
 }
-
-function soloEnvironmentBound(session: SoloSession): boolean {
-  return !!(session.sandboxId || session.sandbox?.id)
-}
-
-function displayedHistoryTitle(run: Run): string {
-  return displayRunTitle(historyRunTitles.value[run.id] ?? run.title) || run.workflowName || run.id
-}
-
-const historyEditingRunId = computed(() => (
-  editingKey.value?.startsWith('history:') ? editingKey.value.slice('history:'.length) : null
-))
-const historyEditingSoloId = computed(() => {
-  const key = editingKey.value
-  if (!key?.startsWith('solo:')) return null
-  const session = soloStore.sessions.value.find((item) => soloRowKey(item) === key)
-  return session && isSoloEnded(session) ? session.id : null
-})
 
 function shareLinkState(it: InboxItem): string | undefined {
   if (!('shareLink' in it) || !it.shareLink) return undefined
@@ -511,62 +439,21 @@ function pendingMenuHeight(it: InboxItem): number {
 }
 
 function openMenu(it: InboxItem, x: number, y: number) {
-  if (editingKey.value || deleteTarget.value) return
+  if (editingKey.value) return
   const height = pendingMenuHeight(it)
   const width = !isRunOnlyRow(it) && shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menuHistoryRun.value = null
   menu.value = { kind: 'run', key: it.runId, x: left, y: top }
 }
 
 function openSoloMenu(session: SoloSession, x: number, y: number) {
-  if (editingKey.value || deleteTarget.value) return
-  const active = isSoloActive(session)
-  const bound = soloEnvironmentBound(session)
-  const release = !active && session.status === 'closed' && bound
-  const deleteReason = !active && bound
-  const width = deleteReason ? MENU_WIDTH_BLOCKED : MENU_WIDTH
-  const workspaceRows = worktreeMode.value ? 0 : 1 + (active ? 1 : Number(release))
-  const rows = (active ? 2 : 1) + workspaceRows + (active ? 0 : 1)
-  const separators = (active && !worktreeMode.value ? 1 : 0) + (active ? 0 : 1)
-  const height = MENU_CHROME + rows * MENU_ROW_HEIGHT + separators * 9 + (deleteReason ? SOLO_DELETE_REASON_HEIGHT : 0)
+  if (editingKey.value) return
+  const width = MENU_WIDTH
+  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menuHistoryRun.value = null
   menu.value = { kind: 'solo', key: soloRowKey(session), x: left, y: top }
-}
-
-function openHistoryMenu(run: Run, x: number, y: number) {
-  if (editingKey.value || deleteTarget.value) return
-  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT + 9
-  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - MENU_WIDTH))
-  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menuHistoryRun.value = run
-  menu.value = { kind: 'history-run', key: run.id, x: left, y: top }
-}
-
-function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
-  const session = menuSolo.value
-  if (!session || worktreeMode.value || (panel === 'release' && (!menuSoloRelease.value || menuSoloClosing.value))) return
-  closeMenu()
-  const path = `/solo/${encodeURIComponent(session.id)}`
-  const query = { ...(route.path === path ? route.query : {}), workspace: panel }
-  if (route.path === path) void router.replace({ path, query })
-  else void router.push({ path, query })
-  onNavigate()
-}
-
-async function onMenuSoloEnvironment() {
-  const session = menuSolo.value
-  if (!session || !menuSoloActive.value || worktreeMode.value || menuSoloEnvironmentDisabled.value) return
-  const phase = session.status === 'stopped' ? 'resuming' : 'stopping'
-  closeMenu()
-  try {
-    await soloStore.changeEnvironment(session.id, phase, () => (phase === 'resuming' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id)))
-  } catch (cause) {
-    toast.error(soloErrorText(cause, t, te, locale.value))
-  }
 }
 
 const menuShareVisible = computed(
@@ -591,6 +478,8 @@ function clearRowPress() {
   if (!rowPress) return
   window.clearTimeout(rowPress.timer)
   window.removeEventListener('pointermove', onRowPressMove)
+  window.removeEventListener('pointerup', onRowPressEnd)
+  window.removeEventListener('pointercancel', onRowPressEnd)
   rowPress = null
 }
 
@@ -606,59 +495,29 @@ function onRowPressMove(event: PointerEvent) {
 
 function onRowPressEnd() {
   clearRowPress()
-  if (!suppressPendingClick.value) return
-  window.clearTimeout(rowClickReleaseTimer)
-  // Keep suppressing while the finger is held, then cover compatibility clicks.
-  rowClickReleaseTimer = window.setTimeout(() => { suppressPendingClick.value = false }, 400)
 }
 
-function startRowPress(event: PointerEvent, key: string, open: (x: number, y: number) => void) {
+function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
   if (event.pointerType === 'mouse' || editingKey.value) return
   clearRowPress()
+  const key = it.runId
   const timer = window.setTimeout(() => {
     if (!rowPress || rowPress.key !== key) return
     const x = rowPress.x
     const y = rowPress.y
-    window.clearTimeout(rowClickReleaseTimer)
     suppressPendingClick.value = true
+    window.setTimeout(() => {
+      suppressPendingClick.value = false
+    }, 400)
     clearRowPress()
-    if (!editingKey.value) open(x, y)
+    const row = pendingRows.value.find((item) => item.runId === key)
+    if (!row || editingKey.value) return
+    openMenu(row, x, y)
   }, LONG_PRESS_MS)
   rowPress = { key, x: event.clientX, y: event.clientY, timer }
   window.addEventListener('pointermove', onRowPressMove)
-}
-
-function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
-  startRowPress(event, it.runId, (x, y) => {
-    const row = pendingRows.value.find(item => item.runId === it.runId)
-    if (row) openMenu(row, x, y)
-  })
-}
-
-function onSoloPointerDown(event: PointerEvent, session: SoloSession) {
-  startRowPress(event, soloRowKey(session), (x, y) => {
-    const row = soloStore.sessions.value.find(item => item.id === session.id)
-    if (row) openSoloMenu(row, x, y)
-  })
-}
-
-function onHistoryRunPointerDown(event: PointerEvent, run: Run) {
-  startRowPress(event, `history:${run.id}`, (x, y) => {
-    const current = historyRunById.value.get(run.id)
-    if (current) openHistoryMenu(current, x, y)
-  })
-}
-
-function onSoloHistoryClick(event: MouseEvent) {
-  if (!suppressPendingClick.value) return
-  event.preventDefault()
-  event.stopPropagation()
-}
-
-function onHistoryRunClick(event: MouseEvent) {
-  if (!suppressPendingClick.value) return
-  event.preventDefault()
-  event.stopPropagation()
+  window.addEventListener('pointerup', onRowPressEnd)
+  window.addEventListener('pointercancel', onRowPressEnd)
 }
 
 function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
@@ -677,38 +536,10 @@ function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
   openSoloMenu(session, event.clientX, event.clientY)
 }
 
-function onHistoryRunContextMenu(event: MouseEvent, run: Run) {
-  event.preventDefault()
-  event.stopPropagation()
-  if (editingKey.value) return
-  clearRowPress()
-  openHistoryMenu(run, event.clientX, event.clientY)
-}
-
-function onSoloMenuKeydown(event: KeyboardEvent, session: SoloSession) {
-  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-  event.preventDefault()
-  if (editingKey.value) return
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  openSoloMenu(session, rect.left + 12, rect.bottom)
-  void nextTick(() => menuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
-}
-
-function onHistoryRunMenuKeydown(event: KeyboardEvent, run: Run) {
-  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-  event.preventDefault()
-  if (editingKey.value) return
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  openHistoryMenu(run, rect.left + 12, rect.bottom)
-  void nextTick(() => menuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
-}
-
 function onDocMouseDown(event: MouseEvent) {
   if (!menu.value) return
   const target = event.target
   if (target instanceof Node && menuEl.value?.contains(target)) return
-  // Touch release can synthesize a mouse down on the row that opened the menu.
-  if (suppressPendingClick.value && target instanceof Element && target.closest('[data-testid="nav-pending-row"], [data-testid="sidebar-recent-solo"], [data-testid="sidebar-recent-run"]')) return
   closeMenu()
 }
 
@@ -853,115 +684,17 @@ function onMenuPin() {
 }
 
 function onMenuRename() {
-  if (menuHistoryRun.value) {
-    void beginHistoryRename(menuHistoryRun.value)
-    return
-  }
   if (menuSolo.value) {
     const s = menuSolo.value
     closeMenu()
     renameDraft.value = s.title || ''
     editingKey.value = soloRowKey(s)
-    void nextTick(() => {
-      const el = renameInput.value
-      if (!el) return
-      el.focus()
-      const end = el.value.length
-      el.setSelectionRange(end, end)
-    })
+    void nextTick(() => renameInput.value?.focus())
     return
   }
   const it = menuItem.value
   if (!it) return
   void beginRename(it)
-}
-
-async function beginHistoryRename(run: Run) {
-  if (saving.value) return
-  closeMenu()
-  editingKey.value = `history:${run.id}`
-  renameDraft.value = displayedHistoryTitle(run)
-  await nextTick()
-  const el = renameInput.value
-  if (!el) return
-  el.focus()
-  const end = el.value.length
-  el.setSelectionRange(end, end)
-}
-
-async function commitHistoryRename() {
-  const key = editingKey.value
-  if (saving.value || !key?.startsWith('history:')) return
-  const runId = key.slice('history:'.length)
-  const run = historyRunById.value.get(runId)
-  if (!run) {
-    cancelEdit()
-    return
-  }
-  const next = renameDraft.value.trim()
-  const prev = displayedHistoryTitle(run)
-  if (next === prev) {
-    cancelEdit()
-    return
-  }
-  if (!next) {
-    toast.error(t('nav.pendingNameEmpty'))
-    refocusRename()
-    return
-  }
-  if ([...next].length > RUN_TITLE_MAX) {
-    toast.error(t('nav.pendingNameTooLong'))
-    refocusRename()
-    return
-  }
-  const epoch = editEpoch.value
-  saving.value = true
-  try {
-    const saved = await api.updateRunTitle(runId, next)
-    const title = saved.title?.trim() || next
-    const previous = historyTitleOverrides.value[runId]?.title ?? run.title?.trim() ?? ''
-    historyTitleOverrides.value = {
-      ...historyTitleOverrides.value,
-      [runId]: { title, previous, at: Date.now() },
-    }
-    patchRunTitle(runId, title)
-    runningRuns.value = runningRuns.value.map((r) => (r.id === runId ? { ...r, title } : r))
-    carriedRows.value = carriedRows.value.map((r) => (r.runId === runId ? { ...r, runTitle: title } : r))
-    if (epoch !== editEpoch.value) return
-    editingKey.value = null
-    renameDraft.value = ''
-    notifyRecentActivity()
-  } catch {
-    if (epoch !== editEpoch.value) return
-    toast.error(t('nav.pendingRenameFailed'))
-    refocusRename()
-  } finally {
-    if (epoch === editEpoch.value) saving.value = false
-  }
-}
-
-function onHistoryRenameBlur() {
-  const key = editingKey.value
-  window.setTimeout(() => {
-    if (saving.value || editingKey.value !== key) return
-    if (document.activeElement === renameInput.value) return
-    if (key?.startsWith('history:')) void commitHistoryRename()
-    else if (key?.startsWith('solo:')) {
-      const session = soloStore.sessions.value.find((item) => soloRowKey(item) === key)
-      if (session && isSoloEnded(session)) void commitSoloRename(session)
-    }
-  }, 0)
-}
-
-function onHistoryRenameCommit() {
-  if (editingKey.value?.startsWith('history:')) {
-    void commitHistoryRename()
-    return
-  }
-  if (editingKey.value?.startsWith('solo:')) {
-    const session = soloStore.sessions.value.find((item) => soloRowKey(item) === editingKey.value)
-    if (session && isSoloEnded(session)) void commitSoloRename(session)
-  }
 }
 
 function preservedListFilters(): Record<string, string> {
@@ -978,102 +711,12 @@ function onMenuWorkflowView() {
   const it = menuItem.value
   if (!it) return
   closeMenu()
-  openRunCanvas(it.runId)
-}
-
-function onMenuHistoryWorkflowView() {
-  const run = menuHistoryRun.value
-  if (!run) return
-  closeMenu()
-  openRunCanvas(run.id)
-}
-
-function openRunCanvas(runId: string) {
   const query: Record<string, string> = { ...preservedListFilters(), view: 'canvas' }
-  const path = runDetailPath(runId)
+  const path = runDetailPath(it.runId)
   const location = { path, query }
   if (route.path === path) void router.replace(location)
   else void router.push(location)
   onNavigate()
-}
-
-type HistoryDeleteTarget = { kind: 'run'; run: Run } | { kind: 'solo'; session: SoloSession }
-const deleteTarget = ref<HistoryDeleteTarget | null>(null)
-const deletingHistory = ref(false)
-const deleteHistoryError = ref('')
-
-function onMenuDeleteHistoryRun() {
-  const run = menuHistoryRun.value
-  if (!run || deletingHistory.value) return
-  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'cancelled') return
-  closeMenu()
-  deleteHistoryError.value = ''
-  deleteTarget.value = { kind: 'run', run }
-}
-
-function onMenuDeleteSolo() {
-  const session = menuSolo.value
-  if (!session || !menuSoloEnded.value || deletingHistory.value || soloEnvironmentBound(session)) return
-  closeMenu()
-  deleteHistoryError.value = ''
-  deleteTarget.value = { kind: 'solo', session }
-}
-
-function closeHistoryDelete() {
-  if (deletingHistory.value) return
-  deleteTarget.value = null
-  deleteHistoryError.value = ''
-}
-
-function mapDeleteRunError(e: unknown): string {
-  const status = (e as { status?: number })?.status
-  const msg = e instanceof Error ? e.message : String(e || '')
-  if (status === 404 || /not found/i.test(msg)) return t('pages.runDetail.deleteErrorNotFound')
-  if (status === 409 || /cannot delete run/i.test(msg)) return t('pages.runDetail.deleteErrorNotDeletable')
-  return msg || t('pages.runDetail.deleteErrorGeneric')
-}
-
-async function confirmHistoryDelete() {
-  const target = deleteTarget.value
-  if (!target || deletingHistory.value) return
-  deletingHistory.value = true
-  deleteHistoryError.value = ''
-  try {
-    if (target.kind === 'run') {
-      const run = target.run
-      await api.deleteRun(run.id)
-      dismissedHistoryRunIds.value = [...dismissedHistoryRunIds.value, run.id]
-      deleteTarget.value = null
-      toast.success(t('pages.runList.deleteSuccess'))
-      notifyRecentActivity()
-      if (recentRunActive(run, route)) {
-        const qs = run.workflowId ? `?wf=${encodeURIComponent(run.workflowId)}` : ''
-        await router.push(`/runs${qs}`)
-        onNavigate()
-      }
-    } else {
-      const session = target.session
-      if (soloEnvironmentBound(session)) {
-        deleteHistoryError.value = t('nav.historySoloDeleteBlocked')
-        return
-      }
-      await api.deleteSoloSession(session.id)
-      dismissedHistorySoloIds.value = [...dismissedHistorySoloIds.value, session.id]
-      soloStore.remove(session.id)
-      deleteTarget.value = null
-      toast.success(t('nav.historySoloDeleted'))
-      if (route.path === `/solo/${encodeURIComponent(session.id)}`) {
-        await router.push('/dashboard')
-        onNavigate()
-      }
-    }
-  } catch (e) {
-    deleteHistoryError.value = target.kind === 'run'
-      ? mapDeleteRunError(e)
-      : (soloErrorText(e, t, te, locale.value) || t('nav.historySoloDeleteFailed'))
-  } finally {
-    deletingHistory.value = false
-  }
 }
 
 function pushConversation(runId: string, nodeId?: string, extra?: Record<string, string>) {
@@ -1091,15 +734,43 @@ function onMenuShare() {
 }
 
 const cancelTarget = ref<InboxItem | null>(null)
+const soloCloseTarget = ref<SoloSession | null>(null)
 const cancellingRun = ref(false)
 const cancelRunError = ref('')
 
 function onMenuCancel() {
+  if (menuSolo.value) {
+    const s = menuSolo.value
+    closeMenu()
+    soloCloseTarget.value = s
+    return
+  }
   const it = menuItem.value
   if (!it || cancellingRun.value) return
   closeMenu()
   cancelRunError.value = ''
   cancelTarget.value = it
+}
+
+function closeSoloConfirm() {
+  if (cancellingRun.value) return
+  soloCloseTarget.value = null
+}
+
+async function confirmCloseSolo() {
+  const target = soloCloseTarget.value
+  if (!target || cancellingRun.value) return
+  cancellingRun.value = true
+  try {
+    const saved = await api.closeSoloSession(target.id)
+    soloStore.upsert(saved)
+    soloCloseTarget.value = null
+    toast.success(t('pages.solo.header.close'))
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : t('nav.pendingRenameFailed'))
+  } finally {
+    cancellingRun.value = false
+  }
 }
 
 function closeCancelConfirm() {
@@ -1170,7 +841,7 @@ async function confirmCancelRun() {
 watch(pendingRows, (rows) => {
   if (menu.value?.kind === 'run' && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
   if (!editingKey.value) return
-  if (editingKey.value.startsWith('solo:') || editingKey.value.startsWith('history:')) return
+  if (editingKey.value.startsWith('solo:')) return
   if (rows.some((it) => it.runId === editingKey.value)) return
   editEpoch.value++
   editingKey.value = null
@@ -1178,54 +849,14 @@ watch(pendingRows, (rows) => {
   saving.value = false
 })
 
-watch(() => soloStore.sessions.value, (sessions) => {
-  if (menu.value?.kind === 'solo' && !sessions.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
+watch(soloRows, (rows) => {
+  if (menu.value?.kind === 'solo' && !rows.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
   if (!editingKey.value?.startsWith('solo:')) return
-  if (sessions.some((s) => soloRowKey(s) === editingKey.value)) return
+  if (rows.some((s) => soloRowKey(s) === editingKey.value)) return
   editingKey.value = null
   renameDraft.value = ''
   saving.value = false
-}, { deep: true })
-
-function reconcileHistoryTitleOverrides(runs: Run[]) {
-  const current = historyTitleOverrides.value
-  if (!Object.keys(current).length) return
-  const next = { ...current }
-  let changed = false
-  for (const run of runs) {
-    const override = next[run.id]
-    if (!override) continue
-    const incoming = run.title?.trim() ?? ''
-    if (!incoming) continue
-    if (incoming === override.title) {
-      delete next[run.id]
-      changed = true
-      continue
-    }
-    // A read that still has the name we replaced may be the poll that started
-    // before the rename. A later activity time means the title really changed again.
-    if (incoming === override.previous) {
-      const activity = Date.parse(run.lastActivityAt ?? '')
-      if (!Number.isFinite(activity) || activity <= override.at) continue
-    }
-    delete next[run.id]
-    changed = true
-  }
-  if (changed) historyTitleOverrides.value = next
-}
-
-function onHistoryRuns(runs: Run[]) {
-  historyRunById.value = new Map(runs.map((run) => [run.id, run]))
-  reconcileHistoryTitleOverrides(runs)
-  if (menu.value?.kind === 'history-run' && !historyRunById.value.has(menu.value.key)) closeMenu()
-  if (!editingKey.value?.startsWith('history:')) return
-  const id = editingKey.value.slice('history:'.length)
-  if (historyRunById.value.has(id)) return
-  editEpoch.value++
-  editingKey.value = null
-  renameDraft.value = ''
-  saving.value = false
-}
+})
 
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
   if (!isRunOnlyRow(it)) return null
@@ -1276,9 +907,9 @@ function onPendingRow(it: InboxItem) {
     suppressPendingClick.value = false
     return
   }
-  // An automatic row always opens the live conversation, including a visit that has
+  // 「自动过程」always opens the live conversation, including a visit that has
   // not started and a confirmed handoff the snapshot has not caught up to.
-  // A row waiting on a person still opens that node's own chat. Right-click stays on the menu.
+  // 「正在执行」still opens that node's own chat. Right-click stays on the menu.
   const auto = rowGroup(it.runId) === 'auto'
   if (auto || isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
@@ -1314,8 +945,6 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
   document.addEventListener('visibilitychange', onDocumentVisibility)
-  window.addEventListener('pointerup', onRowPressEnd)
-  window.addEventListener('pointercancel', onRowPressEnd)
 })
 onBeforeUnmount(() => {
   navAlive = false
@@ -1324,9 +953,9 @@ onBeforeUnmount(() => {
   offRunActivity()
   runningRequest?.abort()
   clearRowPress()
-  window.clearTimeout(rowClickReleaseTimer)
-  window.removeEventListener('pointerup', onRowPressEnd)
-  window.removeEventListener('pointercancel', onRowPressEnd)
+  takeFlightMotion()
+  for (const timer of flightTimers.values()) window.clearTimeout(timer)
+  flightTimers.clear()
   document.removeEventListener('mousedown', onDocMouseDown)
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('visibilitychange', onDocumentVisibility)
@@ -1343,7 +972,6 @@ watch(
 function isActive(to: string) {
   if (to === '/dashboard') return isHomeSectionPath(route.path)
   if (to === '/board') return isBoardSectionPath(route.path)
-  if (to === '/runs') return isRunsSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 
@@ -1360,6 +988,132 @@ function prefersReducedMotion(): boolean {
     typeof window !== 'undefined' &&
     !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
   )
+}
+
+const rowRects = new Map<string, DOMRect>()
+const flights = ref<Record<string, { kind: 'in' | 'back'; landing: 'row' | 'heading' }>>({})
+const flightGhost = ref<{
+  runId: string
+  title: string
+  kind: 'in' | 'back'
+  landing: 'row' | 'heading'
+  style: Record<string, string>
+} | null>(null)
+const flightGhostEl = ref<HTMLElement | null>(null)
+const flightTimers = new Map<string, number>()
+/** Bumped to drop a move that was scheduled but not yet painted. */
+let flightMotion = 0
+const flightFrames: number[] = []
+
+function takeFlightMotion() {
+  flightMotion += 1
+  for (const id of flightFrames) cancelAnimationFrame(id)
+  flightFrames.length = 0
+  return flightMotion
+}
+
+function queueFlightFrame(motion: number, cb: () => void) {
+  const id = requestAnimationFrame(() => {
+    const at = flightFrames.indexOf(id)
+    if (at >= 0) flightFrames.splice(at, 1)
+    if (motion !== flightMotion) return
+    cb()
+  })
+  flightFrames.push(id)
+}
+
+function rowFlight(runId: string) {
+  return flights.value[runId]?.kind
+}
+function rowFlightLanding(runId: string) {
+  return flights.value[runId]?.landing
+}
+function rowFlightHidden(runId: string): boolean {
+  return flightGhost.value?.runId === runId && flights.value[runId]?.landing === 'row'
+}
+
+function captureRowRects() {
+  rowRects.clear()
+  const root = navRoot.value
+  if (!root) return
+  for (const el of root.querySelectorAll<HTMLElement>('[data-testid="nav-pending-row"]')) {
+    if (el.dataset.kind === 'solo') continue
+    const key = el.dataset.key
+    if (!key) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) rowRects.set(key, rect)
+  }
+}
+
+function clearFlightVisual(runId: string) {
+  if (!(runId in flights.value) && flightGhost.value?.runId !== runId) return
+  const next = { ...flights.value }
+  delete next[runId]
+  flights.value = next
+  if (flightGhost.value?.runId === runId) flightGhost.value = null
+}
+
+function scheduleFlightClear(runId: string) {
+  const prev = flightTimers.get(runId)
+  if (prev) window.clearTimeout(prev)
+  flightTimers.set(runId, window.setTimeout(() => {
+    flightTimers.delete(runId)
+    clearFlightVisual(runId)
+  }, SIDEBAR_FLIGHT_MS))
+}
+
+function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'heading') {
+  const motion = takeFlightMotion()
+  flights.value = { ...flights.value, [runId]: { kind, landing } }
+  scheduleFlightClear(runId)
+  const from = rowRects.get(runId)
+  const root = navRoot.value
+  if (!from || !root) return
+  const headingId = kind === 'in' ? 'nav-auto-heading' : 'nav-running-heading'
+  const target = landing === 'heading'
+    ? root.querySelector<HTMLElement>(`[data-testid="${headingId}"]`)
+    : root.querySelector<HTMLElement>(`[data-key="${runId}"]`)
+  const to = target?.getBoundingClientRect()
+  if (!to || to.width < 1 || to.height < 1) return
+  const dx = to.left - from.left
+  const dy = to.top - from.top
+  if (landing === 'row' && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+  const it = pendingRows.value.find((row) => row.runId === runId)
+  // Position only. Transform stays on the element so a later render cannot
+  // snap it to the destination before the origin has been painted.
+  flightGhost.value = {
+    runId,
+    title: it ? rowTitle(it) : '',
+    kind,
+    landing,
+    style: {
+      left: `${from.left}px`,
+      top: `${from.top}px`,
+      width: `${from.width}px`,
+      height: `${from.height}px`,
+    },
+  }
+  void nextTick(() => {
+    if (motion !== flightMotion) return
+    const el = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+    if (!el || flightGhost.value?.runId !== runId) return
+    // Commit the origin, then let that frame paint before writing the end
+    // transform. A nextTick write still lands before the first paint, so the
+    // transition has nothing to interpolate from.
+    el.style.transition = 'none'
+    el.style.transform = 'translate3d(0px, 0px, 0px)'
+    void el.offsetHeight
+    queueFlightFrame(motion, () => {
+      queueFlightFrame(motion, () => {
+        const live = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+        if (!live || flightGhost.value?.runId !== runId || motion !== flightMotion) return
+        live.style.transition = `transform ${SIDEBAR_FLIGHT_MS}ms var(--ease-out-expo)`
+        void live.offsetHeight
+        live.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`
+        scheduleFlightClear(runId)
+      })
+    })
+  })
 }
 
 function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
@@ -1380,6 +1134,32 @@ function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
   clearSidebarHandoff(runId)
 }
 
+function cancelFlight(runId: string) {
+  const timer = flightTimers.get(runId)
+  if (timer) window.clearTimeout(timer)
+  flightTimers.delete(runId)
+  clearFlightVisual(runId)
+  takeFlightMotion()
+}
+
+/** Move a row when its visible group changes. A confirm window still on screen keeps that run in 正在执行. */
+function navIsShown(): boolean {
+  const root = navRoot.value
+  if (!root?.isConnected) return false
+  let el: HTMLElement | null = root
+  while (el) {
+    if (typeof window.getComputedStyle === 'function' && window.getComputedStyle(el).display === 'none') return false
+    el = el.parentElement
+  }
+  return true
+}
+
+function headingIsFlightTarget(id: RunSectionId): boolean {
+  return Object.values(flights.value).some((flight) =>
+    flight.landing === 'heading' && ((id === 'auto' && flight.kind === 'in') || (id === 'running' && flight.kind === 'back')),
+  )
+}
+
 function settleRunGroups() {
   const listed = new Set(pendingRows.value.map((it) => it.runId))
   for (const runId of sidebarTrackedRunIds()) {
@@ -1390,26 +1170,53 @@ function settleRunGroups() {
     if (mark?.confirmedAuto && !isSidebarRunDismissed(runId)) continue
     clearSidebarHandoff(runId)
   }
+  // Queued rows stay out of the painted groups, so moving in or out of 排队中 is a plain place.
   const next = new Map<string, SidebarRunGroup>()
-  for (const it of orderedWorkflowRows.value) {
-    const group = rowGroups.value.get(it.runId)
-    if (isWorkflowGroup(group)) next.set(it.runId, group)
+  for (const it of orderedHumanRows.value) next.set(it.runId, 'running')
+  for (const it of orderedAutoRows.value) next.set(it.runId, 'auto')
+  if (!navIsShown()) {
+    paintedGroups = next
+    return
   }
+  const reduced = prefersReducedMotion()
   for (const [runId, group] of next) {
+    const previous = paintedGroups.get(runId) ?? null
     releaseHandoffIfHuman(runId, group)
     const mark = readSidebarHandoff(runId)
+    const run = runningById.value.get(runId)
+    // A fly-in that has not finished is cancelled when the handoff is taken back.
+    // A finished automatic row that later waits still flies back.
+    const retractingFlyIn = previous === 'auto' && group === 'running' && flights.value[runId]?.kind === 'in'
+    if (retractingFlyIn) cancelFlight(runId)
+    const decision = decideSidebarFlight({
+      previous,
+      next: group,
+      handoffArmed: !!mark,
+      confirmedAuto: !!mark && (mark.confirmedAuto || isAutoProcessNode(run?.currentNode)),
+      reducedMotion: reduced,
+      targetCollapsed: isSectionCollapsed(group),
+      confirmWindowHeld: isSidebarConfirmWindowHeld(runId),
+    })
+    if (!retractingFlyIn && (decision.type === 'fly-in' || decision.type === 'fly-back')) {
+      beginFlight(runId, decision.type === 'fly-in' ? 'in' : 'back', decision.landing)
+    }
     // Keep the claim until the list itself shows the automatic node, so the row does not jump back.
-    if (group === 'auto' && mark && isAutoProcessNode(runningById.value.get(runId)?.currentNode)) consumeSidebarHandoff(runId)
+    if (group === 'auto' && mark && isAutoProcessNode(run?.currentNode)) consumeSidebarHandoff(runId)
+  }
+  for (const runId of paintedGroups.keys()) {
+    if (!next.has(runId) && flights.value[runId]) cancelFlight(runId)
   }
   paintedGroups = next
 }
 
 const placementKey = computed(() => {
   void sidebarHandoffEpoch.value
-  const workflow = orderedWorkflowRows.value.map((it) => `${it.runId}\t${rowGroups.value.get(it.runId)}\t${autoNodeName(it)}`).join('\n')
+  const human = orderedHumanRows.value.map((it) => it.runId).join('\n')
+  const auto = orderedAutoRows.value.map((it) => `${it.runId}\t${autoNodeName(it)}`).join('\n')
   const queued = orderedQueuedRows.value.map((it) => it.runId).join('\n')
-  return `${workflow}\u0000${queued}`
+  return `${human}\u0000${auto}\u0000${queued}`
 })
+watch(placementKey, () => { captureRowRects() }, { flush: 'pre' })
 watch(placementKey, () => { settleRunGroups() }, { flush: 'post', immediate: true })
 
 /** First paint (direct /agents etc.) must not play the push animation. */
@@ -1523,15 +1330,21 @@ const settingsItems = computed(() => (
     </div>
 
     <div v-for="section in runSections" :key="section.id" class="sidebar-run-section mb-3" :data-testid="section.testId">
-      <SidebarSectionHeading
-        :icon="section.icon"
-        :label="t(section.labelKey)"
-        :collapsed="section.collapsed"
-        :count="section.count"
-        :toggle-test-id="section.toggleTestId"
-        :data-testid="section.headingTestId"
-        @toggle="toggleSection(section.id)"
-      />
+      <div class="sidebar-section-heading grasp-status-host px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3" :data-testid="section.headingTestId" :data-flight-target="headingIsFlightTarget(section.id) ? 'true' : undefined">
+        <button
+          type="button"
+          class="sidebar-section-label"
+          :data-testid="section.toggleTestId"
+          :aria-expanded="!section.collapsed"
+          :aria-label="t(section.collapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t(section.labelKey) })"
+          @click="toggleSection(section.id)"
+        >
+          <Icon :name="section.icon" :size="14" class="sidebar-section-icon" aria-hidden="true" />
+          <span>{{ t(section.labelKey) }}</span>
+          <Icon :interactive="false" name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': section.collapsed }" aria-hidden="true" />
+        </button>
+        <span class="sidebar-section-count">{{ section.count }}</span>
+      </div>
       <div v-show="!section.collapsed" class="sidebar-tree" :data-testid="section.rowsTestId">
       <div v-for="entry in section.entries" :key="entry.key" class="sidebar-tree-item">
         <template v-if="entry.kind === 'run'">
@@ -1591,12 +1404,14 @@ const settingsItems = computed(() => (
           v-hover-ink
           type="button"
           class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
-          :class="{ active: isPendingActive(entry.row) }"
+          :class="{ active: isPendingActive(entry.row), 'sidebar-flight-source': rowFlightHidden(entry.row.runId) }"
           data-testid="nav-pending-row"
           :data-key="entry.row.runId"
           :data-node-id="entry.row.nodeId"
-          :data-group="rowGroups.get(entry.row.runId)"
+          :data-section="section.id"
           :data-motion="rowMotion(entry.row) || undefined"
+          :data-flight="rowFlight(entry.row.runId)"
+          :data-flight-landing="rowFlightLanding(entry.row.runId)"
           :title="pendingTooltip(entry.row)"
           :aria-current="isPendingActive(entry.row) ? 'true' : undefined"
           @click="onPendingRow(entry.row)"
@@ -1614,8 +1429,7 @@ const settingsItems = computed(() => (
           </span>
           <span v-if="rowTitle(entry.row)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(entry.row) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
-          <span v-if="rowSaveLabel(entry.row)" class="nav-run-save-status min-w-0 truncate" data-testid="nav-run-save-status">{{ rowSaveLabel(entry.row) }}</span>
-          <span v-else-if="autoNodeName(entry.row)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(entry.row) }}</span>
+          <span v-if="autoNodeName(entry.row)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(entry.row) }}</span>
           <InboxMotionMark v-if="rowMotion(entry.row) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(entry.row) === 'pulse'" kind="pulse" />
           <template v-else>
@@ -1662,17 +1476,6 @@ const settingsItems = computed(() => (
         />
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
-        <Icon
-          v-else-if="soloRowShowsStop(entry.session)"
-          name="stop"
-          :size="14"
-          class="shrink-0 text-txt2"
-          :title="t('pages.solo.status.stopped')"
-          :aria-label="t('pages.solo.status.stopped')"
-          role="img"
-          aria-hidden="false"
-          data-testid="nav-solo-stopped"
-        />
       </div>
       <button
         v-else
@@ -1689,55 +1492,17 @@ const settingsItems = computed(() => (
         :aria-current="isSoloRowActive(entry.session) ? 'page' : undefined"
         @click="onSoloRow(entry.session)"
         @contextmenu="onSoloContextMenu($event, entry.session)"
-        @keydown="onSoloMenuKeydown($event, entry.session)"
-        @pointerdown="onSoloPointerDown($event, entry.session)"
       >
         <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
         <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(entry.session) }}</span>
-        <span v-if="soloStore.closing.value.has(entry.session.id)" class="shrink-0 text-[11px] text-txt3" data-testid="nav-solo-closing">{{ t('pages.solo.close.closing') }}</span>
-        <span v-else-if="soloEnvironmentPhase(entry.session)" class="shrink-0 text-[11px] text-txt3" role="status" data-testid="nav-solo-environment-phase">{{ t(`pages.solo.environment.${soloEnvironmentPhase(entry.session)}`) }}</span>
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
-        <Icon
-          v-else-if="soloRowShowsStop(entry.session)"
-          name="stop"
-          :size="14"
-          class="shrink-0 text-txt2"
-          :title="t('pages.solo.status.stopped')"
-          :aria-label="t('pages.solo.status.stopped')"
-          role="img"
-          aria-hidden="false"
-          data-testid="nav-solo-stopped"
-        />
       </button>
         </template>
       </div>
       </div>
     </div>
-    <SidebarWorkspaceLists v-if="workspaceLists"
-      :run-titles="historyRunTitles"
-      :dismissed-run-ids="dismissedHistoryRunIds"
-      :dismissed-solo-ids="dismissedHistorySoloIds"
-      :editing-run-id="historyEditingRunId"
-      :editing-solo-id="historyEditingSoloId"
-      :rename-draft="renameDraft"
-      :rename-saving="saving"
-      :rename-input-ref="setRenameInput"
-      @navigate="onNavigate"
-      @solo-contextmenu="onSoloContextMenu"
-      @solo-menu-keydown="onSoloMenuKeydown"
-      @solo-pointerdown="onSoloPointerDown"
-      @solo-click="onSoloHistoryClick"
-      @run-contextmenu="onHistoryRunContextMenu"
-      @run-menu-keydown="onHistoryRunMenuKeydown"
-      @run-pointerdown="onHistoryRunPointerDown"
-      @run-click="onHistoryRunClick"
-      @update:rename-draft="renameDraft = $event"
-      @rename-commit="onHistoryRenameCommit"
-      @rename-cancel="onRenameEscape"
-      @rename-blur="onHistoryRenameBlur"
-      @history-runs="onHistoryRuns"
-    />
+    <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" />
     </div>
     </Transition>
     </div>
@@ -1745,12 +1510,21 @@ const settingsItems = computed(() => (
   </nav>
   <Teleport to="body">
     <div
-      v-if="menu && (menuItem || menuSolo || menuHistoryRun)"
+      v-if="flightGhost"
+      ref="flightGhostEl"
+      class="sidebar-flight-ghost"
+      data-testid="nav-flight-ghost"
+      :data-flight="flightGhost.kind"
+      :data-landing="flightGhost.landing"
+      :style="flightGhost.style"
+    >{{ flightGhost.title }}</div>
+    <div
+      v-if="menu && (menuItem || menuSolo)"
       ref="menuEl"
       class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
       role="menu"
       data-testid="nav-pending-menu"
-      :style="{ left: `${menu.x}px`, top: `${menu.y}px`, width: menuSoloEnded && menuSoloBound ? `${MENU_WIDTH_BLOCKED}px` : undefined }"
+      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
       @mousedown.stop
       @click.stop
       @contextmenu.prevent
@@ -1767,18 +1541,6 @@ const settingsItems = computed(() => (
         <span>{{ t('nav.pendingWorkflowView') }}</span>
       </button>
       <button
-        v-if="menuHistoryRun"
-        type="button"
-        role="menuitem"
-        class="pending-row-menu__item"
-        data-testid="nav-pending-menu-workflow"
-        @click="onMenuHistoryWorkflowView"
-      >
-        <Icon name="workflow" :size="14" />
-        <span>{{ t('nav.pendingWorkflowView') }}</span>
-      </button>
-      <button
-        v-if="menuItem || menuSoloActive"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1789,7 +1551,6 @@ const settingsItems = computed(() => (
         <span>{{ menuPinned ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
-        v-if="menuItem || menuSolo || menuHistoryRun"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1799,21 +1560,6 @@ const settingsItems = computed(() => (
         <Icon name="edit" :size="14" />
         <span>{{ t('nav.pendingRename') }}</span>
       </button>
-      <template v-if="menuSolo && !worktreeMode">
-        <div v-if="menuSoloActive" class="pending-row-menu__separator" role="separator" />
-        <button type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-snapshots" @click="onMenuSoloWorkspace('snapshots')">
-          <Icon name="history" :size="14" />
-          <span>{{ t('workspaceSnapshots.title') }}</span>
-        </button>
-        <button v-if="menuSoloActive" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-environment" :disabled="menuSoloEnvironmentDisabled" :aria-busy="changingSoloEnvironments.has(menuSolo.id) || undefined" @click="onMenuSoloEnvironment">
-          <Icon :name="changingSoloEnvironments.has(menuSolo.id) ? 'spinner' : menuSolo.status === 'stopped' ? 'play' : 'stop'" :size="14" />
-          <span>{{ menuSoloEnvironmentLabel }}</span>
-        </button>
-        <button v-else-if="menuSoloRelease" type="button" role="menuitem" class="pending-row-menu__item" data-testid="nav-solo-menu-release" :disabled="menuSoloClosing" @click="onMenuSoloWorkspace('release')">
-          <Icon name="trash" :size="14" />
-          <span>{{ t('workspaceRelease.title') }}</span>
-        </button>
-      </template>
       <button
         v-if="menuShareVisible && menuItem"
         type="button"
@@ -1830,7 +1576,6 @@ const settingsItems = computed(() => (
         <span>{{ menuShareLabel }}</span>
       </button>
       <button
-        v-if="menuItem"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1839,37 +1584,6 @@ const settingsItems = computed(() => (
       >
         <Icon name="close" :size="14" />
         <span>{{ t('nav.pendingCancelRun') }}</span>
-      </button>
-      <div v-if="menuHistoryRun || menuSoloEnded" class="pending-row-menu__separator" role="separator" />
-      <p
-        v-if="menuSoloEnded && menuSoloBound"
-        id="nav-solo-delete-reason"
-        class="pending-row-menu__reason"
-        data-testid="nav-solo-menu-delete-reason"
-      >{{ t('nav.historySoloDeleteBlocked') }}</p>
-      <button
-        v-if="menuHistoryRun"
-        type="button"
-        role="menuitem"
-        class="pending-row-menu__item pending-row-menu__item--danger"
-        data-testid="nav-history-menu-delete"
-        @click="onMenuDeleteHistoryRun"
-      >
-        <Icon name="trash" :size="14" />
-        <span>{{ t('pages.runList.deleteRun') }}</span>
-      </button>
-      <button
-        v-if="menuSoloEnded"
-        type="button"
-        role="menuitem"
-        class="pending-row-menu__item pending-row-menu__item--danger"
-        data-testid="nav-solo-menu-delete"
-        :disabled="menuSoloBound"
-        :aria-describedby="menuSoloBound ? 'nav-solo-delete-reason' : undefined"
-        @click="onMenuDeleteSolo"
-      >
-        <Icon name="trash" :size="14" />
-        <span>{{ t('pages.solo.header.delete') }}</span>
       </button>
     </div>
   </Teleport>
@@ -1914,44 +1628,18 @@ const settingsItems = computed(() => (
     </template>
   </AppModal>
   <AppModal
-    :open="!!deleteTarget"
-    :title="deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloTitle') : t('pages.runDetail.deleteTitle')"
+    :open="!!soloCloseTarget"
+    :title="t('pages.solo.close.title')"
     :width="440"
-    close-on-esc
-    @close="closeHistoryDelete"
+    @close="closeSoloConfirm"
   >
     <div class="space-y-3 text-sm text-txt2">
-      <div class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">
-        <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />
-        {{ deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloWarning') : t('pages.runDetail.deleteWarning') }}
-      </div>
-      <p>{{ deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloNote') : t('pages.runList.deleteConfirm') }}</p>
-      <div
-        v-if="deleteHistoryError"
-        class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"
-        data-testid="nav-history-delete-error"
-      >
-        <Icon name="alert" :size="14" class="mt-0.5" />{{ deleteHistoryError }}
-      </div>
+      <p>{{ t('pages.solo.close.body') }}</p>
+      <p v-if="soloCloseTarget?.busy" class="text-[12px] text-warn">{{ t('pages.solo.close.busy') }}</p>
     </div>
     <template #footer>
-      <AppButton
-        variant="ghost"
-        data-testid="nav-history-delete-dismiss"
-        :disabled="deletingHistory"
-        @click="closeHistoryDelete"
-      >
-        {{ t('common.buttons.cancel') }}
-      </AppButton>
-      <AppButton
-        data-testid="nav-history-delete-confirm"
-        variant="danger"
-        icon="trash"
-        :disabled="deletingHistory"
-        @click="confirmHistoryDelete"
-      >
-        {{ deletingHistory ? t('common.buttons.deleting') : t('common.buttons.confirmDelete') }}
-      </AppButton>
+      <AppButton variant="ghost" :disabled="cancellingRun" @click="closeSoloConfirm">{{ t('common.buttons.cancel') }}</AppButton>
+      <AppButton variant="danger" icon="stop" :disabled="cancellingRun" @click="confirmCloseSolo">{{ t('pages.solo.close.confirm') }}</AppButton>
     </template>
   </AppModal>
 </template>
@@ -2042,6 +1730,64 @@ const settingsItems = computed(() => (
 .sidebar-workspace-nav .sidebar-run-section {
   margin-bottom: 24px;
 }
+.sidebar-workspace-nav .sidebar-section-heading {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sidebar-section-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  transition: color 160ms ease;
+}
+.sidebar-section-label:hover {
+  color: rgb(var(--c-txt));
+}
+.sidebar-section-icon {
+  flex: none;
+}
+.sidebar-section-chevron {
+  flex: none;
+  margin-left: -1px;
+  opacity: .7;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+.sidebar-section-label:hover .sidebar-section-chevron {
+  opacity: 1;
+}
+.sidebar-section-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-section-chevron {
+    transition: none;
+  }
+}
+.sidebar-section-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-txt) / .04);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 /* Buttons default to centered text. Pending titles start at the row edge.
    Weight stays 400 so the active nav rule (600) does not bold this title. */
 .nav-row-title {
@@ -2055,12 +1801,29 @@ const settingsItems = computed(() => (
   font-size: 11px;
   font-weight: 400;
 }
-.nav-run-save-status {
-  flex: none;
-  max-width: 42%;
-  color: rgb(var(--c-txt3));
-  font-size: 11px;
+.sidebar-flight-source {
+  visibility: hidden;
+  pointer-events: none;
+}
+.sidebar-flight-ghost {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: light-dark(#fff, rgb(var(--c-surface)));
+  color: rgb(var(--c-txt));
+  font-size: 13px;
   font-weight: 400;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgb(0 0 0 / .14);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-flight-ghost {
+    display: none;
+  }
 }
 .nav-row-title-skeleton {
   display: flex;
@@ -2146,17 +1909,6 @@ const settingsItems = computed(() => (
   cursor: pointer;
 }
 
-.pending-row-menu__separator { height: 1px; margin: 4px 8px; background: rgb(var(--c-line)); }
-
-.pending-row-menu__reason {
-  margin: 0;
-  padding: 2px 12px 8px;
-  color: rgb(var(--c-txt3));
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: normal;
-}
-
 .pending-row-menu__item:hover,
 .pending-row-menu__item:focus-visible {
   color: rgb(var(--c-txt));
@@ -2172,19 +1924,6 @@ const settingsItems = computed(() => (
 .pending-row-menu__item:disabled:hover,
 .pending-row-menu__item:disabled:focus-visible {
   color: rgb(var(--c-txt2));
-  background: transparent;
-}
-
-.pending-row-menu__item--danger,
-.pending-row-menu__item--danger:hover,
-.pending-row-menu__item--danger:focus-visible {
-  color: rgb(var(--c-err));
-}
-
-.pending-row-menu__item--danger:disabled,
-.pending-row-menu__item--danger:disabled:hover,
-.pending-row-menu__item--danger:disabled:focus-visible {
-  color: rgb(var(--c-err));
   background: transparent;
 }
 

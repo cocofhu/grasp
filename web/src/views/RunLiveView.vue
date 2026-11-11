@@ -8,7 +8,6 @@ import ReviewComposer from '@/components/run/ReviewComposer.vue'
 import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
-import WorkspaceSaveBanner from '@/components/run/WorkspaceSaveBanner.vue'
 import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import { useRunLive, type LiveChatSurface } from '@/lib/run/useRunLive'
 import { useI18n } from 'vue-i18n'
@@ -23,7 +22,6 @@ import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
  * the first User Message), streaming it if auto or as a chat you can answer
  * and 确认并流转 right here. A gate or the end of the run ends it in place.
  */
-const props = defineProps<{ history?: boolean }>()
 const route = useRoute()
 const { t } = useI18n()
 const runId = computed(() => String(route.params.id || ''))
@@ -41,7 +39,6 @@ const {
   stopping,
   ended,
   endState,
-  historyReady,
   task,
   mode,
   chatKind,
@@ -56,7 +53,7 @@ const {
   send,
   confirm,
   reload,
-} = useRunLive(runId, requestedNode, chatRef, { history: props.history })
+} = useRunLive(runId, requestedNode, chatRef)
 /**
  * Where the run is when the page ended in place, in the app's existing words:
  * a gate waiting 「X」人工审批 · 待审批 (the gate row title + the 待审批 label),
@@ -113,14 +110,6 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
             <AppInlineError :title="t('pages.runLive.loadFailed')" :message="''" retry-testid="run-live-retry" @retry="reload" />
           </div>
           <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <WorkspaceSaveBanner
-              v-if="run?.workspaceSave"
-              class="m-3 mb-0 shrink-0"
-              :run="run"
-              :save="run.workspaceSave"
-              :node-label="findGraphNode(run.nodes, run.workspaceSave.nodeId)?.label"
-              @retried="reload"
-            />
             <ArtifactLoadingPane v-if="loading && !nodeId" message-key="pages.runLive.loading" />
             <ReviewShell
               v-else
@@ -133,10 +122,9 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
               split-drawer
               remember-artifact-panel
             >
-              <template v-if="$slots.actions" #actions><slot name="actions" /></template>
               <template #stage>
                 <ReactArtifactStage
-                  :editable="!historyReady"
+                  editable
                   :artifacts="run?.artifacts || []"
                   :run-id="runId"
                   :run="run || undefined"
@@ -156,7 +144,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   v-model:annotations="annotations"
                   :turns="turns"
                   :done="ended"
-                  :active="!historyReady"
+                  :active="true"
                   :can-pass="mode === 'chat'"
                   :observe="mode === 'observe'"
                   :stopping="stopping"

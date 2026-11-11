@@ -2752,7 +2752,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     wrapper.unmount()
   })
 
-  it('busy C-tier: turn_begin placeholder, thought visible, message stays 思考中…, tool keeps placeholder', async () => {
+  it('busy C-tier: turn_begin placeholder, thought visible, message→输出中, tool keeps placeholder', async () => {
     breakpointMocks.isMobile.value = false
     apiMocks.listPreviewIssues.mockResolvedValue({
       issues: [
@@ -2815,9 +2815,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
       { kind: 'message', text: '旁路正文' },
     ])
     await flushPromises()
-    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).toContain('思考中')
-    expect(wrapper.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).not.toContain('输出中')
+    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).toContain('输出中')
     expect(wrapper.find('[data-testid="gate-react-stream"]').text()).toContain('旁路正文')
     expect(wrapper.find('[data-testid="gate-react-thought"]').text()).toContain('旁路思考内容')
 
@@ -3073,9 +3071,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="gate-react-stream"]').text()).toContain('续上的思考')
     expect(wrapper.find('[data-testid="gate-react-stream"]').text()).toContain('续上的正文')
-    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).toContain('思考中')
-    expect(wrapper.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).not.toContain('输出中')
+    expect(wrapper.find('[data-testid="gate-busy-status"]').text()).toContain('输出中')
     expect(wrapper.find('[data-testid="gate-react-thought"]').attributes('open')).toBeUndefined()
     expect(wrapper.find('[data-testid="gate-stream-caret"]').exists()).toBe(true)
     wrapper.unmount()

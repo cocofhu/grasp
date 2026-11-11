@@ -58,22 +58,8 @@ func run(args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "Sandbox gateway .......... healthy")
 
-	session, err := startSandboxArtifactSession(ctx, opts.apiURL, opts.doctorToken)
-	if err != nil {
-		return fmt.Errorf("prepare demo sandbox: %w", err)
-	}
-	sessionCleaned := false
-	defer func() {
-		if !sessionCleaned {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			_ = cleanupArtifactSession(cleanupCtx, opts.apiURL, opts.doctorToken, session)
-		}
-	}()
-
 	client := sandbox.NewGatewayClient(opts.gatewayURL, opts.gatewayAPIKey)
 	created, err := client.Create(ctx, sandbox.GWCreateRequest{
-		Env: session.Bootstrap.Env,
 		Labels: map[string]string{
 			"approving.doctor": "true",
 		},
@@ -102,7 +88,7 @@ func run(args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "Demo sandbox ............. passed")
 
-	if err := verifyArtifactSession(ctx, opts.apiURL, session); err != nil {
+	if err := verifyArtifactIsolation(ctx, opts.apiURL, opts.doctorToken); err != nil {
 		return fmt.Errorf("artifact isolation: %w", err)
 	}
 	_, _ = fmt.Fprintln(out, "Artifact isolation ....... verified")
@@ -111,10 +97,6 @@ func run(args []string, out io.Writer) error {
 		return fmt.Errorf("delete demo sandbox: %w", err)
 	}
 	cleaned = true
-	if err := cleanupArtifactSession(ctx, opts.apiURL, opts.doctorToken, session); err != nil {
-		return fmt.Errorf("cleanup artifact session: %w", err)
-	}
-	sessionCleaned = true
 	_, _ = fmt.Fprintln(out, "Cleanup .................. passed")
 	return nil
 }
@@ -178,13 +160,12 @@ func checkHTTP(ctx context.Context, url, token string) error {
 }
 
 type artifactSession struct {
-	ID           string                   `json:"id"`
-	RunA         string                   `json:"run_a"`
-	TokenA       string                   `json:"token_a"`
-	RunB         string                   `json:"run_b"`
-	TokenB       string                   `json:"token_b"`
-	CleanupToken string                   `json:"cleanup_token"`
-	Bootstrap    *sandbox.DoctorBootstrap `json:"bootstrap,omitempty"`
+	ID           string `json:"id"`
+	RunA         string `json:"run_a"`
+	TokenA       string `json:"token_a"`
+	RunB         string `json:"run_b"`
+	TokenB       string `json:"token_b"`
+	CleanupToken string `json:"cleanup_token"`
 }
 
 type rpcResponse struct {
@@ -209,17 +190,7 @@ func verifyArtifactIsolation(ctx context.Context, apiURL, doctorToken string) er
 			_ = cleanupArtifactSession(cleanupCtx, apiURL, doctorToken, session)
 		}
 	}()
-	if err := verifyArtifactSession(ctx, apiURL, session); err != nil {
-		return err
-	}
-	if err := cleanupArtifactSession(ctx, apiURL, doctorToken, session); err != nil {
-		return err
-	}
-	cleaned = true
-	return nil
-}
 
-func verifyArtifactSession(ctx context.Context, apiURL string, session artifactSession) error {
 	name := "doctor-" + uuid.NewString() + ".txt"
 	const content = "grasp-doctor"
 	write, status, err := callMCP(ctx, apiURL, session.RunA, session.TokenA, 1, "write_artifact", map[string]any{
@@ -240,23 +211,15 @@ func verifyArtifactSession(ctx context.Context, apiURL string, session artifactS
 	if err != nil || status != http.StatusOK || !read.Result.IsError {
 		return errors.New("artifact was visible in another run")
 	}
+	if err := cleanupArtifactSession(ctx, apiURL, doctorToken, session); err != nil {
+		return err
+	}
+	cleaned = true
 	return nil
 }
 
 func startArtifactSession(ctx context.Context, apiURL, doctorToken string) (artifactSession, error) {
-	return startArtifactSessionMode(ctx, apiURL, doctorToken, false)
-}
-
-func startSandboxArtifactSession(ctx context.Context, apiURL, doctorToken string) (artifactSession, error) {
-	return startArtifactSessionMode(ctx, apiURL, doctorToken, true)
-}
-
-func startArtifactSessionMode(ctx context.Context, apiURL, doctorToken string, withSandbox bool) (artifactSession, error) {
-	endpoint := apiURL + "/_internal/doctor/artifact-sessions"
-	if withSandbox {
-		endpoint += "?sandbox=true"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL+"/_internal/doctor/artifact-sessions", nil)
 	if err != nil {
 		return artifactSession{}, err
 	}
@@ -275,29 +238,9 @@ func startArtifactSessionMode(ctx context.Context, apiURL, doctorToken string, w
 		return artifactSession{}, err
 	}
 	if session.ID == "" || session.RunA == "" || session.TokenA == "" || session.RunB == "" || session.TokenB == "" || session.CleanupToken == "" {
-		cleanupRejectedSession(apiURL, doctorToken, session)
 		return artifactSession{}, errors.New("start artifact session returned incomplete credentials")
 	}
-	if withSandbox {
-		if session.Bootstrap == nil {
-			cleanupRejectedSession(apiURL, doctorToken, session)
-			return artifactSession{}, errors.New("start artifact session returned no sandbox bootstrap")
-		}
-		if err := session.Bootstrap.Validate(); err != nil {
-			cleanupRejectedSession(apiURL, doctorToken, session)
-			return artifactSession{}, err
-		}
-	}
 	return session, nil
-}
-
-func cleanupRejectedSession(apiURL, doctorToken string, session artifactSession) {
-	if session.ID == "" || strings.ContainsAny(session.ID, "/\\?#") || session.CleanupToken == "" {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_ = cleanupArtifactSession(ctx, apiURL, doctorToken, session)
 }
 
 func cleanupArtifactSession(ctx context.Context, apiURL, doctorToken string, session artifactSession) error {

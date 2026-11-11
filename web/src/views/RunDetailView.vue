@@ -4,9 +4,6 @@ import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import WorkspaceSaveBanner from '@/components/run/WorkspaceSaveBanner.vue'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
-import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySegmented.vue'
 import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
@@ -233,9 +230,6 @@ const {
   onLiveLogBootSession,
 } = useRunDetail()
 const { worktreeMode } = useExecutionMode()
-function nodeLabelOf(id: string) {
-  return findGraphNode(run.value?.nodes, id)?.label || id
-}
 
 const artifactPanelRef = ref<InstanceType<typeof ArtifactPanel> | null>(null)
 const artifactEditor = useArtifactEditor(() => run.value?.id)
@@ -335,7 +329,7 @@ onMounted(() => {
               class="chip shrink-0"
               :title="t('common.format.pinnedVersionTitle')"
             >v{{ run.workflowVersion }}</span>
-            <StatusPill data-testid="status-pill" :status="runDisplayStatus(run)" class="shrink-0" />
+            <StatusPill data-testid="status-pill" :status="run.status" class="shrink-0" />
             <button
               v-if="priorityEditable"
               ref="priorityBadgeRef"
@@ -447,14 +441,6 @@ onMounted(() => {
             class="mt-1 inline-block text-accent-2 underline underline-offset-[3px]"
           >{{ t('pages.runDetail.failureBanner.codexLoginAction') }}</RouterLink>
         </div>
-        <WorkspaceSaveBanner
-          v-if="run.workspaceSave"
-          class="mt-3 ml-11"
-          :run="run"
-          :save="run.workspaceSave"
-          :node-label="nodeLabelOf(run.workspaceSave.nodeId)"
-          @retried="loadRun(false, true)"
-        />
       </template>
     </header>
 

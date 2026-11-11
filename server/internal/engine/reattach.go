@@ -1,13 +1,9 @@
 package engine
 
 import (
-	"context"
-	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
-	"strconv"
 )
 
 // reattachInfo identifies an agent node that was mid-flight when the previous
@@ -39,9 +35,6 @@ type reattachInfo struct {
 // Queued runs, unfinished human dialogues, and terminal runs are left as they
 // are. Admission still goes through the existing queue.
 func (e *Engine) reconcileInterrupted() {
-	if err := e.executionCheck(context.Background(), ""); err != nil {
-		return
-	}
 	var running []models.StateRun
 	if err := e.db.Where("status = ?", "running").Order("id asc").Find(&running).Error; err != nil {
 		log.Error().Err(err).Msg("startup reconciliation: query running node states failed")
@@ -49,10 +42,6 @@ func (e *Engine) reconcileInterrupted() {
 	handled := map[string]bool{}
 	orphans := map[string]bool{}
 	for _, sr := range running {
-		if err := e.executionCheck(context.Background(), sr.RunID, executionlineage.Entity{Kind: executionlineage.EntityStateRun, ID: strconv.FormatUint(uint64(sr.ID), 10)}); err != nil {
-			continue
-		}
-
 		var run models.Run
 		if e.db.First(&run, "id = ?", sr.RunID).Error != nil || run.Status != "running" || handled[sr.RunID] {
 			e.failStateRun(sr.ID, sr.RunID)
@@ -63,17 +52,6 @@ func (e *Engine) reconcileInterrupted() {
 			// Taken over just before the restart: never adopt or re-run in
 			// auto; park it as a manual session (cold sandbox).
 			e.reconcileManualVisit(&run, sr)
-			handled[sr.RunID] = true
-			continue
-		}
-		if e.workspaceCheckpoints != nil && sr.NodeType == "agent" {
-			if name, ok := e.exactReattachSandbox(&run, sr); ok {
-				e.reserveReattach(sr, name)
-			} else if sr.WorkspaceCheckpointID == "" {
-				if err := e.parkUnknownWorkspaceVisit(sr); err != nil {
-					log.Warn().Err(err).Str("run_id", sr.RunID).Msg("interrupted provider outcome retained without replay")
-				}
-			}
 			handled[sr.RunID] = true
 			continue
 		}
@@ -90,11 +68,9 @@ func (e *Engine) reconcileInterrupted() {
 				Msg("startup reconciliation: agent sandbox adopted")
 			continue
 		}
-		logDB(e.executionMutation(context.Background(), sr.RunID, func(db *gorm.DB) *gorm.DB {
-			return db.Model(&models.StateRun{}).Where("id = ?", sr.ID).Updates(map[string]any{
-				"status": "cancelled",
-				"error":  "控制面重启，节点重新进入",
-			})
+		logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).Updates(map[string]any{
+			"status": "cancelled",
+			"error":  "控制面重启，节点重新进入",
 		}), sr.RunID, "reconcile state_run")
 		if e.enqueueAdmission(sr.RunID, sr.NodeID, true) {
 			handled[sr.RunID] = true
@@ -111,9 +87,6 @@ func (e *Engine) reconcileInterrupted() {
 	}
 	for i := range runs {
 		r := &runs[i]
-		if err := e.executionCheck(context.Background(), r.ID); err != nil {
-			continue
-		}
 		if handled[r.ID] {
 			continue
 		}
@@ -131,9 +104,6 @@ func (e *Engine) reconcileInterrupted() {
 	}
 	for i := range paused {
 		r := &paused[i]
-		if err := e.executionCheck(context.Background(), r.ID); err != nil {
-			continue
-		}
 		if handled[r.ID] {
 			continue
 		}
@@ -144,9 +114,6 @@ func (e *Engine) reconcileInterrupted() {
 	}
 
 	for id := range orphans {
-		if err := e.executionCheck(context.Background(), id); err != nil {
-			continue
-		}
 		if handled[id] {
 			continue
 		}
@@ -157,9 +124,7 @@ func (e *Engine) reconcileInterrupted() {
 		if r.Status == "completed" || r.Status == "failed" || r.Status == "cancelled" || r.Status == "queued" {
 			continue
 		}
-		logDB(e.executionMutation(context.Background(), id, func(db *gorm.DB) *gorm.DB {
-			return db.Model(&models.Run{}).Where("id = ?", id).UpdateColumn("status", "failed")
-		}), id, "reconcile run")
+		logDB(e.db.Model(&models.Run{}).Where("id = ?", id).UpdateColumn("status", "failed"), id, "reconcile run")
 		e.host.UnregisterRun(id)
 		log.Warn().Str("run_id", id).Msg("reconciled interrupted run on startup -> failed")
 	}
@@ -258,9 +223,7 @@ func (e *Engine) reopenAbandonedConfirm(run *models.Run) bool {
 			Order("id desc").First(&sr).Error; err != nil || sr.Status != "waiting_human" {
 			continue
 		}
-		res := e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-			return db.Model(&models.ReactConversation{}).Where("id = ? AND done = ?", conv.ID, true).Update("done", false)
-		})
+		res := e.db.Model(&models.ReactConversation{}).Where("id = ? AND done = ?", conv.ID, true).Update("done", false)
 		if res.Error != nil || res.RowsAffected == 0 {
 			continue
 		}
@@ -270,19 +233,16 @@ func (e *Engine) reopenAbandonedConfirm(run *models.Run) bool {
 		return false
 	}
 	if run.Status == "running" {
-		logDB(e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
-			return db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "running").Update("status", "waiting_human")
-		}), run.ID, "reopen confirm")
+		logDB(e.db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "running").
+			Update("status", "waiting_human"), run.ID, "reopen confirm")
 	}
 	return true
 }
 
 func (e *Engine) failStateRun(id uint, runID string) {
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.StateRun{}).Where("id = ?", id).Updates(map[string]any{
-			"status": "failed",
-			"error":  "服务重启中断,执行协程丢失,节点未收尾",
-		})
+	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", id).Updates(map[string]any{
+		"status": "failed",
+		"error":  "服务重启中断,执行协程丢失,节点未收尾",
 	}), runID, "reconcile state_run")
 }
 
@@ -325,10 +285,6 @@ func (e *Engine) ResumeInterrupted() {
 	e.pendingReattach = nil
 	e.reattachMu.Unlock()
 	for _, r := range pending {
-		if err := e.executionCheck(context.Background(), r.runID); err != nil {
-			e.sem.Release()
-			continue
-		}
 		go e.runReattached(r)
 	}
 }

@@ -266,7 +266,6 @@ func (h *Handlers) latestVisitTask(r models.Run, states []models.StateRun, nodeI
 
 func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
 	out := gin.H{
-		"pauseRequested": r.PauseRequested, "controlVersion": r.ControlVersion,
 		"id": r.ID, "workflowId": r.WorkflowID, "workflowName": r.WorkflowName,
 		"workflowVersion": r.WorkflowVersion,
 		"status":          r.Status, "trigger": r.Trigger, "startedAt": r.StartedAt,
@@ -280,17 +279,6 @@ func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
 		out["currentNodeLabel"] = currentNodeLabel
 	}
 	return out
-}
-
-// withWorkspaceSaves adds what runs paused between nodes are doing (saving the
-// workspace, or a failed save with its reason) so pages never just say paused.
-func (h *Handlers) withWorkspaceSaves(items []gin.H, runs []models.Run) {
-	saves := services.WorkspaceSaves(h.Runs.DB(), runs)
-	for i, r := range runs {
-		if save := saves[r.ID]; save != nil {
-			items[i]["workspaceSave"] = save
-		}
-	}
 }
 
 // runDetailDTO assembles the full run view (nodeRuns, gate, clarify,
@@ -407,11 +395,6 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	if h.Eng != nil {
 		projectReviewSessionsDTO(out, h.Eng, r.ID)
 		out["artifactEdit"] = h.Eng.ArtifactEditState(r.ID)
-	}
-	if h.Runs != nil {
-		if save := services.WorkspaceSaves(h.Runs.DB(), []models.Run{r})[r.ID]; save != nil {
-			out["workspaceSave"] = save
-		}
 	}
 	// Lift a Run-level failure reason for any failed run so the Web detail banner
 	// (and clients) can read a human message without opening a node. Successful

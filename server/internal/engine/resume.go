@@ -59,9 +59,6 @@ type resumeGateOpts struct {
 // ResumeGateAs is like ResumeGate but records the reviewer username on outputs
 // and audit. Empty reviewer → system + unattributable (no fabricated names).
 func (e *Engine) ResumeGateAs(runID, nodeID, action string, form map[string]any, reviewer string) error {
-	if err := e.checkRunNotPaused(runID); err != nil {
-		return err
-	}
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -71,9 +68,6 @@ func (e *Engine) ResumeGateAs(runID, nodeID, action string, form map[string]any,
 }
 
 func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]any, reviewer string, opts resumeGateOpts) error {
-	if err := e.checkRunNotPaused(runID); err != nil {
-		return err
-	}
 	c, err := e.loadCtx(runID)
 	if err != nil {
 		return err
@@ -107,7 +101,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 		}
 	}
 	gate.Resolved = true
-	logDB(e.executionSave(context.Background(), runID, &gate), runID, "resolve gate")
+	logDB(e.db.Save(&gate), runID, "resolve gate")
 
 	// Expose action, assign it to the configured global var,
 	// and leave through the edge whose sourceHandle is the action id.
@@ -141,7 +135,7 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 			// reviewer can retry instead of leaving "vars snapshotted / DB
 			// still open" half-success that falsely re-locks Pass.
 			gate.Resolved = false
-			logDB(e.executionSave(context.Background(), runID, &gate), runID, "rollback gate after preview-issue lifecycle failure")
+			logDB(e.db.Save(&gate), runID, "rollback gate after preview-issue lifecycle failure")
 			return lifeErr
 		}
 	}
@@ -374,9 +368,6 @@ func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
 }
 
 func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool, clientMessageID string, refs ...models.MessageReference) error {
-	if err := e.checkRunNotPaused(runID); err != nil {
-		return err
-	}
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -496,7 +487,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		// gate; reviewReply still owns the review wrap-up below.
 		if force && e.confirmStillWaiting(runID, nodeID, c.run.Status) {
 			conv.Done = false
-			logDB(e.executionSave(context.Background(), runID, &conv), runID, "reopen react for retry confirm")
+			logDB(e.db.Save(&conv), runID, "reopen react for retry confirm")
 			// The previous confirm did not finish this visit. Do not keep
 			// reporting the successor it guessed.
 			e.clearPendingAuto(c)
@@ -515,7 +506,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		refs, prompt := e.pinSyncReferences(runID, nodeID, refs, renderReviewHuman(humanText, annotations))
 		conv.Messages = append(conv.Messages, models.ReactMessage{Role: "human", Text: humanText, At: now,
 			Images: images, Annotations: annotations, References: refs})
-		logDB(e.executionSave(context.Background(), runID, &conv), runID, "save react human turn")
+		logDB(e.db.Save(&conv), runID, "save react human turn")
 		return e.reviewReply(c, node, &conv, prompt, images, true)
 	}
 
@@ -530,13 +521,13 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	humanMsg := models.ReactMessage{Role: "human", Text: humanText, At: now,
 		Images: images, Annotations: annotations, References: refs}
 	conv.Messages = append(conv.Messages, humanMsg)
-	logDB(e.executionSave(context.Background(), runID, &conv), runID, "save react human turn")
+	logDB(e.db.Save(&conv), runID, "save react human turn")
 
 	// Leave the pending inbox immediately (mirrors ResumeGate resolving before
 	// slow work): refresh/reopen must not resurface this item while wrap-up runs.
 	// Roll back Done when the agent stays open (questions / unfinished).
 	conv.Done = true
-	logDB(e.executionSave(context.Background(), runID, &conv), runID, "confirm leave pending (force)")
+	logDB(e.db.Save(&conv), runID, "confirm leave pending (force)")
 	// The wrap-up reply has not returned, so the successor has no running
 	// visit yet. Record it now when the positive outlet is already one
 	// automatic agent; the list reads this before rememberHandoffTarget.
@@ -560,7 +551,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		if t.Err != nil {
 			why = "reopen react after force chat error"
 		}
-		logDB(e.executionSave(context.Background(), runID, &conv), runID, why)
+		logDB(e.db.Save(&conv), runID, why)
 		e.clearPendingAuto(c)
 		// Early Done made pauseStillPending false, so the opening driver's
 		// finish("waiting_human") may have been skipped and the run left
@@ -581,7 +572,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		return errors.New("仍有待确认问题或收尾未完成，无法确认并流转")
 	}
 
-	logDB(e.executionSave(context.Background(), runID, &conv), runID, "finish react conversation")
+	logDB(e.db.Save(&conv), runID, "finish react conversation")
 
 	// Force wrap-up stays on this synchronous path, so its confirm round is
 	// recorded here rather than in the FIFO pump.
@@ -623,10 +614,8 @@ func (e *Engine) rememberHandoffTarget(c *execCtx, target string) {
 		return
 	}
 	e.setAdmissionTarget(c, target)
-	logDB(e.executionMutation(context.Background(), c.run.ID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.Run{}).Where("id = ?", c.run.ID).
-			Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints})
-	}), c.run.ID, "remember handoff target")
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
+		Select("Checkpoints").Updates(&models.Run{Checkpoints: c.run.Checkpoints}), c.run.ID, "remember handoff target")
 }
 
 // confirmStillWaiting reports that a force confirm has not finished this
@@ -661,11 +650,6 @@ func (e *Engine) confirmStillWaiting(runID, nodeID, runStatus string) bool {
 func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
-	}
-	if e.workspaceCheckpoints != nil {
-		if err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error { return e.workflowCheckpointPendingTx(tx, runID) }); err != nil {
-			return err
-		}
 	}
 	// Serialize with any other resume of this run so a double click can't spawn
 	// two drivers; the second caller observes the already-running status below.
@@ -732,9 +716,7 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// since mutated. Persisted to RunVariable so execute()'s fresh loadCtx picks
 	// it up. Skipped for nodes with no recorded entry snapshot.
 	if snap, ok := e.nodeStartVars(runID, nodeID); ok {
-		if err := e.restoreVars(c, snap); err != nil {
-			return err
-		}
+		e.restoreVars(c, snap)
 	}
 	// A cancelled/failed approve visit may have already delivered FirstMessage;
 	// release the latch so the fresh visit opened by this resume can claim again.
@@ -746,10 +728,6 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// loadCtx already re-restored the MCP token from the persisted Run.McpToken
 	// (finish() unregistered it on failure), so in-sandbox artifact writes
 	// authorize again once the run is admitted.
-	if e.workspaceCheckpoints != nil {
-		delete(c.run.Checkpoints, workspaceAutoRetryCheckpoint)
-		e.saveRunCheckpoints(c.run)
-	}
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "从失败位置继续"})
 	log.Info().Str("run_id", runID).Str("node_id", nodeID).Str("transition", "resume-from").Msg("run resumed from node")
 
@@ -781,32 +759,16 @@ func (e *Engine) nodeStartVars(runID, nodeID string) (map[string]any, bool) {
 // so a resumed node re-runs against the exact state it had at that time. Values
 // created by later nodes (not in the snapshot) are dropped; existing rows keep
 // their declared Type and just have their value rewound.
-func (e *Engine) restoreVars(c *execCtx, snap map[string]any) error {
-	ctx := context.Background()
-	var existing []models.RunVariable
-	if err := e.db.Select("id", "name", "type", "secret").Where("run_id = ?", c.run.ID).Find(&existing).Error; err != nil {
-		return err
+func (e *Engine) restoreVars(c *execCtx, snap map[string]any) {
+	c.vars = map[string]any{}
+	for k, v := range snap {
+		c.vars[k] = v
 	}
-	byName := map[string]models.RunVariable{}
-	for _, row := range existing {
-		byName[row.Name] = row
-	}
-	names := make([]string, 0, len(snap))
-	rows := make([]*executionRow, 0, len(snap))
-	for name, value := range snap {
-		row, ok := byName[name]
-		if !ok {
-			row = models.RunVariable{RunID: c.run.ID, Name: name, Type: inferType(value)}
+	err := e.db.Transaction(func(tx *gorm.DB) error {
+		names := make([]string, 0, len(snap))
+		for k := range snap {
+			names = append(names, k)
 		}
-		row.RunID, row.Value = c.run.ID, value
-		prepared, err := e.prepareExecutionRow(ctx, &row, !ok, nil, nil)
-		if err != nil {
-			return err
-		}
-		rows = append(rows, prepared)
-		names = append(names, name)
-	}
-	err := e.executionTransaction(ctx, c.run.ID, func(tx *gorm.DB) error {
 		del := tx.Where("run_id = ?", c.run.ID)
 		if len(names) > 0 {
 			del = del.Where("name NOT IN ?", names)
@@ -814,21 +776,22 @@ func (e *Engine) restoreVars(c *execCtx, snap map[string]any) error {
 		if err := del.Delete(&models.RunVariable{}).Error; err != nil {
 			return err
 		}
-		for _, row := range rows {
-			if err := row.write(tx, nil).Error; err != nil {
+		for k, v := range snap {
+			var rv models.RunVariable
+			if err := tx.Where("run_id = ? AND name = ?", c.run.ID, k).First(&rv).Error; err == nil {
+				rv.Value = v
+				if err := tx.Save(&rv).Error; err != nil {
+					return err
+				}
+			} else if err := tx.Create(&models.RunVariable{RunID: c.run.ID, Name: k, Type: inferType(v), Value: v}).Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		log.Error().Str("run_id", c.run.ID).Err(err).Msg("restore vars-at-that-time failed")
 	}
-	c.vars = map[string]any{}
-	for name, value := range snap {
-		c.vars[name] = value
-	}
-	return nil
 }
 
 // pickAutoResumeNode chooses the best node to resume when the caller omits
@@ -895,19 +858,6 @@ func (e *Engine) Cancel(runID string) error {
 			ab.AbortRun(runID)
 		}
 		return nil
-	}
-	if e.workspaceCheckpoints != nil {
-		var active []models.StateRun
-		if err := e.db.Select("id", "run_id", "node_id", "node_type", "iteration", "attempt", "provider_attempt", "workspace_checkpoint_id").Where("run_id = ? AND node_type = ? AND status IN ?", runID, "agent", []string{"running", "waiting_human"}).Find(&active).Error; err != nil {
-			return err
-		}
-		for _, state := range active {
-			if state.WorkspaceCheckpointID == "" {
-				if err := e.parkUnknownWorkspaceVisit(state); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	e.finish(runID, "cancelled")
 	// Drop the in-memory driver claim immediately so ResumeFrom is not blocked

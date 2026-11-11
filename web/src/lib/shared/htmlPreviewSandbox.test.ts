@@ -37,10 +37,10 @@ describe('createInstanceId', () => {
     vi.unstubAllGlobals()
   })
 
-  it('falls back to a v4 UUID when randomUUID is unavailable', () => {
+  it('returns hp- prefixed fallback when randomUUID is unavailable', () => {
     vi.stubGlobal('crypto', {})
 
-    expect(createInstanceId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(createInstanceId()).toMatch(/^hp-\d+-[a-z0-9]+$/)
 
     vi.unstubAllGlobals()
   })

@@ -1,6 +1,5 @@
 import { computed, reactive } from 'vue'
 import { api, type BrandSettings } from '@/lib/api/api'
-import { setWorkflowFeature } from './useWorkflowFeature'
 
 export const DEFAULT_PRODUCT_NAME = 'Grasp'
 
@@ -39,7 +38,6 @@ export async function loadBrandSettings() {
     .then((response) => {
       setBrandSettings(response.brand)
       setExecutionMode(response.execution_mode)
-      setWorkflowFeature(response.workflows)
       loaded = true
     })
     .catch(() => {

@@ -382,9 +382,14 @@ function turnParts(turn: ClarifyTurn): AgentPart[] {
 function waitingTurn(turn: ClarifyTurn): boolean {
   return !!turn.streaming && !turn.thought && !String(turn.text || '').trim() && !turn.parts?.length && !turn.tools?.length
 }
-/** A running transcript turn stays on 思考中…. Message text does not switch the tail. */
-function tailOutputting(_turn: ClarifyTurn): boolean {
-  return false
+function tailOutputting(turn: ClarifyTurn): boolean {
+  const parts = turn.parts || []
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]!
+    if (part.kind === 'tool') return false
+    if ((part.kind === 'message' || part.kind === 'thought') && part.text?.trim()) return part.kind === 'message'
+  }
+  return !!String(turn.text || '').trim()
 }
 const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role === 'agent'))
 </script>

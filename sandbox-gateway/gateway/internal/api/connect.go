@@ -48,7 +48,7 @@ func gatewayInfo(cfg *config.Config) gin.HandlerFunc {
 			"version": 2, "driver": cfg.Driver, "transport": tunnelProtocol,
 			"profiles":     cfg.Profiles,
 			"ports":        map[string]int{"session": cfg.Image.Ports.Session, "ide": cfg.Image.Ports.CodeServer, "ssh": cfg.Image.Ports.SSH, "cdp": cfg.Image.Ports.CDP, "novnc": cfg.Image.Ports.NoVNC},
-			"capabilities": gin.H{"stopMode": stopMode, "diskMode": diskMode, "coldConfiguration": cfg.Driver == "kubernetes"},
+			"capabilities": gin.H{"stopMode": stopMode, "diskMode": diskMode},
 		})
 	}
 }

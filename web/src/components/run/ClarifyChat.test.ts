@@ -2249,9 +2249,7 @@ describe('ClarifyChat', () => {
       )
       expect(wrapper.find('[data-testid="thought-summary-state"]').text()).not.toContain('已完成')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').text()).toContain('已核对完成')
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).not.toContain('输出中')
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
       wrapper.unmount()
     })
@@ -2322,13 +2320,12 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('turn_done removes 思考中… status while keeping thought+message', async () => {
+    it('turn_done removes 输出中 status while keeping thought+message', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
       const reply: Partial<RowInput>[] = [{ thought: '思考内容', text: '正文内容', streaming: true }]
       await liveTurn(wrapper, '请复审', reply)
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
-      expect(wrapper.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
 
       await endTurn(wrapper, '请复审', reply)
       expect(wrapper.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
@@ -2365,40 +2362,8 @@ describe('ClarifyChat', () => {
       // Only the human keeps its time; the running agent has a tail status instead.
       expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(1)
       const tail = wrapper.get('[data-turn-role="agent"] [data-testid="clarify-busy-status"]')
-      expect(tail.attributes('data-state')).toBe('thinking')
-      expect(tail.text()).toContain('思考中')
-      expect(tail.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(tail.text()).not.toContain('输出中')
-      wrapper.unmount()
-    })
-
-    it('after message text, a later tool or thought stays on 思考中… with the lamp', async () => {
-      const wrapper = mountChat({ draft: '请复审' })
-      await clickSend(wrapper)
-      await liveTurn(wrapper, '请复审', [{ text: '先写进度', streaming: true }])
-      const tail = () => wrapper.get('[data-testid="clarify-busy-status"]')
-      expect(tail().attributes('data-state')).toBe('thinking')
-      expect(tail().text()).toContain('思考中')
-      expect(tail().find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(wrapper.get('[data-testid="clarify-agent-message"]').text()).toContain('先写进度')
-      expect(wrapper.text()).not.toContain('输出中')
-
-      await liveTurn(wrapper, '请复审', [{
-        text: '先写进度',
-        thought: '再核对一处',
-        tools: [{ title: 'read_file', status: 'running' }],
-        parts: [
-          { kind: 'message', text: '先写进度' },
-          { kind: 'tool', title: 'read_file', status: 'running' },
-          { kind: 'thought', text: '再核对一处' },
-        ],
-        streaming: true,
-      }])
-      expect(tail().text()).toContain('思考中')
-      expect(tail().find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(wrapper.get('[data-testid="clarify-agent-message"]').text()).toContain('先写进度')
-      expect(wrapper.find('[data-testid="agent-timeline-thought"]').text()).toContain('再核对一处')
-      expect(wrapper.text()).not.toContain('输出中')
+      expect(tail.attributes('data-state')).toBe('outputting')
+      expect(tail.text()).toContain('输出中')
       wrapper.unmount()
     })
 
@@ -2426,9 +2391,6 @@ describe('ClarifyChat', () => {
       const tail = agent.get('[data-testid="clarify-busy-status"]')
       expect(tail.attributes('data-state')).toBe('thinking')
       expect(tail.text()).toContain('思考中')
-      expect(tail.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(agent.get('[data-testid="clarify-agent-message"]').text()).toContain('先对齐需求。')
-      expect(agent.text()).not.toContain('输出中')
       // The status is the last thing in the reply (after the newest tool group).
       const html = agent.html()
       expect(html.lastIndexOf('clarify-busy-status')).toBeGreaterThan(html.lastIndexOf('agent-tool-group'))
@@ -2615,9 +2577,7 @@ describe('ClarifyChat', () => {
       await clickSend(wrapper)
       await liveTurn(wrapper, '请看日志', [{ text: reply, streaming: true }])
       expect(wrapper.find('[data-testid="agent-timeline"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('思考中')
-      expect(wrapper.find('[data-testid="thinking-lamp"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).not.toContain('输出中')
+      expect(wrapper.find('[data-testid="clarify-busy-status"]').text()).toContain('输出中')
       expectReply(wrapper.get('[data-testid="clarify-agent-message"]'))
 
       await endTurn(wrapper, '请看日志', [{ text: reply }])

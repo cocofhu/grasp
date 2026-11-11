@@ -1,6 +1,5 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { isComposingKey } from '@/lib/chat/composerKeys'
 import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import type { ReferenceTab } from './useReferenceSearch'
 
@@ -86,17 +85,6 @@ export function useReferenceComposer(opts: {
     addToken(at.start, at.start + 1 + at.query.length, ref)
   }
 
-  /** Actions in the @ picker consume only the active query, retaining the draft. */
-  function consumeTrigger(): boolean {
-    updateTrigger()
-    const at = trigger.value
-    if (!at) return false
-    const text = input.value.slice(0, at.start) + input.value.slice(at.start + 1 + at.query.length)
-    trigger.value = null
-    set(text, applyEdit(tokens.value, input.value, text))
-    return true
-  }
-
   function drop(index: number) {
     const res = removeToken(input.value, tokens.value, index)
     set(res.text, res.tokens)
@@ -125,7 +113,7 @@ export function useReferenceComposer(opts: {
 
   /** True when the key was handled here and the caller must ignore it. */
   function onKeydown(e: KeyboardEvent): boolean {
-    if (isComposingKey(e, composing.value)) return false
+    if (composing.value || e.isComposing || e.keyCode === 229) return false
     const p = picker.value
     if (trigger.value && p) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') p.move(e.key === 'ArrowDown' ? 1 : -1)
@@ -167,5 +155,5 @@ export function useReferenceComposer(opts: {
     return () => set(text, saved)
   }
 
-  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, load, updateTrigger, pick, consumeTrigger, drop, open, onPaste, onKeydown, snapshot }
+  return { tokens, trigger, pickerTab, picker, refs, targets, full, set, clear, load, updateTrigger, pick, drop, open, onPaste, onKeydown, snapshot }
 }

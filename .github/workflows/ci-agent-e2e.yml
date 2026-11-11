@@ -57,7 +57,7 @@ jobs:
           node-version: '24'
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.11'
+          go-version: '1.26.10'
           cache-dependency-path: |
             server/go.sum
             sandbox-gateway/sandbox/go.sum

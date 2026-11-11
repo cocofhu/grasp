@@ -34,8 +34,6 @@ const props = withDefaults(
     size?: 'sm' | 'md'
     /** Quiet trigger and compact menu for controls embedded in a list. */
     variant?: 'outline' | 'ghost'
-    /** Smallest ghost menu width in px, for triggers narrower than their labels. */
-    menuMinWidth?: number
   }>(),
   {
     disabled: false,
@@ -46,7 +44,6 @@ const props = withDefaults(
     loading: false,
     size: 'md',
     variant: 'outline',
-    menuMinWidth: 168,
   },
 )
 
@@ -201,7 +198,7 @@ function placePanel() {
   // Form menus retain their trigger width; list menus need room for their labels
   // and must stay inside the viewport even when the trigger sits at the row end.
   const width = props.variant === 'ghost'
-    ? Math.min(Math.max(props.menuMinWidth, r.width), Math.max(0, window.innerWidth - MARGIN * 2))
+    ? Math.min(Math.max(168, r.width), Math.max(0, window.innerWidth - MARGIN * 2))
     : r.width
   const left = props.variant === 'ghost'
     ? Math.max(MARGIN, Math.min(r.left, window.innerWidth - width - MARGIN))

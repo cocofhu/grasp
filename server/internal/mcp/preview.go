@@ -21,18 +21,15 @@ const (
 
 // PreviewPort is a registered preview endpoint of an Agent node (set_preview).
 type PreviewPort struct {
-	WorkspaceBindingID          string `json:"-"`
-	WorkspaceBindingFingerprint string `json:"-"`
-	Stale                       bool   `json:"stale,omitempty"`
-	RunID                       string `json:"runId"`
-	NodeID                      string `json:"nodeId"`
-	Kind                        string `json:"kind,omitempty"`
-	ItemKey                     string `json:"-"`
-	Port                        int    `json:"port"`
-	URL                         string `json:"url,omitempty"`
-	Label                       string `json:"label,omitempty"`
-	ProxyURL                    string `json:"proxyUrl"`
-	SandboxName                 string `json:"-"`
+	RunID       string `json:"runId"`
+	NodeID      string `json:"nodeId"`
+	Kind        string `json:"kind,omitempty"`
+	ItemKey     string `json:"-"`
+	Port        int    `json:"port"`
+	URL         string `json:"url,omitempty"`
+	Label       string `json:"label,omitempty"`
+	ProxyURL    string `json:"proxyUrl"`
+	SandboxName string `json:"-"`
 	// Host is the resolved upstream base the proxy dials (e.g.
 	// "http://172.17.0.5:9090"), persisted so the proxy needn't re-resolve the
 	// container IP through the sandbox manager on every request.
@@ -422,10 +419,10 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 			Msg("list preview ports from store failed; using memory")
-		return h.annotatePreviewTransport(runID, nodeID, unconfirmedBoundPreviews(mem))
+		return h.annotatePreviewTransport(runID, nodeID, mem)
 	}
 	if len(dbPorts) == 0 {
-		return h.annotatePreviewTransport(runID, nodeID, unconfirmedBoundPreviews(mem))
+		return h.annotatePreviewTransport(runID, nodeID, mem)
 	}
 	if len(mem) == 0 {
 		return h.annotatePreviewTransport(runID, nodeID, dbPorts)
@@ -435,9 +432,6 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 		byKey[previewPortItemKey(p)] = p
 	}
 	for _, p := range mem {
-		if durable, exists := byKey[previewPortItemKey(p)]; exists && (durable.Stale || durable.WorkspaceBindingID != "") {
-			continue
-		}
 		byKey[previewPortItemKey(p)] = p
 	}
 	out := make([]PreviewPort, 0, len(byKey))
@@ -445,18 +439,6 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 		out = append(out, p)
 	}
 	return h.annotatePreviewTransport(runID, nodeID, out)
-}
-
-func unconfirmedBoundPreviews(ports []PreviewPort) []PreviewPort {
-	for i := range ports {
-		if ports[i].WorkspaceBindingID != "" {
-			ports[i].Stale = true
-			ports[i].Healthy = false
-			ports[i].Mode = ""
-			ports[i].DirectURL = ""
-		}
-	}
-	return ports
 }
 
 func (h *Host) upsertPreviewMem(runID, nodeID string, rec PreviewPort) {
@@ -620,10 +602,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 // Host when that app was not published at sandbox creation time.
 func (h *Host) prepareDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int) error {
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		// A retired workspace's registration is already denied by the
-		// binding-aware proxy. It must neither block nor acquire a new host
-		// while switching the current workspace's injector.
-		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
@@ -699,7 +678,7 @@ func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxO
 			// restart; the guest port is the durable injector identity.
 			sameUpstream = p.InjectorPort == injectorPort
 		}
-		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
@@ -780,25 +759,14 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort, Healthy: true,
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
-	if binder, ok := store.(interface {
-		BindPreviewPort(context.Context, PreviewPort) (PreviewPort, error)
-	}); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		bound, err := binder.BindPreviewPort(ctx, rec)
-		cancel()
-		if err != nil {
-			return PreviewRegistration{}, err
-		}
-		rec = bound
-	}
+	h.mu.Lock()
+	h.upsertPreviewMem(runID, nodeID, rec)
+	h.mu.Unlock()
 	if store != nil {
 		if err := store.UpsertPreviewPort(rec); err != nil {
 			return PreviewRegistration{}, err
 		}
 	}
-	h.mu.Lock()
-	h.upsertPreviewMem(runID, nodeID, rec)
-	h.mu.Unlock()
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
@@ -808,13 +776,6 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	}
 	h.SignalPreviewReady(runID, nodeID)
 	reg := PreviewRegistration{ProxyURL: proxyURL}
-	if rec.WorkspaceBindingID != "" {
-		// Canonical previews always traverse the binding-aware proxy, whose
-		// actual connection lifetime pins the root. Never advertise an
-		// untracked direct-IP link for a switchable workspace.
-		reg.PublicURL = proxyURL
-		return reg, nil
-	}
 	if h.previewDirect(runID, nodeID) && host != "" {
 		reg.PublicURL = strings.TrimRight(host, "/") + "/"
 		if privateBase.Origin() != "" {
@@ -908,10 +869,6 @@ func (h *Host) annotatePreviewTransport(runID, nodeID string, ports []PreviewPor
 	privateBase := h.privatePreviewBase
 	h.mu.RUnlock()
 	for i := range out {
-		if out[i].Stale || out[i].WorkspaceBindingID != "" {
-			out[i].Mode, out[i].DirectURL = "", ""
-			continue
-		}
 		out[i].Mode = "direct"
 		if out[i].Host != "" {
 			out[i].DirectURL = strings.TrimRight(out[i].Host, "/") + "/"

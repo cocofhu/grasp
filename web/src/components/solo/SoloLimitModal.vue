@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -14,7 +14,6 @@ defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'freed'): void }>()
 const { t, te, locale } = useI18n()
 const store = useSoloSessions()
-const computeSessions = computed(() => store.active.value.filter(session => session.status === 'starting' || session.status === 'running'))
 const closing = ref('')
 const error = ref('')
 
@@ -22,7 +21,7 @@ async function closeOne(id: string) {
   closing.value = id
   error.value = ''
   try {
-    await store.changeEnvironment(id, 'stopping', () => api.stopSoloEnvironment(id))
+    store.upsert(await api.closeSoloSession(id))
     emit('freed')
   } catch (e) {
     error.value = soloErrorText(e, t, te, locale.value)
@@ -37,17 +36,17 @@ async function closeOne(id: string) {
     <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-limit-modal">
       <p>{{ t('pages.solo.limitHint', { max: store.maxSandboxes.value }) }}</p>
       <ul class="divide-y divide-line/70 rounded-lg border border-line">
-        <li v-for="s in computeSessions" :key="s.id" class="flex items-center gap-3 px-3 py-2.5">
+        <li v-for="s in store.active.value" :key="s.id" class="flex items-center gap-3 px-3 py-2.5">
           <SoloStatusDot :status="s.status" :busy="s.busy" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-txt">{{ s.title || t('pages.solo.untitled') }}</div>
             <div class="truncate text-[11px] text-txt3">{{ sessionRepoLabel(s) ? `${s.agentName} · ${sessionRepoLabel(s)}` : s.agentName }}</div>
           </div>
           <AppButton size="sm" variant="outline" :loading="closing === s.id" @click="closeOne(s.id)">
-            {{ t('pages.solo.environment.stop') }}
+            {{ t('pages.solo.closeSession') }}
           </AppButton>
         </li>
-        <li v-if="!computeSessions.length" class="px-3 py-4 text-center text-txt3">
+        <li v-if="!store.active.value.length" class="px-3 py-4 text-center text-txt3">
           <Icon name="check" :size="14" class="mr-1 inline text-ok" />{{ t('pages.solo.limitFreed') }}
         </li>
       </ul>

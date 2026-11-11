@@ -53,20 +53,17 @@ func (c *restoreChat) seen() []string {
 
 func pendingTurnCount(t *testing.T, solo *SoloService, id string) (total int, started int) {
 	t.Helper()
-	snapshot, err := solo.durable.Snapshot(context.Background(), soloQueueScope(id))
+	sessions, _, err := solo.pending.Load(soloPendingSurface)
 	if err != nil {
 		t.Fatal(err)
 	}
-	total = len(snapshot.Pending)
-	if snapshot.Active != nil {
+	for _, turn := range sessions[id] {
 		total++
-		started++
+		if turn.Started {
+			started++
+		}
 	}
-	var legacy int64
-	if err := solo.db.Model(&models.ChatPendingTurn{}).Where("surface = ? AND session_key = ?", soloPendingSurface, id).Count(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	return total + int(legacy), started
+	return total, started
 }
 
 func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
@@ -104,15 +101,12 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	}
 
 	// A new service on the same database stands in for the next process.
-	// Its resource locks are process-local; the old process's persisted lease
-	// is expired below to model a crash rather than a second live owner.
-	sbx = NewSandboxService(db, sbx.mgr, sbx.skills, sbx.host, SandboxOptions{ModelBinding: sbx.modelBinding, ProfilesRoot: sbx.profilesRoot})
 	restarted := NewSoloService(db, sbx, solo.agents, solo.projects)
 	after := newRestoreChat(false)
 	restarted.SetChatterForTest(after)
 	restarted.SetModelAlignerForTest(&recordAligner{})
-	if _, err := restarted.Send(id, "alice", "fourth", nil); err != nil {
-		t.Fatalf("new durable admission must preserve the existing queue: %v", err)
+	if _, err := restarted.Send(id, "alice", "must not overwrite saved queue", nil); err == nil {
+		t.Fatal("new messages must not overwrite a queue awaiting startup restore")
 	}
 	session, err := restarted.Require(id, "alice")
 	if err != nil {
@@ -123,22 +117,12 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway.SetStatus(resident.Name, "stopped")
-	if err := db.Model(&models.ChatQueue{}).Where("id = ?", soloQueueScope(id).ID()).Update("owner_expires_at", time.Now().Add(-time.Second)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.Sandbox{}).Where("id = ?", resident.ID).Update("operation_expires_at", time.Now().Add(-time.Second)).Error; err != nil {
-		t.Fatal(err)
-	}
 	sbx.ReconcileOnStartup(context.Background(), nil)
 	gateway.FailStart = true
 	sbx.RecoverSoloSandboxes(context.Background())
 	restarted.RestoreQueuedTurns()
-	if total, _ := pendingTurnCount(t, restarted, id); total < 3 || total > 4 || len(after.seen()) != 0 {
-		t.Fatalf("queued turns must stay persisted while recovery fails: total=%d prompts=%q", total, after.seen())
-	}
-	var accepted int64
-	if err := db.Model(&models.ChatQueueTurn{}).Where("queue_id = ?", soloQueueScope(id).ID()).Count(&accepted).Error; err != nil || accepted != 4 {
-		t.Fatalf("recovery discarded accepted intent: count=%d err=%v", accepted, err)
+	if total, _ := pendingTurnCount(t, restarted, id); total != 3 || len(after.seen()) != 0 {
+		t.Fatal("queued turns must stay persisted while recovery fails")
 	}
 	gateway.FailStart = false
 	sbx.RecoverSoloSandboxes(context.Background())
@@ -151,12 +135,12 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 				n++
 			}
 		}
-		return n == 3
+		return n == 2
 	})
-	if got := after.seen(); len(got) != 3 || !strings.HasSuffix(got[0], "second") || !strings.HasSuffix(got[1], "third") || !strings.HasSuffix(got[2], "fourth") {
-		t.Fatalf("restored prompts = %q, want second then third then fourth", got)
+	if got := after.seen(); len(got) != 2 || !strings.HasSuffix(got[0], "second") || !strings.HasSuffix(got[1], "third") {
+		t.Fatalf("restored prompts = %q, want second then third", got)
 	}
-	if got := after.seen()[0]; !strings.HasPrefix(got, soloContextPreambleHeader) || !strings.Contains(got, "first") || strings.Contains(got, "未提交的改动已丢失") || strings.Contains(got, soloModelPreambleHeader) {
+	if got := after.seen()[0]; !strings.HasPrefix(got, soloResumePreambleHeader) || !strings.Contains(got, "first") || strings.Contains(got, "未提交的改动已丢失") {
 		t.Fatalf("recovered turn lost history or falsely reported data loss: %q", got)
 	}
 	msgs, _ := restarted.Messages(id, "alice")
@@ -170,8 +154,8 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 		}
 	}
 	want := []string{
-		"user:first:stopped", "assistant:unknown:执行结果待核对：" + soloRestartStopped + "，请核对工作区和已执行操作后继续",
-		"user:second:", "assistant:ok:", "user:third:", "assistant:ok:", "user:fourth:", "assistant:ok:",
+		"user:first:stopped", "assistant:stopped:" + soloRestartStopped,
+		"user:second:", "assistant:ok:", "user:third:", "assistant:ok:",
 	}
 	if strings.Join(order, "|") != strings.Join(want, "|") {
 		t.Fatalf("transcript = %q\nwant %q", order, want)
@@ -187,41 +171,32 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestSoloRestoreDoesNotReplayStartedLegacyTurnWithoutTranscript(t *testing.T) {
-	acp, port := fakeACPServer(t)
-	defer acp.Close()
-	solo, _, _, db := newSoloFixture(t, port, 3)
-	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
-	if err != nil {
+func TestSoloRestoreRunsATurnThatNeverReachedTheTranscript(t *testing.T) {
+	solo, _, _, db := newSoloFixture(t, 0, 3)
+	row := models.SoloSession{ID: "solo-restore-1", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning}
+	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "restore fixture environment ready", func() bool {
-		row, err := solo.Require(view.ID, "alice")
-		return err == nil && row.Status == models.SoloStatusRunning
-	})
 	payload, _ := json.Marshal(&soloTurn{ID: "turn-unwritten", Text: "never written"})
-	if err := chatsession.NewPendingStore(db).Save(soloPendingSurface, view.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
+	if err := solo.pending.Save(soloPendingSurface, row.ID, []chatsession.PendingTurn{{ID: "turn-unwritten", Started: true, Payload: payload}}); err != nil {
 		t.Fatal(err)
 	}
 	solo = NewSoloService(db, solo.sbx, solo.agents, solo.projects)
-	chat := newRestoreChat(false)
+	chat := newRestoreChat(true)
 	solo.SetChatterForTest(chat)
-	solo.SetModelAlignerForTest(&recordAligner{})
 	solo.RestoreQueuedTurns()
-	solo.RestoreQueuedTurns()
-	if _, err := solo.durable.Receipt(context.Background(), soloQueueScope(view.ID), "turn-unwritten"); err == nil {
-		t.Fatal("startup imported retained legacy evidence into the executable queue")
+	c := solo.lookup(row.ID)
+	if c == nil {
+		t.Fatal("restore did not reopen the session")
 	}
-	var original models.ChatPendingTurn
-	if err := db.First(&original, "id = ?", "turn-unwritten").Error; err != nil || !original.Started || string(original.Payload) != string(payload) {
-		t.Fatalf("startup altered retained evidence: %+v %v", original, err)
-	}
-	if len(chat.seen()) != 0 {
-		t.Fatalf("recovery repeated native work without dispatch proof: %q", chat.seen())
-	}
+	defer c.sess.Cancel(true)
+	waitFor(t, "unwritten turn runs", func() bool {
+		var user models.SoloMessage
+		return db.First(&user, "id = ?", "turn-unwritten").Error == nil && user.Content == "never written"
+	})
 }
 
-func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
+func TestSoloRestoreDropsTurnsOfEndedSessions(t *testing.T) {
 	solo, _, _, db := newSoloFixture(t, 0, 3)
 	for _, s := range []models.SoloSession{
 		{ID: "solo-closed", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed},
@@ -231,9 +206,9 @@ func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	payload, _ := json.Marshal(&soloTurn{ID: "q", Text: "queued"})
 	for _, id := range []string{"solo-closed", "solo-error", "solo-deleted"} {
-		payload, _ := json.Marshal(&soloTurn{ID: id + "-q", Text: "queued"})
-		if err := chatsession.NewPendingStore(db).Save(soloPendingSurface, id, []chatsession.PendingTurn{{ID: id + "-q", Payload: payload}}); err != nil {
+		if err := solo.pending.Save(soloPendingSurface, id, []chatsession.PendingTurn{{ID: id + "-q", Payload: payload}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -244,17 +219,9 @@ func TestSoloRestoreRetainsFailedAndOrphanedIntent(t *testing.T) {
 		if solo.lookup(id) != nil {
 			t.Fatalf("%s: an ended session must not be reopened", id)
 		}
-		want := 1
-		if total, _ := pendingTurnCount(t, solo, id); total != want {
-			t.Fatalf("%s: stored turns left = %d, want %d", id, total, want)
+		if total, _ := pendingTurnCount(t, solo, id); total != 0 {
+			t.Fatalf("%s: stored turns left = %d", id, total)
 		}
-	}
-	ready, err := solo.durable.ReadyScopes(context.Background(), soloPendingSurface)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ready) != 0 {
-		t.Fatal("legacy evidence was scheduled as new durable work")
 	}
 }
 

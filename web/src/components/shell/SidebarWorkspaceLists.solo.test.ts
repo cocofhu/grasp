@@ -19,7 +19,6 @@ vi.mock('@/lib/api/api', () => ({ api: mocks }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, loading: ref(false), ensureLoaded: async () => mocks.workspace.value }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { vHoverInk } from '@/lib/shared/hoverInkDirective'
-import { RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 
@@ -141,53 +140,6 @@ describe('sidebar 历史执行 lists ended Solo sessions', () => {
     list.dispatchEvent(new Event('pointerleave'))
     await flushPromises()
     expect(order(wrapper)).toEqual(['solo:live', 'r3', 'solo:closed', 'r1', 'solo:broken'])
-    wrapper.unmount()
-  })
-
-  it('keeps fetched failed runs when newer ended Solo sessions fill the list', async () => {
-    const failed = Array.from({ length: 20 }, (_, i) => run(`f${String(i).padStart(2, '0')}`, 'failed', `2026-11-02T${String(19 - i).padStart(2, '0')}:00:00Z`))
-    const older = run('older', 'failed', '2026-10-01T00:00:00Z')
-    mocks.listRuns.mockResolvedValue({ items: [...failed, older], total: failed.length + 1 })
-    await seedSolos(Array.from({ length: 20 }, (_, i) => solo(`s${String(i).padStart(2, '0')}`, 'closed', { closedAt: `2026-11-03T${String(19 - i).padStart(2, '0')}:00:00Z`, title: `运行 f${String(i).padStart(2, '0')}` })))
-    const { wrapper } = await setup('/')
-    const ids = order(wrapper)
-    expect(wrapper.findAll('[data-testid="sidebar-recent-run"]')).toHaveLength(20)
-    expect(wrapper.findAll('[data-testid="sidebar-recent-solo"]')).toHaveLength(20)
-    expect(wrapper.find('[data-run-id="older"]').exists()).toBe(false)
-    expect(ids.slice(0, 20).every((id) => String(id).startsWith('solo:'))).toBe(true)
-    for (const item of failed) {
-      expect(ids).toContain(item.id)
-      const row = wrapper.get(`[data-run-id="${item.id}"]`)
-      expect(row.attributes('href')).toBe(`/runs/${item.id}`)
-      expect(row.attributes('data-status')).toBe('failed')
-      const mark = row.get('[data-testid="sidebar-recent-ended"]')
-      expect(mark.classes()).toContain('is-failed')
-      expect(mark.attributes('title')).toBe('失败')
-    }
-    wrapper.unmount()
-  })
-
-  it('writes a newly failed run after the pointer leaves the list', async () => {
-    mocks.listRuns.mockResolvedValue({ items: [run('keep', 'completed', '2026-11-03T08:00:00Z')], total: 1 })
-    await seedSolos([solo('closed', 'closed', { closedAt: '2026-11-03T09:00:00Z' })])
-    const { wrapper } = await setup('/')
-    const list = wrapper.get('[data-testid="sidebar-recent-list"]').element as HTMLElement
-    list.dispatchEvent(new Event('pointerenter'))
-    mocks.listRuns.mockResolvedValue({
-      items: [run('fresh', 'failed', '2026-11-03T12:00:00Z'), run('keep', 'completed', '2026-11-03T08:00:00Z')],
-      total: 2,
-    })
-    notifyRecentActivity()
-    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
-    await flushPromises()
-    expect(order(wrapper)).toEqual(['solo:closed', 'keep'])
-    list.dispatchEvent(new Event('pointerleave'))
-    await flushPromises()
-    expect(order(wrapper)).toEqual(['fresh', 'solo:closed', 'keep'])
-    const row = wrapper.get('[data-run-id="fresh"]')
-    expect(row.attributes('href')).toBe('/runs/fresh')
-    expect(row.get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
-    expect(row.get('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('失败')
     wrapper.unmount()
   })
 })

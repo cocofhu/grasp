@@ -4,17 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
-
-// ErrInvalidPromptImage identifies deterministic client input failures. Store
-// outages keep their original error and must never be labelled a bad upload.
-var ErrInvalidPromptImage = errors.New("invalid attachment input")
 
 // IngestPromptImages externalizes any image with inline Data into store,
 // clears Data, and fills Ref / SizeBytes. Images that already have Ref are
@@ -28,7 +23,7 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 		out[i] = im
 		if ref := strings.TrimSpace(im.Ref); ref != "" {
 			if _, err := ParseRef(ref); err != nil {
-				return nil, fmt.Errorf("%w: image[%d]: %w", ErrInvalidPromptImage, i, err)
+				return nil, fmt.Errorf("image[%d]: %w", i, err)
 			}
 			out[i].Ref = ref
 			out[i].Data = ""
@@ -36,14 +31,14 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 		}
 		data := strings.TrimSpace(im.Data)
 		if data == "" {
-			return nil, fmt.Errorf("%w: image[%d]: missing data and ref", ErrInvalidPromptImage, i)
-		}
-		raw, err := base64.StdEncoding.DecodeString(data)
-		if err != nil {
-			return nil, fmt.Errorf("%w: image[%d]: decode base64: %w", ErrInvalidPromptImage, i, err)
+			return nil, fmt.Errorf("image[%d]: missing data and ref", i)
 		}
 		if store == nil {
 			return nil, fmt.Errorf("image[%d]: blob store not configured", i)
+		}
+		raw, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			return nil, fmt.Errorf("image[%d]: decode base64: %w", i, err)
 		}
 		ref, err := store.Put(ctx, bytes.NewReader(raw), Meta{
 			MimeType: im.MimeType,
@@ -63,21 +58,19 @@ func IngestPromptImages(ctx context.Context, store Store, images []models.Prompt
 }
 
 // IngestCompositeInputs walks a launch inputs map and externalizes any
-// composite {text, images[]} values into a new map. The caller's request stays
-// unchanged so concurrent retries retain the same idempotency fingerprint.
+// composite {text, images[]} values in place. Returns the same map.
 func IngestCompositeInputs(ctx context.Context, store Store, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return inputs, nil
 	}
-	out := make(map[string]any, len(inputs))
 	for k, v := range inputs {
 		nv, err := ingestValue(ctx, store, v)
 		if err != nil {
 			return nil, fmt.Errorf("input %q: %w", k, err)
 		}
-		out[k] = nv
+		inputs[k] = nv
 	}
-	return out, nil
+	return inputs, nil
 }
 
 func ingestValue(ctx context.Context, store Store, v any) (any, error) {
@@ -86,6 +79,7 @@ func ingestValue(ctx context.Context, store Store, v any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		ct.Images = imgs
 		return map[string]any{
 			"text":   ct.Text,
 			"images": promptImagesToAny(imgs),

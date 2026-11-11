@@ -23,7 +23,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // dockerState wraps a fake sandbox-gateway so the service tests can drive
@@ -52,14 +51,6 @@ func (d *dockerState) setStatus(name, status string) {
 
 func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxService {
 	t.Helper()
-	for _, value := range []any{
-		&models.Credential{ID: "fixture-key", Name: "Synthetic model", Purpose: "model_api", Issuer: "custom", SecretKind: "api_key", SecretRevision: 1, Type: "ai", Enabled: true},
-		&models.ModelConfiguration{ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "fixture-key", ModelID: "fixture-model"}},
-	} {
-		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(value).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	fg := sandboxtest.New(t)
 	fg.ACPPort = ds.acpPort
 	fg.FailCreate = ds.failRun
@@ -98,10 +89,6 @@ func sandboxTestAppliedBindings(t *testing.T, s *SandboxService, row *models.San
 		t.Fatal(err)
 	}
 	row.ModelBindingFingerprint, row.GitBindingsFingerprint = model, git
-	row.AuthorizationFingerprint, err = s.currentAuthorizationFingerprint(context.Background(), s.effectiveAgent(agent))
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func sandboxTestModelResolver(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
@@ -225,8 +212,8 @@ func TestSandboxListGetView(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	if _, err := s.Get(999); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("get missing should preserve its error type: %v", err)
+	if _, err := s.Get(999); err == nil {
+		t.Fatal("get missing should error")
 	}
 	if _, err := s.GetView(ctx, 999); err == nil {
 		t.Fatal("getview missing should error")
@@ -453,9 +440,6 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 	if got.Status != "stopped" {
 		t.Fatalf("stopped status = %s", got.Status)
 	}
-	if !ds.fg.Has(r1.Name) || got.DesiredState != "stopped" || got.Recovery.Files != "retained" {
-		t.Fatal("stop must retain the provider resource, files and durable intent")
-	}
 
 	r2 := &models.Sandbox{Name: "grasp-sb-b", Purpose: "test", Status: "running", RunID: "rr"}
 	db.Create(r2)
@@ -484,46 +468,41 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 // token of a run whose next node is executing in another sandbox; only the last
 // sandbox of a finished run releases it.
 func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
-	for _, status := range []string{"running", "paused"} {
-		t.Run(status, func(t *testing.T) {
-			db := newTestDB(t)
-			ds := &dockerState{}
-			s := newSandboxService(t, db, ds)
-			ctx := context.Background()
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	ctx := context.Background()
 
-			if err := db.Create(&models.Run{ID: "run-live", Status: status}).Error; err != nil {
-				t.Fatal(err)
-			}
-			token := s.host.RegisterRun("run-live")
-			upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
-			current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
-			db.Create(upstream)
-			db.Create(current)
+	if err := db.Create(&models.Run{ID: "run-live", Status: "running"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	token := s.host.RegisterRun("run-live")
+	upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
+	current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
+	db.Create(upstream)
+	db.Create(current)
 
-			if err := s.Destroy(ctx, upstream.ID); err != nil {
-				t.Fatalf("destroy upstream: %v", err)
-			}
-			if !s.host.AuthorizeRun("run-live", token) {
-				t.Fatal("token revoked while the run is still in progress")
-			}
+	if err := s.Destroy(ctx, upstream.ID); err != nil {
+		t.Fatalf("destroy upstream: %v", err)
+	}
+	if !s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("token revoked while the run is still in progress")
+	}
 
-			db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
-			other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
-			db.Create(other)
-			if err := s.Destroy(ctx, current.ID); err != nil {
-				t.Fatalf("destroy current: %v", err)
-			}
-			if !s.host.AuthorizeRun("run-live", token) {
-				t.Fatal("token revoked while another sandbox of the finished run is alive")
-			}
-			if err := s.Destroy(ctx, other.ID); err != nil {
-				t.Fatalf("destroy last: %v", err)
-			}
-			if s.host.AuthorizeRun("run-live", token) {
-				t.Fatal("last sandbox of a finished run must revoke the token")
-			}
-
-		})
+	db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
+	other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
+	db.Create(other)
+	if err := s.Destroy(ctx, current.ID); err != nil {
+		t.Fatalf("destroy current: %v", err)
+	}
+	if !s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("token revoked while another sandbox of the finished run is alive")
+	}
+	if err := s.Destroy(ctx, other.ID); err != nil {
+		t.Fatalf("destroy last: %v", err)
+	}
+	if s.host.AuthorizeRun("run-live", token) {
+		t.Fatal("last sandbox of a finished run must revoke the token")
 	}
 }
 
@@ -573,7 +552,7 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	// Run attribution survives missing resources; a live one is kept and retired
+	// run-purpose rows: a gone one is dropped; a live one is kept and retired
 	// with a deadline; an adopted one is kept in use with no deadline.
 	db.Create(&models.Sandbox{Name: "grasp-sb-run", Purpose: "run", Status: "running", RunID: "rid"})
 	db.Create(&models.Sandbox{Name: "grasp-sb-run-live", Purpose: "run", Status: "running", RunID: "rid3"})
@@ -584,7 +563,7 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	// test running -> attached and kept.
 	db.Create(&models.Sandbox{Name: "grasp-sb-live", Purpose: "test", Status: "running"})
 	ds.setStatus("grasp-sb-live", "running")
-	// A missing provider observation retains the original application row.
+	// test gone -> dropped.
 	db.Create(&models.Sandbox{Name: "grasp-sb-dead", Purpose: "test", Status: "running", RunID: "rid2"})
 	// orphan sandbox present on the gateway but with no DB row.
 	ds.setStatus("grasp-sb-orphan", "running")
@@ -611,26 +590,29 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	if live.ACPPort == 0 {
 		t.Fatal("live row should get refreshed port")
 	}
-	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != nil {
-		t.Fatal("missing Run resource must retain its recovery attribution")
+	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
+		t.Fatal("run row should be gone")
 	}
-	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != nil {
-		t.Fatal("missing provider observation must retain original attribution", err)
+	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
+		t.Fatal("dead row should be gone")
 	}
-	// Unknown resources can contain unique files and require reconciliation.
+	// g1.1/g1.2: recycled names are Destroy'd; g1.3: unmanaged orphans Destroy'd.
 	if ds.fg.Has("grasp-sb-run") {
 		t.Fatal("run gateway sandbox should be destroyed (g1.1)")
 	}
-	if !ds.fg.Has("grasp-sb-orphan") {
-		t.Fatal("untracked gateway sandbox must survive observation")
+	if ds.fg.Has("grasp-sb-orphan") {
+		t.Fatal("orphan gateway sandbox should be destroyed (g1.3)")
 	}
 	if !ds.fg.Has("grasp-sb-live") {
 		t.Fatal("live gateway sandbox must remain")
 	}
 }
 
-// Non-running provider observations preserve both the original row and disk.
-func TestSandboxReconcileRetainsNonRunningGateway(t *testing.T) {
+// TestSandboxReconcileDestroysNonRunningGateway covers g1.1+g1.2: a non-running
+// local row whose Name is the gateway id must Destroy the gateway instance
+// before the list row is deleted, and must not leave the id in tracked so the
+// orphan pass cannot skip it.
+func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -647,12 +629,11 @@ func TestSandboxReconcileRetainsNonRunningGateway(t *testing.T) {
 	s.ReconcileOnStartup(ctx, nil)
 
 	for _, name := range []string{"gw-error", "gw-stopped", "gw-pm-dead"} {
-		var retained models.Sandbox
-		if err := db.Where("name = ?", name).First(&retained).Error; err != nil || retained.DestroyAt != nil {
-			t.Fatalf("%s row/retention lost: %v", name, err)
+		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
+			t.Fatalf("%s local row should be gone", name)
 		}
-		if !ds.fg.Has(name) {
-			t.Fatalf("%s original provider disk was removed", name)
+		if ds.fg.Has(name) {
+			t.Fatalf("%s gateway sandbox should be destroyed (g1.1/g1.2)", name)
 		}
 	}
 }
@@ -685,8 +666,8 @@ func TestSandboxReconcileCreatingGrace(t *testing.T) {
 	}
 }
 
-// A stale creating record is reconciled to a unique original provider ID,
-// preserving the row/files and requiring explicit recovery instead of replay.
+// TestSandboxReconcileAbandonedCreating destroys stale creating rows and the
+// gateway sandbox still labeled with the placeholder Name.
 func TestSandboxReconcileAbandonedCreating(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
@@ -704,12 +685,11 @@ func TestSandboxReconcileAbandonedCreating(t *testing.T) {
 
 	s.ReconcileOnStartup(ctx, nil)
 
-	var retained models.Sandbox
-	if err := db.Where("name = ?", gwID).First(&retained).Error; err != nil || retained.Status != "error" || retained.DestroyAt != nil {
-		t.Fatalf("original correlated provider identity not retained: %+v %v", retained, err)
+	if err := db.Where("name = ?", placeholder).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
+		t.Fatal("abandoned creating row should be gone")
 	}
-	if !ds.fg.Has(gwID) {
-		t.Fatal("correlated original gateway disk must survive")
+	if ds.fg.Has(gwID) {
+		t.Fatal("correlated abandoned gateway sandbox should be destroyed")
 	}
 }
 

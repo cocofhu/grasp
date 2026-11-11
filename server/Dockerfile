@@ -15,15 +15,10 @@ FROM node:24-bookworm-slim AS web-builder
 # which walks its parent as the project root. WORKDIR /web would put that parent
 # at /, and the guard would scan the whole image (OOM).
 WORKDIR /src/web
-# 构建优先从官方源按 lockfile / integrity 安装，网络不通时使用 .npmrc
-# 的镜像源。两条路径均限制超时与重试间隔，避免持续故障阻塞发布。
+# .npmrc 把 registry 指向 registry.npmmirror.com(见 web/.npmrc):国内网络直连
+# registry.npmjs.org 拉大包(monaco-editor)易 ECONNRESET,换镜像源规避。
 COPY web/package*.json web/.npmrc ./
-RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org \
-      --replace-registry-host=always \
-      --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000 || \
-    npm ci --no-audit --no-fund \
-      --replace-registry-host=always \
-      --fetch-retries=2 --fetch-retry-maxtimeout=30000 --fetch-timeout=120000
+RUN npm ci --no-audit --no-fund
 COPY web/ ./
 COPY scripts/assert-no-approving-brand.mjs /src/scripts/assert-no-approving-brand.mjs
 # Sibling of /src/web, matching the frontend import of the Go effort catalog.
@@ -69,7 +64,6 @@ RUN COMMIT_SHA="${GIT_COMMIT:-$GITHUB_SHA}" && \
       -ldflags="-s -w -X github.com/cocofhu/grasp/internal/version.commit=${COMMIT_SHA}" \
       -o /out/grasp-server ./cmd/server
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp ./cmd/doctor
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp-storage-admin ./cmd/storage-admin
 
 # --- 运行 ---
 # 使用 node bookworm-slim 作为运行底包,使 set_plan 的 Mermaid 11.x 语法校验
@@ -81,7 +75,6 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 WORKDIR /app
 COPY --from=build /out/grasp-server /app/grasp-server
 COPY --from=build /out/grasp /app/grasp
-COPY --from=build /out/grasp-storage-admin /app/grasp-storage-admin
 COPY --from=build /src/web/dist /app/web/dist
 COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /app/sandbox-runtime/sandbox-runtime.tgz
 

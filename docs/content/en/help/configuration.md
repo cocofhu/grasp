@@ -58,36 +58,9 @@ Solo, workflows, Agent tests and PM share the same chat presentation. Hover a me
 
 Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
 
-## Local object storage and COS / S3
-
-The Solo-continuation migration release and source stack can store message bodies, attachments and workspace archives in private object storage. Use the source stack to evaluate this branch and the migration image when upgrading.
-
-Without COS, add this to the root `.env`:
-
-```dotenv
-GRASP_STORAGE_DRIVER=s3
-GRASP_LOCAL_OBJECTSTORE=1
-GRASP_S3_BUCKET=grasp
-GRASP_S3_PREFIX=application
-```
-
-Leave `GRASP_S3_ENDPOINT`, access credentials and session token empty. Explicitly set `GRASP_LOCAL_OBJECTSTORE=1`; a missing S3 endpoint alone is rejected before any local store is provisioned. `./start.sh -d` (migration image) or `./start.sh dev -d` (source) prepares SeaweedFS with its retained local identity before starting the app. Existing databases must follow `server/UPGRADING.md`.
-
-The script creates a private bucket and generates an application identity scoped to that bucket before starting Grasp. S3 binds only to `http://127.0.0.1:8333`; change its port with `GRASP_LOCAL_OBJECTSTORE_PORT`. Admin, Filer and Master ports are not published to the host.
-
-SeaweedFS runs as a non-root user. A non-root launcher uses its host UID/GID. A root launcher retains an existing non-root data owner, defaults new stores to `10001:10001`, and changes ownership only of the private data and IAM mounts. Client credentials stay host-private with mode `0600`. Set `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` to choose a non-root identity; a non-root launcher must own the mounts with its own UID/GID.
-
-Data and credentials live in `.localdata/objectstore`, or `.devdata/objectstore` for the source stack. `client.env` and `iam.json` have mode 600. Stops, restarts and container recreation retain the same data and identity. Include the entire directory in backups; do not delete or regenerate credentials separately. Changing an existing bucket requires a storage migration.
-
-For an existing COS / S3 service, configure `GRASP_S3_ENDPOINT`, bucket, region, prefix and credentials. Use `GRASP_STORAGE_DRIVER=cos` for COS and `s3` for other S3 services; `GRASP_S3_PATH_STYLE` controls addressing. An external endpoint disables bundled storage, and an outage never switches to an empty local store. Credentials without an endpoint are rejected.
-
-After a storage location is registered, endpoint, bucket or prefix changes require an offline copy, verification and explicit switch. Retain legacy local files until archival and integrity checks complete; changing environment variables alone does not migrate data. Use `./start.sh logs objectstore` for component logs and `./start.sh down` to stop it while retaining data.
-
 ## Database and attachment lifecycle
 
 In the release stack, SQLite (`./.localdata/db`) and app-data / default blobs (`./.localdata/app-data`, or a custom `GRASP_BLOBS_ROOT`) must be **backed up and cleaned as a pair**; do not migrate only the database. Otherwise composite images can keep orphan `blob:` refs (GET `/api/blobs/:id` → 404). Historical orphans only get a permanent UI placeholder; this delivery does not add an inspection console. See [Quick start](../guide/quick-start.md#database-and-attachments-share-one-lifecycle-backup--cleanup).
-
-With object storage, the backup set must also include the corresponding bucket / prefix and bundled storage credentials. The database, retained legacy files and objects must form one reference-verified backup set; backing up only SeaweedFS or only SQLite is incomplete.
 
 ## Related
 

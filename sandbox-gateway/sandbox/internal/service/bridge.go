@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"os"
 	"strings"
@@ -35,10 +34,9 @@ type PromptQueueEntry struct {
 // 多个会话由 ChatManager 按 chat id 管理；default 会话即历史上的全局单例。
 type Bridge struct {
 	// 会话元数据（id 创建后不变；title 由 ChatManager 在 mu 下修改）
-	nativeInstanceID string
-	id               string
-	title            string
-	createdAt        time.Time
+	id        string
+	title     string
+	createdAt time.Time
 	// 所属 ChatManager；nil 表示独立使用（单测）
 	mgr *ChatManager
 
@@ -146,22 +144,21 @@ func NewBridge() *Bridge {
 	idle, max := turnLimitsFromEnv()
 	liveCPU, liveIO := livenessThresholdsFromEnv()
 	return &Bridge{
-		nativeInstanceID: rand.Text(),
-		sampler:          procSampler{root: "/proc"},
-		livenessCPU:      liveCPU,
-		livenessIO:       liveIO,
-		livenessSample:   livenessSampleEvery,
-		livenessBeat:     livenessHeartbeatEvery,
-		id:               DefaultChatID,
-		reasoningEffort:  strings.TrimSpace(os.Getenv("ACP_BRIDGE_REASONING_EFFORT")),
-		createdAt:        time.Now(),
-		permWait:         make(map[string]chan string),
-		clients:          make(map[*websocket.Conn]*wsClient),
-		autoPermission:   true,
-		evLog:            eventLog{},
-		eventSubs:        make(map[int]func(json.RawMessage)),
-		turnIdle:         idle,
-		turnMax:          max,
+		sampler:         procSampler{root: "/proc"},
+		livenessCPU:     liveCPU,
+		livenessIO:      liveIO,
+		livenessSample:  livenessSampleEvery,
+		livenessBeat:    livenessHeartbeatEvery,
+		id:              DefaultChatID,
+		reasoningEffort: strings.TrimSpace(os.Getenv("ACP_BRIDGE_REASONING_EFFORT")),
+		createdAt:       time.Now(),
+		permWait:        make(map[string]chan string),
+		clients:         make(map[*websocket.Conn]*wsClient),
+		autoPermission:  true,
+		evLog:           eventLog{},
+		eventSubs:       make(map[int]func(json.RawMessage)),
+		turnIdle:        idle,
+		turnMax:         max,
 	}
 }
 

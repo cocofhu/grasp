@@ -23,7 +23,6 @@ import (
 	"sandbox-gateway/internal/logging"
 	"sandbox-gateway/internal/service"
 	"sandbox-gateway/internal/store"
-	"sandbox-gateway/internal/volumearchive"
 
 	"github.com/rs/zerolog/log"
 )
@@ -78,9 +77,6 @@ func main() {
 		OrphanGCMinAge:   cfg.OrphanGCMinAge(),
 	})
 
-	releases := service.NewEnvironmentReleases(db, svc, service.EnvironmentReleaseOptions{})
-	go releases.Run(context.Background())
-
 	// Reconcile persisted records against live driver state on startup.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -90,9 +86,6 @@ func main() {
 
 	if cfg.OrphanGC.Enabled {
 		go svc.RunOrphanGC(context.Background())
-	}
-	if archiver, ok := drv.(interface{ RunVolumeArchiver(context.Context) }); ok {
-		go archiver.RunVolumeArchiver(context.Background())
 	}
 
 	h := api.NewHandler(svc, cfg.Image.Ports)
@@ -168,10 +161,6 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 			InternalPorts: cfg.Image.Ports.Internal(),
 		}), nil
 	case "kubernetes":
-		archive, err := volumeArchiveOptions(cfg)
-		if err != nil {
-			return nil, err
-		}
 		return k8sdriver.New(k8sdriver.Options{
 			InCluster:          cfg.K8s.InCluster,
 			Kubeconfig:         cfg.K8s.Kubeconfig,
@@ -191,7 +180,6 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 			MemoryRequestRatio: cfg.K8s.MemoryRequestRatio,
 			PublicPorts:        cfg.Image.Ports.Public(),
 			InternalPorts:      cfg.Image.Ports.Internal(),
-			VolumeArchive:      archive,
 		})
 	case "e2b":
 		profiles := make([]e2bdriver.TemplateProfile, 0, len(cfg.E2B.Templates))
@@ -214,25 +202,6 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 	default:
 		return nil, fmt.Errorf("unknown driver %q", cfg.Driver)
 	}
-}
-
-func volumeArchiveOptions(cfg *config.Config) (k8sdriver.VolumeArchiveOptions, error) {
-	a := cfg.K8s.VolumeArchive
-	if !a.Enabled {
-		return k8sdriver.VolumeArchiveOptions{}, nil
-	}
-	store, err := volumearchive.NewS3(volumearchive.S3Config{
-		Endpoint: a.S3.Endpoint, Region: a.S3.Region, Bucket: a.S3.Bucket, Prefix: a.S3.Prefix,
-		AccessKeyID: a.S3.AccessKeyID, SecretAccessKey: a.S3.SecretAccessKey, SessionToken: a.S3.SessionToken,
-		PathStyle: a.S3.PathStyle == nil || *a.S3.PathStyle,
-	})
-	if err != nil {
-		return k8sdriver.VolumeArchiveOptions{}, err
-	}
-	return k8sdriver.VolumeArchiveOptions{
-		Store: store, After: cfg.VolumeArchiveAfter(), Interval: cfg.VolumeArchiveInterval(),
-		Timeout: cfg.VolumeArchiveTimeout(), HelperImage: a.HelperImage,
-	}, nil
 }
 
 func envOr(key, def string) string {

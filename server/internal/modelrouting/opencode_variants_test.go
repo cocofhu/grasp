@@ -27,7 +27,13 @@ func TestOpenCodeVariantCatalogMatchesOpenCode(t *testing.T) {
 	if got := SessionEffortChoices(OpenCodePlatformVariants("opencode/gpt-5.5"), "high"); len(got) != 5 {
 		t.Fatalf("documented level hid the chat menu: %v", got)
 	}
-	if !ValidEffortToken("thinking") || ValidEffortToken("") || ValidEffortToken("bad value") {
+	if got := WithSavedEffort(OpenCodePlatformVariants("opencode/gpt-5.5"), "turbo"); len(got) != 6 || got[5] != "turbo" {
+		t.Fatalf("custom variant was not appended: %v", got)
+	}
+	if got := WithSavedEffort(OpenCodePlatformVariants("opencode/gpt-5.5"), "high"); len(got) != 5 {
+		t.Fatalf("catalog variant was duplicated: %v", got)
+	}
+	if WithSavedEffort(nil, "bad value") != nil || !ValidEffortToken("thinking") || ValidEffortToken("") {
 		t.Fatal("custom token rules changed")
 	}
 }
