@@ -735,3 +735,36 @@ func TestSoloInitialReadyRollsBackParentWhenPhysicalPublicationFails(t *testing.
 		t.Fatal(err)
 	}
 }
+
+func TestSoloCompletedCloseWithMissingEnvironmentRowHoldsNoQuota(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 1)
+	legacy := &models.SoloSession{ID: "legacy-closed-missing-row", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed, SandboxID: 9001}
+	if err := db.Create(legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count, err := countSoloCompute(db, 0); err != nil || count != 0 {
+		t.Fatalf("completed Close of a missing row held quota: %d %v", count, err)
+	}
+	view, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
+	if err != nil {
+		t.Fatalf("legacy closed binding blocked a new session: %v", err)
+	}
+	waitFor(t, "new resident running", func() bool { row, _ := solo.Require(view.ID, "alice"); return row.Status == models.SoloStatusRunning })
+	if _, err := solo.Close(context.Background(), view.ID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	unknown := []*models.SoloSession{
+		{ID: "closing-missing-row", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed, LifecycleAction: soloCloseCleanup, SandboxID: 9002},
+		{ID: "error-missing-row", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusError, SandboxID: 9003},
+	}
+	for _, row := range unknown {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count, err := countSoloCompute(db, 0); err != nil || count != 2 {
+		t.Fatalf("unconfirmed missing rows must keep quota: %d %v", count, err)
+	}
+}
