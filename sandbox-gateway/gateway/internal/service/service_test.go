@@ -720,6 +720,75 @@ func TestFinalizeLBWaitFailure(t *testing.T) {
 	}
 }
 
+type restoreFake struct {
+	*fake.Driver
+	delay     time.Duration
+	err       error
+	withdrawn bool
+}
+
+func (r *restoreFake) WaitVolumeRestored(ctx context.Context, id string) (bool, error) {
+	time.Sleep(r.delay)
+	return !r.withdrawn && r.err == nil, r.err
+}
+
+func TestFinalizeWaitsForVolumeRestoreBeyondFinalizeTimeout(t *testing.T) {
+	st := testDB(t)
+	drv := &restoreFake{Driver: fake.New(), delay: 700 * time.Millisecond}
+	if err := drv.WithSessionListener(8765); err != nil {
+		t.Fatalf("session listener: %v", err)
+	}
+	t.Cleanup(drv.Close)
+	svc := New(drv, st, Config{
+		Image: "i", Ports: []int{8765}, SessionPort: 8765,
+		FinalizeTimeout: 500 * time.Millisecond, Resources: testResources(),
+	})
+	sb, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSvcRunning(t, svc, sb.ID)
+}
+
+func TestFinalizeVolumeRestoreFailure(t *testing.T) {
+	st := testDB(t)
+	drv := &restoreFake{Driver: fake.New(), err: errors.New("archive retained")}
+	svc := New(drv, st, Config{
+		Image: "i", Ports: []int{8765}, SessionPort: 8765,
+		FinalizeTimeout: 500 * time.Millisecond, Resources: testResources(),
+	})
+	sb, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := waitSvcError(t, svc, sb.ID)
+	if !strings.Contains(msg, "restore volume") {
+		t.Fatalf("error=%q", msg)
+	}
+}
+
+func TestFinalizeStopsQuietlyWhenRestoreStartIsWithdrawn(t *testing.T) {
+	st := testDB(t)
+	drv := &restoreFake{Driver: fake.New(), withdrawn: true}
+	svc := New(drv, st, Config{
+		Image: "i", Ports: []int{8765}, SessionPort: 8765,
+		FinalizeTimeout: 100 * time.Millisecond, Resources: testResources(),
+	})
+	sb, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Without a session listener, a finalize that kept going would fail here.
+	time.Sleep(400 * time.Millisecond)
+	cur, err := svc.Get(sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.Status == "error" || cur.Status == "running" {
+		t.Fatalf("withdrawn start finalized as %s (%s)", cur.Status, cur.Error)
+	}
+}
+
 func TestFinalizeEndpointsError(t *testing.T) {
 	st := testDB(t)
 	base := fake.New()

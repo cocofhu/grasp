@@ -20,6 +20,8 @@ An expired workflow debugging window stops compute while retaining the environme
 
 Kubernetes stop waits for the controller to observe scaling down and for live Pods to exit. The PVC is retained and services cold-start on resume; process memory is not saved. Stop is not reported as complete while it is waiting. Observation failures or a subsequent start superseding the stop return an error so operators can check the current state and retry.
 
+With `kubernetes.volumeArchive` enabled, a sandbox stopped for longer than `afterSeconds` (30 minutes by default) has its whole data volume archived to S3-compatible storage. The PVC is deleted only after the upload is verified, which frees the disk. The archive covers the entire volume (workspace, caches, dependencies, Docker data and `/tmp`), with no directory exclusions or size cap. The next start recreates the PVC in the background and restores it after verifying the digest. The sandbox reports Pending during the restore and starts automatically once it finishes; cold starts and environment releases wait for the restore. The Deployment, Services and Secret are kept and consume no compute. A failed archive or restore keeps the original PVC or archive, so no data is lost. The gateway needs `pods` and `pods/exec` permissions (see `sandbox-gateway/deploy/k8s/role-volume-archive.yaml`), and the helper pod image must ship GNU tar. If a PV's reclaim policy is `Retain`, deleting the PVC does not free the underlying disk.
+
 ## Full documentation
 
 - [GATEWAY.md](https://github.com/cocofhu/approving/blob/main/GATEWAY.md)

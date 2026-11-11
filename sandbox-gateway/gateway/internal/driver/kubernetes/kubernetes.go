@@ -59,6 +59,9 @@ type Options struct {
 	// without a full Spec.
 	PublicPorts   []int
 	InternalPorts []int
+	// VolumeArchive releases data PVCs of long-stopped sandboxes to object
+	// storage and restores them on start.
+	VolumeArchive VolumeArchiveOptions
 }
 
 // Driver provisions sandboxes as Deployments in Kubernetes and exposes them via
@@ -67,6 +70,7 @@ type Driver struct {
 	cs         kubernetes.Interface
 	opts       Options
 	getPodLogs podLogReader
+	exec       podExecutor
 }
 
 // New builds a kubernetes driver from a kubeconfig or in-cluster config.
@@ -80,7 +84,9 @@ func New(o Options) (*Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
 	}
-	return NewFromClient(cs, o), nil
+	d := NewFromClient(cs, o)
+	d.exec = newPodExecutor(cfg, cs)
+	return d, nil
 }
 
 // NewFromClient builds a Driver over an existing client (used by unit tests
@@ -662,6 +668,14 @@ func (d *Driver) ConvergePublishSurface(ctx context.Context, id string) error {
 }
 
 func (d *Driver) Start(ctx context.Context, id string) error {
+	restoring, err := d.prepareStart(ctx, id)
+	if err != nil {
+		return err
+	}
+	if restoring {
+		// The background restore scales up once the PVC is back.
+		return nil
+	}
 	if err := d.scale(ctx, id, 1); err != nil {
 		return err
 	}
@@ -687,9 +701,35 @@ func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	if replicas > 0 && coldPending(dep) {
 		return driver.ErrColdStartUnknown
 	}
+	a, err := readArchive(dep)
+	if err != nil {
+		return err
+	}
+	cancelled := false
+	if replicas > 0 {
+		if a != nil && a.State != archiveStateArchiving {
+			return ErrVolumeRestoring
+		}
+		// Dropping the record in this write makes an in-flight archive lose
+		// its claim before it can release the PVC.
+		cancelled = a != nil
+		writeArchive(dep, nil)
+		delete(dep.Annotations, stoppedAtAnnotation)
+	} else {
+		stampStopped(dep, time.Now())
+		if a != nil && a.StartAfter {
+			a.StartAfter = false
+			writeArchive(dep, a)
+		}
+	}
 	dep.Spec.Replicas = &replicas
-	_, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
-	return err
+	if _, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+		return err
+	}
+	if cancelled {
+		return d.deleteHelper(ctx, id)
+	}
+	return nil
 }
 
 func (d *Driver) Destroy(ctx context.Context, id string) error {
@@ -697,6 +737,7 @@ func (d *Driver) Destroy(ctx context.Context, id string) error {
 	name := d.resourceName(id)
 	fg := metav1.DeletePropagationForeground
 	delOpts := metav1.DeleteOptions{PropagationPolicy: &fg}
+	d.dropArchive(ctx, id)
 	// Best effort: NotFound is ignored; other errors are recorded.
 	logging.WarnErr(ignoreNotFound(d.cs.AppsV1().Deployments(ns).Delete(ctx, name, delOpts)), "k8s destroy deployment", map[string]any{"sandbox_id": id, "name": name})
 	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().Services(ns).Delete(ctx, name, delOpts)), "k8s destroy service", map[string]any{"sandbox_id": id, "name": name})
@@ -714,6 +755,15 @@ func (d *Driver) Reinstall(ctx context.Context, spec driver.Spec, preserveData b
 	driver.ApplyK8sPreviewDirect(&spec)
 	res := d.resolveResources(spec.Resources)
 
+	// Deleting the Deployment drops the archive record, so preserved data must
+	// be back on its PVC first.
+	if preserveData {
+		if err := d.requireVolume(ctx, id); ignoreNotFound(err) != nil {
+			return err
+		}
+	} else {
+		d.dropArchive(ctx, id)
+	}
 	if err := d.deleteDeployment(ctx, id); err != nil {
 		return fmt.Errorf("delete deployment: %w", err)
 	}
@@ -955,6 +1005,10 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 			return driver.StatusError, err
 		}
 		if !stopped {
+			return driver.StatusPending, nil
+		}
+		// A start waiting on its volume restore is starting, not stopped.
+		if a, _ := readArchive(dep); a != nil && a.State == archiveStateRestoring && a.StartAfter {
 			return driver.StatusPending, nil
 		}
 	}

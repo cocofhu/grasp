@@ -37,6 +37,14 @@ type lbWaiter interface {
 	WaitLoadBalancerIP(ctx context.Context, id string, timeout time.Duration) (string, error)
 }
 
+// volumeRestoreWaiter is optionally implemented by drivers whose Start may
+// first restore an archived data volume in the background. The wait is bounded
+// by the driver, not by FinalizeTimeout, since restores scale with disk size.
+// It reports false when a stop withdrew the start.
+type volumeRestoreWaiter interface {
+	WaitVolumeRestored(ctx context.Context, id string) (bool, error)
+}
+
 // Config tunes the service orchestration.
 type Config struct {
 	Image         string
@@ -288,6 +296,16 @@ func (s *SandboxService) setStatus(id, status, errMsg string) {
 
 // finalize waits for the sandbox to become reachable and backfills endpoints.
 func (s *SandboxService) finalize(id string) {
+	if w, ok := s.drv.(volumeRestoreWaiter); ok {
+		started, err := w.WaitVolumeRestored(context.Background(), id)
+		if err != nil {
+			s.fail(id, fmt.Sprintf("restore volume: %v", err))
+			return
+		}
+		if !started {
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.FinalizeTimeout)
 	defer cancel()
 
