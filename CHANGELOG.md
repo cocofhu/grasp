@@ -5,6 +5,7 @@ All notable public-release changes are documented here.
 ## Unreleased
 
 - Solo 会话可以「停止环境」：先把工作区打包备份（配置了 `solo_backup.s3` 时存到 S3 兼容存储，否则存在服务端本地 `data/solo-backups`），再停止沙箱，停止后不占 Solo 配额，对话保留。点「恢复」时原沙箱还在就直接启动，E2B 沙箱连进程一起恢复；原沙箱已不存在则新建沙箱并从备份还原工作区。`node_modules`、`.venv` 等依赖与缓存目录不备份，单个备份默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`）。
+- 引导创建的 Solo Agent 自带一份 `AGENTS.md`，要求 Agent 需要用户选择时用文字列出选项并等待回复，不再调用 Solo 无法应答的 AskQuestion 工具（此前会显示为失败的工具调用）。已有的 Solo Agent 不受影响，可在 Agent 设置里自行加入同样的说明。
 - Solo 沙箱名额已满的弹窗显示整个工作区已用名额，列出仍占名额的失败会话，并说明其余由其他成员占用，可直接停止或关闭自己的会话（#1201）。
 - 私有网络（`sandbox.private_endpoints`）下的预览不再需要通配子域名和 `GRASP_PREVIEW_ADVERTISE`：预览统一走 `/preview/...` 路径代理，并继续校验预览端口归属当前沙箱（#1198）。
 - 移除 v3.3 / v3.4 的 Solo 迁移、存储认证与外部执行控制体系，回到 v3.2 的数据格式；保留其后的通用修复（见下）。

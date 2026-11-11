@@ -19,7 +19,7 @@ const (
 	OnboardingWorkflowName = "默认工作流"
 	// OnboardingWorkflowNameEN is the first-install published workflow in English.
 	OnboardingWorkflowNameEN = "Default Workflow"
-	// OnboardingSoloAgentName is the empty Agent created for Solo sessions.
+	// OnboardingSoloAgentName is the role-free Agent created for Solo sessions.
 	OnboardingSoloAgentName = "Solo"
 )
 
@@ -95,7 +95,7 @@ type CreateBaselineWorkflowRequest struct {
 	Repos []BaselineRepo `json:"repos"`
 }
 
-// OnboardingService configures the built-in team, an empty Solo Agent and 默认工作流.
+// OnboardingService configures the built-in team, a role-free Solo Agent and 默认工作流.
 type OnboardingService struct {
 	Skills      *AgentService
 	SharedAgent *SharedAgentService
@@ -406,6 +406,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 			AcpBackend:   configuration.Backend,
 			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)},
 			GitBindings:  gitBindings,
+			Files:        []AgentFile{{Path: "AGENTS.md", Content: loc.SoloAgentsMD}},
 			Env:          map[string]string{},
 			Layout: AgentLayout{
 				ConfigRoot:   DefaultConfigRootForBackend(configuration.Backend),

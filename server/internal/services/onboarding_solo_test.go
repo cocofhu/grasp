@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -36,8 +37,14 @@ func TestOnboardingCreatesEmptySoloOutsideWorkflow(t *testing.T) {
 			if !ok {
 				t.Fatal("Solo Agent is missing")
 			}
-			if len(solo.Files) != 0 || len(solo.MCP) != 0 || solo.Capabilities != nil || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
-				t.Fatalf("Solo must have no role instructions, skills or workflow settings: %+v", solo)
+			if len(solo.Files) != 1 || solo.Files[0].Path != "AGENTS.md" || !strings.Contains(solo.Files[0].Content, "AskQuestion") {
+				t.Fatalf("Solo must only carry the AskQuestion instruction: %+v", solo.Files)
+			}
+			if zh := strings.Contains(solo.Files[0].Content, "不要调用"); zh != (language == "zh-CN") {
+				t.Fatalf("Solo instruction is not in %s: %q", language, solo.Files[0].Content)
+			}
+			if len(solo.MCP) != 0 || solo.Capabilities != nil || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
+				t.Fatalf("Solo must have no skills or workflow settings: %+v", solo)
 			}
 			if solo.AcpBackend != "cursor" || solo.InheritModel || solo.InheritGit || solo.ModelBinding == nil || solo.ModelBinding.Kind != "configuration" || solo.ModelBinding.ConfigurationID != "model-onboarding" {
 				t.Fatalf("Solo must use the selected default model: %+v", solo)
