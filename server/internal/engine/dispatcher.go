@@ -122,7 +122,7 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRu
 	res := e.executionMutation(context.Background(), run.ID, func(db *gorm.DB) *gorm.DB {
 		query := db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "queued")
 		if e.workspaceCheckpoints != nil {
-			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
+			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state NOT IN ('applied', 'cancelled'))")
 		}
 		return query.Updates(updates)
 	})
@@ -316,7 +316,7 @@ func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
 	res := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
 		query := db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"})
 		if e.workspaceCheckpoints != nil {
-			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state <> 'applied')")
+			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state NOT IN ('applied', 'cancelled'))")
 		}
 		return query.Updates(updates)
 	})

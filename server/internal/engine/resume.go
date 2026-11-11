@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // validateGateForm enforces a human_gate's form contract on resume. A field is
@@ -662,6 +663,16 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
+	// A save-failed pause cannot call the rest of this path directly: paused is
+	// rejected below, and an open checkpoint returns ErrWorkflowCheckpointBlocked.
+	// End that save first (without marking it applied), then resume the banner node.
+	pinned, err := e.prepareSaveFailedRetry(runID, nodeID)
+	if err != nil {
+		return err
+	}
+	if pinned != "" {
+		nodeID = pinned
+	}
 	if e.workspaceCheckpoints != nil {
 		if err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error { return e.workflowCheckpointPendingTx(tx, runID) }); err != nil {
 			return err
@@ -760,6 +771,99 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 		return errors.New("续跑入场失败")
 	}
 	return nil
+}
+
+// prepareSaveFailedRetry ends a failed workspace save so ResumeFrom can open a
+// new execution of the banner node. It returns that node id when the run was
+// save-failed. Other runs return an empty id and no error. Still-saving,
+// ordinary pauses are not rewritten; saving is rejected here, ordinary pauses
+// fall through to the existing status check.
+func (e *Engine) prepareSaveFailedRetry(runID, requested string) (string, error) {
+	var run models.Run
+	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	checkpointID := services.WorkspaceSaveCheckpointID(run)
+	if checkpointID == "" {
+		return "", nil
+	}
+	var row models.WorkflowVisitCheckpoint
+	if err := e.db.Where("id = ? AND run_id = ?", checkpointID, runID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("没有可续跑的节点")
+		}
+		return "", err
+	}
+	if !services.CheckpointSaveFailed(row) {
+		return "", fmt.Errorf("run 当前状态 %q 不可续跑", "saving")
+	}
+	// An unsealed visit (provider outcome still unknown) must keep blocking
+	// ResumeFrom. Only a sealed node whose file save failed can be re-run.
+	if row.RouteState != "sealed" {
+		return "", nil
+	}
+	if row.NodeID == "" {
+		return "", errors.New("没有可续跑的节点")
+	}
+	if run.Graph.FindNode(row.NodeID) == nil {
+		return "", fmt.Errorf("节点 %q 不在该 run 的流程图中", row.NodeID)
+	}
+	var visits int64
+	if err := e.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ?", runID, row.NodeID).Count(&visits).Error; err != nil {
+		return "", err
+	}
+	if visits == 0 {
+		return "", errors.New("没有可续跑的节点")
+	}
+	if requested != "" && requested != row.NodeID {
+		return "", fmt.Errorf("保存失败只能从停住的节点 %q 重新执行", row.NodeID)
+	}
+	err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
+		var current models.Run
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", runID).Error; err != nil {
+			return err
+		}
+		if current.Status != "paused" || services.WorkspaceSaveCheckpointID(current) != checkpointID {
+			return fmt.Errorf("run 当前状态 %q 不可续跑", current.Status)
+		}
+		var checkpoint models.WorkflowVisitCheckpoint
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", checkpointID).First(&checkpoint).Error; err != nil {
+			return err
+		}
+		if !services.CheckpointSaveFailed(checkpoint) || checkpoint.RouteState != "sealed" {
+			return fmt.Errorf("run 当前状态 %q 不可续跑", current.Status)
+		}
+		ended := tx.Model(&models.WorkflowVisitCheckpoint{}).
+			Where("id = ? AND "+services.WorkflowCheckpointOpenSQL("route_state"), checkpointID).
+			Update("route_state", "cancelled")
+		if ended.Error != nil {
+			return ended.Error
+		}
+		if ended.RowsAffected != 1 {
+			return fmt.Errorf("run 当前状态 %q 不可续跑", current.Status)
+		}
+		if err := services.EndOpenWorkspaceSavesTx(tx, runID); err != nil {
+			return err
+		}
+		// Leave paused before the existing admission path. failed is resumable;
+		// the cancelled checkpoint is not a successful save.
+		result := tx.Model(&models.Run{}).Where("id = ? AND status = ?", runID, "paused").
+			Updates(map[string]any{"status": "failed", "pause_from_status": "", "pause_requested": false})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("run 当前状态 %q 不可续跑", current.Status)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return row.NodeID, nil
 }
 
 // nodeStartVars returns the global-variable snapshot captured when a node's most

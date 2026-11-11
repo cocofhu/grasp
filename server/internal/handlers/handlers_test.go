@@ -84,6 +84,8 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	if len(providers) > 0 {
 		provider = providers[0]
 	}
+	runs := services.NewRunService(db)
+	runs.SetSandboxReleaser(sbx)
 	eng := engine.New(db, provider, host, arts, 5)
 	auditSvc := services.NewAuditService(db)
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
@@ -133,7 +135,7 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	h := &handlers.Handlers{
 		WF:                wfSvc,
 		Workspace:         workspaceSvc,
-		Runs:              services.NewRunService(db),
+		Runs:              runs,
 		Arts:              arts,
 		APIKeys:           services.NewAPIKeyService(db),
 		Agents:            skills,
@@ -646,6 +648,43 @@ func TestDeleteRun(t *testing.T) {
 		strings.Contains(list.Body.String(), "del-ok-failed") ||
 		strings.Contains(list.Body.String(), "del-ok-cancelled") {
 		t.Fatalf("deleted runs still listed: %s", list.Body.String())
+	}
+
+	const saveID = "del-save-failed"
+	if err := h.db.Create(&models.Run{ID: saveID, WorkflowID: "wf-del", Status: "paused", PauseFromStatus: "workspace_checkpoint:cp-del", StartedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.WorkflowVisitCheckpoint{ID: "cp-del", RunID: saveID, NodeID: "n", FileState: "blocked", RouteState: "sealed", Reason: "snapshot_failed"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.Sandbox{Name: "sb-del-save", Purpose: "run", RunID: saveID, Status: "running"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	h.fg.Seed("sb-del-save")
+	w := h.do(http.MethodDelete, "/api/runs/"+saveID, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save-failed delete: %d %s", w.Code, w.Body)
+	}
+	if h.fg.Has("sb-del-save") {
+		t.Fatal("sandbox container was not destroyed")
+	}
+	if w := h.do("GET", "/api/runs/"+saveID, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("save-failed detail after delete: %d", w.Code)
+	}
+
+	const savingID = "del-saving"
+	if err := h.db.Create(&models.Run{ID: savingID, WorkflowID: "wf-del", Status: "paused", PauseFromStatus: "workspace_checkpoint:cp-saving", StartedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.WorkflowVisitCheckpoint{ID: "cp-saving", RunID: savingID, NodeID: "n", FileState: "pending", RouteState: "sealed"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	w = h.do(http.MethodDelete, "/api/runs/"+savingID, nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("saving delete: %d %s", w.Code, w.Body)
+	}
+	if w := h.do("GET", "/api/runs/"+savingID, nil); w.Code != http.StatusOK {
+		t.Fatalf("saving run should remain: %d", w.Code)
 	}
 }
 

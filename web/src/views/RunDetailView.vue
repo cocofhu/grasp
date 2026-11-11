@@ -158,6 +158,7 @@ const {
   onPriorityReposition,
   savePriority,
   canResume,
+  resumeUnavailableHint,
   canResumeSelected,
   statusMap,
   activePath,
@@ -404,8 +405,17 @@ onMounted(() => {
               :title="deleteRunHint || t('common.buttons.deleteRun')"
               @click="openDeleteConfirm"
             >{{ t('common.buttons.deleteRun') }}</AppButton>
-            <AppButton v-if="canResume" variant="primary" size="sm" icon="refresh" :disabled="resuming" @click="onResume('')">
-              {{ resuming ? t('common.buttons.resuming') : t('common.buttons.resumeFromFail') }}
+            <AppButton
+              v-if="canResume"
+              data-testid="failure-retry-btn"
+              variant="primary"
+              size="sm"
+              icon="refresh"
+              :disabled="resuming"
+              :title="t('common.buttons.resumeFromFailHint')"
+              @click="onResume('')"
+            >
+              {{ resuming ? t('common.buttons.failureRetrying') : t('common.buttons.resumeFromFail') }}
             </AppButton>
           </div>
         </div>
@@ -419,6 +429,7 @@ onMounted(() => {
           <span v-else-if="runRepos" data-testid="run-repos" class="min-w-0 max-w-full">{{ t('pages.runDetail.repos') }} <code class="font-mono text-txt2">{{ runRepos }}</code></span>
           <span v-else class="text-txt3">{{ t('pages.runDetail.noRepo') }}</span>
           <span v-if="deleteRunHint" data-testid="delete-run-hint" class="text-[11px] md:ml-auto">{{ deleteRunHint }}</span>
+          <span v-if="resumeUnavailableHint" data-testid="resume-unavailable-hint" class="text-[11px] text-err md:ml-auto">{{ resumeUnavailableHint }}</span>
         </div>
         <div v-if="run.tags?.length" class="mt-2 flex flex-wrap items-center gap-1.5 pl-11">
           <span class="text-[12px] text-txt3">{{ t('pages.runDetail.tagsLabel') }}</span>

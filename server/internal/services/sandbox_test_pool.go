@@ -662,6 +662,36 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	return s.stopRetainedSandbox(ctx, id)
 }
 
+// ReleaseHeldRunSandboxes tears down every sandbox still held by a run that
+// is being deleted. It calls Destroy so the container is removed, not only
+// the sandbox row. runActive is cleared first: a save-failed run is paused,
+// not executing, but the row can still be marked busy from the finished node.
+func (s *SandboxService) ReleaseHeldRunSandboxes(ctx context.Context, runID string) error {
+	if strings.TrimSpace(runID) == "" {
+		return nil
+	}
+	var rows []models.Sandbox
+	if err := s.db.Where("run_id = ?", runID).Find(&rows).Error; err != nil {
+		return err
+	}
+	var first error
+	for i := range rows {
+		row := rows[i]
+		s.mu.Lock()
+		delete(s.runActive, row.Name)
+		s.mu.Unlock()
+		if err := s.Destroy(ctx, row.ID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			if first == nil {
+				first = err
+			}
+		}
+	}
+	return first
+}
+
 // Destroy removes the container and deletes the DB record.
 func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	ctx, unlock, lockErr := s.acquireSandboxOperation(ctx, id)

@@ -275,10 +275,11 @@ func (h *Handlers) CancelRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
 }
 
-// DeleteRun hard-deletes a completed/failed/cancelled run and its associated
-// data. Missing id → 404; non-deletable status → 409; success → 200
-// {status:deleted} (aligned with DeleteWorkflow). Permission matches
-// cancel/resume (same /api session auth).
+// DeleteRun hard-deletes a completed, failed, cancelled, or save-failed run
+// and its associated data. A save-failed run releases its sandbox through
+// SandboxService.Destroy before the rows are removed. Missing id → 404;
+// non-deletable status → 409; success → 200 {status:deleted} (aligned with
+// DeleteWorkflow). Permission matches cancel/resume (same /api session auth).
 func (h *Handlers) DeleteRun(c *gin.Context) {
 	if err := h.Runs.Delete(c.Param("id")); err != nil {
 		switch {

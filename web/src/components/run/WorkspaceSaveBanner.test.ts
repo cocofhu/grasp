@@ -34,6 +34,7 @@ describe('WorkspaceSaveBanner', () => {
     const wrapper = mountBanner(failed)
     expect(wrapper.get('[data-testid="workspace-save-banner"]').attributes('role')).toBe('alert')
     expect(wrapper.text()).toContain('工作区保存失败')
+    expect(wrapper.text()).toContain('重试保存只会重新保存')
     expect(wrapper.text()).toContain('无法安全保存的 Git 元数据')
     await wrapper.get('[data-testid="workspace-save-retry"]').trigger('click')
     await flushPromises()

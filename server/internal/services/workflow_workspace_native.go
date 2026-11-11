@@ -21,7 +21,7 @@ func GuardWorkflowNativeTx(ctx context.Context, tx *gorm.DB, runID string) error
 		return err
 	}
 	var pending struct{ ID string }
-	err := tx.Table("workflow_visit_checkpoints").Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("run_id = ? AND route_state <> ?", runID, "applied").Take(&pending).Error
+	err := tx.Table("workflow_visit_checkpoints").Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("run_id = ? AND "+WorkflowCheckpointOpenSQL("route_state"), runID).Take(&pending).Error
 	if err == nil {
 		return ErrWorkflowCheckpointBlocked
 	}

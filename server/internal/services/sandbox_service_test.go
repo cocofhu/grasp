@@ -436,6 +436,35 @@ func TestSandboxListFiftyBatchOnce(t *testing.T) {
 	t.Logf("List(%d) took %v with %d gateway list call(s)", n, elapsed, ds.fg.ListCalls-before)
 }
 
+func TestReleaseHeldRunSandboxesDestroysContainer(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	row := &models.Sandbox{Name: "grasp-sb-held", Purpose: "run", Status: "running", RunID: "run-held"}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ds.setStatus(row.Name, "running")
+	s.mu.Lock()
+	s.runActive[row.Name] = true
+	s.mu.Unlock()
+	if s.Destroy(context.Background(), row.ID) == nil {
+		t.Fatal("busy run sandbox should refuse Destroy until the delete path clears it")
+	}
+	if err := db.First(&models.Sandbox{}, row.ID).Error; err != nil {
+		t.Fatal("refused Destroy removed the row")
+	}
+	if err := s.ReleaseHeldRunSandboxes(context.Background(), row.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&models.Sandbox{}, row.ID).Error; err != gorm.ErrRecordNotFound {
+		t.Fatal("Destroy should remove the sandbox row")
+	}
+	if ds.fg.Has(row.Name) {
+		t.Fatal("gateway sandbox still present; only the table row was deleted")
+	}
+}
+
 func TestSandboxStopDestroyCleanup(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
