@@ -42,7 +42,6 @@ import (
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
-	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -463,12 +462,7 @@ func main() {
 	host.SetPreviewStore(previewSvc)
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)
-	var privatePreviewBase privatepreview.Base
-	if cfg.Sandbox.PrivateEndpoints {
-		// Config parsing already validated the isolated wildcard origin.
-		privatePreviewBase, _ = privatepreview.Parse(cfg.Server.PreviewAdvertise)
-		host.SetPrivatePreviewBase(privatePreviewBase)
-	}
+	host.SetPrivateEndpoints(cfg.Sandbox.PrivateEndpoints)
 
 	// Preview feedback: humans report problems from the preview UI (one-way).
 	// The engine snapshots them into the preview_issues run variable at gate
@@ -624,7 +618,6 @@ func main() {
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
 		PublicAdvertise:     cfg.Server.PublicAdvertise,
-		PrivatePreviewBase:  privatePreviewBase,
 		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,

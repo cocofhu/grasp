@@ -57,12 +57,6 @@ var (
 // it additionally enforces liveness/health and self-heals a stale host after a
 // container restart.
 func (h *Handlers) PreviewProxy(c *gin.Context) {
-	// Private registrations are served exclusively on isolated origins. A
-	// same-origin path would let sandbox HTML use the platform's login cookie.
-	if h.MCP != nil && h.MCP.PrivatePreviews() {
-		c.String(http.StatusNotFound, "preview not found")
-		return
-	}
 	runID := c.Param("runId")
 	nodeID := c.Param("nodeId")
 	port, err := strconv.Atoi(c.Param("port"))
@@ -85,6 +79,11 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
 	host, sandboxName := reg.Host, reg.SandboxName
+	private := h.privateEndpoints()
+	if private && !h.privatePreviewBound(reg) {
+		c.String(http.StatusGone, "preview expired")
+		return
+	}
 
 	// When co-located with the sandbox manager, enforce liveness + health and
 	// refresh a stale/empty upstream host (container IP changes across restarts).
@@ -129,7 +128,14 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
 	rewritePreview := rewritePreviewResponse(prefix, previewStorageShim)
+	upstreamPath := c.Param("path")
 	proxy.ModifyResponse = func(resp *http.Response) error {
+		if private {
+			if err := checkPrivateInjectorUpstream(reg, upstreamPath, resp); err != nil {
+				return err
+			}
+			stripPrivateReservedHeaders(resp.Header)
+		}
 		dropSessionSetCookie(resp.Header)
 		resp.Header.Del("Access-Control-Allow-Origin")
 		resp.Header.Del("Access-Control-Allow-Credentials")
@@ -176,6 +182,9 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 		c.Request.Header.Set("Origin", target.Scheme+"://"+target.Host)
 	}
 	c.Request.Header.Del("Forwarded")
+	if private {
+		stripPrivateReservedHeaders(c.Request.Header)
+	}
 	proxy.ServeHTTP(c.Writer, c.Request)
 }
 

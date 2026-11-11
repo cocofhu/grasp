@@ -42,8 +42,8 @@ It implements this gateway API with prepared E2B templates and private loopback
 TCP tunnels, so Grasp keeps using SSH, ACP, IDE and browser protocols. Legacy
 direct mode requires Grasp and the gateway in the same Linux network namespace.
 The opt-in gateway transport below removes that requirement; only the gateway
-needs access to its provider endpoints. Browser clients use Grasp proxies and
-an isolated wildcard preview site. The dedicated
+needs access to its provider endpoints. Browser clients use Grasp proxies,
+including the existing `/preview/...` path proxy. The dedicated
 [deployment guide](sandbox-gateway/deploy/e2b/README.md) covers template profiles,
 callback routing, credentials, leases and recovery. `compose.e2b.yaml` does not
 change either existing startup path.
@@ -81,10 +81,9 @@ Grasp's loopback only; these local endpoint addresses are for the server. The
 browser continues using Grasp's existing links and session authorization.
 
 For a single existing gateway, set `GRASP_SANDBOX_GATEWAY_TRANSPORT=gateway`
-and `GRASP_SANDBOX_GATEWAY_API_KEY`, plus a valid `GRASP_PREVIEW_ADVERTISE`.
-Gateway transport automatically enables isolated private previews for every
-driver. DNS for the preview base and its wildcard subdomains must route to
-Grasp; in production this must be a different registrable site from the app.
+and `GRASP_SANDBOX_GATEWAY_API_KEY`. Gateway transport automatically marks
+endpoints private for every driver: previews are served through the Grasp
+`/preview/...` path proxy and no extra preview domain is needed.
 `server.mcp_advertise` must remain reachable **from inside the sandbox** for
 runtime/config bundles, artifacts, MCP and callbacks; the data tunnel does not
 replace that route.
@@ -96,7 +95,6 @@ connections to the Grasp YAML:
 server:
   public_advertise: https://grasp.example.com
   mcp_advertise: https://grasp.example.com
-  preview_advertise: https://preview.example.net
 sandbox:
   # Original gateway for existing, unqualified sandbox IDs. Do not repoint it.
   gateway_url: https://gateway-docker.example.test

@@ -106,7 +106,7 @@ func (s *PreviewService) ListPreviewPorts(runID, nodeID string) ([]mcp.PreviewPo
 		out = append(out, mcp.PreviewPort{
 			RunID: r.RunID, NodeID: r.NodeID, Kind: kind, ItemKey: itemKey,
 			Port: r.Port, URL: r.ExternalURL, Label: r.Label,
-			ProxyURL: r.ProxyURL, SandboxName: r.SandboxName, Host: r.Host, InjectorPort: r.InjectorPort, Healthy: r.Healthy,
+			ProxyURL: storedPreviewProxyURL(r, kind), SandboxName: r.SandboxName, Host: r.Host, InjectorPort: r.InjectorPort, Healthy: r.Healthy,
 			KeepalivePID: r.KeepalivePID, RegisteredAt: r.RegisteredAt,
 		})
 	}
@@ -121,25 +121,19 @@ func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.Pr
 	rec := mcp.PreviewPort{
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
 		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
-		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
+		ProxyURL: storedPreviewProxyURL(row, row.Kind), SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
 		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
 	}
 	return &rec, true
 }
 
-// PrivatePreviewByURL resolves an opaque browser capability from persisted
-// registrations, including after a server restart. No endpoint is inferred
-// from a hostname or caller-supplied port.
-func (s *PreviewService) PrivatePreviewByURL(rawURL string) (*mcp.PreviewPort, bool) {
-	var row models.RunPreviewPort
-	if s.db == nil || s.db.Where("proxy_url = ? AND kind = ?", rawURL, mcp.PreviewKindPort).First(&row).Error != nil {
-		return nil, false
+// storedPreviewProxyURL serves port registrations through the path proxy.
+// Rows saved by the removed isolated-origin preview hold an absolute URL.
+func storedPreviewProxyURL(row models.RunPreviewPort, kind string) string {
+	if kind == mcp.PreviewKindURL || row.Port <= 0 || strings.HasPrefix(row.ProxyURL, "/preview/") {
+		return row.ProxyURL
 	}
-	return &mcp.PreviewPort{
-		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind, ItemKey: row.ItemKey,
-		Port: row.Port, ProxyURL: row.ProxyURL, SandboxName: row.SandboxName,
-		Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
-	}, true
+	return fmt.Sprintf("/preview/%s/%s/%d/", row.RunID, row.NodeID, row.Port)
 }
 
 func (s *PreviewService) UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error {

@@ -15,7 +15,6 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_DEPLOYMENT_MODE` | `server.deployment_mode` | string | `development` | Public | Deployment trust boundary; local-demo is loopback-only |
 | `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for artifact-store MCP |
 | `GRASP_PUBLIC_ADVERTISE` | `server.public_advertise` | URL | `derived` | Public | Public base URL for browser preview proxy and Run→QQ deep links (not used to mint gate share URLs) |
-| `GRASP_PREVIEW_ADVERTISE` | `server.preview_advertise` | URL | `Not set` | Public | Separate wildcard origin for private previews routed to Grasp; production requires a different registrable site from the platform |
 | `GRASP_FRAME_ANCESTORS` | `server.frame_ancestors` | origin list | `Not set` | Public | Origins allowed to embed workspace pages in an iframe (space or comma separated, e.g. https://portal.example.com); empty forbids embedding |
 | `GRASP_DB` | `database.path` | path | `grasp.db` | Public | SQLite database file |
 | `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite or mysql |
@@ -35,7 +34,7 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | `sandbox.gateway_api_key` | string | `Not set` | Sensitive | Gateway bearer token |
 | `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `sandbox.gateway_transport` | enum | `direct` | Public | Sandbox transport: direct or authenticated gateway; gateway requires an isolated preview origin |
 | `GRASP_SANDBOX_DEFAULT_GATEWAY` | `sandbox.default_gateway` | string | `Not set` | Public | Named gateway for new sandboxes; existing sandboxes retain their binding |
-| `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `sandbox.private_endpoints` | boolean | `false` | Public | Use isolated Grasp preview origins for private endpoints; gateway transport enables this automatically; legacy direct defaults remain compatible |
+| `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `sandbox.private_endpoints` | boolean | `false` | Public | Sandbox endpoints are server-only and previews use the Grasp path proxy; gateway transport enables this automatically; legacy direct defaults remain compatible |
 | `GRASP_OPENCODE_CATALOG_URL` | `sandbox.opencode_catalog_url` | URL | `https://models.dev/api.json` | Public | OpenCode model catalog URL; point at a mirror when egress is restricted |
 | `GRASP_SANDBOX_ENV` | `sandbox.env` | key-value list | `Not set` | Sensitive | Generic environment injected into every sandbox |
 | `GRASP_AGENT_TIMEOUT_SEC` | `sandbox.agent_chat_timeout_seconds` | integer | `Not set` | Public | Deprecated and ignored: Agent turns no longer have a per-turn limit; set the node time limit on the canvas |

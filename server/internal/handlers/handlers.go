@@ -19,7 +19,6 @@ import (
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
-	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
@@ -82,9 +81,6 @@ type Handlers struct {
 	// compares Origin/Referer to this request's Host (never client
 	// X-Forwarded-Host; advertise host is not used for CSRF).
 	PublicAdvertise string
-	// PrivatePreviewBase reserves an isolated wildcard origin for private
-	// sandbox endpoints. Its zero value preserves existing direct previews.
-	PrivatePreviewBase privatepreview.Base
 	// FrameAncestors are the origins allowed to embed workspace pages.
 	FrameAncestors []string
 	Team           *services.TeamService

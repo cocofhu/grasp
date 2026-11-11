@@ -11,13 +11,12 @@ E2B 是 sandbox-gateway 的第三种显式驱动，适用于 E2B Cloud 或自托
 ## 部署边界
 
 - Grasp 和 gateway 必须在同一 Linux 宿主机共享网络命名空间。此 Compose 使用 `network_mode: host`；guest 的 SSH、ACP、IDE、CDP、noVNC、应用端口均由 gateway 转成宿主机 `127.0.0.1` TCP 端口。它们不能直接作为用户浏览器地址，也不能直接拆到另一台宿主机。
-- E2B 控制面 API key、envd token、traffic token、relay key 留在 gateway；浏览器只拿到注册预览的 Grasp 随机域名。guest 保留现有按作用域注入的 MCP、模型和 Git 凭据。
+- E2B 控制面 API key、envd token、traffic token、relay key 留在 gateway；浏览器只通过 Grasp 的 `/preview/...` 路径代理访问注册预览。guest 保留现有按作用域注入的 MCP、模型和 Git 凭据。
 - guest 到 Grasp 的专用回连入口只转发 `/mcp/`、`/sandbox-inject/`，以及 **GET `/embed-api/origin/<runID>`**。最后一条只提供按 run/node 和短期 ticket 校验的嵌入聊天来源查询，不能扩展成整个 `/embed-api/`。运行时包和 ConfigHome 通过受保护的 `/sandbox-inject/` 下发。该入口不转发 `/api/`、登录页或整个 Grasp UI；网络策略只放行这一受控入口。provider 默认禁止内网访问时，由运维为该入口配置所需的精确规则，不要开放整个私有网段。
-- 用户平台来源、guest 回连来源和预览来源分开配置。例如 `https://grasp.example.com`、`https://callback.internal.example.com` 和 `https://preview.example.net`。生产模式要求预览与平台属于**不同可注册站点**；`grasp.example.com` 与 `preview.example.com` 仍共享 Cookie 的站点边界，配置会拒绝。
-- `*.preview.example.net` 的 DNS 和通配符 TLS 证书指向同一个 Grasp listener。反向代理须保留原始 `Host`、查询参数与 WebSocket Upgrade，直接转发完整根路径，不加 `/preview/` 前缀。每个随机子域名只服务其注册的应用；未知子域名不能回落到平台 API、静态文件或登录页。
+- 用户平台来源与 guest 回连来源分开配置，例如 `https://grasp.example.com` 和 `https://callback.internal.example.com`。预览不需要额外域名或通配符证书。
 - 只有边缘代理应能访问平台 HTTP listener。用宿主防火墙保护 Grasp 原始端口，gateway 控制面仅监听 loopback；不要把 E2B 管理端口、relay、CDP 或动态本地端口开放到公网。
 
-独立来源保留应用的 `/`、`fetch('/api/...')`、`/__grasp/*`、Vite HMR 和 WebSocket 路径。现有嵌入聊天仍使用 Grasp 自身的短期 ticket、bearer 与严格 `postMessage` 来源检查，不把 E2B 认证头交给页面。生产环境还需实际浏览器验收第三方 Cookie 限制下的 ticket 流程；该流程不应依赖 iframe 携带平台登录 Cookie。
+预览与 Docker/Kubernetes 一样走路径代理：应用页面在 CSP sandbox 的不透明来源中运行，代理只服务当前沙箱代次的注册端口，并在双向剥离 E2B 路由头。路径代理会改写 HTML 中的根路径引用，但应用脚本里写死的根路径请求（例如 `fetch('/api/...')`）和 Vite HMR 的 WebSocket 地址需要应用自行使用相对路径，这与现有 Docker/Kubernetes 预览一致。
 
 ## 准备环境模板
 
@@ -76,7 +75,6 @@ Compose 读取的变量如下；敏感值请由 Secret 管理或受保护的环�
 | `SANDBOX_GATEWAY_API_KEY` | Grasp→gateway 的独立 Bearer token |
 | `GRASP_PUBLIC_ADVERTISE` | 用户访问的平台 HTTPS 来源，例如 `https://grasp.example.com` |
 | `GRASP_MCP_ADVERTISE` | guest 能访问的受控回连来源，只开放上述精确回连路径 |
-| `GRASP_PREVIEW_ADVERTISE` | 独立可注册站点的预览基址，例如 `https://preview.example.net`，须有通配符 DNS/TLS |
 | `GRASP_AUTH_USERS`、`GRASP_SECRETS_KEY` | 原有平台账户散列配置与固定加密主密钥 |
 | `GRASP_SANDBOX_IMAGE` | 与 profile 相同；默认 `universal-sandbox:e2b` |
 | `GRASP_SANDBOX_MEMORY_MB` | 与 profile 相同；默认 `3072` |

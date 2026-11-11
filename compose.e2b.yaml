@@ -1,6 +1,6 @@
 # Independent E2B deployment. Existing start.sh/Compose/Kubernetes modes do not
 # read this file. Linux host networking lets Grasp use private loopback tunnels.
-# Setup and wildcard preview routing: sandbox-gateway/deploy/e2b/README.md.
+# Setup: sandbox-gateway/deploy/e2b/README.md.
 name: grasp-e2b
 services:
   gateway:
@@ -43,7 +43,6 @@ services:
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:?Set GRASP_SECRETS_KEY}
       GRASP_PUBLIC_ADVERTISE: ${GRASP_PUBLIC_ADVERTISE:?Set the browser-facing HTTPS origin}
       GRASP_MCP_ADVERTISE: ${GRASP_MCP_ADVERTISE:?Set the sandbox-reachable callback origin}
-      GRASP_PREVIEW_ADVERTISE: ${GRASP_PREVIEW_ADVERTISE:?Set the wildcard preview base origin on a separate site}
       GRASP_SANDBOX_PRIVATE_ENDPOINTS: "true"
       GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY}

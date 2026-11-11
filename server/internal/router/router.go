@@ -22,7 +22,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.Use(errorLogger())
 	// Private preview hosts are a separate trust boundary. Intercept them
 	// before CORS, static files and API routes, including unknown tickets.
-	r.Use(h.PrivatePreviewMiddleware())
 	r.Use(cors())
 	// Trust common private-network proxies so ClientIP reads X-Forwarded-For
 	// correctly behind K8s Ingress.
