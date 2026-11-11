@@ -34,7 +34,7 @@ import {
   sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
-import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { notifyRecentActivity, onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -47,7 +47,7 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { isSoloActive, useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloActive, isSoloEnded, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { soloErrorText } from '@/lib/solo/soloErrors'
 import type { SoloSession } from '@/lib/api/apiTypes'
 import SidebarSectionHeading from './SidebarSectionHeading.vue'
@@ -383,9 +383,15 @@ const saving = ref(false)
 const editEpoch = ref(0)
 const suppressPendingClick = ref(false)
 let rowClickReleaseTimer: number | undefined
-type MenuTarget = { kind: 'run' | 'solo'; key: string; x: number; y: number }
+type MenuTarget = { kind: 'run' | 'solo' | 'history-run'; key: string; x: number; y: number }
 const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
+const menuHistoryRun = ref<Run | null>(null)
+const historyRunById = ref(new Map<string, Run>())
+const historyTitleOverrides = ref<Record<string, string>>({})
+const dismissedHistoryRunIds = ref<string[]>([])
+const dismissedHistorySoloIds = ref<string[]>([])
+const historyRunTitles = computed(() => ({ ...pendingRunTitles.value, ...historyTitleOverrides.value }))
 
 type RowPress = { key: string; x: number; y: number; timer: number }
 let rowPress: RowPress | null = null
@@ -401,8 +407,10 @@ const menuSolo = computed(() => {
   return soloStore.sessions.value.find((it) => soloRowKey(it) === key) ?? null
 })
 const menuSoloActive = computed(() => !!menuSolo.value && isSoloActive(menuSolo.value))
+const menuSoloEnded = computed(() => !!menuSolo.value && isSoloEnded(menuSolo.value))
 const menuSoloClosing = computed(() => !!menuSolo.value && soloStore.closing.value.has(menuSolo.value.id))
-const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && !!(menuSolo.value.sandboxId || menuSolo.value.sandbox?.id))
+const menuSoloBound = computed(() => !!(menuSolo.value?.sandboxId || menuSolo.value?.sandbox?.id))
+const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && menuSoloBound.value)
 const changingSoloEnvironments = ref(new Map<string, 'stopping' | 'resuming'>())
 /** The local request, or the server still converging on the requested state. */
 function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | null {
@@ -437,7 +445,26 @@ function setRenameInput(el: unknown) {
 
 function closeMenu() {
   menu.value = null
+  menuHistoryRun.value = null
 }
+
+function soloEnvironmentBound(session: SoloSession): boolean {
+  return !!(session.sandboxId || session.sandbox?.id)
+}
+
+function displayedHistoryTitle(run: Run): string {
+  return displayRunTitle(historyRunTitles.value[run.id] ?? run.title) || run.workflowName || run.id
+}
+
+const historyEditingRunId = computed(() => (
+  editingKey.value?.startsWith('history:') ? editingKey.value.slice('history:'.length) : null
+))
+const historyEditingSoloId = computed(() => {
+  const key = editingKey.value
+  if (!key?.startsWith('solo:')) return null
+  const session = soloStore.sessions.value.find((item) => soloRowKey(item) === key)
+  return session && isSoloEnded(session) ? session.id : null
+})
 
 function shareLinkState(it: InboxItem): string | undefined {
   if (!('shareLink' in it) || !it.shareLink) return undefined
@@ -460,25 +487,38 @@ function pendingMenuHeight(it: InboxItem): number {
 }
 
 function openMenu(it: InboxItem, x: number, y: number) {
-  if (editingKey.value) return
+  if (editingKey.value || deleteTarget.value) return
   const height = pendingMenuHeight(it)
   const width = !isRunOnlyRow(it) && shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
+  menuHistoryRun.value = null
   menu.value = { kind: 'run', key: it.runId, x: left, y: top }
 }
 
 function openSoloMenu(session: SoloSession, x: number, y: number) {
-  if (editingKey.value) return
+  if (editingKey.value || deleteTarget.value) return
   const width = MENU_WIDTH
   const active = isSoloActive(session)
-  const environment = active || (session.status === 'closed' && !!(session.sandboxId || session.sandbox?.id))
-  const rows = (active ? 2 : 0) + (worktreeMode.value ? 0 : 1 + Number(environment))
-  const separators = active && !worktreeMode.value ? 1 : 0
+  const bound = soloEnvironmentBound(session)
+  const release = !active && session.status === 'closed' && bound
+  const workspaceRows = worktreeMode.value ? 0 : 1 + (active ? 1 : Number(release))
+  const rows = (active ? 2 : 1) + workspaceRows + (active ? 0 : 1)
+  const separators = (active && !worktreeMode.value ? 1 : 0) + (active ? 0 : 1)
   const height = MENU_CHROME + rows * MENU_ROW_HEIGHT + separators * 9
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
+  menuHistoryRun.value = null
   menu.value = { kind: 'solo', key: soloRowKey(session), x: left, y: top }
+}
+
+function openHistoryMenu(run: Run, x: number, y: number) {
+  if (editingKey.value || deleteTarget.value) return
+  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT + 9
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - MENU_WIDTH))
+  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
+  menuHistoryRun.value = run
+  menu.value = { kind: 'history-run', key: run.id, x: left, y: top }
 }
 
 function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
@@ -574,14 +614,26 @@ function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
 }
 
 function onSoloPointerDown(event: PointerEvent, session: SoloSession) {
-  if (worktreeMode.value && !isSoloActive(session)) return
   startRowPress(event, soloRowKey(session), (x, y) => {
     const row = soloStore.sessions.value.find(item => item.id === session.id)
     if (row) openSoloMenu(row, x, y)
   })
 }
 
+function onHistoryRunPointerDown(event: PointerEvent, run: Run) {
+  startRowPress(event, `history:${run.id}`, (x, y) => {
+    const current = historyRunById.value.get(run.id)
+    if (current) openHistoryMenu(current, x, y)
+  })
+}
+
 function onSoloHistoryClick(event: MouseEvent) {
+  if (!suppressPendingClick.value) return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onHistoryRunClick(event: MouseEvent) {
   if (!suppressPendingClick.value) return
   event.preventDefault()
   event.stopPropagation()
@@ -596,7 +648,6 @@ function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
 }
 
 function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
-  if (worktreeMode.value && !isSoloActive(session)) return
   event.preventDefault()
   event.stopPropagation()
   if (editingKey.value) return
@@ -604,12 +655,29 @@ function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
   openSoloMenu(session, event.clientX, event.clientY)
 }
 
+function onHistoryRunContextMenu(event: MouseEvent, run: Run) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (editingKey.value) return
+  clearRowPress()
+  openHistoryMenu(run, event.clientX, event.clientY)
+}
+
 function onSoloMenuKeydown(event: KeyboardEvent, session: SoloSession) {
   if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
-  if (worktreeMode.value && !isSoloActive(session)) return
   event.preventDefault()
+  if (editingKey.value) return
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   openSoloMenu(session, rect.left + 12, rect.bottom)
+  void nextTick(() => menuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
+}
+
+function onHistoryRunMenuKeydown(event: KeyboardEvent, run: Run) {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+  event.preventDefault()
+  if (editingKey.value) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  openHistoryMenu(run, rect.left + 12, rect.bottom)
   void nextTick(() => menuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
 }
 
@@ -618,7 +686,7 @@ function onDocMouseDown(event: MouseEvent) {
   const target = event.target
   if (target instanceof Node && menuEl.value?.contains(target)) return
   // Touch release can synthesize a mouse down on the row that opened the menu.
-  if (suppressPendingClick.value && target instanceof Element && target.closest('[data-testid="nav-pending-row"], [data-testid="sidebar-recent-solo"]')) return
+  if (suppressPendingClick.value && target instanceof Element && target.closest('[data-testid="nav-pending-row"], [data-testid="sidebar-recent-solo"], [data-testid="sidebar-recent-run"]')) return
   closeMenu()
 }
 
@@ -763,17 +831,111 @@ function onMenuPin() {
 }
 
 function onMenuRename() {
+  if (menuHistoryRun.value) {
+    void beginHistoryRename(menuHistoryRun.value)
+    return
+  }
   if (menuSolo.value) {
     const s = menuSolo.value
     closeMenu()
     renameDraft.value = s.title || ''
     editingKey.value = soloRowKey(s)
-    void nextTick(() => renameInput.value?.focus())
+    void nextTick(() => {
+      const el = renameInput.value
+      if (!el) return
+      el.focus()
+      const end = el.value.length
+      el.setSelectionRange(end, end)
+    })
     return
   }
   const it = menuItem.value
   if (!it) return
   void beginRename(it)
+}
+
+async function beginHistoryRename(run: Run) {
+  if (saving.value) return
+  closeMenu()
+  editingKey.value = `history:${run.id}`
+  renameDraft.value = displayedHistoryTitle(run)
+  await nextTick()
+  const el = renameInput.value
+  if (!el) return
+  el.focus()
+  const end = el.value.length
+  el.setSelectionRange(end, end)
+}
+
+async function commitHistoryRename() {
+  const key = editingKey.value
+  if (saving.value || !key?.startsWith('history:')) return
+  const runId = key.slice('history:'.length)
+  const run = historyRunById.value.get(runId)
+  if (!run) {
+    cancelEdit()
+    return
+  }
+  const next = renameDraft.value.trim()
+  const prev = displayedHistoryTitle(run)
+  if (next === prev) {
+    cancelEdit()
+    return
+  }
+  if (!next) {
+    toast.error(t('nav.pendingNameEmpty'))
+    refocusRename()
+    return
+  }
+  if ([...next].length > RUN_TITLE_MAX) {
+    toast.error(t('nav.pendingNameTooLong'))
+    refocusRename()
+    return
+  }
+  const epoch = editEpoch.value
+  saving.value = true
+  try {
+    const saved = await api.updateRunTitle(runId, next)
+    const title = saved.title?.trim() || next
+    historyTitleOverrides.value = { ...historyTitleOverrides.value, [runId]: title }
+    patchRunTitle(runId, title)
+    runningRuns.value = runningRuns.value.map((r) => (r.id === runId ? { ...r, title } : r))
+    carriedRows.value = carriedRows.value.map((r) => (r.runId === runId ? { ...r, runTitle: title } : r))
+    if (epoch !== editEpoch.value) return
+    editingKey.value = null
+    renameDraft.value = ''
+    notifyRecentActivity()
+  } catch {
+    if (epoch !== editEpoch.value) return
+    toast.error(t('nav.pendingRenameFailed'))
+    refocusRename()
+  } finally {
+    if (epoch === editEpoch.value) saving.value = false
+  }
+}
+
+function onHistoryRenameBlur() {
+  const key = editingKey.value
+  window.setTimeout(() => {
+    if (saving.value || editingKey.value !== key) return
+    if (document.activeElement === renameInput.value) return
+    if (key?.startsWith('history:')) void commitHistoryRename()
+    else if (key?.startsWith('solo:')) {
+      const session = soloStore.sessions.value.find((item) => soloRowKey(item) === key)
+      if (session && isSoloEnded(session)) void commitSoloRename(session)
+    }
+  }, 0)
+}
+
+function onHistoryRenameCommit() {
+  if (editingKey.value?.startsWith('history:')) {
+    void commitHistoryRename()
+    return
+  }
+  if (editingKey.value?.startsWith('solo:')) {
+    const session = soloStore.sessions.value.find((item) => soloRowKey(item) === editingKey.value)
+    if (session && isSoloEnded(session)) void commitSoloRename(session)
+  }
 }
 
 function preservedListFilters(): Record<string, string> {
@@ -790,12 +952,102 @@ function onMenuWorkflowView() {
   const it = menuItem.value
   if (!it) return
   closeMenu()
+  openRunCanvas(it.runId)
+}
+
+function onMenuHistoryWorkflowView() {
+  const run = menuHistoryRun.value
+  if (!run) return
+  closeMenu()
+  openRunCanvas(run.id)
+}
+
+function openRunCanvas(runId: string) {
   const query: Record<string, string> = { ...preservedListFilters(), view: 'canvas' }
-  const path = runDetailPath(it.runId)
+  const path = runDetailPath(runId)
   const location = { path, query }
   if (route.path === path) void router.replace(location)
   else void router.push(location)
   onNavigate()
+}
+
+type HistoryDeleteTarget = { kind: 'run'; run: Run } | { kind: 'solo'; session: SoloSession }
+const deleteTarget = ref<HistoryDeleteTarget | null>(null)
+const deletingHistory = ref(false)
+const deleteHistoryError = ref('')
+
+function onMenuDeleteHistoryRun() {
+  const run = menuHistoryRun.value
+  if (!run || deletingHistory.value) return
+  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'cancelled') return
+  closeMenu()
+  deleteHistoryError.value = ''
+  deleteTarget.value = { kind: 'run', run }
+}
+
+function onMenuDeleteSolo() {
+  const session = menuSolo.value
+  if (!session || !menuSoloEnded.value || deletingHistory.value || soloEnvironmentBound(session)) return
+  closeMenu()
+  deleteHistoryError.value = ''
+  deleteTarget.value = { kind: 'solo', session }
+}
+
+function closeHistoryDelete() {
+  if (deletingHistory.value) return
+  deleteTarget.value = null
+  deleteHistoryError.value = ''
+}
+
+function mapDeleteRunError(e: unknown): string {
+  const status = (e as { status?: number })?.status
+  const msg = e instanceof Error ? e.message : String(e || '')
+  if (status === 404 || /not found/i.test(msg)) return t('pages.runDetail.deleteErrorNotFound')
+  if (status === 409 || /cannot delete run/i.test(msg)) return t('pages.runDetail.deleteErrorNotDeletable')
+  return msg || t('pages.runDetail.deleteErrorGeneric')
+}
+
+async function confirmHistoryDelete() {
+  const target = deleteTarget.value
+  if (!target || deletingHistory.value) return
+  deletingHistory.value = true
+  deleteHistoryError.value = ''
+  try {
+    if (target.kind === 'run') {
+      const run = target.run
+      await api.deleteRun(run.id)
+      dismissedHistoryRunIds.value = [...dismissedHistoryRunIds.value, run.id]
+      deleteTarget.value = null
+      toast.success(t('pages.runList.deleteSuccess'))
+      notifyRecentActivity()
+      if (recentRunActive(run, route)) {
+        const qs = run.workflowId ? `?wf=${encodeURIComponent(run.workflowId)}` : ''
+        await router.push(`/runs${qs}`)
+        onNavigate()
+      }
+    } else {
+      const session = target.session
+      if (soloEnvironmentBound(session)) {
+        deleteHistoryError.value = t('nav.historySoloDeleteBlocked')
+        return
+      }
+      await api.deleteSoloSession(session.id)
+      dismissedHistorySoloIds.value = [...dismissedHistorySoloIds.value, session.id]
+      soloStore.remove(session.id)
+      deleteTarget.value = null
+      toast.success(t('nav.historySoloDeleted'))
+      if (route.path === `/solo/${encodeURIComponent(session.id)}`) {
+        await router.push('/dashboard')
+        onNavigate()
+      }
+    }
+  } catch (e) {
+    deleteHistoryError.value = target.kind === 'run'
+      ? mapDeleteRunError(e)
+      : (soloErrorText(e, t, te, locale.value) || t('nav.historySoloDeleteFailed'))
+  } finally {
+    deletingHistory.value = false
+  }
 }
 
 function pushConversation(runId: string, nodeId?: string, extra?: Record<string, string>) {
@@ -892,7 +1144,7 @@ async function confirmCancelRun() {
 watch(pendingRows, (rows) => {
   if (menu.value?.kind === 'run' && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
   if (!editingKey.value) return
-  if (editingKey.value.startsWith('solo:')) return
+  if (editingKey.value.startsWith('solo:') || editingKey.value.startsWith('history:')) return
   if (rows.some((it) => it.runId === editingKey.value)) return
   editEpoch.value++
   editingKey.value = null
@@ -900,14 +1152,26 @@ watch(pendingRows, (rows) => {
   saving.value = false
 })
 
-watch(soloRows, (rows) => {
-  if (menu.value?.kind === 'solo' && !soloStore.sessions.value.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
+watch(() => soloStore.sessions.value, (sessions) => {
+  if (menu.value?.kind === 'solo' && !sessions.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
   if (!editingKey.value?.startsWith('solo:')) return
-  if (rows.some((s) => soloRowKey(s) === editingKey.value)) return
+  if (sessions.some((s) => soloRowKey(s) === editingKey.value)) return
   editingKey.value = null
   renameDraft.value = ''
   saving.value = false
-})
+}, { deep: true })
+
+function onHistoryRuns(runs: Run[]) {
+  historyRunById.value = new Map(runs.map((run) => [run.id, run]))
+  if (menu.value?.kind === 'history-run' && !historyRunById.value.has(menu.value.key)) closeMenu()
+  if (!editingKey.value?.startsWith('history:')) return
+  const id = editingKey.value.slice('history:'.length)
+  if (historyRunById.value.has(id)) return
+  editEpoch.value++
+  editingKey.value = null
+  renameDraft.value = ''
+  saving.value = false
+}
 
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
   if (!isRunOnlyRow(it)) return null
@@ -1372,7 +1636,30 @@ const settingsItems = computed(() => (
       </div>
       </div>
     </div>
-    <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" @solo-contextmenu="onSoloContextMenu" @solo-menu-keydown="onSoloMenuKeydown" @solo-pointerdown="onSoloPointerDown" @solo-click="onSoloHistoryClick" />
+    <SidebarWorkspaceLists v-if="workspaceLists"
+      :run-titles="historyRunTitles"
+      :dismissed-run-ids="dismissedHistoryRunIds"
+      :dismissed-solo-ids="dismissedHistorySoloIds"
+      :editing-run-id="historyEditingRunId"
+      :editing-solo-id="historyEditingSoloId"
+      :rename-draft="renameDraft"
+      :rename-saving="saving"
+      :rename-input-ref="setRenameInput"
+      @navigate="onNavigate"
+      @solo-contextmenu="onSoloContextMenu"
+      @solo-menu-keydown="onSoloMenuKeydown"
+      @solo-pointerdown="onSoloPointerDown"
+      @solo-click="onSoloHistoryClick"
+      @run-contextmenu="onHistoryRunContextMenu"
+      @run-menu-keydown="onHistoryRunMenuKeydown"
+      @run-pointerdown="onHistoryRunPointerDown"
+      @run-click="onHistoryRunClick"
+      @update:rename-draft="renameDraft = $event"
+      @rename-commit="onHistoryRenameCommit"
+      @rename-cancel="onRenameEscape"
+      @rename-blur="onHistoryRenameBlur"
+      @history-runs="onHistoryRuns"
+    />
     </div>
     </Transition>
     </div>
@@ -1380,7 +1667,7 @@ const settingsItems = computed(() => (
   </nav>
   <Teleport to="body">
     <div
-      v-if="menu && (menuItem || menuSolo)"
+      v-if="menu && (menuItem || menuSolo || menuHistoryRun)"
       ref="menuEl"
       class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
       role="menu"
@@ -1402,6 +1689,17 @@ const settingsItems = computed(() => (
         <span>{{ t('nav.pendingWorkflowView') }}</span>
       </button>
       <button
+        v-if="menuHistoryRun"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-workflow"
+        @click="onMenuHistoryWorkflowView"
+      >
+        <Icon name="workflow" :size="14" />
+        <span>{{ t('nav.pendingWorkflowView') }}</span>
+      </button>
+      <button
         v-if="menuItem || menuSoloActive"
         type="button"
         role="menuitem"
@@ -1413,7 +1711,7 @@ const settingsItems = computed(() => (
         <span>{{ menuPinned ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
-        v-if="menuItem || menuSoloActive"
+        v-if="menuItem || menuSolo || menuHistoryRun"
         type="button"
         role="menuitem"
         class="pending-row-menu__item"
@@ -1464,6 +1762,31 @@ const settingsItems = computed(() => (
         <Icon name="close" :size="14" />
         <span>{{ t('nav.pendingCancelRun') }}</span>
       </button>
+      <div v-if="menuHistoryRun || menuSoloEnded" class="pending-row-menu__separator" role="separator" />
+      <button
+        v-if="menuHistoryRun"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item pending-row-menu__item--danger"
+        data-testid="nav-history-menu-delete"
+        @click="onMenuDeleteHistoryRun"
+      >
+        <Icon name="trash" :size="14" />
+        <span>{{ t('pages.runList.deleteRun') }}</span>
+      </button>
+      <button
+        v-if="menuSoloEnded"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item pending-row-menu__item--danger"
+        data-testid="nav-solo-menu-delete"
+        :disabled="menuSoloBound"
+        :title="menuSoloBound ? t('nav.historySoloDeleteBlocked') : undefined"
+        @click="onMenuDeleteSolo"
+      >
+        <Icon name="trash" :size="14" />
+        <span>{{ t('pages.solo.header.delete') }}</span>
+      </button>
     </div>
   </Teleport>
   <AppModal
@@ -1503,6 +1826,47 @@ const settingsItems = computed(() => (
         @click="confirmCancelRun"
       >
         {{ cancellingRun ? t('common.buttons.cancelling') : t('common.buttons.confirmCancelRun') }}
+      </AppButton>
+    </template>
+  </AppModal>
+  <AppModal
+    :open="!!deleteTarget"
+    :title="deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloTitle') : t('pages.runDetail.deleteTitle')"
+    :width="440"
+    close-on-esc
+    @close="closeHistoryDelete"
+  >
+    <div class="space-y-3 text-sm text-txt2">
+      <div class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">
+        <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />
+        {{ deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloWarning') : t('pages.runDetail.deleteWarning') }}
+      </div>
+      <p>{{ deleteTarget?.kind === 'solo' ? t('nav.historyDeleteSoloNote') : t('pages.runList.deleteConfirm') }}</p>
+      <div
+        v-if="deleteHistoryError"
+        class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"
+        data-testid="nav-history-delete-error"
+      >
+        <Icon name="alert" :size="14" class="mt-0.5" />{{ deleteHistoryError }}
+      </div>
+    </div>
+    <template #footer>
+      <AppButton
+        variant="ghost"
+        data-testid="nav-history-delete-dismiss"
+        :disabled="deletingHistory"
+        @click="closeHistoryDelete"
+      >
+        {{ t('common.buttons.cancel') }}
+      </AppButton>
+      <AppButton
+        data-testid="nav-history-delete-confirm"
+        variant="danger"
+        icon="trash"
+        :disabled="deletingHistory"
+        @click="confirmHistoryDelete"
+      >
+        {{ deletingHistory ? t('common.buttons.deleting') : t('common.buttons.confirmDelete') }}
       </AppButton>
     </template>
   </AppModal>
@@ -1708,6 +2072,19 @@ const settingsItems = computed(() => (
 .pending-row-menu__item:disabled:hover,
 .pending-row-menu__item:disabled:focus-visible {
   color: rgb(var(--c-txt2));
+  background: transparent;
+}
+
+.pending-row-menu__item--danger,
+.pending-row-menu__item--danger:hover,
+.pending-row-menu__item--danger:focus-visible {
+  color: rgb(var(--c-err));
+}
+
+.pending-row-menu__item--danger:disabled,
+.pending-row-menu__item--danger:disabled:hover,
+.pending-row-menu__item--danger:disabled:focus-visible {
+  color: rgb(var(--c-err));
   background: transparent;
 }
 

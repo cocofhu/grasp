@@ -4987,7 +4987,8 @@
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
         "environment_authorization_blocked": "当前授权未通过核验，已阻止恢复；聊天、工作区和原环境关联均已保留。",
-        "environment_stop_pending": "环境停止尚未确认，聊天和工作区已保留，系统会继续核对停止状态。"
+        "environment_stop_pending": "环境停止尚未确认，聊天和工作区已保留，系统会继续核对停止状态。",
+        "environment_retained": "工作区仍保留在原环境中，请先释放环境后再删除聊天"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",
