@@ -30,34 +30,91 @@ func (s *SoloService) StopEnvironment(ctx context.Context, id, user string) (*So
 	if row.Status == models.SoloStatusStarting {
 		return nil, soloErr(http.StatusConflict, "environment_starting", "环境正在启动，请就绪后再停止")
 	}
+	environment, err := s.sbx.Get(row.SandboxID)
+	if err != nil {
+		return nil, err
+	}
+	if s.sbx.isBusyRow(environment) {
+		return nil, soloErr(http.StatusConflict, "session_busy", "环境仍在执行任务")
+	}
+	// Close admission before gateway discovery and the provider stop. A turn
+	// already queued still fails this idle check and leaves desired_state
+	// untouched. A message that arrives after the commit is rejected and is
+	// not inserted, so it cannot make the later idle check look busy.
+	processBefore := environment.Recovery.Process
+	desiredBefore := environment.DesiredState
+	if err := s.admitStopIntent(ctx, row); err != nil {
+		return nil, err
+	}
+	s.publishStatus(id)
 	if err := s.sbx.stopSoloEnvironment(ctx, row.SandboxID, func(tx *gorm.DB) error {
-		// Admit and Claim take this same queue lock before inspecting the
-		// environment. Commit the stop intent under it so either an accepted
-		// message blocks stopping or a later message sees desired=stopped.
-		if err := s.durable.GuardIdle(tx, soloQueueScope(id)); err != nil {
-			if errors.Is(err, chatsession.ErrQueueBusy) {
-				return soloErr(http.StatusConflict, "session_busy", "请先停止当前轮次并处理待发送消息")
-			}
-			if errors.Is(err, chatsession.ErrQueueRetired) {
-				return soloErr(http.StatusConflict, "session_closed", "会话已关闭，请重新加载")
-			}
-			return err
-		}
-		var current models.SoloSession
-		if err := tx.Select("id", "sandbox_id", "status", "lifecycle_epoch", "lifecycle_attempt_id", "lifecycle_action").First(&current, "id = ?", id).Error; err != nil {
-			return err
-		}
-		if current.SandboxID != row.SandboxID || current.LifecycleEpoch != row.LifecycleEpoch || current.LifecycleAttemptID != row.LifecycleAttemptID || current.LifecycleAction != "" || current.Status == models.SoloStatusStarting || current.Status == models.SoloStatusClosed {
-			return soloErr(http.StatusConflict, "session_changed", "会话状态已变化，请重新加载")
-		}
-		return nil
+		return s.guardSoloEnvironmentStop(tx, row)
 	}); err != nil {
+		s.revertUnprogressedStop(ctx, row.SandboxID, processBefore, desiredBefore, err)
 		s.publishStatus(id)
 		return nil, err
 	}
 	s.appendSystem(id, "环境已停止，聊天和工作区已保留。继续执行前可恢复环境。")
 	s.publishStatus(id)
 	return s.Get(ctx, id, user)
+}
+
+// guardSoloEnvironmentStop runs under the queue lock. An already accepted turn
+// blocks the stop. The caller commits desired_state=stopped in that same
+// transaction when the queue is idle.
+func (s *SoloService) guardSoloEnvironmentStop(tx *gorm.DB, row *models.SoloSession) error {
+	if err := s.durable.GuardIdle(tx, soloQueueScope(row.ID)); err != nil {
+		if errors.Is(err, chatsession.ErrQueueBusy) {
+			return soloErr(http.StatusConflict, "session_busy", "请先停止当前轮次并处理待发送消息")
+		}
+		if errors.Is(err, chatsession.ErrQueueRetired) {
+			return soloErr(http.StatusConflict, "session_closed", "会话已关闭，请重新加载")
+		}
+		return err
+	}
+	var current models.SoloSession
+	if err := tx.Select("id", "sandbox_id", "status", "lifecycle_epoch", "lifecycle_attempt_id", "lifecycle_action").First(&current, "id = ?", row.ID).Error; err != nil {
+		return err
+	}
+	if current.SandboxID != row.SandboxID || current.LifecycleEpoch != row.LifecycleEpoch || current.LifecycleAttemptID != row.LifecycleAttemptID || current.LifecycleAction != "" || current.Status == models.SoloStatusStarting || current.Status == models.SoloStatusClosed {
+		return soloErr(http.StatusConflict, "session_changed", "会话状态已变化，请重新加载")
+	}
+	return nil
+}
+
+// admitStopIntent records the stop before the provider call. New admissions
+// see desired_state=stopped under the same queue lock and return without
+// inserting a turn.
+func (s *SoloService) admitStopIntent(ctx context.Context, row *models.SoloSession) error {
+	return s.executionTransaction(ctx, row.ID, func(tx *gorm.DB) error {
+		if err := s.guardSoloEnvironmentStop(tx, row); err != nil {
+			return err
+		}
+		return tx.Model(&models.Sandbox{}).Where("id = ?", row.SandboxID).Update("desired_state", "stopped").Error
+	})
+}
+
+// revertUnprogressedStop undoes a seal when stopping never wrote its own
+// recovery. A provider failure after that write keeps the stop intent.
+func (s *SoloService) revertUnprogressedStop(ctx context.Context, sandboxID uint, processBefore, desiredBefore string, cause error) {
+	var failure *SoloError
+	if errors.As(cause, &failure) && failure.Code == "environment_stop_pending" {
+		return
+	}
+	_ = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sb models.Sandbox
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "desired_state", "recovery").First(&sb, sandboxID).Error; err != nil {
+			return err
+		}
+		if sb.DesiredState != "stopped" || sb.Status == "stopped" || sb.Status == "exited" || sb.Recovery.Process != processBefore {
+			return nil
+		}
+		desired := desiredBefore
+		if desired == "" {
+			desired = "running"
+		}
+		return tx.Model(&models.Sandbox{}).Where("id = ?", sandboxID).Update("desired_state", desired).Error
+	})
 }
 
 func (s *SandboxService) stopSoloEnvironment(ctx context.Context, id uint, prepare ...func(*gorm.DB) error) error {

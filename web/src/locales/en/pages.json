@@ -5038,6 +5038,7 @@
         "stopPending": "Stop is not confirmed. Workspace retained.",
         "retryStop": "Retry stop",
         "stopping": "Stopping…",
+        "stoppingNotice": "Stopping the environment. Chat and workspace will be retained.",
         "resuming": "Resuming…"
       },
       "workflows": {

@@ -6,7 +6,7 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, isRunsSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { isNodeConversationPath, nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
@@ -79,6 +79,7 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
+const changingSoloEnvironments = soloStore.environmentChanges
 const soloCollapsed = computed(() => isSectionCollapsed('solo'))
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
 const queuedCollapsed = computed(() => isSectionCollapsed('queued'))
@@ -353,7 +354,16 @@ function soloRowTitle(session: SoloSession): string {
 function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
   if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return 'spin'
   if (session.status === 'starting') return 'spin'
+  // A stopped environment keeps its place in 正在执行, but the row end is the
+  // stop mark even when the session is still flagged busy.
+  if (session.status === 'stopped') return null
   return session.busy ? 'pulse' : null
+}
+
+/** Stop square only after the environment has settled. Closing, stopping and resuming keep their phase mark. */
+function soloRowShowsStop(session: SoloSession): boolean {
+  if (soloStore.closing.value.has(session.id) || soloEnvironmentPhase(session)) return false
+  return session.status === 'stopped'
 }
 
 function isSoloRowActive(session: SoloSession): boolean {
@@ -419,10 +429,10 @@ const menuSoloEnded = computed(() => !!menuSolo.value && isSoloEnded(menuSolo.va
 const menuSoloClosing = computed(() => !!menuSolo.value && soloStore.closing.value.has(menuSolo.value.id))
 const menuSoloBound = computed(() => !!(menuSolo.value?.sandboxId || menuSolo.value?.sandbox?.id))
 const menuSoloRelease = computed(() => menuSolo.value?.status === 'closed' && menuSoloBound.value)
-const changingSoloEnvironments = ref(new Map<string, 'stopping' | 'resuming'>())
 /** The local request, or the server still converging on the requested state. */
 function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | null {
-  const local = changingSoloEnvironments.value.get(session.id)
+  const local = soloStore.environmentChanges.value.get(session.id)
+  if (local === 'stopping' && (session.status === 'stopped' || session.status === 'closed')) return null
   if (local) return local
   const sandbox = session.sandbox
   if (!sandbox || session.status === 'closed') return null
@@ -433,11 +443,11 @@ function soloEnvironmentPhase(session: SoloSession): 'stopping' | 'resuming' | n
 }
 const menuSoloEnvironmentDisabled = computed(() => {
   const session = menuSolo.value
-  return !session || menuSoloClosing.value || changingSoloEnvironments.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
+  return !session || menuSoloClosing.value || soloStore.environmentChanges.value.has(session.id) || (session.status !== 'stopped' && (session.busy || session.waiting > 0 || session.status === 'starting'))
 })
 const menuSoloEnvironmentLabel = computed(() => {
   const session = menuSolo.value
-  const local = session && changingSoloEnvironments.value.get(session.id)
+  const local = session && soloStore.environmentChanges.value.get(session.id)
   if (local) return t(`pages.solo.environment.${local}`)
   if (session?.status === 'stopped') return t('pages.solo.environment.resume')
   return t(session?.sandbox?.desiredState === 'stopped' ? 'pages.solo.environment.retryStop' : 'pages.solo.environment.stop')
@@ -544,15 +554,12 @@ function onMenuSoloWorkspace(panel: 'snapshots' | 'release') {
 async function onMenuSoloEnvironment() {
   const session = menuSolo.value
   if (!session || !menuSoloActive.value || worktreeMode.value || menuSoloEnvironmentDisabled.value) return
-  changingSoloEnvironments.value.set(session.id, session.status === 'stopped' ? 'resuming' : 'stopping')
+  const phase = session.status === 'stopped' ? 'resuming' : 'stopping'
   closeMenu()
   try {
-    const saved = await (session.status === 'stopped' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id))
-    soloStore.upsert(saved)
+    await soloStore.changeEnvironment(session.id, phase, () => (phase === 'resuming' ? api.resumeSoloEnvironment(session.id) : api.stopSoloEnvironment(session.id)))
   } catch (cause) {
     toast.error(soloErrorText(cause, t, te, locale.value))
-  } finally {
-    changingSoloEnvironments.value.delete(session.id)
   }
 }
 
@@ -1330,6 +1337,7 @@ watch(
 function isActive(to: string) {
   if (to === '/dashboard') return isHomeSectionPath(route.path)
   if (to === '/board') return isBoardSectionPath(route.path)
+  if (to === '/runs') return isRunsSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 
@@ -1647,6 +1655,17 @@ const settingsItems = computed(() => (
         />
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
+        <Icon
+          v-else-if="soloRowShowsStop(entry.session)"
+          name="stop"
+          :size="14"
+          class="shrink-0 text-txt2"
+          :title="t('pages.solo.status.stopped')"
+          :aria-label="t('pages.solo.status.stopped')"
+          role="img"
+          aria-hidden="false"
+          data-testid="nav-solo-stopped"
+        />
       </div>
       <button
         v-else
@@ -1672,6 +1691,17 @@ const settingsItems = computed(() => (
         <span v-else-if="soloEnvironmentPhase(entry.session)" class="shrink-0 text-[11px] text-txt3" role="status" data-testid="nav-solo-environment-phase">{{ t(`pages.solo.environment.${soloEnvironmentPhase(entry.session)}`) }}</span>
         <InboxMotionMark v-if="soloRowMotion(entry.session) === 'spin'" kind="spin" />
         <InboxMotionMark v-else-if="soloRowMotion(entry.session) === 'pulse'" kind="pulse" />
+        <Icon
+          v-else-if="soloRowShowsStop(entry.session)"
+          name="stop"
+          :size="14"
+          class="shrink-0 text-txt2"
+          :title="t('pages.solo.status.stopped')"
+          :aria-label="t('pages.solo.status.stopped')"
+          role="img"
+          aria-hidden="false"
+          data-testid="nav-solo-stopped"
+        />
       </button>
         </template>
       </div>

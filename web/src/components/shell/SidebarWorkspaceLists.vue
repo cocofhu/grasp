@@ -23,7 +23,7 @@ import {
   sameRecentRows,
 } from '@/lib/run/recentRuns'
 
-/** Sidebar history asks for and renders the same number of finished runs. */
+/** Finished runs requested per page, and the same cap on ended Solo sessions before they merge. */
 const SIDEBAR_HISTORY_RUN_LIMIT = 20
 
 const props = defineProps<{
