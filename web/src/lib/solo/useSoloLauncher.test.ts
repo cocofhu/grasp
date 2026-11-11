@@ -351,7 +351,7 @@ describe('useSoloLauncher', () => {
     expect(soloPrefs.lastProjects()).toEqual(['web'])
   })
 
-  it('writes the frozen opening request before POST and restores it without POST after remount', async () => {
+  it('writes the frozen opening request before POST and keeps the unconfirmed request retryable', async () => {
     const scope = soloOutboxScope('u', 'creation')
     const images = [{ data: 'aW1hZ2U=', mimeType: 'image/png', name: 'original.png' }]
     const references = [{ id: 'display-only', kind: 'solo', target: 'other', title: 'Original title', createdAt: '' }] as never[]
@@ -369,20 +369,14 @@ describe('useSoloLauncher', () => {
     const original = mocks.createSoloSession.mock.calls.at(-1)![0]
     expect(first.canStart.value).toBe(false)
     images[0]!.name = 'edited.png'
-    for (const app of mountedApps.splice(0)) app.unmount()
-
-    const restored = mountLauncher()
-    await restored.load()
-    expect(mocks.createSoloSession).toHaveBeenCalledTimes(1)
-    expect(restored.pendingCreation.value?.request).toEqual(original)
-    expect(restored.pendingCreation.value?.request.images?.[0]?.name).toBe('original.png')
-    expect(restored.canStart.value).toBe(false)
-    restored.agentName.value = 'another-agent'
-    restored.projectIds.value = []
-    restored.branches.value = { web: 'different' }
-    restored.initialModelId.value = 'a-different-model'
-    restored.reasoningEffort.value = 'low'
-    expect((await restored.retryPendingCreation())?.id).toBe('s1')
+    expect(first.pendingCreation.value?.request).toEqual(original)
+    expect(first.pendingCreation.value?.request.images?.[0]?.name).toBe('original.png')
+    first.agentName.value = 'another-agent'
+    first.projectIds.value = []
+    first.branches.value = { web: 'different' }
+    first.initialModelId.value = 'a-different-model'
+    first.reasoningEffort.value = 'low'
+    expect((await first.retryPendingCreation())?.id).toBe('s1')
     expect(mocks.createSoloSession).toHaveBeenCalledTimes(2)
     expect(mocks.createSoloSession.mock.calls[1]?.[0]).toEqual(original)
     expect(await readSoloOutbox(scope)).toEqual([])
@@ -452,21 +446,51 @@ describe('useSoloLauncher', () => {
     expect(mocks.resolveSoloCreation).not.toHaveBeenCalled()
   })
 
-  it('keeps a pending request private across account changes and preserves it for its owner', async () => {
+  it('drops a leftover unconfirmed request on startup without showing it or POSTing', async () => {
+    mocks.createSoloSession.mockRejectedValueOnce(new Error('lost acknowledgement'))
+    const first = mountLauncher()
+    await first.load()
+    await first.start('Left over')
+    for (const app of mountedApps.splice(0)) app.unmount()
+
+    const restored = mountLauncher()
+    await restored.load()
+    expect(mocks.resolveSoloCreation).toHaveBeenCalled()
+    expect(restored.pendingCreation.value).toBeNull()
+    expect(restored.canStart.value).toBe(true)
+    expect(restored.error.value).toBe('')
+    expect(await readSoloOutbox(soloOutboxScope('u', 'creation'))).toEqual([])
+    expect(mocks.createSoloSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('quietly accepts a leftover request the server already created without navigating', async () => {
+    mocks.createSoloSession.mockRejectedValueOnce(new Error('lost acknowledgement'))
+    const first = mountLauncher()
+    await first.load()
+    await first.start('Already created')
+    const pending = first.pendingCreation.value!
+    for (const app of mountedApps.splice(0)) app.unmount()
+
+    mocks.resolveSoloCreation.mockResolvedValue({ id: 'accepted', userId: 'u', clientRequestId: pending.id, initialTurnId: 'turn' } as never)
+    const restored = mountLauncher()
+    await restored.load()
+    expect(restored.pendingCreation.value).toBeNull()
+    expect(await readSoloOutbox(soloOutboxScope('u', 'creation'))).toEqual([])
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.createSoloSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a pending request private across account changes', async () => {
     mocks.createSoloSession.mockRejectedValueOnce(new Error('lost response'))
     const launcher = mountLauncher()
     await launcher.load()
     await launcher.start('Private owner request')
-    const original = launcher.pendingCreation.value!
     useAuth().setUser({ username: 'other-user', expiresAt: '' })
     await flushPromises()
     expect(launcher.pendingCreation.value).toBeNull()
     expect(await readSoloOutbox(soloOutboxScope('u', 'creation'))).toHaveLength(1)
     expect(await launcher.retryPendingCreation()).toBeNull()
     expect(mocks.createSoloSession).toHaveBeenCalledTimes(1)
-    useAuth().setUser({ username: 'u', expiresAt: '' })
-    await flushPromises()
-    await vi.waitFor(() => expect(launcher.pendingCreation.value?.id).toBe(original.id))
   })
 
   it('ignores a previous account acknowledgement instead of navigating or exposing its chat', async () => {

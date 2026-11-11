@@ -163,7 +163,7 @@ export function useSoloLauncher() {
       pendingCreation.value = saved.find((record): record is SoloCreationOutbox => record.kind === 'creation') || null
       recoveredSession.value = null
       recoveryChecked.value = false
-      if (pendingCreation.value) await checkPendingCreation()
+      if (pendingCreation.value) await settleRestoredCreation(pendingCreation.value)
     } catch (cause) {
       if (generation === loadGeneration) error.value = String((cause as Error).message || cause)
     } finally {
@@ -244,7 +244,28 @@ export function useSoloLauncher() {
     }
   }
 
-  async function acceptCreation(record: SoloCreationOutbox, session: SoloSession): Promise<SoloSession | null> {
+  /**
+   * A record left over from an earlier visit is reconciled with GET only and
+   * then dropped, so startup never shows a recovery card or POSTs again.
+   */
+  async function settleRestoredCreation(record: SoloCreationOutbox) {
+    const session = await checkPendingCreation()
+    if (!ownsRequest(record) || pendingCreation.value !== record) return
+    try {
+      if (session) {
+        await acceptCreation(record, session, false)
+        return
+      }
+      await removeSoloOutbox(record.scope, record.id)
+    } catch { /* Keep the record in storage; it stays hidden until the next load. */ }
+    if (!ownsRequest(record) || pendingCreation.value !== record) return
+    pendingCreation.value = null
+    recoveredSession.value = null
+    recoveryChecked.value = false
+    error.value = ''
+  }
+
+  async function acceptCreation(record: SoloCreationOutbox, session: SoloSession, navigate = true): Promise<SoloSession | null> {
     if (!ownsRequest(record)) return null
     verifyReceipt(record, session)
     // Continuing an already linked workflow is navigation, not acceptance of
@@ -266,7 +287,7 @@ export function useSoloLauncher() {
     error.value = ''
     soloPrefs.setLastProjects(record.request.repos?.map(repo => repo.projectId) || [])
     store.upsert(session)
-    void router.push(`/solo/${session.id}`)
+    if (navigate) void router.push(`/solo/${session.id}`)
     return session
   }
 
