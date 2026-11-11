@@ -289,7 +289,6 @@ export default defineConfig({
           new URL('./e2e/clarify-unread-fab.html', import.meta.url),
         ),
         board: fileURLToPath(new URL('./e2e/board.html', import.meta.url)),
-        'solo-workflows': fileURLToPath(new URL('./e2e/solo-workflows.html', import.meta.url)),
         'dashboard-home-chat': fileURLToPath(
           new URL('./e2e/dashboard-home-chat.html', import.meta.url),
         ),

@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { randomUuid } from '@/lib/shared/randomUuid'
 import {
   EMBED_CMD_MESSAGE,
   EMBED_CONTROL_MESSAGE,
@@ -27,7 +26,13 @@ export type PageControlOptions = {
   isVisible?: () => boolean
 }
 
-const nonce = randomUuid
+function nonce(): string {
+  const c = globalThis.crypto
+  if (c?.randomUUID) return c.randomUUID()
+  const b = new Uint8Array(16)
+  c?.getRandomValues?.(b)
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('') || String(Math.random()).slice(2)
+}
 
 /**
  * Drawer side of agent page control: owns the toggle, reports it with tab

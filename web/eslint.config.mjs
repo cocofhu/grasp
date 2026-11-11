@@ -61,17 +61,6 @@ export default defineConfigWithVueTs(
       ],
     },
   },
-  // crypto.randomUUID is missing on plain-http origins; randomUuid falls back.
-  {
-    files: ['src/**/*.{ts,vue}'],
-    ignores: ['src/**/*.test.ts', 'src/lib/shared/randomUuid.ts'],
-    rules: {
-      'no-restricted-properties': [
-        'error',
-        { property: 'randomUUID', message: 'Use randomUuid() from @/lib/shared/randomUuid; crypto.randomUUID is missing on plain-http origins.' },
-      ],
-    },
-  },
   // Dead-symbol anti-churn: warn only under src/lib (not views). Keep as warn —
   // do not promote to error or enable for views/knip.
   {

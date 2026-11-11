@@ -196,7 +196,7 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 			// failed request; keep its partial edits for the human to review.
 			cur.State = models.LiveStateDiscarded
 			cur.Error = ""
-			if err := e.executionSave(context.Background(), runID, cur).Error; err != nil {
+			if err := e.db.Save(cur).Error; err != nil {
 				return nil, err
 			}
 			e.publishLive(cur)
@@ -276,7 +276,7 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	case models.LiveOpDiscard:
 		sess.RetryAccept = false
 	}
-	if err := e.executionSave(context.Background(), runID, sess).Error; err != nil {
+	if err := e.db.Save(sess).Error; err != nil {
 		return nil, err
 	}
 
@@ -296,9 +296,9 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	}
 	if _, err := e.enqueueReviewItem(runID, nodeID, e.liveQueueKind(runID, nodeID), item); err != nil {
 		if prev != nil {
-			e.executionSave(context.Background(), runID, prev)
+			e.db.Save(prev)
 		} else {
-			e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB { return db.Delete(&models.LiveSession{}, "id = ?", sess.ID) })
+			e.db.Delete(&models.LiveSession{}, "id = ?", sess.ID)
 		}
 		return nil, err
 	}
@@ -428,7 +428,7 @@ func (e *Engine) failCancelledQueuedLive(runID, nodeID, sid string) {
 	case models.LiveStateGenerating, models.LiveStateRefining, models.LiveStateAccepting, models.LiveStateDiscarding:
 		sess.State = models.LiveStateFailed
 		sess.Error = "请求尚未执行时已取消;可重试或关闭失败请求"
-		if err := e.executionSave(context.Background(), runID, sess).Error; err != nil {
+		if err := e.db.Save(sess).Error; err != nil {
 			log.Warn().Err(err).Str("sid", sid).Msg("cancel queued live session")
 			return
 		}
@@ -569,7 +569,7 @@ func (e *Engine) ApplyLiveReport(runID, nodeID string, u mcp.LiveReport) (*model
 			return nil, err
 		}
 	}
-	if err := e.executionSave(context.Background(), runID, sess).Error; err != nil {
+	if err := e.db.Save(sess).Error; err != nil {
 		return nil, err
 	}
 	e.publishLive(sess)
@@ -644,7 +644,7 @@ func (e *Engine) settleLiveAfterTurn(runID, nodeID, sid string, interrupted bool
 	if !models.LiveStateOpen(next) {
 		sess.RetryAccept = false
 	}
-	logDB(e.executionSave(context.Background(), runID, sess), runID, "settle live session")
+	logDB(e.db.Save(sess), runID, "settle live session")
 	e.publishLive(sess)
 }
 

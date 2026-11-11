@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"gorm.io/gorm"
 	"strings"
 	"time"
 
@@ -64,7 +63,7 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 		// it before the first human message is prepared.
 		e.rememberTurnRoute(&conv, &req, t)
 		e.applyVisitLaunchModel(&conv, c.run, node, iter, msgs)
-		logDB(e.executionCreate(context.Background(), c.run.ID, &conv), c.run.ID, "create react conversation")
+		logDB(e.db.Create(&conv), c.run.ID, "create react conversation")
 
 		if t.Done {
 			if t.Err != nil {
@@ -121,7 +120,7 @@ func (e *Engine) setReactPreviewArtifact(runID, nodeID, name string) error {
 	if err != nil {
 		return fmt.Errorf("react conversation not found")
 	}
-	if err := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB { return db.Model(&conv).Update("preview_artifact", name) }).Error; err != nil {
+	if err := e.db.Model(&conv).Update("preview_artifact", name).Error; err != nil {
 		return err
 	}
 	e.broker.Publish(runID, artifactEditMsg(runID, nodeID, name, name))

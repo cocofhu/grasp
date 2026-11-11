@@ -69,7 +69,6 @@ RUN COMMIT_SHA="${GIT_COMMIT:-$GITHUB_SHA}" && \
       -ldflags="-s -w -X github.com/cocofhu/grasp/internal/version.commit=${COMMIT_SHA}" \
       -o /out/grasp-server ./cmd/server
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp ./cmd/doctor
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/grasp-storage-admin ./cmd/storage-admin
 
 # --- 运行 ---
 # 使用 node bookworm-slim 作为运行底包,使 set_plan 的 Mermaid 11.x 语法校验
@@ -81,7 +80,6 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 WORKDIR /app
 COPY --from=build /out/grasp-server /app/grasp-server
 COPY --from=build /out/grasp /app/grasp
-COPY --from=build /out/grasp-storage-admin /app/grasp-storage-admin
 COPY --from=build /src/web/dist /app/web/dist
 COPY --from=sandbox-runtime /out/sandbox-runtime.tgz /app/sandbox-runtime/sandbox-runtime.tgz
 

@@ -16,12 +16,6 @@ const presetAgent = ref('')
 const presetProject = ref('')
 
 const sessionId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
-const workspaceIntent = computed(() => typeof route.query.workspace === 'string' ? route.query.workspace : undefined)
-function workspaceOpened() {
-  const query = { ...route.query }
-  delete query.workspace
-  void router.replace({ path: route.path, query })
-}
 
 // ?new=1&agent=x&project=y opens the dialog prefilled (Agent Studio, project list).
 watch(
@@ -53,7 +47,7 @@ onMounted(() => void store.refresh())
 <template>
   <div class="solo-view flex h-full min-h-0" data-testid="solo-view">
     <main class="solo-main min-h-0 min-w-0 flex-1">
-      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" :workspace-intent="workspaceIntent" @back="goHome" @workspace-opened="workspaceOpened" />
+      <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" @back="goHome" />
       <div v-else class="min-h-0 flex-1 overflow-y-auto">
         <SoloSessionList @create="openCreate" />
       </div>

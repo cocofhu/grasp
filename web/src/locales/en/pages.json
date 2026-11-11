@@ -1759,9 +1759,6 @@
       "deleteConfirm": "Only this run is removed; you will return to the run list.",
       "deleteSuccess": "Run deleted",
       "deleteHintActive": "Cancel or wait until the run ends before deleting",
-      "deleteHintSaving": "The workspace is still being saved. Delete is available after it finishes or fails.",
-      "resumeNoNode": "There is no node execution to re-run, so failure retry is unavailable.",
-      "resumeUnsealed": "The node result is not confirmed yet, so failure retry is unavailable.",
       "deleteErrorNotFound": "Run not found or already deleted",
       "deleteErrorNotDeletable": "This run status cannot be deleted",
       "deleteErrorGeneric": "Failed to delete run",
@@ -2129,12 +2126,6 @@
         "concurrency": "concurrency",
         "autoRefresh": "Auto-refresh every 5s",
         "note": "total = test + running workflows · excludes TTL keep-alive sandboxes"
-      },
-      "workflows": {
-        "title": "Workflows",
-        "description": "Use Solo as the main entry, with optional workflow management.",
-        "enabled": "Enable workflows",
-        "help": "Disabling prevents new runs. Existing tasks remain available for review, replies and cancellation."
       }
     },
     "sandboxes": {
@@ -4765,21 +4756,6 @@
     },
     "solo": {
       "title": "Solo chats",
-      "outboxUnavailable": "The browser cannot save pending messages. Restore storage access and try again.",
-      "outboxRestored": "A pending message was restored with its original request. Check the records before retrying.",
-      "stopLocalRetry": "Stop local retries",
-      "stopLocalRetryHint": "Only removes this device's retry record. It does not cancel work already accepted by the server.",
-      "invalidReceipt": "The server has not confirmed the original request. Check its status before retrying.",
-      "creationRecovery": {
-        "title": "A chat creation request needs confirmation",
-        "hint": "Your opening message and launch settings are saved on this device. Check whether the chat exists, then open it or retry the original request.",
-        "repositories": "{n} repositories",
-        "defaultModel": "Follow the Agent's default model",
-        "attachments": "{images} attachments · {references} references",
-        "open": "Open the existing chat",
-        "retry": "Retry original request",
-        "check": "Check status"
-      },
       "capacity": "{n} / {max} sandboxes running",
       "newSession": "New session",
       "filterActive": "Running",
@@ -4793,16 +4769,18 @@
       "closeSession": "Close",
       "limitTitle": "Solo sandbox limit reached",
       "limitHint": "Up to {max} Solo sandboxes can run at once. Close a session you no longer need and try again.",
+      "limitUsage": "{used} of {max} Solo sandbox slots are in use. Stop or close a session you no longer need and try again.",
+      "limitOthers": "{count} more are held by other members' sessions.",
       "limitFreed": "A slot is free, you can start again",
       "status": {
         "starting": "Starting",
         "running": "Running",
         "closed": "Closed",
         "error": "Error",
+        "stopping": "Stopping",
         "stopped": "Stopped"
       },
       "phase": {
-        "confirming": "Waiting for message confirmation…",
         "preparing": "Waiting for the sandbox…",
         "running": "Agent is working"
       },
@@ -4864,6 +4842,9 @@
         "submit": "Start"
       },
       "home": {
+        "modeLabel": "Home mode",
+        "modeWorkflow": "Workflow",
+        "modeSolo": "Solo",
         "placeholders": [
           "Chat with an Agent, e.g. find out why the login API sometimes returns 500",
           "Ask the Agent to fix a bug in the repo and push a branch",
@@ -4871,9 +4852,6 @@
         ],
         "start": "Start Solo chat",
         "noAgent": "Choose an Agent first",
-        "modeLabel": "Home mode",
-        "modeWorkflow": "Workflow",
-        "modeSolo": "Solo",
         "recent": "Running Solo sessions",
         "viewAll": "All sessions",
         "projects": "Repositories",
@@ -4911,19 +4889,12 @@
       },
       "chat": {
         "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
-        "commands": "Chat commands",
         "send": "Send",
         "stop": "Stop",
         "attach": "Attach files",
         "queue": "{n} queued",
         "removeQueued": "Remove from queue",
         "turnFailed": "This turn failed",
-        "journalGap": "Chat history contains a gap. Refresh to reload; no records have been skipped.",
-        "loadEarlier": "Load earlier messages",
-        "loadProcess": "View execution details",
-        "loadMoreProcess": "Load more details",
-        "noAdditionalProcess": "No additional thinking or tool activity was recorded for this reply.",
-        "legacyIncomplete": "This record is from an older version; execution details may be incomplete.",
         "stopped": "Stopped",
         "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
@@ -4933,20 +4904,23 @@
         "plan": "Plan"
       },
       "closedBar": {
-        "text": "Session closed. Chat and workspace are retained. Continue by resuming the original environment after checking current authorization.",
-        "restart": "Resume session"
+        "text": "Session closed and sandbox released. Restarting creates a new sandbox and clones the repository again; earlier messages are sent to the Agent as context.",
+        "restart": "Restart"
       },
       "close": {
         "title": "Close Solo session",
-        "body": "Closing stops current compute and retains the chat, original environment and workspace files.",
+        "body": "Closing destroys the sandbox. Uncommitted or unpushed changes in it are lost.",
         "busy": "The Agent is working; closing interrupts the current task.",
-        "confirm": "Close and keep workspace",
-        "closing": "Closing…",
-        "pending": "Closing “{title}”…",
-        "progress": "Closing the session and stopping compute. You can continue with other sessions.",
-        "confirmingStop": "Session closed. The environment is still stopping; checking its status.",
-        "success": "“{title}” closed. Workspace retained.",
-        "failed": "Could not close the session. Refresh to check its state before retrying."
+        "pushFirst": "Have the Agent commit and push first",
+        "pushFirstHint": "Sends a message asking the Agent to push its changes; close afterwards",
+        "pushPrompt": "Please commit all current changes and push them to a remote branch, then tell me the branch name and a summary of the commits.",
+        "confirm": "Close and release sandbox"
+      },
+      "delete": {
+        "title": "Delete session",
+        "body": "This deletes the session and all its messages. It cannot be undone.",
+        "bodyActive": "This closes the sandbox, then deletes the session and all its messages. It cannot be undone.",
+        "confirm": "Delete"
       },
       "env": {
         "title": "Session environment",
@@ -4988,10 +4962,7 @@
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
-        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
-        "environment_authorization_blocked": "Current authorization could not be verified. Recovery was blocked; chat, workspace and the original environment are retained.",
-        "environment_stop_pending": "The environment has not yet confirmed it stopped. Chat and workspace are retained, and its status will be checked again.",
-        "environment_retained": "The workspace is still kept in its environment. Release the environment before deleting the chat."
+        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",
@@ -5032,112 +5003,20 @@
           "github": "Reference an issue / PR"
         }
       },
-      "environment": {
-        "stop": "Stop environment",
-        "resume": "Resume environment",
-        "stopped": "Environment stopped. Chat and workspace are retained.",
-        "retained": "Stopping releases compute while retaining files.",
-        "release": "Release environment",
-        "stopPending": "Stop is not confirmed. Workspace retained.",
-        "retryStop": "Retry stop",
-        "stopping": "Stopping…",
-        "stoppingNotice": "Stopping the environment. Chat and workspace will be retained.",
-        "resuming": "Resuming…"
+      "stop": {
+        "action": "Stop environment",
+        "hint": "Back up the workspace and stop the sandbox; it no longer uses quota and can be resumed",
+        "busy": "Wait for the current reply and queued messages to finish before stopping",
+        "title": "Stop environment",
+        "body": "The workspace is backed up first, then the sandbox stops. A stopped session no longer uses Solo quota and keeps its history; resume it to continue.",
+        "excludes": "Dependency and cache directories (node_modules, .venv, __pycache__, .cache, .pnpm-store) are not backed up; reinstall them if the session resumes in a new sandbox.",
+        "confirm": "Back up and stop"
       },
-      "workflows": {
-        "title": "Workflow tasks",
-        "choose": "Choose a workflow",
-        "search": "Search published workflows",
-        "launchHint": "Choose a workflow, configure the request and code source, then click Start. Each workflow has its own environment while Solo remains available.",
-        "empty": "No matching published workflows.",
-        "disabled": "Workflows are disabled. Existing tasks remain available.",
-        "handle": "Respond",
-        "conversation": "Conversation and controls",
-        "details": "Execution details",
-        "iteration": "Iteration {n}",
-        "noPendingInput": "No conversation is waiting for input.",
-        "cancelTitle": "Cancel workflow",
-        "cancelBody": "Cancel “{task}”? Solo and other workflows will continue.",
-        "confirmCancel": "Confirm cancellation",
-        "pause": "Pause scheduling",
-        "resume": "Resume",
-        "pausePending": "Will pause after the current step",
-        "continueChat": "Continue conversation",
-        "historyLoadFailed": "Unable to load conversation history",
-        "historyNewEnvironment": "Continue with the workflow conversation and results in a separate environment. Original workspace files require a separate restore.",
-        "instructions": {
-          "title": "Additional instructions",
-          "hint": "Sent to this node in order after its current chat turn. The workflow continues automatically.",
-          "older": "Load earlier instructions",
-          "stale": "The node execution changed. Your draft is retained; check the current target.",
-          "adopt": "Use current execution",
-          "closed": "This execution no longer accepts instructions. Continue in Solo after the workflow.",
-          "preparing": "This node is preparing or has no active instruction inbox.",
-          "placeholder": "Add instructions for this workflow node…",
-          "tooLong": "Instructions must be at most 16 KB.",
-          "send": "Submit to this execution",
-          "states": {
-            "queued": "Queued for this execution",
-            "dispatching": "Processing",
-            "applied": "Processed this execution",
-            "unknown": "Needs verification",
-            "expired": "Execution expired"
-          },
-          "attempt": "Attempt {n}"
-        }
-      },
-      "sendUnconfirmed": "Delivery is unconfirmed. Retry this message to check its receipt.",
-      "retryUnconfirmed": "Retry unconfirmed send",
-      "workspaceImport": {
-        "open": "Import code",
-        "title": "Import workflow code",
-        "intro": "Choose an execution, repositories and commits. Review the preview, then confirm the import into Solo.",
-        "boundaries": "Import committed Git code and history, including unpushed commits, into a new directory. The source and current Solo workspace are preserved.",
-        "limits": "Up to 64 MiB per repository including the complete history of the selected commit, 128 MiB total, and 32 MiB per file. Compressed bundle size is checked when generating the preview. Each transfer can run for up to 45 seconds; check the result after a timeout.",
-        "source": "Source execution",
-        "chooseSource": "Choose an execution",
-        "sourceLabel": "{node} · iteration {iteration} · environment {attempt}",
-        "shared": "currently retained shared workspace",
-        "unavailable": "environment is not running",
-        "noSources": "No source workspace is retained. Opening this page never starts an environment.",
-        "readRepositories": "Read repositories",
-        "noRepositories": "No Git repository is available for this import method.",
-        "repositoryUnsupported": "This repository does not support import through Git commits.",
-        "reasons": {
-          "repository_submodules": "This repository includes submodules that cannot be transferred together yet. Keep the source workspace.",
-          "repository_lfs": "Some files use Git LFS. This method cannot yet guarantee that their contents are included.",
-          "repository_shallow": "This repository retains only part of its Git history. Complete history cannot be imported with this method.",
-          "repository_external_objects": "This repository depends on Git data stored elsewhere and cannot be imported independently.",
-          "repository_external_worktree": "This workspace shares Git data with another location and cannot be imported independently.",
-          "repository_custom_configuration": "This repository uses custom file conversion or external Git configuration. Its files cannot yet be reproduced safely.",
-          "repository_rewritten_history": "This repository uses a custom history mapping. Complete original history cannot be guaranteed.",
-          "repository_unsafe_metadata": "This repository has paths or Git data requiring additional checks and cannot be imported safely yet.",
-          "repository_limit": "The selected commit exceeds the file count or size limits and cannot be imported in full."
-        },
-        "commit": "Full Git commit SHA",
-        "dirtyExcluded": "The source has working changes or untracked files. This import includes only the selected commit; other files remain at the source.",
-        "preview": "Preview import",
-        "confirm": "Confirm import into a new directory",
-        "confirmHint": "Only these frozen commits will be imported. Your Solo repositories and working changes remain intact. Stop the active Solo turn and handle pending messages before confirming.",
-        "expiresAt": "Confirm this preview before {time}.",
-        "expiredHint": "This unconfirmed preview expired without importing files. Create a new preview to continue.",
-        "retention": "New unconfirmed previews expire after 24 hours. Opening the import panel or creating a preview retires a bounded number of expired archive references. This does not delete shared object data; physical garbage collection is disabled.",
-        "unknownHint": "The previous result is unconfirmed. Check the existing receipt first; no filesystem operation is replayed automatically. Without a complete receipt, all files are retained. Inspect the isolated directory before creating a new preview.",
-        "reconcile": "Check import result",
-        "newPreview": "New preview",
-        "destination": "Isolated directory, relative to the Solo workspace. Inspect retained files here when the result is unknown:",
-        "result": "Code was imported at these workspace-relative paths. The result is also in Solo chat; reference these paths to continue:",
-        "files": "{count} files · {size} KiB",
-        "previous": "Saved previews and import results",
-        "states": {
-          "prepared": "Awaiting confirmation",
-          "expired": "Preview expired",
-          "applying": "Import in progress; check result",
-          "unknown": "Result unconfirmed",
-          "applied": "Imported into a new directory"
-        },
-        "details": "Import scope and limits",
-        "exclusions": "This method excludes working changes, untracked and ignored files, non-Git directories and native session data. Git LFS, submodules, incomplete Git history, external Git data, custom file conversion and external configuration are unsupported. The source must still be retained and running; opening this page never resumes it. It never commits, pushes or switches branches in the original repository."
+      "stoppedBar": {
+        "text": "Environment stopped and workspace backed up. Resume to continue the conversation.",
+        "stopping": "Backing up the workspace and stopping the sandbox…",
+        "backup": "Backed up {time} · {size}",
+        "resume": "Resume"
       }
     },
     "projects": {

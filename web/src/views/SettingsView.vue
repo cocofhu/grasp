@@ -17,7 +17,6 @@ import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
 import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
 import type { SettingsStatItem } from '@/components/settings/settingsStats'
 import { setBrandSettings, setExecutionMode } from '@/lib/composables/useBrandSettings'
-import { setWorkflowFeature, type WorkflowFeature } from '@/lib/composables/useWorkflowFeature'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -106,13 +105,6 @@ function sourceLabelOf(source: string): string {
 const items = ref<SettingItem[]>([])
 const form = reactive<Record<string, number>>({})
 const brandForm = reactive<BrandSettings>({ product_name: '', home_subtitle: '' })
-const workflows = reactive<WorkflowFeature>({ enabled: true, locked: false, source: 'config' })
-const workflowEnabled = ref(true)
-function hydrateWorkflows(value?: WorkflowFeature) {
-  if (value) Object.assign(workflows, value)
-  workflowEnabled.value = workflows.enabled
-  setWorkflowFeature(value)
-}
 const savedBrand = reactive<BrandSettings>({ product_name: '', home_subtitle: '' })
 const workspaceForm = reactive({ name: '', description: '', unknownModelDisplayName: '' })
 const workspaceSaved = reactive({ name: '', description: '', unknownModelDisplayName: '' })
@@ -257,7 +249,6 @@ async function loadSettings() {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
     hydrate(res.items)
     hydrateBrand(res.brand)
-    hydrateWorkflows(res.workflows)
     executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
     setExecutionMode(res.execution_mode)
   } catch (e: any) {
@@ -294,9 +285,8 @@ function failureText(cause: unknown, fallback: string): string {
   return message && message !== '[object Object]' ? message : fallback
 }
 
-function platformPatch(): Record<string, number | string | boolean> {
-  const patch: Record<string, number | string | boolean> = {}
-  if (isAdmin.value && !workflows.locked && workflowEnabled.value !== workflows.enabled) patch.workflows_enabled = workflowEnabled.value
+function platformPatch(): Record<string, number | string> {
+  const patch: Record<string, number | string> = {}
   for (const it of items.value) {
     if (it.locked) continue
     const next = Number(form[it.key])
@@ -344,7 +334,6 @@ function clearUnknownModelDisplayName() {
 }
 
 function restoreSavedDrafts() {
-  workflowEnabled.value = workflows.enabled
   workspaceForm.name = workspaceSaved.name
   workspaceForm.description = workspaceSaved.description
   workspaceForm.unknownModelDisplayName = workspaceSaved.unknownModelDisplayName
@@ -404,7 +393,6 @@ async function save() {
         if (epoch === formEpoch) {
           hydrate(res.items)
           hydrateBrand(res.brand)
-          hydrateWorkflows(res.workflows)
           if (res.execution_mode) {
             executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
             setExecutionMode(res.execution_mode)
@@ -562,12 +550,6 @@ onBeforeUnmount(() => {
                 <template #details>
                   <p v-if="displayNameError" class="m-0 text-xs text-err" data-testid="workspace-meta-unknown-display-error">{{ displayNameError }}</p>
                 </template>
-              </SettingsRow>
-            </SettingsSection>
-
-            <SettingsSection icon="workflow" :title="t('pages.settings.workflows.title')" :description="t('pages.settings.workflows.description')" data-testid="workflow-feature-settings">
-              <SettingsRow for="setting-workflows-enabled" :label="t('pages.settings.workflows.enabled')" :description="t('pages.settings.workflows.help')">
-                <input id="setting-workflows-enabled" v-model="workflowEnabled" type="checkbox" role="switch" class="h-4 w-4 accent-accent" :disabled="!isAdmin || workflows.locked || saving" />
               </SettingsRow>
             </SettingsSection>
 

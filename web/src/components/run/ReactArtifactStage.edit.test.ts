@@ -199,7 +199,7 @@ describe('stage hosts', () => {
   const src = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8')
   const stageBlocks = (text: string) => text.split('<ReactArtifactStage').slice(1).map((b) => b.split('/>')[0]!)
 
-  it('logged-in run hosts enable editing, with a read-only completed history mode', () => {
+  it('logged-in run hosts enable editing', () => {
     for (const p of [
       'components/run/RunClarifyPanel.vue',
       'components/run/RunReviewPanel.vue',
@@ -208,7 +208,7 @@ describe('stage hosts', () => {
     ]) {
       const blocks = stageBlocks(src(p))
       expect(blocks.length, p).toBeGreaterThan(0)
-      for (const b of blocks) expect(b, p).toMatch(p === 'views/RunLiveView.vue' ? /:editable="!historyReady"/ : /\n\s+editable\n/)
+      for (const b of blocks) expect(b, p).toMatch(/\n\s+editable\n/)
     }
   })
 

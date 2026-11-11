@@ -141,60 +141,6 @@ func TestV1APIAuthAndIsolation(t *testing.T) {
 	}
 }
 
-func TestV1APIIdempotencyIsScopedToAuthenticatedKey(t *testing.T) {
-	hn := newHarness(t)
-	seedPublishedWorkflow(t, hn, "wf-key-scope")
-	keyA := createAPIKey(t, hn, "wf-key-scope", "integration-a")
-	keyB := createAPIKey(t, hn, "wf-key-scope", "integration-b")
-	post := func(key, text string) *httptest.ResponseRecorder {
-		t.Helper()
-		body, err := json.Marshal(map[string]any{"inputs": map[string]any{"idea": text}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/wf-key-scope/runs", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+key)
-		req.Header.Set("Idempotency-Key", "same-integration-request")
-		hn.r.ServeHTTP(w, req)
-		return w
-	}
-	readID := func(w *httptest.ResponseRecorder) string {
-		t.Helper()
-		var result struct {
-			ID string `json:"run_id"`
-		}
-		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.ID == "" {
-			t.Fatalf("launch: %d %s", w.Code, w.Body)
-		}
-		return result.ID
-	}
-	firstA := readID(post(keyA, "integration A"))
-	firstB := readID(post(keyB, "integration B"))
-	if firstA == firstB {
-		t.Fatal("different authenticated API keys shared a launch receipt")
-	}
-	for _, request := range []struct{ key, text, id string }{{keyA, "integration A", firstA}, {keyB, "integration B", firstB}} {
-		if retry := readID(post(request.key, request.text)); retry != request.id {
-			t.Fatalf("retry returned %s, want %s", retry, request.id)
-		}
-	}
-	conflict := post(keyA, "changed by A")
-	if conflict.Code != http.StatusConflict || errorCode(t, conflict.Body.Bytes()) != "idempotency_conflict" {
-		t.Fatalf("changed original request: %d %s", conflict.Code, conflict.Body)
-	}
-	var launches []models.WorkflowLaunch
-	if err := hn.db.Find(&launches).Error; err != nil || len(launches) != 2 {
-		t.Fatalf("launches=%d err=%v", len(launches), err)
-	}
-	for _, launch := range launches {
-		if launch.ActorID == "api:wf-key-scope" || launch.ActorID == keyA || launch.ActorID == keyB {
-			t.Fatalf("invalid credential identity in launch: %q", launch.ActorID)
-		}
-	}
-}
-
 func TestV1DraftWorkflowRejected(t *testing.T) {
 	hn := newHarness(t)
 	graph := minimalGraph()

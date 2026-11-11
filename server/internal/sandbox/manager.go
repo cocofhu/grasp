@@ -3,14 +3,12 @@ package sandbox
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -24,10 +22,6 @@ import (
 // containerPrefix labels approving-managed sandboxes so they can be listed and
 // reconciled apart from any other tenants sharing the gateway.
 const containerPrefix = "grasp-sb-"
-
-// ErrCreateOutcomeUnknown requires reconciliation of the original create,
-// never an automatic replacement after a potentially accepted provider call.
-var ErrCreateOutcomeUnknown = errors.New("original sandbox creation requires reconciliation")
 
 // managedByLabel/managedByValue tag every sandbox approving creates on the
 // gateway, so List/reconcile only ever touch our own sandboxes.
@@ -48,11 +42,10 @@ func NewContainerName() string {
 // terminal). It no longer talks to Docker directly — the gateway owns the
 // container/pod lifecycle and image.
 type Manager struct {
-	workspaceOperations *WorkspaceRuntimeConfig
-	gw                  *GatewayClient
-	Image               string // optional image override; empty = gateway default
-	WorkspaceDir        string // default WORKSPACE_DIR inside the sandbox
-	SSHUser             string // ssh login user (default root)
+	gw           *GatewayClient
+	Image        string // optional image override; empty = gateway default
+	WorkspaceDir string // default WORKSPACE_DIR inside the sandbox
+	SSHUser      string // ssh login user (default root)
 	// dataPlanePassword returns one sandbox's saved token, used only as that
 	// sandbox's SSH password after publickey is refused. It is not a
 	// process-wide password.
@@ -87,10 +80,9 @@ type Manager struct {
 
 // ManagerOptions configures a gateway-backed Manager.
 type ManagerOptions struct {
-	WorkspaceOperations *WorkspaceRuntimeConfig
-	Image               string
-	WorkspaceDir        string
-	SSHUser             string
+	Image        string
+	WorkspaceDir string
+	SSHUser      string
 	// SSHKeyFile is the persistent data-plane private key. Empty keeps an
 	// in-memory key (tests). The first non-empty path wins for the process.
 	SSHKeyFile string
@@ -279,18 +271,16 @@ func DecodeRepos(s string) []RepoSpec {
 // endpoint (8765) the gateway published; SSHHost/SSHPort at the sshd endpoint
 // (22) used for the data plane.
 type Sandbox struct {
-	CorrelationName string // create request identity, independent of gateway id
-	ID              string // gateway sandbox id (authoritative handle)
-	Name            string // == ID (kept for API/DB compatibility)
-	Image           string // gateway-reported image of the existing container
-	Host            string // session endpoint host
-	Port            int    // session endpoint port (ACP bridge, 8765)
-	CodeServerPort  int    // published code-server (ide) port (0 if none)
-	SSHHost         string // ssh endpoint host
-	SSHPort         int    // ssh endpoint port
-	WorkspaceDir    string // resolved WORKSPACE_DIR inside the sandbox
-	activeWorkspace atomic.Pointer[activeWorkspaceRoot]
-	ConfigRoot      string // in-sandbox agent config root (e.g. /root/.cursor)
+	ID             string // gateway sandbox id (authoritative handle)
+	Name           string // == ID (kept for API/DB compatibility)
+	Image          string // gateway-reported image of the existing container
+	Host           string // session endpoint host
+	Port           int    // session endpoint port (ACP bridge, 8765)
+	CodeServerPort int    // published code-server (ide) port (0 if none)
+	SSHHost        string // ssh endpoint host
+	SSHPort        int    // ssh endpoint port
+	WorkspaceDir   string // resolved WORKSPACE_DIR inside the sandbox
+	ConfigRoot     string // in-sandbox agent config root (e.g. /root/.cursor)
 	// Password is the sandbox token the acp-bridge (8765) requires
 	// (ACP_BRIDGE_PASSWORD). ACP() attaches it so the platform's client logs in
 	// before dialing /ws.
@@ -323,7 +313,6 @@ func NewManager(gw *GatewayClient, opts ManagerOptions) *Manager {
 		SetDataPlaneKeyFile(path)
 	}
 	return &Manager{
-		workspaceOperations:     copyWorkspaceRuntimeConfig(opts.WorkspaceOperations),
 		gw:                      gw,
 		Image:                   strings.TrimSpace(opts.Image),
 		WorkspaceDir:            ws,
@@ -371,16 +360,14 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 		workspaceDir = m.WorkspaceDir
 	}
 	return &Sandbox{
-		CorrelationName: sb.Labels[cfNameLabel],
-		ID:              sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
+		ID: sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
 		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m, Blobs: m.blobs,
 	}
 }
 
-// Create provisions a sandbox via the gateway and waits for its endpoint. Once
-// the provider assigned an identity, failures return that retained handle plus
-// the error. A timeout/cancellation is never permission to delete its disk.
-// The caller must preserve the handle and reconcile the original operation.
+// Create provisions a sandbox via the gateway, waits until it is running with a
+// resolved session endpoint, and returns the handle. The caller should
+// WaitForACPReady before connecting the ACP client.
 func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if execution.Worktree() {
 		return m.createWorktree(ctx, spec)
@@ -403,12 +390,6 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 			continue
 		}
 		env[k] = v
-	}
-	// The platform layout is authoritative even when a tool profile supplies
-	// an environment variable with the same name.
-	env["WORKSPACE_DIR"] = workspaceDir
-	if err := m.prepareWorkspaceRuntimeEnv(env, "", ""); err != nil {
-		return nil, err
 	}
 	bridgePassword := strings.TrimSpace(env[BridgePasswordEnv])
 	if bridgePassword == "" {
@@ -495,27 +476,17 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	}
 	created, err := m.gw.Create(ctx, req)
 	if err != nil {
-		if created != nil && created.ID != "" {
-			sb := m.sandboxFromGW(created, workspaceDir)
-			sb.ConfigRoot, sb.Password = configRoot, bridgePassword
-			return sb, fmt.Errorf("%w: gateway endpoint setup: %w", ErrCreateOutcomeUnknown, err)
-		}
-		return nil, fmt.Errorf("%w: gateway create: %w", ErrCreateOutcomeUnknown, err)
+		m.deleteInjectBundles(bundleIDs)
+		return nil, fmt.Errorf("gateway create: %w", err)
 	}
 	log.Info().Str("id", created.ID).Str("cf_name", spec.Name).
 		Int("repos", repoCount).Int("env_vars", len(env)).Msg("sandbox create (gateway)")
 
 	running, err := m.gw.WaitRunning(ctx, created.ID, m.createTimeout)
 	if err != nil {
-		observed := created
-		if running != nil && running.ID == created.ID {
-			observed = running
-		}
-		sb := m.sandboxFromGW(observed, workspaceDir)
-		sb.ConfigRoot, sb.Password = configRoot, bridgePassword
-		// Startup may still fetch its inject URLs after the observation fails.
-		// Keep them until their original TTL, just as on a successful create.
-		return sb, fmt.Errorf("%w: sandbox not ready; original resource retained: %w", ErrCreateOutcomeUnknown, err)
+		_ = m.gw.Destroy(context.Background(), created.ID)
+		m.deleteInjectBundles(bundleIDs)
+		return nil, fmt.Errorf("sandbox not ready: %w", err)
 	}
 	sb := m.sandboxFromGW(running, workspaceDir)
 	sb.ConfigRoot = configRoot
@@ -535,9 +506,6 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		m.EnsureConfigHome(ctx, sb, spec.ConfigHome, configRoot)
 	}
 	m.EnsureHelpers(ctx, sb)
-	if err := m.ConfigureWorkspaceRuntime(ctx, sb); err != nil {
-		return sb, fmt.Errorf("%w: %w", ErrCreateOutcomeUnknown, err)
-	}
 	return sb, nil
 }
 
@@ -999,29 +967,11 @@ func (m *Manager) ExecScript(ctx context.Context, id string, timeout time.Durati
 // --- Sandbox data-plane (over SSH) -------------------------------------------
 
 func (s *Sandbox) workspaceDir() string {
-	if active := s.activeWorkspace.Load(); active != nil {
-		return active.path
-	}
 	if s.WorkspaceDir != "" {
 		return s.WorkspaceDir
 	}
 	if s.mgr != nil {
 		return s.mgr.WorkspaceDir
-	}
-	return ""
-}
-
-type activeWorkspaceRoot struct{ path, fingerprint string }
-
-// EffectiveWorkspaceDir is the only path accessor for live consumers. The
-// exported WorkspaceDir remains the trusted original layout used at creation.
-func (s *Sandbox) EffectiveWorkspaceDir() string { return s.workspaceDir() }
-func (s *Sandbox) SetActiveWorkspace(path, fingerprint string) {
-	s.activeWorkspace.Store(&activeWorkspaceRoot{path: path, fingerprint: fingerprint})
-}
-func (s *Sandbox) ActiveWorkspaceFingerprint() string {
-	if active := s.activeWorkspace.Load(); active != nil {
-		return active.fingerprint
 	}
 	return ""
 }

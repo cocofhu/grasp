@@ -23,7 +23,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/execution"
-	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -38,22 +37,37 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Security SecurityConfig `yaml:"security"`
 	Storage  StorageConfig  `yaml:"storage"`
-	// ExecutionControl is read only by grasp-storage-admin offline modes; the
-	// server binds execution to the SQL dataset and ignores this section.
-	ExecutionControl    *StorageConfig            `yaml:"execution_control"`
-	WorkspaceOperations WorkspaceOperationsConfig `yaml:"workspace_operations"`
-	Features            FeatureConfig             `yaml:"features"`
-	GitHub              GitHubConfig              `yaml:"github"`
+	GitHub   GitHubConfig   `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
+	// SoloBackup stores workspace archives of stopped Solo sessions.
+	SoloBackup SoloBackupConfig `yaml:"solo_backup"`
 }
 
-type FeatureConfig struct {
-	// Nil preserves existing installations' workflow support.
-	WorkflowsEnabled *bool `yaml:"workflows_enabled"`
-	// Bounds the accepted backlog, independently of concurrent execution slots.
-	MaxActiveWorkflows int `yaml:"max_active_workflows"`
+// SoloBackupConfig selects where a stopped Solo workspace is archived. S3 is
+// used when a bucket is configured; otherwise archives stay under LocalDir.
+type SoloBackupConfig struct {
+	LocalDir string `yaml:"local_dir"`
+	// MaxBytes caps one compressed archive; a larger workspace cannot stop.
+	MaxBytes int64        `yaml:"max_bytes"`
+	S3       SoloBackupS3 `yaml:"s3"`
 }
+
+// SoloBackupS3 is an S3-compatible bucket (AWS, MinIO, COS, OSS...).
+type SoloBackupS3 struct {
+	// Endpoint is an HTTP(S) origin. Empty uses the AWS endpoint for Region.
+	Endpoint        string `yaml:"endpoint"`
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	Prefix          string `yaml:"prefix"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	// PathStyle addresses the bucket in the path; most self-hosted servers need it.
+	PathStyle bool `yaml:"path_style"`
+}
+
+// Enabled reports whether archives go to S3 instead of the local directory.
+func (s SoloBackupS3) Enabled() bool { return strings.TrimSpace(s.Bucket) != "" }
 
 // CodexLoginConfig controls how the platform renews Codex ChatGPT logins. The
 // platform is the only holder of the refresh token; sandboxes get copies
@@ -108,28 +122,14 @@ func (c *Config) GitHubOAuthClientID() string {
 	return strings.TrimSpace(c.GitHub.OAuthClientID)
 }
 
-// StorageConfig selects how persistent payloads and attachment bytes are stored.
+// StorageConfig selects how attachment bytes are persisted (DB keeps refs only).
 type StorageConfig struct {
-	// Driver is local, s3, or cos (the COS S3-compatible preset).
-	Driver string          `yaml:"driver"`
-	S3     S3StorageConfig `yaml:"s3"`
+	// Driver is "local" (default) or "cos" (reserved; not implemented yet).
+	Driver string `yaml:"driver"`
 	// BlobsRoot is the LocalFS directory for blob:{id} objects.
 	BlobsRoot string `yaml:"blobs_root"`
 	// MaxFileBytes limits one Agent file import (default 128 MiB).
 	MaxFileBytes int64 `yaml:"max_file_bytes"`
-}
-
-// S3StorageConfig covers the portable object-storage API. Credentials stay in
-// server configuration/Secret environment variables, never in object references.
-type S3StorageConfig struct {
-	Endpoint        string `yaml:"endpoint"`
-	Region          string `yaml:"region"`
-	Bucket          string `yaml:"bucket"`
-	Prefix          string `yaml:"prefix"`
-	AccessKeyID     string `yaml:"access_key_id" json:"-"`
-	SecretAccessKey string `yaml:"secret_access_key" json:"-"`
-	SessionToken    string `yaml:"session_token" json:"-"`
-	PathStyle       *bool  `yaml:"path_style"`
 }
 
 // SecurityConfig holds cross-cutting secrets. SecretsKey is the master key used
@@ -239,11 +239,6 @@ type ServerConfig struct {
 	// and Run→QQ notification deep links (/runs/{id}). Empty defaults to
 	// http://localhost:<port>; QQ clients cannot open relative /runs paths.
 	PublicAdvertise string `yaml:"public_advertise"`
-	// PreviewAdvertise is the separate browser origin whose wildcard subdomains
-	// route to this server for private sandbox previews. Only used when
-	// sandbox.private_endpoints is enabled; never use the platform origin.
-	// Production additionally requires a different registrable cookie site.
-	PreviewAdvertise string `yaml:"preview_advertise"`
 	// FrameAncestors lists the origins (space or comma separated) that may
 	// embed workspace pages in an iframe. Empty forbids embedding.
 	FrameAncestors string `yaml:"frame_ancestors"`
@@ -315,8 +310,9 @@ type SandboxConfig struct {
 	// only; existing opaque sandbox IDs retain their original connection.
 	Gateways       []GatewayConnectionConfig `yaml:"gateways"`
 	DefaultGateway string                    `yaml:"default_gateway"`
-	// PrivateEndpoints exposes previews through isolated Grasp origins. Gateway
-	// transport enables it for every driver; legacy same-host E2B can opt in.
+	// PrivateEndpoints keeps sandbox endpoints server-only: previews go through
+	// the Grasp path proxy. Gateway transport enables it for every driver;
+	// legacy same-host E2B can opt in.
 	PrivateEndpoints bool `yaml:"private_endpoints"`
 	// OpenCodeCatalogURL overrides where the OpenCode model catalog is read from
 	// (models.dev by default). Point it at a mirror when egress is restricted.
@@ -492,14 +488,8 @@ func parse(path string) (*Config, error) {
 	if err := rejectSandboxSecretEnv(c); err != nil {
 		return nil, err
 	}
-	if c.Sandbox.PrivateEndpoints {
-		base, err := privatepreview.Parse(c.Server.PreviewAdvertise)
-		if err != nil {
-			return nil, err
-		}
-		if err := base.ValidatePlatformOrigin(c.Server.PublicAdvertise, strings.EqualFold(strings.TrimSpace(c.Server.DeploymentMode), "production")); err != nil {
-			return nil, err
-		}
+	if err := validateSoloBackup(c.SoloBackup); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -520,16 +510,6 @@ func rejectSandboxSecretEnv(c *Config) error {
 // applyEnvOverrides lets explicit env vars win over the file. Secrets such as
 // gateway_api_key are injected here from K8s Secret-backed env.
 func applyEnvOverrides(c *Config) {
-	applyExecutionControlEnv(c)
-	applyWorkspaceOperationsEnv(c)
-	if v := env("GRASP_WORKFLOWS_ENABLED"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil {
-			c.Features.WorkflowsEnabled = &enabled
-		}
-	}
-	if v := envInt("GRASP_MAX_ACTIVE_WORKFLOWS"); v > 0 {
-		c.Features.MaxActiveWorkflows = v
-	}
 	if v := envInt("GRASP_PORT"); v != 0 {
 		c.Server.Port = v
 	}
@@ -582,9 +562,6 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_SANDBOX_PRIVATE_ENDPOINTS"); v != "" {
 		c.Sandbox.PrivateEndpoints, _ = strconv.ParseBool(v)
 	}
-	if v := env("GRASP_PREVIEW_ADVERTISE"); v != "" {
-		c.Server.PreviewAdvertise = v
-	}
 	if v := env("GRASP_OPENCODE_CATALOG_URL"); v != "" {
 		c.Sandbox.OpenCodeCatalogURL = v
 	}
@@ -633,28 +610,10 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_STORAGE_DRIVER"); v != "" {
 		c.Storage.Driver = v
 	}
-	for name, target := range map[string]*string{
-		"GRASP_S3_ENDPOINT":          &c.Storage.S3.Endpoint,
-		"GRASP_S3_REGION":            &c.Storage.S3.Region,
-		"GRASP_S3_BUCKET":            &c.Storage.S3.Bucket,
-		"GRASP_S3_PREFIX":            &c.Storage.S3.Prefix,
-		"GRASP_S3_ACCESS_KEY_ID":     &c.Storage.S3.AccessKeyID,
-		"GRASP_S3_SECRET_ACCESS_KEY": &c.Storage.S3.SecretAccessKey,
-		"GRASP_S3_SESSION_TOKEN":     &c.Storage.S3.SessionToken,
-	} {
-		if v := env(name); v != "" {
-			*target = v
-		}
-	}
-	if v := env("GRASP_S3_PATH_STYLE"); v != "" {
-		value, err := strconv.ParseBool(v)
-		if err == nil {
-			c.Storage.S3.PathStyle = &value
-		}
-	}
 	if v := env("GRASP_BLOBS_ROOT"); v != "" {
 		c.Storage.BlobsRoot = v
 	}
+	applySoloBackupEnv(c)
 	if v := env("GRASP_MAX_FILE_BYTES"); v != "" {
 		c.Storage.MaxFileBytes, _ = strconv.ParseInt(v, 10, 64)
 	}
@@ -705,15 +664,14 @@ func setDefaults(c *Config) {
 		c.Storage.Driver = "local"
 	}
 	c.Storage.Driver = strings.ToLower(strings.TrimSpace(c.Storage.Driver))
-	if c.Storage.S3.Region == "" {
-		c.Storage.S3.Region = "us-east-1"
-	}
-	if c.Storage.S3.PathStyle == nil {
-		pathStyle := c.Storage.Driver != "cos"
-		c.Storage.S3.PathStyle = &pathStyle
-	}
 	if c.Storage.BlobsRoot == "" {
 		c.Storage.BlobsRoot = "data/blobs"
+	}
+	if c.SoloBackup.LocalDir == "" {
+		c.SoloBackup.LocalDir = "data/solo-backups"
+	}
+	if c.SoloBackup.MaxBytes <= 0 {
+		c.SoloBackup.MaxBytes = 4 << 30
 	}
 	if c.Storage.MaxFileBytes <= 0 {
 		c.Storage.MaxFileBytes = 128 << 20
@@ -928,6 +886,55 @@ func mergeEnvList(c *Config, list string) {
 }
 
 func env(key string) string { return os.Getenv(key) }
+
+func applySoloBackupEnv(c *Config) {
+	b := &c.SoloBackup
+	for key, dst := range map[string]*string{
+		"GRASP_SOLO_BACKUP_DIR":                  &b.LocalDir,
+		"GRASP_SOLO_BACKUP_S3_ENDPOINT":          &b.S3.Endpoint,
+		"GRASP_SOLO_BACKUP_S3_REGION":            &b.S3.Region,
+		"GRASP_SOLO_BACKUP_S3_BUCKET":            &b.S3.Bucket,
+		"GRASP_SOLO_BACKUP_S3_PREFIX":            &b.S3.Prefix,
+		"GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID":     &b.S3.AccessKeyID,
+		"GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY": &b.S3.SecretAccessKey,
+	} {
+		if v := env(key); v != "" {
+			*dst = v
+		}
+	}
+	if v := env("GRASP_SOLO_BACKUP_MAX_BYTES"); v != "" {
+		b.MaxBytes, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := env("GRASP_SOLO_BACKUP_S3_PATH_STYLE"); v != "" {
+		b.S3.PathStyle, _ = strconv.ParseBool(v)
+	}
+}
+
+// validateSoloBackup fails startup on a half-configured bucket instead of
+// silently keeping archives on local disk.
+func validateSoloBackup(b SoloBackupConfig) error {
+	s := b.S3
+	if !s.Enabled() {
+		if s.Endpoint != "" || s.AccessKeyID != "" || s.SecretAccessKey != "" {
+			return fmt.Errorf("solo_backup.s3 requires bucket when endpoint or credentials are set")
+		}
+		return nil
+	}
+	if strings.ContainsAny(s.Bucket, "/\\\r\n") {
+		return fmt.Errorf("solo_backup.s3.bucket must be a bucket name")
+	}
+	if s.AccessKeyID == "" || s.SecretAccessKey == "" {
+		return fmt.Errorf("solo_backup.s3 requires access_key_id and secret_access_key")
+	}
+	if s.Endpoint != "" {
+		u, err := url.Parse(strings.TrimSpace(s.Endpoint))
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+			u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("solo_backup.s3.endpoint must be an HTTP(S) origin")
+		}
+	}
+	return nil
+}
 
 func envInt(key string) int {
 	if v := env(key); v != "" {

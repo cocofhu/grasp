@@ -7,7 +7,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import SoloStatusDot from './SoloStatusDot.vue'
 import { relTime } from '@/lib/shared/format'
 import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
-import { isSoloActive, useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloActive, isSoloComputing, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { SoloSession } from '@/lib/api/apiTypes'
 
 defineProps<{ embedded?: boolean }>()
@@ -17,7 +17,7 @@ const store = useSoloSessions()
 
 const filter = ref<'active' | 'all'>('active')
 const activeCount = computed(() => store.active.value.length)
-const computeCount = computed(() => store.active.value.filter(session => session.status === 'starting' || session.status === 'running').length)
+const computeCount = computed(() => store.active.value.filter(isSoloComputing).length)
 const listed = computed(() => {
   const all = store.sessions.value
   const rows = filter.value === 'active' ? all.filter(isSoloActive) : all

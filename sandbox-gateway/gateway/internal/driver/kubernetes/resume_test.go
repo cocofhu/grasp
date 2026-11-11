@@ -6,14 +6,13 @@ import (
 
 	"sandbox-gateway/internal/driver"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestPrepareStartRefreshesRuntimeAndKeepsExistingSecrets(t *testing.T) {
-	cs := fake.NewClientset(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "sbx-original", Namespace: "sandboxes"}}, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sbx-original-env", Namespace: "sandboxes"}, Data: map[string][]byte{"SSH_KEY": []byte("original-key"), "SANDBOX_INJECT": []byte("expired config URL")}})
+	cs := fake.NewClientset(&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sbx-original-env", Namespace: "sandboxes"}, Data: map[string][]byte{"SSH_KEY": []byte("original-key"), "SANDBOX_INJECT": []byte("expired config URL")}})
 	d := NewFromClient(cs, Options{})
 	if err := d.PrepareStart(context.Background(), "original", driver.StartOptions{RuntimeURL: "http://fresh/runtime", RuntimeHeaders: "Authorization: Bearer fresh"}); err != nil {
 		t.Fatal(err)

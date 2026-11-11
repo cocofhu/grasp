@@ -11,7 +11,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
-	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pagebridge"
@@ -23,14 +22,11 @@ import (
 
 // Engine orchestrates workflow runs.
 type Engine struct {
-	db                   *gorm.DB
-	execution            *executionlineage.Controller
-	workspaceCheckpoints *services.WorkflowWorkspaceCheckpoints
-	checkpointActive     atomic.Int64
-	provider             runtime.ExecProvider
-	host                 *mcp.Host
-	store                mcp.Store
-	broker               *Broker
+	db       *gorm.DB
+	provider runtime.ExecProvider
+	host     *mcp.Host
+	store    mcp.Store
+	broker   *Broker
 	// sem bounds the number of runs actively executing (in the "running"
 	// state). Its capacity is the effective max_concurrent_runs and can be
 	// changed at runtime via SetMaxConcurrent (settings page).
@@ -39,9 +35,8 @@ type Engine struct {
 	// size 1 so signals coalesce and senders never block.
 	wake chan struct{}
 	// stop closes to end the dispatcher goroutine (tests / process shutdown).
-	stop      chan struct{}
-	stopOnce  sync.Once
-	startOnce sync.Once
+	stop     chan struct{}
+	stopOnce sync.Once
 
 	// autoRetryMax caps how many times a node that fails with retryable=true
 	// (and has no explicit failure/rollback edge) is auto-retried from the
@@ -89,9 +84,6 @@ type Engine struct {
 	// running drivers requeue their run at the next node boundary.
 	haltMu sync.RWMutex
 	halted bool
-	// blockAdmission forces scheduleRunAdmission to refuse. Tests use it to
-	// prove a save-failed retry restores the checkpoint when admission fails.
-	blockAdmission atomic.Bool
 
 	// reattachMu guards pendingReattach / adoptedSandboxes: agent nodes found
 	// mid-flight on startup whose sandbox is still alive. Their slots are
@@ -181,27 +173,7 @@ func (e *Engine) SetReferencePinner(p ReferencePinner) { e.refs = p }
 func (e *Engine) SetPageHub(h *pagebridge.Hub) { e.pageHub = h }
 
 // New builds an engine.
-func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution ...*executionlineage.Controller) *Engine {
-	var controller *executionlineage.Controller
-	if len(execution) > 0 {
-		controller = execution[0]
-	}
-	e := newEngine(db, provider, host, store, maxRuns, controller, nil)
-	e.Start()
-	return e
-}
-
-// NewConfigured installs every execution/checkpoint dependency before any
-// recovery or dispatch. Production calls Start after its one capture pipeline,
-// registry and current-authorization callbacks are completely wired.
-func NewConfigured(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution *executionlineage.Controller, checkpoints *services.WorkflowWorkspaceCheckpoints) (*Engine, error) {
-	if execution == nil || checkpoints == nil {
-		return nil, services.ErrWorkspaceJobAuthority
-	}
-	return newEngine(db, provider, host, store, maxRuns, execution, checkpoints), nil
-}
-
-func newEngine(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int, execution *executionlineage.Controller, checkpoints *services.WorkflowWorkspaceCheckpoints) *Engine {
+func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int) *Engine {
 	if maxRuns <= 0 {
 		maxRuns = 5
 	}
@@ -214,11 +186,6 @@ func newEngine(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store
 		adoptedSandboxes: map[string]bool{},
 		pendingTurns:     chatsession.NewPendingStore(db),
 	}
-	e.workspaceCheckpoints = checkpoints
-	if execution != nil {
-		e.execution = execution
-		e.pendingTurns.SetExecutionController(e.execution)
-	}
 
 	if sink, ok := provider.(interface {
 		SetEventSink(func(runID, nodeID string, events []models.AcpEvent, busy bool))
@@ -228,16 +195,12 @@ func newEngine(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store
 
 	host.SetAfterWriteArtifact(e.syncAfterPrimaryArtifactWrite)
 	host.SetArtifactPreviewHook(e.setReactPreviewArtifact)
-	return e
-}
+	// Reconcile before the dispatcher starts so adopted runs reserve their
+	// slots ahead of the queued backlog.
+	e.reconcileInterrupted()
 
-func (e *Engine) Start() {
-	e.startOnce.Do(func() {
-		// Reconcile before dispatch so retained/checkpointed visits can never
-		// compete with a new execution of their already-dispatched Agent.
-		e.reconcileInterrupted()
-		go e.dispatch()
-	})
+	go e.dispatch()
+	return e
 }
 
 // SetMaxConcurrent changes the live cap on simultaneously executing runs and

@@ -74,3 +74,21 @@ func runtimeBootstrapScript(data []byte) (string, error) {
 		return string(script), nil
 	}
 }
+
+// Stop stops a sandbox and retains its resource for a later Resume.
+func (m *Manager) Stop(ctx context.Context, id string) error {
+	if m.gw == nil {
+		return fmt.Errorf("no gateway client")
+	}
+	return m.gw.Stop(ctx, id)
+}
+
+// KeepsProcessesOnStop reports whether Stop preserves process memory. Only
+// E2B pauses; Docker and Kubernetes keep files but cold-start processes.
+func (m *Manager) KeepsProcessesOnStop(ctx context.Context, id string) bool {
+	if m.gw == nil {
+		return false
+	}
+	driver, err := m.gw.Driver(ctx, id)
+	return err == nil && driver == "e2b"
+}

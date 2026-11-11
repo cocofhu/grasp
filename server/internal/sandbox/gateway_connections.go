@@ -28,33 +28,9 @@ type GatewayInfo struct {
 		Image string `json:"image"`
 	} `json:"profiles"`
 	Capabilities struct {
-		StopMode          string `json:"stopMode"`
-		DiskMode          string `json:"diskMode"`
-		ColdConfiguration bool   `json:"coldConfiguration"`
+		StopMode string `json:"stopMode"`
+		DiskMode string `json:"diskMode"`
 	} `json:"capabilities"`
-}
-
-// InfoFor observes the gateway bound to this sandbox; it never starts a guest.
-func (g *GatewayClient) InfoFor(ctx context.Context, id string) (*GatewayInfo, error) {
-	client, _, err := g.resolveID(id)
-	if err != nil {
-		return nil, err
-	}
-	if client.bridge != nil {
-		return client.bridge.info(ctx)
-	}
-	var info GatewayInfo
-	if err := client.doDirect(ctx, http.MethodGet, "/api/v2/info", nil, &info); err != nil {
-		if !GatewayRecordMissing(err) {
-			return nil, err
-		}
-		// Some older direct gateways exposed discovery on v1 only. An auth
-		// failure or unavailable current gateway must not trigger a downgrade.
-		if err := client.doDirect(ctx, http.MethodGet, "/api/v1/info", nil, &info); err != nil {
-			return nil, err
-		}
-	}
-	return &info, nil
 }
 
 // NewConfiguredGatewayClient preserves the legacy URL for unqualified IDs.

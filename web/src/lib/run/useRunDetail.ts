@@ -34,7 +34,6 @@ import {
 } from '@/lib/run/mergeRunChrome'
 import { fmtTime, fmtDuration, formatTrigger } from '@/lib/shared/format'
 import { pickDefaultTimelineNodeId } from '@/lib/run/runStats'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import { useRunDetailLiveLog } from '@/lib/run/useRunDetailLiveLog'
 import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
@@ -587,11 +586,8 @@ let clock: number | undefined
 
 onMounted(async () => {
   await loadRun(true)
-  let ticks = 0
   clock = window.setInterval(() => {
     if (ACTIVE.includes(run.value.status)) nowMs.value = Date.now()
-    // A workspace save moves the run on without a socket frame; follow it.
-    if (run.value.workspaceSave?.state === 'saving' && ++ticks % 3 === 0 && !runLoading.value && !document.hidden) void loadRun(false, true)
   }, 1000)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocusRefresh)
@@ -932,8 +928,7 @@ async function confirmCancelRun() {
 
 const canDeleteRun = computed(() => {
   const s = run.value?.status
-  if (s === 'completed' || s === 'failed' || s === 'cancelled') return true
-  return runDisplayStatus(run.value) === 'save_failed'
+  return s === 'completed' || s === 'failed' || s === 'cancelled'
 })
 
 const deleteRunHint = computed(() => {
@@ -941,9 +936,6 @@ const deleteRunHint = computed(() => {
   const s = run.value?.status
   if (s === 'queued' || s === 'running' || s === 'waiting_human') {
     return t('pages.runDetail.deleteHintActive')
-  }
-  if (runDisplayStatus(run.value) === 'saving') {
-    return t('pages.runDetail.deleteHintSaving')
   }
   return ''
 })
@@ -1010,10 +1002,8 @@ const resumeError = ref<string | null>(null)
 let resumeFollowGen = 0
 onUnmounted(() => { resumeFollowGen++ })
 
-function resumeStillEnded(): boolean {
-  const status = run.value?.status
-  if (status === 'failed' || status === 'cancelled') return true
-  return runDisplayStatus(run.value) === 'save_failed'
+function resumeStillEnded(status: string | undefined): boolean {
+  return status === 'failed' || status === 'cancelled'
 }
 
 function delay(ms: number) {
@@ -1029,7 +1019,7 @@ async function followResumeUntilLeftTerminal(gen: number, id: string) {
     if (gen !== resumeFollowGen || runId.value !== id) return
     await loadRun(false, true)
     if (gen !== resumeFollowGen || runId.value !== id) return
-    if (!resumeStillEnded()) {
+    if (!resumeStillEnded(run.value.status)) {
       notifyRecentActivity()
       return
     }
@@ -1038,9 +1028,6 @@ async function followResumeUntilLeftTerminal(gen: number, id: string) {
 
 async function onResume(nodeId = '') {
   if (resuming.value) return
-  // The unsealed-result button stays visible but disabled. Ignore a header
-  // click so it cannot reach the checkpoint gate.
-  if (!nodeId && failureRetryBlocked.value) return
   resumeFollowGen++
   const followGen = resumeFollowGen
   const id = runId.value
@@ -1057,7 +1044,7 @@ async function onResume(nodeId = '') {
   }
   await loadRun(false)
   if (!accepted || followGen !== resumeFollowGen || runId.value !== id) return
-  if (resumeStillEnded()) {
+  if (resumeStillEnded(run.value.status)) {
     void followResumeUntilLeftTerminal(followGen, id)
     return
   }
@@ -1278,27 +1265,8 @@ onUnmounted(() => {
   window.removeEventListener('scroll', onPriorityReposition, true)
 })
 
-function saveFailedRetryNode(): string {
-  if (runDisplayStatus(run.value) !== 'save_failed') return ''
-  if (run.value.workspaceSave?.outcomeSealed === false) return ''
-  const id = run.value.workspaceSave?.nodeId || ''
-  if (!id || !run.value.nodeRuns?.[id]) return ''
-  return id
-}
-
-// Header failure retry: failed, cancelled, or a save-failed pause that still
-// has the banner node's execution. A running run keeps the per-node action only.
-// An unsealed node result stays on screen as disabled: retry would only hit
-// the checkpoint gate.
-const canResume = computed(() => run.value.status === 'failed' || run.value.status === 'cancelled' || !!saveFailedRetryNode())
-
-const failureRetryBlocked = computed(() => runDisplayStatus(run.value) === 'save_failed' && run.value.workspaceSave?.outcomeSealed === false)
-
-const resumeUnavailableHint = computed(() => {
-  if (runDisplayStatus(run.value) !== 'save_failed' || canResume.value) return ''
-  if (failureRetryBlocked.value) return t('pages.runDetail.resumeUnsealed')
-  return t('pages.runDetail.resumeNoNode')
-})
+// A terminated run can be resumed; the header button auto-picks the failed node.
+const canResume = computed(() => run.value.status === 'failed' || run.value.status === 'cancelled')
 // The selected node can be individually retried when the run is terminated
 // (any graph node) or still running with a failed node (react sandbox setup).
 const canResumeSelected = computed(() => {
@@ -1544,7 +1512,7 @@ function applyCanvasViewIntent() {
   if (queryParam('view') !== 'canvas') return
   viewMode.value = isMobile.value ? 'timeline' : 'canvas'
   const query = { ...route.query }
-  query.view = 'details'
+  delete query.view
   void router.replace({ path: route.path, query })
 }
 
@@ -1702,8 +1670,6 @@ function locateExecution(nodeId: string, idx: number) {
   onPriorityReposition,
   savePriority,
   canResume,
-  failureRetryBlocked,
-  resumeUnavailableHint,
   canResumeSelected,
   statusMap,
   activePath,

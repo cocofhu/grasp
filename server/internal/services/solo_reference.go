@@ -130,7 +130,7 @@ func (s *SoloService) pinReferences(row *models.SoloSession, refs []models.Messa
 		}
 		ref.Title = other.Title
 		var last models.SoloMessage
-		err := s.db.Select("id", "created_at").Where("session_id = ?", other.ID).Order("created_at desc, id desc").First(&last).Error
+		err := s.db.Where("session_id = ?", other.ID).Order("created_at desc, id desc").First(&last).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			ref.Error = "snapshot_unavailable"
 			continue
@@ -151,14 +151,12 @@ func (s *SoloService) referenceSummary(ref models.MessageReference) string {
 		return "（该会话在引用时还没有消息）"
 	}
 	var anchor models.SoloMessage
-	if s.db.Select("id", "created_at").Where("id = ?", ref.Anchor).First(&anchor).Error != nil {
+	if s.db.Where("id = ?", ref.Anchor).First(&anchor).Error != nil {
 		return ""
 	}
-	rows, err := readSoloMessages(s.db.Where("session_id = ? AND role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", ref.Target, "user", anchor.CreatedAt, anchor.CreatedAt, anchor.ID).
-		Order("created_at asc, id asc"), soloMessageChat|soloMessageWorkflowContext)
-	if err != nil {
-		return ""
-	}
+	var rows []models.SoloMessage
+	s.db.Where("session_id = ? AND role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", ref.Target, "user", anchor.CreatedAt, anchor.CreatedAt, anchor.ID).
+		Order("created_at asc, id asc").Find(&rows)
 	return renderUserInstructions(rows, referenceSummaryBudget, referenceReadTool(ref.ID))
 }
 

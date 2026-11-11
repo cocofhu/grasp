@@ -58,63 +58,57 @@ func (m *Manager) ensureRuntimeAsync(sb *Sandbox) {
 // preview-inject, and restart backend once it is idle. Sandboxes from images
 // too old for the bundle are skipped for good.
 func (m *Manager) EnsureRuntime(ctx context.Context, sb *Sandbox) error {
-	_, err := m.refreshRuntime(ctx, sb)
-	return err
-}
-
-// refreshRuntime reports whether the backend now runs a newly installed bundle.
-func (m *Manager) refreshRuntime(ctx context.Context, sb *Sandbox) (bool, error) {
 	if m == nil || m.runtime == nil || sb == nil || sb.ID == "" {
-		return false, nil
+		return nil
 	}
 	data, man, err := m.runtime.Current()
 	if err != nil {
-		return false, err
+		return err
 	}
 	st, ok := m.runtime.begin(sb.ID)
 	if !ok {
-		return false, nil
+		return nil
 	}
-	restarted, err := m.ensureRuntime(ctx, sb, data, man, &st)
+	err = m.ensureRuntime(ctx, sb, data, man, &st)
 	m.runtime.end(sb.ID, st)
-	return restarted, err
+	return err
 }
 
-func (m *Manager) ensureRuntime(ctx context.Context, sb *Sandbox, data []byte, man RuntimeManifest, st *runtimeState) (bool, error) {
+func (m *Manager) ensureRuntime(ctx context.Context, sb *Sandbox, data []byte, man RuntimeManifest, st *runtimeState) error {
 	if st.skip != "" {
-		return false, nil
+		return nil
 	}
 	creds := sb.creds()
 	if st.version != man.Version {
 		installed, err := m.installedRuntime(ctx, creds)
 		if err != nil {
-			return false, fmt.Errorf("runtime version: %w", err)
+			return fmt.Errorf("runtime version: %w", err)
 		}
 		if installed != man.Version {
 			if err := m.pushRuntime(ctx, creds, sb.ID, data, man, st); err != nil || st.skip != "" {
-				return false, err
+				return err
 			}
 		}
 		st.version = man.Version
 	}
 	if !st.backendPending {
-		return false, nil
+		return nil
 	}
 	cmd, err := newSafeCmd(runtimeServices, "restart", "backend", "--if-idle")
 	if err != nil {
-		return false, err
+		return err
 	}
 	out, err := creds.run(ctx, 90*time.Second, cmd)
 	if code, ok := exitStatus(err); ok && code == runtimeExitBusy {
 		log.Info().Str("sandbox", sb.ID).Msg("sandbox backend busy; runtime restart deferred")
-		return false, nil
+		return nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("restart backend: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("restart backend: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	st.backendPending = false
 	log.Info().Str("sandbox", sb.ID).Str("version", shortVersion(man.Version)).Msg("sandbox backend restarted on new runtime")
-	return true, nil
+	return nil
 }
 
 // installedRuntime returns the sandbox's current runtime version ("" when

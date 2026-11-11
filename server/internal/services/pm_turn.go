@@ -217,9 +217,6 @@ func (r *PmTurnRunner) Enqueue(threadID string, req PmTurnRequest) (int, error) 
 	if r.chat == nil || r.pm == nil {
 		return 0, errors.New("pm turn runner unavailable")
 	}
-	if err := r.pm.executionCheck(context.Background(), threadID); err != nil {
-		return 0, err
-	}
 	if req.Text == "" {
 		req.Text = req.Prompt
 	}
@@ -337,9 +334,6 @@ func (th *pmThread) fail(q *PmTurnRequest, failKind string) {
 
 func (th *pmThread) execute(ctx context.Context, q *PmTurnRequest) (bool, error) {
 	r := th.r
-	if err := r.pm.executionCheck(ctx, th.id); err != nil {
-		return false, err
-	}
 	sandboxID, prompt := q.SandboxID, q.Prompt
 	if q.Prepare != nil {
 		pctx, pcancel := context.WithTimeout(ctx, pmPrepareTimeout)
@@ -454,17 +448,9 @@ func ExtractAgentMessageText(raw json.RawMessage) string {
 
 // extractPmAgentText pulls agent_message_chunk text from a raw ACP frame.
 func extractPmAgentText(raw json.RawMessage) string {
-	update, kind := agentSessionUpdate(raw)
-	if kind != "agent_message_chunk" {
-		return ""
-	}
-	return contentTextAny(update["content"])
-}
-
-func agentSessionUpdate(raw json.RawMessage) (map[string]any, string) {
 	var envelope map[string]any
 	if json.Unmarshal(raw, &envelope) != nil {
-		return nil, ""
+		return ""
 	}
 	ev := envelope
 	if op, _ := envelope["op"].(string); op == "event" {
@@ -478,11 +464,11 @@ func agentSessionUpdate(raw json.RawMessage) (map[string]any, string) {
 	}
 	typ, _ := ev["type"].(string)
 	if typ != "session_update" {
-		return nil, ""
+		return ""
 	}
 	update, _ := ev["update"].(map[string]any)
 	if update == nil {
-		return nil, ""
+		return ""
 	}
 	kind := stringifyKind(update["sessionUpdate"])
 	if kind == "" {
@@ -491,7 +477,10 @@ func agentSessionUpdate(raw json.RawMessage) (map[string]any, string) {
 	if kind == "" {
 		kind = stringifyKind(update["type"])
 	}
-	return update, normalizePmKind(kind)
+	if normalizePmKind(kind) != "agent_message_chunk" {
+		return ""
+	}
+	return contentTextAny(update["content"])
 }
 
 func stringifyKind(v any) string {

@@ -38,6 +38,14 @@ const label = computed(() => (props.busy && props.status === 'running' ? t('page
 .solo-dot--error {
   background: rgb(var(--c-err));
 }
+.solo-dot--stopping {
+  background: rgb(var(--c-txt3));
+  animation: solo-dot-pulse 1.4s ease-in-out infinite;
+}
+.solo-dot--stopped {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px rgb(var(--c-txt3));
+}
 .solo-dot--busy::after {
   position: absolute;
   inset: -3px;
@@ -63,6 +71,7 @@ const label = computed(() => (props.busy && props.status === 'running' ? t('page
 }
 @media (prefers-reduced-motion: reduce) {
   .solo-dot--starting,
+  .solo-dot--stopping,
   .solo-dot--busy::after {
     animation: none;
   }

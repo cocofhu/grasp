@@ -60,10 +60,9 @@ func TestGatewayConfigurationValidation(t *testing.T) {
 	}
 }
 
-func TestGatewayTransportEnablesIsolatedPreviews(t *testing.T) {
+func TestGatewayTransportEnablesPrivateEndpoints(t *testing.T) {
 	t.Setenv("GRASP_SANDBOX_GATEWAY_TRANSPORT", "gateway")
 	t.Setenv("GRASP_SANDBOX_GATEWAY_API_KEY", "synthetic-key")
-	t.Setenv("GRASP_PREVIEW_ADVERTISE", "http://preview.example.test:8080")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("sandbox:\n  gateways:\n    - id: e2b\n      url: http://e2b.example.test\n      api_key_env: E2B_GATEWAY_KEY\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -79,10 +78,6 @@ func TestGatewayTransportEnablesIsolatedPreviews(t *testing.T) {
 	cfg, err = parse(path)
 	if err != nil || cfg.Sandbox.DefaultGateway != "e2b" {
 		t.Fatalf("default override: %v", err)
-	}
-	t.Setenv("GRASP_PREVIEW_ADVERTISE", "")
-	if _, err := parse(path); err == nil {
-		t.Fatal("transport without preview origin accepted")
 	}
 	t.Setenv("GRASP_SANDBOX_GATEWAY_TRANSPORT", "invalid")
 	if _, err := parse(path); err == nil || !strings.Contains(err.Error(), "transport") {

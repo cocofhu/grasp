@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { attachmentsReading } from '@/lib/shared/attachments'
-import { randomUuid } from '@/lib/shared/randomUuid'
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -41,10 +40,8 @@ type Phase = 'form' | 'loading' | 'success' | 'error'
 
 const props = defineProps<{
   open: boolean
-  soloSessionId?: string
   workflowId: string
   workflowName: string
-  workflowVersion?: number
   fields: InputField[]
   runInputs: Record<string, string>
   runImages: Record<string, ClarifyImage[]>
@@ -87,8 +84,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const router = useRouter()
 const phase = ref<Phase>('form')
-const requestKey = ref(randomUuid())
-watch(() => props.open, (open) => { if (open) requestKey.value = randomUuid() })
 const messageText = ref('')
 const messageImages = ref<ClarifyImage[]>([])
 /** The home composer passes its own first message; other entry points type it here. */
@@ -393,9 +388,6 @@ async function startRun() {
   try {
     if (props.beforeStart) await props.beforeStart()
     const res = await api.startRun(props.workflowId, inputs, 'manual', priority.value, tags.value, {
-      idempotencyKey: requestKey.value,
-      ...(props.workflowVersion ? { expectedWorkflowVersion: props.workflowVersion } : {}),
-      ...(props.soloSessionId ? { soloSessionId: props.soloSessionId } : {}),
       signal: startAbort.signal,
       env: envEntries.length ? envEntries : undefined,
       title: props.runTitle?.trim() || (ownMessage ? runTitleFromDraft(ownText, ownImages) : '') || undefined,
@@ -406,7 +398,6 @@ async function startRun() {
     if (gen !== startGen) return
     successRunId.value = res.id
     emit('started', res.id)
-    if (props.soloSessionId) { emit('close'); return }
     if (ownMessage) {
       setHomeApproveHandoff({ runId: res.id, nodeId: '', text: ownText, images: ownImages })
       emit('close')

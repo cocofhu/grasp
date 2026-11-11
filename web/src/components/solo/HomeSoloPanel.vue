@@ -9,7 +9,7 @@ import SoloSessionList from './SoloSessionList.vue'
 import { relTime } from '@/lib/shared/format'
 import { repoShort } from '@/lib/solo/soloPrefs'
 import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
-import { useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloComputing, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { Project } from '@/lib/api/apiTypes'
 
 const props = withDefaults(defineProps<{ projects?: Project[]; projectIds?: string[] }>(), {
@@ -22,7 +22,6 @@ const store = useSoloSessions()
 const allOpen = ref(false)
 
 const recent = computed(() => store.active.value.slice(0, 3))
-const computeCount = computed(() => store.active.value.filter(session => session.status === 'starting' || session.status === 'running').length)
 const cards = computed(() => props.projects.slice(0, 8))
 const selected = computed(() => (Array.isArray(props.projectIds) ? props.projectIds : []))
 
@@ -37,7 +36,7 @@ function repoMeta(session: (typeof recent.value)[number]) {
     <section v-if="recent.length" class="home-solo__section">
       <div class="home-solo__head">
         <span>{{ t('pages.solo.home.recent') }}</span>
-        <span class="home-solo__count">{{ computeCount }}/{{ store.maxSandboxes.value }}</span>
+        <span class="home-solo__count">{{ store.active.value.filter(isSoloComputing).length }}/{{ store.maxSandboxes.value }}</span>
         <button type="button" class="home-solo__more" data-testid="home-solo-view-all" @click="allOpen = true">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></button>
       </div>
       <div class="home-solo__list">

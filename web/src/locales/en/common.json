@@ -30,10 +30,7 @@
       "cancelling": "Cancelling",
       "skipped": "Skipped",
       "published": "Published",
-      "draft": "Draft",
-      "paused": "Paused",
-      "saving": "Saving workspace",
-      "save_failed": "Save failed"
+      "draft": "Draft"
     },
     "priority": {
       "label": "Priority",
@@ -106,9 +103,7 @@
       "cancelRun": "Cancel run",
       "confirmCancelRun": "Confirm cancel",
       "deleteRun": "Delete run",
-      "resumeFromFail": "Retry failure",
-      "resumeFromFailHint": "Re-run the stuck node. Results from earlier nodes stay.",
-      "failureRetrying": "Retrying…",
+      "resumeFromFail": "Resume from failure",
       "resumeFromNode": "Resume from this node",
       "loading": "Loading…",
       "approving": "Approving…",

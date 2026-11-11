@@ -27,9 +27,12 @@ type Project struct {
 const (
 	SoloStatusStarting = "starting"
 	SoloStatusRunning  = "running"
-	SoloStatusStopped  = "stopped"
 	SoloStatusClosed   = "closed"
 	SoloStatusError    = "error"
+	// Stopping archives the workspace, then stops the sandbox. Stopped holds
+	// no compute; Resume starts the same sandbox or restores the archive.
+	SoloStatusStopping = "stopping"
+	SoloStatusStopped  = "stopped"
 )
 
 // SoloArtifactRunPrefix reserves the run namespace used by resident Solo sandboxes.
@@ -48,20 +51,12 @@ type SessionRepo struct {
 }
 
 // SoloSession is a direct CLI chat with one Agent in a resident sandbox. The
-// sandbox has no idle TTL. Closing stops compute and retains its writable files.
+// sandbox has no idle TTL; it lives until the user closes the session.
 type SoloSession struct {
-	WorkflowContextVersion uint64 `gorm:"not null;default:0" json:"-"`
-	// Lifecycle fields are a persistent operation receipt, independent of the
-	// native chat queue. They fence late create/recovery callbacks and reserve
-	// accepted restarts that have not acquired a new sandbox row yet.
-	LifecycleEpoch           uint64 `gorm:"not null;default:0" json:"-"`
-	LifecycleAttemptID       string `gorm:"size:64;not null;default:''" json:"-"`
-	LifecycleAction          string `gorm:"size:32;not null;default:'';index" json:"-"`
-	LifecycleSourceSandboxID uint   `json:"-"`
-	ID                       string `gorm:"primaryKey" json:"id"`
-	UserID                   string `gorm:"index" json:"userId"`
-	Title                    string `json:"title"`
-	AgentName                string `gorm:"index" json:"agentName"`
+	ID        string `gorm:"primaryKey" json:"id"`
+	UserID    string `gorm:"index" json:"userId"`
+	Title     string `json:"title"`
+	AgentName string `gorm:"index" json:"agentName"`
 	// ProjectID is the single repository of a legacy session. New multi-repo
 	// sessions leave it empty; usage is the Repos list. A new single-repo
 	// session still fills it so older readers keep working.
@@ -95,9 +90,6 @@ type SoloSession struct {
 	// ModelContextPending survives a cancelled switch after the coding tool was
 	// restarted, so the next turn still receives the existing task history.
 	ModelContextPending bool `json:"-"`
-	// ConversationContextPending syncs workflow results or an uncertain native
-	// execution without claiming that a model or environment was replaced.
-	ConversationContextPending bool `json:"-"`
 	// ResumeContextPending restores dialogue context after a cold start while
 	// accurately retaining the workspace and uncommitted changes.
 	ResumeContextPending bool `json:"-"`
@@ -118,8 +110,15 @@ type SoloSession struct {
 	NeedsPreamble bool       `json:"-"`
 	LastActiveAt  *time.Time `json:"lastActiveAt,omitempty"`
 	ClosedAt      *time.Time `json:"closedAt,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	// Backup* describe the workspace archive taken by the last stop. It is
+	// kept until the next stop replaces it or the session is closed.
+	BackupStore  string     `json:"-"`
+	BackupKey    string     `json:"-"`
+	BackupSHA256 string     `json:"-"`
+	BackupSize   int64      `json:"backupSize,omitempty"`
+	BackupAt     *time.Time `json:"backupAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 // Reference kinds a Solo user turn may attach.
@@ -180,15 +179,10 @@ type RunReference struct {
 // SoloMessage is one persisted turn of a Solo session. Agent turns keep the raw
 // ACP frames so the UI can replay thoughts and tool calls.
 type SoloMessage struct {
-	ClientMessageID string `gorm:"size:128" json:"clientMessageId,omitempty"`
-	// WorkflowContext holds the immutable task context separately from the
-	// compact system notice displayed in chat. get_history returns its original.
-	WorkflowContext string               `gorm:"serializer:filetext" json:"-"`
-	WorkflowRunID   string               `gorm:"index" json:"workflowRunId,omitempty"`
-	TurnID          string               `gorm:"index" json:"turnId,omitempty"`
-	Files           []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
-	ID              string               `gorm:"primaryKey" json:"id"`
-	SessionID       string               `gorm:"index" json:"sessionId"`
+	TurnID    string               `gorm:"index" json:"turnId,omitempty"`
+	Files     []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
+	ID        string               `gorm:"primaryKey" json:"id"`
+	SessionID string               `gorm:"index" json:"sessionId"`
 	// Role: user | assistant | system (system marks restarts).
 	Role          string            `json:"role"`
 	Content       string            `gorm:"serializer:filetext" json:"content"`
@@ -196,12 +190,10 @@ type SoloMessage struct {
 	Annotations   []ReactAnnotation `gorm:"serializer:filejson" json:"annotations,omitempty"`
 	PreviewShared bool              `json:"-"`
 	Events        []json.RawMessage `gorm:"serializer:filejson" json:"events,omitempty"`
-	EventLog      *ChatEventLog     `gorm:"serializer:json" json:"eventLog,omitempty"`
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
-	// Status: ok | failed | stopped | unknown. Empty means ok. Unknown never
-	// claims a dispatched operation failed or succeeded after an executor loss.
+	// Status: ok | failed | stopped. Empty means ok.
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	Usage        *TokenUsage       `gorm:"serializer:json" json:"usage,omitempty"`
@@ -211,28 +203,4 @@ type SoloMessage struct {
 	Execution  *ChatExecution `gorm:"serializer:json" json:"execution,omitempty"`
 	DurationMs int64          `json:"durationMs,omitempty"`
 	CreatedAt  time.Time      `json:"createdAt"`
-}
-
-// ChatEventLog points into the immutable conversation journal. The range may
-// contain interleaved control frames; Count counts this turn's ACP frames.
-type ChatEventLog struct {
-	Version    int    `json:"version"`
-	From       int64  `json:"from"`
-	Through    int64  `json:"through"`
-	Count      int    `json:"count"`
-	Generation uint64 `json:"generation"`
-	// Legacy identifies a read-only import of the original Events cell. Its
-	// generation and turn remain unknown; it never grants execution authority.
-	Legacy *ChatLegacyEventOrigin `json:"legacy,omitempty"`
-}
-
-// ChatLegacyEventOrigin binds an imported range to its unchanged source body.
-// Reaching the former storage cap cannot prove the original process was saved
-// in full, even when the imported journal itself has no gaps.
-type ChatLegacyEventOrigin struct {
-	Format            string `json:"format"`
-	MessageID         string `json:"messageId"`
-	SHA256            string `json:"sha256"`
-	Count             int    `json:"count"`
-	PossiblyTruncated bool   `json:"possiblyTruncated"`
 }

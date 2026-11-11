@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
   /** Opens above the composer by default; the home composer opens below. */
   placement?: 'up' | 'down'
 }>(), { allowSolo: true })
-const emit = defineEmits<{ pick: [ref: MessageReference] }>()
+const emit = defineEmits<{ (e: 'pick', ref: MessageReference): void }>()
 const { t } = useI18n()
 
 const tab = ref<ReferenceTab>(props.initialTab || 'all')
@@ -117,7 +117,8 @@ const options = computed(() => sections.value.flatMap((s) => s.options))
 const refreshing = computed(() => sections.value.some((s) => s.loading && !s.first))
 
 const rows = computed<Row[]>(() => {
-  if (!props.full && !sections.value.length) return [{ type: 'note', key: 'empty', text: t('pages.solo.reference.noMatch'), error: false }]
+  if (props.full) return [{ type: 'note', key: 'full', text: t('pages.solo.reference.full', { n: 5 }), error: false }]
+  if (!sections.value.length) return [{ type: 'note', key: 'empty', text: t('pages.solo.reference.noMatch'), error: false }]
   const out: Row[] = []
   let index = 0
   for (const section of sections.value) {
@@ -127,7 +128,6 @@ const rows = computed<Row[]>(() => {
     else if (section.note && !section.options.length) out.push({ type: 'note', key: `n:${section.key}`, text: section.note, error: section.error })
     else if (section.error) out.push({ type: 'note', key: `e:${section.key}`, text: section.note, error: true })
   }
-  if (props.full) out.push({ type: 'note', key: 'full', text: t('pages.solo.reference.full', { n: 5 }), error: false })
   return out
 })
 

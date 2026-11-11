@@ -1,13 +1,11 @@
 package engine
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gorm.io/gorm"
 	"strings"
 	"time"
 
@@ -118,7 +116,7 @@ func (e *Engine) SaveGateArtifact(runID, gateNodeID, name, content, ifMatch stri
 		// Reload outputs into ctx after sync (loadCtx picks latest per node).
 		if c2, err2 := e.loadCtx(runID); err2 == nil {
 			gate.BodyMd = e.interpolate(c2, bt)
-			logDB(e.executionSave(context.Background(), runID, &gate), runID, "refresh gate body after human artifact edit")
+			logDB(e.db.Save(&gate), runID, "refresh gate body after human artifact edit")
 		}
 	}
 
@@ -241,7 +239,7 @@ func (e *Engine) syncUpstreamOutputs(c *execCtx, gate *models.Gate, gateNode *mo
 	}
 	applyHumanArtifactOutputs(outs, norm)
 	sr.Outputs = outs
-	logDB(e.executionSave(context.Background(), c.run.ID, &sr, stateRunTakeoverCols...), c.run.ID, "sync upstream outputs after human artifact edit")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "sync upstream outputs after human artifact edit")
 	c.nodeOutputs[upNodeID] = outs
 }
 
@@ -334,7 +332,7 @@ func (e *Engine) syncAfterPrimaryArtifactWrite(runID, nodeID, name, content, kin
 		}
 	}
 	sr.Outputs = outs
-	logDB(e.executionSave(context.Background(), runID, &sr, stateRunTakeoverCols...), runID, "sync outputs after WriteArtifact")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "sync outputs after WriteArtifact")
 
 	c, err := e.loadCtx(runID)
 	if err != nil {
@@ -368,9 +366,7 @@ func (e *Engine) noteArtifactVisitWrite(runID, nodeID, name string) {
 	if err != nil {
 		return
 	}
-	logDB(e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		return db.Model(&models.StateRun{}).Where("id = ?", sr.ID).Update("artifact_visit_writes", string(raw))
-	}), runID, "note artifact visit write")
+	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).Update("artifact_visit_writes", string(raw)), runID, "note artifact visit write")
 }
 
 // structuredRenderForArtifact returns a markdown renderer for known structured

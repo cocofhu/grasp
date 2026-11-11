@@ -61,9 +61,9 @@ describe('scrollbar exceptions stay put', () => {
     expect(shell).toMatch(/scrollbar-color:\s*rgb\(var\(--c-txt3\)\s*\/\s*\.65\)\s*transparent/)
   })
 
-  it('keeps the home column and conversation rail scrollbars hidden', () => {
+  it('keeps the workflow rail and conversation rail scrollbars hidden', () => {
     const home = read('../views/DashboardView.vue')
-    expect(home).toMatch(/\.home-shell__content\s*\{[^}]*scrollbar-width:\s*none/)
+    expect(home).toMatch(/\.home-workflow-rail\s*\{[^}]*scrollbar-width:\s*none/)
     const chat = read('../components/chat/ChatMessageRail.vue')
     expect(chat).toMatch(/\.chat-message-rail-track\s*\{[^}]*scrollbar-width:\s*none/)
   })

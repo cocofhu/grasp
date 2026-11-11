@@ -133,13 +133,8 @@ type ACPClient struct {
 	lg   zerolog.Logger
 
 	// ConnectOpts injected into the {op:connect} message.
-	attachOperation      *OperationIdentity
-	attachedComplete     atomic.Bool
-	nativeSessionID      string
-	sessionWorkspace     string
-	workspaceFingerprint string
-	cwd                  string
-	mcpServers           json.RawMessage // JSON array, may be nil
+	cwd        string
+	mcpServers json.RawMessage // JSON array, may be nil
 
 	// blobs resolves blob:{id} attachments to base64 for the wire format.
 	blobs blob.Store
@@ -411,13 +406,6 @@ func (c *ACPClient) Connect(ctx context.Context) error {
 // (tracked by a per-dial done channel) so Connect can safely re-dial.
 func (c *ACPClient) connectOnce(ctx context.Context) error {
 	url := c.wsURL()
-	if c.attachOperation != nil {
-		separator := "?"
-		if strings.Contains(url, "?") {
-			separator = "&"
-		}
-		url += separator + "attachOnly=1"
-	}
 	c.lg.Info().Str("url", url).Msg("acp connecting")
 
 	// Unified auth: log in first and carry the session cookie on the WS
@@ -436,9 +424,6 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	conn, _, err := dialer.DialContext(ctx, url, reqHeader)
 	if err != nil {
 		return fmt.Errorf("ws dial: %w", err)
-	}
-	if c.attachOperation != nil {
-		conn.SetReadLimit(64 << 20)
 	}
 	release := c.acquireReader()
 	defer release()
@@ -461,9 +446,6 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	if len(c.mcpServers) > 0 {
 		connectMsg["mcpServers"] = c.mcpServers
 	}
-	if c.attachOperation != nil {
-		connectMsg = c.operationRequest()
-	}
 	if err := c.send(connectMsg); err != nil {
 		return fmt.Errorf("send connect: %w", err)
 	}
@@ -474,22 +456,8 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 		select {
 		case raw := <-c.eventCh:
 			op, sessionID := parseOpAndSession(raw)
-			if c.attachOperation != nil {
-				if op == "operation_attached" {
-					if _, err := c.checkOperationReply(raw, false); err != nil {
-						return err
-					}
-					c.setConnected(sessionID)
-					c.observeConnectedWorkspace(raw)
-					return nil
-				}
-				if op == "connected" {
-					continue
-				}
-			}
 			if op == "connected" && sessionID != "" {
 				c.setConnected(sessionID)
-				c.observeConnectedWorkspace(raw)
 				c.lg.Info().Str("session", sessionID).Msg("acp connected")
 				return nil
 			}
@@ -603,7 +571,6 @@ func (c *ACPClient) RestartAgent(ctx context.Context) error {
 			case "connected":
 				if sessionID != "" {
 					c.setConnected(sessionID)
-					c.observeConnectedWorkspace(raw)
 				}
 				c.lg.Info().Str("session", sessionID).Msg("acp agent restarted")
 				return nil
@@ -794,9 +761,6 @@ func (c *ACPClient) readLoop(conn *websocket.Conn, done chan struct{}, stop <-ch
 			return
 		}
 		c.observeQueueState(message)
-		if op, _ := parseOpAndSession(message); op == "connected" {
-			c.observeConnectedWorkspace(message)
-		}
 		c.readerMu.Lock()
 		readersDone := c.readersDone
 		reading := c.readers.Load() > 0

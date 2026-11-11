@@ -5,23 +5,6 @@ import { fileURLToPath } from 'node:url'
 const shotDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.tmp-tool-timeline-shots')
 
 test.describe('Agent 工具调用时间线', () => {
-  test('loads local screenshot Markdown through the Solo image endpoint', async ({ page }) => {
-    const paths: string[] = []
-    await page.route('**/api/solo/sessions/image-session/images?*', async route => {
-      paths.push(new URL(route.request().url()).searchParams.get('path') || '')
-      await route.fulfill({
-        contentType: 'image/png',
-        body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
-      })
-    })
-    await page.goto('/agent-tool-timeline.html?localImages=1')
-    const reply = page.getByTestId('agent-timeline-message')
-    await expect(reply.locator('img')).toHaveCount(2)
-    await expect.poll(() => reply.locator('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).naturalWidth > 0))).toBe(true)
-    expect(paths.sort()).toEqual(['/tmp/full.png', '/tmp/side.png'])
-    await page.setViewportSize({ width: 390, height: 720 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  })
   for (const theme of ['light', 'dark']) {
     test(`思考 / 工具 / 正文按序展示，查看打开产物 (${theme})`, async ({ page }) => {
       await page.setViewportSize({ width: 1200, height: 720 })

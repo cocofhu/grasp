@@ -48,10 +48,9 @@ type FakeGateway struct {
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
-	FailStop   bool // POST /sandboxes/:id/stop returns 500 without stopping compute
-	// BeforeInfo runs for gateway discovery before the handler answers.
-	// Stop records its intent before this call; tests block here to send concurrently.
-	BeforeInfo func()
+	FailStop   bool // POST /sandboxes/:id/stop returns 500
+	// Driver is reported by GET /healthz (empty -> "docker").
+	Driver string
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
 
@@ -184,20 +183,18 @@ func (fg *FakeGateway) SetEndpoints(id string, endpoints map[string]string) {
 }
 
 func (fg *FakeGateway) handle(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/v1/info" || r.URL.Path == "/api/v2/info" {
-		fg.mu.Lock()
-		hook := fg.BeforeInfo
-		fg.mu.Unlock()
-		if hook != nil {
-			hook()
-		}
-		http.NotFound(w, r)
-		return
-	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/sandboxes"), "/"), "/")
 	// parts: [] for collection, [id], [id, "status"], [id, "stop"|"start"],
 	// [id, "hosts", port].
 	switch {
+	case r.URL.Path == "/healthz" && r.Method == http.MethodGet:
+		fg.mu.Lock()
+		driver := fg.Driver
+		fg.mu.Unlock()
+		if driver == "" {
+			driver = "docker"
+		}
+		writeJSON(w, map[string]string{"status": "ok", "driver": driver})
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodPost:
 		fg.create(w, r)
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodGet:
@@ -271,12 +268,16 @@ func (fg *FakeGateway) get(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var out map[string]any
+	if rec != nil {
+		out = fg.dto(rec)
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, fg.dto(rec))
+	writeJSON(w, out)
 }
 
 func (fg *FakeGateway) delete(w http.ResponseWriter, id string) {
@@ -293,21 +294,25 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var st string
+	if rec != nil {
+		st = rec.status
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"status": rec.status})
+	writeJSON(w, map[string]string{"status": st})
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
-	if action == "stop" && fg.FailStop {
-		http.Error(w, "stop failed", http.StatusInternalServerError)
-		return
-	}
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
+		return
+	}
+	if action == "stop" && fg.FailStop {
+		http.Error(w, "stop failed", http.StatusInternalServerError)
 		return
 	}
 	fg.mu.Lock()
@@ -344,12 +349,16 @@ func (fg *FakeGateway) logs(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var content string
+	if rec != nil {
+		content = rec.logs
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"content": rec.logs})
+	writeJSON(w, map[string]string{"content": content})
 }
 
 func (fg *FakeGateway) dto(rec *record) map[string]any {

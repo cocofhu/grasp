@@ -16,152 +16,6 @@ const caps = [
 type ConfigurationRow = { id: string; name: string; backend: string; binding: { kind: string; connectionId?: string; credentialId?: string; modelId?: string; auxiliaryModelIds?: string[] }; state: string; revision: number }
 const connection = (id: string, protocol: string, modelId: string) => ({ id, name: id, providerId: 'same-vendor', protocol, baseUrl: `https://${id}.example/v1`, credentialId: key.id, auth: { scheme: 'bearer' }, models: [{ id: modelId, name: modelId, source: 'manual' }], state: 'active', revision: 1 })
 
-test('Solo pages saved messages and execution details without replacing the complete answer', async ({ page }, testInfo) => {
-  const service = connection('history-service', 'openai-chat-completions', 'history-model')
-  const state = await setup(page, [service])
-  state.configurations.push({ id: 'history-config', name: '测试模型', backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: 'history-model' }, state: 'active', revision: 1 })
-  state.agents.push({ name: 'Solo', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'history-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
-  const session = { id: 'solo-history', title: '历史续聊', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-11-09T00:00:00Z', updatedAt: '2026-11-09T00:00:02Z', restarts: 0, busy: false, waiting: 0, repos: [], initialConfigurationId: 'history-config', initialModelId: 'history-model' }
-  const messages = [
-    { id: 'question', sessionId: session.id, role: 'user', content: '检查已有代码和工作区', createdAt: session.createdAt },
-    { id: 'answer', turnId: 'question', sessionId: session.id, role: 'assistant', content: '完整结论：现有改动已保留，可以继续处理后续需求。', status: 'ok', createdAt: session.updatedAt, durationMs: 49_000, eventLog: { version: 1, from: 101, through: 104, count: 4, generation: 9 } },
-  ]
-  const cursors: number[] = []
-  const replyOnlyCursors: number[] = []
-  let latestMessages: Record<string, unknown>[] = messages
-  let socket: WebSocketRoute | undefined
-  let submitted: Record<string, unknown> | undefined
-  let failed = false
-  const event = (seq: number, update: Record<string, unknown>) => ({ seq, type: 'acp', turnId: 'question', generation: 9, data: { type: 'session_update', update } })
-  await routeApi(page, '**/api/solo/sessions**', async route => {
-    const url = new URL(route.request().url()); const path = url.pathname
-    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
-    if (path.endsWith('/messages/answer/events')) {
-      const after = Number(url.searchParams.get('after')); cursors.push(after)
-      if (after === -1) return route.fulfill({ json: { items: [event(101, { sessionUpdate: 'tool_call', toolCallId: 'read-1', title: '检查 workspace.txt', status: 'completed' }), event(102, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '早期片段' } })], next: 102, head: 104, hasMore: true } })
-      if (!failed) { failed = true; return route.fulfill({ status: 503, json: { error: '过程记录暂不可用，请重试' } }) }
-      return route.fulfill({ json: { items: [event(103, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '已核对现有工作区和未提交改动。' } }), event(104, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '剩余片段' } })], next: 104, head: 104, hasMore: false } })
-    }
-    if (path.endsWith('/messages/next-answer/events')) {
-      replyOnlyCursors.push(Number(url.searchParams.get('after')))
-      return route.fulfill({ json: { items: [{ ...event(202, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '第二轮完整回复，工作流结果也已保留。' } }), turnId: 'next-question' }], next: 202, head: 202, hasMore: false } })
-    }
-    if (path.endsWith('/messages')) return route.fulfill({ json: url.searchParams.has('before') ? { items: [{ id: 'earlier', sessionId: session.id, role: 'system', content: '更早的会话记录', createdAt: '2026-11-08T00:00:00Z' }], hasMore: false } : { items: latestMessages, before: 'older-token', hasMore: true } })
-    if (path.endsWith('/turn-requests') && route.request().method() === 'POST') {
-      submitted = route.request().postDataJSON()
-      return route.fulfill({ json: { waiting: 0, turnId: 'next-question', clientMessageId: submitted!.clientMessageId, state: 'executing' } })
-    }
-    if (path.endsWith('/env')) return route.fulfill({ json: [] })
-    if (path.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: false, locked: false, source: 'db' } } })
-    return route.fulfill({ json: session })
-  })
-  await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => {
-    socket = ws
-    ws.send(JSON.stringify({ type: 'session', event: 'queue_state', seq: 200, journalVersion: 1, stateSnapshot: true, sessionGeneration: 9, revision: 3, busy: false, items: [] }))
-  })
-  await page.setViewportSize({ width: 1280, height: 900 })
-  await page.goto('/workspace-config.html?view=/solo/solo-history')
-  const answer = page.getByTestId('solo-agent-message').filter({ hasText: messages[1]!.content })
-  await expect(answer).toContainText(messages[1]!.content)
-  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveText('用时 49s')
-  await expect(page.getByTestId('solo-load-process')).toHaveCount(0)
-  expect(cursors).toEqual([])
-  await page.getByTestId('solo-load-earlier').click()
-  await expect(page.getByText('更早的会话记录', { exact: true })).toHaveCount(1)
-  await page.getByTestId('agent-timeline-elapsed').click()
-  await expect(answer).toContainText(messages[1]!.content)
-  await expect(page.getByText('检查 workspace.txt', { exact: true })).toBeVisible()
-  await page.getByTestId('solo-load-process').click()
-  await expect(page.getByRole('alert').filter({ hasText: '过程记录暂不可用' })).toBeVisible()
-  await page.getByTestId('solo-load-process').click()
-  await expect(page.getByTestId('solo-load-process')).toHaveCount(0)
-  await expect(answer).toContainText(messages[1]!.content)
-  await expect(answer).toHaveCount(1)
-  expect(cursors).toEqual([-1, 102, 102])
-  await page.screenshot({ path: testInfo.outputPath('solo-history-paged.png'), fullPage: true })
-  await page.getByTestId('agent-timeline-elapsed').click()
-  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByTestId('solo-agent-message')).toHaveCount(1)
-
-  await page.getByTestId('solo-input').fill('工作流继续运行，同时回答我的问题')
-  await page.getByTestId('solo-send').click()
-  await expect.poll(() => submitted?.text).toBe('工作流继续运行，同时回答我的问题')
-  socket!.send(JSON.stringify({ type: 'session', event: 'turn_begin', seq: 201, sessionGeneration: 9, revision: 4, item: { id: 'next-question', text: submitted!.text, clientMessageId: submitted!.clientMessageId, images: [] } }))
-  socket!.send(JSON.stringify({ type: 'acp', seq: 202, sessionGeneration: 9, userMsgId: 'next-question', data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '第二轮完整回复，工作流结果也已保留。' } } } }))
-  const question = { id: 'next-question', sessionId: session.id, role: 'user', content: submitted!.text, clientMessageId: submitted!.clientMessageId, createdAt: '2026-11-09T00:00:03Z' }
-  const result = { id: 'workflow-result', sessionId: session.id, role: 'system', content: '工作流任务已完成，结果已同步', createdAt: '2026-11-09T00:00:04Z' }
-  latestMessages = [...messages, question, result]
-  socket!.send(JSON.stringify({ type: 'session', event: 'history_changed', seq: 203, sessionGeneration: 9, revision: 5 }))
-  await expect(page.getByText(result.content, { exact: true })).toBeVisible()
-  latestMessages.push({ id: 'next-answer', turnId: question.id, sessionId: session.id, role: 'assistant', content: '第二轮完整回复，工作流结果也已保留。', status: 'ok', createdAt: '2026-11-09T00:00:05Z', durationMs: 2_000, eventLog: { version: 1, from: 202, through: 202, count: 1, generation: 9 } })
-  socket!.send(JSON.stringify({ type: 'session', event: 'turn_done', seq: 204, sessionGeneration: 9, revision: 6, userMsgId: question.id }))
-  await expect(page.getByTestId('solo-agent-activity')).toHaveCount(0)
-  await expect(page.getByTestId('solo-agent-message')).toHaveCount(2)
-  await expect(page.getByTestId('solo-agent-message').last()).toHaveText('第二轮完整回复，工作流结果也已保留。')
-  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(2)
-  await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveText('用时 2s')
-  await expect(page.getByTestId('agent-timeline-elapsed').last()).toHaveAttribute('aria-expanded', 'false')
-  const replyOnlyFold = page.getByTestId('agent-timeline-elapsed').last()
-  await replyOnlyFold.click()
-  await expect(page.getByTestId('solo-process-empty')).toHaveText('本轮未记录额外的思考或工具调用过程。')
-  await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(2)
-  await expect(replyOnlyFold).toHaveText('用时 2s')
-  await expect(replyOnlyFold).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.getByTestId('solo-agent-message').last()).toHaveText('第二轮完整回复，工作流结果也已保留。')
-  await expect(page.getByTestId('solo-agent-message')).toHaveCount(2)
-  await replyOnlyFold.click()
-  await expect(page.getByTestId('solo-process-empty')).toBeHidden()
-  await replyOnlyFold.click()
-  await expect(page.getByTestId('solo-process-empty')).toBeVisible()
-  expect(replyOnlyCursors).toEqual([-1])
-  await page.screenshot({ path: testInfo.outputPath('solo-reply-only-process.png'), fullPage: true })
-})
-
-test('Solo restores an unconfirmed send after reload with the exact original identity and shows one human message', async ({ page }, testInfo) => {
-  const service = connection('durable-service', 'openai-chat-completions', 'durable-model')
-  const state = await setup(page, [service])
-  state.configurations.push({ id: 'durable-config', name: '测试模型', backend: 'opencode', binding: { kind: 'connection', connectionId: service.id, modelId: 'durable-model' }, state: 'active', revision: 1 })
-  state.agents.push({ name: 'Solo', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'durable-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
-  const session = { id: 'solo-durable', title: '续聊确认', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-11-09T00:00:00Z', updatedAt: '2026-11-09T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialConfigurationId: 'durable-config', initialModelId: 'durable-model' }
-  const requests: Record<string, unknown>[] = []
-  await routeApi(page, '**/api/solo/sessions**', async route => {
-    const path = new URL(route.request().url()).pathname
-    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
-    if (path.endsWith('/messages') || path.endsWith('/env')) return route.fulfill({ json: [] })
-    if (path.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: false, locked: false, source: 'db' } } })
-    if (path.endsWith('/turn-requests') && route.request().method() === 'POST') {
-      requests.push(route.request().postDataJSON())
-      if (requests.length === 1) return route.fulfill({ status: 503, json: { code: 'message_not_confirmed', error: '消息接收结果尚未确认' } })
-      return route.fulfill({ json: { waiting: 1, turnId: 'accepted-turn', clientMessageId: requests[0]!.clientMessageId, state: 'queued' } })
-    }
-    return route.fulfill({ json: session })
-  })
-  await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
-  await page.setViewportSize({ width: 1280, height: 900 })
-  await page.goto('/workspace-config.html?view=/solo/solo-durable')
-  await expect(page.getByTestId('solo-session-pane')).toBeVisible()
-  await page.getByTestId('solo-input').fill('继续检查并保留现有改动')
-  await page.getByTestId('solo-send').click()
-  const retry = page.getByTestId('solo-retry-unconfirmed')
-  await expect(retry).toBeVisible()
-  await expect(page.getByTestId('solo-input')).toBeDisabled()
-  await expect(page.getByTestId('solo-input')).toHaveValue('')
-  await page.screenshot({ path: testInfo.outputPath('solo-message-unconfirmed.png'), fullPage: true })
-  expect(requests).toHaveLength(1)
-  expect(requests[0]!.clientMessageId).toBeTruthy()
-  await page.reload()
-  await expect(retry).toBeVisible()
-  await expect(page.getByTestId('solo-input')).toBeDisabled()
-  expect(requests).toHaveLength(1)
-  await retry.click()
-  await expect(retry).toHaveCount(0)
-  await expect(page.getByTestId('solo-input')).toBeEnabled()
-  await expect(page.getByTestId('solo-input')).toHaveValue('')
-  expect(requests).toHaveLength(2)
-  expect(requests[1]).toEqual(requests[0])
-  await expect(page.getByTestId('solo-session-pane').getByText('继续检查并保留现有改动', { exact: true })).toHaveCount(1)
-})
-
 async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]) {
   await installWorkspaceApiDefaults(page)
   const credentials: Record<string, unknown>[] = [key]
@@ -989,19 +843,19 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   const state = await setup(page, [service])
   state.configurations.push({ id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
   state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
-  const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'workspace-config-test', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
+  const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
   let createBody: Record<string, unknown> | undefined
   const modelWrites: Record<string, unknown>[] = []
   await routeApi(page, '**/api/projects', route => route.fulfill({ json: [] }))
-  await routeApi(page, '**/api/solo/creation-requests', async route => {
-    createBody = route.request().postDataJSON()
-    session.initialModelId = String(createBody?.initialModelId || '')
-    session.reasoningEffort = String(createBody?.reasoningEffort || '')
-    return route.fulfill({ json: { ...session, clientRequestId: createBody?.clientRequestId, initialTurnId: 'initial-model-turn' } })
-  })
   await routeApi(page, '**/api/solo/sessions**', async route => {
     const pathname = new URL(route.request().url()).pathname
     if (pathname === '/api/solo/sessions') {
+      if (route.request().method() === 'POST') {
+        createBody = route.request().postDataJSON()
+        session.initialModelId = String(createBody?.initialModelId || '')
+        session.reasoningEffort = String(createBody?.reasoningEffort || '')
+        return route.fulfill({ json: session })
+      }
       return route.fulfill({ json: { sessions: createBody ? [session] : [], maxSandboxes: 8 } })
     }
     if (pathname.endsWith('/messages') || pathname.endsWith('/env')) return route.fulfill({ json: [] })
@@ -1140,7 +994,6 @@ for (const scenario of [
       if (pathname === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
       if (pathname.endsWith('/messages')) return route.fulfill({ json: history })
       if (pathname.endsWith('/env')) return route.fulfill({ json: [] })
-      if (pathname.endsWith('/workflows')) return route.fulfill({ json: { items: [], workflows: { enabled: true, locked: false, source: 'config' } } })
       return route.fulfill({ json: session })
     })
     await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => {

@@ -48,8 +48,6 @@ jobs:
         run: ./.github/scripts/shellcheck-error.sh
       - name: Docs publish transport regressions
         run: python3 .github/scripts/test-publish-pages.py
-      - name: Local object storage regressions
-        run: python3 scripts/test-local-objectstore.py
 
   changes:
     runs-on: ubuntu-latest

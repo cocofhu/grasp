@@ -22,8 +22,6 @@ const props = withDefaults(defineProps<{
   rememberArtifactPanel?: boolean
   /** Chat the remembered switch belongs to. Defaults to the run. */
   panelMemoryKey?: string
-  /** Drawer state shared with the stage. Defaults to the run; Solo may not have one yet. */
-  drawerKey?: string
   /** Passed through to the conversation toolbar. Omit to keep 「对话」. */
   runName?: string
 }>(), { scopeKey: 'review-conversation', hostConfirmFlow: true, chatOnly: false, splitDrawer: false, rememberArtifactPanel: false })
@@ -31,7 +29,6 @@ const props = withDefaults(defineProps<{
 const { t } = useI18n()
 const remembersPanel = () => props.rememberArtifactPanel && !props.chatOnly
 const memoryKey = () => props.panelMemoryKey || props.runId
-const drawerKey = () => props.drawerKey || props.runId
 function rememberedPanel(): { open: boolean; mode: 'resources' | 'artifacts' | null } {
   const open = remembersPanel() && readArtifactPanelOpen(memoryKey())
   return { open, mode: open && props.splitDrawer ? readRememberedPanelMode(memoryKey()) : null }
@@ -60,7 +57,7 @@ watch(() => props.scopeKey, () => {
     panelOpen.value = false
     panelMode.value = null
   }
-  const entry = ensureConversationDrawer(drawerKey())
+  const entry = ensureConversationDrawer(props.runId)
   if (entry && splitToolbar()) entry.resetEpoch += 1
 }, { flush: 'sync' })
 watch(() => props.chatOnly, (chatOnly) => {
@@ -77,9 +74,9 @@ watch([panelOpen, panelMode], ([open, mode], [prevOpen]) => {
   else if (prevOpen) writeArtifactPanelOpen(false, undefined, memoryKey())
 }, { flush: 'sync' })
 watch(
-  () => [drawerKey(), props.splitDrawer, props.chatOnly, panelOpen.value, panelMode.value] as const,
+  () => [props.runId, props.splitDrawer, props.chatOnly, panelOpen.value, panelMode.value] as const,
   () => {
-    const entry = ensureConversationDrawer(drawerKey())
+    const entry = ensureConversationDrawer(props.runId)
     if (!entry) return
     entry.split = splitToolbar()
     entry.mode = panelOpen.value ? (panelMode.value ?? 'artifacts') : null
@@ -87,7 +84,7 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => {
-  const entry = ensureConversationDrawer(drawerKey())
+  const entry = ensureConversationDrawer(props.runId)
   if (!entry) return
   entry.split = false
   entry.mode = null

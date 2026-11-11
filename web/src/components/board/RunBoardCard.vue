@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { runBoardTitle, runIdShort } from '@/lib/run/runBoard'
@@ -27,7 +26,7 @@ const nodeLine = computed(() => {
   }
   return props.run.currentNodeLabel || ''
 })
-const pillStatus = computed(() => (isWorkingWaitingRun(props.run) ? 'running' : runDisplayStatus(props.run)))
+const pillStatus = computed(() => (isWorkingWaitingRun(props.run) ? 'running' : props.run.status))
 const progressWidth = computed(() => `${Math.min(100, Math.max(0, props.run.progress || 0))}%`)
 </script>
 

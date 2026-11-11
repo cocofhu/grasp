@@ -233,36 +233,15 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	}
 
 	runID, nodeID, port := claims.RunID, claims.NodeID, claims.Port
-	if h.MCP.PrivatePreviews() {
-		for _, rec := range h.MCP.ListPreviewPorts(runID, nodeID) {
-			if rec.Port != port || !h.PrivatePreviewBase.OwnsURL(rec.ProxyURL) {
-				continue
-			}
-			// Private app HTML must never inherit the platform origin through
-			// the older path proxy. The isolated host rechecks its binding and
-			// liveness, while preserving the app's root-relative paths.
-			target, _ := url.Parse(rec.ProxyURL)
-			target.Path = c.Param("path")
-			if target.Path == "" {
-				target.Path = "/"
-			}
-			target.RawQuery = c.Request.URL.RawQuery
-			c.Redirect(http.StatusTemporaryRedirect, target.String())
-			return
-		}
-		// A private port without an isolated registration must not fall back
-		// to serving a loopback upstream on the platform's own origin.
-		for _, rec := range h.MCP.ListPreviewPorts(runID, nodeID) {
-			if rec.Port == port && rec.Kind != "url" {
-				c.String(http.StatusNotFound, "preview not found")
-				return
-			}
-		}
-	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
 	host, sandboxName := reg.Host, reg.SandboxName
+	private := h.privateEndpoints()
+	if private && !h.privatePreviewBound(reg) {
+		c.String(http.StatusGone, "preview expired")
+		return
+	}
 	if h.Sbx != nil {
 		if mgr := h.Sbx.Manager(); mgr != nil && sandboxName != "" {
 			if mgr.Status(ctx, sandboxName) != "running" {
@@ -301,6 +280,16 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.ModifyResponse = publicPreviewAPIModifyResponse(prefix)
+	if private {
+		modify, upstreamPath := proxy.ModifyResponse, c.Param("path")
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			if err := checkPrivateInjectorUpstream(reg, upstreamPath, resp); err != nil {
+				return err
+			}
+			stripPrivateReservedHeaders(resp.Header)
+			return modify(resp)
+		}
+	}
 	if sharedApp {
 		modify := proxy.ModifyResponse
 		proxy.ModifyResponse = func(resp *http.Response) error {
@@ -355,6 +344,9 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 		c.Request.Header.Set("Origin", target.Scheme+"://"+target.Host)
 	}
 	c.Request.Header.Del("Forwarded")
+	if private {
+		stripPrivateReservedHeaders(c.Request.Header)
+	}
 	proxy.ServeHTTP(c.Writer, c.Request)
 }
 

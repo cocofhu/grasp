@@ -53,12 +53,12 @@ set +a
 : "${GRASP_GATEWAY_PORT:=8899}"
 : "${GRASP_SANDBOX_GATEWAY_URL:=http://127.0.0.1:${GRASP_GATEWAY_PORT}}"
 : "${GRASP_DEPLOYMENT_MODE:=local-demo}"
-: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:3.4.0}"
-: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:3.4.0}"
+: "${GRASP_IMAGE:=ghcr.io/cocofhu/grasp:3.2.0}"
+: "${SANDBOX_GATEWAY_IMAGE:=ghcr.io/cocofhu/sandbox-gateway:3.2.0}"
 : "${SANDBOX_GATEWAY_API_KEY:=grasp-local-demo}"
 
 # One published sandbox image (coding CLIs inside; runtime AGENT_PROVIDER picks).
-: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:3.4.0}"
+: "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:3.2.0}"
 # Release compose must pin Grasp to GHCR; empty would fall through to
 # universal-sandbox:local inside the container.
 if [[ -z "${GRASP_SANDBOX_IMAGE:-}" ]]; then
@@ -100,12 +100,6 @@ export GIT_COMMIT="${GIT_COMMIT:-}"
 
 RELEASE_COMPOSE_FILE="${COMPOSE_FILE:-compose.release.yaml}"
 DEV_COMPOSE_FILE="docker-compose.yml"
-
-# shellcheck source=scripts/local-objectstore.sh
-source scripts/local-objectstore.sh
-if local_objectstore_requested; then
-  local_objectstore_profile
-fi
 
 wait_for_url() {
   local url="$1"
@@ -158,9 +152,6 @@ ensure_sandbox_runtime_image() {
 # Does not refresh tags that are already present; use `./start.sh pull` for that.
 ensure_compose_images_if_missing() {
   local images=("${GRASP_IMAGE}" "${SANDBOX_GATEWAY_IMAGE}")
-  if [[ "${GRASP_LOCAL_OBJECTSTORE_ENABLED:-0}" == 1 ]]; then
-    images+=("${GRASP_LOCAL_OBJECTSTORE_IMAGE}")
-  fi
   local -A seen=()
   local img
   for img in "${images[@]}"; do
@@ -178,14 +169,11 @@ ensure_compose_images_if_missing() {
 
 up_release() {
   local detach="${1:-}"
-  validate_local_objectstore_selection
   mkdir -p .localdata/gateway .localdata/db .localdata/app-data
-  prepare_local_objectstore "$HOST_REPO_DIR/.localdata/objectstore"
   # On-demand: only Grasp + Gateway when missing. Sandbox runtimes are
   # pulled later by the gateway on first sandbox create (plan g1.1 / g1.2).
   echo "ensuring Grasp + Gateway images (sandbox runtimes on demand)..."
   ensure_compose_images_if_missing
-  start_local_objectstore "$RELEASE_COMPOSE_FILE"
   if [[ "$detach" == "1" ]]; then
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" up -d
     wait_for_url "http://127.0.0.1:${GRASP_GATEWAY_PORT}/healthz" "gateway"
@@ -194,7 +182,7 @@ up_release() {
     print_release_endpoints
     echo "note: sandbox runtime pulls on first Agent use"
     echo "      warm it now: ./start.sh pull"
-    echo "data: .localdata/{gateway,db,app-data,objectstore} (bind mounts)"
+    echo "data: .localdata/{gateway,db,app-data} (bind mounts)"
     echo "wipe: ./start.sh down && rm -rf .localdata"
     echo "logs: ./start.sh logs   stop: ./start.sh down"
   else
@@ -263,18 +251,15 @@ build_dev_runtime() {
 }
 
 up_dev() {
-  validate_local_objectstore_selection
   local detach="${1:-}"
   if [[ ! -f server/config.yaml ]]; then
     cp server/config.example.yaml server/config.yaml
     echo "created server/config.yaml from config.example.yaml"
   fi
   mkdir -p .devdata/db .devdata/sandbox-home
-  prepare_local_objectstore "$HOST_REPO_DIR/.devdata/objectstore"
   export GRASP_SANDBOX_GATEWAY_URL="http://127.0.0.1:${GRASP_GATEWAY_PORT}"
   build_dev_runtime
   ensure_dev_sandbox_image
-  start_local_objectstore "$DEV_COMPOSE_FILE"
   if [[ "$detach" == "1" ]]; then
     "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" up --build -d
     wait_for_url "http://127.0.0.1:${GRASP_GATEWAY_PORT}/healthz" "gateway"
@@ -316,12 +301,11 @@ case "$cmd" in
     fi
     ;;
   down)
-    "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
-    "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
+    "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
+    "${COMPOSE[@]}" -f "$DEV_COMPOSE_FILE" down --remove-orphans || true
     ;;
   restart)
-    validate_local_objectstore_selection
-    "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
+    "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" down --remove-orphans || true
     up_release 1
     ;;
   dev)

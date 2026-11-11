@@ -1,6 +1,5 @@
 import type { ClarifyImage, ReactAnnotation } from '../../shared/types'
-import { BASE, req, wsUrl } from '../httpCore'
-import type { SoloChatDiagnostic } from '@/lib/solo/soloDiagnostics'
+import { req, wsUrl } from '../httpCore'
 import type {
   Project,
   ProjectInput,
@@ -9,8 +8,6 @@ import type {
   SoloCreateBody,
   SoloEnvEntry,
   SoloMessage,
-  SoloMessagePage,
-  SoloMessageEventPage,
   SoloResources,
   SoloSession,
   SoloSessionList,
@@ -18,8 +15,6 @@ import type {
 import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
-
-export const soloImageBase = (id: string) => `${BASE}/solo/sessions/${enc(id)}/images`
 
 export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
 
@@ -42,15 +37,8 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
-    listSoloMessagePage: async (id: string, before?: string): Promise<SoloMessagePage> => {
-      const result = await req<SoloMessagePage | SoloMessage[]>(`${path(id)}/messages?limit=50${before ? `&before=${enc(before)}` : ''}`)
-      // Migration release: an older application replica ignores pagination.
-      // Remove this reader together with the unpaged route in the next minor.
-      return Array.isArray(result) ? { items: result, hasMore: false } : result
-    },
-    listSoloMessageEvents: (id: string, messageId: string, after = -1) => req<SoloMessageEventPage>(`${path(id)}/messages/${enc(messageId)}/events?after=${after}`),
-    sendSoloTurn: (id: string, body: { text: string; clientMessageId?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
-      req<{ waiting: number; turnId?: string; clientMessageId?: string; state?: string }>(`${path(id)}/${body.clientMessageId ? 'turn-requests' : 'turns'}`, { method: 'POST', body: JSON.stringify(body) }),
+    sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
+      req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
     searchSoloReferences: <T>(id: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
       req<ReferenceSearchResult<T>>(`${path(id)}/references/search?${referenceQuery(params)}`, { signal }),
     cancelSoloTurn: (id: string) =>
@@ -59,25 +47,13 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
       req<{ ok: boolean }>(`${path(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
     reorderSoloQueue: (id: string, ids: string[]) =>
       req<{ ok: boolean }>(`${path(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
-    soloChatWsUrl: (id: string, afterSeq?: number, journalVersion?: number) => {
-      const query = new URLSearchParams()
-      if (afterSeq != null && afterSeq >= 0) query.set('after', String(afterSeq))
-      if (journalVersion !== undefined) query.set('journal', String(journalVersion))
-      return wsUrl(`${path(id)}/chat${query.size ? `?${query}` : ''}`)
-    },
+    soloChatWsUrl: (id: string, afterSeq?: number) =>
+      wsUrl(`${path(id)}/chat${afterSeq != null && afterSeq >= 0 ? `?after=${afterSeq}` : ''}`),
   }
 }
 
 export const soloClient = {
   ...createSoloChatClient(req, wsUrl, id => `/solo/sessions/${enc(id)}`),
-  // Diagnostics are best effort and never affect API health, shutdown toasts,
-  // history fetching or the replay cursor. Keep the bounded metadata on reload.
-  reportSoloDiagnostics: async (id: string, body: SoloChatDiagnostic): Promise<void> => {
-    await fetch(`${BASE}/solo/sessions/${enc(id)}/diagnostics`, {
-      method: 'POST', credentials: 'include', keepalive: true,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    })
-  },
   listProjects: () => req<Project[]>('/projects'),
   getProject: (id: string) =>
     req<{ project: Project; activeSessions: number }>(`/projects/${enc(id)}`),
@@ -91,12 +67,7 @@ export const soloClient = {
   listSoloSessions: (params?: { status?: 'active' }) =>
     req<SoloSessionList>(`/solo/sessions${params?.status ? `?status=${params.status}` : ''}`),
   createSoloSession: (body: SoloCreateBody) =>
-    req<SoloSession>('/solo/creation-requests', { method: 'POST', body: JSON.stringify(body) }),
-  resolveSoloCreation: (requestId: string) => req<SoloSession>(`/solo/creation-requests/${enc(requestId)}`),
-  workflowChat: (runId: string, signal?: AbortSignal) =>
-    req<{ soloId: string; title: string; status: string }>(`/runs/${enc(runId)}/chat`, { signal }),
-  continueWorkflow: (runId: string, body: SoloCreateBody) =>
-    req<SoloSession>(`/runs/${enc(runId)}/continue`, { method: 'POST', body: JSON.stringify(body) }),
+    req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
   getSoloResources: (id: string, signal?: AbortSignal) =>
     req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
   soloEmbedTicket: (id: string) =>
@@ -109,8 +80,11 @@ export const soloClient = {
     req<SoloSession>(`/solo/sessions/${enc(id)}/close`, { method: 'POST' }),
   restartSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/restart`, { method: 'POST' }),
-  stopSoloEnvironment: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}/environment/stop`, { method: 'POST' }),
-  resumeSoloEnvironment: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}/environment/resume`, { method: 'POST' }),
+  /** Backs up the workspace, then stops the sandbox. Returns while stopping. */
+  stopSoloSession: (id: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/stop`, { method: 'POST' }),
+  resumeSoloSession: (id: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/resume`, { method: 'POST' }),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   /** Home workflow composer: the workflow's default repos and first clarify Agent. */
   searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>

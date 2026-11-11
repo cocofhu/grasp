@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
 import { api } from '@/lib/api/api'
 import { fmtTime, fmtDuration, formatTrigger } from '@/lib/shared/format'
@@ -122,7 +121,7 @@ onUnmounted(() => {
               <td class="px-5 py-3 text-txt2">{{ formatTrigger(r.trigger) }}</td>
               <td class="px-5 py-3 text-txt2">{{ fmtTime(r.startedAt || r.createdAt || '') }}</td>
               <td class="px-5 py-3 text-txt2">{{ fmtDuration(r.durationSec) }}</td>
-              <td class="px-5 py-3"><StatusPill :status="runDisplayStatus(r)" size="sm" /></td>
+              <td class="px-5 py-3"><StatusPill :status="r.status" size="sm" /></td>
             </tr>
           </template>
         </tbody>

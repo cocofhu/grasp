@@ -184,8 +184,7 @@ type fakePmEngine struct {
 	thinking    bool
 }
 
-func (f *fakePmEngine) StartAdmittedRun(input services.RunStart) (*models.Run, error) {
-	workflowID, trigger, tags, env := input.WorkflowID, input.Trigger, input.Tags, input.Env
+func (f *fakePmEngine) StartRunWithPriority(workflowID string, inputs map[string]any, trigger, priority string, tags []string, env []models.EnvEntry) (*models.Run, error) {
 	f.lastTrigger = trigger
 	f.startCalls++
 	normalized := append([]string{}, tags...)
@@ -300,7 +299,7 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 		t.Fatalf("pm_start_run empty trigger: got %q want pm_mcp", eng.lastTrigger)
 	}
 	okCall(MCPWorkflowWrite, "pm_start_run", map[string]any{"workflowId": wfDef.ID, "trigger": "manual"})
-	if eng.lastTrigger != models.TriggerPMMCP {
+	if eng.lastTrigger != models.TriggerManual {
 		t.Fatalf("pm_start_run explicit manual: got %q", eng.lastTrigger)
 	}
 	beforeIllegal := eng.startCalls

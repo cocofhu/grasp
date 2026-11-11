@@ -106,8 +106,6 @@ describe('RunListView delete run and ops column', () => {
     )
     expect(cancelFn).not.toMatch(/completed|failed/)
     expect(deleteFn).not.toMatch(/queued|running|waiting_human/)
-    expect(deleteFn).toMatch(/save_failed/)
-    expect(src).not.toMatch(/failure-retry-btn|resumeFromFail/)
   })
 
   it('renders text danger buttons without icons and grey dash placeholder', () => {

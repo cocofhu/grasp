@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -247,8 +246,6 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 		return
 	}
 	b.BeginRunSandbox(RunSandboxInfo{
-		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
-		Iteration:    req.Iteration,
 		Name:         name,
 		Profile:      models.AgentProfile(req.Config),
 		RunID:        req.RunID,
@@ -264,31 +261,23 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
 // registerRunSandbox records a freshly-created node sandbox in the platform
 // store. No-op when no registry is wired.
 func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home string) {
-	c.registerRunSandboxStatus(req, sb, home, "")
-}
-
-func (c *acpProvider) registerRunSandboxStatus(req NodeReq, sb *sandbox.Sandbox, home, startupError string) {
 	if c.registry == nil || sb == nil {
 		return
 	}
 	repo := firstRepoURL(req)
 	c.registry.RegisterRunSandbox(RunSandboxInfo{
-		StateRunID: req.StateRunID, RunAttempt: req.RunAttempt, ProviderAttempt: req.ProviderAttempt,
-		Iteration:       req.Iteration,
-		CorrelationName: sb.CorrelationName,
-		Name:            sb.Name,
-		Profile:         models.AgentProfile(req.Config),
-		RunID:           req.RunID,
-		WorkflowID:      req.WorkflowID,
-		WorkflowName:    req.WorkflowName,
-		NodeID:          req.NodeID,
-		Host:            sb.Host,
-		ACPPort:         sb.Port,
-		CodeServerPort:  sb.CodeServerPort,
-		StartupError:    startupError,
-		RepoURL:         repo,
-		HomeDir:         home,
-		Token:           req.Token,
+		Name:           sb.Name,
+		Profile:        models.AgentProfile(req.Config),
+		RunID:          req.RunID,
+		WorkflowID:     req.WorkflowID,
+		WorkflowName:   req.WorkflowName,
+		NodeID:         req.NodeID,
+		Host:           sb.Host,
+		ACPPort:        sb.Port,
+		CodeServerPort: sb.CodeServerPort,
+		RepoURL:        repo,
+		HomeDir:        home,
+		Token:          req.Token,
 	})
 }
 
@@ -330,9 +319,12 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 	removeHome(home)
 }
 
-// discardSandbox closes a broken attempt between retries. A production
-// registry retains its independent workspace and retires its compute; a fault
-// does not prove the guest has no valuable files. snapshotEvents runs first.
+// discardSandbox tears down a broken sandbox between retries: close the ACP
+// session, drop its registry/live bookkeeping, destroy the container, and
+// remove its cursor-home. Unlike retireRunSandbox it does NOT keep the
+// container for debugging — a faulted sandbox has no value and would leak.
+// Best-effort snapshotEvents runs before destroy so ACP events are not lost
+// when the container is recycled.
 func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, fallback []models.AcpEvent) []models.AcpEvent {
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
@@ -348,13 +340,6 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 		removeHome(home)
 		return events
 	}
-	// An interrupted attempt may contain uncommitted or non-Git user files.
-	// Retire it independently of its replacement instead of erasing the only
-	// copy while retrying. The production registry stops expired compute.
-	if r, ok := c.registry.(RunSandboxRetirer); ok {
-		r.RetireRunSandbox(sb.Name)
-		return events
-	}
 	c.deregisterRunSandbox(sb.Name)
 	sb.Destroy(context.Background())
 	removeHome(home)
@@ -362,16 +347,6 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 }
 
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
-	var attemptErr error
-	req, attemptErr = prepareProviderAttempt(ctx, req)
-	if attemptErr != nil {
-		return nil, nil, "", attemptErr
-	}
-	ctx, stopExecution, executionErr := c.executionContext(ctx, req)
-	if executionErr != nil {
-		return nil, nil, "", executionErr
-	}
-	defer stopExecution()
 	if req.SandboxMode == models.SandboxModeShared && c.shared != nil {
 		if sb, acp, home, handled, err := c.openSharedSandbox(ctx, req); handled {
 			return sb, acp, home, err
@@ -397,32 +372,29 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 	sb, err := c.mgr.Create(ctx, spec)
 	if err != nil {
 		c.unregisterCodexLogin(req)
-		if sb != nil || errors.Is(err, sandbox.ErrCreateOutcomeUnknown) {
-			if sb == nil {
-				sb = &sandbox.Sandbox{Name: placeholder, CorrelationName: placeholder}
-			}
-			c.registerRunSandboxStatus(req, sb, home, err.Error())
-			return nil, nil, "", spec, fmt.Errorf("%w: %v", errSandboxStartupUnconfirmed, err)
-		}
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
 		return nil, nil, "", spec, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.unregisterCodexLogin(req)
-		c.registerRunSandboxStatus(req, sb, home, err.Error())
-		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxStartupUnconfirmed, err)
+		c.deregisterRunSandbox(placeholder)
+		sb.Destroy(context.Background())
+		removeHome(home)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
 	acp := sb.ACP().
-		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
+		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(spec.Env["ACP_BRIDGE_MODEL"]).
 		WithExecution(c.executionForEnvironment(req, spec.Env))
 	if err := acp.Connect(ctx); err != nil {
 		c.unregisterCodexLogin(req)
+		c.deregisterRunSandbox(placeholder)
 		acp.Close()
-		c.registerRunSandboxStatus(req, sb, home, err.Error())
-		return nil, nil, "", spec, fmt.Errorf("%w: acp connect: %v", errSandboxStartupUnconfirmed, err)
+		sb.Destroy(context.Background())
+		removeHome(home)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
 	}
 	c.registerRunSandbox(req, sb, home)
 	c.opts.CodexLogins.Bind(c.codexHubKey(req), sb)
@@ -441,17 +413,19 @@ var reattachKnownWait = 15 * time.Second
 
 // attachSandbox reconnects to a node sandbox that kept running across a
 // control-plane restart. The bridge reuses the agent session already open in
-// the container. An unconfirmed reconnect preserves the original receipt and
-// workspace; it never authorizes retrying the node in a fresh sandbox.
+// the container. Failures are errSandboxSetup so RunAgent retries the node in
+// a fresh sandbox, and the unusable sandbox is torn down.
 func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, error) {
 	name := req.ReattachSandbox
 	att, ok := c.mgr.(sandboxAttacher)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %w: sandbox manager cannot reattach", errSandboxStartupUnconfirmed, errSandboxSetup)
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: sandbox manager cannot reattach", errSandboxSetup)
 	}
 	sb, err := att.AttachNoEnsure(ctx, name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w: reattach %s: %v", errSandboxStartupUnconfirmed, errSandboxSetup, name, err)
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: reattach %s: %v", errSandboxSetup, name, err)
 	}
 	sb.Password = req.Token
 	sb.ConfigRoot = c.agentLayout(models.AgentProfile(req.Config), c.effectiveAgent(req)).ConfigRoot
@@ -459,18 +433,17 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	group, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvModelConfigurationID+" || true")
 	effort, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeReasoningEffort+" || true")
 	acp := sb.ACP().
-		WithSession(sb.EffectiveWorkspaceDir(), c.mcpServers(req)).
+		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(strings.TrimSpace(model)).
 		WithExecution(c.executionForEnvironment(req, map[string]string{
 			EnvACPBridgeModel: strings.TrimSpace(model), EnvModelConfigurationID: strings.TrimSpace(group), EnvACPBridgeReasoningEffort: strings.TrimSpace(effort),
 		}))
-	if req.AttachOnly {
-		acp.WithAttachOperation(req.Operation)
-	}
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
-		return nil, nil, fmt.Errorf("%w: %w: reattach acp connect: %v", errSandboxStartupUnconfirmed, errSandboxSetup, err)
+		c.deregisterRunSandbox(name)
+		sb.Destroy(context.Background())
+		return nil, nil, fmt.Errorf("%w: reattach acp connect: %v", errSandboxSetup, err)
 	}
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).
 		Msg("reattached node sandbox after restart")

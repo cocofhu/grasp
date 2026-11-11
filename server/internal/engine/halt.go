@@ -33,8 +33,4 @@ func (e *Engine) IsHalted() bool {
 }
 
 // ActiveDrivers reports admitted executions still reaching a safe boundary.
-func (e *Engine) ActiveDrivers() int {
-	e.sem.mu.Lock()
-	defer e.sem.mu.Unlock()
-	return e.sem.cur + int(e.checkpointActive.Load())
-}
+func (e *Engine) ActiveDrivers() int { e.sem.mu.Lock(); defer e.sem.mu.Unlock(); return e.sem.cur }

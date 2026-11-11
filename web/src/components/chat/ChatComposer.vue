@@ -87,7 +87,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
         <template #input>
           <Transition name="ref-pop">
             <ReferencePicker
-              v-if="trigger && !disabled && !composing"
+              v-if="trigger && !disabled"
               ref="picker"
               :scope="scope"
               :scoped-search="scopedSearch"
@@ -110,9 +110,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
             @keydown="onKeydown"
             @input="mention.updateTrigger"
             @click="mention.updateTrigger"
-            @select="mention.updateTrigger"
             @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && mention.updateTrigger()"
-            @focus="mention.updateTrigger"
             @blur="trigger = null"
             @compositionstart="composing = true"
             @compositionend="composing = false; mention.updateTrigger()"

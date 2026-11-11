@@ -58,38 +58,17 @@ Solo、工作流、Agent 测试和 PM 使用同一套聊天展示。悬停消息
 
 这些信息属于该条回复的执行快照，后续切换模型不会改写旧回复。历史消息没有记录的字段显示为未提供，不使用当前选择推测；尚未完成的回复只显示已收到的信息。
 
-## 本地对象存储与 COS / S3
+## Solo 停止环境的备份位置
 
-Solo 续聊迁移版本和源码栈支持把正文、附件及工作区归档放到私有对象存储。评估本分支时使用源码栈，正式升级时使用迁移版本镜像。
+Solo 会话「停止环境」时会先把工作区打包备份，再停止沙箱；恢复时原沙箱还在就直接启动（E2B 连进程一起恢复），原沙箱已不存在则新建沙箱并从备份还原。依赖与缓存目录（`node_modules`、`.venv`、`__pycache__`、`.cache`、`.pnpm-store`）不备份。
 
-已有 v3.2 数据需先停止全部写入者，使用迁移版本的 `grasp-storage-admin --mode upgrade` 完成原 SQL 备份、正文和历史日志转换及引用校验，再以原维护目录显式初始化独立执行控制。完整操作和恢复约束见仓库 `server/UPGRADING.md`；不要用普通重启代替版本迁移。
-
-没有 COS 时，在根目录 `.env` 设置：
-
-```dotenv
-GRASP_STORAGE_DRIVER=s3
-GRASP_LOCAL_OBJECTSTORE=1
-GRASP_S3_BUCKET=grasp
-GRASP_S3_PREFIX=application
-```
-
-保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空；必须显式设置 `GRASP_LOCAL_OBJECTSTORE=1`，只缺少 S3 地址会报错，不会创建空白本地存储。执行 `./start.sh -d`（迁移版本镜像）或 `./start.sh dev -d`（源码）时会先准备 SeaweedFS 和原本地凭据，再启动应用。已有数据库按前述升级流程处理。
-
-脚本自动创建私有 bucket，生成只允许该 bucket 的应用密钥，并在确认服务就绪后启动 Grasp。默认 S3 地址为 `http://127.0.0.1:8333`，仅绑定本机；端口可用 `GRASP_LOCAL_OBJECTSTORE_PORT` 修改。管理界面、Filer 和 Master 端口不发布到宿主。
-
-SeaweedFS 以非 root 身份运行。普通用户启动时沿用宿主 UID/GID；root 启动时沿用已有数据的非 root 属主，新数据默认使用 `10001:10001`，并仅调整私有数据目录与 IAM 挂载的属主。客户端密钥保持宿主用户可读的 `0600`。可用 `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` 指定非 root 身份；普通用户需先确保挂载目录属于自己的 UID/GID。
-
-数据和凭据保存在 `.localdata/objectstore`，源码栈使用 `.devdata/objectstore`；`client.env` 与 `iam.json` 权限为 600。停止、重启和重新创建容器会沿用原数据及密钥。备份时保留整个目录，不能单独删除或重新生成密钥；更换已有 bucket 需要执行存储迁移。
-
-已有 COS / S3 时配置 `GRASP_S3_ENDPOINT`、bucket、地域、前缀和访问密钥，COS 使用 `GRASP_STORAGE_DRIVER=cos`，其他 S3 使用 `s3`。路径式寻址可通过 `GRASP_S3_PATH_STYLE` 指定。配置外部地址后不会启动本地存储，外部故障也不会自动改用空白本地存储。配置了访问密钥却没有地址会直接报错。
-
-存储位置已经登记后，更改地址、bucket 或前缀必须使用离线复制、校验和显式切换流程。旧本地正文仍需保留到归档与完整性校验完成；只改环境变量不等于迁移。`./start.sh logs objectstore` 查看本地组件日志，`./start.sh down` 停止组件并保留数据。
+- 默认存放在服务端本地目录 `data/solo-backups`（正式栈位于 `./.localdata/app-data`，与附件一起备份），可用 `GRASP_SOLO_BACKUP_DIR` 修改。
+- 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID`、`GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 后改存 S3 兼容存储；MinIO、COS 等用 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 指定地址，必要时设 `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true`。只填一部分会启动失败。
+- 单个备份默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`），超过时停止失败、会话继续运行。
 
 ## 数据库与附件同生命周期
 
 正式栈中 SQLite（`./.localdata/db`）与应用数据/默认 blobs（`./.localdata/app-data`，或自定义 `GRASP_BLOBS_ROOT`）必须**成对备份与成对清理**；迁移/升级勿只搬库。否则复合变量附图会出现孤儿 `blob:` 引用（GET `/api/blobs/:id` → 404）。历史孤儿仅界面永久失败占位，本次不做巡检台。详见 [快速开始](../guide/quick-start.md#数据库与附件同生命周期备份--清理)。
-
-使用对象存储时，备份集合还必须包含对应 bucket / 前缀和本地组件凭据。数据库、仍保留的旧文件与对象存储应形成同一个经过引用核对的备份集，不能只备份 SeaweedFS 或只备份 SQLite。
 
 ## 相关
 

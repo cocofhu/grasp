@@ -96,7 +96,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   apiState.checked = true
 
   if (!res.ok) {
-    let parsedError: unknown
     if (res.status === 401 && !AUTH_WHITELIST.has(path)) {
       redirectToLogin()
       throw new Error('unauthorized')
@@ -105,7 +104,6 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       let body: { status?: string; message?: string; error?: string } | null = null
       try {
         body = await res.json()
-        parsedError = body
       } catch {
         // non-JSON 503 body
       }
@@ -129,7 +127,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       field?: string
     } = {}
     try {
-      const body = parsedError ?? await res.json()
+      const body = await res.json()
       if (body?.error) msg = body.error
       if (typeof body?.code === 'string') extra.code = body.code
       if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId

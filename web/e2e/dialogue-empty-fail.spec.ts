@@ -145,7 +145,7 @@ test('run detail: empty reply shows the failure card before and after reload', a
 test('run detail LLM transcript: empty reply shows the failure card before and after reload', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('grasp-run-view-mode', 'llm'))
   await streamEndEmptyReload(page, async () => {
-    await page.goto(shell(`/runs/${RUN}?view=details`))
+    await page.goto(shell(`/runs/${RUN}`))
     const llm = page.getByTestId('view-mode-llm')
     await expect(llm).toBeVisible({ timeout: 15_000 })
     await llm.click()

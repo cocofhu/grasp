@@ -44,10 +44,6 @@ func TestAPIKeyServiceLifecycle(t *testing.T) {
 	if len(keys) != 1 {
 		t.Fatalf("List = %d", len(keys))
 	}
-	principal, ok := svc.AuthenticateBearer(res.Plaintext)
-	if !ok || principal.KeyID != res.Key.ID || principal.WorkflowID != "wf-a" {
-		t.Fatalf("authenticated principal=%+v ok=%v", principal, ok)
-	}
 	if !svc.Revoke("wf-a", res.Key.ID) {
 		t.Fatal("Revoke should succeed")
 	}
@@ -56,9 +52,6 @@ func TestAPIKeyServiceLifecycle(t *testing.T) {
 	}
 	if _, ok := svc.ValidateBearer(res.Plaintext); ok {
 		t.Fatal("revoked key must not validate")
-	}
-	if _, ok := svc.AuthenticateBearer(res.Plaintext); ok {
-		t.Fatal("revoked key must not establish a principal")
 	}
 	if len(svc.List("wf-a")) != 0 {
 		t.Fatal("List should exclude revoked keys")

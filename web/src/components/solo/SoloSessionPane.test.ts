@@ -27,7 +27,6 @@ const box = vi.hoisted(() => ({
     reasoningEfforts?: string[]
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
-  environmentStopping: undefined as undefined | import('vue').Ref<boolean>,
   phase: undefined as undefined | import('vue').Ref<string>,
   link: undefined as undefined | import('vue').Ref<string>,
   currentModelId: undefined as undefined | import('vue').Ref<string>,
@@ -36,6 +35,9 @@ const box = vi.hoisted(() => ({
   setCurrentReasoningEffort: undefined as undefined | ReturnType<typeof vi.fn>,
   actionError: undefined as undefined | import('vue').Ref<string>,
   setCurrentModel: undefined as undefined | ReturnType<typeof vi.fn>,
+  stop: vi.fn(async () => true),
+  resumeSoloSession: vi.fn(),
+  load: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -45,6 +47,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/lib/api/api', () => ({
   api: {
     getSoloResources: box.getResources,
+    resumeSoloSession: (...args: unknown[]) => box.resumeSoloSession(...args),
     getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
@@ -55,12 +58,6 @@ vi.mock('@/lib/api/api', () => ({
 vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
-    hasEarlier: ref(false),
-    loadingEarlier: ref(false),
-    earlierError: ref(''),
-    processPages: ref({}),
-    loadEarlier: vi.fn(),
-    loadProcess: vi.fn(),
     session: box.session,
     turns: box.turns,
     queued: ref([]),
@@ -72,14 +69,15 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     loadError: ref(''),
     actionError: box.actionError,
     status: box.status,
-    environmentStopping: box.environmentStopping,
     closed: computed(() => box.status?.value === 'closed'),
+    stopped: computed(() => box.status?.value === 'stopping' || box.status?.value === 'stopped'),
     canSend: computed(() => box.status?.value === 'starting' || box.status?.value === 'running'),
     currentModelId: box.currentModelId,
     currentReasoningEffort: box.currentReasoningEffort,
     modelChangePending: box.modelChangePending,
     setCurrentReasoningEffort: (...args: unknown[]) => box.setCurrentReasoningEffort?.(...args),
-    load: vi.fn(),
+    load: box.load,
+    stop: box.stop,
     send: vi.fn(),
     setCurrentModel: (...args: unknown[]) => box.setCurrentModel?.(...args),
     removeQueued: vi.fn(),
@@ -102,7 +100,6 @@ const sessionState = (box.session = ref<NonNullable<typeof box.session>['value']
   repos: [] as Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>,
 }))
 const statusState = (box.status = ref('running'))
-const environmentStopping = (box.environmentStopping = ref(false))
 const phaseState = (box.phase = ref(''))
 const linkState = (box.link = ref('open'))
 const currentModelId = (box.currentModelId = ref(''))
@@ -112,14 +109,13 @@ const setCurrentReasoningEffort = (box.setCurrentReasoningEffort = vi.fn(async (
 const actionError = (box.actionError = ref(''))
 const setCurrentModel = (box.setCurrentModel = vi.fn(async () => true))
 
-function mountPane(messages: object = {}) {
+function mountPane(messages: object = {}, stubs: Record<string, unknown> = {}) {
   return mount(SoloSessionPane, {
     attachTo: document.body,
     props: { sessionId: 's1' },
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': messages } })],
       stubs: {
-        SoloWorkflowPanel: true,
         Icon: true,
         ReviewShell: { template: '<div><slot name="actions" /><slot name="stage" /><slot name="sidebar" /></div>' },
         ReactArtifactStage: true,
@@ -128,6 +124,7 @@ function mountPane(messages: object = {}) {
         SoloLimitModal: true,
         AppModal: true,
         ChatImagePreviewModal: true,
+        ...stubs,
       },
     },
   })
@@ -139,16 +136,6 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
-  it('scopes agent Markdown images to the current Solo session', () => {
-    turns.value = [turn('reply:one', 'agent', '![Homepage](/tmp/full.png)')]
-    const wrapper = mountPane(pages)
-    try {
-      expect(wrapper.findComponent({ name: 'AgentTimeline' }).props('imageBase')).toBe('/api/solo/sessions/s1/images')
-    } finally {
-      wrapper.unmount()
-      turns.value = []
-    }
-  })
   it('passes only the current sandbox generation’s preview resources to the stage', async () => {
     const initial = sessionState.value
     let finishOld!: (value: SoloResources) => void
@@ -432,33 +419,60 @@ describe('SoloSessionPane', () => {
     resetCliCatalog()
   })
 
-  it('shows only the stopping sentence and keeps the stopped bar after the environment halts', async () => {
-    environmentStopping.value = true
+  it('confirms before backing up and stopping a running environment', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    box.stop.mockClear()
+    const wrapper = mountPane(pages, {
+      AppModal: { props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-stop-modal"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="solo-stop-sandbox"]').trigger('click')
+    expect(wrapper.text()).toContain('node_modules')
+    await wrapper.get('[data-testid="solo-stop-confirm"]').trigger('click')
+    await flushPromises()
+    expect(box.stop).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="solo-stop-modal"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the stopped bar with the backup summary and resumes the session', async () => {
+    turns.value = []
+    const initial = sessionState.value
+    statusState.value = 'stopping'
     const stopping = mountPane(pages)
-    try {
-      await flushPromises()
-      expect(stopping.get('[data-testid="solo-closed-bar"] p').text()).toBe('正在停止环境，聊天和工作区会保留。')
-      expect(stopping.get('[data-testid="solo-closed-bar"]').text()).not.toContain('不再接收')
-      expect(stopping.get('[data-testid="solo-closed-bar"]').text()).not.toContain('恢复环境')
-      expect(stopping.find('[data-testid="solo-send"]').exists()).toBe(false)
-      expect(stopping.find('textarea').exists()).toBe(false)
-    } finally {
-      stopping.unmount()
-      environmentStopping.value = false
-    }
+    await flushPromises()
+    expect(stopping.get('[data-testid="solo-stopped-bar"]').text()).toContain(pages.pages.solo.stoppedBar.stopping)
+    expect(stopping.find('[data-testid="solo-resume"]').exists()).toBe(false)
+    expect(stopping.find('[data-testid="solo-model-select"]').exists()).toBe(false)
+    stopping.unmount()
 
     statusState.value = 'stopped'
+    sessionState.value = { ...initial, status: 'stopped', backupAt: new Date().toISOString(), backupSize: 3 * 1024 * 1024 } as typeof initial
+    box.resumeSoloSession.mockResolvedValueOnce({ ...initial, status: 'starting' })
+    box.load.mockClear()
     const stopped = mountPane(pages)
-    try {
-      await flushPromises()
-      expect(stopped.get('[data-testid="solo-closed-bar"] p').text()).toBe('环境已停止，聊天和工作区已保留。')
-      expect(stopped.get('[data-testid="solo-closed-bar"]').text()).toContain('恢复环境')
-      expect(stopped.find('[data-testid="solo-send"]').exists()).toBe(false)
-      expect(stopped.find('textarea').exists()).toBe(false)
-    } finally {
-      stopped.unmount()
-      statusState.value = 'running'
-    }
+    await flushPromises()
+    expect(stopped.get('[data-testid="solo-stopped-bar"]').text()).toContain('3.0 MiB')
+    await stopped.get('[data-testid="solo-resume"]').trigger('click')
+    await flushPromises()
+    expect(box.resumeSoloSession).toHaveBeenCalledWith('s1')
+    expect(box.load).toHaveBeenCalled()
+    stopped.unmount()
+
+    sessionState.value = { ...initial, status: 'stopped', error: '恢复失败，工作区备份仍保留，可重试：boom' } as typeof initial
+    box.resumeSoloSession.mockRejectedValueOnce(new Error('nope'))
+    const failed = mountPane(pages)
+    await flushPromises()
+    expect(failed.get('[data-testid="solo-stopped-error"]').text()).toContain('boom')
+    await failed.get('[data-testid="solo-resume"]').trigger('click')
+    await flushPromises()
+    expect(actionError.value).not.toBe('')
+    failed.unmount()
+    actionError.value = ''
+    sessionState.value = initial
+    statusState.value = 'running'
   })
 
   it('hides the selector on a closed session and disables it when sending is blocked', async () => {

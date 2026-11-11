@@ -124,7 +124,6 @@ func (b *Bridge) tryRecordBroadcast(payload []byte) {
 	}
 	var probe struct {
 		Op   string          `json:"op"`
-		ID   string          `json:"opId"`
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(payload, &probe); err != nil {
@@ -132,17 +131,6 @@ func (b *Bridge) tryRecordBroadcast(payload []byte) {
 	}
 	if probe.Op != "event" || len(probe.Data) == 0 {
 		return
-	}
-	// Keep native operation identity on persisted update frames as well as the
-	// prompt boundaries. Old untagged logs remain readable, but cannot authorize
-	// exact live reattachment.
-	if probe.ID != "" {
-		var data map[string]json.RawMessage
-		if json.Unmarshal(probe.Data, &data) != nil {
-			return
-		}
-		data["opId"], _ = json.Marshal(probe.ID)
-		probe.Data, _ = json.Marshal(data)
 	}
 	// data 即前端 handleEvent 收到的原始 JSON
 	b.evLog.append(probe.Data)

@@ -117,7 +117,7 @@ func TestClarifyRestoreDropsTurnsOfAnEndedVisit(t *testing.T) {
 	}
 }
 
-func TestClarifyRestoreNeverReplaysAStartedTurnWithoutTranscript(t *testing.T) {
+func TestClarifyRestoreRerunsATurnThatNeverLanded(t *testing.T) {
 	eng, db, _ := setupEngineGraphP(t, clarifyOnlyGraph())
 	run, err := eng.StartRun("wf", nil, "test")
 	if err != nil {
@@ -149,10 +149,7 @@ func TestClarifyRestoreNeverReplaysAStartedTurnWithoutTranscript(t *testing.T) {
 		}
 	}
 	if humans != 1 {
-		t.Fatalf("dialogue = %s, want the original human receipt preserved and the Live request settled", dialogueSummary(conv.Messages))
-	}
-	if len(conv.Messages) < 2 || conv.Messages[len(conv.Messages)-1].Text != clarifyRestartStopped {
-		t.Fatalf("started turn was replayed instead of reported unknown: %s", dialogueSummary(conv.Messages))
+		t.Fatalf("dialogue = %s, want the unwritten turn run once and the Live request settled", dialogueSummary(conv.Messages))
 	}
 }
 

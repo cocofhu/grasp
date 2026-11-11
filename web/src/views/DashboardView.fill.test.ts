@@ -25,12 +25,19 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-shell__content[^>]*overflow-y-auto/)
   })
 
-  it('shares one composer between the workflow and Solo modes', () => {
-    expect(src.match(/data-testid="home-composer"/g)).toHaveLength(1)
-    expect(src).toContain('<HomeModeSwitch v-model="homeMode" />')
-    expect(src).toContain('HomeSoloPanel')
-    expect(src).toContain('HomeWorkflowRail')
-    expect(src).toContain('useHomeApproveChat({ draft, attach })')
+  it('centers composer, workflow cards, and unpublished guidance without empty-state navigation', () => {
+    expect(src).toMatch(/data-testid="home-composer"/)
+    expect(src).toMatch(/data-testid="home-workflow-cards"/)
+    expect(src).toMatch(/data-testid="home-composer-input"/)
+    expect(src).toMatch(/data-testid="home-workflows-empty"/)
+    expect(src).not.toMatch(/data-testid="home-go-workflows"/)
+    expect(src).toMatch(/data-testid="home-new-workflow"/)
+    expect(src).toMatch(/HomeCreateBaselineModal/)
+    expect(src).toMatch(/@created="onBaselineCreated"/)
+    expect(src).toMatch(/reloadAfterCreate/)
+    expect(src).not.toMatch(/dashboard-kpi-/)
+    expect(src).not.toMatch(/dashboard-board-empty/)
+    expect(src).not.toMatch(/RunBoardColumn/)
   })
 
   // plan g1.1 — no purple stage atmosphere; particle mesh background instead
@@ -89,9 +96,9 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-composer__send/)
     expect(src).toMatch(/data-testid="home-composer"/)
     expect(src).toMatch(/data-testid="home-composer-plus"/)
-    expect(src).toMatch(/SoloAgentSelect/)
-    expect(src).toMatch(/SoloProjectSelect/)
-    expect(src).toMatch(/SoloModelSelect/)
+    expect(src).toMatch(/HomeWorkflowSelect/)
+    expect(src).toMatch(/HomePrioritySelect/)
+    expect(src).toMatch(/:initial-priority="launchPriority"/)
     expect(workflowSelectSrc).toMatch(/data-testid="home-workflow-select"/)
     expect(src).not.toMatch(/<select[^>]*home-workflow-select/)
     expect(src).toMatch(/data-testid="home-composer-send"/)
@@ -102,11 +109,14 @@ describe('DashboardView home chat layout', () => {
   })
 
   // review — 无 subtitle；工作流卡片脱离全局 .card；圆角 Token 12px
-  it('omits extra hero copy and keeps compact rounded attachment chips', () => {
+  it('omits home-subtitle/hint and uses rounded workflow cards', () => {
     expect(src).not.toMatch(/data-testid="home-subtitle"/)
     expect(src).not.toMatch(/data-testid="home-title"/)
     expect(src).not.toMatch(/home-hint/)
+    expect(src).toMatch(/class="home-shell__card[^"]*border border-line/)
     expect(src).not.toMatch(/class="[^"]*\bcard\b[^"]*home-shell__card|class="home-shell__card[^"]*\bcard\b/)
+    expect(src).toMatch(/\.home-shell__card\s*\{[^}]*border-radius:\s*12px/s)
+    expect(src).toMatch(/data-testid="home-workflow-card-name"/)
     expect(src).toMatch(/rounded pending-attach-remove[\s\S]{0,80}data-testid="home-attach-remove"/)
     expect(src).not.toMatch(/rounded-full[\s\S]{0,80}data-testid="home-attach-remove"/)
     expect(src).not.toMatch(/rounded-none[\s\S]{0,80}data-testid="home-attach-remove"/)
@@ -129,7 +139,27 @@ describe('DashboardView home chat layout', () => {
   })
 
   // plan g1 — workflow rail hides scrollbar and adds edge nav aligned to page.html demo
-
+  it('hides workflow horizontal scrollbar and adds edge scroll arrows', () => {
+    expect(src).toMatch(/data-testid="home-workflow-rail-wrap"/)
+    expect(src).toMatch(/data-testid="home-workflow-scroll-prev"/)
+    expect(src).toMatch(/data-testid="home-workflow-scroll-next"/)
+    expect(src).toMatch(/home-workflow-rail/)
+    expect(src).toMatch(/home-workflow-rail--overflow/)
+    expect(src).toMatch(/justify-content:\s*center/)
+    expect(src).toMatch(/home-workflow-rail--overflow[\s\S]*justify-content:\s*flex-start/)
+    expect(src).not.toMatch(
+      /data-testid="home-workflow-cards"[^>]*justify-center/,
+    )
+    expect(src).toMatch(/scrollbar-width:\s*none/)
+    expect(src).toMatch(/::-webkit-scrollbar/)
+    expect(src).toMatch(/home-workflow-nav/)
+    expect(src).toMatch(/home-workflow-fade/)
+    expect(src).toMatch(/syncWorkflowNav/)
+    expect(src).toMatch(/scrollWorkflowByDir/)
+    expect(src).not.toMatch(
+      /data-testid="home-workflow-cards"[^>]*overflow-x-auto/,
+    )
+  })
 
   // plan g2.5 / g3.2 — scoped only; no external fonts
   it('keeps styles scoped to DashboardView and does not load external fonts', () => {
@@ -171,11 +201,19 @@ describe('DashboardView home chat layout', () => {
     )
   })
 
-
+  it('anchors and animates the workflow/Solo mode switch', () => {
+    expect(src).toMatch(/home-shell__content--mode-locked/)
+    expect(src).toMatch(/lockHomeModeTopInset/)
+    expect(src).toMatch(/<Transition name="home-mode-controls" mode="out-in">/)
+    expect(src).toMatch(/<Transition name="home-mode-tail" mode="out-in">/)
+    expect(src).toMatch(/\.home-mode-controls-enter-active[\s\S]*transition:/)
+    expect(src).toMatch(/\.home-mode-tail-enter-active[\s\S]*transition:/)
+  })
 
   // plan g1.2 — keep overflow-hidden on composer; priority panel teleports instead
   it('keeps .home-composer overflow-hidden and does not raise other z-index layers', () => {
     expect(src).toMatch(/\.home-composer\s*\{[^}]*overflow:\s*hidden/s)
+    expect(src).toMatch(/z-\[9999\]/)
     const prioritySrc = readFileSync(
       join(dir, '../components/dashboard/HomePrioritySelect.vue'),
       'utf8',
@@ -187,7 +225,22 @@ describe('DashboardView home chat layout', () => {
   })
 
   // plan g1 / g2 — whole-rail enter: no loading copy; immediate 420ms group rise; reduced-motion
-
+  it('reveals workflow rail as one enter group without loading copy or post-success wait', () => {
+    expect(src).not.toMatch(/data-testid="home-workflows-loading"/)
+    expect(src).not.toMatch(/v-else-if="loading"/)
+    expect(src).toMatch(/data-testid="home-workflow-enter"/)
+    expect(src).toMatch(/home-workflow-enter--ready/)
+    expect(src).toMatch(/workflowRailRevealed/)
+    expect(src).toMatch(/prev === true && now === false && !loadError/)
+    expect(src).toMatch(/animation:\s*home-workflow-rail-enter 420ms cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/)
+    expect(src).not.toMatch(/nth-child\([^)]+\)[^{]*animation-delay|animation-delay:[^;]+nth-child/)
+    expect(src).not.toMatch(/DEFAULT_MIN_VISIBLE|SHOW_AFTER|minVisible|min-visible|show-after/)
+    expect(src).toMatch(/workflowRailRevealed\.value = true/)
+    expect(src).not.toMatch(/workflowRailRevealed\.value = false/)
+    expect(src).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.home-workflow-enter[\s\S]*animation:\s*none/,
+    )
+  })
 
   it('loads slogan copy from locale files instead of a hardcoded Chinese line', () => {
     const zh = JSON.parse(

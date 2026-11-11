@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
-import { randomUuid } from '@/lib/shared/randomUuid'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import type { ClarifyImage } from '@/lib/shared/types'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
@@ -385,7 +384,9 @@ function dropRestoredActiveTurn(active: { id?: string; text?: string }) {
 const canSend = () =>
   !!ws && ws.readyState === WebSocket.OPEN && (status.value === 'ready' || status.value === 'thinking')
 
-const newItemId = randomUuid
+function newItemId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
 
 function onComposerKeydown(event: KeyboardEvent) {
   if (!isPlainEnter(event)) return

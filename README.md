@@ -21,7 +21,7 @@
 
 </div>
 
-New installations use an empty database and data directory. Existing v3.2 installations must follow the [stopped, verified migration procedure](server/UPGRADING.md) before starting this version with their original data.
+This release requires a fresh install: an empty database and an empty data directory.
 
 ## Why Grasp
 
@@ -73,7 +73,6 @@ Requirements: a **Linux** host with Git, Docker, and Docker Compose (services us
 ```bash
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
-cp .env.example .env
 ./start.sh -d
 ```
 
@@ -85,15 +84,12 @@ This pulls the published GHCR images without building locally. Once started:
 
 The default login is `admin` / `demo1234` (for local evaluation only; configure your own users for shared or production setups). The sandbox runtime image is pulled on first sandbox creation, or ahead of time with `./start.sh pull`.
 
-Existing v3.2 data must follow [UPGRADING.md](server/UPGRADING.md).
-
 ### Running your first workflow
 
 1. Sign in with the demo account. Opening the workspace for the first time launches the setup wizard.
 2. In **Settings → Credentials**, save a tool platform credential or a model service key with a preset or custom API base. In the **Models** tab, save a named combination of coding tool, credential and selected model, then choose that configuration in Agent Studio. Supported tools are Cursor, Claude Code, CodeBuddy, Trae, OpenCode, Codex and DeepSeek Harness; third-party protocols are filtered by tool support. Codex accepts a ChatGPT `~/.codex/auth.json` login file or a Responses connection. Git credentials are optional. Finishing the first-time setup wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
-3. Start a Solo conversation from the home page. Open **Choose a workflow** from the `@` picker, select a published workflow and click **Start** yourself. Definitions and the canvas are under Settings; Solo does not launch workflows autonomously.
-4. Manage independent workflow task cards in that Solo. Open a node to clarify, approve or submit additional instructions for its next chat boundary. Instructions stay tied to the displayed iteration and execution attempt; their queued, processed, expired or uncertain state remains visible. Workflow results return to Solo, and history opens as a conversation with execution details available separately.
-5. Turn workflows off in Settings for a Solo-only experience. Existing tasks remain manageable; all new launches, including API and PM launches, are disabled. Stop/resume retains an environment's workspace; Docker/Kubernetes restart services, while E2B uses its native pause capability.
+3. Start a run from the home page with a single prompt, or open the canvas to customize nodes and `success` / `fail` / `rollback` edges.
+4. When a run pauses at a human gate, review the spec, preview page, or code diff from the inbox to approve or reject.
 
 ### Common commands
 
@@ -149,7 +145,7 @@ Service configuration precedence: environment variables > mounted config file > 
 
 ## Deployment notes
 
-- **E2B (third sandbox deployment):** use the independent [E2B deployment guide](sandbox-gateway/deploy/e2b/README.md) and `compose.e2b.yaml` for E2B Cloud or a compatible self-hosted control plane. It requires prepared environment templates, persistent gateway state and a separate wildcard preview site. Existing Docker and Kubernetes deployments keep their defaults.
+- **E2B (third sandbox deployment):** use the independent [E2B deployment guide](sandbox-gateway/deploy/e2b/README.md) and `compose.e2b.yaml` for E2B Cloud or a compatible self-hosted control plane. It requires prepared environment templates and persistent gateway state. Existing Docker and Kubernetes deployments keep their defaults.
 
 - Store API keys and Git credentials only in the workspace credentials settings; never commit them to the repository.
 - Pin images by digest in production; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).

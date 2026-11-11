@@ -83,6 +83,13 @@ export function truncateText(s: string, maxLen: number): string {
   return s.slice(0, maxLen) + '…'
 }
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
+}
+
 export function relTime(iso: string): string {
   if (!iso) return ''
   const diff = (Date.now() - new Date(iso).getTime()) / 1000

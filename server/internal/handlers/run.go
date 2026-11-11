@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -14,13 +13,12 @@ import (
 )
 
 type startRunBody struct {
-	ExpectedWorkflowVersion int               `json:"expectedWorkflowVersion"`
-	Inputs                  map[string]any    `json:"inputs"`
-	Trigger                 string            `json:"trigger"`
-	Priority                string            `json:"priority"` // high|normal|low; empty → normal
-	Tags                    []string          `json:"tags"`
-	Env                     []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
-	Title                   string            `json:"title"` // optional; overrides computeRunTitle when non-blank
+	Inputs   map[string]any    `json:"inputs"`
+	Trigger  string            `json:"trigger"`
+	Priority string            `json:"priority"` // high|normal|low; empty → normal
+	Tags     []string          `json:"tags"`
+	Env      []models.EnvEntry `json:"env"`   // optional run-scoped sandbox env snapshot
+	Title    string            `json:"title"` // optional; overrides computeRunTitle when non-blank
 	// FirstMessage is the opening chat message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once that node parks, so the caller can navigate away at once.
@@ -39,32 +37,39 @@ type startRunBody struct {
 
 // firstMessageBody is the opening message as a client sends it: references
 // are bare picks that the server validates and resolves.
-type firstMessageBody = services.RunFirstMessage
+type firstMessageBody struct {
+	Text       string                    `json:"text"`
+	Images     []models.PromptImage      `json:"images,omitempty"`
+	References []services.ReferenceInput `json:"references,omitempty"`
+}
 
 // firstMessage validates the opening message's @ picks against the workflow
-// scope. It runs after receipt lookup, so an acknowledged launch can still be
-// recovered after an external reference changes or is deleted.
-func (h *Handlers) firstMessage(ctx context.Context, user, workflowID string, b *firstMessageBody) (*models.CompositeText, error) {
+// scope. It writes the error response and reports false on failure, so an
+// invalid pick never creates a run.
+func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessageBody) (*models.CompositeText, bool) {
 	if b == nil {
-		return nil, nil
+		return nil, true
 	}
 	msg := &models.CompositeText{Text: b.Text, Images: b.Images}
 	if len(b.References) == 0 {
-		return msg, nil
+		return msg, true
 	}
-	if h.Solo == nil {
-		return nil, &services.AdmissionError{Status: http.StatusServiceUnavailable, Code: "solo_unavailable", Message: "solo unavailable"}
+	user, ok := h.soloReady(c)
+	if !ok {
+		return nil, false
 	}
 	scope, ok := h.workflowReferenceScope(user, workflowID)
 	if !ok {
-		return nil, &services.AdmissionError{Status: http.StatusNotFound, Code: "workflow_not_found", Message: "workflow not found"}
+		c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
+		return nil, false
 	}
-	refs, err := h.Solo.PrepareScopedReferences(ctx, scope, b.References)
+	refs, err := h.Solo.PrepareScopedReferences(c.Request.Context(), scope, b.References)
 	if err != nil {
-		return nil, err
+		writeSoloErr(c, err)
+		return nil, false
 	}
 	msg.References, msg.ReferenceUser = refs, user
-	return msg, nil
+	return msg, true
 }
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
@@ -85,37 +90,35 @@ func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 }
 
 func (h *Handlers) StartRun(c *gin.Context) {
-	user, ok := h.sessionUser(c)
-	if !ok {
-		return
-	}
 	var b startRunBody
 	if err := c.ShouldBindJSON(&b); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
 		return
 	}
-	_, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
+	trigger, err := models.ResolveTrigger(b.Trigger, models.TriggerManual)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	trigger := models.TriggerManual
 	tags, err := models.NormalizeRunTags(b.Tags)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	launch := launchChoiceFromBody(b)
-	run, err := h.admission().Start(services.RunStart{WorkflowID: c.Param("id"), Source: "web", ActorID: user,
-		ExpectedVersion: b.ExpectedWorkflowVersion,
-		IdempotencyKey:  c.GetHeader("Idempotency-Key"), Published: b.PublishedSnapshot, Inputs: b.Inputs, Trigger: trigger,
-		Priority: b.Priority, Tags: tags, Env: b.Env, Title: b.Title, FirstMessageInput: b.FirstMessage,
-		PrepareFirstMessage: func() (*models.CompositeText, error) {
-			return h.firstMessage(c.Request.Context(), user, c.Param("id"), b.FirstMessage)
-		},
-		ModelSet: launch.Set, ConfigurationID: launch.ConfigurationID, ModelID: launch.ModelID, ReasoningEffort: launch.ReasoningEffort})
+	firstMessage, ok := h.firstMessage(c, c.Param("id"), b.FirstMessage)
+	if !ok {
+		return
+	}
+	var run *models.Run
+	if b.PublishedSnapshot {
+		run, err = h.Eng.StartRunFromPublishedWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
+	} else {
+		run, err = h.Eng.StartRunWithFirstMessage(c.Param("id"), b.Inputs, trigger, b.Priority, tags, b.Env, b.Title, firstMessage, launch)
+	}
 	if err != nil {
-		writeAdmissionErr(c, err)
+		_ = c.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if _, ok := h.WF.Get(c.Param("id")); ok {
@@ -145,7 +148,6 @@ func (h *Handlers) StartRun(c *gin.Context) {
 var validRunStatuses = map[string]bool{
 	"running":       true,
 	"waiting_human": true,
-	"paused":        true,
 	"queued":        true,
 	"completed":     true,
 	"failed":        true,
@@ -219,7 +221,6 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-	h.withWorkspaceSaves(items, runs)
 	c.JSON(http.StatusOK, paginatedResponse(items, int(total), pg.Page, pg.PageSize))
 }
 
@@ -275,11 +276,10 @@ func (h *Handlers) CancelRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
 }
 
-// DeleteRun hard-deletes a completed, failed, cancelled, or save-failed run
-// and its associated data. A save-failed run releases its sandbox through
-// SandboxService.Destroy before the rows are removed. Missing id → 404;
-// non-deletable status → 409; success → 200 {status:deleted} (aligned with
-// DeleteWorkflow). Permission matches cancel/resume (same /api session auth).
+// DeleteRun hard-deletes a completed/failed/cancelled run and its associated
+// data. Missing id → 404; non-deletable status → 409; success → 200
+// {status:deleted} (aligned with DeleteWorkflow). Permission matches
+// cancel/resume (same /api session auth).
 func (h *Handlers) DeleteRun(c *gin.Context) {
 	if err := h.Runs.Delete(c.Param("id")); err != nil {
 		switch {

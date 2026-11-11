@@ -30,10 +30,7 @@
       "cancelling": "取消中",
       "skipped": "已跳过",
       "published": "已发布",
-      "draft": "草稿",
-      "paused": "已暂停",
-      "saving": "保存工作区中",
-      "save_failed": "保存失败"
+      "draft": "草稿"
     },
     "priority": {
       "label": "优先级",
@@ -106,9 +103,7 @@
       "cancelRun": "取消运行",
       "confirmCancelRun": "确认取消",
       "deleteRun": "删除运行",
-      "resumeFromFail": "失败重试",
-      "resumeFromFailHint": "从停住的节点重新执行，上游已完成结果保留",
-      "failureRetrying": "正在重试…",
+      "resumeFromFail": "从失败位置继续",
       "resumeFromNode": "从此节点继续",
       "loading": "加载中…",
       "approving": "批准中…",

@@ -4,9 +4,6 @@ import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import WorkspaceSaveBanner from '@/components/run/WorkspaceSaveBanner.vue'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
-import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySegmented.vue'
 import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
@@ -158,8 +155,6 @@ const {
   onPriorityReposition,
   savePriority,
   canResume,
-  failureRetryBlocked,
-  resumeUnavailableHint,
   canResumeSelected,
   statusMap,
   activePath,
@@ -235,9 +230,6 @@ const {
   onLiveLogBootSession,
 } = useRunDetail()
 const { worktreeMode } = useExecutionMode()
-function nodeLabelOf(id: string) {
-  return findGraphNode(run.value?.nodes, id)?.label || id
-}
 
 const artifactPanelRef = ref<InstanceType<typeof ArtifactPanel> | null>(null)
 const artifactEditor = useArtifactEditor(() => run.value?.id)
@@ -337,7 +329,7 @@ onMounted(() => {
               class="chip shrink-0"
               :title="t('common.format.pinnedVersionTitle')"
             >v{{ run.workflowVersion }}</span>
-            <StatusPill data-testid="status-pill" :status="runDisplayStatus(run)" class="shrink-0" />
+            <StatusPill data-testid="status-pill" :status="run.status" class="shrink-0" />
             <button
               v-if="priorityEditable"
               ref="priorityBadgeRef"
@@ -406,17 +398,8 @@ onMounted(() => {
               :title="deleteRunHint || t('common.buttons.deleteRun')"
               @click="openDeleteConfirm"
             >{{ t('common.buttons.deleteRun') }}</AppButton>
-            <AppButton
-              v-if="canResume || failureRetryBlocked"
-              data-testid="failure-retry-btn"
-              variant="primary"
-              size="sm"
-              icon="refresh"
-              :disabled="resuming || failureRetryBlocked"
-              :title="failureRetryBlocked ? resumeUnavailableHint : t('common.buttons.resumeFromFailHint')"
-              @click="onResume('')"
-            >
-              {{ resuming ? t('common.buttons.failureRetrying') : t('common.buttons.resumeFromFail') }}
+            <AppButton v-if="canResume" variant="primary" size="sm" icon="refresh" :disabled="resuming" @click="onResume('')">
+              {{ resuming ? t('common.buttons.resuming') : t('common.buttons.resumeFromFail') }}
             </AppButton>
           </div>
         </div>
@@ -430,7 +413,6 @@ onMounted(() => {
           <span v-else-if="runRepos" data-testid="run-repos" class="min-w-0 max-w-full">{{ t('pages.runDetail.repos') }} <code class="font-mono text-txt2">{{ runRepos }}</code></span>
           <span v-else class="text-txt3">{{ t('pages.runDetail.noRepo') }}</span>
           <span v-if="deleteRunHint" data-testid="delete-run-hint" class="text-[11px] md:ml-auto">{{ deleteRunHint }}</span>
-          <span v-if="resumeUnavailableHint" data-testid="resume-unavailable-hint" class="text-[11px] text-err md:ml-auto">{{ resumeUnavailableHint }}</span>
         </div>
         <div v-if="run.tags?.length" class="mt-2 flex flex-wrap items-center gap-1.5 pl-11">
           <span class="text-[12px] text-txt3">{{ t('pages.runDetail.tagsLabel') }}</span>
@@ -459,14 +441,6 @@ onMounted(() => {
             class="mt-1 inline-block text-accent-2 underline underline-offset-[3px]"
           >{{ t('pages.runDetail.failureBanner.codexLoginAction') }}</RouterLink>
         </div>
-        <WorkspaceSaveBanner
-          v-if="run.workspaceSave"
-          class="mt-3 ml-11"
-          :run="run"
-          :save="run.workspaceSave"
-          :node-label="nodeLabelOf(run.workspaceSave.nodeId)"
-          @retried="loadRun(false, true)"
-        />
       </template>
     </header>
 

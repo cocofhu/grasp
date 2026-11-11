@@ -133,27 +133,29 @@ test('an unavailable historical Agent keeps the conversation readable without a 
 })
 
 test('workspace sidebar keeps recent runs without a workflow directory', async ({ page }) => {
-  await page.goto('/workspace.html?view=/dashboard')
+  await page.goto('/workspace.html')
   const lists = page.getByTestId('app-desktop-sidebar').getByTestId('sidebar-workspace-lists')
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(lists.getByTestId('sidebar-workflow')).toHaveCount(0)
   await expect(lists.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(lists.getByRole('button', { name: /新建工作流|置顶 / })).toHaveCount(0)
   await expect(lists.locator('input[type="search"]')).toHaveCount(0)
-  await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
-  await expect(lists.getByTestId('sidebar-recent-toggle')).toHaveText('历史执行')
-  // Finished runs only. Waiting-human and automatic runs both stay under 工作流.
+  await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
+  await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
+  // Finished runs only. Waiting-human stays under 正在执行; the automatic agent run is 自动过程.
   await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
   await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-3')
   const running = page.getByTestId('app-desktop-sidebar').getByTestId('nav-pending-approvals')
-  await expect(running).toContainText('工作流')
-  await expect(running.getByTestId('nav-pending-row')).toHaveCount(2)
-  await expect(running.locator('[data-testid="nav-pending-row"][data-group="running"]')).toContainText('修复回归测试中的不稳定用例')
-  await expect(running.locator('[data-testid="nav-pending-row"][data-group="auto"]')).toContainText('优化工作流审批交互')
-  await expect(page.getByTestId('nav-auto-process')).toHaveCount(0)
+  await expect(running).toContainText('正在执行')
+  await expect(running.getByTestId('nav-pending-row')).toHaveCount(1)
+  await expect(running.getByTestId('nav-pending-row')).toContainText('修复回归测试中的不稳定用例')
+  const automatic = page.getByTestId('app-desktop-sidebar').getByTestId('nav-auto-process')
+  await expect(automatic).toContainText('自动过程')
+  await expect(automatic.getByTestId('nav-pending-row')).toHaveCount(1)
+  await expect(automatic.getByTestId('nav-pending-row')).toContainText('优化工作流审批交互')
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
   expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(false)
-  expect(calls.some((call: any) => call.path === '/api/runs' && call.method === 'GET')).toBe(true)
+  expect(calls.some((call: any) => call.path === '/api/workflows' && call.method === 'GET')).toBe(true)
 })
 
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
@@ -173,7 +175,7 @@ test('settings lists workspace tools and independent configuration pages', async
 
 test('390px drawer shows recent runs without a workflow directory', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/workspace.html?view=/dashboard')
+  await page.goto('/workspace.html')
   const toggle = page.getByTestId('floating-nav-ball')
   if (await toggle.count()) await toggle.click()
   else await page.getByRole('button', { name: /打开导航|显示导航/ }).first().click()
@@ -184,7 +186,7 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
   await expect(drawer.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(drawer.locator('input[type="search"]')).toHaveCount(0)
   await expect(drawer.getByTestId('sidebar-recent-run')).toHaveCount(4)
-  await expect(drawer.getByTestId('sidebar-recent-toggle')).toHaveText('历史执行')
+  await expect(drawer.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
@@ -259,7 +261,7 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
 })
 
 test('settings and workspace retain the same app rail while changing directory', async ({ page }) => {
-  await page.goto('/workspace.html?view=/dashboard')
+  await page.goto('/workspace.html')
   const rail = page.getByTestId('sidebar-app-rail')
   await expect(rail).toBeVisible()
   const railAppearance = () => rail.evaluate((nav) => {
@@ -283,18 +285,17 @@ test('settings and workspace retain the same app rail while changing directory',
   await expect.poll(railAppearance).toEqual(before)
   await settingsToggle.click()
   await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
-  await expect(page.getByTestId('dashboard-view')).toBeVisible()
+  await expect(page.getByTestId('workflows-page')).toBeVisible()
   await expect(settingsToggle).toHaveAttribute('aria-label', '设置')
   await expect.poll(railAppearance).toEqual(before)
   await settingsToggle.click()
   await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
-  await page.getByTestId('nav-settings-chrome').locator('a[href="/workflows"]').click()
+  await rail.locator(':scope > a[href="/workflows"]').click()
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page')).toBeVisible()
-  await expect(page.getByTestId('sidebar-recent')).toHaveCount(0)
-  await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
-  await expect(rail.locator('a[href="/workflows"]')).toHaveCount(0)
-  await expect(settingsToggle).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('sidebar-recent')).toBeVisible()
+  await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
+  await expect(rail.locator('a[href="/workflows"]')).toHaveAttribute('aria-current', 'page')
   await expect.poll(railAppearance).toEqual(before)
 })
 

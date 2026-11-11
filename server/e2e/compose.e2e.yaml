@@ -5,10 +5,10 @@ services:
   gateway:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/gateway:/data
+      - ./.localdata-e2e/gateway:/data
   grasp:
     environment:
       GRASP_MAX_RUNS: "1"
     volumes:
-      - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/db:/data
-      - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/app-data:/app/data
+      - ./.localdata-e2e/db:/data
+      - ./.localdata-e2e/app-data:/app/data

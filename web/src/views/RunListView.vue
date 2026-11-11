@@ -3,8 +3,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import { runDisplayStatus } from '@/lib/run/workspaceSave'
-import { isInProgressListQuery, listCurrentViewRuns } from '@/lib/inbox/sidebarRunRows'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import StatusFilter from '@/components/ui/StatusFilter.vue'
 import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
@@ -67,14 +65,13 @@ function nonDefaultPriority(r: Run) { return r.priority === 'high' || r.priority
 /** Desktop status segments; each maps onto the existing ?status= filter. */
 const STATUS_SEGMENTS = [
   { id: 'all', labelKey: 'pages.runList.segAll', statuses: [] as string[] },
-  { id: 'active', labelKey: 'pages.runList.segActive', statuses: ['running'] },
+  { id: 'active', labelKey: 'pages.runList.segActive', statuses: ['running', 'queued'] },
   { id: 'waiting', labelKey: 'pages.runList.segWaiting', statuses: ['waiting_human'] },
   { id: 'done', labelKey: 'pages.runList.segDone', statuses: ['completed'] },
   { id: 'failed', labelKey: 'pages.runList.segFailed', statuses: ['failed', 'cancelled'] },
 ]
-function segActive(seg: { id: string; statuses: string[] }) {
+function segActive(seg: { statuses: string[] }) {
   const cur = [...selectedStatuses.value].sort().join(',')
-  if (seg.id === 'active' && isInProgressListQuery(cur)) return true
   return cur === [...seg.statuses].sort().join(',')
 }
 const SKELETON_ROWS = 6
@@ -100,8 +97,6 @@ const toast = useToast()
 const { isMobile } = useBreakpoint()
 const runs = ref<Run[]>([])
 const total = ref(0)
-/** 「进行中」draws every live row, so the pager stays off for that view. */
-const showingEntireCurrentView = ref(false)
 const page = ref(1)
 const loading = ref(false)
 const initialLoading = ref(false)
@@ -191,7 +186,7 @@ function canCancelRun(r: Run) {
 }
 
 function canDeleteRun(r: Run) {
-  return r.status === 'completed' || r.status === 'failed' || r.status === 'cancelled' || runDisplayStatus(r) === 'save_failed'
+  return r.status === 'completed' || r.status === 'failed' || r.status === 'cancelled'
 }
 
 /** Prefetch RunDetail chunk once so list → detail navigation feels snappy. */
@@ -226,8 +221,6 @@ function runListFingerprint(r: Run): string {
     r.startedAt,
     r.createdAt ?? '',
     (r.tags || []).join(','),
-    r.workspaceSave?.state ?? '',
-    r.workspaceSave?.nodeId ?? '',
   ].join('\0')
 }
 
@@ -383,35 +376,15 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   }
 
   try {
-    if (isInProgressListQuery(params.status)) {
-      const items = await listCurrentViewRuns((query) => api.listRuns(query), {
-        tag: params.tag,
-        wf: params.wf,
-        sort: params.sort,
-        order: params.order,
-      }, { includeQueued: (params.status ?? '').split(',').includes('queued') })
-      if (localSeq === requestSeq) {
-        countsByFilter.value[countKey] = items.length
-        if (!runsListUnchanged(items, items.length)) {
-          runs.value = items
-          total.value = items.length
-        }
-        showingEntireCurrentView.value = true
-        loadFailed.value = false
-        loadErrorMessage.value = ''
+    const data = await api.listRuns(params)
+    if (localSeq === requestSeq) {
+      countsByFilter.value[countKey] = data.total
+      if (!runsListUnchanged(data.items, data.total)) {
+        runs.value = data.items
+        total.value = data.total
       }
-    } else {
-      const data = await api.listRuns(params)
-      if (localSeq === requestSeq) {
-        countsByFilter.value[countKey] = data.total
-        if (!runsListUnchanged(data.items, data.total)) {
-          runs.value = data.items
-          total.value = data.total
-        }
-        showingEntireCurrentView.value = false
-        loadFailed.value = false
-        loadErrorMessage.value = ''
-      }
+      loadFailed.value = false
+      loadErrorMessage.value = ''
     }
   } catch (e) {
     // First load and user-driven reloads (filter / page / sort) must not leave a
@@ -656,7 +629,7 @@ onUnmounted(() => {
                   :class="runTitle(r) ? 'mt-0.5' : 'text-[13px] font-medium'"
                 >#{{ runIdShort(r.id) }}</div>
               </div>
-              <StatusPill :status="runDisplayStatus(r)" size="sm" />
+              <StatusPill :status="r.status" size="sm" />
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <PriorityBadge :priority="r.priority" />
@@ -710,7 +683,7 @@ onUnmounted(() => {
         </RouterLink>
         </div>
         </Transition>
-        <Pagination v-if="!showingEntireCurrentView && total > PAGE_SIZE" v-model:page="page" class="shrink-0" :page-size="PAGE_SIZE" :total="total" />
+        <Pagination v-if="total > PAGE_SIZE" v-model:page="page" class="shrink-0" :page-size="PAGE_SIZE" :total="total" />
       </div>
     </div>
 
@@ -824,7 +797,7 @@ onUnmounted(() => {
                 </td>
                 <td class="px-3 py-2.5">
                   <div class="flex items-center gap-2 whitespace-nowrap">
-                    <StatusPill :status="runDisplayStatus(r)" size="sm" />
+                    <StatusPill :status="r.status" size="sm" />
                     <template v-if="showProgress(r)">
                       <div class="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-elevated">
                         <div class="h-full rounded-full" :class="r.status === 'failed' ? 'bg-err' : r.status === 'cancelled' ? 'bg-txt3' : 'bg-accent'" :style="{ width: r.progress * 100 + '%' }" />
@@ -870,7 +843,7 @@ onUnmounted(() => {
       </div>
       </Transition>
       </div>
-      <Pagination v-if="!showingEntireCurrentView && total > PAGE_SIZE" v-model:page="page" class="shrink-0" :page-size="PAGE_SIZE" :total="total" />
+      <Pagination v-if="total > PAGE_SIZE" v-model:page="page" class="shrink-0" :page-size="PAGE_SIZE" :total="total" />
     </div>
 
     <AppModal

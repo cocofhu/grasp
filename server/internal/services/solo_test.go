@@ -77,16 +77,6 @@ func TestSoloRepoSpecs(t *testing.T) {
 func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxService, *sandboxtest.FakeGateway, *gorm.DB) {
 	t.Helper()
 	db := newTestDB(t)
-	// The synthetic secret resolvers below also require current credential
-	// metadata, just like the production authorization gate.
-	for _, row := range []models.Credential{
-		{ID: "fixture-key", Name: "Synthetic model", Purpose: "model_api", Issuer: "custom", SecretKind: "api_key", SecretRevision: 1, Type: "ai", Enabled: true},
-		{ID: "cred-proj", Name: "Synthetic Git", Purpose: "git", Issuer: "github", SecretKind: "api_key", SecretRevision: 1, Type: "git", EnvKey: "GITHUB_TOKEN", Host: "https://github.com", Enabled: true},
-	} {
-		if err := db.Create(&row).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := db.Create(&models.ModelConfiguration{ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "k", ModelID: "fixture-model"}}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -258,9 +248,8 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if row.Status != models.SoloStatusClosed || row.ClosedAt == nil {
 		t.Fatalf("closed row: %+v", row)
 	}
-	var retained models.Sandbox
-	if err := db.First(&retained, sb.ID).Error; err != nil || retained.Status != "stopped" || row.SandboxID != sb.ID || !fg.Has(sb.Name) {
-		t.Fatal("close must stop compute and retain the original workspace", err)
+	if err := db.First(&models.Sandbox{}, sb.ID).Error; err == nil {
+		t.Fatal("close should destroy the sandbox")
 	}
 	if _, err := solo.Send(id, "alice", "again", nil); err == nil {
 		t.Fatal("send on closed session should fail")
@@ -274,31 +263,28 @@ func TestSoloSessionLifecycle(t *testing.T) {
 		return r.Status == models.SoloStatusRunning
 	})
 	row, _ = solo.Require(id, "alice")
-	if row.Restarts != 0 || row.SandboxID != sb.ID || !row.ResumeContextPending {
-		t.Fatalf("reopening must resume the original workspace and context: %+v", row)
+	if row.Restarts != 1 || !row.NeedsPreamble {
+		t.Fatalf("restart flags: restarts=%d preamble=%v", row.Restarts, row.NeedsPreamble)
 	}
 	if pre := solo.buildPreamble(id, ""); !strings.Contains(pre, "hello there") {
 		t.Fatalf("preamble missing history: %q", pre)
 	}
 
-	// The generic sandbox route cannot bypass the retained-data contract.
-	if err := sbx.Destroy(ctx, row.SandboxID); err == nil {
-		t.Fatal("generic destroy discarded a retained Solo workspace")
-	}
-	row, _ = solo.Require(id, "alice")
-	if row.Status != models.SoloStatusRunning || row.SandboxID != sb.ID {
-		t.Fatalf("rejected destruction changed the active session: %+v", row)
-	}
-	if _, err := solo.Close(ctx, id, "alice"); err != nil {
+	// Destroying the sandbox outside Close flags the session.
+	if err := sbx.Destroy(ctx, row.SandboxID); err != nil {
 		t.Fatal(err)
 	}
-	if err := solo.Delete(ctx, id, "alice"); err == nil {
-		t.Fatal("deleting history with a retained workspace requires a separate release")
+	row, _ = solo.Require(id, "alice")
+	if row.Status != models.SoloStatusError {
+		t.Fatalf("external destroy should mark error, got %s", row.Status)
+	}
+	if err := solo.Delete(ctx, id, "alice"); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 	var left int64
 	db.Model(&models.SoloMessage{}).Where("session_id = ?", id).Count(&left)
-	if left == 0 {
-		t.Fatal("rejected deletion removed the conversation")
+	if left != 0 {
+		t.Fatalf("messages left after delete: %d", left)
 	}
 }
 

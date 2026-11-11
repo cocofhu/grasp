@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -42,13 +41,12 @@ type ChannelDeliverer interface {
 
 // CronScheduler polls due AgentCronJob rows and executes them via fresh PM sandboxes.
 type CronScheduler struct {
-	db        *gorm.DB
-	execution *executionlineage.Controller
-	pm        *PmService
-	sbx       *SandboxService
-	turns     *PmTurnRunner
-	hooks     CronTokenHooks
-	owner     string
+	db    *gorm.DB
+	pm    *PmService
+	sbx   *SandboxService
+	turns *PmTurnRunner
+	hooks CronTokenHooks
+	owner string
 
 	deliverer ChannelDeliverer
 
@@ -70,9 +68,6 @@ func NewCronScheduler(db *gorm.DB, pm *PmService, sbx *SandboxService, turns *Pm
 	s := &CronScheduler{
 		db: db, pm: pm, sbx: sbx, turns: turns, hooks: hooks,
 		owner: "cf-" + uuid.NewString()[:8],
-	}
-	if pm != nil {
-		s.execution = pm.execution
 	}
 	s.parallel.Store(3)
 	s.staleMin.Store(120)
@@ -125,14 +120,7 @@ func (s *CronScheduler) tick(ctx context.Context) {
 	now := time.Now()
 	cutoff := now.Add(-stale)
 	var jobs []models.AgentCronJob
-	query := s.db.Where("enabled = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now)
-	if s.execution != nil {
-		if err := s.execution.Check(ctx); err != nil {
-			return
-		}
-		query = query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.entity_kind = 'cron_job' AND q.entity_id = agent_cron_jobs.id AND q.review_state = 'pending')")
-	}
-	err := query.
+	err := s.db.Where("enabled = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now).
 		Where("claimed_at IS NULL OR claimed_at < ?", cutoff).
 		Order("next_run_at asc").Limit(limit).Find(&jobs).Error
 	if err != nil {
@@ -164,31 +152,21 @@ func (s *CronScheduler) tick(ctx context.Context) {
 }
 
 func (s *CronScheduler) tryClaim(job *models.AgentCronJob, now time.Time) bool {
-	claimed := false
-	err := s.executionTransaction(context.Background(), job.ID, "", func(tx *gorm.DB) error {
-		res := tx.Model(&models.AgentCronJob{}).
-			Where("id = ? AND enabled = ? AND (claimed_at IS NULL OR claimed_at < ?)",
-				job.ID, true, now.Add(-time.Duration(s.staleMin.Load())*time.Minute)).
-			Updates(map[string]any{"claimed_at": now, "claim_owner": s.owner, "updated_at": now})
-		claimed = res.RowsAffected == 1
-		return res.Error
-	})
-	return err == nil && claimed
+	res := s.db.Model(&models.AgentCronJob{}).
+		Where("id = ? AND enabled = ? AND (claimed_at IS NULL OR claimed_at < ?)",
+			job.ID, true, now.Add(-time.Duration(s.staleMin.Load())*time.Minute)).
+		Updates(map[string]any{"claimed_at": now, "claim_owner": s.owner, "updated_at": now})
+	return res.Error == nil && res.RowsAffected == 1
 }
 
 func (s *CronScheduler) releaseClaim(job *models.AgentCronJob) {
-	if err := s.executionTransaction(context.Background(), job.ID, "", func(tx *gorm.DB) error {
-		return tx.Model(&models.AgentCronJob{}).Where("id = ?", job.ID).
-			Updates(map[string]any{"claimed_at": nil, "claim_owner": "", "updated_at": time.Now()}).Error
-	}); err != nil {
+	if err := s.db.Model(&models.AgentCronJob{}).Where("id = ?", job.ID).
+		Updates(map[string]any{"claimed_at": nil, "claim_owner": "", "updated_at": time.Now()}).Error; err != nil {
 		log.Error().Err(err).Str("job", job.ID).Msg("cron release claim failed")
 	}
 }
 
 func (s *CronScheduler) execute(ctx context.Context, job *models.AgentCronJob) {
-	if err := s.executionCheck(ctx, job.ID, ""); err != nil {
-		return
-	}
 	start := time.Now()
 	run := models.AgentCronRun{
 		ID: "crun-" + uuid.NewString()[:12], JobID: job.ID, StartedAt: start,
@@ -196,7 +174,7 @@ func (s *CronScheduler) execute(ctx context.Context, job *models.AgentCronJob) {
 	defer func() {
 		fin := time.Now()
 		run.FinishedAt = &fin
-		if err := s.executionTransaction(ctx, job.ID, run.ID, func(tx *gorm.DB) error { return tx.Create(&run).Error }); err != nil {
+		if err := s.db.Create(&run).Error; err != nil {
 			log.Error().Err(err).Str("job", job.ID).Str("run", run.ID).
 				Str("status", run.Status).Msg("cron persist run failed")
 		}
@@ -302,9 +280,6 @@ func (s *CronScheduler) deliverCronFailure(job *models.AgentCronJob, reason stri
 	if job == nil || !job.DeliverToChannel || s.deliverer == nil {
 		return
 	}
-	if err := s.executionCheck(context.Background(), job.ID, ""); err != nil {
-		return
-	}
 	category := strings.TrimSpace(job.Name)
 	if category == "" {
 		category = "cron"
@@ -339,9 +314,6 @@ func (s *CronScheduler) destroyCronSandbox(ctx context.Context, id uint, jobID s
 func (s *CronScheduler) maybeDeliver(job *models.AgentCronJob, userMsg models.ChatMessage) error {
 	if !job.DeliverToChannel || s.deliverer == nil {
 		return nil
-	}
-	if err := s.executionCheck(context.Background(), job.ID, ""); err != nil {
-		return err
 	}
 	has, err := s.pm.HasAssistantAfter(job.ThreadID, userMsg.ID)
 	if err != nil || !has {
@@ -436,9 +408,7 @@ func (s *CronScheduler) finishJob(job *models.AgentCronJob, run *models.AgentCro
 			updates["next_run_at"] = now.Add(cronBackoff(n)).UTC()
 		}
 	}
-	if err := s.executionTransaction(context.Background(), job.ID, run.ID, func(tx *gorm.DB) error {
-		return tx.Model(&models.AgentCronJob{}).Where("id = ?", job.ID).Updates(updates).Error
-	}); err != nil {
+	if err := s.db.Model(&models.AgentCronJob{}).Where("id = ?", job.ID).Updates(updates).Error; err != nil {
 		log.Error().Err(err).Str("job", job.ID).Str("status", run.Status).
 			Msg("cron finish job update failed")
 	}

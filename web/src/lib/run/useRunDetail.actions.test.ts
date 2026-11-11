@@ -644,69 +644,6 @@ describe('useRunDetail actions', () => {
     app.unmount()
   })
 
-  it('allows delete and failure retry only for a failed workspace save', async () => {
-    const { detail, app } = await withRunDetail()
-    const save = { checkpointId: 'cp', nodeId: 'n1', state: 'failed' as const, reason: 'snapshot_failed', action: 'retry' as const }
-
-    detail.run.value = { ...detail.run.value, status: 'paused', workspaceSave: save } as Run
-    await nextTick()
-    expect(detail.canDeleteRun.value).toBe(true)
-    expect(detail.deleteRunHint.value).toBe('')
-    expect(detail.canResume.value).toBe(true)
-    expect(detail.canResumeSelected.value).toBe(false)
-    expect(detail.resumeUnavailableHint.value).toBe('')
-
-    detail.run.value = { ...detail.run.value, workspaceSave: { ...save, nodeId: 'missing' } } as Run
-    await nextTick()
-    expect(detail.canDeleteRun.value).toBe(true)
-    expect(detail.canResume.value).toBe(false)
-    expect(detail.resumeUnavailableHint.value).toBeTruthy()
-
-    detail.run.value = { ...detail.run.value, workspaceSave: { ...save, state: 'saving', action: undefined } } as Run
-    await nextTick()
-    expect(detail.canDeleteRun.value).toBe(false)
-    expect(detail.canResume.value).toBe(false)
-    expect(detail.deleteRunHint.value).toContain('正在保存')
-
-    detail.run.value = {
-      ...detail.run.value,
-      status: 'paused',
-      workspaceSave: { checkpointId: 'cp', nodeId: 'n1', state: 'failed', reason: 'provider_outcome_unconfirmed', outcomeSealed: false },
-    } as Run
-    await nextTick()
-    expect(detail.canDeleteRun.value).toBe(true)
-    expect(detail.canResume.value).toBe(false)
-    expect(detail.failureRetryBlocked.value).toBe(true)
-    expect(detail.resumeUnavailableHint.value).toContain('尚未确认')
-    mocks.resumeRun.mockClear()
-    await detail.onResume('')
-    expect(mocks.resumeRun).not.toHaveBeenCalled()
-
-    detail.run.value = { ...detail.run.value, status: 'paused', workspaceSave: undefined } as Run
-    await nextTick()
-    expect(detail.canDeleteRun.value).toBe(false)
-    expect(detail.canResume.value).toBe(false)
-    expect(detail.failureRetryBlocked.value).toBe(false)
-
-    detail.run.value = {
-      ...detail.run.value,
-      status: 'running',
-      workspaceSave: undefined,
-      nodeRuns: { ...detail.run.value.nodeRuns, n1: { nodeId: 'n1', status: 'failed', outputs: {} } },
-    } as Run
-    detail.selectNode('n1')
-    await nextTick()
-    expect(detail.canResume.value).toBe(false)
-    expect(detail.canResumeSelected.value).toBe(true)
-
-    detail.run.value = { ...detail.run.value, status: 'failed', workspaceSave: undefined } as Run
-    await nextTick()
-    expect(detail.canResume.value).toBe(true)
-    expect(detail.canDeleteRun.value).toBe(true)
-
-    app.unmount()
-  })
-
   it('exports logs through an anchor click', async () => {
     const { detail, app } = await withRunDetail()
     const click = vi.fn()

@@ -40,9 +40,6 @@ func TestWorktreeReprimeKeepsDirectoryAndStopsLatestBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sb.Destroy(context.Background()) })
-	if environments[0]["GRASP_SANDBOX_RESOURCE_ID"] != sb.ID {
-		t.Fatal("runtime workspace jobs were not bound to the actual local resource")
-	}
 	workspace := sb.WorkspaceDir
 	if err := sb.WriteFile(context.Background(), "app/a.txt", []byte("uncommitted work")); err != nil {
 		t.Fatal(err)
@@ -61,9 +58,6 @@ func TestWorktreeReprimeKeepsDirectoryAndStopsLatestBackend(t *testing.T) {
 	}
 	if environments[1]["CONFIG_ROOT"] != nextHome || environments[1]["WORKSPACE_DIR"] != workspace || environments[1]["CODEX_HOME"] != "" {
 		t.Fatalf("target tool settings wrong: %+v", environments[1])
-	}
-	if environments[1]["GRASP_SANDBOX_RESOURCE_ID"] != sb.ID {
-		t.Fatal("tool switch changed the retained workspace job resource")
 	}
 	body, err := os.ReadFile(filepath.Join(workspace, "app", "a.txt"))
 	if err != nil || string(body) != "uncommitted work" {
@@ -86,7 +80,7 @@ func TestWorktreeReprimeKeepsDirectoryAndStopsLatestBackend(t *testing.T) {
 	}
 }
 
-func TestWorktreeReprimeFailedStartRetainsStoppedOriginalHandleAndFiles(t *testing.T) {
+func TestWorktreeReprimeFailedStartLeavesOriginalToolAndFiles(t *testing.T) {
 	useWorktreeGitHelper(t)
 	t.Setenv(execution.EnvMode, execution.ModeWorktree)
 	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
@@ -116,11 +110,8 @@ func TestWorktreeReprimeFailedStartRetainsStoppedOriginalHandleAndFiles(t *testi
 	if err := m.Reprime(context.Background(), sb, spec, nil); err == nil {
 		t.Fatal("expected startup failure")
 	}
-	if stops != 1 || sb.Port != 15500 {
-		t.Fatal("failed replacement changed the retained original handle")
-	}
-	if requested, confirmed := sb.LocalStopState(); requested || !confirmed {
-		t.Fatal("failed replacement did not retain the original confirmed stop proof")
+	if stops != 0 || sb.Port != 15500 {
+		t.Fatal("failed replacement stopped old backend")
 	}
 	if body, err := sb.ReadFile(context.Background(), "progress.txt"); err != nil || string(body) != "keep progress" {
 		t.Fatalf("lost task: %q %v", body, err)
@@ -195,12 +186,7 @@ func TestWorktreeReprimeRetainsSelectedGitCredentialsAndCleansReplacedCatalogs(t
 	if err := manager.Reprime(context.Background(), sb, makeSpec("codex", "failed-selected"), nil); err == nil {
 		t.Fatal("failed replacement was accepted")
 	}
-	if _, err := os.Stat(environments[1]["GIT_CONFIG_GLOBAL"]); !os.IsNotExist(err) {
-		t.Fatal("confirmed old backend stop retained its private credential files")
-	}
-	if body, err := sb.ReadFile(context.Background(), "progress.txt"); err != nil || string(body) != "keep task progress" {
-		t.Fatal("failed replacement lost the original workspace")
-	}
+	checkSelected("second-selected")
 	if _, err := os.Stat(environments[2]["GIT_CONFIG_GLOBAL"]); !os.IsNotExist(err) {
 		t.Fatal("failed replacement leaked its credential files")
 	}

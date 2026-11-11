@@ -74,8 +74,7 @@ func TestSoloExecutionSnapshotSurvivesSelectionChangesAndFailures(t *testing.T) 
 				select {
 				case frame := <-frames:
 					if frame.Event == SoloEventExecution {
-						encoded, _ := json.Marshal(frame.Payload["execution"])
-						_ = json.Unmarshal(encoded, &execution)
+						execution, _ = frame.Payload["execution"].(*models.ChatExecution)
 					}
 				case <-deadline:
 					t.Fatal("aligned execution frame missing")
@@ -95,10 +94,7 @@ func TestSoloExecutionSnapshotSurvivesSelectionChangesAndFailures(t *testing.T) 
 			}
 			first := <-replayed
 			unReplay()
-			encoded, _ := json.Marshal(first.Payload["execution"])
-			var replayExecution *models.ChatExecution
-			_ = json.Unmarshal(encoded, &replayExecution)
-			if first.Event != chatsession.EventQueueState || !reflect.DeepEqual(replayExecution, execution) {
+			if first.Event != chatsession.EventQueueState || !reflect.DeepEqual(first.Payload["execution"], execution) {
 				t.Fatal("active reconnect snapshot lost the original execution")
 			}
 			if status == "stopped" {

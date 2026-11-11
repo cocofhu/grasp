@@ -1,5 +1,5 @@
 import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatTrigger, fmtCompactDuration, fmtDuration, fmtMultiAvgDuration, fmtTurnElapsed, relTime, wallClockSec } from './format'
+import { formatBytes, formatTrigger, fmtCompactDuration, fmtDuration, fmtMultiAvgDuration, fmtTurnElapsed, relTime, wallClockSec } from './format'
 import { i18n } from './i18n'
 import { loadLocaleMessages } from './loadLocaleMessages'
 
@@ -68,6 +68,15 @@ describe('fmtMultiAvgDuration', () => {
   it('does not reuse compact x.xm / 0s for the multi avg main', () => {
     expect(fmtMultiAvgDuration(105)).not.toBe(fmtCompactDuration(105))
     expect(fmtMultiAvgDuration(0)).not.toBe('0s')
+  })
+})
+
+describe('formatBytes', () => {
+  it('scales through binary units', () => {
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(1536)).toBe('1.5 KiB')
+    expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MiB')
+    expect(formatBytes(4 * 1024 ** 3)).toBe('4.00 GiB')
   })
 })
 

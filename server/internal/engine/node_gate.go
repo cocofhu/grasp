@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -31,7 +30,7 @@ func (e *Engine) execGate(c *execCtx, node *models.Node) nodeOutcome {
 			UpstreamNodeID:    upNodeID,
 			UpstreamIteration: upIter,
 			RequestedAt:       time.Now()}
-		logDB(e.executionCreate(context.Background(), c.run.ID, &gate), c.run.ID, "create gate")
+		logDB(e.db.Create(&gate), c.run.ID, "create gate")
 		if e.shareRevoker != nil {
 			e.shareRevoker.RevokeUnusedForNode(c.run.ID, node.ID)
 		}

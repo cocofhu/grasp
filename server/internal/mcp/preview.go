@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/privatepreview"
 	"github.com/rs/zerolog/log"
 )
 
@@ -21,18 +20,15 @@ const (
 
 // PreviewPort is a registered preview endpoint of an Agent node (set_preview).
 type PreviewPort struct {
-	WorkspaceBindingID          string `json:"-"`
-	WorkspaceBindingFingerprint string `json:"-"`
-	Stale                       bool   `json:"stale,omitempty"`
-	RunID                       string `json:"runId"`
-	NodeID                      string `json:"nodeId"`
-	Kind                        string `json:"kind,omitempty"`
-	ItemKey                     string `json:"-"`
-	Port                        int    `json:"port"`
-	URL                         string `json:"url,omitempty"`
-	Label                       string `json:"label,omitempty"`
-	ProxyURL                    string `json:"proxyUrl"`
-	SandboxName                 string `json:"-"`
+	RunID       string `json:"runId"`
+	NodeID      string `json:"nodeId"`
+	Kind        string `json:"kind,omitempty"`
+	ItemKey     string `json:"-"`
+	Port        int    `json:"port"`
+	URL         string `json:"url,omitempty"`
+	Label       string `json:"label,omitempty"`
+	ProxyURL    string `json:"proxyUrl"`
+	SandboxName string `json:"-"`
 	// Host is the resolved upstream base the proxy dials (e.g.
 	// "http://172.17.0.5:9090"), persisted so the proxy needn't re-resolve the
 	// container IP through the sandbox manager on every request.
@@ -268,19 +264,19 @@ func (h *Host) SetPreviewBaseURL(base string) {
 	h.mu.Unlock()
 }
 
-// SetPrivatePreviewBase enables isolated browser origins for private gateway
-// endpoints. The deployment validates this wildcard origin before wiring it.
-func (h *Host) SetPrivatePreviewBase(base privatepreview.Base) {
+// SetPrivateEndpoints marks gateway endpoints as server-only. Previews are
+// then served through the path proxy and never expose a direct link.
+func (h *Host) SetPrivateEndpoints(private bool) {
 	h.mu.Lock()
-	h.privatePreviewBase = base
+	h.privateEndpoints = private
 	h.mu.Unlock()
 }
 
-// PrivatePreviews reports whether gateway endpoints are server-only.
-func (h *Host) PrivatePreviews() bool {
+// PrivateEndpoints reports whether gateway endpoints are server-only.
+func (h *Host) PrivateEndpoints() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.privatePreviewBase.Origin() != ""
+	return h.privateEndpoints
 }
 
 // SetPreviewStore wires DB persistence for preview ports.
@@ -422,10 +418,10 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 			Msg("list preview ports from store failed; using memory")
-		return h.annotatePreviewTransport(runID, nodeID, unconfirmedBoundPreviews(mem))
+		return h.annotatePreviewTransport(runID, nodeID, mem)
 	}
 	if len(dbPorts) == 0 {
-		return h.annotatePreviewTransport(runID, nodeID, unconfirmedBoundPreviews(mem))
+		return h.annotatePreviewTransport(runID, nodeID, mem)
 	}
 	if len(mem) == 0 {
 		return h.annotatePreviewTransport(runID, nodeID, dbPorts)
@@ -435,9 +431,6 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 		byKey[previewPortItemKey(p)] = p
 	}
 	for _, p := range mem {
-		if durable, exists := byKey[previewPortItemKey(p)]; exists && (durable.Stale || durable.WorkspaceBindingID != "") {
-			continue
-		}
 		byKey[previewPortItemKey(p)] = p
 	}
 	out := make([]PreviewPort, 0, len(byKey))
@@ -445,18 +438,6 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 		out = append(out, p)
 	}
 	return h.annotatePreviewTransport(runID, nodeID, out)
-}
-
-func unconfirmedBoundPreviews(ports []PreviewPort) []PreviewPort {
-	for i := range ports {
-		if ports[i].WorkspaceBindingID != "" {
-			ports[i].Stale = true
-			ports[i].Healthy = false
-			ports[i].Mode = ""
-			ports[i].DirectURL = ""
-		}
-	}
-	return ports
 }
 
 func (h *Host) upsertPreviewMem(runID, nodeID string, rec PreviewPort) {
@@ -620,10 +601,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 // Host when that app was not published at sandbox creation time.
 func (h *Host) prepareDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int) error {
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		// A retired workspace's registration is already denied by the
-		// binding-aware proxy. It must neither block nor acquire a new host
-		// while switching the current workspace's injector.
-		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
@@ -694,12 +672,12 @@ func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxO
 	h.mu.RUnlock()
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
 		sameUpstream := p.Host == host
-		if h.PrivatePreviews() && p.InjectorPort != 0 {
+		if h.PrivateEndpoints() && p.InjectorPort != 0 {
 			// Private loopback ports can be republished after a gateway
 			// restart; the guest port is the durable injector identity.
 			sameUpstream = p.InjectorPort == injectorPort
 		}
-		if p.Stale || previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
+		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
 			continue
 		}
 		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
@@ -752,27 +730,9 @@ func (h *Host) keepalivePreview(ctx context.Context, ops PreviewSandboxOps, runI
 func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, label, host string, keepalivePID int) (PreviewRegistration, error) {
 	h.mu.RLock()
 	store := h.previewStore
-	privateBase := h.privatePreviewBase
+	private := h.privateEndpoints
 	h.mu.RUnlock()
 	proxyURL := h.previewProxyURL(runID, nodeID, port)
-	if privateBase.Origin() != "" {
-		// Re-registering during a Live edit must not invalidate the open
-		// page's origin or its embed session. Rotate only for a new sandbox
-		// generation, a different port, or a new configured preview origin.
-		for _, existing := range h.ListPreviewPorts(runID, nodeID) {
-			if existing.Port == port && existing.SandboxName == sandboxName && privateBase.OwnsURL(existing.ProxyURL) {
-				proxyURL = existing.ProxyURL
-				break
-			}
-		}
-		if !privateBase.OwnsURL(proxyURL) {
-			var err error
-			proxyURL, err = privateBase.NewURL()
-			if err != nil {
-				return PreviewRegistration{}, err
-			}
-		}
-	}
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
 		ItemKey: previewItemKey(PreviewKindPort, port, ""),
@@ -780,25 +740,14 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort, Healthy: true,
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
-	if binder, ok := store.(interface {
-		BindPreviewPort(context.Context, PreviewPort) (PreviewPort, error)
-	}); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		bound, err := binder.BindPreviewPort(ctx, rec)
-		cancel()
-		if err != nil {
-			return PreviewRegistration{}, err
-		}
-		rec = bound
-	}
+	h.mu.Lock()
+	h.upsertPreviewMem(runID, nodeID, rec)
+	h.mu.Unlock()
 	if store != nil {
 		if err := store.UpsertPreviewPort(rec); err != nil {
 			return PreviewRegistration{}, err
 		}
 	}
-	h.mu.Lock()
-	h.upsertPreviewMem(runID, nodeID, rec)
-	h.mu.Unlock()
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
@@ -808,18 +757,8 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	}
 	h.SignalPreviewReady(runID, nodeID)
 	reg := PreviewRegistration{ProxyURL: proxyURL}
-	if rec.WorkspaceBindingID != "" {
-		// Canonical previews always traverse the binding-aware proxy, whose
-		// actual connection lifetime pins the root. Never advertise an
-		// untracked direct-IP link for a switchable workspace.
-		reg.PublicURL = proxyURL
-		return reg, nil
-	}
-	if h.previewDirect(runID, nodeID) && host != "" {
+	if h.previewDirect(runID, nodeID) && host != "" && !private {
 		reg.PublicURL = strings.TrimRight(host, "/") + "/"
-		if privateBase.Origin() != "" {
-			reg.PublicURL = proxyURL
-		}
 	}
 	return reg, nil
 }
@@ -905,22 +844,12 @@ func (h *Host) annotatePreviewTransport(runID, nodeID string, ports []PreviewPor
 	out := make([]PreviewPort, len(ports))
 	copy(out, ports)
 	h.mu.RLock()
-	privateBase := h.privatePreviewBase
+	private := h.privateEndpoints
 	h.mu.RUnlock()
 	for i := range out {
-		if out[i].Stale || out[i].WorkspaceBindingID != "" {
-			out[i].Mode, out[i].DirectURL = "", ""
-			continue
-		}
 		out[i].Mode = "direct"
-		if out[i].Host != "" {
+		if out[i].Host != "" && !private {
 			out[i].DirectURL = strings.TrimRight(out[i].Host, "/") + "/"
-			if privateBase.Origin() != "" {
-				out[i].DirectURL = ""
-				if privateBase.OwnsURL(out[i].ProxyURL) {
-					out[i].DirectURL = out[i].ProxyURL
-				}
-			}
 		}
 	}
 	return out

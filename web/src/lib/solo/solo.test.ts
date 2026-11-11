@@ -10,32 +10,6 @@ const label = () => ''
 const chunk = (kind: string, text: string) => ({ op: 'event', data: { type: 'session_update', update: { sessionUpdate: kind, content: { type: 'text', text } } } })
 
 describe('acpTurn', () => {
-  it('keeps tool updates inside the current message and starts a new run for an unseen tool update', () => {
-    const turn = emptyAgentTurn('live:updates', true)
-    const tool = (kind: string, id: string) => ({ data: { type: 'session_update', update: { sessionUpdate: kind, toolCallId: id, title: 'Screenshot' } } })
-    applyAcp(tool('tool_call', 'one'), turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'Server '), turn, label, 'Tool')
-    applyAcp(tool('tool_call', 'one'), turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'is up.'), turn, label, 'Tool')
-    applyAcp(tool('tool_call_update', 'two'), turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'Screenshot ready.'), turn, label, 'Tool')
-    expect(turn.text).toBe('Server is up.\n\nScreenshot ready.')
-    turn.historyContent = turn.text
-    turn.processComplete = true
-    expect(partsOf(turn).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['Server is up.', 'Screenshot ready.'])
-  })
-  it('separates progress messages across tools and recognizes the saved reply when its process finishes loading', () => {
-    const turn = emptyAgentTurn('live:1', true)
-    applyAcp(chunk('agent_message_chunk', 'Checking '), turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'the setup.'), turn, label, 'Tool')
-    applyAcp({ data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'screenshot', title: 'Screenshot' } } }, turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', '![Homepage](/tmp/full.png)'), turn, label, 'Tool')
-    expect(turn.text).toBe('Checking the setup.\n\n![Homepage](/tmp/full.png)')
-    turn.historyContent = turn.text
-    turn.processComplete = true
-    expect(partsOf(turn).map(part => part.kind)).toEqual(['message', 'tool', 'message'])
-    expect(partsOf(turn).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['Checking the setup.', '![Homepage](/tmp/full.png)'])
-  })
   it('folds message, thought and tool frames in arrival order', () => {
     const turn = emptyAgentTurn('live:1', true)
     applyAcp(chunk('agent_thought_chunk', 'think '), turn, label, 'Tool')
@@ -107,64 +81,6 @@ describe('acpTurn', () => {
       events: [{ data: { type: 'error_text', text: 'Provider interrupted' } }],
     }], label, 'Tool')
     expect(turn).toMatchObject({ status: 'stopped', error: 'Stopped by user' })
-  })
-
-  it('retains persisted process capability without fetching or fabricating work parts', () => {
-    const [turn] = turnsFromMessages([{
-      id: 'reply:q', sessionId: 's', role: 'assistant', content: '最终答案', createdAt: '2026-01-01T00:00:00Z',
-      eventLog: { version: 1, from: 7, through: 9, count: 3, generation: 1 }, durationMs: 12_000,
-    }], label, 'Tool')
-    expect(turn).toMatchObject({ historyMessageId: 'reply:q', replyTo: 'q', processAvailable: true, durationMs: 12_000, text: '最终答案' })
-    expect(partsOf(turn!)).toEqual([{ kind: 'message', text: '最终答案' }])
-    const [empty] = turnsFromMessages([{
-      id: 'empty', sessionId: 's', role: 'assistant', content: '', createdAt: '',
-      eventLog: { version: 1, from: 0, through: -1, count: 0, generation: 1 },
-    }], label, 'Tool')
-    expect(empty?.processAvailable).toBe(false)
-  })
-
-  it('preserves earlier progress in a complete journal instead of replacing it with aggregate text', () => {
-    const [turn] = turnsFromMessages([{
-      id: 'a', sessionId: 's', role: 'assistant', content: '先检查文件最终答案', createdAt: '',
-      eventLog: { version: 1, from: 1, through: 3, count: 3, generation: 1 },
-      events: [chunk('agent_message_chunk', '先检查文件'),
-        { data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'read_file', status: 'completed' } } },
-        chunk('agent_message_chunk', '最终答案')],
-    }], label, 'Tool')
-    turn!.processComplete = true
-    expect(partsOf(turn!).map(part => part.kind)).toEqual(['message', 'tool', 'message'])
-    expect(partsOf(turn!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['先检查文件', '最终答案'])
-    expect(turn?.text).toBe('先检查文件最终答案')
-  })
-
-  it('keeps the complete saved reply during partial pages and renders an exact journal copy only once', () => {
-    const [turn] = turnsFromMessages([{
-      id: 'a', sessionId: 's', role: 'assistant', content: '最终答案', createdAt: '', legacyEvents: true,
-      events: [chunk('agent_message_chunk', '先检查文件'),
-        { data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'read_file', status: 'completed' } } },
-        chunk('agent_message_chunk', '最终答案')],
-    }], label, 'Tool')
-    expect(turn?.text).toBe('最终答案')
-    expect(partsOf(turn!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['先检查文件', '最终答案'])
-    turn!.processComplete = true
-    expect(partsOf(turn!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['先检查文件', '最终答案'])
-  })
-
-  it('matches a trimmed saved reply against a journal with surrounding whitespace', () => {
-    const events = [chunk('agent_message_chunk', '\n先检查文件'),
-      { data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'read_file', status: 'completed' } } },
-      chunk('agent_message_chunk', '最终答案\n')]
-    const [complete] = turnsFromMessages([{
-      id: 'a', sessionId: 's', role: 'assistant', content: '先检查文件最终答案', createdAt: '',
-      eventLog: { version: 1, from: 1, through: 3, count: 3, generation: 1 }, events,
-    }], label, 'Tool')
-    complete!.processComplete = true
-    expect(partsOf(complete!).map(part => part.kind)).toEqual(['message', 'tool', 'message'])
-    const [single] = turnsFromMessages([{
-      id: 'b', sessionId: 's', role: 'assistant', content: '最终答案', createdAt: '', legacyEvents: true,
-      events: [chunk('agent_message_chunk', '最终答案\n')],
-    }], label, 'Tool')
-    expect(partsOf(single!).filter(part => part.kind === 'message').map(part => part.text)).toEqual(['最终答案'])
   })
 })
 

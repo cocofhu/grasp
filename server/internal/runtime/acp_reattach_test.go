@@ -21,16 +21,13 @@ import (
 type survivorBridge struct {
 	srv *httptest.Server
 
-	mu         sync.Mutex
-	log        []json.RawMessage
-	running    string        // opId still running when a client connects
-	finishIn   time.Duration // when running, prompt_done follows this long after connect
-	onFinish   func()
-	chats      []string
-	connects   int
-	attachOnly int
-	finishOnce sync.Once
-	finished   chan struct{}
+	mu       sync.Mutex
+	log      []json.RawMessage
+	running  string        // opId still running when a client connects
+	finishIn time.Duration // when running, prompt_done follows this long after connect
+	onFinish func()
+	chats    []string
+	connects int
 }
 
 func (b *survivorBridge) start(t *testing.T) {
@@ -90,43 +87,14 @@ func (b *survivorBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		switch m["op"] {
-		case "connect", "attach_operation":
+		case "connect":
 			b.mu.Lock()
 			b.connects++
 			logCopy := append([]json.RawMessage(nil), b.log...)
 			qs := b.queueState()
 			running, finishIn := b.running, b.finishIn
-			if b.finished == nil {
-				b.finished = make(chan struct{})
-			}
-			finished := b.finished
 			b.mu.Unlock()
-			if m["op"] == "attach_operation" {
-				b.mu.Lock()
-				b.attachOnly++
-				b.mu.Unlock()
-				var selected []json.RawMessage
-				id, _ := m["opId"].(string)
-				complete := false
-				for _, raw := range logCopy {
-					var f struct {
-						ID   string `json:"opId"`
-						Type string `json:"type"`
-					}
-					_ = json.Unmarshal(raw, &f)
-					if f.ID == id {
-						selected = append(selected, raw)
-						complete = f.Type == "prompt_done"
-					}
-				}
-				if m["sessionId"] != "kept-session" || m["cwd"] != "/root/workspace" || len(selected) == 0 {
-					write(map[string]any{"op": "error", "message": "original operation unconfirmed"})
-					continue
-				}
-				write(map[string]any{"op": "operation_attached", "opId": id, "sessionId": "kept-session", "nativeSessionId": "kept-session", "cwd": "/root/workspace", "workspaceFingerprint": "", "events": selected, "complete": complete})
-			} else {
-				write(map[string]any{"op": "connected", "sessionId": "kept-session", "nativeSessionId": "kept-session", "eventLog": logCopy, "totalTurns": 1})
-			}
+			write(map[string]any{"op": "connected", "sessionId": "kept-session", "eventLog": logCopy, "totalTurns": 1})
 			write(qs)
 			if running != "" {
 				go func() {
@@ -143,28 +111,17 @@ func (b *survivorBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 				}()
 			}
 			if running != "" && finishIn > 0 {
-				b.finishOnce.Do(func() {
-					go func() {
-						time.Sleep(finishIn)
-						b.mu.Lock()
-						var fin func()
-						if b.running == running {
-							b.appendTurnEnd(running, "finished after restart")
-							b.running = ""
-							fin = b.onFinish
-						}
-						b.mu.Unlock()
-						if fin != nil {
-							fin()
-						}
-						close(finished)
-					}()
-				})
 				go func() {
-					<-finished
+					time.Sleep(finishIn)
 					b.mu.Lock()
+					b.appendTurnEnd(running, "finished after restart")
+					b.running = ""
+					fin := b.onFinish
 					qs := b.queueState()
 					b.mu.Unlock()
+					if fin != nil {
+						fin()
+					}
 					write(map[string]any{"op": "event", "opId": running, "data": map[string]any{"type": "prompt_done"}})
 					write(qs)
 				}()
@@ -312,19 +269,22 @@ func TestRunAgentReattachSendsPromptWhenNoneSent(t *testing.T) {
 	}
 }
 
-func TestRunAgentReattachGoneKeepsOriginalReceiptWithoutFreshSandbox(t *testing.T) {
+func TestRunAgentReattachGoneFallsBackToFreshSandbox(t *testing.T) {
 	p, mgr, req := setupReattach(t, nil)
 	p.opts.SandboxRetryBackoff = time.Millisecond
 
-	_, err := p.RunAgent(context.Background(), req)
-	if !errors.Is(err, errSandboxStartupUnconfirmed) || isRetryableSandboxErr(err) {
-		t.Fatalf("unconfirmed original resource was retryable: %v", err)
+	res, err := p.RunAgent(context.Background(), req)
+	if err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
-	if mgr.createCount() != 0 {
-		t.Errorf("created %d sandboxes, want no replacement", mgr.createCount())
+	if mgr.createCount() != 1 {
+		t.Errorf("created %d sandboxes, want 1 fresh retry", mgr.createCount())
 	}
 	if len(mgr.attached) != 1 || mgr.attached[0] != "sb-old" {
 		t.Errorf("attached = %v", mgr.attached)
+	}
+	if !strings.Contains(res.OutputMd, "fresh sandbox") {
+		t.Errorf("narration = %q", res.OutputMd)
 	}
 }
 

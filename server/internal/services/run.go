@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // defaultRunListOrder is the production default: hybrid time DESC + id DESC.
@@ -48,42 +47,20 @@ func runListOrderBy(sort, order string) string {
 	}
 }
 
-// deletableRunStatuses is the allowlist for terminal DeleteRun statuses.
-// A paused run is also deletable when its workspace save has already failed.
-// Queued, running, waiting_human, still-saving, and ordinary pauses are not.
+// deletableRunStatuses is the allowlist for DeleteRun. Matches terminal statuses
+// (completed/failed/cancelled); active runs remain non-deletable.
 var deletableRunStatuses = []string{"completed", "failed", "cancelled"}
 
 var (
 	// ErrRunNotFound is returned when Delete targets a missing run id.
 	ErrRunNotFound = errors.New("run not found")
-	// ErrRunNotDeletable is returned when the run status is outside the
-	// deletable set (queued/running/waiting_human, still saving, ordinary pause).
-	ErrRunNotDeletable = errors.New("cannot delete run: only completed, failed, cancelled, or save-failed runs can be deleted")
-	// errDeleteNeedsSandboxRelease rolls back the pre-check transaction so a
-	// save-failed run can release its sandbox before rows are removed.
-	errDeleteNeedsSandboxRelease = errors.New("delete needs sandbox release")
+	// ErrRunNotDeletable is returned when the run status is outside
+	// deletableRunStatuses (queued/running/waiting_human, etc.).
+	ErrRunNotDeletable = errors.New("cannot delete run: only completed, failed or cancelled runs can be deleted")
 )
 
-// runSandboxReleaser destroys containers still held by a run. Delete calls it
-// for a save-failed run instead of only removing sandbox rows.
-type runSandboxReleaser interface {
-	ReleaseHeldRunSandboxes(ctx context.Context, runID string) error
-}
-
 // RunService assembles run views from the underlying tables.
-type RunService struct {
-	db                  *gorm.DB
-	sandboxReleaser     runSandboxReleaser
-	beforeDeleteRecheck func(tx *gorm.DB, id string)
-}
-
-// SetSandboxReleaser installs the sandbox teardown used when deleting a run
-// whose workspace save has failed. Without it, that delete is refused.
-func (s *RunService) SetSandboxReleaser(r runSandboxReleaser) {
-	if s != nil {
-		s.sandboxReleaser = r
-	}
-}
+type RunService struct{ db *gorm.DB }
 
 // NewRunService builds the service.
 func NewRunService(db *gorm.DB) *RunService { return &RunService{db: db} }
@@ -311,172 +288,64 @@ func (s *RunService) RunTags() []string {
 	return out
 }
 
-// Delete permanently removes a completed, failed, cancelled, or save-failed run
-// and its associated rows so the run no longer appears in lists, details, or
-// other run entry points. Queued, running, waiting_human, still-saving, and
-// ordinary paused runs are rejected with ErrRunNotDeletable. Missing runs
-// return ErrRunNotFound. Does not touch WorkflowDef, WorkflowVersion, or
-// WorkflowAPIKey.
-//
-// A save-failed delete holds LockRunMutation across the status check, sandbox
-// Destroy, and row removal, the same lock a failure retry holds until the run
-// is queued or running. If the run has left save-failed — including a
-// transitional failed written before admission — Destroy is not called and the
-// run, its artifacts, and its sandbox stay.
+// Delete permanently removes a completed/failed/cancelled run and its
+// associated rows so the run no longer appears in lists/details or related UI
+// entry points. Active (queued/running/waiting_human) runs are rejected with
+// ErrRunNotDeletable. Missing runs return ErrRunNotFound. Does not touch
+// WorkflowDef, WorkflowVersion, or WorkflowAPIKey.
 func (s *RunService) Delete(id string) error {
 	run, ok := s.Get(id)
 	if !ok {
 		return ErrRunNotFound
 	}
-	if err := s.rejectIfNotDeletable(s.db, run); err != nil {
+	if err := rejectIfNotDeletable(run.Status); err != nil {
 		return err
 	}
-	if !WorkspaceSaveFailed(s.db, run) {
-		return s.deleteTerminalRun(id)
-	}
-	return s.deleteSaveFailedRun(id)
-}
 
-func (s *RunService) deleteTerminalRun(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.lockDeletable(tx, id, true); err != nil {
-			return err
-		}
-		if err := EndOpenWorkspaceSavesTx(tx, id); err != nil {
-			return err
-		}
-		return deleteRunRows(tx, id)
-	})
-}
-
-// deleteSaveFailedRun releases the sandbox only while the run is still
-// save-failed, then removes rows under the same mutation lock.
-func (s *RunService) deleteSaveFailedRun(id string) error {
-	unlock := LockRunMutation(id)
-	defer unlock()
-
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		current, err := s.lockDeletable(tx, id, true)
-		if err != nil {
-			return err
-		}
-		if !WorkspaceSaveFailed(tx, current) {
-			return fmt.Errorf("%w: status changed before delete", ErrRunNotDeletable)
-		}
-		if s.sandboxReleaser == nil {
-			return errors.New("cannot delete save-failed run without releasing its sandbox")
-		}
-		return errDeleteNeedsSandboxRelease
-	})
-	if !errors.Is(err, errDeleteNeedsSandboxRelease) {
-		return err
-	}
-	current, ok := s.Get(id)
-	if !ok {
-		return ErrRunNotFound
-	}
-	if !WorkspaceSaveFailed(s.db, current) {
-		return fmt.Errorf("%w: status changed before sandbox release", ErrRunNotDeletable)
-	}
-	if err := s.sandboxReleaser.ReleaseHeldRunSandboxes(context.Background(), id); err != nil {
-		return err
-	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		current, err := s.lockDeletable(tx, id, false)
-		if err != nil {
-			return err
-		}
-		// Destroy can take seconds. A failure retry that slipped through must
-		// not have its transitional failed, or a now-active run, deleted.
-		if !WorkspaceSaveFailed(tx, current) {
-			return fmt.Errorf("%w: status changed during sandbox release", ErrRunNotDeletable)
-		}
-		if err := EndOpenWorkspaceSavesTx(tx, id); err != nil {
-			return err
-		}
-		return deleteRunRows(tx, id)
-	})
-}
-
-// EnsureSaveFailedForRelease reports whether a sandbox Destroy is still
-// allowed. Queued, running, waiting_human, and a transitional failed are not.
-func EnsureSaveFailedForRelease(db *gorm.DB, runID string) error {
-	if db == nil {
-		return errors.New("cannot release a sandbox without a database")
-	}
-	var run models.Run
-	if err := db.First(&run, "id = ?", runID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrRunNotFound
-		}
-		return err
-	}
-	if !WorkspaceSaveFailed(db, run) {
-		return fmt.Errorf("%w: sandbox release aborted", ErrRunNotDeletable)
-	}
-	return nil
-}
-
-func (s *RunService) lockDeletable(tx *gorm.DB, id string, applyHook bool) (models.Run, error) {
-	var current models.Run
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return current, ErrRunNotFound
-		}
-		return current, err
-	}
-	if applyHook && s.beforeDeleteRecheck != nil {
-		s.beforeDeleteRecheck(tx, id)
+		// Re-check inside the transaction so a status change between the
+		// pre-check and delete is rejected atomically; a concurrent delete
+		// surfaces as not-found.
+		var current models.Run
 		if err := tx.First(&current, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return current, ErrRunNotFound
+				return ErrRunNotFound
 			}
-			return current, err
-		}
-	}
-	if err := s.rejectIfNotDeletable(tx, current); err != nil {
-		return current, err
-	}
-	return current, nil
-}
-
-func deleteRunRows(tx *gorm.DB, id string) error {
-	for _, m := range []any{
-		&models.WorkflowInstruction{},
-		&models.WorkflowInstructionMailbox{},
-		&models.StateRun{},
-		&models.RunVariable{},
-		&models.Artifact{},
-		&models.Gate{},
-		&models.ReactConversation{},
-		&models.RunReference{},
-		&models.PreviewIssue{},
-		&models.RunPreviewPort{},
-		&models.SandboxLog{},
-		&models.WorkflowVisitCheckpoint{},
-		&models.Sandbox{},
-	} {
-		if err := tx.Where("run_id = ?", id).Delete(m).Error; err != nil {
 			return err
 		}
-	}
-	return tx.Delete(&models.Run{}, "id = ?", id).Error
+		if err := rejectIfNotDeletable(current.Status); err != nil {
+			return err
+		}
+
+		for _, m := range []any{
+			&models.StateRun{},
+			&models.RunVariable{},
+			&models.Artifact{},
+			&models.Gate{},
+			&models.ReactConversation{},
+			&models.RunReference{},
+			&models.PreviewIssue{},
+			&models.RunPreviewPort{},
+			&models.SandboxLog{},
+			&models.Sandbox{},
+		} {
+			if err := tx.Where("run_id = ?", id).Delete(m).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&models.Run{}, "id = ?", id).Error
+	})
 }
 
-func (s *RunService) rejectIfNotDeletable(db *gorm.DB, run models.Run) error {
-	if containsString(deletableRunStatuses, run.Status) {
+func rejectIfNotDeletable(status string) error {
+	if containsString(deletableRunStatuses, status) {
 		return nil
 	}
-	if WorkspaceSaveFailed(db, run) {
-		return nil
-	}
-	switch run.Status {
+	switch status {
 	case "queued", "running", "waiting_human":
-		return fmt.Errorf("%w: cancel or wait until the run ends (status %q)", ErrRunNotDeletable, run.Status)
+		return fmt.Errorf("%w: cancel or wait until the run ends (status %q)", ErrRunNotDeletable, status)
 	default:
-		if WorkspaceSaveInProgress(db, run) {
-			return fmt.Errorf("%w: workspace save still in progress", ErrRunNotDeletable)
-		}
-		return fmt.Errorf("%w (status %q)", ErrRunNotDeletable, run.Status)
+		// unexpected non-deletable status
+		return fmt.Errorf("%w (status %q)", ErrRunNotDeletable, status)
 	}
 }

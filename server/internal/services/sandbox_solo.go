@@ -5,21 +5,18 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/executionlineage"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // SandboxPurposeSolo marks resident Solo session sandboxes. They have no idle
-// TTL. Closing stops compute while retaining the writable workspace.
+// TTL and are only destroyed when the user closes the session.
 const SandboxPurposeSolo = "solo"
 
 // ErrSoloSandboxLimit is returned when the resident Solo sandbox cap is reached.
@@ -42,20 +39,10 @@ type SoloSandboxOpts struct {
 	InitialConfigurationID string
 	ReasoningEffort        string
 	OnEnv                  func(sources map[string]string)
-	OnEnvForSandbox        func(sandboxID uint, sources map[string]string)
 	OnReady                func(sandboxID uint)
 	OnFail                 func(sandboxID uint, err error)
-	// PublishReady is metadata SQL only. It takes compute -> queue -> parent
-	// before the final physical sandbox proof/running update in that same TX.
-	PublishReady func(*gorm.DB, uint) error
-	// Admit revalidates the exact parent lifecycle before reusing or binding a
-	// row. It runs inside the compute transaction, before any provider request.
-	Admit func(*gorm.DB) error
-	// Current is the same parent epoch/attempt/binding fence for asynchronous
-	// creation and its final publication. It performs metadata SQL only.
-	Current func(*gorm.DB, uint) error
-	// Bind commits the parent session association before any provider request.
-	Bind func(*gorm.DB, *models.Sandbox) error
+	// Restore replaces the repository clone with a stopped workspace archive.
+	Restore func(ctx context.Context, sb *sandbox.Sandbox) error
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -68,7 +55,7 @@ func (s *SandboxService) SetMaxSoloSandboxes(n int) {
 	}
 }
 
-// SetSoloSandboxDestroyHook registers a callback for confirmed purpose=solo teardown,
+// SetSoloSandboxDestroyHook registers a callback for purpose=solo teardown,
 // so sessions whose sandbox was removed elsewhere stop showing as running.
 func (s *SandboxService) SetSoloSandboxDestroyHook(fn func(sandboxID uint)) {
 	s.mu.Lock()
@@ -82,12 +69,6 @@ func (s *SandboxService) SetSoloSandboxRecoveredHook(fn func(sandboxID uint)) {
 	s.mu.Unlock()
 }
 
-func (s *SandboxService) SetSoloSandboxRecoveryFailedHook(fn func(sandboxID uint)) {
-	s.mu.Lock()
-	s.soloOnRecoveryFailed = fn
-	s.mu.Unlock()
-}
-
 func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	s.mu.Lock()
 	fn := s.soloOnDestroy
@@ -98,59 +79,18 @@ func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 }
 
 func (s *SandboxService) activeSoloSandboxCount() int {
-	n, _ := countSoloCompute(s.db, 0)
+	var n int64
+	activeSessions := s.db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
+		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
+	s.db.Model(&models.Sandbox{}).
+		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
+			[]string{"running", "creating", "pulling"}, activeSessions).
+		Count(&n)
 	return int(n)
 }
 
-func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
-	return countSoloComputeReserved(db, exclude, "")
-}
-
-func countSoloComputeReserved(db *gorm.DB, exclude uint, reservedSession string) (int64, error) {
-	var n int64
-	activeSessions := db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
-		[]string{models.SoloStatusStarting, models.SoloStatusRunning, models.SoloStatusError}).
-		Or("lifecycle_action IN ?", []string{soloRestartCleanup, soloCloseCleanup, soloDeleteCleanup})
-	query := db.Model(&models.Sandbox{}).
-		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
-			[]string{"running", "creating", "pulling"}, activeSessions)
-	if exclude != 0 {
-		query = query.Where("id <> ?", exclude)
-	}
-	if err := query.Count(&n).Error; err != nil {
-		return 0, err
-	}
-	var pending int64
-	reservations := db.Model(&models.SoloSession{}).Where("status = ? AND sandbox_id = 0 AND (lifecycle_action = ? OR EXISTS (SELECT 1 FROM solo_creations c WHERE c.session_id = solo_sessions.id))", models.SoloStatusStarting, soloRestartCreate)
-	if reservedSession != "" {
-		reservations = reservations.Where("id <> ?", reservedSession)
-	}
-	if err := reservations.Count(&pending).Error; err != nil {
-		return 0, err
-	}
-	// A missing application row is not proof that its provider workload died.
-	// Keep unknown associations occupied until explicit reconciliation confirms
-	// their state; losing metadata must not authorize extra compute allocation.
-	// A completed Close already confirmed its compute stopped, so its retained
-	// binding holds no quota, the same as a closed session with a stopped row.
-	var unknown int64
-	orphans := db.Model(&models.SoloSession{}).Where("sandbox_id <> 0 AND NOT (status = ? AND lifecycle_action = '') AND NOT EXISTS (SELECT 1 FROM sandboxes b WHERE b.id = solo_sessions.sandbox_id)", models.SoloStatusClosed)
-	if exclude != 0 {
-		orphans = orphans.Where("sandbox_id <> ?", exclude)
-	}
-	if err := orphans.Distinct("sandbox_id").Count(&unknown).Error; err != nil {
-		return 0, err
-	}
-	return n + pending + unknown, nil
-}
-
-func lockSoloCompute(tx *gorm.DB) error {
-	row := models.Setting{Key: "solo_compute_admission", Value: "1"}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
-		return err
-	}
-	return tx.Model(&models.Setting{}).Where("key = ?", row.Key).Update("updated_at", time.Now().UTC()).Error
-}
+// UsedSoloSandboxes returns the workspace-wide quota the next Solo admission sees.
+func (s *SandboxService) UsedSoloSandboxes() int { return s.activeSoloSandboxCount() }
 
 // SoloRepoSpecs converts a project into the sandbox clone list.
 func SoloRepoSpecs(p *models.Project, branch string) []sandbox.RepoSpec {
@@ -185,13 +125,21 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
 	agent = s.effectiveAgent(agent)
-	agent, err := selectSoloConfiguration(s.db, agent, strings.TrimSpace(opts.InitialConfigurationID))
-	if err != nil {
-		return nil, err
+	if selected := strings.TrimSpace(opts.InitialConfigurationID); selected != "" {
+		var err error
+		agent, err = selectSoloConfiguration(s.db, agent, selected)
+		if err != nil {
+			return nil, err
+		}
+	} else if agent.ModelBinding != nil {
+		agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: agent.ModelBinding.ConfigurationID}
 	}
 	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
 	if err != nil {
 		return nil, err
+	}
+	if maxN := s.MaxSoloSandboxes(); s.activeSoloSandboxCount() >= maxN {
+		return nil, ErrSoloSandboxLimit{Max: maxN}
 	}
 
 	snapshots := opts.Repos
@@ -199,6 +147,9 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		snapshots = []models.SessionRepo{sessionRepoFromProject(opts.Project, opts.Branch, 0)}
 	}
 	repos := SoloRepoSpecsList(snapshots)
+	if opts.Restore != nil {
+		repos = nil
+	}
 	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
 	token := uuid.NewString()
 	if s.host != nil {
@@ -219,68 +170,14 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}
-	created := false
-	if err := s.executionCreateTransaction(ctx, []executionlineage.Entity{{Kind: executionlineage.EntitySolo, ID: sessionID}}, func(tx *gorm.DB) error {
-		if err := lockSoloCompute(tx); err != nil {
-			return err
-		}
-		if opts.Admit != nil {
-			if err := opts.Admit(tx); err != nil {
-				return err
-			}
-		}
-		if opts.Bind != nil {
-			var parent models.SoloSession
-			if err := tx.Select("id", "sandbox_id", "status").First(&parent, "id = ?", sessionID).Error; err != nil {
-				return err
-			}
-			if parent.Status != models.SoloStatusStarting {
-				return soloErr(409, "session_changed", "会话状态已变化，请重新加载")
-			}
-			if parent.SandboxID != 0 {
-				return tx.First(row, "id = ? AND thread_id = ? AND purpose = ?", parent.SandboxID, sessionID, SandboxPurposeSolo).Error
-			}
-		}
-		count, err := countSoloComputeReserved(tx, 0, sessionID)
-		if err != nil {
-			return err
-		}
-		if count >= int64(s.MaxSoloSandboxes()) {
-			return ErrSoloSandboxLimit{Max: s.MaxSoloSandboxes()}
-		}
-		if err := tx.Create(row).Error; err != nil {
-			return err
-		}
-		if opts.Bind != nil {
-			if err := opts.Bind(tx, row); err != nil {
-				return err
-			}
-		}
-		created = true
-		return nil
-	}); err != nil {
+	if err := s.db.Create(row).Error; err != nil {
 		if s.host != nil {
 			s.host.UnregisterRun(runID)
 		}
 		return nil, err
 	}
-	if !created {
-		if s.host != nil {
-			s.host.UnregisterRun(runID)
-		}
-		return row, nil
-	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort}
+	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, Restore: opts.Restore}
 	id := row.ID
-	if opts.OnEnvForSandbox != nil {
-		extra.OnEnv = func(sources map[string]string) { opts.OnEnvForSandbox(id, sources) }
-	}
-	if opts.Current != nil {
-		extra.Current = func(tx *gorm.DB) error { return opts.Current(tx, id) }
-	}
-	if opts.PublishReady != nil {
-		extra.PublishReady = func(tx *gorm.DB) error { return opts.PublishReady(tx, id) }
-	}
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }
 	}

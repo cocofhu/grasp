@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -67,9 +66,6 @@ func (e *Engine) RecentTurns(runID string) map[string][]models.AcpEvent {
 // in the sandbox (queried on demand via LiveNodeEvents) and the final snapshot
 // is persisted by saveState — this is purely the live push channel.
 func (e *Engine) publishAcp(runID, nodeID string, events []models.AcpEvent, busy bool) {
-	if err := e.executionCheck(context.Background(), runID); err != nil {
-		return
-	}
 	if isActivityEvent(events) {
 		e.touchActivity(runID, false)
 	}
@@ -102,7 +98,7 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 	// Snapshot product revisions before the agent writes. A conclusion left by
 	// the previous execution of this node does not count as delivered here.
 	base := e.host.BeginArtifactVisit(c.run.ID, node.ID)
-	logDB(e.executionCreate(context.Background(), c.run.ID, &models.StateRun{
+	logDB(e.db.Create(&models.StateRun{
 		RunID: c.run.ID, NodeID: node.ID, NodeType: node.Type,
 		Iteration: c.iter[node.ID], Status: "running", StartedAt: &now, Attempt: c.run.Attempt,
 		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
@@ -163,9 +159,6 @@ func (e *Engine) lockResume(key string) func() {
 }
 
 func (e *Engine) loadCtx(runID string) (*execCtx, error) {
-	if err := e.executionCheck(context.Background(), runID); err != nil {
-		return nil, err
-	}
 	var run models.Run
 	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
 		return nil, err
@@ -173,20 +166,6 @@ func (e *Engine) loadCtx(runID string) (*execCtx, error) {
 	c := &execCtx{run: &run, graph: run.Graph,
 		vars: map[string]any{}, nodeOutputs: map[string]map[string]any{},
 		iter: map[string]int{}, autoRetries: map[string]int{}}
-	if e.workspaceCheckpoints != nil {
-		for id, value := range run.Checkpoints[workspaceAutoRetryCheckpoint] {
-			var count int
-			switch n := value.(type) {
-			case float64:
-				count = int(n)
-			case int:
-				count = n
-			}
-			if count > 0 {
-				c.autoRetries[id] = count
-			}
-		}
-	}
 	var vars []models.RunVariable
 	if err := e.db.Where("run_id = ?", runID).Find(&vars).Error; err != nil {
 		return nil, fmt.Errorf("load run variables: %w", err)
@@ -327,9 +306,6 @@ func (e *Engine) execute(runID, fromNodeID string) {
 // first node continues re's in-flight StateRun in its still-running sandbox
 // instead of opening a new visit.
 func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
-	if err := e.executionCheck(context.Background(), runID); err != nil {
-		return
-	}
 
 	gen, ok := e.acquireExecuteSlot(runID)
 	if !ok {
@@ -362,9 +338,6 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 
 	cur := fromNodeID
 	for cur != "" {
-		if err := e.executionCheck(context.Background(), runID); err != nil {
-			return
-		}
 
 		if !e.isExecOwner(runID, gen) {
 			log.Info().Str("run_id", runID).Str("from", cur).
@@ -375,24 +348,6 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.appendTrace(c, models.TraceEntry{NodeID: cur, Event: "pause", Detail: "控制面停机，重启后从此节点继续"})
 			e.requeueRun(runID, cur)
 			return
-		}
-		if re == nil {
-			parked, err := e.parkRunBoundary(c, cur)
-			if err != nil {
-				if errors.Is(err, errRunBoundaryChanged) {
-					log.Info().Str("run_id", runID).Msg("pause boundary yielded to a newer execution or control decision")
-					return
-				}
-				log.Error().Err(err).Str("run_id", runID).Msg("pause observation failed; retaining driver position")
-				e.requeueFailedRunBoundary(c, cur, err)
-				return
-			}
-			if parked {
-				return
-			}
-		}
-		if !e.isExecOwner(runID, gen) {
-			return // checkpoint preparation may have outlived this driver's claim
 		}
 		node := c.graph.FindNode(cur)
 		if node == nil {
@@ -427,9 +382,6 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 		re = nil
 
 		outcome := e.executeNode(c, node)
-		if err := e.executionCheck(context.Background(), runID); err != nil {
-			return
-		}
 
 		if !e.isExecOwner(runID, gen) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})
@@ -460,16 +412,6 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 		}
 
 		switch {
-		case outcome.providerUnknown && e.workspaceCheckpoints != nil:
-			var state models.StateRun
-			if err := e.db.Select("id", "run_id", "node_id", "iteration", "attempt", "provider_attempt", "workspace_checkpoint_id").Where("run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?", runID, node.ID, c.iter[node.ID], c.run.Attempt).Take(&state).Error; err == nil {
-				if err := e.parkUnknownWorkspaceVisit(state); err != nil {
-					log.Error().Err(err).Str("run_id", runID).Msg("retain unknown provider outcome failed")
-				}
-			}
-			e.recordDroppedOutcomeUsage(c, node, outcome, models.TokenLedgerStatusFailed)
-			e.publishRunControl(runID)
-			return
 		case outcome.status == "paused":
 
 			e.saveState(c, node, outcome)
@@ -486,7 +428,7 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				}
 			}
 			return
-		case outcome.status == "failed" && outcome.sandboxSetup && e.workspaceCheckpoints == nil:
+		case outcome.status == "failed" && outcome.sandboxSetup:
 			// The dialogue never opened: no execution to finish, the run fails.
 			ensureHandoff(c, node, &outcome)
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("err", outcome.err).Msg("node failed")
