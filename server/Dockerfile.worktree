@@ -138,7 +138,7 @@ RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
-ENV GO_VERSION=1.26.10
+ENV GO_VERSION=1.26.11
 RUN set -eux; \
     file="go${GO_VERSION}.linux-amd64.tar.gz"; \
     ok=0; \

@@ -225,7 +225,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Go (阿里云优先；golang.google.cn 会回源 dl.google.com，国内 CI 易超时)
-ENV GO_VERSION=1.26.10
+ENV GO_VERSION=1.26.11
 ENV GO_ARCH=amd64
 RUN set -eux; \
     file="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
