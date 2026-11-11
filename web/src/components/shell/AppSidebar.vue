@@ -11,7 +11,7 @@ import SidebarAccountMenu from './SidebarAccountMenu.vue'
 import { authApi } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { clearAllEmbedSessions } from '@/lib/inbox/embedChat'
-import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, isRunsSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
@@ -32,6 +32,7 @@ function isRailActive(to: string) {
   if (settingsChrome.value) return false
   if (to === '/dashboard' && isHomeSectionPath(route.path)) return true
   if (to === '/board') return isBoardSectionPath(route.path)
+  if (to === '/runs') return isRunsSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 
