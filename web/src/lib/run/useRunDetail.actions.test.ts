@@ -668,10 +668,25 @@ describe('useRunDetail actions', () => {
     expect(detail.canResume.value).toBe(false)
     expect(detail.deleteRunHint.value).toContain('正在保存')
 
+    detail.run.value = {
+      ...detail.run.value,
+      status: 'paused',
+      workspaceSave: { checkpointId: 'cp', nodeId: 'n1', state: 'failed', reason: 'provider_outcome_unconfirmed', outcomeSealed: false },
+    } as Run
+    await nextTick()
+    expect(detail.canDeleteRun.value).toBe(true)
+    expect(detail.canResume.value).toBe(false)
+    expect(detail.failureRetryBlocked.value).toBe(true)
+    expect(detail.resumeUnavailableHint.value).toContain('尚未确认')
+    mocks.resumeRun.mockClear()
+    await detail.onResume('')
+    expect(mocks.resumeRun).not.toHaveBeenCalled()
+
     detail.run.value = { ...detail.run.value, status: 'paused', workspaceSave: undefined } as Run
     await nextTick()
     expect(detail.canDeleteRun.value).toBe(false)
     expect(detail.canResume.value).toBe(false)
+    expect(detail.failureRetryBlocked.value).toBe(false)
 
     detail.run.value = {
       ...detail.run.value,

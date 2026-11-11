@@ -24,6 +24,9 @@ type WorkspaceSave struct {
 	// Action is how a user moves a failed save on: "retry" captures again via
 	// run resume, "reconcile" re-reads an ambiguous receipt; empty means neither.
 	Action string `json:"action,omitempty"`
+	// OutcomeSealed is false when the node result is not sealed yet. Failure
+	// retry must stay disabled; delete is still allowed for a failed save.
+	OutcomeSealed bool `json:"outcomeSealed"`
 }
 
 // WorkspaceSaveCheckpointID reports the checkpoint a run is paused on, if any.
@@ -67,7 +70,7 @@ func WorkspaceSaves(db *gorm.DB, runs []models.Run) map[string]*WorkspaceSave {
 		}
 	}
 	for _, row := range rows {
-		save := &WorkspaceSave{CheckpointID: row.ID, NodeID: row.NodeID, State: "saving"}
+		save := &WorkspaceSave{CheckpointID: row.ID, NodeID: row.NodeID, State: "saving", OutcomeSealed: row.RouteState == "sealed"}
 		if CheckpointSaveFailed(row) {
 			save.State, save.Reason = "failed", row.Reason
 			switch row.FileState {

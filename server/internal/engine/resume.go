@@ -663,12 +663,38 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
+	// Hold the same lock as save-failed deletion before cancelling the
+	// checkpoint, so a delete cannot destroy the sandbox or treat a
+	// half-finished retry as a deletable failure.
+	candidate, err := e.saveFailedSealedCandidate(runID)
+	if err != nil {
+		return err
+	}
+	if candidate {
+		unlock := services.LockRunMutation(runID)
+		defer unlock()
+	}
+	return e.resumeFrom(runID, nodeID)
+}
+
+func (e *Engine) resumeFrom(runID, nodeID string) error {
 	// A save-failed pause cannot call the rest of this path directly: paused is
 	// rejected below, and an open checkpoint returns ErrWorkflowCheckpointBlocked.
 	// End that save first (without marking it applied), then resume the banner node.
-	pinned, err := e.prepareSaveFailedRetry(runID, nodeID)
+	// Status stays paused until admission writes queued or running. A deletable
+	// failed is never committed in between; a refused admission puts the
+	// checkpoint back so the run is still recognizably save-failed.
+	pinned, checkpointID, err := e.prepareSaveFailedRetry(runID, nodeID)
 	if err != nil {
 		return err
+	}
+	admitted := false
+	if checkpointID != "" {
+		defer func() {
+			if !admitted {
+				e.restoreSaveFailedCheckpoint(runID, checkpointID)
+			}
+		}()
 	}
 	if pinned != "" {
 		nodeID = pinned
@@ -705,6 +731,10 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// a waiting_human run continues through its gate/react reply.
 	switch c.run.Status {
 	case "failed", "cancelled":
+	case "paused":
+		if pinned == "" {
+			return fmt.Errorf("run 当前状态 %q 不可续跑", c.run.Status)
+		}
 	case "running":
 		var sr models.StateRun
 		if err := e.db.Where("run_id = ? AND node_id = ? AND status = ?", runID, nodeID, "failed").
@@ -767,59 +797,106 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 	// History only lists completed, failed, and cancelled. Write queued or
 	// running before returning so the caller does not still observe a terminal
 	// status. The driver itself still starts asynchronously once a slot is held.
-	if !e.resumeAdmitted(runID, nodeID) {
+	if pinned != "" {
+		if !e.scheduleRunAdmissionMode(runID, nodeID, true) {
+			return errors.New("续跑入场失败")
+		}
+	} else if !e.resumeAdmitted(runID, nodeID) {
 		return errors.New("续跑入场失败")
 	}
+	admitted = true
 	return nil
 }
 
-// prepareSaveFailedRetry ends a failed workspace save so ResumeFrom can open a
-// new execution of the banner node. It returns that node id when the run was
-// save-failed. Other runs return an empty id and no error. Still-saving,
-// ordinary pauses are not rewritten; saving is rejected here, ordinary pauses
-// fall through to the existing status check.
-func (e *Engine) prepareSaveFailedRetry(runID, requested string) (string, error) {
+func (e *Engine) saveFailedSealedCandidate(runID string) (bool, error) {
 	var run models.Run
 	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", nil
+			return false, nil
 		}
-		return "", err
+		return false, err
 	}
 	checkpointID := services.WorkspaceSaveCheckpointID(run)
 	if checkpointID == "" {
-		return "", nil
+		return false, nil
 	}
 	var row models.WorkflowVisitCheckpoint
 	if err := e.db.Where("id = ? AND run_id = ?", checkpointID, runID).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", errors.New("没有可续跑的节点")
+			return false, nil
 		}
-		return "", err
+		return false, err
+	}
+	return services.CheckpointSaveFailed(row) && row.RouteState == "sealed", nil
+}
+
+func (e *Engine) restoreSaveFailedCheckpoint(runID, checkpointID string) {
+	if checkpointID == "" {
+		return
+	}
+	_ = e.db.Transaction(func(tx *gorm.DB) error {
+		var run models.Run
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
+			return err
+		}
+		if run.Status != "paused" {
+			return nil
+		}
+		return tx.Model(&models.WorkflowVisitCheckpoint{}).
+			Where("id = ? AND run_id = ? AND route_state = ?", checkpointID, runID, "cancelled").
+			Update("route_state", "sealed").Error
+	})
+}
+
+// prepareSaveFailedRetry ends a failed workspace save so ResumeFrom can open a
+// new execution of the banner node. It returns that node id and the checkpoint
+// it cancelled when the run was a sealed save-failed pause. Other runs return
+// empty ids and no error. Still-saving and ordinary pauses are not rewritten;
+// saving is rejected here, ordinary pauses fall through to the existing status
+// check. The run stays paused: admission is what leaves that status, so a
+// deletable failed is never visible before the run is queued or running.
+func (e *Engine) prepareSaveFailedRetry(runID, requested string) (string, string, error) {
+	var run models.Run
+	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+	checkpointID := services.WorkspaceSaveCheckpointID(run)
+	if checkpointID == "" {
+		return "", "", nil
+	}
+	var row models.WorkflowVisitCheckpoint
+	if err := e.db.Where("id = ? AND run_id = ?", checkpointID, runID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", errors.New("没有可续跑的节点")
+		}
+		return "", "", err
 	}
 	if !services.CheckpointSaveFailed(row) {
-		return "", fmt.Errorf("run 当前状态 %q 不可续跑", "saving")
+		return "", "", fmt.Errorf("run 当前状态 %q 不可续跑", "saving")
 	}
 	// An unsealed visit (provider outcome still unknown) must keep blocking
 	// ResumeFrom. Only a sealed node whose file save failed can be re-run.
 	if row.RouteState != "sealed" {
-		return "", nil
+		return "", "", nil
 	}
 	if row.NodeID == "" {
-		return "", errors.New("没有可续跑的节点")
+		return "", "", errors.New("没有可续跑的节点")
 	}
 	if run.Graph.FindNode(row.NodeID) == nil {
-		return "", fmt.Errorf("节点 %q 不在该 run 的流程图中", row.NodeID)
+		return "", "", fmt.Errorf("节点 %q 不在该 run 的流程图中", row.NodeID)
 	}
 	var visits int64
 	if err := e.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ?", runID, row.NodeID).Count(&visits).Error; err != nil {
-		return "", err
+		return "", "", err
 	}
 	if visits == 0 {
-		return "", errors.New("没有可续跑的节点")
+		return "", "", errors.New("没有可续跑的节点")
 	}
 	if requested != "" && requested != row.NodeID {
-		return "", fmt.Errorf("保存失败只能从停住的节点 %q 重新执行", row.NodeID)
+		return "", "", fmt.Errorf("保存失败只能从停住的节点 %q 重新执行", row.NodeID)
 	}
 	err := e.executionTransaction(context.Background(), runID, func(tx *gorm.DB) error {
 		var current models.Run
@@ -848,22 +925,14 @@ func (e *Engine) prepareSaveFailedRetry(runID, requested string) (string, error)
 		if err := services.EndOpenWorkspaceSavesTx(tx, runID); err != nil {
 			return err
 		}
-		// Leave paused before the existing admission path. failed is resumable;
-		// the cancelled checkpoint is not a successful save.
-		result := tx.Model(&models.Run{}).Where("id = ? AND status = ?", runID, "paused").
-			Updates(map[string]any{"status": "failed", "pause_from_status": "", "pause_requested": false})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("run 当前状态 %q 不可续跑", current.Status)
-		}
+		// Stay paused. Admission is the only writer that leaves this status,
+		// so delete never observes a deletable failed in the gap.
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return row.NodeID, nil
+	return row.NodeID, checkpointID, nil
 }
 
 // nodeStartVars returns the global-variable snapshot captured when a node's most

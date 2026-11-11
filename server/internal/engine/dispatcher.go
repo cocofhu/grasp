@@ -185,21 +185,35 @@ func pickQueuedByRemainingHumanGate(candidates []models.Run) models.Run {
 // keeps fromNodeID for the dispatcher. Callers that answer a resume must not
 // return success while the run is still failed or cancelled.
 func (e *Engine) scheduleRunAdmission(runID, fromNodeID string) bool {
+	return e.scheduleRunAdmissionMode(runID, fromNodeID, false)
+}
+
+// scheduleRunAdmissionMode is scheduleRunAdmission with allowPaused set for a
+// save-failed retry. That retry is still paused when admission starts; every
+// other caller keeps the paused exclusion.
+func (e *Engine) scheduleRunAdmissionMode(runID, fromNodeID string, allowPaused bool) bool {
+	if e.blockAdmission.Load() {
+		return false
+	}
 	e.haltMu.RLock()
 	if e.halted || !e.sem.TryAcquire() {
 		e.haltMu.RUnlock()
-		return e.queueForAdmission(runID, fromNodeID)
+		return e.queueForAdmissionMode(runID, fromNodeID, allowPaused)
 	}
 	e.haltMu.RUnlock()
-	if e.admitRunDirect(runID, fromNodeID) {
+	if e.admitRunDirectMode(runID, fromNodeID, allowPaused) {
 		return true
 	}
 	e.sem.Release()
-	return e.queueForAdmission(runID, fromNodeID)
+	return e.queueForAdmissionMode(runID, fromNodeID, allowPaused)
 }
 
 func (e *Engine) queueForAdmission(runID, fromNodeID string) bool {
-	ok := e.enqueueAdmission(runID, fromNodeID, false)
+	return e.queueForAdmissionMode(runID, fromNodeID, false)
+}
+
+func (e *Engine) queueForAdmissionMode(runID, fromNodeID string, allowPaused bool) bool {
+	ok := e.enqueueAdmission(runID, fromNodeID, false, allowPaused)
 	e.signalDispatch()
 	return ok
 }
@@ -209,7 +223,7 @@ func (e *Engine) queueForAdmission(runID, fromNodeID string) bool {
 // defer releases the sem slot while DB still shows running, drifting sem below
 // the actual running count and allowing subsequent over-admission.
 func (e *Engine) requeueRun(runID, fromNodeID string) {
-	if !e.enqueueAdmission(runID, fromNodeID, true) {
+	if !e.enqueueAdmission(runID, fromNodeID, true, false) {
 		return
 	}
 	msg, _ := json.Marshal(map[string]any{"type": "status", "runId": runID, "status": "queued"})
@@ -230,7 +244,7 @@ func (e *Engine) requeueRun(runID, fromNodeID string) {
 // "running" (the requeue-after-early-exit path); the returned bool reports
 // whether the run was actually queued so callers can skip follow-up work when
 // they lost the race.
-func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool) bool {
+func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning, allowPaused bool) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Read a raw immutable source identity, then hydrate/prepare outside SQL.
@@ -245,7 +259,11 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool)
 	if err := e.db.WithContext(ctx).Table("runs").Select("status", "checkpoints", "attempt", "control_version").Where("id = ?", runID).Take(&source).Error; err != nil {
 		return false
 	}
-	if requireRunning && source.Status != "running" || source.Status == "paused" {
+	if allowPaused {
+		if source.Status != "paused" {
+			return false
+		}
+	} else if (requireRunning && source.Status != "running") || source.Status == "paused" {
 		return false
 	}
 	files, err := filestore.FromDB(e.db)
@@ -290,7 +308,12 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool)
 		if err != nil {
 			return err
 		}
-		result := tx.Table("runs").Where("id = ? AND status = ? AND attempt = ? AND control_version = ?", runID, source.Status, source.Attempt, source.ControlVersion).Updates(map[string]any{"status": "queued", "checkpoints": ref})
+		updates := map[string]any{"status": "queued", "checkpoints": ref}
+		if allowPaused {
+			updates["pause_from_status"] = ""
+			updates["pause_requested"] = false
+		}
+		result := tx.Table("runs").Where("id = ? AND status = ? AND attempt = ? AND control_version = ?", runID, source.Status, source.Attempt, source.ControlVersion).Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -305,16 +328,32 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning bool)
 }
 
 func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
+	return e.admitRunDirectMode(runID, fromNodeID, false)
+}
+
+func (e *Engine) admitRunDirectMode(runID, fromNodeID string, allowPaused bool) bool {
 	var run models.Run
 	if err := e.db.First(&run, "id = ?", runID).Error; err != nil {
+		return false
+	}
+	if allowPaused && run.Status != "paused" {
 		return false
 	}
 	updates := map[string]any{"status": "running"}
 	if run.StartedAt.IsZero() {
 		updates["started_at"] = time.Now()
 	}
+	if allowPaused {
+		updates["pause_from_status"] = ""
+		updates["pause_requested"] = false
+	}
 	res := e.executionMutation(context.Background(), runID, func(db *gorm.DB) *gorm.DB {
-		query := db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"})
+		var query *gorm.DB
+		if allowPaused {
+			query = db.Model(&models.Run{}).Where("id = ? AND status = ?", runID, "paused")
+		} else {
+			query = db.Model(&models.Run{}).Where("id = ? AND status NOT IN ?", runID, []string{"running", "paused"})
+		}
 		if e.workspaceCheckpoints != nil {
 			query = query.Where("NOT EXISTS (SELECT 1 FROM workflow_visit_checkpoints w WHERE w.run_id = runs.id AND w.route_state NOT IN ('applied', 'cancelled'))")
 		}

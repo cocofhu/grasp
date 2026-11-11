@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/services"
 )
 
 func pauseOnCheckpoint(t *testing.T, e *Engine, runID, checkpointID string) {
@@ -182,5 +183,93 @@ func TestSaveFailedResumeRejectsSavingAndOrdinaryPause(t *testing.T) {
 	e.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ?", c.run.ID, "agent").Count(&visits)
 	if visits != 1 {
 		t.Fatalf("rejected resumes opened visits: %d", visits)
+	}
+}
+
+func TestSaveFailedResumeRestoresCheckpointWhenAdmissionRefused(t *testing.T) {
+	e, c, _, state := workspaceCheckpointFixture(t, true)
+	defer e.Close()
+	const checkpointID = "cp-refuse"
+	if err := e.db.Create(&models.WorkflowVisitCheckpoint{
+		ID: checkpointID, RunID: c.run.ID, StateRunID: state.ID, NodeID: "agent",
+		FileState: "blocked", RouteState: "sealed", Reason: "snapshot_failed",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Model(&models.StateRun{}).Where("id = ?", state.ID).Update("status", "completed").Error; err != nil {
+		t.Fatal(err)
+	}
+	pauseOnCheckpoint(t, e, c.run.ID, checkpointID)
+	e.blockAdmission.Store(true)
+	defer e.blockAdmission.Store(false)
+
+	if err := e.ResumeFrom(c.run.ID, ""); err == nil || !strings.Contains(err.Error(), "续跑入场失败") {
+		t.Fatalf("refused admission err = %v", err)
+	}
+	var run models.Run
+	if err := e.db.First(&run, "id = ?", c.run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != "paused" || !strings.HasPrefix(run.PauseFromStatus, "workspace_checkpoint:") {
+		t.Fatalf("run was not restored to a save-failed pause: status %s pause %s", run.Status, run.PauseFromStatus)
+	}
+	var row models.WorkflowVisitCheckpoint
+	if err := e.db.First(&row, "id = ?", checkpointID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.RouteState != "sealed" {
+		t.Fatalf("checkpoint route = %s, want sealed again", row.RouteState)
+	}
+	var visits int64
+	e.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ?", c.run.ID, "agent").Count(&visits)
+	if visits != 1 {
+		t.Fatalf("refused retry opened visits: %d", visits)
+	}
+}
+
+func TestSaveFailedResumeWaitsForMutationLock(t *testing.T) {
+	e, c, _, state := workspaceCheckpointFixture(t, true)
+	defer e.Close()
+	const checkpointID = "cp-lock"
+	if err := e.db.Create(&models.WorkflowVisitCheckpoint{
+		ID: checkpointID, RunID: c.run.ID, StateRunID: state.ID, NodeID: "agent",
+		FileState: "blocked", RouteState: "sealed", Reason: "snapshot_failed",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Model(&models.StateRun{}).Where("id = ?", state.ID).Update("status", "completed").Error; err != nil {
+		t.Fatal(err)
+	}
+	pauseOnCheckpoint(t, e, c.run.ID, checkpointID)
+	unlock := services.LockRunMutation(c.run.ID)
+	done := make(chan error, 1)
+	go func() { done <- e.ResumeFrom(c.run.ID, "") }()
+	select {
+	case err := <-done:
+		t.Fatalf("resume finished while the mutation lock was held: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	var row models.WorkflowVisitCheckpoint
+	if err := e.db.First(&row, "id = ?", checkpointID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.RouteState != "sealed" {
+		t.Fatalf("checkpoint changed while locked: %s", row.RouteState)
+	}
+	unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("resume did not finish after the mutation lock was released")
+	}
+	var run models.Run
+	if err := e.db.First(&run, "id = ?", c.run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != "queued" && run.Status != "running" {
+		t.Fatalf("status after unlock = %s", run.Status)
 	}
 }

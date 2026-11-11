@@ -89,6 +89,9 @@ type Engine struct {
 	// running drivers requeue their run at the next node boundary.
 	haltMu sync.RWMutex
 	halted bool
+	// blockAdmission forces scheduleRunAdmission to refuse. Tests use it to
+	// prove a save-failed retry restores the checkpoint when admission fails.
+	blockAdmission atomic.Bool
 
 	// reattachMu guards pendingReattach / adoptedSandboxes: agent nodes found
 	// mid-flight on startup whose sandbox is still alive. Their slots are

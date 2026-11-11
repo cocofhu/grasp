@@ -1761,6 +1761,7 @@
       "deleteHintActive": "Cancel or wait until the run ends before deleting",
       "deleteHintSaving": "The workspace is still being saved. Delete is available after it finishes or fails.",
       "resumeNoNode": "There is no node execution to re-run, so failure retry is unavailable.",
+      "resumeUnsealed": "The node result is not confirmed yet, so failure retry is unavailable.",
       "deleteErrorNotFound": "Run not found or already deleted",
       "deleteErrorNotDeletable": "This run status cannot be deleted",
       "deleteErrorGeneric": "Failed to delete run",

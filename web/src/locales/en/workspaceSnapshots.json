@@ -95,6 +95,7 @@
       "retrying": "Retrying…",
       "retryFailed": "Retry did not succeed: {error}",
       "noAction": "This case cannot be retried automatically. You can delete this run, or use Retry failure in the header to re-run the stuck node.",
+      "noActionUnsealed": "The node result is not confirmed yet, so it cannot be re-run. You can still delete this run.",
       "reasons": {
         "snapshot_failed": "The save job failed.",
         "snapshot_cancelled": "The save job was cancelled.",

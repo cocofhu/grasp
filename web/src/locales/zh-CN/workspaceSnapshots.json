@@ -95,6 +95,7 @@
       "retrying": "正在重试…",
       "retryFailed": "重试未成功：{error}",
       "noAction": "这种情况无法自动重试。可以删除这次运行，或用页头的失败重试从停住的节点重新执行。",
+      "noActionUnsealed": "节点执行结果尚未确认，不能从停住的节点重新执行。可以删除这次运行。",
       "reasons": {
         "snapshot_failed": "保存任务执行失败。",
         "snapshot_cancelled": "保存任务被取消。",

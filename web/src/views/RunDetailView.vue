@@ -158,6 +158,7 @@ const {
   onPriorityReposition,
   savePriority,
   canResume,
+  failureRetryBlocked,
   resumeUnavailableHint,
   canResumeSelected,
   statusMap,
@@ -406,13 +407,13 @@ onMounted(() => {
               @click="openDeleteConfirm"
             >{{ t('common.buttons.deleteRun') }}</AppButton>
             <AppButton
-              v-if="canResume"
+              v-if="canResume || failureRetryBlocked"
               data-testid="failure-retry-btn"
               variant="primary"
               size="sm"
               icon="refresh"
-              :disabled="resuming"
-              :title="t('common.buttons.resumeFromFailHint')"
+              :disabled="resuming || failureRetryBlocked"
+              :title="failureRetryBlocked ? resumeUnavailableHint : t('common.buttons.resumeFromFailHint')"
               @click="onResume('')"
             >
               {{ resuming ? t('common.buttons.failureRetrying') : t('common.buttons.resumeFromFail') }}

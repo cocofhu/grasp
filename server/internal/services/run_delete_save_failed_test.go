@@ -4,16 +4,27 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 )
 
 type recordingReleaser struct {
-	runs []string
+	db     *gorm.DB
+	before func(runID string)
+	runs   []string
 }
 
 func (r *recordingReleaser) ReleaseHeldRunSandboxes(_ context.Context, runID string) error {
+	if r.before != nil {
+		r.before(runID)
+	}
+	if r.db != nil {
+		if err := EnsureSaveFailedForRelease(r.db, runID); err != nil {
+			return err
+		}
+	}
 	r.runs = append(r.runs, runID)
 	return nil
 }
@@ -156,5 +167,105 @@ func TestDeleteSaveFailedRejectsStatusChangeInsideTransaction(t *testing.T) {
 	}
 	if checkpoint.RouteState != "sealed" {
 		t.Fatalf("checkpoint route = %s, save should still be open", checkpoint.RouteState)
+	}
+}
+
+func TestDeleteSaveFailedKeepsDataWhenStatusChangesDuringRelease(t *testing.T) {
+	for _, status := range []string{"running", "queued", "waiting_human", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			db := newTestDB(t)
+			s := NewRunService(db)
+			id := "release-" + status
+			run, cp := saveFailedRun(id, "cp-"+status, true)
+			if err := db.Create(&run).Error; err != nil || db.Create(&cp).Error != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&models.Artifact{ID: "art-" + status, RunID: id, Name: "doc"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&models.Sandbox{Name: "sb-" + status, Purpose: "run", RunID: id, Status: "running"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			rel := &recordingReleaser{db: db, before: func(runID string) {
+				if err := db.Model(&models.Run{}).Where("id = ?", runID).Update("status", status).Error; err != nil {
+					t.Errorf("flip status: %v", err)
+				}
+				if status == "failed" {
+					if err := db.Model(&models.WorkflowVisitCheckpoint{}).Where("run_id = ?", runID).Update("route_state", "cancelled").Error; err != nil {
+						t.Errorf("cancel checkpoint: %v", err)
+					}
+				}
+			}}
+			s.SetSandboxReleaser(rel)
+			if err := s.Delete(id); !errors.Is(err, ErrRunNotDeletable) {
+				t.Fatalf("delete: %v", err)
+			}
+			if _, ok := s.Get(id); !ok {
+				t.Fatal("run was deleted")
+			}
+			var n int64
+			db.Model(&models.Artifact{}).Where("run_id = ?", id).Count(&n)
+			if n != 1 {
+				t.Fatalf("artifacts = %d", n)
+			}
+			db.Model(&models.Sandbox{}).Where("run_id = ?", id).Count(&n)
+			if n != 1 {
+				t.Fatalf("sandboxes = %d", n)
+			}
+			if len(rel.runs) != 0 {
+				t.Fatalf("sandbox released: %#v", rel.runs)
+			}
+			var checkpoint models.WorkflowVisitCheckpoint
+			if err := db.First(&checkpoint, "id = ?", cp.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if status == "failed" {
+				if checkpoint.RouteState != "cancelled" {
+					t.Fatalf("transitional checkpoint route = %s", checkpoint.RouteState)
+				}
+			} else if checkpoint.RouteState != "sealed" {
+				t.Fatalf("checkpoint route = %s", checkpoint.RouteState)
+			}
+		})
+	}
+}
+
+func TestDeleteSaveFailedWaitsForMutationLock(t *testing.T) {
+	db := newTestDB(t)
+	s := NewRunService(db)
+	rel := &recordingReleaser{}
+	s.SetSandboxReleaser(rel)
+	run, cp := saveFailedRun("locked", "cp-locked", true)
+	if err := db.Create(&run).Error; err != nil || db.Create(&cp).Error != nil {
+		t.Fatal(err)
+	}
+	unlock := LockRunMutation(run.ID)
+	done := make(chan error, 1)
+	go func() { done <- s.Delete(run.ID) }()
+	select {
+	case err := <-done:
+		t.Fatalf("delete finished while the mutation lock was held: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if len(rel.runs) != 0 {
+		t.Fatalf("sandbox released while locked: %#v", rel.runs)
+	}
+	if _, ok := s.Get(run.ID); !ok {
+		t.Fatal("run disappeared while locked")
+	}
+	unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delete did not finish after the mutation lock was released")
+	}
+	if _, ok := s.Get(run.ID); ok {
+		t.Fatal("run still present after the waiting delete")
+	}
+	if len(rel.runs) != 1 {
+		t.Fatalf("sandbox release = %#v", rel.runs)
 	}
 }

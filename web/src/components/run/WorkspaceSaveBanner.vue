@@ -68,7 +68,7 @@ async function retry() {
         :loading="busy"
         @click="retry"
       >{{ busy ? t('workspaceSnapshots.runSave.retrying') : t(save.action === 'reconcile' ? 'workspaceSnapshots.runSave.reconcile' : 'workspaceSnapshots.runSave.retry') }}</AppButton>
-      <span v-else class="text-[12px] text-txt2">{{ t('workspaceSnapshots.runSave.noAction') }}</span>
+      <span v-else class="text-[12px] text-txt2" data-testid="workspace-save-no-action">{{ t(save.outcomeSealed === false ? 'workspaceSnapshots.runSave.noActionUnsealed' : 'workspaceSnapshots.runSave.noAction') }}</span>
       <span v-if="error" class="text-[12px] text-err" data-testid="workspace-save-retry-error">{{ t('workspaceSnapshots.runSave.retryFailed', { error }) }}</span>
     </div>
   </div>

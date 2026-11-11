@@ -440,6 +440,10 @@ func TestReleaseHeldRunSandboxesDestroysContainer(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
+	run, cp := saveFailedRun("run-held", "cp-held", true)
+	if err := db.Create(&run).Error; err != nil || db.Create(&cp).Error != nil {
+		t.Fatal("seed save-failed run")
+	}
 	row := &models.Sandbox{Name: "grasp-sb-held", Purpose: "run", Status: "running", RunID: "run-held"}
 	if err := db.Create(row).Error; err != nil {
 		t.Fatal(err)
@@ -462,6 +466,54 @@ func TestReleaseHeldRunSandboxesDestroysContainer(t *testing.T) {
 	}
 	if ds.fg.Has(row.Name) {
 		t.Fatal("gateway sandbox still present; only the table row was deleted")
+	}
+}
+
+func TestReleaseHeldRunSandboxesSkipsDestroyWhenStatusChanges(t *testing.T) {
+	for _, status := range []string{"running", "queued", "waiting_human", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			db := newTestDB(t)
+			ds := &dockerState{}
+			s := newSandboxService(t, db, ds)
+			id := "flip-" + status
+			run, cp := saveFailedRun(id, "cp-"+status, true)
+			if err := db.Create(&run).Error; err != nil || db.Create(&cp).Error != nil {
+				t.Fatal(err)
+			}
+			row := &models.Sandbox{Name: "grasp-sb-" + status, Purpose: "run", Status: "running", RunID: id}
+			if err := db.Create(row).Error; err != nil {
+				t.Fatal(err)
+			}
+			ds.setStatus(row.Name, "running")
+			s.mu.Lock()
+			s.runActive[row.Name] = true
+			s.mu.Unlock()
+			s.beforeHeldDestroy = func(runID string) {
+				if err := db.Model(&models.Run{}).Where("id = ?", runID).Update("status", status).Error; err != nil {
+					t.Errorf("flip status: %v", err)
+				}
+				if status == "failed" {
+					if err := db.Model(&models.WorkflowVisitCheckpoint{}).Where("run_id = ?", runID).Update("route_state", "cancelled").Error; err != nil {
+						t.Errorf("cancel checkpoint: %v", err)
+					}
+				}
+			}
+			if err := s.ReleaseHeldRunSandboxes(context.Background(), id); !errors.Is(err, ErrRunNotDeletable) {
+				t.Fatalf("release: %v", err)
+			}
+			if err := db.First(&models.Sandbox{}, row.ID).Error; err != nil {
+				t.Fatal("sandbox row was destroyed")
+			}
+			if !ds.fg.Has(row.Name) {
+				t.Fatal("gateway sandbox was destroyed")
+			}
+			s.mu.Lock()
+			busy := s.runActive[row.Name]
+			s.mu.Unlock()
+			if !busy {
+				t.Fatal("runActive was cleared even though Destroy did not run")
+			}
+		})
 	}
 }
 

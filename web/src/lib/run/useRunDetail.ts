@@ -1038,6 +1038,9 @@ async function followResumeUntilLeftTerminal(gen: number, id: string) {
 
 async function onResume(nodeId = '') {
   if (resuming.value) return
+  // The unsealed-result button stays visible but disabled. Ignore a header
+  // click so it cannot reach the checkpoint gate.
+  if (!nodeId && failureRetryBlocked.value) return
   resumeFollowGen++
   const followGen = resumeFollowGen
   const id = runId.value
@@ -1277,6 +1280,7 @@ onUnmounted(() => {
 
 function saveFailedRetryNode(): string {
   if (runDisplayStatus(run.value) !== 'save_failed') return ''
+  if (run.value.workspaceSave?.outcomeSealed === false) return ''
   const id = run.value.workspaceSave?.nodeId || ''
   if (!id || !run.value.nodeRuns?.[id]) return ''
   return id
@@ -1284,10 +1288,15 @@ function saveFailedRetryNode(): string {
 
 // Header failure retry: failed, cancelled, or a save-failed pause that still
 // has the banner node's execution. A running run keeps the per-node action only.
+// An unsealed node result stays on screen as disabled: retry would only hit
+// the checkpoint gate.
 const canResume = computed(() => run.value.status === 'failed' || run.value.status === 'cancelled' || !!saveFailedRetryNode())
+
+const failureRetryBlocked = computed(() => runDisplayStatus(run.value) === 'save_failed' && run.value.workspaceSave?.outcomeSealed === false)
 
 const resumeUnavailableHint = computed(() => {
   if (runDisplayStatus(run.value) !== 'save_failed' || canResume.value) return ''
+  if (failureRetryBlocked.value) return t('pages.runDetail.resumeUnsealed')
   return t('pages.runDetail.resumeNoNode')
 })
 // The selected node can be individually retried when the run is terminated
@@ -1693,6 +1702,7 @@ function locateExecution(nodeId: string, idx: number) {
   onPriorityReposition,
   savePriority,
   canResume,
+  failureRetryBlocked,
   resumeUnavailableHint,
   canResumeSelected,
   statusMap,

@@ -318,9 +318,11 @@ func (s *RunService) RunTags() []string {
 // return ErrRunNotFound. Does not touch WorkflowDef, WorkflowVersion, or
 // WorkflowAPIKey.
 //
-// A save-failed run is re-checked inside a transaction before its sandbox is
-// destroyed. If it has become queued, running, or waiting_human, the delete
-// stops and the run is kept. Destroy runs before the rows are removed.
+// A save-failed delete holds LockRunMutation across the status check, sandbox
+// Destroy, and row removal, the same lock a failure retry holds until the run
+// is queued or running. If the run has left save-failed — including a
+// transitional failed written before admission — Destroy is not called and the
+// run, its artifacts, and its sandbox stay.
 func (s *RunService) Delete(id string) error {
 	run, ok := s.Get(id)
 	if !ok {
@@ -329,41 +331,90 @@ func (s *RunService) Delete(id string) error {
 	if err := s.rejectIfNotDeletable(s.db, run); err != nil {
 		return err
 	}
+	if !WorkspaceSaveFailed(s.db, run) {
+		return s.deleteTerminalRun(id)
+	}
+	return s.deleteSaveFailedRun(id)
+}
+
+func (s *RunService) deleteTerminalRun(id string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := s.lockDeletable(tx, id, true); err != nil {
+			return err
+		}
+		if err := EndOpenWorkspaceSavesTx(tx, id); err != nil {
+			return err
+		}
+		return deleteRunRows(tx, id)
+	})
+}
+
+// deleteSaveFailedRun releases the sandbox only while the run is still
+// save-failed, then removes rows under the same mutation lock.
+func (s *RunService) deleteSaveFailedRun(id string) error {
+	unlock := LockRunMutation(id)
+	defer unlock()
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		current, err := s.lockDeletable(tx, id, true)
 		if err != nil {
 			return err
 		}
-		if WorkspaceSaveFailed(tx, current) {
-			if s.sandboxReleaser == nil {
-				return errors.New("cannot delete save-failed run without releasing its sandbox")
-			}
-			return errDeleteNeedsSandboxRelease
+		if !WorkspaceSaveFailed(tx, current) {
+			return fmt.Errorf("%w: status changed before delete", ErrRunNotDeletable)
 		}
-		if err := EndOpenWorkspaceSavesTx(tx, id); err != nil {
-			return err
+		if s.sandboxReleaser == nil {
+			return errors.New("cannot delete save-failed run without releasing its sandbox")
 		}
-		return deleteRunRows(tx, id)
+		return errDeleteNeedsSandboxRelease
 	})
-	if err == nil {
-		return nil
-	}
 	if !errors.Is(err, errDeleteNeedsSandboxRelease) {
 		return err
+	}
+	current, ok := s.Get(id)
+	if !ok {
+		return ErrRunNotFound
+	}
+	if !WorkspaceSaveFailed(s.db, current) {
+		return fmt.Errorf("%w: status changed before sandbox release", ErrRunNotDeletable)
 	}
 	if err := s.sandboxReleaser.ReleaseHeldRunSandboxes(context.Background(), id); err != nil {
 		return err
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.lockDeletable(tx, id, false); err != nil {
+		current, err := s.lockDeletable(tx, id, false)
+		if err != nil {
 			return err
+		}
+		// Destroy can take seconds. A failure retry that slipped through must
+		// not have its transitional failed, or a now-active run, deleted.
+		if !WorkspaceSaveFailed(tx, current) {
+			return fmt.Errorf("%w: status changed during sandbox release", ErrRunNotDeletable)
 		}
 		if err := EndOpenWorkspaceSavesTx(tx, id); err != nil {
 			return err
 		}
 		return deleteRunRows(tx, id)
 	})
+}
+
+// EnsureSaveFailedForRelease reports whether a sandbox Destroy is still
+// allowed. Queued, running, waiting_human, and a transitional failed are not.
+func EnsureSaveFailedForRelease(db *gorm.DB, runID string) error {
+	if db == nil {
+		return errors.New("cannot release a sandbox without a database")
+	}
+	var run models.Run
+	if err := db.First(&run, "id = ?", runID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRunNotFound
+		}
+		return err
+	}
+	if !WorkspaceSaveFailed(db, run) {
+		return fmt.Errorf("%w: sandbox release aborted", ErrRunNotDeletable)
+	}
+	return nil
 }
 
 func (s *RunService) lockDeletable(tx *gorm.DB, id string, applyHook bool) (models.Run, error) {

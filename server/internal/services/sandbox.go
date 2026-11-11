@@ -79,6 +79,10 @@ type SandboxService struct {
 	// this service's ACP pool; the flag protects them from being stopped or
 	// swept while in use.
 	runActive map[string]bool
+	// beforeHeldDestroy runs at the start of ReleaseHeldRunSandboxes, before
+	// the save-failed recheck that guards Destroy. Tests flip the run status
+	// here to prove a concurrent change does not tear the sandbox down.
+	beforeHeldDestroy func(runID string)
 	// agentOnDestroy revokes thread-bound agent MCP sessions when a
 	// purpose=agent|pm sandbox is torn down (optional; SetAgentSandboxDestroyHook).
 	agentOnDestroy AgentSandboxDestroyHook

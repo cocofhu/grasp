@@ -1761,6 +1761,7 @@
       "deleteHintActive": "请先取消或等待运行结束后再删除",
       "deleteHintSaving": "正在保存工作区，完成或失败后才能删除",
       "resumeNoNode": "没有可重跑的节点，无法失败重试",
+      "resumeUnsealed": "节点执行结果尚未确认，不能失败重试",
       "deleteErrorNotFound": "运行不存在或已删除",
       "deleteErrorNotDeletable": "当前状态不可删除",
       "deleteErrorGeneric": "删除失败",

@@ -52,8 +52,16 @@ describe('WorkspaceSaveBanner', () => {
   })
 
   it('says when no automatic retry exists', () => {
-    const wrapper = mountBanner({ ...failed, reason: 'provider_outcome_unconfirmed', detail: '', action: undefined })
+    const wrapper = mountBanner({ ...failed, reason: 'binding_unavailable', detail: '', action: undefined, outcomeSealed: true })
     expect(wrapper.find('[data-testid="workspace-save-retry"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('无法自动重试')
+    expect(wrapper.text()).toContain('失败重试')
+  })
+
+  it('does not point at failure retry when the node result is unsealed', () => {
+    const wrapper = mountBanner({ ...failed, reason: 'provider_outcome_unconfirmed', detail: '', action: undefined, outcomeSealed: false })
+    expect(wrapper.find('[data-testid="workspace-save-retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-save-no-action"]').text()).toContain('尚未确认')
+    expect(wrapper.get('[data-testid="workspace-save-no-action"]').text()).not.toContain('失败重试')
   })
 })
