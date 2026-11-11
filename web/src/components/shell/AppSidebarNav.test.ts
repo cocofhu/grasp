@@ -253,6 +253,7 @@ beforeEach(() => {
     return Promise.resolve({ items, total: items.length })
   })
   apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
+  useSoloSessions().endEnvironmentChange('solo-1')
   workspaceMocks.ensureLoaded.mockReset()
   workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
   workspaceMocks.workspace.value = { name: 'ws' }
@@ -453,6 +454,7 @@ describe('AppSidebarNav', () => {
     stop.click()
     await flushPromises()
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(useSoloSessions().environmentChanges.value.get('solo-1')).toBe('stopping')
     expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
     expect(row.attributes('data-motion')).toBe('spin')
     const pending = await open()
@@ -463,6 +465,7 @@ describe('AppSidebarNav', () => {
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledTimes(1)
     stopped({ ...session, status: 'stopped', waiting: 1 })
     await flushPromises()
+    expect(useSoloSessions().environmentChanges.value.has('solo-1')).toBe(false)
     expect(row.find('[data-testid="nav-solo-environment-phase"]').exists()).toBe(false)
     const resume = await open()
     expect(resume.textContent).toContain('恢复环境')

@@ -5037,6 +5037,7 @@
         "stopPending": "停止尚未确认，工作区已保留。",
         "retryStop": "重试停止",
         "stopping": "正在停止…",
+        "stoppingNotice": "正在停止环境，聊天和工作区会保留。",
         "resuming": "正在恢复…"
       },
       "workflows": {
