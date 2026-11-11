@@ -258,6 +258,37 @@ func (d *Driver) volumeArchived(ctx context.Context, id string) (bool, error) {
 	return a != nil && a.State != archiveStateArchiving, err
 }
 
+// WaitVolumeRestored blocks while a start waits on its volume restore. It
+// returns false when a stop withdrew the start, and an error when the restore
+// gave up.
+func (d *Driver) WaitVolumeRestored(ctx context.Context, id string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, d.archiveTimeout()+archiveLeaseTTL)
+	defer cancel()
+	for {
+		dep, err := d.cs.AppsV1().Deployments(d.opts.Namespace).Get(ctx, d.resourceName(id), metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		a, err := readArchive(dep)
+		if err != nil {
+			return false, err
+		}
+		switch {
+		case a == nil || a.State == archiveStateArchiving:
+			return true, nil
+		case a.State != archiveStateRestoring:
+			return false, errors.New("volume restore did not complete; archive retained")
+		case !a.StartAfter:
+			return false, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, fmt.Errorf("wait volume restore: %w", ctx.Err())
+		case <-time.After(archivePollInterval):
+		}
+	}
+}
+
 // cancelArchive drops an in-flight archive. The archiver then fails its
 // claim check and removes its object; the PVC is never deleted.
 func (d *Driver) cancelArchive(ctx context.Context, id string) error {
@@ -485,8 +516,9 @@ func (d *Driver) RunVolumeArchiver(ctx context.Context) {
 	}
 }
 
-// SweepVolumeArchives archives every sandbox stopped longer than After and
-// abandons archives whose owner stopped renewing them.
+// SweepVolumeArchives archives every sandbox stopped longer than After,
+// abandons archives whose owner stopped renewing them, and resumes restores
+// whose owner stopped renewing them.
 func (d *Driver) SweepVolumeArchives(ctx context.Context) {
 	deps, err := d.cs.AppsV1().Deployments(d.opts.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/managed-by=" + managedByLabel})
 	if err != nil {
@@ -508,8 +540,14 @@ func (d *Driver) SweepVolumeArchives(ctx context.Context) {
 			continue
 		}
 		if a != nil {
-			if a.State == archiveStateArchiving && time.Now().After(a.Lease) {
+			switch {
+			case !time.Now().After(a.Lease):
+			case a.State == archiveStateArchiving:
 				d.discardArchive(ctx, id, *a)
+			case a.State == archiveStateRestoring:
+				if _, err := d.requestRestore(ctx, id, false); err != nil {
+					log.Warn().Err(err).Str("sandbox_id", id).Msg("volume archiver: resume restore failed")
+				}
 			}
 			continue
 		}

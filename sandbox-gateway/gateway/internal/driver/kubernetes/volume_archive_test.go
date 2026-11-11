@@ -680,6 +680,114 @@ func TestRestoreClaimRespectsLiveLeaseAndTakesOverExpiredOne(t *testing.T) {
 	waitFor(t, "takeover restore", func() bool { r := e.dep(t).Spec.Replicas; return e.archive(t) == nil && *r == 1 })
 }
 
+func TestSweepResumesAbandonedRestore(t *testing.T) {
+	e := archiveFixture(t)
+	ctx := context.Background()
+	e.d.SweepVolumeArchives(ctx)
+	a := e.archive(t)
+	a.State, a.Claim, a.Lease, a.StartAfter = archiveStateRestoring, "live", time.Now().Add(time.Hour), true
+	e.setArchive(t, a)
+	e.d.SweepVolumeArchives(ctx)
+	if got := e.archive(t); got == nil || got.Claim != "live" {
+		t.Fatalf("sweep took over a live restore: %+v", got)
+	}
+	// The gateway that owned the restore died; its lease lapsed.
+	a.Claim, a.Lease = "dead", time.Now().Add(-time.Second)
+	e.setArchive(t, a)
+	e.d.SweepVolumeArchives(ctx)
+	waitFor(t, "resumed restore", func() bool { r := e.dep(t).Spec.Replicas; return e.archive(t) == nil && *r == 1 })
+}
+
+func TestWaitVolumeRestored(t *testing.T) {
+	t.Run("no archive", func(t *testing.T) {
+		e := archiveFixture(t)
+		if started, err := e.d.WaitVolumeRestored(context.Background(), "keep"); err != nil || !started {
+			t.Fatalf("started=%v err=%v", started, err)
+		}
+	})
+	t.Run("restore completes", func(t *testing.T) {
+		e := archiveFixture(t)
+		e.d.SweepVolumeArchives(context.Background())
+		e.exec.gate = make(chan struct{})
+		if err := e.d.Start(context.Background(), "keep"); err != nil {
+			t.Fatal(err)
+		}
+		type result struct {
+			started bool
+			err     error
+		}
+		done := make(chan result, 1)
+		go func() {
+			started, err := e.d.WaitVolumeRestored(context.Background(), "keep")
+			done <- result{started, err}
+		}()
+		select {
+		case r := <-done:
+			t.Fatalf("returned before the restore finished: %+v", r)
+		case <-time.After(20 * time.Millisecond):
+		}
+		close(e.exec.gate)
+		if r := <-done; r.err != nil || !r.started {
+			t.Fatalf("%+v", r)
+		}
+		if r := e.dep(t).Spec.Replicas; *r != 1 {
+			t.Fatalf("replicas=%d after restore", *r)
+		}
+	})
+	t.Run("stop withdraws the start", func(t *testing.T) {
+		e := archiveFixture(t)
+		e.d.SweepVolumeArchives(context.Background())
+		e.exec.gate = make(chan struct{})
+		defer close(e.exec.gate)
+		if err := e.d.Start(context.Background(), "keep"); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.d.scale(context.Background(), "keep", 0); err != nil {
+			t.Fatal(err)
+		}
+		if started, err := e.d.WaitVolumeRestored(context.Background(), "keep"); err != nil || started {
+			t.Fatalf("started=%v err=%v", started, err)
+		}
+	})
+	t.Run("restore fails", func(t *testing.T) {
+		e := archiveFixture(t)
+		e.d.SweepVolumeArchives(context.Background())
+		e.exec.setFail("extract", errors.New("tar: no space"))
+		if err := e.d.Start(context.Background(), "keep"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.d.WaitVolumeRestored(context.Background(), "keep"); err == nil {
+			t.Fatal("failed restore reported as done")
+		}
+	})
+	t.Run("cancelled", func(t *testing.T) {
+		e := archiveFixture(t)
+		e.d.SweepVolumeArchives(context.Background())
+		a := e.archive(t)
+		a.State, a.Claim, a.Lease, a.StartAfter = archiveStateRestoring, "live", time.Now().Add(time.Hour), true
+		e.setArchive(t, a)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := e.d.WaitVolumeRestored(ctx, "keep"); !errors.Is(err, context.Canceled) {
+			t.Fatalf("err=%v", err)
+		}
+	})
+	t.Run("missing deployment and corrupt record", func(t *testing.T) {
+		e := archiveFixture(t)
+		dep := e.dep(t)
+		dep.Annotations[archiveAnnotation] = "{"
+		if _, err := e.cs.AppsV1().Deployments("sandboxes").Update(context.Background(), dep, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.d.WaitVolumeRestored(context.Background(), "keep"); err == nil {
+			t.Fatal("corrupt record accepted")
+		}
+		if _, err := e.d.WaitVolumeRestored(context.Background(), "gone"); !apierrors.IsNotFound(err) {
+			t.Fatalf("err=%v", err)
+		}
+	})
+}
+
 func TestArchivedVolumeWithoutConfiguredStoreIsAnError(t *testing.T) {
 	e := archiveFixture(t)
 	e.setArchive(t, &volumeArchive{State: archiveStateArchived, Key: "k", Storage: "25Gi"})
