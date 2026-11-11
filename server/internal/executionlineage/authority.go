@@ -1,42 +1,42 @@
-// Package executionlineage keeps execution authority outside SQL/payload
-// backups. An independent conditional-write namespace is required. Starting a
-// server never initializes or activates a missing/corrupt control marker.
+// Package executionlineage fences execution against the current SQL dataset
+// and records sources that require explicit review after offline restoration.
+// It never reads or writes an independent object-store control marker.
 package executionlineage
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
-	"os"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/objectstore"
+	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/storageguard"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrUnavailable   = errors.New("independent execution authority is unavailable")
-	ErrUninitialized = errors.New("execution authority needs explicit offline initialization")
-	ErrInactive      = errors.New("execution authority is inactive during offline recovery")
-	ErrConflict      = errors.New("execution authority identity or operation changed")
-	ErrUnbound       = errors.New("SQL execution dataset does not match independent authority")
+	ErrUnavailable   = errors.New("SQL execution binding is unavailable")
+	ErrUninitialized = errors.New("execution binding needs explicit offline initialization")
+	ErrInactive      = errors.New("execution is inactive during offline recovery")
+	ErrConflict      = errors.New("execution binding identity or operation changed")
+	ErrUnbound       = errors.New("SQL execution dataset does not match its prepared binding")
 	ErrQuarantined   = errors.New("restored execution requires explicit review")
-	ErrTransaction   = errors.New("external authority I/O requires an outer transaction-free boundary")
+	ErrTransaction   = errors.New("execution operation requires a different SQL transaction boundary")
 )
 
 const (
-	markerKey    = "execution-namespace.json"
-	Initializing = "initializing"
-	Restoring    = "restoring"
-	Active       = "active"
-	permitTTL    = 5 * time.Second
+	Initializing   = "initializing"
+	Restoring      = "restoring"
+	Active         = "active"
+	TicketProtocol = "grasp-sql-execution-ticket/v1"
 )
 
+// Marker is frozen SQL comparison metadata, not an external capability.
 type Marker struct {
 	Version           int       `json:"version"`
 	NamespaceID       string    `json:"namespaceId"`
@@ -51,15 +51,21 @@ type Marker struct {
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
-type Authority struct{ store objectstore.ConditionalStore }
+// SQLAuthority exposes explicit offline recovery. OpenSQL neither initializes
+// schema nor acquires maintenance; ordinary serving uses NewLocalController.
+type SQLAuthority struct{ db *gorm.DB }
 
-// Open tests real conditional writes with its own isolated probe. It does not
-// create an execution marker, bind SQL, or grant execution to existing history.
-func Open(ctx context.Context, store objectstore.ConditionalStore) (*Authority, error) {
-	if err := objectstore.ProbeConditional(ctx, store); err != nil {
-		return nil, errors.Join(ErrUnavailable, err)
+func OpenSQL(ctx context.Context, db *gorm.DB) (*SQLAuthority, error) {
+	if db == nil {
+		return nil, ErrUnavailable
 	}
-	return &Authority{store: store}, nil
+	if err := outsideSQLTransaction(db); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &SQLAuthority{db: db}, nil
 }
 
 func validUUID(value string) bool { _, err := uuid.Parse(value); return err == nil }
@@ -78,63 +84,51 @@ func (m Marker) valid() bool {
 	}
 	initial := m.PreviousDatasetID == "" && m.PreviousLineage == "" && m.BackupSHA256 == ""
 	restored := validUUID(m.PreviousDatasetID) && validUUID(m.PreviousLineage) && m.PreviousDatasetID != m.DatasetID && m.PreviousLineage != m.Lineage && validSHA(m.BackupSHA256, false)
-	return m.State == Initializing && m.Revision == 1 && initial || m.State == Restoring && m.Revision > 1 && restored || m.State == Active && m.Revision >= 2 && (initial || restored)
+	// A verified backup can predate execution bindings. Only its active SQL
+	// binding may record unknown source identity; a restoring ticket must still
+	// identify the actual bound installation from which recovery began.
+	unboundSource := m.PreviousDatasetID == "" && m.PreviousLineage == "" && validSHA(m.BackupSHA256, false)
+	return m.State == Initializing && m.Revision == 1 && initial || m.State == Restoring && m.Revision > 1 && restored || m.State == Active && m.Revision >= 2 && (initial || restored || unboundSource)
 }
 
-func markerInfo(body []byte) objectstore.Info {
-	sum := sha256.Sum256(body)
-	return objectstore.Info{Size: int64(len(body)), ContentType: "application/json", Metadata: map[string]string{"grasp-sha256": hex.EncodeToString(sum[:])}}
-}
-
-func (a *Authority) read(ctx context.Context) (Marker, objectstore.Info, error) {
-	if a == nil {
-		return Marker{}, objectstore.Info{}, ErrUnavailable
+func markerFromBinding(binding models.ExecutionDataset) (Marker, error) {
+	marker := Marker{Version: 1, NamespaceID: binding.NamespaceID, DatasetID: binding.DatasetID, Lineage: binding.Lineage,
+		Revision: binding.ControlRevision, State: Active, OperationID: binding.OperationID, BackupSHA256: binding.BackupSHA256,
+		PreviousDatasetID: binding.SourceDatasetID, PreviousLineage: binding.SourceLineage, UpdatedAt: binding.BoundAt}
+	if binding.ID != "primary" || !marker.valid() {
+		return Marker{}, ErrUnbound
 	}
-	return readMarker(ctx, a.store)
+	return marker, nil
 }
 
-func readMarker(ctx context.Context, store objectstore.ControlReader) (Marker, objectstore.Info, error) {
-	var marker Marker
-	if store == nil {
-		return marker, objectstore.Info{}, ErrUnavailable
+func (a *SQLAuthority) Inspect(ctx context.Context) (Marker, error) {
+	if a == nil || a.db == nil {
+		return Marker{}, ErrUnavailable
 	}
-	body, info, err := store.Open(ctx, markerKey)
+	if err := outsideSQLTransaction(a.db); err != nil {
+		return Marker{}, err
+	}
+	if err := noPendingRecovery(a.db.WithContext(ctx)); err != nil {
+		return Marker{}, err
+	}
+	binding, present, err := observeDataset(ctx, a.db)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return marker, info, ErrUninitialized
-		}
-		return marker, info, errors.Join(ErrUnavailable, err)
+		return Marker{}, errors.Join(ErrUnavailable, err)
 	}
-	defer func() { _ = body.Close() }()
-	if info.Size < 1 || info.Size > objectstore.MaxConditionalBytes || info.ETag == "" {
-		return marker, info, ErrUnavailable
+	if !present {
+		return Marker{}, ErrUninitialized
 	}
-	raw, err := io.ReadAll(io.LimitReader(body, objectstore.MaxConditionalBytes+1))
-	if err != nil || int64(len(raw)) != info.Size || json.Unmarshal(raw, &marker) != nil || !marker.valid() {
-		return Marker{}, info, errors.Join(ErrUnavailable, err)
-	}
-	canonical, _ := json.Marshal(marker)
-	sum := sha256.Sum256(raw)
-	if !bytes.Equal(raw, canonical) || info.Metadata["grasp-sha256"] != hex.EncodeToString(sum[:]) {
-		return Marker{}, info, ErrUnavailable
-	}
-	return marker, info, ctx.Err()
-}
-
-func (a *Authority) Inspect(ctx context.Context) (Marker, error) {
-	marker, _, err := a.read(ctx)
-	return marker, err
+	return markerFromBinding(binding)
 }
 
 type permitData struct {
-	authority *Authority
-	marker    Marker
-	expiresAt time.Time
+	authority  *SQLAuthority
+	controller *Controller
+	marker     Marker
 }
 
-// Permit is a short-lived, private proof of an actual external active read.
-// GuardTx performs metadata checks only; long-lived workers must refresh this
-// outside their next SQL transaction rather than caching it for their lifetime.
+// Permit is private. Its validity comes from current SQL comparisons, not a
+// wall-clock TTL; legitimate object staging may take arbitrarily longer.
 type Permit struct{ data *permitData }
 
 func (p Permit) DatasetID() string {
@@ -143,42 +137,33 @@ func (p Permit) DatasetID() string {
 	}
 	return p.data.marker.DatasetID
 }
-
 func (p Permit) Lineage() string {
 	if p.data == nil {
 		return ""
 	}
 	return p.data.marker.Lineage
 }
-
 func (p Permit) NamespaceID() string {
 	if p.data == nil {
 		return ""
 	}
 	return p.data.marker.NamespaceID
 }
-
-func (a *Authority) ReadActive(ctx context.Context) (Permit, error) {
-	marker, _, err := a.read(ctx)
+func (a *SQLAuthority) ReadActive(ctx context.Context) (Permit, error) {
+	marker, err := a.Inspect(ctx)
 	if err != nil {
 		return Permit{}, err
 	}
-	if marker.State != Active {
-		return Permit{}, ErrInactive
-	}
 	return a.permit(marker), nil
 }
-
-func (a *Authority) permit(marker Marker) Permit {
-	return Permit{data: &permitData{authority: a, marker: marker, expiresAt: time.Now().Add(permitTTL)}}
+func (a *SQLAuthority) permit(marker Marker) Permit {
+	return Permit{data: &permitData{authority: a, marker: marker}}
 }
-
-func (a *Authority) Current(ctx context.Context) (string, error) {
+func (a *SQLAuthority) Current(ctx context.Context) (string, error) {
 	permit, err := a.ReadActive(ctx)
 	return permit.Lineage(), err
 }
-
-func (a *Authority) Verify(ctx context.Context, lineage string) error {
+func (a *SQLAuthority) Verify(ctx context.Context, lineage string) error {
 	current, err := a.Current(ctx)
 	if err != nil {
 		return err
@@ -190,120 +175,239 @@ func (a *Authority) Verify(ctx context.Context, lineage string) error {
 }
 
 type ticketData struct {
-	authority *Authority
+	authority *SQLAuthority
 	marker    Marker
 }
-
 type Ticket struct{ data *ticketData }
 
-// TicketDocument can be persisted in the operator's private workdir. It cannot
-// authorize anything until Resume GETs and matches the actual external marker.
+// TicketDocument is persisted in the locked offline workdir. It has no online
+// authority. Old v1 external-marker tickets are never silently converted.
 type TicketDocument struct {
-	Version int    `json:"version"`
-	Marker  Marker `json:"marker"`
+	Version  int    `json:"version"`
+	Protocol string `json:"protocol"`
+	Marker   Marker `json:"marker"`
 }
 
 func (t Ticket) Document() TicketDocument {
 	if t.data == nil {
 		return TicketDocument{}
 	}
-	return TicketDocument{Version: 1, Marker: t.data.marker}
+	return TicketDocument{Version: 2, Protocol: TicketProtocol, Marker: t.data.marker}
 }
-
-func ticketFor(a *Authority, marker Marker) Ticket {
+func ticketFor(a *SQLAuthority, marker Marker) Ticket {
 	return Ticket{data: &ticketData{authority: a, marker: marker}}
 }
-
-func sameOperation(a, b Marker) bool {
-	return a.Version == b.Version && a.NamespaceID == b.NamespaceID && a.DatasetID == b.DatasetID && a.Lineage == b.Lineage && a.OperationID == b.OperationID && a.BackupSHA256 == b.BackupSHA256 && a.PreviousDatasetID == b.PreviousDatasetID && a.PreviousLineage == b.PreviousLineage
+func documentSHA(document TicketDocument) string {
+	body, _ := json.Marshal(document)
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
+}
+func validDocument(document TicketDocument) bool {
+	return document.Version == 2 && document.Protocol == TicketProtocol && document.Marker.valid() &&
+		(document.Marker.State == Initializing || document.Marker.State == Restoring)
 }
 
-func activeChild(current, target Marker) bool {
-	return current.State == Active && current.Revision == target.Revision+1 && sameOperation(current, target)
-}
-
-// Resume mints a process-local ticket only after an exact external GET. It also
-// recognizes the one already-activated child for idempotent finalize retries.
-func (a *Authority) Resume(ctx context.Context, document TicketDocument) (Ticket, error) {
-	target := document.Marker
-	if document.Version != 1 || !target.valid() || target.State != Initializing && target.State != Restoring {
-		return Ticket{}, ErrConflict
-	}
-	current, _, err := a.read(ctx)
-	if err != nil {
-		return Ticket{}, err
-	}
-	if current != target && !activeChild(current, target) {
-		return Ticket{}, ErrConflict
-	}
-	return ticketFor(a, target), nil
-}
-
-// Initialize is an explicit offline operation. It first creates only an
-// inactive marker; SQL binding/quarantine and Activate are still required.
-func (a *Authority) Initialize(ctx context.Context, operationID string) (Ticket, error) {
-	if !validUUID(operationID) {
-		return Ticket{}, ErrConflict
-	}
-	current, _, err := a.read(ctx)
-	if err == nil {
-		if current.State == Initializing && current.OperationID == operationID {
-			return ticketFor(a, current), nil
-		}
-		return Ticket{}, ErrConflict
-	}
-	if !errors.Is(err, ErrUninitialized) {
-		return Ticket{}, err
-	}
-	marker := Marker{Version: 1, NamespaceID: uuid.NewString(), DatasetID: uuid.NewString(), Lineage: uuid.NewString(), Revision: 1, State: Initializing, OperationID: operationID, UpdatedAt: time.Now().UTC()}
-	if err := a.publish(ctx, marker, ""); err != nil {
-		return Ticket{}, err
-	}
-	return ticketFor(a, marker), nil
-}
-
-// BeginRestore MUST run before importing SQL. It immediately revokes the old
-// active lineage in the independent namespace and never imports/replays work.
-func (a *Authority) BeginRestore(ctx context.Context, operationID, backupSHA256 string) (Ticket, error) {
-	if !validUUID(operationID) || !validSHA(backupSHA256, false) {
-		return Ticket{}, ErrConflict
-	}
-	marker, info, err := a.read(ctx)
-	if err != nil {
-		return Ticket{}, err
-	}
-	if marker.State == Restoring && marker.OperationID == operationID && marker.BackupSHA256 == backupSHA256 {
-		return ticketFor(a, marker), nil
-	}
-	if marker.State != Active || marker.Revision >= math.MaxUint64-1 {
-		return Ticket{}, ErrInactive
-	}
-	marker.PreviousDatasetID, marker.PreviousLineage = marker.DatasetID, marker.Lineage
-	marker.DatasetID, marker.Lineage = uuid.NewString(), uuid.NewString()
-	marker.State, marker.Revision, marker.OperationID, marker.BackupSHA256 = Restoring, marker.Revision+1, operationID, backupSHA256
-	marker.UpdatedAt = time.Now().UTC()
-	if err := a.publish(ctx, marker, info.ETag); err != nil {
-		return Ticket{}, err
-	}
-	return ticketFor(a, marker), nil
-}
-
-func (a *Authority) publish(ctx context.Context, marker Marker, expected string) error {
-	body, err := json.Marshal(marker)
-	if err != nil || !marker.valid() {
+// The control row serializes with runtime registration and online guards.
+// There is no runtime-presence TTL or implicit stale-process deletion.
+func offlineGuardTx(tx *gorm.DB, owner string) error {
+	if tx == nil || !validUUID(owner) {
 		return ErrConflict
 	}
-	if expected == "" {
-		_, err = a.store.PutIfAbsent(ctx, markerKey, bytes.NewReader(body), markerInfo(body))
-	} else {
-		_, err = a.store.CompareAndSwap(ctx, markerKey, expected, bytes.NewReader(body), markerInfo(body))
+	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
+		return ErrTransaction
 	}
-	// Read-back establishes the external inactive barrier before SQL import.
-	// A lost write acknowledgement can also be reconciled by this exact body;
-	// never mint a new lineage or retry blindly into another generation.
-	actual, _, readErr := a.read(ctx)
-	if readErr != nil || actual != marker {
-		return errors.Join(ErrConflict, err, readErr)
+	var control storageguard.Control
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ? AND owner = ?", "primary", owner).Take(&control).Error; err != nil {
+		return errors.Join(ErrInactive, err)
+	}
+	var active int64
+	if err := tx.Model(&storageguard.Runtime{}).Count(&active).Error; err != nil {
+		return err
+	}
+	if active != 0 {
+		return ErrInactive
 	}
 	return nil
+}
+func (a *SQLAuthority) offline(ctx context.Context, owner string, body func(*gorm.DB) error) error {
+	if a == nil || a.db == nil {
+		return ErrUnavailable
+	}
+	if err := outsideSQLTransaction(a.db); err != nil {
+		return err
+	}
+	return a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := offlineGuardTx(tx, owner); err != nil {
+			return err
+		}
+		return body(tx)
+	})
+}
+
+func noPendingRecovery(db *gorm.DB) error {
+	// This single newer metadata table can be absent in a pre-change backup.
+	// Preserve metadata failures instead of treating HasTable=false as proof.
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		return errors.Join(ErrUnavailable, err)
+	}
+	if !containsTable(tables, "execution_recoveries") {
+		return nil
+	}
+	return strictNoPendingRecovery(db)
+}
+
+func strictNoPendingRecovery(db *gorm.DB) error {
+	var rows []struct{ ID string }
+	err := db.Model(&models.ExecutionRecovery{}).Select("id").Where("COALESCE(state, '') <> 'finalized' OR finalized_at IS NULL").Limit(1).Clauses(clause.Locking{Strength: "SHARE"}).Find(&rows).Error
+	if err != nil {
+		return errors.Join(ErrUnavailable, err)
+	}
+	if len(rows) != 0 {
+		return ErrInactive
+	}
+	return nil
+}
+func recoveryMatches(row models.ExecutionRecovery, document TicketDocument) bool {
+	raw, _ := json.Marshal(document.Marker)
+	return row.ID == document.Marker.OperationID && row.Protocol == TicketProtocol && row.MarkerJSON == string(raw) && row.TicketSHA256 == documentSHA(document) &&
+		(row.State == document.Marker.State && row.FinalizedAt == nil || row.State == "finalized" && row.FinalizedAt != nil)
+}
+func (a *SQLAuthority) recordTx(tx *gorm.DB, document TicketDocument) error {
+	if err := noPendingRecovery(tx); err != nil {
+		return err
+	}
+	var count int64
+	if err := tx.Model(&models.ExecutionRecovery{}).Where("id = ?", document.Marker.OperationID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 0 {
+		return ErrConflict
+	}
+	raw, _ := json.Marshal(document.Marker)
+	return tx.Create(&models.ExecutionRecovery{ID: document.Marker.OperationID, Protocol: TicketProtocol, MarkerJSON: string(raw), State: document.Marker.State, TicketSHA256: documentSHA(document), CreatedAt: time.Now().UTC()}).Error
+}
+func (a *SQLAuthority) existingTicketTx(tx *gorm.DB, owner, state, backup string) (Ticket, bool, error) {
+	var row models.ExecutionRecovery
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", owner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Ticket{}, false, nil
+	}
+	if err != nil {
+		return Ticket{}, false, err
+	}
+	var marker Marker
+	if json.Unmarshal([]byte(row.MarkerJSON), &marker) != nil {
+		return Ticket{}, false, ErrConflict
+	}
+	document := TicketDocument{Version: 2, Protocol: TicketProtocol, Marker: marker}
+	if !validDocument(document) || marker.State != state || marker.BackupSHA256 != backup || !recoveryMatches(row, document) {
+		return Ticket{}, false, ErrConflict
+	}
+	return ticketFor(a, marker), true, nil
+}
+func (a *SQLAuthority) resume(ctx context.Context, document TicketDocument, importedSHA string) (Ticket, error) {
+	if !validDocument(document) {
+		return Ticket{}, ErrConflict
+	}
+	if importedSHA != "" && (document.Marker.State != Restoring || importedSHA != document.Marker.BackupSHA256) {
+		return Ticket{}, ErrConflict
+	}
+	err := a.offline(ctx, document.Marker.OperationID, func(tx *gorm.DB) error {
+		var row models.ExecutionRecovery
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", document.Marker.OperationID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) && importedSHA != "" {
+			// This narrowly named path is called only after the CLI verifies
+			// the original workdir, backup SHA and imported target checkpoint.
+			return a.recordTx(tx, document)
+		}
+		if err != nil {
+			return errors.Join(ErrConflict, err)
+		}
+		if !recoveryMatches(row, document) {
+			return ErrConflict
+		}
+		return nil
+	})
+	if err != nil {
+		return Ticket{}, err
+	}
+	return ticketFor(a, document.Marker), nil
+}
+func (a *SQLAuthority) Resume(ctx context.Context, document TicketDocument) (Ticket, error) {
+	return a.resume(ctx, document, "")
+}
+
+// ResumeImported re-registers the exact original restore intent after SQL
+// import. The offline CLI must first validate its original checkpoint, workdir
+// and backup hash; this function neither verifies files nor grants execution.
+func (a *SQLAuthority) ResumeImported(ctx context.Context, document TicketDocument, verifiedBackupSHA string) (Ticket, error) {
+	if !validSHA(verifiedBackupSHA, false) {
+		return Ticket{}, ErrConflict
+	}
+	return a.resume(ctx, document, verifiedBackupSHA)
+}
+
+func (a *SQLAuthority) Initialize(ctx context.Context, operationID string) (Ticket, error) {
+	var marker Marker
+	err := a.offline(ctx, operationID, func(tx *gorm.DB) error {
+		if existing, found, err := a.existingTicketTx(tx, operationID, Initializing, ""); err != nil {
+			return err
+		} else if found {
+			marker = existing.data.marker
+			return nil
+		}
+		var binding models.ExecutionDataset
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&binding, "id = ?", "primary").Error
+		if err == nil {
+			return ErrConflict
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		marker = Marker{Version: 1, NamespaceID: uuid.NewString(), DatasetID: uuid.NewString(), Lineage: uuid.NewString(), Revision: 1, State: Initializing, OperationID: operationID, UpdatedAt: time.Now().UTC()}
+		return a.recordTx(tx, ticketFor(a, marker).Document())
+	})
+	if err != nil {
+		return Ticket{}, err
+	}
+	return ticketFor(a, marker), nil
+}
+
+// BeginRestore requires the already-held SQL maintenance barrier. Persist its
+// Document before importing SQL, and resume that same ticket on every retry.
+func (a *SQLAuthority) BeginRestore(ctx context.Context, operationID, backupSHA256 string) (Ticket, error) {
+	if !validSHA(backupSHA256, false) {
+		return Ticket{}, ErrConflict
+	}
+	var marker Marker
+	err := a.offline(ctx, operationID, func(tx *gorm.DB) error {
+		if existing, found, err := a.existingTicketTx(tx, operationID, Restoring, backupSHA256); err != nil {
+			return err
+		} else if found {
+			marker = existing.data.marker
+			return nil
+		}
+		var binding models.ExecutionDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&binding, "id = ?", "primary").Error; err != nil {
+			return errors.Join(ErrUnbound, err)
+		}
+		var err error
+		marker, err = markerFromBinding(binding)
+		if err != nil {
+			return err
+		}
+		if marker.Revision >= math.MaxUint64-1 {
+			return ErrConflict
+		}
+		marker.PreviousDatasetID, marker.PreviousLineage = marker.DatasetID, marker.Lineage
+		marker.DatasetID, marker.Lineage = uuid.NewString(), uuid.NewString()
+		marker.State, marker.Revision, marker.OperationID, marker.BackupSHA256 = Restoring, marker.Revision+1, operationID, backupSHA256
+		marker.UpdatedAt = time.Now().UTC()
+		return a.recordTx(tx, ticketFor(a, marker).Document())
+	})
+	if err != nil {
+		return Ticket{}, err
+	}
+	return ticketFor(a, marker), nil
 }

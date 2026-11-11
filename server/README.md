@@ -2,7 +2,7 @@
 
 有限状态机(FSM)编排引擎 + 按 run 隔离的 artifact-store + 真实沙箱执行(cursor-agent)。
 
-聊天正文、附件、S3 / COS 和本地数据归档配置见 [持久化存储](STORAGE.md)。
+聊天正文、附件、S3 / COS 和本地数据归档配置见 [持久化存储](STORAGE.md)。执行绑定和离线维护状态保存在 SQL，初始化、升级与恢复使用原私有维护目录中的持久票据，不需要独立的执行控制存储。已有数据的升级与原操作续办见 [升级说明](UPGRADING.md)。
 
 ## 执行后端(ExecProvider)
 

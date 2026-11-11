@@ -71,7 +71,7 @@ func workspaceExecutionParents(db *gorm.DB, row models.WorkspaceSnapshotJob, ent
 	return entities, nil
 }
 
-// WithWorkspaceJobExecution adds independent execution fencing to an existing
+// WithWorkspaceJobExecution adds SQL execution fencing to an existing
 // strict business authorizer. It never substitutes lineage for ownership,
 // current credential grants, immutable source checks or physical job fencing.
 func WithWorkspaceJobExecution(options WorkspaceJobOptions, execution *executionlineage.Controller) (WorkspaceJobOptions, error) {

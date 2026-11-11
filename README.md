@@ -85,7 +85,7 @@ This pulls the published GHCR images without building locally. Once started:
 
 The default login is `admin` / `demo1234` (for local evaluation only; configure your own users for shared or production setups). The sandbox runtime image is pulled on first sandbox creation, or ahead of time with `./start.sh pull`.
 
-Existing v3.2 data must follow [UPGRADING.md](server/UPGRADING.md).
+Execution bindings and offline maintenance locks live in SQL; maintenance operations retain their durable tickets in a private work directory. No separate execution-control storage is required. Business payload storage still supports local files, S3 and COS; see [STORAGE.md](server/STORAGE.md). Existing v3.2 data must follow [UPGRADING.md](server/UPGRADING.md).
 
 ### Running your first workflow
 

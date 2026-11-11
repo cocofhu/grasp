@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// The release container creates 0700 maintenance/control directories as root.
+// The release container creates 0700 maintenance directories as root.
 // The host runner cannot traverse those directories. Only after Compose has
 // stopped, remove their contents in the matching image with one exact private
 // fixture mount; do not relax the production directory permissions.
@@ -95,7 +95,7 @@ func TestRestartFixtureCleanupRemovesContainerPrivateDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const create = `const fs=require('node:fs');for(const n of ['execution-maintenance/fresh-install','execution-control/private']){fs.mkdirSync('/owned-restart-fixture/'+n,{recursive:true,mode:0o700});fs.writeFileSync('/owned-restart-fixture/'+n+'/receipt','owned synthetic receipt',{mode:0o600});}`
+	const create = `const fs=require('node:fs');for(const n of ['execution-maintenance/fresh-install','execution-maintenance/restore']){fs.mkdirSync('/owned-restart-fixture/'+n,{recursive:true,mode:0o700});fs.writeFileSync('/owned-restart-fixture/'+n+'/receipt','owned synthetic receipt',{mode:0o600});}`
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	args := []string{"run", "--rm", "--network", "none", "--read-only", "--user", "0:0", "--mount", "type=bind,source=" + root + ",target=/owned-restart-fixture", "--entrypoint", "node", image, "-e", create}

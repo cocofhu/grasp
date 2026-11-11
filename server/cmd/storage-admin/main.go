@@ -36,11 +36,12 @@ type options struct {
 }
 
 type checkpoint struct {
-	Header   payloadstore.ReplicaHeader  `json:"header"`
-	Phase    string                      `json:"phase"`
-	Switch   bool                        `json:"switch"`
-	Summary  payloadstore.ReplicaSummary `json:"summary"`
-	Database string                      `json:"database"`
+	Header            payloadstore.ReplicaHeader  `json:"header"`
+	Phase             string                      `json:"phase"`
+	Switch            bool                        `json:"switch"`
+	Summary           payloadstore.ReplicaSummary `json:"summary"`
+	Database          string                      `json:"database"`
+	ExecutionRecovery bool                        `json:"executionRecovery,omitempty"`
 }
 
 func main() {
@@ -48,7 +49,7 @@ func main() {
 	flag.StringVar(&opts.config, "config", "config.yaml", "source server configuration")
 	flag.StringVar(&opts.target, "target-storage", "", "private YAML containing destination storage config (no env overrides)")
 	flag.StringVar(&opts.mode, "mode", "status", "status, execution-status, upgrade, certify-primary, review-solo-environment, copy, verify, execution-init, restore-begin, restore-finalize, or release")
-	flag.StringVar(&opts.executionControl, "execution-control", "", "private storage YAML for the independent execution control namespace")
+	flag.StringVar(&opts.executionControl, "execution-control", "", "obsolete: execution maintenance now uses SQL and the original private workdir")
 	flag.StringVar(&opts.workdir, "workdir", "", "private durable checkpoint and SQL backup directory")
 	flag.StringVar(&opts.stopped, "acknowledge-stopped", "", "comma-separated exact IDs of registered processes you have confirmed stopped")
 	flag.BoolVar(&opts.offline, "offline", false, "attest all servers, scripts and external SQL writers are stopped")
@@ -135,14 +136,11 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 	}
 	// The workdir lock complements the durable SQL owner: accidental duplicate
 	// invocations cannot truncate each other's manifest/checkpoint files.
-	lock, err := os.OpenFile(filepath.Join(opts.workdir, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := lockExecutionWorkdir(opts.workdir, false)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return errors.New("this replica work directory is already in use")
-	}
 	if opts.mode == "release" {
 		if err := checkExecutionRelease(ctx, opts, cfg, db); err != nil {
 			return err
@@ -161,6 +159,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 	}
 	failure := func(err error) error {
 		return fmt.Errorf("%w; maintenance %s remains active: resume this workdir or explicitly release it", err, state.Header.ID)
+	}
+	if err := checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+		return failure(err)
 	}
 	targetConfig, err := loadTarget(opts.target)
 	if err != nil {
@@ -200,6 +201,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 			return failure(err)
 		}
 	}
+	if err = checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+		return failure(err)
+	}
 	if err = storageguard.Leave(ctx, db, state.Header.ID); err != nil {
 		return failure(err)
 	}
@@ -218,6 +222,9 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 }
 
 func validateOptions(opts options) error {
+	if opts.executionControl != "" {
+		return errors.New("--execution-control is no longer supported; remove the flag and use SQL maintenance with the original private workdir; legacy external recovery tickets require completion with their original tool before upgrading")
+	}
 	if opts.finalize && opts.mode != "certify-primary" && opts.mode != "review-solo-environment" {
 		return errors.New("--finalize is only supported for certify-primary or review-solo-environment")
 	}
@@ -233,12 +240,12 @@ func validateOptions(opts options) error {
 		}
 		return nil
 	case "upgrade":
-		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate || opts.executionControl != "" {
+		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate {
 			return errors.New("upgrade requires --offline and its own --workdir; configure current storage explicitly and do not switch or initialize execution")
 		}
 		return nil
 	case "certify-primary":
-		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate || opts.executionControl != "" || opts.finalize && !opts.resume {
+		if !opts.offline || opts.workdir == "" || opts.target != "" || opts.activate || opts.finalize && !opts.resume {
 			return errors.New("certify-primary requires --offline and its own --workdir; finalize requires --resume and never initializes execution")
 		}
 		return nil
@@ -259,9 +266,6 @@ func validateOptions(opts options) error {
 	}
 	if opts.activate && opts.mode != "copy" {
 		return errors.New("--switch is only used with copy; restore activates its verified replica")
-	}
-	if (opts.mode == "execution-init" || opts.mode == "restore" || opts.mode == "restore-begin" || opts.mode == "restore-finalize") && opts.executionControl == "" {
-		return errors.New("execution initialization and restore require --execution-control; run restore-begin before importing SQL")
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/storageguard"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +35,11 @@ func TestDiagnosticRunsUseCurrentAuthorityAndRetainOnRevocation(t *testing.T) {
 	if err := arts.DiagnosticRuns(t.Context(), true, a, b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authority.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("f", 64)); err != nil {
+	owner := uuid.NewString()
+	if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authority.BeginRestore(t.Context(), owner, strings.Repeat("f", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if err := arts.DiagnosticRuns(t.Context(), false, a, b); err == nil {

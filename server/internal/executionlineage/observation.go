@@ -3,18 +3,15 @@ package executionlineage
 import (
 	"context"
 	"errors"
-	"path/filepath"
-	"strings"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/objectstore"
+	"github.com/cocofhu/grasp/internal/storageguard"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// Observation is a read-only deployment diagnostic, never a dispatch permit.
-// Active is true only when both the external marker and existing SQL binding
-// agree. No missing table, database, directory or marker is initialized here.
+// Observation is a SELECT-only diagnostic, never an execution permit. It
+// neither initializes missing SQL metadata nor contacts any object store.
 type Observation struct {
 	Version           int    `json:"version"`
 	Status            string `json:"status"`
@@ -28,61 +25,62 @@ type Observation struct {
 	Revision          uint64 `json:"revision,omitempty"`
 }
 
-// ObserveConfigured performs GET/SELECT only. Nil db means the caller has
-// established that the SQL file does not exist, not that SQL is unreachable.
-func ObserveConfigured(ctx context.Context, control config.StorageConfig, payloads []config.StorageConfig, protected []string, db *gorm.DB) (Observation, error) {
+func ObserveSQL(ctx context.Context, db *gorm.DB) (Observation, error) {
 	view := Observation{Version: 1, Status: "unavailable"}
-	_, present, err := observeDataset(ctx, db)
-	view.SQLDatasetPresent = present
-	if err != nil {
-		return view, ErrUnavailable
+	if db == nil {
+		view.Status = "uninitialized"
+		return view, ErrUninitialized
 	}
-	reader, err := observationReader(control, payloads, protected)
-	if err != nil {
-		return view, ErrUnavailable
-	}
-	return observe(ctx, reader, db, view)
-}
-
-func observe(ctx context.Context, reader objectstore.ControlReader, db *gorm.DB, view Observation) (Observation, error) {
-	marker, _, err := readMarker(ctx, reader)
-	if err != nil {
-		if errors.Is(err, ErrUninitialized) {
-			view.Status = "uninitialized"
-		}
+	if err := outsideSQLTransaction(db); err != nil {
 		return view, err
 	}
-	view.NamespaceID, view.DatasetID, view.Lineage, view.Revision = marker.NamespaceID, marker.DatasetID, marker.Lineage, marker.Revision
-	if marker.State != Active {
-		view.Status = "inactive"
-		return view, ErrInactive
-	}
-	binding, present, err := observeDataset(ctx, db)
-	view.SQLDatasetPresent = present
+	tables, err := db.WithContext(ctx).Migrator().GetTables()
 	if err != nil {
 		return view, ErrUnavailable
 	}
-	if !present || !bindingMatches(binding, marker, marker.Revision) {
-		view.Status = "unbound"
-		return view, ErrUnbound
+	if !containsTable(tables, "execution_datasets") {
+		view.Status = "uninitialized"
+		return view, ErrUninitialized
 	}
-	// Activation can succeed before an interrupted offline command removes
-	// maintenance. Such a database is still fenced against server startup.
-	var control struct{ Owner string }
-	if err := db.WithContext(ctx).Table("payload_storage_control").Select("owner").Where("name = ?", "primary").Take(&control).Error; err != nil {
-		return view, ErrUnavailable
-	}
-	if control.Owner != "" {
-		view.Status, view.MaintenanceActive, view.SQLMatches = "inactive", true, true
-		return view, ErrInactive
-	}
-	// A concurrent offline rotation cannot turn the earlier read into success.
-	after, _, err := readMarker(ctx, reader)
-	if err != nil || after != marker {
-		return view, ErrUnavailable
-	}
-	view.Status, view.Active, view.SQLMatches = "active", true, true
-	return view, nil
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Same lock order as runtime admission and offline administration.
+		var control storageguard.Control
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Take(&control, "name = ?", "primary").Error; err != nil {
+			return ErrUnavailable
+		}
+		view.MaintenanceActive = control.Owner != ""
+		var binding models.ExecutionDataset
+		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Take(&binding, "id = ?", "primary").Error
+		if err == nil {
+			view.SQLDatasetPresent = true
+			marker, valid := markerFromBinding(binding)
+			if valid != nil {
+				view.Status = "unbound"
+				return ErrUnbound
+			}
+			view.NamespaceID, view.DatasetID, view.Lineage, view.Revision = marker.NamespaceID, marker.DatasetID, marker.Lineage, marker.Revision
+			view.SQLMatches = true
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUnavailable
+		}
+		if err := noPendingRecovery(tx); err != nil {
+			if errors.Is(err, ErrInactive) {
+				view.Status = "inactive"
+			}
+			return err
+		}
+		if view.MaintenanceActive {
+			view.Status = "inactive"
+			return ErrInactive
+		}
+		if !view.SQLDatasetPresent {
+			view.Status = "uninitialized"
+			return ErrUninitialized
+		}
+		view.Status, view.Active = "active", true
+		return nil
+	})
+	return view, err
 }
 
 func observeDataset(ctx context.Context, db *gorm.DB) (models.ExecutionDataset, bool, error) {
@@ -93,7 +91,6 @@ func observeDataset(ctx context.Context, db *gorm.DB) (models.ExecutionDataset, 
 	if err := outsideSQLTransaction(db); err != nil {
 		return binding, false, err
 	}
-	// HasTable discards metadata-query failures; GetTables preserves them.
 	tables, err := db.WithContext(ctx).Migrator().GetTables()
 	if err != nil {
 		return binding, false, err
@@ -115,52 +112,4 @@ func containsTable(tables []string, name string) bool {
 		}
 	}
 	return false
-}
-
-func observationReader(control config.StorageConfig, payloads []config.StorageConfig, protected []string) (objectstore.ControlReader, error) {
-	driver := strings.ToLower(strings.TrimSpace(control.Driver))
-	if driver == "local" {
-		if strings.TrimSpace(control.BlobsRoot) == "" {
-			return nil, ErrUnavailable
-		}
-		root, err := physicalPath(control.BlobsRoot)
-		if err != nil {
-			return nil, ErrUnavailable
-		}
-		paths := append([]string(nil), protected...)
-		for _, payload := range payloads {
-			path := payload.BlobsRoot
-			if path == "" {
-				path = filepath.Join("data", "blobs")
-			}
-			paths = append(paths, path)
-		}
-		for _, path := range paths {
-			if path == "" {
-				continue
-			}
-			other, err := physicalPath(path)
-			if err != nil || pathOverlap(root, other) {
-				return nil, ErrUnavailable
-			}
-		}
-		return objectstore.NewLocalControlReader(root)
-	}
-	if driver != "s3" && driver != "cos" {
-		return nil, ErrUnavailable
-	}
-	for _, payload := range payloads {
-		payloadDriver := strings.ToLower(strings.TrimSpace(payload.Driver))
-		// A read-only check cannot run the alias-separation write probe. Require
-		// disjoint logical prefixes even if endpoints or buckets differ.
-		if (payloadDriver == "s3" || payloadDriver == "cos") && prefixOverlap(control.S3.Prefix, payload.S3.Prefix) {
-			return nil, ErrUnavailable
-		}
-	}
-	opts := control.S3
-	if driver == "cos" && opts.PathStyle == nil {
-		pathStyle := false
-		opts.PathStyle = &pathStyle
-	}
-	return objectstore.NewS3(opts)
 }

@@ -40,9 +40,9 @@ func (p *soloReviewNative) Stop(context.Context, string) error {
 	return nil
 }
 
-func soloReviewFixture(t *testing.T) (*gorm.DB, *Authority, string, models.Sandbox, models.Sandbox, *soloReviewNative) {
+func soloReviewFixture(t *testing.T) (*gorm.DB, *SQLAuthority, string, models.Sandbox, models.Sandbox, *soloReviewNative) {
 	t.Helper()
-	db, a, calls, owner := authorityFixture(t)
+	db, a, owner := authorityFixture(t)
 	rows := []models.Sandbox{{Name: "original-provider-one", Profile: "profile", Purpose: "solo", ThreadID: "original-solo-one", Status: "running"}, {Name: "original-provider-two", Profile: "profile", Purpose: "solo", ThreadID: "original-solo-two", Status: "running"}}
 	for i := range rows {
 		if err := db.Create(&rows[i]).Error; err != nil {
@@ -55,11 +55,11 @@ func soloReviewFixture(t *testing.T) (*gorm.DB, *Authority, string, models.Sandb
 	if err := db.Table("chat_queue_turns").Create(map[string]any{"id": "unrelated-original-unknown", "queue_id": "other-queue", "state": "unknown", "payload": "do-not-replay"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	ticket, err := a.Initialize(t.Context(), uuid.NewString())
+	ticket, err := a.Initialize(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitQuarantine(t, db, a, calls, owner, ticket)
+	commitQuarantine(t, db, a, owner, ticket)
 	if _, err := a.Activate(t.Context(), db, owner, ticket); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestOfflineSoloReviewStopsOnlyOriginalAndRetainsOtherQuarantines(t *testing
 	if err := db.First(&control, "name = 'primary'").Error; err != nil || control.Owner != "" {
 		t.Fatal("original maintenance not released", err)
 	}
-	controller, err := NewController(t.Context(), db, a)
+	controller, err := NewLocalController(t.Context(), db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,8 +186,7 @@ func TestOfflineSoloReviewChangedScopeGrantOrAuthorityCannotComplete(t *testing.
 				case "grant":
 					grant = func(context.Context, uint) (string, error) { return strings.Repeat("b", 64), nil }
 				case "authority":
-					_, err := a.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("f", 64))
-					return err
+					return db.Model(&models.ExecutionDataset{}).Where("id = 'primary'").Update("lineage", uuid.NewString()).Error
 				case "maintenance":
 					return db.Model(&storageguard.Control{}).Where("name = 'primary'").Update("owner", uuid.NewString()).Error
 				case "still_running":

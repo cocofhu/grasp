@@ -62,6 +62,8 @@ Each reply keeps its execution snapshot; later model changes do not relabel old 
 
 The Solo-continuation migration release and source stack can store message bodies, attachments and workspace archives in private object storage. Use the source stack to evaluate this branch and the migration image when upgrading.
 
+Execution bindings and offline maintenance locks live in SQL, with durable operation tickets in the original private work directory. They need no separate control store; bodies, attachments and workspace archives still use the storage configured below. Retired `execution_control` / `GRASP_EXECUTION_CONTROL_*` settings are no longer read, and existing control data is not deleted automatically. Follow `server/UPGRADING.md` for existing data and unfinished tickets from older tools.
+
 Without COS, add this to the root `.env`:
 
 ```dotenv

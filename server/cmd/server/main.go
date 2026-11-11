@@ -134,9 +134,6 @@ func main() {
 		log.Fatal().Err(err).Msg("persistent payload storage init failed")
 	}
 	defer storage.Close()
-	if cfg.ExecutionControl != nil {
-		log.Warn().Msg("execution_control / GRASP_EXECUTION_CONTROL_* is ignored by the server; it is only read by grasp-storage-admin")
-	}
 	executionCtx, executionCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	executionController, err := executionlineage.NewLocalController(executionCtx, db)
 	executionCancel()

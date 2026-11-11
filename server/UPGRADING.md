@@ -2,14 +2,16 @@
 
 升级路径为 **v3.2 → v3.3 迁移版 → v3.4 清理版**。迁移版保留旧格式读取与离线转换工具；清理版移除已完成迁移的运行时兼容路径。已有 v3.2 数据必须经过迁移版，不能直接跳到清理版。命令和运行镜像必须来自对应版本，保留选定镜像的不可变 digest。新安装使用空 SQL 与空数据目录，直接启动即可，服务端会自动建立执行绑定。
 
+下文执行初始化、核对和恢复命令采用当前 SQL 维护协议，不需要独立执行控制存储。固定的旧版本镜像仍须遵循其对应 tag 的命令说明；旧工具已有未完成票据时，先用原版本和原目录完成操作，再升级。新工具拒绝旧外部控制票据，不自动转换未知操作。
+
 这里的版本升级不恢复运行进程，也不重新执行旧请求。工作流、Solo 历史、原附件和沙箱工作区分别保留。Docker / Kubernetes 重新启动服务；进程内存恢复不属于本流程。
 
 ## 升级前
 
 1. 停止全部应用副本、调度器、脚本和其他 SQL / 对象写入者，暂停自动扩缩与滚动发布。v3.2 进程没有新的运行登记机制，必须从部署系统核实它们已经退出。
-2. 成套备份原 SQL、正文与附件目录或对象、沙箱工作区、配置、凭据加密主密钥及 Token 账本。独立执行控制位置不纳入 SQL / 正文回滚范围。
+2. 成套备份原 SQL、正文与附件目录或对象、沙箱工作区、配置、凭据加密主密钥及 Token 账本。已有旧控制对象、目录或 Secret 保留不动，本版本不会自动删除它们。
 3. 使用迁移版本镜像内的 `/app/grasp-storage-admin`，或从同一版本源码编译。保留原 `blobs_root` 挂载，明确配置实际 SQL 和目标支持的载荷存储。MySQL 维护环境另需 Oracle MySQL 8.4+ 的原生备份客户端，见 [STORAGE.md](STORAGE.md)。
-4. 准备新的私有维护目录，以及与 SQL / 正文相互独立的执行控制配置。配置文件包含凭据，使用 Secret 或权限为 `0600` 的文件，不能提交到 Git。
+4. 准备新的私有维护目录，保留原操作的持久票据；不要将其指向在用的 SQL 或业务载荷目录。应用及业务对象存储的配置如包含凭据，使用 Secret 或权限为 `0600` 的文件，不能提交到 Git。旧 `execution_control` YAML 和 `GRASP_EXECUTION_CONTROL_*` 不再读取，可移除旧配置；显式传入 `--execution-control` 会报错。
 
 ## 转换并校验
 
@@ -35,19 +37,17 @@ grasp-storage-admin --mode upgrade --config /private/application.yaml \
 
 ## 显式完成执行初始化
 
-转换完成不授予执行权限。首次启动新版本前，使用**同一原维护目录**单独执行下列命令；它在 SQL 中写入执行绑定并隔离旧工作。服务端本身不读取独立执行控制，只沿用这一 SQL 绑定；已有升级收据但缺少绑定时服务端拒绝启动，不会自行生成绑定：
+转换完成不授予执行权限。首次启动新版本前，使用**同一原维护目录**单独执行下列命令；它在 SQL 中写入执行绑定并隔离旧工作。服务端与离线工具沿用这一 SQL 绑定；已有升级收据但缺少绑定时服务端拒绝启动，不会自行生成绑定：
 
 ```bash
 grasp-storage-admin --mode execution-init --config /private/application.yaml \
-  --execution-control /private/independent-control.yaml \
   --offline --workdir /private/upgrades/solo-migration
-grasp-storage-admin --mode execution-status --config /private/application.yaml \
-  --execution-control /private/independent-control.yaml
+grasp-storage-admin --mode execution-status --config /private/application.yaml
 ```
 
-初始化先重核原 SQL 备份、SQL / 文件收据、历史转换结果和对象引用闭包，再使用原升级 UUID 进入独立执行控制协议。旧待执行及结果不明的 Run、节点和旧排队请求隔离待核对，不自动成为新的可执行请求。
+初始化先重核原 SQL 备份、SQL / 文件收据、历史转换结果和对象引用闭包，再以原升级 UUID、SQL 维护所有权和原目录票据建立执行绑定。旧待执行及结果不明的 Run、节点和旧排队请求隔离待核对，不自动成为新的可执行请求。
 
-仅当 `active=true`、`sqlMatches=true`、`maintenanceActive=false` 时启动配套新版本应用、网关和运行时。验证原聊天、附件和工作区，再提交新的用户任务。常规部署不得自动升级、初始化或以新控制标记覆盖缺失状态。
+仅当 `active=true`、`sqlMatches=true`、`maintenanceActive=false` 时启动配套新版本应用、网关和运行时。验证原聊天、附件和工作区，再提交新的用户任务。常规部署不得自动升级历史、重新初始化既有绑定或清除维护状态。
 
 初始化中断时使用原目录与原票据续办。激活完成但维护未解除也必须继续原操作；不能手动清除维护或另建目录绕过收据。
 
@@ -59,14 +59,12 @@ grasp-storage-admin --mode execution-status --config /private/application.yaml \
 
 ```bash
 grasp-storage-admin --mode review-solo-environment --config /private/application.yaml \
-  --execution-control /private/independent-control.yaml \
   --offline --sandbox-id 123 --workdir /private/upgrades/solo-review-123
 grasp-storage-admin --mode review-solo-environment --config /private/application.yaml \
-  --execution-control /private/independent-control.yaml \
   --offline --sandbox-id 123 --workdir /private/upgrades/solo-review-123 --resume --finalize
 ```
 
-第一步固定原操作 UUID、独立执行身份、Solo 绑定和原提供方资源，核验当前有效的 Agent、模型、Git 及其他凭据，然后只对这一原环境请求保盘停机。只有再次读到同一资源的正向停止证明，才原子保存停机收据、将这一条沙箱隔离标记为已核对，并将原 Solo 和沙箱标记为停止。原文件、历史、其他环境和旧请求的隔离记录不变。第一步成功仍保持维护；第二步在原目录重核并明确解除这一操作的维护。命令不会初始化、激活或轮换独立执行控制。
+第一步固定原操作 UUID、SQL 执行身份、Solo 绑定和原提供方资源，核验当前有效的 Agent、模型、Git 及其他凭据，然后只对这一原环境请求保盘停机。只有再次读到同一资源的正向停止证明，才原子保存停机收据、将这一条沙箱隔离标记为已核对，并将原 Solo 和沙箱标记为停止。原文件、历史、其他环境和旧请求的隔离记录不变。第一步成功仍保持维护；第二步在原目录重核并明确解除这一操作的维护。命令不会重新初始化或轮换 SQL 执行绑定。
 
 原队列有待发送、已执行但结果不明的请求、其他父实体仍被隔离、正在切换工作区或已有环境释放操作时，核对会拒绝继续。不能通过此命令取消、重发或批量解除这些请求。若此前已经向尚未核对的 Solo 提交了新消息，应先在原聊天中明确取消该新消息，再停写进行环境核对。
 
@@ -80,7 +78,7 @@ grasp-storage-admin --mode review-solo-environment --config /private/application
 
 ## 进入清理版前验证实际主存储
 
-在迁移版完成历史转换、实际新消息读写及备份验证后，停止所有写入者，再升级清理版。清理版会在迁移 schema、登记进程或写入对象之前检查规范格式和物理存储证明；执行控制已激活不能代替这些检查。
+在迁移版完成历史转换、实际新消息读写及备份验证后，停止所有写入者，再升级清理版。清理版会在迁移 schema、登记进程或写入对象之前检查规范格式和物理存储证明；SQL 执行绑定有效不能代替这些检查。
 
 继续使用本地主存储时，保留 SQL 登记的同一本地路径及原文件。已有 S3 / COS 主存储必须具有实际核验完成的目标副本证明，或使用迁移版提供的独立离线命令认证当前主存储：
 
@@ -95,7 +93,7 @@ grasp-storage-admin --mode certify-primary --config /private/application.yaml \
 
 迁移版的后台归档日志、本地源文件仍存在、空安装来源印记或仅登记 endpoint 均不等于远端认证完成。清理版的远端读取不会回退本地文件；缺失或损坏的主存储对象必须在切换前修复。首次绑定远端的真正空安装可以在同一事务中建立空集合证明；已有主存储不能借空安装来源印记绕过认证。
 
-清理版继续使用既有独立执行控制和原 SQL 收据，**不得再次执行 `execution-init`**。历史查询与新消息使当前引用集合正常增长，不要求其摘要始终等于历史迁移或认证收据。
+清理版继续使用既有 SQL 执行绑定和原 SQL 收据，**不得再次执行 `execution-init`**。历史查询与新消息使当前引用集合正常增长，不要求其摘要始终等于历史迁移或认证收据。
 
 启动检查还要求当前正文仅含规范引用或定义的空值，旧 Solo Events 已有绑定原消息及准确范围的历史日志，保留的旧 Solo 排队记录已隔离到当前数据集。清理版移除运行时 inline 正文适配、旧 Events 数组读取、旧 Solo 队列导入和启动正文迁移/归档。原 Events 来源、截断提示、未知执行身份、正式 JSON 统计与非 Solo 排队继续保留；离线历史转换工具仍要求维护所有权及全部运行实例停止。
 
@@ -105,11 +103,11 @@ grasp-storage-admin --mode certify-primary --config /private/application.yaml \
 
 升级目录的 `upgrade.json` 和原 SQL 快照用于证明本次格式转换，**不是**副本恢复所需的 `checkpoint.json`。迁移版完成显式初始化后，保持停写，在新的独立目录执行 `copy --offline`，创建并核验真实 SQL / 对象副本及完整清单，见 [STORAGE.md](STORAGE.md#离线复制切换与恢复)。工作区、配置及主密钥仍需配套备份。
 
-恢复数据时使用当前独立执行控制的 `restore-begin` / `restore-finalize` 协议，在隔离位置恢复匹配的 SQL、对象和工作区备份，见 [STORAGE.md](STORAGE.md#在隔离位置验证恢复)。不能把格式升级目录当作副本恢复票据，也不能随 SQL 回滚控制标记。服务端只沿用 SQL 中的执行绑定，直接把 SQL 备份覆盖回运行库并启动，会让备份时未完成的工作重新执行。
+恢复数据时使用当前 SQL 维护锁和本地持久票据的 `restore-begin` / `restore-finalize` 协议，在隔离位置恢复匹配的 SQL、对象和工作区备份，见 [STORAGE.md](STORAGE.md#在隔离位置验证恢复)。不能把格式升级目录当作副本恢复票据，也不能以数据库覆盖代替显式恢复。服务端只沿用 SQL 中的执行绑定，直接把 SQL 备份覆盖回运行库并启动，会让备份时未完成的工作重新执行。
 
-清理版回退到迁移版二进制时，必须停写并保留当前 SQL、对象及控制身份，核对配套版本兼容和原执行绑定后再启动，不重新初始化。独立执行控制首次激活后，不能承诺直接回退到不认识该协议的 v3.2 可以安全恢复执行；优先在迁移版向前修复。保留原备份、来源文件和票据，升级完成不等于允许删除它们。
+清理版回退到迁移版二进制时，必须停写并保留当前 SQL、对象及原操作票据，核对配套版本兼容和原执行绑定后再启动，不重新初始化。执行绑定和隔离记录建立后，不能承诺直接回退到不认识这些记录的 v3.2 可以安全恢复执行；优先在迁移版向前修复。保留原备份、来源文件和票据，升级完成不等于允许删除它们。
 
-本补丁使用原 v3.2.0 源码生成原始数据，已验证以下完整升级组合：
+历史格式迁移已使用原 v3.2.0 源码生成原始数据，验证以下升级组合；这些结果不代替新 SQL 维护协议本身的验证：
 
 | 原数据库 | 载荷存储 | 结果 |
 | --- | --- | --- |

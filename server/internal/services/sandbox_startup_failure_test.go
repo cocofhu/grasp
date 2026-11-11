@@ -15,6 +15,8 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/storageguard"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -303,6 +305,10 @@ func TestSandboxStartupFailureCannotPublishAcrossExecutionLineage(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer release()
+	owner = uuid.NewString()
+	if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = authority.BeginRestore(context.Background(), owner, strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}

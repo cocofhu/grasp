@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/historymigration"
 	"github.com/cocofhu/grasp/internal/models"
@@ -19,7 +20,7 @@ import (
 )
 
 // initializationAfterUpgrade runs inside execution-init's existing workdir
-// lock, before it initializes the independent authority. It only verifies the
+// lock, before it initializes the SQL execution binding. It only verifies the
 // original normalization receipt; it cannot create or repair missing history.
 func initializationAfterUpgrade(ctx context.Context, opts options, cfg *config.Config, proposed initialization, existing bool) (initialization, error) {
 	if _, err := os.Stat(filepath.Join(opts.workdir, "upgrade.json")); errors.Is(err, os.ErrNotExist) {
@@ -64,12 +65,12 @@ func initializationAfterUpgrade(ctx context.Context, opts options, cfg *config.C
 	}
 	if control.Owner == "" && existing {
 		// An exact retry after successful finalization can only use the
-		// already-active external identity. SQL alone never authorizes adoption.
+		// already-active SQL identity, without creating a new generation.
 		var binding models.ExecutionDataset
 		if err := db.WithContext(ctx).First(&binding, "id = ?", "primary").Error; err != nil || binding.OperationID != state.ID {
 			return proposed, errors.New("upgrade initialization has no matching completed execution binding")
 		}
-		authority, err := openExecutionControl(ctx, opts, cfg)
+		authority, err := executionlineage.OpenSQL(ctx, db)
 		if err != nil {
 			return proposed, err
 		}
@@ -129,7 +130,8 @@ func initializationAfterUpgrade(ctx context.Context, opts options, cfg *config.C
 	if err := storageguard.Check(ctx, db, state.ID); err != nil {
 		return proposed, err
 	}
-	return initialization{Version: 1, ID: state.ID}, nil
+	proposed.ID = state.ID
+	return proposed, nil
 }
 
 func sameUpgradeReceipt(a, b database.OfflineUpgradeReceipt) bool {

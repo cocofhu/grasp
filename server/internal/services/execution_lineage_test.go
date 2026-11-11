@@ -15,21 +15,16 @@ import (
 	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/objectstore"
 	"github.com/cocofhu/grasp/internal/storageguard"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
-func serviceExecutionController(t *testing.T, db *gorm.DB) (*executionlineage.Controller, *executionlineage.Authority, string) {
+func serviceExecutionController(t *testing.T, db *gorm.DB) (*executionlineage.Controller, *executionlineage.SQLAuthority, string) {
 	t.Helper()
 	ctx := t.Context()
-	backend, err := objectstore.NewLocalControl(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := executionlineage.Open(ctx, backend)
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +48,7 @@ func serviceExecutionController(t *testing.T, db *gorm.DB) (*executionlineage.Co
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	controller, err := executionlineage.NewController(ctx, db, authority)
+	controller, err := executionlineage.NewLocalController(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,10 +99,11 @@ func TestServiceLineageArtifactPrepareDoesNotHoldSQLAndCannotPublishAfterRestore
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
+	owner = uuid.NewString()
 	if err := storageguard.Enter(ctx, db, owner, nil); err != nil {
 		t.Fatal("artifact PUT retained a SQL lock", err)
 	}
-	if _, err := authority.BeginRestore(ctx, uuid.NewString(), strings.Repeat("f", 64)); err != nil {
+	if _, err := authority.BeginRestore(ctx, owner, strings.Repeat("f", 64)); err != nil {
 		t.Fatal(err)
 	}
 	once.Do(func() { close(release) })
@@ -159,10 +155,11 @@ func TestServiceLineageWorkspaceChecksParentsAndFencesExpiryRelease(t *testing.T
 	if err := db.Model(&models.WorkspaceSnapshotJob{}).Where("id = ?", row.ID).Update("deadline", time.Now().Add(-time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
+	owner = uuid.NewString()
 	if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authority.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("a", 64)); err != nil {
+	if _, err := authority.BeginRestore(t.Context(), owner, strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
 	}
 	jobs.expire(t.Context(), row.Lineage)
@@ -274,10 +271,11 @@ func TestServiceLineageStudioPhysicalLeaseCancelsFlyingNativeTurn(t *testing.T) 
 	if original == "" {
 		t.Fatal("native turn was missing its operation identity")
 	}
+	owner = uuid.NewString()
 	if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authority.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("c", 64)); err != nil {
+	if _, err := authority.BeginRestore(t.Context(), owner, strings.Repeat("c", 64)); err != nil {
 		t.Fatal(err)
 	}
 	select {

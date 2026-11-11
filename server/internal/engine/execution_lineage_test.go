@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func executionEngineFixture(t *testing.T, seed func(*gorm.DB)) (*gorm.DB, *executionlineage.Authority, *executionlineage.Controller) {
+func executionEngineFixture(t *testing.T, seed func(*gorm.DB)) (*gorm.DB, *executionlineage.SQLAuthority, *executionlineage.Controller) {
 	t.Helper()
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "execution.db"))
 	if err != nil {
@@ -32,12 +32,8 @@ func executionEngineFixture(t *testing.T, seed func(*gorm.DB)) (*gorm.DB, *execu
 	if seed != nil {
 		seed(db)
 	}
-	local, err := objectstore.NewLocalControl(filepath.Join(t.TempDir(), "independent-control"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
-	authority, err := executionlineage.Open(ctx, local)
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +44,7 @@ func executionEngineFixture(t *testing.T, seed func(*gorm.DB)) (*gorm.DB, *execu
 	if err = executionlineage.EnsureRecoverySchema(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	ticket, err := authority.Initialize(ctx, uuid.NewString())
+	ticket, err := authority.Initialize(ctx, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +57,7 @@ func executionEngineFixture(t *testing.T, seed func(*gorm.DB)) (*gorm.DB, *execu
 	if err = storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	controller, err := executionlineage.NewController(ctx, db, authority)
+	controller, err := executionlineage.NewLocalController(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +153,7 @@ func (p *pausedExecutionPayload) Put(ctx context.Context, _ string, _ io.ReadSee
 	}
 }
 
-func TestExecutionEngineFencesPayloadCompletionAfterExternalRestore(t *testing.T) {
+func TestExecutionEngineFencesPayloadCompletionDuringOfflineRestore(t *testing.T) {
 	db, authority, controller := executionEngineFixture(t, nil)
 	if err := db.Table("runs").Create(map[string]any{"id": "active", "status": "running"}).Error; err != nil {
 		t.Fatal(err)
@@ -199,7 +195,7 @@ func TestExecutionEngineFencesPayloadCompletionAfterExternalRestore(t *testing.T
 		close(backend.release)
 		t.Fatal("blocked payload held SQL lock", err)
 	}
-	if _, err = authority.BeginRestore(ctx, uuid.NewString(), strings.Repeat("f", 64)); err != nil {
+	if _, err = authority.BeginRestore(ctx, owner, strings.Repeat("f", 64)); err != nil {
 		close(backend.release)
 		t.Fatal(err)
 	}

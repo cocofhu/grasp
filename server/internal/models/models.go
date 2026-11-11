@@ -1219,7 +1219,7 @@ func AllModels() []any {
 		&WorkspaceRelease{},
 		&WorkflowVisitCheckpoint{},
 		&PayloadUploadHold{}, &PayloadUploadBudget{},
-		&ExecutionDataset{}, &ExecutionQuarantine{},
+		&ExecutionDataset{}, &ExecutionQuarantine{}, &ExecutionRecovery{},
 	}
 }
 

@@ -3,14 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
-	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/config"
@@ -23,7 +24,7 @@ import (
 )
 
 func statusOptions(opts options) options {
-	return options{config: opts.config, executionControl: opts.executionControl, mode: "execution-status"}
+	return options{config: opts.config, mode: "execution-status"}
 }
 
 func statusResult(t *testing.T, opts options) (executionlineage.Observation, error) {
@@ -32,70 +33,50 @@ func statusResult(t *testing.T, opts options) (executionlineage.Observation, err
 	err := run(context.Background(), opts, &output)
 	var view executionlineage.Observation
 	if decodeErr := json.Unmarshal(output.Bytes(), &view); decodeErr != nil {
-		t.Fatalf("status did not return its machine-readable diagnostic: %s (%v, %v)", output.String(), err, decodeErr)
+		t.Fatalf("status did not return machine-readable diagnostic: %s (%v, %v)", output.String(), err, decodeErr)
 	}
 	return view, err
 }
 
-func controlFiles(t *testing.T, root string) map[string][32]byte {
-	t.Helper()
-	files := map[string][32]byte{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.IsDir() {
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			files[path] = sha256.Sum256(raw)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return files
-}
-
-func TestExecutionStatusReadsInitializedConfigWithoutChangingControlOrSQL(t *testing.T) {
+func TestExecutionStatusReadsOnlySQLWithoutObjectRequests(t *testing.T) {
 	opts, cfg := executionOptions(t)
-	if err := run(context.Background(), opts, io.Discard); err != nil {
+	if err := run(t.Context(), opts, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	control, err := loadTarget(opts.executionControl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.ExecutionControl = &control
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	cfg.Storage = config.StorageConfig{Driver: "s3", BlobsRoot: filepath.Join(t.TempDir(), "must-not-create"), S3: config.S3StorageConfig{Endpoint: server.URL, Bucket: "payloads", Prefix: "body"}}
 	writeYAML(t, opts.config, cfg)
-	before := controlFiles(t, control.BlobsRoot)
 	sqlBefore, err := os.ReadFile(cfg.Database.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := statusOptions(opts)
-	status.executionControl = "" // Normal pod configuration, including env overrides.
-	view, err := statusResult(t, status)
+	view, err := statusResult(t, statusOptions(opts))
 	if err != nil || view.Status != "active" || !view.Active || !view.SQLMatches || !view.SQLDatasetPresent || view.Revision < 2 || view.Lineage == "" {
-		t.Fatal("initialized installation was not verified", view, err)
-	}
-	if after := controlFiles(t, control.BlobsRoot); !reflect.DeepEqual(before, after) {
-		t.Fatal("read-only status mutated control objects or created a CAS probe", before, after)
+		t.Fatal(view, err)
 	}
 	sqlAfter, _ := os.ReadFile(cfg.Database.Path)
 	if !bytes.Equal(sqlBefore, sqlAfter) {
-		t.Fatal("status changed application SQL")
+		t.Fatal("read-only status changed SQL")
 	}
-	db, err := connectExecutionStatus(context.Background(), cfg.Database)
+	if requests.Load() != 0 {
+		t.Fatal("execution status depended on payload/object S3", requests.Load())
+	}
+	if _, err := os.Stat(cfg.Storage.BlobsRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("status attached a payload store", err)
+	}
+	db, err := connectExecutionStatus(t.Context(), cfg.Database)
 	if err != nil || db == nil {
 		t.Fatal(err)
 	}
 	conn, _ := db.DB()
 	defer func() { _ = conn.Close() }()
 	if err := db.Exec("CREATE TABLE forbidden_status_write (id INTEGER)").Error; err == nil {
-		t.Fatal("SQLite diagnostic connection permitted schema writes")
+		t.Fatal("SQLite status permitted writes")
 	}
 }
 
@@ -105,14 +86,14 @@ func TestExecutionStatusEmptyInstallationCreatesNothing(t *testing.T) {
 	if !errors.Is(err, executionlineage.ErrUninitialized) || view.Status != "uninitialized" || view.Active || view.SQLDatasetPresent {
 		t.Fatal(view, err)
 	}
-	for _, path := range []string{cfg.Database.Path, filepath.Dir(cfg.Database.Path), cfg.Storage.BlobsRoot, filepath.Join(filepath.Dir(opts.config), "independent-control"), opts.workdir} {
+	for _, path := range []string{cfg.Database.Path, filepath.Dir(cfg.Database.Path), cfg.Storage.BlobsRoot, opts.workdir} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Fatal("status created a database, directory, lock or marker", path, err)
+			t.Fatal("status created SQL, payloads or workdir", path, err)
 		}
 	}
 }
 
-func TestExecutionStatusOldSQLDoesNotMigrateAndMissingMarkerPreservesDatasetEvidence(t *testing.T) {
+func TestExecutionStatusOldSQLDoesNotMigrate(t *testing.T) {
 	opts, cfg := executionOptions(t)
 	if err := os.MkdirAll(filepath.Dir(cfg.Database.Path), 0o700); err != nil {
 		t.Fatal(err)
@@ -130,7 +111,7 @@ func TestExecutionStatusOldSQLDoesNotMigrateAndMissingMarkerPreservesDatasetEvid
 	if !errors.Is(err, executionlineage.ErrUninitialized) || view.SQLDatasetPresent {
 		t.Fatal(view, err)
 	}
-	db, err = connectExecutionStatus(context.Background(), cfg.Database)
+	db, err = connectExecutionStatus(t.Context(), cfg.Database)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,61 +119,42 @@ func TestExecutionStatusOldSQLDoesNotMigrateAndMissingMarkerPreservesDatasetEvid
 	conn, _ = db.DB()
 	_ = conn.Close()
 	if !reflect.DeepEqual(tables, []string{"existing_history"}) {
-		t.Fatal("old schema was migrated by status", tables)
+		t.Fatal("status migrated old SQL", tables)
 	}
-	if err := run(context.Background(), opts, io.Discard); err == nil {
-		// This deliberately incomplete legacy schema is not an adoptable install.
-		t.Fatal("initialization unexpectedly adopted incomplete old SQL")
+	if err := run(t.Context(), opts, io.Discard); err == nil {
+		t.Fatal("initialization silently adopted incomplete history")
 	}
-	// Use a separate properly initialized installation to test a lost marker.
-	opts, cfg = executionOptions(t)
-	if err := run(context.Background(), opts, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(filepath.Dir(opts.config), "independent-control", "execution-namespace.json")
-	if err := os.Rename(marker, marker+".retained"); err != nil {
-		t.Fatal(err)
-	}
-	view, err = statusResult(t, statusOptions(opts))
-	if !errors.Is(err, executionlineage.ErrUninitialized) || view.Status != "uninitialized" || !view.SQLDatasetPresent || view.Active {
-		t.Fatal("lost control marker hid the existing SQL dataset", view, err)
-	}
-	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("status recreated a missing marker", err)
-	}
-	_ = cfg
 }
 
-func TestExecutionStatusActiveMarkerWithMissingSQLRefusesAndRejectsMutationFlags(t *testing.T) {
+func TestExecutionStatusMissingSQLAndMutationFlags(t *testing.T) {
 	opts, cfg := executionOptions(t)
-	if err := run(context.Background(), opts, io.Discard); err != nil {
+	if err := run(t.Context(), opts, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(cfg.Database.Path, cfg.Database.Path+".retained"); err != nil {
 		t.Fatal(err)
 	}
 	view, err := statusResult(t, statusOptions(opts))
-	if !errors.Is(err, executionlineage.ErrUnbound) || view.Status != "unbound" || view.Active || view.SQLDatasetPresent {
-		t.Fatal("existing external authority admitted absent SQL", view, err)
+	if !errors.Is(err, executionlineage.ErrUninitialized) || view.Active || view.SQLDatasetPresent {
+		t.Fatal(view, err)
 	}
 	if _, err := os.Stat(cfg.Database.Path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("status created missing SQL", err)
+		t.Fatal("status recreated SQL", err)
 	}
-	invalid := []options{{offline: true}, {activate: true}, {resume: true}, {stopped: "process"}, {target: "target.yaml"}}
-	for _, candidate := range invalid {
-		candidate.mode = "execution-status"
-		if validateOptions(candidate) == nil {
-			t.Fatal("read-only status accepted mutation intent", candidate)
+	for _, invalid := range []options{{offline: true}, {activate: true}, {resume: true}, {stopped: "process"}, {target: "target.yaml"}, {executionControl: "must-not-read.yaml"}} {
+		invalid.mode = "execution-status"
+		if validateOptions(invalid) == nil {
+			t.Fatal("status accepted mutation or external control", invalid)
 		}
 	}
-	if _, err := connectExecutionStatus(context.Background(), config.DatabaseConfig{Path: ":memory:"}); err == nil {
-		t.Fatal("transient database admitted as durable execution status")
+	if _, err := connectExecutionStatus(t.Context(), config.DatabaseConfig{Path: ":memory:"}); err == nil {
+		t.Fatal("transient status database accepted")
 	}
 }
 
-func TestExecutionStatusInterruptedOfflineFinalizationIsInactiveWithoutClearingMaintenance(t *testing.T) {
+func TestExecutionStatusInterruptedMaintenanceIsInactiveWithoutUnlocking(t *testing.T) {
 	opts, cfg := executionOptions(t)
-	if err := run(context.Background(), opts, io.Discard); err != nil {
+	if err := run(t.Context(), opts, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	db, err := database.ConnectWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
@@ -201,21 +163,21 @@ func TestExecutionStatusInterruptedOfflineFinalizationIsInactiveWithoutClearingM
 	}
 	defer func() { _ = database.Close(db) }()
 	owner := uuid.NewString()
-	if err := storageguard.Enter(context.Background(), db, owner, nil); err != nil {
+	if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
 	view, err := statusResult(t, statusOptions(opts))
-	if !errors.Is(err, executionlineage.ErrInactive) || view.Status != "inactive" || view.Active || !view.SQLMatches || !view.SQLDatasetPresent || !view.MaintenanceActive {
-		t.Fatal("interrupted activation was declared ready", view, err)
+	if !errors.Is(err, executionlineage.ErrInactive) || view.Status != "inactive" || view.Active || !view.SQLDatasetPresent || !view.MaintenanceActive {
+		t.Fatal(view, err)
 	}
-	if err := storageguard.Check(context.Background(), db, owner); err != nil {
-		t.Fatal("read-only status cleared maintenance", err)
+	if err := storageguard.Check(t.Context(), db, owner); err != nil {
+		t.Fatal("status cleared maintenance", err)
 	}
-	if err := storageguard.Leave(context.Background(), db, owner); err != nil {
+	if err := storageguard.Leave(t.Context(), db, owner); err != nil {
 		t.Fatal(err)
 	}
 	view, err = statusResult(t, statusOptions(opts))
 	if err != nil || !view.Active || view.MaintenanceActive {
-		t.Fatal("explicit finalization did not permit status", view, err)
+		t.Fatal(view, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/storageguard"
 )
@@ -37,11 +38,6 @@ func completedUpgradeForInit(t *testing.T) (*config.Config, options, string) {
 		t.Fatal(err)
 	}
 	opts.mode = "execution-init"
-	opts.executionControl = filepath.Join(filepath.Dir(opts.workdir), "control.yaml")
-	// The SQL lives at the fixture parent. An independent sibling outside it
-	// avoids making the control authority part of the database backup root.
-	controlRoot := filepath.Join(t.TempDir(), "control")
-	writeYAML(t, opts.executionControl, &config.Config{Storage: config.StorageConfig{Driver: "local", BlobsRoot: controlRoot}})
 	return cfg, opts, receipt.ID
 }
 
@@ -75,7 +71,7 @@ func TestOfflineUpgradeThenExplicitInitializationUsesOriginalOwnerAndQuarantines
 	if err := db.First(&pending, "id = ?", "unknown-dispatch").Error; err != nil || !pending.Started || string(pending.Payload) != `{"text":"must never replay"}` {
 		t.Fatal("unknown source changed", err)
 	}
-	authority, err := openExecutionControl(ctx, opts, cfg)
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,18 +107,15 @@ func TestOfflineUpgradeInitializationRejectsUnverifiedHistoryAndMismatchedCheckp
 			if err := initializeExecution(context.Background(), opts, cfg, io.Discard); err == nil {
 				t.Fatal("unverified upgrade was used to initialize execution")
 			}
-			control, err := loadTarget(opts.executionControl)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(control.BlobsRoot); !os.IsNotExist(err) {
-				t.Fatal("rejected receipt already initialized external control", err)
-			}
 			db, err := database.ConnectWithFiles(cfg.Database, filepath.Join(cfg.Storage.BlobsRoot, "payloads"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = database.Close(db) }()
+			var count int64
+			if err := db.Model(&models.ExecutionDataset{}).Count(&count).Error; err != nil || count != 0 {
+				t.Fatal("rejected upgrade already bound execution", count, err)
+			}
 			if err := storageguard.Check(context.Background(), db, owner); err != nil {
 				t.Fatal("failed explicit initialization lost original maintenance", err)
 			}

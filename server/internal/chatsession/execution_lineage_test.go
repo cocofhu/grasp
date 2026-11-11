@@ -8,20 +8,15 @@ import (
 
 	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/objectstore"
 	"github.com/cocofhu/grasp/internal/storageguard"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-func queueController(t *testing.T, db *gorm.DB) (*executionlineage.Controller, *executionlineage.Authority, string) {
+func queueController(t *testing.T, db *gorm.DB) (*executionlineage.Controller, *executionlineage.SQLAuthority, string) {
 	t.Helper()
 	ctx := context.Background()
-	local, err := objectstore.NewLocalControl(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := executionlineage.Open(ctx, local)
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +40,7 @@ func queueController(t *testing.T, db *gorm.DB) (*executionlineage.Controller, *
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	controller, err := executionlineage.NewController(ctx, db, authority)
+	controller, err := executionlineage.NewLocalController(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,10 +64,11 @@ func TestQueueLineageFencesClaimsRenewalDispatchAndPublicationWhileHistoryRemain
 	if _, err := store.RenewUntil(ctx, lease); err != nil {
 		t.Fatal(err)
 	}
+	owner = uuid.NewString()
 	if err := storageguard.Enter(ctx, db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
-	ticket, err := authority.BeginRestore(ctx, uuid.NewString(), strings.Repeat("a", 64))
+	ticket, err := authority.BeginRestore(ctx, owner, strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +96,7 @@ func TestQueueLineageFencesClaimsRenewalDispatchAndPublicationWhileHistoryRemain
 	if _, _, err := store.Acquire(ctx, scope, uuid.NewString()); !errors.Is(err, ErrQueueOwnerLost) {
 		t.Fatal("old process automatically adopted the restored active dataset", err)
 	}
-	restarted, err := executionlineage.NewController(ctx, db, authority)
+	restarted, err := executionlineage.NewLocalController(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}

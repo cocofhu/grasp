@@ -147,9 +147,7 @@ func TestLiveStorageAdminMigrationAndColdBackupRestore(t *testing.T) {
 	sourceConfig, targetConfig := filepath.Join(dir, "source.yaml"), filepath.Join(dir, "target.yaml")
 	writeYAML(t, sourceConfig, cfg)
 	writeYAML(t, targetConfig, &config.Config{Storage: target})
-	controlConfig := filepath.Join(dir, "execution-control.yaml")
-	writeYAML(t, controlConfig, &config.Config{Storage: config.StorageConfig{Driver: "local", BlobsRoot: t.TempDir()}})
-	if err := run(ctx, options{config: sourceConfig, mode: "execution-init", offline: true, workdir: filepath.Join(dir, "execution-init"), executionControl: controlConfig}, io.Discard); err != nil {
+	if err := run(ctx, options{config: sourceConfig, mode: "execution-init", offline: true, workdir: filepath.Join(dir, "execution-init")}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	opts := options{config: sourceConfig, target: targetConfig, mode: "copy", offline: true, activate: true, workdir: filepath.Join(dir, "replica")}
@@ -184,9 +182,9 @@ func TestLiveStorageAdminMigrationAndColdBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	beginRestore := options{config: sourceConfig, target: targetConfig, mode: "restore-begin", offline: true, workdir: opts.workdir, executionControl: controlConfig}
+	beginRestore := options{config: sourceConfig, target: targetConfig, mode: "restore-begin", offline: true, workdir: opts.workdir}
 	if err := run(ctx, beginRestore, io.Discard); err != nil {
-		t.Fatal("independent restore barrier before SQL import", err)
+		t.Fatal("SQL restore barrier before import", err)
 	}
 	restoredCfg := *cfg
 	restoredCfg.Database.Path = filepath.Join(dir, "restored.db")
@@ -203,7 +201,7 @@ func TestLiveStorageAdminMigrationAndColdBackupRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	restore := options{config: restoredConfig, target: targetConfig, mode: "restore-finalize", offline: true, workdir: opts.workdir, executionControl: controlConfig}
+	restore := options{config: restoredConfig, target: targetConfig, mode: "restore-finalize", offline: true, workdir: opts.workdir}
 	if err := run(ctx, restore, io.Discard); err != nil {
 		t.Fatalf("cold restore without source bytes: %v", err)
 	}

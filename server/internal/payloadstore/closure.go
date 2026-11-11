@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -129,6 +131,11 @@ func CanBootstrapPrimaryClosure(ctx context.Context, db *gorm.DB) error {
 	}
 	for _, table := range tables {
 		switch table {
+		case "execution_recoveries":
+			if err := checkEmptyExecutionRecovery(ctx, db); err != nil {
+				return err
+			}
+			continue
 		case "payload_storage_control", "payload_storage_runtimes", "sqlite_sequence", "database_fresh_origins", "execution_datasets":
 			if table == "execution_datasets" {
 				var count int64
@@ -160,6 +167,44 @@ func CanBootstrapPrimaryClosure(ctx context.Context, db *gorm.DB) error {
 		if count != 0 {
 			return fmt.Errorf("%w: %s contains retained data", ErrPrimaryClosure, table)
 		}
+	}
+	return nil
+}
+
+// A finalized initialization receipt is metadata for the same genuinely empty
+// installation. Restores, pending operations and unrelated receipts must never
+// make retained data eligible for a new empty-primary proof.
+func checkEmptyExecutionRecovery(ctx context.Context, db *gorm.DB) error {
+	var rows []models.ExecutionRecovery
+	if err := db.WithContext(ctx).Limit(2).Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if len(rows) != 1 {
+		return ErrPrimaryClosure
+	}
+	row := rows[0]
+	var binding models.ExecutionDataset
+	if err := db.WithContext(ctx).Take(&binding, "id = ?", "primary").Error; err != nil {
+		return ErrPrimaryClosure
+	}
+	var marker executionlineage.Marker
+	if json.Unmarshal([]byte(row.MarkerJSON), &marker) != nil {
+		return ErrPrimaryClosure
+	}
+	canonical, _ := json.Marshal(marker)
+	document, _ := json.Marshal(executionlineage.TicketDocument{Version: 2, Protocol: executionlineage.TicketProtocol, Marker: marker})
+	sum := sha256.Sum256(document)
+	if row.Protocol != executionlineage.TicketProtocol || row.State != "finalized" || row.FinalizedAt == nil ||
+		row.CreatedAt.IsZero() || row.FinalizedAt.Before(row.CreatedAt) || row.MarkerJSON != string(canonical) || row.TicketSHA256 != hex.EncodeToString(sum[:]) ||
+		marker.Version != 1 || marker.State != executionlineage.Initializing || marker.Revision != 1 || marker.UpdatedAt.IsZero() ||
+		uuid.Validate(marker.NamespaceID) != nil || uuid.Validate(marker.DatasetID) != nil || uuid.Validate(marker.Lineage) != nil || uuid.Validate(row.ID) != nil ||
+		marker.OperationID != row.ID || binding.OperationID != row.ID || binding.NamespaceID != marker.NamespaceID || binding.DatasetID != marker.DatasetID || binding.Lineage != marker.Lineage || binding.ControlRevision != 2 ||
+		marker.BackupSHA256 != "" || marker.PreviousDatasetID != "" || marker.PreviousLineage != "" ||
+		binding.BackupSHA256 != "" || binding.SourceDatasetID != "" || binding.SourceLineage != "" || binding.QuarantineCount != 0 {
+		return ErrPrimaryClosure
 	}
 	return nil
 }

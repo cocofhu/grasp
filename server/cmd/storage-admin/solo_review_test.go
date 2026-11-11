@@ -158,25 +158,13 @@ func TestOfflineSoloReviewCLIRequiresExactManualScopeAndCompletesOriginalWorkdir
 	if provider.stops != 1 || provider.forbidden != 0 {
 		t.Fatal("final receipt replayed the stop", provider)
 	}
-	controller, err := executionlineage.NewController(t.Context(), db, mustReviewAuthority(t, opts, db))
+	controller, err := executionlineage.NewLocalController(t.Context(), db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := controller.Check(t.Context(), executionlineage.Entity{Kind: executionlineage.EntitySandbox, ID: fmt.Sprint(row.ID)}); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func mustReviewAuthority(t *testing.T, opts options, db *gorm.DB) *executionlineage.Authority {
-	t.Helper()
-	if err := config.Load(opts.config); err != nil {
-		t.Fatal(err)
-	}
-	a, err := openExecutionControl(t.Context(), opts, config.GetConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a
 }
 
 func TestOfflineSoloReviewCLILostStopRetainsMaintenanceAndOnlyObserves(t *testing.T) {

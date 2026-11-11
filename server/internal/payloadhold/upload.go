@@ -300,7 +300,7 @@ func (m *Manager) RecoverHold(ctx context.Context, id Identity, deadline time.Ti
 // CommitPinTx performs pure SQL after service authorization, physical Sandbox
 // and source-job fencing. Its caller MUST publish snapshot.ready and final job
 // state in this same outer transaction, returning any failed CAS to roll back
-// the pin. It does not invoke the external authority or any object reader.
+// the pin. It performs SQL checks without reading object storage.
 func (m *Manager) CommitPinTx(tx *gorm.DB, lease Lease, verified Verified) (Pinned, error) {
 	if !m.validLease(lease) || verified.lease != lease.data {
 		return Pinned{}, ErrInvalid

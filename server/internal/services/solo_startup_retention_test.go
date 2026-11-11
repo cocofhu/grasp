@@ -60,10 +60,11 @@ func TestSoloCreateReceiptSurvivesCallerButCannotCrossOwnerOrDataset(t *testing.
 					t.Fatal(err)
 				}
 			case "restored_dataset":
+				owner = uuid.NewString()
 				if err := storageguard.Enter(t.Context(), db, owner, nil); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := authority.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("a", 64)); err != nil {
+				if _, err := authority.BeginRestore(t.Context(), owner, strings.Repeat("a", 64)); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -30,17 +30,14 @@ import (
 
 // Config is the resolved server configuration.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Engine   EngineConfig   `yaml:"engine"`
-	Sandbox  SandboxConfig  `yaml:"sandbox"`
-	Browser  BrowserConfig  `yaml:"browser"`
-	Auth     AuthConfig     `yaml:"auth"`
-	Security SecurityConfig `yaml:"security"`
-	Storage  StorageConfig  `yaml:"storage"`
-	// ExecutionControl is read only by grasp-storage-admin offline modes; the
-	// server binds execution to the SQL dataset and ignores this section.
-	ExecutionControl    *StorageConfig            `yaml:"execution_control"`
+	Server              ServerConfig              `yaml:"server"`
+	Database            DatabaseConfig            `yaml:"database"`
+	Engine              EngineConfig              `yaml:"engine"`
+	Sandbox             SandboxConfig             `yaml:"sandbox"`
+	Browser             BrowserConfig             `yaml:"browser"`
+	Auth                AuthConfig                `yaml:"auth"`
+	Security            SecurityConfig            `yaml:"security"`
+	Storage             StorageConfig             `yaml:"storage"`
 	WorkspaceOperations WorkspaceOperationsConfig `yaml:"workspace_operations"`
 	Features            FeatureConfig             `yaml:"features"`
 	GitHub              GitHubConfig              `yaml:"github"`
@@ -520,7 +517,6 @@ func rejectSandboxSecretEnv(c *Config) error {
 // applyEnvOverrides lets explicit env vars win over the file. Secrets such as
 // gateway_api_key are injected here from K8s Secret-backed env.
 func applyEnvOverrides(c *Config) {
-	applyExecutionControlEnv(c)
 	applyWorkspaceOperationsEnv(c)
 	if v := env("GRASP_WORKFLOWS_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {

@@ -80,15 +80,16 @@ func TestPendingLineagePreparesOutsideSQLAndCannotPublishAfterRestoreBarrier(t *
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	owner = uuid.NewString()
 	if err := storageguard.Enter(ctx, db, owner, nil); err != nil {
 		t.Fatal("body publication held SQL or maintenance locks", err)
 	}
-	if _, err := authority.BeginRestore(ctx, uuid.NewString(), strings.Repeat("c", 64)); err != nil {
+	if _, err := authority.BeginRestore(ctx, owner, strings.Repeat("c", 64)); err != nil {
 		t.Fatal(err)
 	}
 	once.Do(func() { close(release) })
 	if err := <-done; !errors.Is(err, executionlineage.ErrInactive) {
-		t.Fatal("prepared pending body published after external restore barrier", err)
+		t.Fatal("prepared pending body published after offline restore barrier", err)
 	}
 	var count int64
 	if err := db.Model(&models.ChatPendingTurn{}).Where("id = ?", "late-pending").Count(&count).Error; err != nil || count != 0 {

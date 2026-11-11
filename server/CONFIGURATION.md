@@ -76,16 +76,6 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_WORKSPACE_MAX_SCOPE_RESERVED_BYTES` | `workspace_operations.max_scope_reserved_bytes` | int | `8589934592` | Public | Durable upload reservation bytes per Solo/workflow scope |
 | `GRASP_WORKSPACE_MAX_DURATION` | `workspace_operations.max_duration` | duration | `30m` | Public | Maximum file capture or isolated restore operation duration |
 | `GRASP_WORKSPACE_MAX_WORKERS` | `workspace_operations.max_workers` | integer | `2` | Public | Concurrent workspace file jobs (1–64) |
-| `GRASP_EXECUTION_CONTROL_DRIVER` | `execution_control.driver` | enum | `Not set` | Public | Independent execution control store for grasp-storage-admin offline modes only: local / s3 / cos; the server ignores it and executes immediately |
-| `GRASP_EXECUTION_CONTROL_BLOBS_ROOT` | `execution_control.blobs_root` | path | `Not set` | Public | Independent persistent control directory, disjoint from SQL, payload and backup directories |
-| `GRASP_EXECUTION_CONTROL_S3_ENDPOINT` | `execution_control.s3.endpoint` | URL | `Not set` | Public | Independent control S3 HTTP(S) origin; real conditional writes are required |
-| `GRASP_EXECUTION_CONTROL_S3_REGION` | `execution_control.s3.region` | string | `us-east-1` | Public | Independent control object storage region |
-| `GRASP_EXECUTION_CONTROL_S3_BUCKET` | `execution_control.s3.bucket` | string | `Not set` | Public | Independent control bucket, or a bucket with strictly disjoint payload/control prefixes |
-| `GRASP_EXECUTION_CONTROL_S3_PREFIX` | `execution_control.s3.prefix` | string | `Not set` | Public | Control prefix must be disjoint from payload and replica roots; control data must not roll back with SQL |
-| `GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID` | `execution_control.s3.access_key_id` | string | `Not set` | Sensitive | Independent control access key ID; inject through a Secret |
-| `GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY` | `execution_control.s3.secret_access_key` | string | `Not set` | Sensitive | Independent control secret key; inject through a Secret |
-| `GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN` | `execution_control.s3.session_token` | string | `Not set` | Sensitive | Optional independent control temporary session token |
-| `GRASP_EXECUTION_CONTROL_S3_PATH_STYLE` | `execution_control.s3.path_style` | boolean | `Not set` | Public | Control path-style addressing; defaults to true for s3 and false for cos |
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |
 | `GRASP_CODEX_LOGIN_REFRESH_LEAD` | `codex_login.refresh_lead` | duration | `96h` | Public | How long before the access token expires the platform renews a Codex ChatGPT login |
 | `GRASP_CODEX_LOGIN_CHECK_INTERVAL` | `codex_login.check_interval` | duration | `10m` | Public | How often the platform checks whether Codex logins need renewal |

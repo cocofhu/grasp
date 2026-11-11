@@ -30,7 +30,7 @@ func TestProductionWorkspaceHistoryWorksWithClosedExecutionButNewWorkNeverDoes(t
 		t.Fatal(err)
 	}
 	storage := &payloadstore.Storage{Files: files, Location: payloadstore.Location{Fingerprint: strings.Repeat("a", 64)}}
-	execution, err := executionlineage.NewController(t.Context(), db, nil)
+	execution, err := executionlineage.NewLocalController(t.Context(), nil)
 	if err == nil || execution == nil {
 		t.Fatal("fixture did not keep a closed controller")
 	}

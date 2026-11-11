@@ -199,7 +199,7 @@ func TestWorkspaceHoldProofBindsRealPublicationAndCanonicalDeadline(t *testing.T
 func TestWorkspaceRestoreSourceReadIsIndependentOfOriginalActorAndExecutionLineage(t *testing.T) {
 	f := restoreFixture(t)
 	db := f.service.db
-	closed, _ := executionlineage.NewController(t.Context(), db, nil)
+	closed, _ := executionlineage.NewLocalController(t.Context(), nil)
 	unused := func(context.Context, string, string, string, uint) (WorkspaceRestoreBinding, error) {
 		t.Fatal("historical source read resolved a native execution binding")
 		return WorkspaceRestoreBinding{}, ErrWorkspaceJobAuthority

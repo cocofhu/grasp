@@ -10,7 +10,9 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/storageguard"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -93,6 +95,72 @@ func TestEmptyPrimaryBootstrapRefusesHistoricalOrModifiedSealedInstallations(t *
 			var count int64
 			if err := db.Model(&PrimaryClosure{}).Count(&count).Error; err != nil || count != 0 {
 				t.Fatal("invalid bootstrap published a receipt", err, count)
+			}
+		})
+	}
+}
+
+func TestEmptyPrimaryBootstrapAfterSQLInitializationStillRejectsRecoveryOrHistory(t *testing.T) {
+	for _, state := range []string{"initialized", "pending", "wrong-protocol", "corrupt-ticket", "unrelated-operation", "restored", "business"} {
+		t.Run(state, func(t *testing.T) {
+			db, _ := closureFreshFixture(t)
+			ctx := t.Context()
+			status, err := storageguard.Inspect(ctx, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stopped []string
+			for _, runtime := range status.Runtimes {
+				stopped = append(stopped, runtime.ID) // This fixture has no application workers.
+			}
+			owner := uuid.NewString()
+			if err := storageguard.Enter(ctx, db, owner, stopped); err != nil {
+				t.Fatal(err)
+			}
+			if err := executionlineage.EnsureRecoverySchema(ctx, db, owner); err != nil {
+				t.Fatal(err)
+			}
+			authority, err := executionlineage.OpenSQL(ctx, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ticket, err := authority.Initialize(ctx, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Transaction(func(tx *gorm.DB) error { _, err := authority.QuarantineTx(tx, owner, ticket); return err }); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := authority.Activate(ctx, db, owner, ticket); err != nil {
+				t.Fatal(err)
+			}
+			if err := storageguard.Leave(ctx, db, owner); err != nil {
+				t.Fatal(err)
+			}
+			switch state {
+			case "pending":
+				err = db.Model(&models.ExecutionRecovery{}).Where("id = ?", owner).Updates(map[string]any{"state": "initializing", "finalized_at": nil}).Error
+			case "wrong-protocol":
+				err = db.Model(&models.ExecutionRecovery{}).Where("id = ?", owner).Update("protocol", "unrecognized").Error
+			case "corrupt-ticket":
+				err = db.Model(&models.ExecutionRecovery{}).Where("id = ?", owner).Update("ticket_sha256", strings.Repeat("f", 64)).Error
+			case "unrelated-operation":
+				err = db.Model(&models.ExecutionDataset{}).Where("id = ?", "primary").Update("operation_id", uuid.NewString()).Error
+			case "restored":
+				err = db.Model(&models.ExecutionDataset{}).Where("id = ?", "primary").Update("source_dataset_id", uuid.NewString()).Error
+			case "business":
+				err = db.Table("solo_messages").Create(map[string]any{"id": "retained-history", "content": "history"}).Error
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = CanBootstrapPrimaryClosure(ctx, db)
+			if state == "initialized" {
+				if err != nil {
+					t.Fatal("empty SQL initialization blocked the first business S3 binding", err)
+				}
+			} else if !errors.Is(err, ErrPrimaryClosure) {
+				t.Fatal("SQL recovery metadata bypassed primary certification", state, err)
 			}
 		})
 	}

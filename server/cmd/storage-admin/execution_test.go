@@ -21,18 +21,17 @@ func executionOptions(t *testing.T) (options, *config.Config) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{Database: config.DatabaseConfig{Driver: "sqlite", Path: filepath.Join(dir, "sql", "application.db")}, Storage: config.StorageConfig{Driver: "local", BlobsRoot: filepath.Join(dir, "payloads")}}
-	opts := options{config: filepath.Join(dir, "config.yaml"), mode: "execution-init", offline: true, workdir: filepath.Join(dir, "initialization"), executionControl: filepath.Join(dir, "control.yaml")}
+	opts := options{config: filepath.Join(dir, "config.yaml"), mode: "execution-init", offline: true, workdir: filepath.Join(dir, "initialization")}
 	writeYAML(t, opts.config, cfg)
-	writeYAML(t, opts.executionControl, &config.Config{Storage: config.StorageConfig{Driver: "local", BlobsRoot: filepath.Join(dir, "independent-control")}})
 	return opts, cfg
 }
 
 func TestExecutionCLIInitializesOnlyByExplicitOfflineCommandAndRetriesExactTicket(t *testing.T) {
 	opts, cfg := executionOptions(t)
 	bad := opts
-	bad.executionControl = ""
+	bad.offline = false
 	if err := run(context.Background(), bad, io.Discard); err == nil {
-		t.Fatal("initialization without independent authority accepted")
+		t.Fatal("initialization without explicit offline attestation accepted")
 	}
 	if _, err := os.Stat(cfg.Database.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("invalid initialization already mutated SQL", err)
@@ -48,7 +47,7 @@ func TestExecutionCLIInitializesOnlyByExplicitOfflineCommandAndRetriesExactTicke
 		t.Fatal(err)
 	}
 	defer func() { _ = database.Close(db) }()
-	authority, err := openExecutionControl(context.Background(), opts, cfg)
+	authority, err := executionlineage.OpenSQL(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +95,7 @@ func TestExecutionCLIAdoptsHistoryWithoutReplayingUnknownAndRequiresTicketBefore
 		t.Fatal("adoption changed unknown dispatch or user body", turn, err)
 	}
 	// A replica checkpoint alone is insufficient to authorize rollback. The
-	// independent marker must be rotated by restore-begin before SQL import.
+	// SQL binding must be suspended by restore-begin before SQL import.
 	opts.target = filepath.Join(filepath.Dir(opts.config), "replica.yaml")
 	writeYAML(t, opts.target, &config.Config{Storage: config.StorageConfig{Driver: "s3", S3: config.S3StorageConfig{Endpoint: "http://objects.invalid", Bucket: "backup", Prefix: "replica"}}})
 	opts.workdir = filepath.Join(filepath.Dir(opts.config), "replica")
@@ -116,9 +115,9 @@ func TestExecutionCLIAdoptsHistoryWithoutReplayingUnknownAndRequiresTicketBefore
 	}
 	opts.mode = "restore-finalize"
 	if err := restoreExecution(ctx, opts, cfg, db, io.Discard); err == nil {
-		t.Fatal("SQL checkpoint without external restore-begin ticket accepted")
+		t.Fatal("SQL checkpoint without its original restore-begin ticket accepted")
 	}
-	authority, err := openExecutionControl(ctx, opts, cfg)
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +138,7 @@ func TestExecutionCLIAdoptsHistoryWithoutReplayingUnknownAndRequiresTicketBefore
 	raw, _ := os.ReadFile(filepath.Join(opts.workdir, executionTicketFile))
 	var ticket executionlineage.TicketDocument
 	if json.Unmarshal(raw, &ticket) != nil || ticket.Marker.Lineage == before {
-		t.Fatal("restore did not create a new external lineage")
+		t.Fatal("restore did not create a new SQL lineage")
 	}
 	ticket.Marker.DatasetID = binding.DatasetID // An operator JSON edit is not authority.
 	if err := writeJSON(filepath.Join(opts.workdir, executionTicketFile), ticket); err != nil {

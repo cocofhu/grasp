@@ -14,7 +14,7 @@ import (
 
 func TestLocalControllerKeepsOneStableBindingAndStillFencesQuarantines(t *testing.T) {
 	ctx := context.Background()
-	db, _, _, owner := authorityFixture(t)
+	db, _, owner := authorityFixture(t)
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLocalControllerKeepsOneStableBindingAndStillFencesQuarantines(t *testin
 
 func TestLocalControllerRefusesUpgradedHistoryWithoutExecutionInit(t *testing.T) {
 	ctx := context.Background()
-	db, _, _, owner := authorityFixture(t)
+	db, _, owner := authorityFixture(t)
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +79,8 @@ func TestLocalControllerRefusesUpgradedHistoryWithoutExecutionInit(t *testing.T)
 
 func TestLocalControllerAdoptsAnExistingInitializedBinding(t *testing.T) {
 	ctx := context.Background()
-	db, a, calls, owner := authorityFixture(t)
-	_, permit := activateFixture(t, db, a, calls, owner)
+	db, a, owner := authorityFixture(t)
+	_, permit := activateFixture(t, db, a, owner)
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}

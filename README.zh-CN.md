@@ -85,7 +85,7 @@ cp .env.example .env
 
 默认演示账号为 `admin` / `demo1234`（仅限本地试用，共享或生产环境请配置独立账号）。沙箱镜像会在首次创建沙箱时按需拉取，也可执行 `./start.sh pull` 提前拉取。
 
-已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。
+执行绑定与离线维护锁保存在 SQL，维护操作在私有工作目录保留持久票据，无需独立执行控制存储。业务正文仍支持本地文件、S3 和 COS，详见 [STORAGE.md](server/STORAGE.md)。已有 v3.2 数据须按照 [UPGRADING.md](server/UPGRADING.md) 迁移。
 
 ### 跑通第一个工作流
 

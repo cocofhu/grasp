@@ -14,7 +14,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/executionlineage"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/objectstore"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/storageguard"
@@ -94,13 +93,9 @@ func configureDoctorRuntime(t *testing.T, h *harness) (*sandbox.BundleStore, []b
 	return store, data.Bytes()
 }
 
-func doctorAuthority(t *testing.T, h *harness) *executionlineage.Authority {
+func doctorAuthority(t *testing.T, h *harness) *executionlineage.SQLAuthority {
 	t.Helper()
-	backend, err := objectstore.NewLocalControl(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := executionlineage.Open(t.Context(), backend)
+	authority, err := executionlineage.OpenSQL(t.Context(), h.db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +119,7 @@ func doctorAuthority(t *testing.T, h *harness) *executionlineage.Authority {
 	if err := storageguard.Leave(t.Context(), h.db, owner); err != nil {
 		t.Fatal(err)
 	}
-	controller, err := executionlineage.NewController(t.Context(), h.db, authority)
+	controller, err := executionlineage.NewLocalController(t.Context(), h.db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +188,11 @@ func TestDoctorSandboxSessionUsesRealGuardedRunsAndScopedBundleCleanup(t *testin
 	if w := call(first.RunA, first.TokenA, "read_artifact", map[string]string{"name": "proof.txt"}); w.Code != http.StatusUnauthorized {
 		t.Fatal("cleanup retained the old MCP token", w.Code)
 	}
-	if _, err := authority.BeginRestore(t.Context(), uuid.NewString(), strings.Repeat("f", 64)); err != nil {
+	owner := uuid.NewString()
+	if err := storageguard.Enter(t.Context(), h.db, owner, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authority.BeginRestore(t.Context(), owner, strings.Repeat("f", 64)); err != nil {
 		t.Fatal(err)
 	}
 	if w := doctorSessionRequest(h, http.MethodDelete, "/_internal/doctor/artifact-sessions/"+second.ID, second.CleanupToken); w.Code != http.StatusNotFound || fetch(second) {

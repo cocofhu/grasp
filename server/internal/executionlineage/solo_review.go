@@ -124,7 +124,7 @@ func soloReviewBindingDigest(source soloReviewSource) string {
 }
 
 // VerifyReviewedSoloEnvironmentBindingTx is pure metadata validation for the
-// explicit cold-resume path. Its caller must hold the current Authority and
+// explicit cold-resume path. Its caller must hold the current SQL binding and
 // physical operation fence; a receipt never supplies either capability.
 func VerifyReviewedSoloEnvironmentBindingTx(tx *gorm.DB, row SoloEnvironmentReview) error {
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
@@ -143,7 +143,7 @@ func VerifyReviewedSoloEnvironmentBindingTx(tx *gorm.DB, row SoloEnvironmentRevi
 	return nil
 }
 
-func (a *Authority) soloReviewPermit(ctx context.Context, db *gorm.DB, owner string) (Permit, error) {
+func (a *SQLAuthority) soloReviewPermit(ctx context.Context, db *gorm.DB, owner string) (Permit, error) {
 	if err := outsideSQLTransaction(db); err != nil {
 		return Permit{}, err
 	}
@@ -160,7 +160,7 @@ func (a *Authority) soloReviewPermit(ctx context.Context, db *gorm.DB, owner str
 	return permit, err
 }
 
-func (a *Authority) guardSoloReviewTx(tx *gorm.DB, owner string, permit Permit) error {
+func (a *SQLAuthority) guardSoloReviewTx(tx *gorm.DB, owner string, permit Permit) error {
 	var control storageguard.Control
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ? AND owner = ?", "primary", owner).Take(&control).Error; err != nil {
 		return errors.Join(ErrInactive, err)
@@ -175,7 +175,7 @@ func (a *Authority) guardSoloReviewTx(tx *gorm.DB, owner string, permit Permit) 
 	return a.GuardTx(tx, permit, "", "")
 }
 
-func (a *Authority) guardSoloReviewParentsTx(tx *gorm.DB, permit Permit, source soloReviewSource) error {
+func (a *SQLAuthority) guardSoloReviewParentsTx(tx *gorm.DB, permit Permit, source soloReviewSource) error {
 	queueHash := sha256.Sum256([]byte("solo\x00" + source.SoloID))
 	queueID := hex.EncodeToString(queueHash[:])
 	for _, entity := range []Entity{{Kind: EntitySolo, ID: source.SoloID}, {Kind: EntityQueue, ID: queueID}} {
@@ -209,7 +209,7 @@ func (a *Authority) guardSoloReviewParentsTx(tx *gorm.DB, permit Permit, source 
 // ReviewSoloEnvironment stops exactly one original Solo environment while all
 // writers are offline. Once dispatch is durable, retries only observe the
 // original result; they never repeat a possibly accepted native stop.
-func (a *Authority) ReviewSoloEnvironment(ctx context.Context, db *gorm.DB, owner string, sandboxID uint, provider SoloReviewProvider, authorize SoloReviewAuthorization) (SoloEnvironmentReview, error) {
+func (a *SQLAuthority) ReviewSoloEnvironment(ctx context.Context, db *gorm.DB, owner string, sandboxID uint, provider SoloReviewProvider, authorize SoloReviewAuthorization) (SoloEnvironmentReview, error) {
 	var row SoloEnvironmentReview
 	if provider == nil || authorize == nil || sandboxID == 0 {
 		return row, ErrConflict
@@ -282,6 +282,9 @@ func (a *Authority) ReviewSoloEnvironment(ctx context.Context, db *gorm.DB, owne
 	}
 	if row.DispatchedAt == nil {
 		permit, err = a.soloReviewPermit(ctx, db, owner)
+		if err == nil && (permit.DatasetID() != row.DatasetID || permit.Lineage() != row.Lineage) {
+			err = ErrConflict
+		}
 		if err != nil {
 			return row, err
 		}
@@ -334,6 +337,9 @@ func (a *Authority) ReviewSoloEnvironment(ctx context.Context, db *gorm.DB, owne
 		return row, errors.Join(ErrConflict, err)
 	}
 	permit, err = a.soloReviewPermit(ctx, db, owner)
+	if err == nil && (permit.DatasetID() != row.DatasetID || permit.Lineage() != row.Lineage) {
+		err = ErrConflict
+	}
 	if err != nil {
 		return row, err
 	}
@@ -388,12 +394,15 @@ func (a *Authority) ReviewSoloEnvironment(ctx context.Context, db *gorm.DB, owne
 
 // FinalizeSoloEnvironmentReview releases only this original offline operation.
 // It re-observes the same stopped provider and never dispatches another stop.
-func (a *Authority) FinalizeSoloEnvironmentReview(ctx context.Context, db *gorm.DB, owner string, sandboxID uint, provider SoloReviewProvider, authorize SoloReviewAuthorization) (SoloEnvironmentReview, error) {
+func (a *SQLAuthority) FinalizeSoloEnvironmentReview(ctx context.Context, db *gorm.DB, owner string, sandboxID uint, provider SoloReviewProvider, authorize SoloReviewAuthorization) (SoloEnvironmentReview, error) {
 	row, err := a.ReviewSoloEnvironment(ctx, db, owner, sandboxID, provider, authorize)
 	if err != nil {
 		return row, err
 	}
 	permit, err := a.soloReviewPermit(ctx, db, owner)
+	if err == nil && (permit.DatasetID() != row.DatasetID || permit.Lineage() != row.Lineage) {
+		err = ErrConflict
+	}
 	if err != nil {
 		return row, err
 	}

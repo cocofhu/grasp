@@ -12,44 +12,45 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestControllerDoesNotAdoptAChangedExternalGeneration(t *testing.T) {
+func TestControllerDoesNotAdoptAChangedSQLGeneration(t *testing.T) {
 	ctx := context.Background()
-	db, a, calls, owner := authorityFixture(t)
-	_, original := activateFixture(t, db, a, calls, owner)
+	db, a, owner := authorityFixture(t)
+	_, original := activateFixture(t, db, a, owner)
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewController(ctx, db, a)
+	runtime, err := NewLocalController(ctx, db)
 	if err != nil || runtime.DatasetID() != original.DatasetID() {
 		t.Fatal(err)
 	}
 	if err := runtime.Check(ctx); err != nil {
 		t.Fatal(err)
 	}
+	owner = uuid.NewString()
 	if err := storageguard.Enter(ctx, db, owner, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.Check(ctx); !errors.Is(err, ErrInactive) {
 		t.Fatal("maintenance did not fence execution", err)
 	}
-	ticket, err := a.BeginRestore(ctx, uuid.NewString(), strings.Repeat("f", 64))
+	ticket, err := a.BeginRestore(ctx, owner, strings.Repeat("f", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runtime.Prepare(ctx); !errors.Is(err, ErrInactive) {
 		t.Fatal("inactive marker did not revoke original process", err)
 	}
-	commitQuarantine(t, db, a, calls, owner, ticket)
+	commitQuarantine(t, db, a, owner, ticket)
 	if _, err := a.Activate(ctx, db, owner, ticket); err != nil {
 		t.Fatal(err)
 	}
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.Prepare(ctx); !errors.Is(err, ErrConflict) {
-		t.Fatal("old process adopted newly active external generation", err)
+	if _, err := runtime.Prepare(ctx); !errors.Is(err, ErrUnbound) {
+		t.Fatal("old process adopted newly finalized SQL generation", err)
 	}
-	restarted, err := NewController(ctx, db, a)
+	restarted, err := NewLocalController(ctx, db)
 	if err != nil || restarted.DatasetID() == runtime.DatasetID() {
 		t.Fatal("new explicitly restarted process did not bind new dataset", err)
 	}
@@ -60,22 +61,22 @@ func TestControllerDoesNotAdoptAChangedExternalGeneration(t *testing.T) {
 
 func TestControllerDisabledStartupStaysClosedAndQuarantinedParentsFenceNewChildren(t *testing.T) {
 	ctx := context.Background()
-	db, a, calls, owner := authorityFixture(t)
-	disabled, err := NewController(ctx, db, a)
+	db, a, owner := authorityFixture(t)
+	disabled, err := NewLocalController(ctx, db)
 	if err == nil {
 		t.Fatal("uninitialized startup granted authority")
 	}
 	if err := db.Table("runs").Create(map[string]any{"id": "old-run", "status": "queued"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	activateFixture(t, db, a, calls, owner)
+	activateFixture(t, db, a, owner)
 	if err := storageguard.Leave(ctx, db, owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := disabled.Prepare(ctx); err == nil {
 		t.Fatal("previously disabled process auto-adopted later initialization")
 	}
-	runtime, err := NewController(ctx, db, a)
+	runtime, err := NewLocalController(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +86,6 @@ func TestControllerDisabledStartupStaysClosedAndQuarantinedParentsFenceNewChildr
 		t.Fatal("new child bypassed quarantined parent", err)
 	}
 	err = runtime.Transaction(ctx, db, []Entity{{EntityRun, "explicit-new-run"}}, func(tx *gorm.DB) error {
-		calls.inSQL.Store(true)
-		defer calls.inSQL.Store(false)
 		return tx.Table("runs").Create(map[string]any{"id": "explicit-new-run", "status": "queued"}).Error
 	})
 	if err != nil {

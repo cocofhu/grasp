@@ -23,18 +23,6 @@ func executionStatus(ctx context.Context, opts options, cfg *config.Config, outp
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	view := executionlineage.Observation{Version: 1, Status: "unavailable"}
-	control := config.StorageConfig{}
-	var err error
-	if opts.executionControl != "" {
-		control, err = loadTarget(opts.executionControl)
-	} else if cfg.ExecutionControl != nil {
-		control = *cfg.ExecutionControl
-	} else {
-		err = executionlineage.ErrUnavailable
-	}
-	if err != nil {
-		return writeExecutionStatus(output, view, executionlineage.ErrUnavailable)
-	}
 	db, err := connectExecutionStatus(ctx, cfg.Database)
 	if err != nil {
 		return writeExecutionStatus(output, view, executionlineage.ErrUnavailable)
@@ -43,11 +31,7 @@ func executionStatus(ctx context.Context, opts options, cfg *config.Config, outp
 		conn, _ := db.DB()
 		defer func() { _ = conn.Close() }()
 	}
-	protected := []string{opts.workdir}
-	if cfg.Database.Driver != "mysql" {
-		protected = append(protected, filepath.Dir(cfg.Database.Path))
-	}
-	view, err = executionlineage.ObserveConfigured(ctx, control, []config.StorageConfig{cfg.Storage}, protected, db)
+	view, err = executionlineage.ObserveSQL(ctx, db)
 	return writeExecutionStatus(output, view, err)
 }
 

@@ -185,21 +185,9 @@ func reviewSoloEnvironment(ctx context.Context, opts options, cfg *config.Config
 	if err != nil {
 		return err
 	}
-	if opts.executionControl == "" && cfg.ExecutionControl == nil {
-		return errors.New("existing independent execution control is required")
-	}
-	var authority *executionlineage.Authority
-	if opts.executionControl != "" {
-		authority, err = openExecutionControl(ctx, opts, cfg)
-	} else {
-		protected := []string{opts.workdir}
-		if cfg.Database.Driver != "mysql" {
-			protected = append(protected, filepath.Dir(cfg.Database.Path))
-		}
-		authority, err = executionlineage.OpenConfigured(ctx, *cfg.ExecutionControl, []config.StorageConfig{cfg.Storage}, protected)
-	}
+	authority, err := executionlineage.OpenSQL(ctx, db)
 	if err != nil {
-		return errors.New("existing independent execution authority is unavailable")
+		return errors.New("existing SQL execution binding is unavailable")
 	}
 	permit, err := authority.ReadActive(ctx)
 	if err != nil {

@@ -75,6 +75,9 @@ func knownKind(kind EntityKind) bool {
 }
 
 func outsideSQLTransaction(db *gorm.DB) error {
+	if db == nil {
+		return ErrUnavailable
+	}
 	if _, inside := db.Statement.ConnPool.(gorm.TxCommitter); inside {
 		return ErrTransaction
 	}
@@ -90,18 +93,18 @@ func EnsureRecoverySchema(ctx context.Context, db *gorm.DB, maintenanceID string
 	if err := storageguard.Check(ctx, db, maintenanceID); err != nil {
 		return err
 	}
-	return db.WithContext(ctx).AutoMigrate(&models.ExecutionDataset{}, &models.ExecutionQuarantine{})
+	return db.WithContext(ctx).AutoMigrate(&models.ExecutionDataset{}, &models.ExecutionQuarantine{}, &models.ExecutionRecovery{})
 }
 
-func (a *Authority) validTicket(ticket Ticket) bool {
+func (a *SQLAuthority) validTicket(ticket Ticket) bool {
 	return ticket.data != nil && ticket.data.authority == a && ticket.data.marker.valid() && (ticket.data.marker.State == Initializing || ticket.data.marker.State == Restoring)
 }
 
 // QuarantineTx only freezes SQL metadata. It preserves all user bodies and
 // native unknown/dispatched states and deliberately provides no bulk replay or
-// generic review-release API. The marker stays inactive until Activate reads
-// back this transaction's committed binding outside the transaction.
-func (a *Authority) QuarantineTx(tx *gorm.DB, maintenanceID string, ticket Ticket) (models.ExecutionDataset, error) {
+// generic review-release API. The durable recovery stays pending until
+// Activate validates this transaction's committed binding and quarantine set.
+func (a *SQLAuthority) QuarantineTx(tx *gorm.DB, maintenanceID string, ticket Ticket) (models.ExecutionDataset, error) {
 	var binding models.ExecutionDataset
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
 		return binding, ErrTransaction
@@ -109,9 +112,15 @@ func (a *Authority) QuarantineTx(tx *gorm.DB, maintenanceID string, ticket Ticke
 	if !a.validTicket(ticket) {
 		return binding, ErrConflict
 	}
-	var control storageguard.Control
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ? AND owner = ?", "primary", maintenanceID).Take(&control).Error; err != nil || maintenanceID == "" {
-		return binding, errors.Join(ErrInactive, err)
+	if maintenanceID != ticket.data.marker.OperationID {
+		return binding, ErrConflict
+	}
+	if err := offlineGuardTx(tx, maintenanceID); err != nil {
+		return binding, err
+	}
+	var recovery models.ExecutionRecovery
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&recovery, "id = ?", maintenanceID).Error; err != nil || !recoveryMatches(recovery, ticket.Document()) {
+		return binding, errors.Join(ErrConflict, err)
 	}
 	target := ticket.data.marker
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&binding, "id = ?", "primary").Error
@@ -123,6 +132,9 @@ func (a *Authority) QuarantineTx(tx *gorm.DB, maintenanceID string, ticket Ticke
 			return binding, ErrUnbound
 		}
 		return binding, nil // Retry must not quarantine post-activation new work.
+	}
+	if recovery.State == "finalized" || err == nil && (binding.OperationID == maintenanceID || target.State == Initializing) {
+		return binding, ErrConflict
 	}
 	sourceDataset, sourceLineage := binding.DatasetID, binding.Lineage
 	for _, spec := range quarantineSpecs {
@@ -209,62 +221,69 @@ func bindingMatches(binding models.ExecutionDataset, marker Marker, revision uin
 	return binding.ID == "primary" && binding.NamespaceID == marker.NamespaceID && binding.DatasetID == marker.DatasetID && binding.Lineage == marker.Lineage && binding.OperationID == marker.OperationID && binding.ControlRevision == revision && binding.BackupSHA256 == marker.BackupSHA256
 }
 
-// Activate requires the SQL binding to exist after commit and the same offline
-// maintenance owner to remain present. An uncommitted/rolled-back binding never
-// activates the independently stored lineage.
-func (a *Authority) Activate(ctx context.Context, db *gorm.DB, maintenanceID string, ticket Ticket) (Permit, error) {
+// Activate validates the committed binding and complete quarantine set, then
+// finalizes the durable SQL recovery record. It never releases maintenance.
+func (a *SQLAuthority) Activate(ctx context.Context, db *gorm.DB, maintenanceID string, ticket Ticket) (Permit, error) {
 	if err := outsideSQLTransaction(db); err != nil {
 		return Permit{}, err
 	}
-	if !a.validTicket(ticket) {
+	if !a.validTicket(ticket) || ticket.data.marker.OperationID != maintenanceID {
 		return Permit{}, ErrConflict
-	}
-	if err := storageguard.Check(ctx, db, maintenanceID); err != nil {
-		return Permit{}, err
 	}
 	var binding models.ExecutionDataset
-	if err := db.WithContext(ctx).Take(&binding, "id = ?", "primary").Error; err != nil {
-		return Permit{}, errors.Join(ErrUnbound, err)
-	}
-	target := ticket.data.marker
-	if !bindingMatches(binding, target, target.Revision+1) {
-		return Permit{}, ErrUnbound
-	}
-	// All quarantine records and their identities must survive the committed
-	// SQL snapshot. Review-state changes do not erase the original frozen set.
-	count, fingerprint, err := quarantineFingerprint(db.WithContext(ctx), target.DatasetID)
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := offlineGuardTx(tx, maintenanceID); err != nil {
+			return err
+		}
+		var row models.ExecutionRecovery
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", maintenanceID).Error; err != nil || !recoveryMatches(row, ticket.Document()) {
+			return errors.Join(ErrConflict, err)
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&binding, "id = ?", "primary").Error; err != nil {
+			return errors.Join(ErrUnbound, err)
+		}
+		if !bindingMatches(binding, ticket.data.marker, ticket.data.marker.Revision+1) {
+			return ErrUnbound
+		}
+		count, fingerprint, err := quarantineFingerprint(tx, binding.DatasetID)
+		if err != nil {
+			return err
+		}
+		if binding.QuarantineCount != count || binding.QuarantineSHA256 != fingerprint {
+			return ErrUnbound
+		}
+		if row.State == "finalized" {
+			return nil
+		}
+		now := time.Now().UTC()
+		changed := tx.Model(&models.ExecutionRecovery{}).Where("id = ? AND state = ? AND ticket_sha256 = ? AND finalized_at IS NULL", maintenanceID, ticket.data.marker.State, row.TicketSHA256).Updates(map[string]any{"state": "finalized", "finalized_at": now})
+		if changed.Error != nil {
+			return changed.Error
+		}
+		if changed.RowsAffected != 1 {
+			return ErrConflict
+		}
+		return nil
+	})
 	if err != nil {
 		return Permit{}, err
 	}
-	if binding.QuarantineCount != count || binding.QuarantineSHA256 != fingerprint {
-		return Permit{}, ErrUnbound
-	}
-	current, info, err := a.read(ctx)
-	if err != nil {
-		return Permit{}, err
-	}
-	if activeChild(current, target) {
-		return a.permit(current), nil
-	}
-	if current != target {
-		return Permit{}, ErrConflict
-	}
-	current.State, current.Revision, current.UpdatedAt = Active, current.Revision+1, time.Now().UTC()
-	if err := a.publish(ctx, current, info.ETag); err != nil {
-		return Permit{}, err
-	}
-	return a.permit(current), nil
+	// Read the committed stored values (including SQL timestamp precision).
+	return a.ReadActive(ctx)
 }
 
-func (a *Authority) validPermit(permit Permit) bool {
-	return permit.data != nil && permit.data.authority == a && permit.data.marker.State == Active && permit.data.expiresAt.After(time.Now())
+func (a *SQLAuthority) validPermit(permit Permit) bool {
+	return permit.data != nil && permit.data.authority == a && permit.data.marker.State == Active
 }
 
-// CheckBinding is the mandatory startup comparison after a fresh ReadActive.
-// It uses only SQL; an old/restored SQL dataset cannot make itself authoritative.
-func (a *Authority) CheckBinding(ctx context.Context, db *gorm.DB, permit Permit) error {
+// CheckBinding compares a private preflight to current SQL and rejects every
+// unfinished recovery, including one whose local workdir ticket was lost.
+func (a *SQLAuthority) CheckBinding(ctx context.Context, db *gorm.DB, permit Permit) error {
 	if !a.validPermit(permit) {
 		return ErrUnavailable
+	}
+	if err := noPendingRecovery(db.WithContext(ctx)); err != nil {
+		return err
 	}
 	var binding models.ExecutionDataset
 	if err := db.WithContext(ctx).Take(&binding, "id = ?", "primary").Error; err != nil {
@@ -282,7 +301,7 @@ func (a *Authority) CheckBinding(ctx context.Context, db *gorm.DB, permit Permit
 // GuardTx belongs in the actual dispatch/claim/publication transaction. Empty
 // kind/id checks only the current dataset for admitting a brand new identity.
 // Each existing source must also check its parent Run/Solo/Queue as applicable.
-func (a *Authority) GuardTx(tx *gorm.DB, permit Permit, kind EntityKind, id string) error {
+func (a *SQLAuthority) GuardTx(tx *gorm.DB, permit Permit, kind EntityKind, id string) error {
 	if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
 		return ErrTransaction
 	}
@@ -303,23 +322,7 @@ func (a *Authority) GuardTx(tx *gorm.DB, permit Permit, kind EntityKind, id stri
 		return ErrQuarantined
 	}
 	if !a.validPermit(permit) {
-		return ErrUnavailable // A SQL lock wait cannot extend proof lifetime.
-	}
-	return nil
-}
-
-func localGuardTx(tx *gorm.DB, entities []Entity) error {
-	for _, entity := range entities {
-		if !knownKind(entity.Kind) || entity.ID == "" {
-			return ErrConflict
-		}
-		var rows []struct{ ID string }
-		if err := tx.Table("execution_quarantines").Select("id").Where("entity_kind = ? AND entity_id = ? AND review_state = ?", string(entity.Kind), entity.ID, "pending").Limit(1).Clauses(clause.Locking{Strength: "SHARE"}).Find(&rows).Error; err != nil {
-			return err
-		}
-		if len(rows) != 0 {
-			return ErrQuarantined
-		}
+		return ErrUnavailable
 	}
 	return nil
 }

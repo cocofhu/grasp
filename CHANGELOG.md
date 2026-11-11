@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 彻底移除独立的执行控制对象存储：离线初始化、升级核对和恢复改用 SQL 与原维护目录中的恢复票据，无需额外配置 S3/COS；保留停机维护锁、历史待执行任务隔离，以及聊天、附件和工作区的业务对象存储。
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
 - 移除 `./start.sh [dev] init-execution --offline` 离线初始化步骤与 `GRASP_EXECUTION_CONTROL_*` 外部控制目录依赖，`./start.sh -d` 与 `./start.sh dev -d` 启动即可直接创建 Solo 会话和运行工作流。
 - `./start.sh dev` / `sandbox` 构建本地沙箱镜像时，Docker CE 不再只依赖清华源：密钥或软件包 403 时依次回退阿里云、中科大和官方源；整次构建仍失败则自动用 `USE_CN_MIRROR=false` 再打一次。
