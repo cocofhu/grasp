@@ -375,6 +375,8 @@ const MENU_WIDTH_BLOCKED = 280
 const MENU_CHROME = 8
 const MENU_ROW_HEIGHT = 32
 const MENU_MARGIN = 8
+/** Wrapped note under a disabled delete-session item. The menu width is MENU_WIDTH_BLOCKED. */
+const SOLO_DELETE_REASON_HEIGHT = 96
 
 const editingKey = ref<string | null>(null)
 const renameDraft = ref('')
@@ -388,10 +390,16 @@ const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
 const menuHistoryRun = ref<Run | null>(null)
 const historyRunById = ref(new Map<string, Run>())
-const historyTitleOverrides = ref<Record<string, string>>({})
+/** Local title kept until a later history read catches up or brings a newer name. */
+type HistoryTitleOverride = { title: string; previous: string; at: number }
+const historyTitleOverrides = ref<Record<string, HistoryTitleOverride>>({})
 const dismissedHistoryRunIds = ref<string[]>([])
 const dismissedHistorySoloIds = ref<string[]>([])
-const historyRunTitles = computed(() => ({ ...pendingRunTitles.value, ...historyTitleOverrides.value }))
+const historyRunTitles = computed(() => {
+  const overrides: Record<string, string> = {}
+  for (const [id, item] of Object.entries(historyTitleOverrides.value)) overrides[id] = item.title
+  return { ...pendingRunTitles.value, ...overrides }
+})
 
 type RowPress = { key: string; x: number; y: number; timer: number }
 let rowPress: RowPress | null = null
@@ -498,14 +506,15 @@ function openMenu(it: InboxItem, x: number, y: number) {
 
 function openSoloMenu(session: SoloSession, x: number, y: number) {
   if (editingKey.value || deleteTarget.value) return
-  const width = MENU_WIDTH
   const active = isSoloActive(session)
   const bound = soloEnvironmentBound(session)
   const release = !active && session.status === 'closed' && bound
+  const deleteReason = !active && bound
+  const width = deleteReason ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const workspaceRows = worktreeMode.value ? 0 : 1 + (active ? 1 : Number(release))
   const rows = (active ? 2 : 1) + workspaceRows + (active ? 0 : 1)
   const separators = (active && !worktreeMode.value ? 1 : 0) + (active ? 0 : 1)
-  const height = MENU_CHROME + rows * MENU_ROW_HEIGHT + separators * 9
+  const height = MENU_CHROME + rows * MENU_ROW_HEIGHT + separators * 9 + (deleteReason ? SOLO_DELETE_REASON_HEIGHT : 0)
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
   menuHistoryRun.value = null
@@ -897,7 +906,11 @@ async function commitHistoryRename() {
   try {
     const saved = await api.updateRunTitle(runId, next)
     const title = saved.title?.trim() || next
-    historyTitleOverrides.value = { ...historyTitleOverrides.value, [runId]: title }
+    const previous = historyTitleOverrides.value[runId]?.title ?? run.title?.trim() ?? ''
+    historyTitleOverrides.value = {
+      ...historyTitleOverrides.value,
+      [runId]: { title, previous, at: Date.now() },
+    }
     patchRunTitle(runId, title)
     runningRuns.value = runningRuns.value.map((r) => (r.id === runId ? { ...r, title } : r))
     carriedRows.value = carriedRows.value.map((r) => (r.runId === runId ? { ...r, runTitle: title } : r))
@@ -1161,8 +1174,36 @@ watch(() => soloStore.sessions.value, (sessions) => {
   saving.value = false
 }, { deep: true })
 
+function reconcileHistoryTitleOverrides(runs: Run[]) {
+  const current = historyTitleOverrides.value
+  if (!Object.keys(current).length) return
+  const next = { ...current }
+  let changed = false
+  for (const run of runs) {
+    const override = next[run.id]
+    if (!override) continue
+    const incoming = run.title?.trim() ?? ''
+    if (!incoming) continue
+    if (incoming === override.title) {
+      delete next[run.id]
+      changed = true
+      continue
+    }
+    // A read that still has the name we replaced may be the poll that started
+    // before the rename. A later activity time means the title really changed again.
+    if (incoming === override.previous) {
+      const activity = Date.parse(run.lastActivityAt ?? '')
+      if (!Number.isFinite(activity) || activity <= override.at) continue
+    }
+    delete next[run.id]
+    changed = true
+  }
+  if (changed) historyTitleOverrides.value = next
+}
+
 function onHistoryRuns(runs: Run[]) {
   historyRunById.value = new Map(runs.map((run) => [run.id, run]))
+  reconcileHistoryTitleOverrides(runs)
   if (menu.value?.kind === 'history-run' && !historyRunById.value.has(menu.value.key)) closeMenu()
   if (!editingKey.value?.startsWith('history:')) return
   const id = editingKey.value.slice('history:'.length)
@@ -1672,7 +1713,7 @@ const settingsItems = computed(() => (
       class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
       role="menu"
       data-testid="nav-pending-menu"
-      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
+      :style="{ left: `${menu.x}px`, top: `${menu.y}px`, width: menuSoloEnded && menuSoloBound ? `${MENU_WIDTH_BLOCKED}px` : undefined }"
       @mousedown.stop
       @click.stop
       @contextmenu.prevent
@@ -1763,6 +1804,12 @@ const settingsItems = computed(() => (
         <span>{{ t('nav.pendingCancelRun') }}</span>
       </button>
       <div v-if="menuHistoryRun || menuSoloEnded" class="pending-row-menu__separator" role="separator" />
+      <p
+        v-if="menuSoloEnded && menuSoloBound"
+        id="nav-solo-delete-reason"
+        class="pending-row-menu__reason"
+        data-testid="nav-solo-menu-delete-reason"
+      >{{ t('nav.historySoloDeleteBlocked') }}</p>
       <button
         v-if="menuHistoryRun"
         type="button"
@@ -1781,7 +1828,7 @@ const settingsItems = computed(() => (
         class="pending-row-menu__item pending-row-menu__item--danger"
         data-testid="nav-solo-menu-delete"
         :disabled="menuSoloBound"
-        :title="menuSoloBound ? t('nav.historySoloDeleteBlocked') : undefined"
+        :aria-describedby="menuSoloBound ? 'nav-solo-delete-reason' : undefined"
         @click="onMenuDeleteSolo"
       >
         <Icon name="trash" :size="14" />
@@ -2056,6 +2103,15 @@ const settingsItems = computed(() => (
 }
 
 .pending-row-menu__separator { height: 1px; margin: 4px 8px; background: rgb(var(--c-line)); }
+
+.pending-row-menu__reason {
+  margin: 0;
+  padding: 2px 12px 8px;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: normal;
+}
 
 .pending-row-menu__item:hover,
 .pending-row-menu__item:focus-visible {

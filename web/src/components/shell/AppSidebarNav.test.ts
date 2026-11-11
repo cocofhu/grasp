@@ -518,7 +518,7 @@ describe('AppSidebarNav', () => {
     expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(el => el.textContent?.trim())).toEqual(['重命名', '快照', '释放环境', '删除会话'])
     const blocked = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
     expect(blocked.disabled).toBe(true)
-    expect(blocked.title).toContain('释放环境')
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')?.textContent).toContain('请先释放环境')
     blocked.click()
     expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
     expect(document.querySelector('[data-testid="nav-history-delete-confirm"]')).toBeNull()
@@ -678,6 +678,33 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
+  it('lets a later history read replace a sidebar rename', async () => {
+    stubHistoryRuns([finishedRun({ title: 'hello' })])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue('侧栏名字')
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-h', title: '侧栏名字' })
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('侧栏名字')
+
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('侧栏名字')
+
+    stubHistoryRuns([finishedRun({ title: '详情里改的名字', lastActivityAt: '2026-11-11T08:00:00Z' })])
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('详情里改的名字')
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).not.toContain('侧栏名字')
+    wrapper.unmount()
+  })
+
   it('confirms before deleting a history run and leaves the run page for the run list', async () => {
     stubHistoryRuns([finishedRun()])
     routeState.path = '/runs/run-h'
@@ -774,11 +801,47 @@ describe('AppSidebarNav', () => {
     await flushPromises()
     await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
     expect(historyMenuLabels()).toEqual(['重命名', '快照', '删除会话'])
+    expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
     const del = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
     expect(del.disabled).toBe(true)
+    const reason = document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')
+    expect(reason?.textContent).toBe('工作区仍保留在原环境中，请先释放环境后再删除聊天')
+    expect(del.getAttribute('title')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('请先释放环境')
     del.click()
     expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
     expect(document.querySelector('[data-testid="nav-history-delete-confirm"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it.each([
+    { status: 'closed' as const, labels: ['重命名', '快照', '释放环境', '删除会话'] },
+    { status: 'error' as const, labels: ['重命名', '快照', '删除会话'] },
+  ])('shows the bound-environment reason in the menu for a $status Solo', async ({ status, labels }) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status, sandboxId: 9 })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="sidebar-recent-solo"]')
+    await row.trigger('contextmenu', { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
+    expect(historyMenuLabels()).toEqual(labels)
+    const menu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    const reason = menu.querySelector('[data-testid="nav-solo-menu-delete-reason"]')
+    expect(reason?.textContent).toBe('工作区仍保留在原环境中，请先释放环境后再删除聊天')
+    expect(reason?.getAttribute('role')).not.toBe('menuitem')
+    const del = menu.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(true)
+    expect(del.getAttribute('title')).toBeNull()
+    expect(del.getAttribute('aria-describedby')).toBe('nav-solo-delete-reason')
+    expect(menu.textContent).toContain('请先释放环境')
+    if (status === 'error') expect(menu.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    const width = status === 'error' ? 209 : 241
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 280)
+    expect(Number.parseFloat(menu.style.left)).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - width)
+    expect(Number.parseFloat(menu.style.top)).toBeGreaterThanOrEqual(8)
+    del.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -825,6 +888,25 @@ describe('AppSidebarNav', () => {
     expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-solo-menu-environment"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows the bound-environment reason in worktree without a release action', async () => {
+    setExecutionMode('worktree')
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'error', sandboxId: 4, title: '失败仍绑定' })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 18, clientY: 18 })
+    expect(historyMenuLabels()).toEqual(['重命名', '删除会话'])
+    expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')?.textContent).toContain('请先释放环境')
+    const del = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(true)
+    del.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

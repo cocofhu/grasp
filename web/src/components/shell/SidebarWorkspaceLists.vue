@@ -141,11 +141,15 @@ async function loadRuns() {
   } finally { if (runsRequest === controller) runsRequest = null }
 }
 const endedBadly = (run: Run) => run.status === 'failed' || run.status === 'cancelled'
+/** The list's own title. A sidebar rename override must not hide a later read. */
+function storedRunTitle(run: Run) {
+  return displayRunTitle(run.title) || run.workflowName || run.id
+}
 /** Write only real changes, and never while the user is on the list. */
 function applyRuns(next: Run[]) {
   if (recentHold.isHeld()) { heldRuns = next; return }
   heldRuns = null
-  if (sameRecentRows(runs.value, next, runTitle)) return
+  if (sameRecentRows(runs.value, next, storedRunTitle)) return
   runs.value = next
 }
 function applySolos(next: SoloSession[]) {
