@@ -175,7 +175,7 @@ func pickQueuedByRemainingHumanGate(candidates []models.Run) models.Run {
 }
 
 // scheduleRunAdmission is the unified entry for resuming or re-driving a run
-// from a specific node. It TryAcquires a slot synchronously (admitRunDirect —
+// from a specific node. It TryAcquires a slot synchronously (admitRunDirectMode —
 // empty-slot passthrough; does not wait for a future human_gate run). When at
 // capacity the run is persisted as queued (with fromNodeID) and the dispatcher
 // promotes it later by Priority → remaining human_gate → FIFO — never writing
@@ -206,10 +206,6 @@ func (e *Engine) scheduleRunAdmissionMode(runID, fromNodeID string, allowPaused 
 	}
 	e.sem.Release()
 	return e.queueForAdmissionMode(runID, fromNodeID, allowPaused)
-}
-
-func (e *Engine) queueForAdmission(runID, fromNodeID string) bool {
-	return e.queueForAdmissionMode(runID, fromNodeID, false)
 }
 
 func (e *Engine) queueForAdmissionMode(runID, fromNodeID string, allowPaused bool) bool {
@@ -325,10 +321,6 @@ func (e *Engine) enqueueAdmission(runID, fromNodeID string, requireRunning, allo
 		return false
 	}
 	return queued
-}
-
-func (e *Engine) admitRunDirect(runID, fromNodeID string) bool {
-	return e.admitRunDirectMode(runID, fromNodeID, false)
 }
 
 func (e *Engine) admitRunDirectMode(runID, fromNodeID string, allowPaused bool) bool {
