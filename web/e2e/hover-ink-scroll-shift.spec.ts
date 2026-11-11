@@ -109,7 +109,7 @@ test.describe('hover-ink scroll-shift fix', () => {
     })
 
     // Primary destinations now live in the outer rail; inner Home keeps hover ink.
-    const runsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '运行', exact: true })
+    const runsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '全部运行', exact: true })
     const runsBox = await runsLink.boundingBox()
     expect(runsBox).toBeTruthy()
     await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
