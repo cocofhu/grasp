@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  GO_VERSION: "1.26.10"
+  GO_VERSION: "1.26.11"
   # Pipe also falls back on proxy transport / 5xx errors; comma only does on 404/410.
   GOPROXY: https://proxy.golang.org|direct
 

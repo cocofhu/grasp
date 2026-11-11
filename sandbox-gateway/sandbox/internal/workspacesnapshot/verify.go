@@ -87,14 +87,10 @@ func (e *Engine) validateManifest(data []byte, receipt Receipt) (Manifest, error
 		if indexes > e.config.Limits.MaxEntries {
 			return manifest, ErrLimit
 		}
-		refs := map[string]string{}
-		for _, ref := range repo.Refs {
-			if !validRef(ref.Name) || !validObjectID(ref.OID, repo.ObjectFormat) || refs[ref.Name] != "" {
-				return manifest, ErrUnsafe
-			}
-			refs[ref.Name] = ref.OID
+		if !validRefs(repo.Refs, repo.ObjectFormat) {
+			return manifest, ErrUnsafe
 		}
-		if repo.SymbolicHEAD != "" && refs[repo.SymbolicHEAD] != repo.HEAD {
+		if repo.SymbolicHEAD != "" && resolveRef(repo.Refs, repo.SymbolicHEAD) != repo.HEAD {
 			return manifest, ErrIntegrity
 		}
 		operations := map[string]bool{}
@@ -129,6 +125,19 @@ func (e *Engine) validateManifest(data []byte, receipt Receipt) (Manifest, error
 		return manifest, ErrIntegrity
 	}
 	return manifest, nil
+}
+
+func validRefs(refs []GitRef, format string) bool {
+	names := map[string]bool{}
+	for _, ref := range refs {
+		direct := ref.Target == "" && validObjectID(ref.OID, format)
+		symbolic := ref.OID == "" && validRef(ref.Target) && ref.Target != ref.Name
+		if !validRef(ref.Name) || !(direct || symbolic) || names[ref.Name] {
+			return false
+		}
+		names[ref.Name] = true
+	}
+	return true
 }
 
 func validObjectID(value, format string) bool {

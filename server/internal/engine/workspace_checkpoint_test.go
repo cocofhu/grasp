@@ -423,3 +423,113 @@ func TestWorkspaceCheckpointFailureAndCancelNeverInventHistoricalFiles(t *testin
 		})
 	}
 }
+
+func TestWorkspaceCheckpointResumeRetriesDefinitelyFailedCaptureThenRoutes(t *testing.T) {
+	e, c, node, state := workspaceCheckpointFixture(t, true)
+	ctx := context.Background()
+	lineage, err := e.execution.Current(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := e.db.Model(&models.StateRun{}).Where("id = ?", state.ID).Updates(map[string]any{"provider_attempt": 1, "sandbox_ready_at": now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.Sandbox{Name: "retry-workflow-resource", Purpose: "run", RunID: c.run.ID, NodeID: node.ID, StateRunID: state.ID, Iteration: 1, ProviderAttempt: 1, Status: "running"}
+	if err := e.db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := strings.Repeat("b", 64)
+	var nonces []string
+	checkpoints, err := services.NewWorkflowWorkspaceCheckpoints(e.db, services.WorkflowCheckpointOptions{Enabled: true, Execution: e.execution, AccountExists: func(actor string) bool { return actor == "alice" }, ReadScope: func(context.Context, *gorm.DB, string, string, string) error { return nil }, ResolveBinding: func(context.Context, string, string, string, uint) (services.WorkspaceActiveBinding, error) {
+		return services.WorkspaceActiveBinding{SandboxID: resource.ID, Resource: resource.Name, Lineage: lineage, Fingerprint: fingerprint, Reference: sandbox.WorkspaceBindingReference{ID: "original", Revision: 1, Fingerprint: strings.Repeat("c", 64)}}, nil
+	}, Capture: func(ctx context.Context, actor string, input services.WorkspaceCaptureInput) (services.WorkspaceSnapshotMetadata, error) {
+		nonces = append(nonces, input.ClientRequestID)
+		var row models.WorkflowVisitCheckpoint
+		if err := e.db.WithContext(ctx).Take(&row, "run_id = ?", c.run.ID).Error; err != nil {
+			return services.WorkspaceSnapshotMetadata{}, err
+		}
+		job := models.WorkspaceSnapshotJob{ID: "job-" + row.SnapshotID[:16], ActorID: actor, ScopeKind: "run", ScopeID: c.run.ID, SandboxID: resource.ID, Kind: "capture_files", Nonce: input.ClientRequestID, Lineage: lineage, State: "failed", Error: "executor_failed"}
+		if len(nonces) > 1 {
+			job.State, job.Error = "executed", ""
+		}
+		if err := e.db.WithContext(ctx).Create(&job).Error; err != nil {
+			return services.WorkspaceSnapshotMetadata{}, err
+		}
+		snapshot := models.WorkspaceSnapshot{ID: row.SnapshotID, ActorID: actor, ScopeKind: "run", ScopeID: c.run.ID, RunID: c.run.ID, NodeID: node.ID, StateRunID: state.ID, Iteration: 1, ProviderAttempt: 1, SourceSandboxID: resource.ID, Lineage: lineage, SourceBindingFingerprint: fingerprint, State: "captured", JobID: job.ID}
+		return services.WorkspaceSnapshotMetadata{}, e.db.WithContext(ctx).Create(&snapshot).Error
+	}, Reconcile: func(context.Context, string, string, string, string) (services.WorkspaceSnapshotMetadata, error) {
+		return services.WorkspaceSnapshotMetadata{}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.workspaceCheckpoints = checkpoints
+	if err := e.sealWorkspaceCheckpoint(ctx, c, node, nodeOutcome{status: "completed", outputMd: "clarified"}, finishOpts{trigger: triggerAuto}); err != nil {
+		t.Fatal(err)
+	}
+	id := services.WorkflowCheckpointID(c.run.ID, state.ID, 0)
+	row, err := checkpoints.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.advanceWorkspaceCheckpoint(ctx, row); !errors.Is(err, services.ErrWorkflowCheckpointBlocked) {
+		t.Fatal("failed capture did not block", err)
+	}
+	if row, _ = checkpoints.Get(ctx, id); row.FileState != "blocked" || row.Reason != "snapshot_failed" {
+		t.Fatal(row)
+	}
+	failedSnapshot := row.SnapshotID
+
+	if err := e.ResumePausedRun(c.run.ID, 0); err != nil {
+		t.Fatal("resume did not retry the failed capture", err)
+	}
+	row, _ = checkpoints.Get(ctx, id)
+	if row.FileState != "pending" || row.Reason != "" || row.CaptureStartedAt != nil || row.SnapshotID != "" {
+		t.Fatal("checkpoint was not re-armed", row)
+	}
+	var run models.Run
+	if e.db.Select("status", "control_version").First(&run, "id = ?", c.run.ID); run.Status != "paused" || run.ControlVersion != 0 {
+		t.Fatal("run left the checkpoint pause before routing", run.Status, run.ControlVersion)
+	}
+	if err := e.advanceWorkspaceCheckpoint(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	if row, _ = checkpoints.Get(ctx, id); row.SnapshotID == "" || row.SnapshotID == failedSnapshot || len(nonces) != 2 || nonces[0] == nonces[1] {
+		t.Fatal("retry reused the failed capture request", nonces, row.SnapshotID)
+	}
+	files, _ := filestore.FromDB(e.db)
+	archive, _ := files.Prepare(ctx, strings.NewReader("archive"), filestore.Binary)
+	manifest, _ := files.Prepare(ctx, strings.NewReader(`{"ok":true}`), filestore.JSON)
+	if err := e.db.Table("workspace_snapshots").Where("id = ?", row.SnapshotID).Updates(map[string]any{"state": "ready", "verified_at": now, "archive_ref": archive.Ref(), "manifest_ref": manifest.Ref()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := e.advanceWorkspaceCheckpoint(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	run = models.Run{}
+	if err := e.db.First(&run, "id = ?", c.run.ID).Error; err != nil || run.Status != "queued" {
+		t.Fatal("run did not route on after the retried capture", run.Status, err)
+	}
+	if got, ok := e.admissionFromNode(run); !ok || got != "next" {
+		t.Fatal(got, ok)
+	}
+}
+
+func TestWorkspaceCheckpointResumeKeepsAmbiguousCaptureBlocked(t *testing.T) {
+	e, c, node, state := workspaceCheckpointFixture(t, true)
+	if err := e.sealWorkspaceCheckpoint(t.Context(), c, node, nodeOutcome{status: "completed"}, finishOpts{trigger: triggerConfirm}); err != nil {
+		t.Fatal(err)
+	}
+	id := services.WorkflowCheckpointID(c.run.ID, state.ID, 0)
+	now := time.Now().UTC()
+	if err := e.db.Model(&models.WorkflowVisitCheckpoint{}).Where("id = ?", id).Updates(map[string]any{"file_state": "unknown", "reason": "snapshot_unknown", "capture_started_at": now, "snapshot_id": strings.Repeat("d", 64)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := e.ResumePausedRun(c.run.ID, 0); !errors.Is(err, services.ErrWorkflowCheckpointBlocked) {
+		t.Fatal("ambiguous capture was retried", err)
+	}
+	if row, _ := e.workspaceCheckpoints.Get(t.Context(), id); row.FileState != "unknown" || row.SnapshotID != strings.Repeat("d", 64) {
+		t.Fatal(row)
+	}
+}

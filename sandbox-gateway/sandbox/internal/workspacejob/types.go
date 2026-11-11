@@ -146,6 +146,18 @@ func ownerHash(owner string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+var receiptCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,63}$`)
+
+// failureCode reports an executor's stable receipt code (errors implementing
+// ReceiptCode() string); anything else stays the generic executor_failed.
+func failureCode(err error) string {
+	var coded interface{ ReceiptCode() string }
+	if errors.As(err, &coded) && receiptCodePattern.MatchString(coded.ReceiptCode()) {
+		return coded.ReceiptCode()
+	}
+	return "executor_failed"
+}
+
 func terminal(state string) bool {
 	return state == "completed" || state == "failed" || state == "cancelled" || state == "unknown"
 }

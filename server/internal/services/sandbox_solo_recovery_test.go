@@ -95,6 +95,9 @@ func TestSoloRecoveryRetriesSameSandbox(t *testing.T) {
 	if svc.activeSoloSandboxCount() != 1 {
 		t.Fatal("retained recovery failure must still count toward the resident limit")
 	}
+	if err := db.First(&session, "id = ?", session.ID).Error; err != nil || session.Status != models.SoloStatusError || session.Error != soloRecoveryFailedText {
+		t.Fatalf("recovery failure is not visible on the session: %+v %v", session, err)
+	}
 	ds.fg.FailStart = false
 	svc.RecoverSoloSandboxes(context.Background())
 	got, err := svc.Get(row.ID)
@@ -104,7 +107,7 @@ func TestSoloRecoveryRetriesSameSandbox(t *testing.T) {
 	if err := db.First(&session, "id = ?", session.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if session.SandboxID != row.ID || session.Restarts != 0 || !session.ResumeContextPending || session.NeedsPreamble {
+	if session.Status != models.SoloStatusRunning || session.Error != "" || session.SandboxID != row.ID || session.Restarts != 0 || !session.ResumeContextPending || session.NeedsPreamble {
 		t.Fatalf("resume must retain workspace and request accurate dialogue context: %+v", session)
 	}
 	if _, err := solo.Close(context.Background(), session.ID, "alice"); err != nil {

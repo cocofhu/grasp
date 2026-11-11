@@ -1171,7 +1171,22 @@ export interface NodeTakeoverResult {
   state: 'stopping' | 'waiting_human'
 }
 
+/**
+ * A run paused between nodes while the finished node's workspace files are
+ * saved. `failed` means the save is stuck; `action` is how to move it on.
+ */
+export interface RunWorkspaceSave {
+  checkpointId: string
+  nodeId: string
+  state: 'saving' | 'failed'
+  reason?: string
+  detail?: string
+  action?: 'retry' | 'reconcile'
+}
+
 export interface Run {
+  /** Set while a paused run is really saving (or failed to save) the workspace. */
+  workspaceSave?: RunWorkspaceSave
   pauseRequested?: boolean
   controlVersion?: number
   id: string

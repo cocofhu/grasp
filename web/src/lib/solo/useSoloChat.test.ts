@@ -107,6 +107,7 @@ function acceptedResponse(turnId: string, waiting = 1) {
 describe('useSoloChat', () => {
   beforeEach(() => {
     outbox.rows.clear()
+    useSoloSessions().endEnvironmentChange('s1')
     vi.mocked(readSoloOutbox).mockClear()
     vi.mocked(saveSoloOutbox).mockClear()
     FakeSocket.all = []
@@ -602,6 +603,97 @@ describe('useSoloChat', () => {
     expect(chat.turns.value.map((x) => x.id)).toEqual(['u:q1', 'live:q1'])
     expect(chat.phase.value).toBe('preparing')
     expect(chat.busy.value).toBe(true)
+    app.unmount()
+  })
+
+  it('does not send while stopping, and sends again only if that stop leaves the session running', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    expect(chat.canSend.value).toBe(true)
+    useSoloSessions().beginEnvironmentChange('s1', 'stopping')
+    expect(chat.environmentStopping.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('late text')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    useSoloSessions().endEnvironmentChange('s1')
+    expect(chat.environmentStopping.value).toBe(false)
+    expect(chat.canSend.value).toBe(true)
+    app.unmount()
+  })
+
+  it('drops a send that was not yet submitted when stopping begins', async () => {
+    const { chat, app } = mountChat()
+    const save = vi.mocked(saveSoloOutbox)
+    const original = save.getMockImplementation()
+    try {
+      await flushPromises()
+      FakeSocket.all[0]!.open()
+      await flushPromises()
+      let releaseSave!: () => void
+      save.mockImplementationOnce(() => new Promise((resolve) => { releaseSave = () => resolve(undefined) }))
+      const pending = chat.send('race')
+      useSoloSessions().beginEnvironmentChange('s1', 'stopping')
+      releaseSave()
+      expect(await pending).toBe(false)
+      expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+      expect(chat.turns.value.some((turn) => turn.text === 'race')).toBe(false)
+      expect(chat.queued.value).toEqual([])
+    } finally {
+      if (original) save.mockImplementation(original)
+      app.unmount()
+    }
+  })
+
+  it('keeps sending closed when the server has requested a stop and the session is still running', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({
+      status: 'running',
+      sandbox: { id: 7, name: 'sb', status: 'running', desiredState: 'stopped', connected: false, hasCodeServer: false },
+    }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    expect(chat.environmentStopping.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('after intent')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    useSoloSessions().endEnvironmentChange('s1')
+    expect(chat.canSend.value).toBe(false)
+    app.unmount()
+  })
+
+  it('does not send after the environment is stopped until it is running again', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({
+      status: 'stopped',
+      sandbox: { id: 7, name: 'sb', status: 'stopped', desiredState: 'stopped', connected: false, hasCodeServer: false },
+    }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    expect(chat.environmentStopping.value).toBe(false)
+    expect(chat.canSend.value).toBe(false)
+    expect(await chat.send('while stopped')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('does not retry an unconfirmed send while the environment is stopping', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    mocks.sendSoloTurn.mockRejectedValueOnce(new TypeError('network disconnected'))
+    expect(await chat.send('keep this identity')).toBe(false)
+    const calls = mocks.sendSoloTurn.mock.calls.length
+    useSoloSessions().beginEnvironmentChange('s1', 'stopping')
+    expect(await chat.retryPendingSend()).toBe(false)
+    expect(mocks.sendSoloTurn.mock.calls.length).toBe(calls)
+    useSoloSessions().endEnvironmentChange('s1')
+    mocks.sendSoloTurn.mockResolvedValueOnce({ waiting: 1, turnId: 'accepted-after-stop', clientMessageId: chat.pendingConfirmation.value[0], state: 'queued' })
+    expect(await chat.retryPendingSend()).toBe(true)
     app.unmount()
   })
 

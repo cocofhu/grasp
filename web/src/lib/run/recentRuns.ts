@@ -67,6 +67,18 @@ export function recentRunMark(run: RecentRun): RecentRunMark | null {
   return { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }
 }
 
+/**
+ * A waiting_human run whose current node is not actually waiting: a manual
+ * session replying (busy), a stopping takeover, or a successor that already
+ * started. The board and the status bar count it as executing (server:
+ * PlatformStatus adds the same runs to runningCount).
+ */
+export function isWorkingWaitingRun(run: RecentRun): boolean {
+  if (run.status !== 'waiting_human') return false
+  const n = run.currentNode
+  return !!n?.id && n.state !== 'waiting_human'
+}
+
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 
@@ -136,21 +148,24 @@ function firstTime(...values: Array<string | undefined>): number {
 }
 
 /**
- * Finished runs and ended Solo sessions, newest first, capped at `limit`.
- * Runs keep the server's last-activity order; Solo sessions are sorted by time
- * (ties by id) and merged in, a tie going to the run, so the order is stable
- * across polls.
+ * Finished runs and ended Solo sessions, newest first.
+ * Each side is cut to `limit` before the merge: runs keep the server's
+ * last-activity order, Solo sessions are sorted by time (ties by id).
+ * Both sides are then kept in full, so a newer Solo session cannot drop a
+ * run already inside the run window. A time tie goes to the run, which keeps
+ * the order stable across polls. The merged list is at most twice `limit`.
  */
 export function historyEntries(runs: readonly RecentRun[], solos: readonly SoloSession[], limit: number): HistoryEntry[] {
-  const runEntries = runs.map((run): HistoryEntry => ({ kind: 'run', key: run.id, at: firstTime(run.lastActivityAt, run.startedAt, run.createdAt), run }))
+  const max = Math.max(0, limit)
+  const runEntries = runs.slice(0, max).map((run): HistoryEntry => ({ kind: 'run', key: run.id, at: firstTime(run.lastActivityAt, run.startedAt, run.createdAt), run }))
   const soloEntries = solos
     .map((session): HistoryEntry => ({ kind: 'solo', key: `solo:${session.id}`, at: firstTime(session.closedAt, session.lastActiveAt, session.updatedAt), session }))
     .sort((a, b) => (b.at - a.at) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-  const max = Math.max(0, limit)
+    .slice(0, max)
   const out: HistoryEntry[] = []
   let i = 0
   let j = 0
-  while (out.length < max && (i < runEntries.length || j < soloEntries.length)) {
+  while (i < runEntries.length || j < soloEntries.length) {
     if (j >= soloEntries.length || (i < runEntries.length && runEntries[i].at >= soloEntries[j].at)) out.push(runEntries[i++])
     else out.push(soloEntries[j++])
   }
