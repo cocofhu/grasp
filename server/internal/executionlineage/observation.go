@@ -7,7 +7,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/storageguard"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Observation is a SELECT-only diagnostic, never an execution permit. It
@@ -43,14 +42,15 @@ func ObserveSQL(ctx context.Context, db *gorm.DB) (Observation, error) {
 		return view, ErrUninitialized
 	}
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Same lock order as runtime admission and offline administration.
+		// One snapshot without row locks: diagnostics must never queue behind
+		// or block runtime admission and offline administration.
 		var control storageguard.Control
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Take(&control, "name = ?", "primary").Error; err != nil {
+		if err := tx.Take(&control, "name = ?", "primary").Error; err != nil {
 			return ErrUnavailable
 		}
 		view.MaintenanceActive = control.Owner != ""
 		var binding models.ExecutionDataset
-		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Take(&binding, "id = ?", "primary").Error
+		err := tx.Take(&binding, "id = ?", "primary").Error
 		if err == nil {
 			view.SQLDatasetPresent = true
 			marker, valid := markerFromBinding(binding)
@@ -63,7 +63,7 @@ func ObserveSQL(ctx context.Context, db *gorm.DB) (Observation, error) {
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUnavailable
 		}
-		if err := noPendingRecovery(tx); err != nil {
+		if err := pendingRecoveryCheck(tx, false); err != nil {
 			if errors.Is(err, ErrInactive) {
 				view.Status = "inactive"
 			}

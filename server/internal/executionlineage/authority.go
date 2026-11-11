@@ -245,6 +245,10 @@ func (a *SQLAuthority) offline(ctx context.Context, owner string, body func(*gor
 }
 
 func noPendingRecovery(db *gorm.DB) error {
+	return pendingRecoveryCheck(db, true)
+}
+
+func pendingRecoveryCheck(db *gorm.DB, lock bool) error {
 	// This single newer metadata table can be absent in a pre-change backup.
 	// Preserve metadata failures instead of treating HasTable=false as proof.
 	tables, err := db.Migrator().GetTables()
@@ -254,12 +258,20 @@ func noPendingRecovery(db *gorm.DB) error {
 	if !containsTable(tables, "execution_recoveries") {
 		return nil
 	}
-	return strictNoPendingRecovery(db)
+	return pendingRecoveryRows(db, lock)
 }
 
 func strictNoPendingRecovery(db *gorm.DB) error {
+	return pendingRecoveryRows(db, true)
+}
+
+func pendingRecoveryRows(db *gorm.DB, lock bool) error {
+	query := db.Model(&models.ExecutionRecovery{}).Select("id").Where("COALESCE(state, '') <> 'finalized' OR finalized_at IS NULL").Limit(1)
+	if lock {
+		query = query.Clauses(clause.Locking{Strength: "SHARE"})
+	}
 	var rows []struct{ ID string }
-	err := db.Model(&models.ExecutionRecovery{}).Select("id").Where("COALESCE(state, '') <> 'finalized' OR finalized_at IS NULL").Limit(1).Clauses(clause.Locking{Strength: "SHARE"}).Find(&rows).Error
+	err := query.Find(&rows).Error
 	if err != nil {
 		return errors.Join(ErrUnavailable, err)
 	}

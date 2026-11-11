@@ -129,7 +129,7 @@ func TestExecutionCLIAdoptsHistoryWithoutReplayingUnknownAndRequiresTicketBefore
 	if _, err := authority.Current(ctx); !errors.Is(err, executionlineage.ErrInactive) {
 		t.Fatal("restore-begin did not revoke old process authority before SQL import", err)
 	}
-	if err := checkExecutionRelease(ctx, opts, cfg, db); !errors.Is(err, executionlineage.ErrInactive) {
+	if err := checkExecutionRelease(ctx, opts, state, db); !errors.Is(err, executionlineage.ErrInactive) {
 		t.Fatal("release bypassed inactive execution recovery", err)
 	}
 	if err := restoreExecution(ctx, opts, cfg, db, io.Discard); err != nil {

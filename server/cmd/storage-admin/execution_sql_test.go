@@ -99,10 +99,7 @@ func TestSQLExecutionRecoversOnlyUnpublishedTicketFromOriginalIntent(t *testing.
 		t.Fatal(err)
 	}
 	dir, _ := executionWorkdir(opts.workdir)
-	fingerprint, _ := executionFingerprint(struct {
-		Database config.DatabaseConfig
-		Storage  config.StorageConfig
-	}{cfg.Database, cfg.Storage})
+	fingerprint, _ := executionConfigurationFingerprint(cfg)
 	operation := initialization{Version: 2, Protocol: sqlMaintenanceProtocol, ID: uuid.NewString(), Workdir: dir, ConfigurationSHA256: fingerprint}
 	if err := writeJSON(filepath.Join(opts.workdir, "execution-initialization.json"), operation); err != nil {
 		t.Fatal(err)
@@ -623,7 +620,7 @@ func TestSQLRestoreResumesTargetRegistrationOnBothSidesOfLocalPhaseWrite(t *test
 			if err := config.Load(opts.config); err != nil {
 				t.Fatal(err)
 			}
-			intent.TargetDatabaseSHA256, err = executionFingerprint(config.GetConfig().Database)
+			intent.TargetDatabaseSHA256, err = closureDatabaseIdentity(config.GetConfig().Database)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -649,5 +646,35 @@ func TestSQLRestoreResumesTargetRegistrationOnBothSidesOfLocalPhaseWrite(t *test
 				t.Fatal("retry changed the original recovery generation", err)
 			}
 		})
+	}
+}
+
+func TestExecutionConfigurationFingerprintTracksIdentityNotCredentials(t *testing.T) {
+	base := config.Config{
+		Database: config.DatabaseConfig{Driver: "mysql", DSN: "first:one@tcp(db:3306)/app?parseTime=true"},
+		Storage:  config.StorageConfig{Driver: "s3", S3: config.S3StorageConfig{Endpoint: "https://objects.example", Bucket: "payloads", Prefix: "grasp", AccessKeyID: "a", SecretAccessKey: "b"}},
+	}
+	want, err := executionConfigurationFingerprint(&base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same := base
+	same.Database.DSN = "second:two@tcp(db:3306)/app?parseTime=true&timeout=5s"
+	same.Storage.S3.AccessKeyID, same.Storage.S3.SecretAccessKey = "rotated", "rotated"
+	same.Storage.MaxFileBytes = 1
+	if got, err := executionConfigurationFingerprint(&same); err != nil || got != want {
+		t.Fatal("credential or tunable change altered the execution fingerprint", err)
+	}
+	for name, change := range map[string]func(*config.Config){
+		"database": func(c *config.Config) { c.Database.DSN = "first:one@tcp(db:3306)/other?parseTime=true" },
+		"host":     func(c *config.Config) { c.Database.DSN = "first:one@tcp(replica:3306)/app?parseTime=true" },
+		"bucket":   func(c *config.Config) { c.Storage.S3.Bucket = "elsewhere" },
+		"prefix":   func(c *config.Config) { c.Storage.S3.Prefix = "other" },
+	} {
+		changed := base
+		change(&changed)
+		if got, err := executionConfigurationFingerprint(&changed); err != nil || got == want {
+			t.Fatal("identity change kept the execution fingerprint", name, err)
+		}
 	}
 }

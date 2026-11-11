@@ -70,6 +70,22 @@ func executionBindingFingerprint(binding models.ExecutionDataset) (string, error
 		binding.SourceDatasetID, binding.SourceLineage, binding.BackupSHA256, binding.QuarantineCount, binding.QuarantineSHA256})
 }
 
+// executionConfigurationFingerprint freezes which SQL database and physical
+// payload location a workdir belongs to. Credentials and tunables are excluded
+// so rotation between begin and finalize cannot strand a recovery, and the
+// private workdir never holds a digest of a secret.
+func executionConfigurationFingerprint(cfg *config.Config) (string, error) {
+	database, err := closureDatabaseIdentity(cfg.Database)
+	if err != nil {
+		return "", err
+	}
+	location, err := payloadstore.PrimaryLocation(cfg.Storage)
+	if err != nil {
+		return "", err
+	}
+	return executionFingerprint(struct{ Database, Storage string }{database, location.Fingerprint})
+}
+
 func executionFingerprint(value any) (string, error) {
 	body, err := json.Marshal(value)
 	if err != nil {
@@ -181,10 +197,7 @@ func initializeExecution(ctx context.Context, opts options, cfg *config.Config, 
 	if err != nil {
 		return err
 	}
-	fingerprint, err := executionFingerprint(struct {
-		Database config.DatabaseConfig
-		Storage  config.StorageConfig
-	}{cfg.Database, cfg.Storage})
+	fingerprint, err := executionConfigurationFingerprint(cfg)
 	if err != nil {
 		return err
 	}
@@ -476,7 +489,7 @@ func restoreExecution(ctx context.Context, opts options, cfg *config.Config, db 
 	if err != nil {
 		return err
 	}
-	databaseSHA, err := executionFingerprint(cfg.Database)
+	databaseSHA, err := closureDatabaseIdentity(cfg.Database)
 	if err != nil {
 		return err
 	}
@@ -618,7 +631,7 @@ func restoreExecution(ctx context.Context, opts options, cfg *config.Config, db 
 	return finalizeExecution(ctx, authority, db, state.Header.ID, ticket, opts.workdir, output)
 }
 
-func checkExecutionRelease(ctx context.Context, opts options, cfg *config.Config, db *gorm.DB) error {
+func checkExecutionRelease(ctx context.Context, opts options, state checkpoint, db *gorm.DB) error {
 	// Always consult SQL: local ticket loss must not turn pending SQL
 	// initialization/restore into an ordinary releasable payload copy.
 	authority, err := executionlineage.OpenSQL(ctx, db)
@@ -626,10 +639,6 @@ func checkExecutionRelease(ctx context.Context, opts options, cfg *config.Config
 		return err
 	}
 	permit, err := authority.ReadActive(ctx)
-	state, stateErr := prepareCheckpoint(opts, cfg)
-	if stateErr != nil {
-		return stateErr
-	}
 	_, ticketErr := os.Lstat(filepath.Join(opts.workdir, executionTicketFile))
 	_, intentErr := os.Lstat(filepath.Join(opts.workdir, "execution-restore.json"))
 	recovery := state.ExecutionRecovery || !errors.Is(ticketErr, os.ErrNotExist) || !errors.Is(intentErr, os.ErrNotExist)

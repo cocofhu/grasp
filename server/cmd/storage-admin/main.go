@@ -142,7 +142,7 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 	}
 	defer func() { _ = lock.Close() }()
 	if opts.mode == "release" {
-		if err := checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+		if err := checkExecutionRelease(ctx, opts, state, db); err != nil {
 			return err
 		}
 		return storageguard.Leave(ctx, db, state.Header.ID)
@@ -160,7 +160,7 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 	failure := func(err error) error {
 		return fmt.Errorf("%w; maintenance %s remains active: resume this workdir or explicitly release it", err, state.Header.ID)
 	}
-	if err := checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+	if err := checkExecutionRelease(ctx, opts, state, db); err != nil {
 		return failure(err)
 	}
 	targetConfig, err := loadTarget(opts.target)
@@ -201,7 +201,7 @@ func run(ctx context.Context, opts options, output io.Writer) error {
 			return failure(err)
 		}
 	}
-	if err = checkExecutionRelease(ctx, opts, cfg, db); err != nil {
+	if err = checkExecutionRelease(ctx, opts, state, db); err != nil {
 		return failure(err)
 	}
 	if err = storageguard.Leave(ctx, db, state.Header.ID); err != nil {
