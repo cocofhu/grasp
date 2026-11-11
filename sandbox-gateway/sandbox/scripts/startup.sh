@@ -601,8 +601,25 @@ cat > /root/.local/share/code-server/User/settings.json <<'EOF'
 }
 EOF
 
-# 加载开发工具 PATH（Go / Java / MongoDB 等），确保 code-server 及其子进程也可见
+# 加载 Agent CLI 与开发工具 PATH（/root/.local/bin、Go / Java / MongoDB 等），确保 code-server 及其子进程也可见
+[ -f /etc/profile.d/agent-path.sh ] && . /etc/profile.d/agent-path.sh
 [ -f /etc/profile.d/devtools-path.sh ] && . /etc/profile.d/devtools-path.sh
+
+# SSH 会话（Web 终端 `bash -i`、ExecScript）既不继承容器 ENV，也不是登录 shell，
+# PATH 只来自 pam_env 读取的 /etc/environment。启动 sshd 前把完整 PATH 写进去，
+# 否则 /root/.local/bin 下的 agent / claude / trae-cli 等命令在终端里找不到。
+persist_session_path() {
+    local file="${1:-/etc/environment}"
+    local staged
+    staged="$(mktemp "${file}.grasp.XXXXXX")" || return 1
+    if ! { grep -v '^PATH=' "$file" 2>/dev/null; printf 'PATH="%s"\n' "$PATH"; } >"$staged" ||
+       ! chmod 644 "$staged" ||
+       ! mv -f -- "$staged" "$file"; then
+        rm -f -- "$staged"
+        return 1
+    fi
+}
+persist_session_path || echo "WARN: 写入 /etc/environment PATH 失败，SSH 终端可能找不到 Agent CLI"
 
 # Grasp always sets a nonempty root password above. Imported environment
 # templates may enable empty passwords, which makes SSH's initial "none" probe
