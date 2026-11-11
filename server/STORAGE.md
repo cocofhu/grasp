@@ -53,7 +53,9 @@ go build -o grasp-storage-admin ./cmd/storage-admin
 
 ### 独立执行控制与部署检查
 
-正文和 SQL 备份不能授予恢复后的执行权限。`execution_control` 必须位于独立持久位置：本地目录不与 SQL、正文或备份目录互为父子；S3 / COS 使用独立的逻辑前缀，例如正文 `application/`、控制 `execution-control/`。控制标记不随 SQL / 正文备份回滚。部署时通过 `GRASP_EXECUTION_CONTROL_*` 注入配置和 Secret，不能使用正文存储的凭据默认值代替独立配置。
+服务端不读取独立执行控制，启动时直接使用 SQL 中的执行绑定（`execution_datasets`）：全新空库自动生成一次绑定，已有绑定沿用原 dataset / lineage，并照常遵守 SQL 隔离记录和离线维护锁。因此 SQL 中的绑定和隔离记录就是执行连续性的依据：**直接把 SQL 备份覆盖回运行库会沿用备份时的绑定，备份时未完成的工作不会被隔离，可能在启动后重新执行**。恢复必须走下文的 `restore-begin` / `restore-finalize`，由它写入新的执行代次并隔离旧工作后再启动服务。
+
+以下 `execution_control` 配置只由 `grasp-storage-admin` 的初始化、升级、核对和恢复模式读取。它必须位于独立持久位置：本地目录不与 SQL、正文或备份目录互为父子；S3 / COS 使用独立的逻辑前缀，例如正文 `application/`、控制 `execution-control/`。控制标记不随 SQL / 正文备份回滚。部署时通过 `GRASP_EXECUTION_CONTROL_*` 注入配置和 Secret，不能使用正文存储的凭据默认值代替独立配置。
 
 部署前后可执行只读检查，无需停机：
 
@@ -65,14 +67,14 @@ go build -o grasp-storage-admin ./cmd/storage-admin
 
 输出为版本化 JSON：`status` 为 `active`、`uninitialized`、`inactive`、`unbound` 或 `unavailable`，并包含 `active`、`sqlMatches`、`sqlDatasetPresent`、`maintenanceActive` 及已验证的命名空间身份。仅 `active`、SQL 完整匹配且维护已解除时退出码为 0，其余情况均非 0。激活成功但离线命令尚未解除维护时返回 `inactive`，只允许用原私有目录和原票据显式完成收尾。控制标记缺失但 `sqlDatasetPresent=true` 时必须保留现有数据并检查控制存储，不能视为空安装重新初始化。S3 检查不会通过写探针证明 endpoint 别名分离，因此要求正文与控制的逻辑前缀不相交，即使 bucket 不同。
 
-新安装或明确采用旧历史时，先核实所有写入者停止，再运行一次显式初始化：
+新安装无需此步骤，直接启动即可。采用旧历史（含 v3.2 升级）时，先核实所有写入者停止，再在首次启动新版本前运行一次显式初始化；已有升级收据但没有执行绑定的数据库会被服务端拒绝启动：
 
 ```bash
 ./grasp-storage-admin --config source.yaml --mode execution-init --offline \
   --execution-control control-storage.yaml --workdir /maintenance/execution-init
 ```
 
-保留该私有目录中的原初始化身份和票据；中断后仅以同一目录核对续办。已有历史的待执行和结果不明操作会隔离，不自动重发。普通服务启动、滚动发布和 `execution-status` 都不会代替这一步。
+保留该私有目录中的原初始化身份和票据；中断后仅以同一目录核对续办。已有历史的待执行和结果不明操作会隔离，不自动重发。滚动发布和 `execution-status` 都不会代替这一步。
 
 该工具用于停写期间的 SQL / 载荷复制，不是在线迁移或沙箱磁盘快照。先停止所有 Grasp 副本、迁移脚本和外部 SQL 写入者；Kubernetes 中关闭自动扩容/滚动发布，在维护 Pod 中挂载原 SQL / blobs 卷、配置与 Secret。先前未提供维护登记的旧版本也必须停止，不能只依赖登记列表判断。
 
@@ -113,7 +115,7 @@ MySQL 导出要求执行工具的环境有 **Oracle MySQL 8.4+ 的 `mysqldump`**
 
 ### 在隔离位置验证恢复
 
-恢复前先停止所有写入者，使用当前 SQL 配置和同一独立控制位置执行 `restore-begin`，保留备份本身和原 `workdir`。该步骤先撤销原执行代次，再允许导入：
+恢复前先停止所有写入者，并在整个恢复期间保持停止：服务端不读取控制标记，撤销控制代次不能拦住仍在运行的进程，只有 SQL 离线维护锁和停写能防止并发写入。使用当前 SQL 配置和同一独立控制位置执行 `restore-begin`，保留备份本身和原 `workdir`。该步骤先撤销原执行代次，再允许导入：
 
 ```bash
 ./grasp-storage-admin --config source.yaml --mode restore-begin --offline \

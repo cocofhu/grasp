@@ -307,3 +307,19 @@ func (a *Authority) GuardTx(tx *gorm.DB, permit Permit, kind EntityKind, id stri
 	}
 	return nil
 }
+
+func localGuardTx(tx *gorm.DB, entities []Entity) error {
+	for _, entity := range entities {
+		if !knownKind(entity.Kind) || entity.ID == "" {
+			return ErrConflict
+		}
+		var rows []struct{ ID string }
+		if err := tx.Table("execution_quarantines").Select("id").Where("entity_kind = ? AND entity_id = ? AND review_state = ?", string(entity.Kind), entity.ID, "pending").Limit(1).Clauses(clause.Locking{Strength: "SHARE"}).Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) != 0 {
+			return ErrQuarantined
+		}
+	}
+	return nil
+}

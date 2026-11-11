@@ -57,25 +57,6 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def initialize_fixture_execution(config_path, data, output, env, storage_admin=None):
-    """Initialize only this stopped, synthetic fixture through the offline CLI.
-
-    The SQL directory, payload root, independent control and maintenance ticket
-    are siblings. The ordinary server is never allowed to initialize itself.
-    """
-    control_path = data/'execution-control.json'
-    control_path.write_text(json.dumps({'storage': {'driver': 'local', 'blobs_root': str(data/'execution-control')}}))
-    control_path.chmod(0o600)
-    with (output/'execution-init.log').open('w') as log:
-        if storage_admin:
-            admin = Path(storage_admin).resolve()
-        else:
-            admin = data/'storage-admin'
-            build_env = {**env, 'GOTOOLCHAIN': 'go1.26.11'}
-            subprocess.run(['go', 'build', '-o', str(admin), './cmd/storage-admin'], cwd=ROOT/'server', env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        subprocess.run([str(admin), '--mode', 'execution-init', '--offline', '--config', str(config_path), '--execution-control', str(control_path), '--workdir', str(data/'execution-init')], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-
-
 def history_tool_completed(message):
     """Require the runtime's parsed native MCP events as well as HTTP evidence."""
     history_calls, completed = set(), set()
@@ -289,10 +270,9 @@ sys.exit(child.wait())
                     wrapper.chmod(0o755)
         env.update({'PATH': os.pathsep.join([str(native_bin), str(fixture_bin), env['PATH']]), 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
         port = int(self.base.rsplit(':', 1)[1])
-        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'sql/grasp.db')}, 'storage': {'driver': 'local', 'blobs_root': str(self.data/'blobs')}, 'execution_control': {'driver': 'local', 'blobs_root': str(self.data/'execution-control')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
+        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'sql/grasp.db')}, 'storage': {'driver': 'local', 'blobs_root': str(self.data/'blobs')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
         config_path.write_text(json.dumps(config)); config_path.chmod(0o600)
-        initialize_fixture_execution(config_path, self.data, self.output, env, self.args.storage_admin)
         self.launch([str(Path(self.args.server).resolve()), str(config_path)], env, 'server')
         self.wait(lambda: self.request('/api/health').get('ready'), 'Grasp readiness')
         self.request('/api/auth/login', {'username': 'admin', 'password': 'demo1234'})

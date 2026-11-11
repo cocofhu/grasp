@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 移除 `./start.sh [dev] init-execution --offline` 离线初始化步骤与 `GRASP_EXECUTION_CONTROL_*` 外部控制目录依赖，`./start.sh -d` 与 `./start.sh dev -d` 启动即可直接创建 Solo 会话和运行工作流。
 - `./start.sh dev` / `sandbox` 构建本地沙箱镜像时，Docker CE 不再只依赖清华源：密钥或软件包 403 时依次回退阿里云、中科大和官方源；整次构建仍失败则自动用 `USE_CN_MIRROR=false` 再打一次。
 - 修复手机上聊天输入框有时异常变高、占掉大半屏幕的问题：输入框宽度变化时重新计算高度，内容为空时恢复默认高度，并在矮屏上限制最大高度。
 - 修复工作流节点完成后保存工作区必然失败、运行卡在「已暂停」的问题：克隆仓库自带的 `origin/HEAD` 等符号引用现在可正常保存和还原。运行在节点之间保存工作区时不再显示「已暂停」，而是显示「保存工作区中」；保存失败显示「保存失败」，运行详情、对话页和 Solo 任务卡片都会说明具体原因，并提供「重试保存」（只重新保存，不重跑节点）。运行页在保存期间不再一直加载。
