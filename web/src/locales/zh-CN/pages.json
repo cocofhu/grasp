@@ -507,7 +507,7 @@
         "sshSavedToCredentials": "SSH 私钥与可信主机将保存到工作区凭据。"
       },
       "team": {
-        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流。名称已锁定，可为每个 Agent 指定模型。",
+        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流。名称已锁定，可为每个 Agent 指定模型组。",
         "loading": "正在读取模板能力…",
         "loadError": "模板能力读取失败，仍可按默认配置创建。",
         "retry": "重试",
@@ -521,7 +521,7 @@
         "writes": "产出",
         "nameLabel": "名称",
         "namePlaceholder": "Agent 名称",
-        "modelLabel": "模型",
+        "modelLabel": "模型组",
         "modelPlaceholder": "留空沿用工作区默认",
         "modelInherit": "留空沿用 {model}",
         "foot": "这四个都会创建，名称已锁定，生成后不能在 Agent 页删除或重命名。",

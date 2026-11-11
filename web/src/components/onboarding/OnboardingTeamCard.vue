@@ -14,8 +14,9 @@ const props = defineProps<{
   /** Server summary, shown when the locale has no copy for this template. */
   summary?: string
   namePlaceholder?: string
-  modelPlaceholder: string
-  /** Backend of the wizard-wide model that the empty option inherits. */
+  /** Wizard default model group. An empty card selection displays and follows this id. */
+  defaultModelId?: string
+  /** Backend of the wizard default group, used when that group is not in the list. */
   defaultModelBackend?: string
   modelConfigurations: ModelConfiguration[]
   issue?: TeamNameIssue
@@ -35,9 +36,18 @@ const title = computed(() => t(`${keyBase.value}.title`))
 const requiredWrites = computed(() => caps.value?.writes.filter((w) => w.required) ?? [])
 const optionalWrites = computed(() => caps.value?.writes.filter((w) => !w.required) ?? [])
 const desc = computed(() => (te(`${keyBase.value}.desc`) ? t(`${keyBase.value}.desc`) : props.summary || ''))
+const activeModelGroups = computed(() => props.modelConfigurations.filter((row) => row.state === 'active'))
+/** Shown selection. An unset card still points at the wizard default without storing that id. */
+const effectiveModelId = computed(() => props.member.modelConfigurationId || props.defaultModelId || '')
+const effectiveModelName = computed(() => props.modelConfigurations.find((row) => row.id === effectiveModelId.value)?.name || '')
+const modelOptions = computed(() => activeModelGroups.value.map((row) => ({ value: row.id, label: row.name })))
 
 function backendOf(id: string) {
-  return id ? props.modelConfigurations.find((row) => row.id === id)?.backend : props.defaultModelBackend
+  return props.modelConfigurations.find((row) => row.id === id)?.backend || (id && id === props.defaultModelId ? props.defaultModelBackend : undefined)
+}
+
+function onModel(value: string) {
+  emit('update:model', value === props.defaultModelId ? '' : value)
 }
 
 function schemaLabel(schema: string, fallback: string) {
@@ -107,19 +117,19 @@ function schemaLabel(schema: string, fallback: string) {
         <span class="team-field-label">{{ t('pages.onboarding.team.modelLabel') }}</span>
         <AppSelect
           class="team-select"
-          :title="modelConfigurations.find((row) => row.id === member.modelConfigurationId)?.name || modelPlaceholder"
-          :model-value="member.modelConfigurationId"
-          :options="[{ value: '', label: modelPlaceholder }, ...modelConfigurations.filter((row) => row.state === 'active').map((row) => ({ value: row.id, label: row.name }))]"
+          :title="effectiveModelName"
+          :model-value="effectiveModelId"
+          :options="modelOptions"
           :aria-label="t('pages.onboarding.team.modelLabel')"
           searchable
           variant="ghost"
           size="sm"
           :menu-min-width="240"
           :data-testid="`onboarding-team-model-${member.templateId}`"
-          @update:model-value="emit('update:model', $event)"
+          @update:model-value="onModel"
         >
           <template #leading>
-            <CredentialProviderLogo v-if="backendOf(member.modelConfigurationId)" :provider="backendOf(member.modelConfigurationId)" match="provider" class="!h-4 !w-4 !rounded !border-0 !bg-transparent [&>img]:!h-4 [&>img]:!w-4" aria-hidden="true" />
+            <CredentialProviderLogo v-if="backendOf(effectiveModelId)" :provider="backendOf(effectiveModelId)" match="provider" class="!h-4 !w-4 !rounded !border-0 !bg-transparent [&>img]:!h-4 [&>img]:!w-4" aria-hidden="true" />
           </template>
           <template #option-leading="{ option }">
             <CredentialProviderLogo v-if="backendOf(option.value)" :provider="backendOf(option.value)" match="provider" class="!h-5 !w-5 !rounded !border-0 !bg-transparent" aria-hidden="true" />

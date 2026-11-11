@@ -507,7 +507,7 @@
         "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the workspace credentials."
       },
       "team": {
-        "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model for each.",
+        "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model group for each.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
@@ -521,7 +521,7 @@
         "writes": "Writes",
         "nameLabel": "Name",
         "namePlaceholder": "Agent name",
-        "modelLabel": "Model",
+        "modelLabel": "Model group",
         "modelPlaceholder": "Empty = workspace default",
         "modelInherit": "Empty = {model}",
         "foot": "All four are created. Names are locked and cannot be deleted or renamed on the Agents page.",

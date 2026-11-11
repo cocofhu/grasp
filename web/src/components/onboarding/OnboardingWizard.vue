@@ -182,7 +182,6 @@ const nameIssues = computed(() => teamNameIssues(draft.value.team))
 const workflowPreview = computed(() => buildOnboardingWorkflowPreview(draft.value.team))
 const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.id === 'test_review'))
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
-const modelPlaceholder = computed(() => selectedModel.value?.name || c.value.selectConfiguration)
 const successAgentNames = computed(() => {
   const team = result.value?.agentIds?.length ? result.value.agentIds : enabledTeam.value.map(member => member.name).filter(Boolean)
   return [...new Set([...team, ...(result.value?.soloAgentId ? [result.value.soloAgentId] : [])])]
@@ -794,7 +793,7 @@ function editWorkflow() {
                       :capabilities="templateFor(m.templateId)?.capabilities"
                       :summary="templateFor(m.templateId)?.summary"
                       :name-placeholder="t('pages.onboarding.team.namePlaceholder')"
-                      :model-placeholder="modelPlaceholder"
+                      :default-model-id="selectedModel?.id || ''"
                       :default-model-backend="selectedModel?.backend"
                       :model-configurations="models"
                       :issue="memberIssue(m.templateId)"
