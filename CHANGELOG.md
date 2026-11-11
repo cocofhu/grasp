@@ -5,7 +5,9 @@ All notable public-release changes are documented here.
 ## Unreleased
 
 - 「Solo 沙箱已达上限」弹窗改为显示全局已用名额（如「已用 32 / 32」），同时列出你名下仍占名额的异常会话并可直接关闭；其他成员的会话或尚未确认停止的环境合计显示为「另有 N 个」。首页 Solo 卡片的计数也改为全局已用名额。
+- 修复首页 Solo「全部会话」点击后白屏：现在在首页弹窗列出全部 Solo 会话（分「运行中 / 全部」），点会话直接进入；直接访问 `/solo` 也显示会话列表。
 - 修复设置的 Solo 沙箱上限明明没用满，却提示「Solo 沙箱已达上限」、无法新建会话的问题：旧版本留下的已关闭会话在原环境记录被清理后，仍被当作占用计算名额；现在已确认关闭的会话不再占用，未确认停止的仍保留占用。
+- 修复沙箱 Web 终端里 `agent`、`cursor-agent`、`claude`、`trae-cli` 等 Agent CLI 提示 `command not found` 的问题：SSH 会话（终端与后台命令）现在拿到完整 PATH，Docker、Kubernetes 与 E2B 沙箱均生效；新版本上线后新建、或停止后再恢复的沙箱生效（运行时热更新不会重跑启动脚本）。
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
 - 移除 `./start.sh [dev] init-execution --offline` 离线初始化步骤与 `GRASP_EXECUTION_CONTROL_*` 外部控制目录依赖，`./start.sh -d` 与 `./start.sh dev -d` 启动即可直接创建 Solo 会话和运行工作流。
 - `./start.sh dev` / `sandbox` 构建本地沙箱镜像时，Docker CE 不再只依赖清华源：密钥或软件包 403 时依次回退阿里云、中科大和官方源；整次构建仍失败则自动用 `USE_CN_MIRROR=false` 再打一次。
