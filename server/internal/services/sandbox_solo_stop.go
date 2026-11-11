@@ -102,6 +102,11 @@ func (s *SandboxService) ResumeSolo(ctx context.Context, id uint) (warm bool, er
 	case "exited", "stopped":
 		warm = s.mgr.KeepsProcessesOnStop(ctx, row.Name)
 		s.teardownLive(id)
+		if !warm {
+			// recordSoloRecovered publishes running; the first turn after it
+			// must already see the pending dialogue context.
+			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
+		}
 		sb, err = s.mgr.Resume(ctx, row.Name)
 	case "pending", "creating", "pulling":
 		sb, err = s.mgr.WaitForRunning(ctx, row.Name)

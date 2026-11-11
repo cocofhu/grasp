@@ -268,12 +268,16 @@ func (fg *FakeGateway) get(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var out map[string]any
+	if rec != nil {
+		out = fg.dto(rec)
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, fg.dto(rec))
+	writeJSON(w, out)
 }
 
 func (fg *FakeGateway) delete(w http.ResponseWriter, id string) {
@@ -290,12 +294,16 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var st string
+	if rec != nil {
+		st = rec.status
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"status": rec.status})
+	writeJSON(w, map[string]string{"status": st})
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
@@ -341,12 +349,16 @@ func (fg *FakeGateway) logs(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
+	var content string
+	if rec != nil {
+		content = rec.logs
+	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"content": rec.logs})
+	writeJSON(w, map[string]string{"content": content})
 }
 
 func (fg *FakeGateway) dto(rec *record) map[string]any {
