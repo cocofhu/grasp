@@ -67,6 +67,18 @@ export function recentRunMark(run: RecentRun): RecentRunMark | null {
   return { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }
 }
 
+/**
+ * A waiting_human run whose current node is not actually waiting: a manual
+ * session replying (busy), a stopping takeover, or a successor that already
+ * started. The board and the status bar count it as executing (server:
+ * PlatformStatus adds the same runs to runningCount).
+ */
+export function isWorkingWaitingRun(run: RecentRun): boolean {
+  if (run.status !== 'waiting_human') return false
+  const n = run.currentNode
+  return !!n?.id && n.state !== 'waiting_human'
+}
+
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 

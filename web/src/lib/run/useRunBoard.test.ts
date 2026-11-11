@@ -68,6 +68,32 @@ describe('useRunBoard', () => {
     expect(board.column('completed').items).toHaveLength(1)
   })
 
+  it('moves a waiting_human run whose session is replying into the running column', async () => {
+    listRuns.mockImplementation(async (params: { status?: string }) => {
+      if (params.status === 'waiting_human') {
+        return {
+          items: [
+            stubRun({ id: 'busy', status: 'waiting_human', currentNode: { id: 'clarify', name: 'C', iteration: 1, kind: 'clarify', mode: 'manual', state: 'busy' } }),
+            stubRun({ id: 'idle', status: 'waiting_human', currentNode: { id: 'clarify', name: 'C', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' } }),
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 100,
+          hasMore: false,
+        }
+      }
+      return { items: [], total: 0, page: 1, pageSize: 100, hasMore: false }
+    })
+    const board = useRunBoard({ mode: 'full' })
+    await board.load()
+
+    expect(board.column('running').items.map((r) => r.id)).toEqual(['busy'])
+    expect(board.column('running').total).toBe(1)
+    expect(board.column('waiting_human').items.map((r) => r.id)).toEqual(['idle'])
+    expect(board.column('waiting_human').total).toBe(1)
+    expect(board.column('waiting_human').truncated).toBe(false)
+  })
+
   it('loads only the three full-board main columns', async () => {
     listRuns.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100, hasMore: false })
     const board = useRunBoard({ mode: 'full' })
