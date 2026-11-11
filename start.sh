@@ -17,6 +17,9 @@
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
 #
+# Sandbox image build (dev/sandbox): USE_CN_MIRROR defaults to true (Tsinghua).
+# If that build fails, start.sh retries once with USE_CN_MIRROR=false.
+#
 # Requires Docker Compose on a Linux host (services use network_mode: host).
 set -euo pipefail
 
@@ -202,22 +205,47 @@ up_release() {
   fi
 }
 
-ensure_dev_sandbox_image() {
+docker_build_sandbox_image() {
+  local sandbox_image="$1"
+  local gateway_dir="$2"
+  local cn_mirror="$3"
+  local providers="$4"
+  docker build --network=host \
+    -t "$sandbox_image" \
+    --build-arg AGENT_PROVIDERS="$providers" \
+    --build-arg USE_CN_MIRROR="$cn_mirror" \
+    -f "${gateway_dir}/sandbox/Dockerfile" \
+    "${gateway_dir}/sandbox"
+}
+
+build_dev_sandbox_image() {
   local sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
   local gateway_dir="${SANDBOX_GATEWAY_DIR:-./sandbox-gateway}"
-  if docker image inspect "$sandbox_image" >/dev/null 2>&1; then
-    return 0
-  fi
+  local cn_mirror="${USE_CN_MIRROR:-true}"
+  local providers="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}"
   if [[ ! -f "${gateway_dir}/sandbox/Dockerfile" ]]; then
     echo "error: missing ${gateway_dir}/sandbox/Dockerfile (needed to build ${sandbox_image})" >&2
     exit 1
   fi
-  echo "building local sandbox image ${sandbox_image} (first run is slow)..."
-  docker build --network=host \
-    -t "$sandbox_image" \
-    --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}" \
-    -f "${gateway_dir}/sandbox/Dockerfile" \
-    "${gateway_dir}/sandbox"
+  echo "building local sandbox image ${sandbox_image} (USE_CN_MIRROR=${cn_mirror}; first run is slow)..."
+  if docker_build_sandbox_image "$sandbox_image" "$gateway_dir" "$cn_mirror" "$providers"; then
+    return 0
+  fi
+  if [[ "$cn_mirror" == "true" ]]; then
+    echo "warning: CN mirror build failed; retrying with USE_CN_MIRROR=false" >&2
+    docker_build_sandbox_image "$sandbox_image" "$gateway_dir" "false" "$providers"
+  else
+    echo "error: failed to build ${sandbox_image}" >&2
+    exit 1
+  fi
+}
+
+ensure_dev_sandbox_image() {
+  local sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
+  if docker image inspect "$sandbox_image" >/dev/null 2>&1; then
+    return 0
+  fi
+  build_dev_sandbox_image
 }
 
 # Sandbox runtime bundle (backend, preview-inject, startup scripts) the dev
@@ -317,13 +345,8 @@ case "$cmd" in
     esac
     ;;
   sandbox)
-    gateway_dir="${SANDBOX_GATEWAY_DIR:-./sandbox-gateway}"
     sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
-    docker build --network=host \
-      -t "$sandbox_image" \
-      --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}" \
-      -f "${gateway_dir}/sandbox/Dockerfile" \
-      "${gateway_dir}/sandbox"
+    build_dev_sandbox_image
     echo "built ${sandbox_image}"
     ;;
   gateway)
