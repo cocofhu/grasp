@@ -126,7 +126,7 @@ async function setup(page: Page) {
   return { state, send, navs, quiet, push, observe }
 }
 
-const busy = (page: Page) => page.locator('text=/^(输出中|思考中…|生成中…)$/ >> visible=true')
+const busy = (page: Page) => page.locator('text=/^(思考中…|生成中…)$/ >> visible=true')
 type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; title: string; status: string; input?: string; output?: string }
 /** An observed automatic visit: one reply row of the latest thought / message and every step, in turn auto:1. */
 function observed(steps: Step[], running = true): FakeDialogue {
@@ -274,7 +274,7 @@ for (const theme of ['light', 'dark'] as const) {
     observe('verify', [T1, M1, tool('运行测试 npm test'), M2])
     await expect(page.getByText('验证完成：登录页改版无回归。')).toHaveCount(1)
     // Let the background poll run (it still reads 「follow 验证」 from the opened URL):
-    // the stream must not be re-seeded into a new 「输出中」 row.
+    // the stream must not be re-seeded into a new thinking row.
     await page.waitForTimeout(4600)
     await expect(page.getByText('Agent', { exact: true })).toHaveCount(1)
     // Streamed text is kept (not replaced by a fresh empty row per frame).

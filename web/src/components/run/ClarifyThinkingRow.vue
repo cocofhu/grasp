@@ -1,20 +1,25 @@
 <script setup lang="ts">
 /**
- * The conversation's busy line: a small lamp and 「思考中…」, or the tail
- * 「输出中」once a streaming reply already has text. One component for
- * ClarifyChat and the run LLM transcript.
+ * In-progress status for ClarifyChat and the run LLM transcript.
+ * Always the thinking lamp and 「思考中…」/ Thinking…, including while
+ * visible message text is still streaming. Callers omit the row once the
+ * turn ends. `outputting` is ignored so message text is not restyled as
+ * 「输出中」/ Writing.
  */
 import { useI18n } from 'vue-i18n'
 import ThinkingBusyCue from './ThinkingBusyCue.vue'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** placeholder = empty in-flight turn; status = tail under steps that already started. */
     variant?: 'placeholder' | 'status'
+    /** Ignored. A running turn never switches this row to 输出中. */
     outputting?: boolean
   }>(),
   { variant: 'placeholder', outputting: false },
 )
+
+void props.outputting
 
 const { t } = useI18n()
 </script>
@@ -29,19 +34,16 @@ const { t } = useI18n()
   </div>
   <div
     v-else
-    class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal"
-    :class="outputting ? 'clarify-outputting' : 'clarify-thinking'"
+    class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal clarify-thinking"
     data-testid="clarify-busy-status"
-    :data-state="outputting ? 'outputting' : 'thinking'"
+    data-state="thinking"
     role="status"
   >
-    <ThinkingBusyCue v-if="!outputting" :label="t('pages.clarify.thinkingBusy')" />
-    <span v-else>{{ t('pages.clarify.outputting') }}</span>
+    <ThinkingBusyCue :label="t('pages.clarify.thinkingBusy')" />
   </div>
 </template>
 
 <style scoped>
 .clarify-thinking { padding-inline: 4px; }
 .clarify-thinking :deep(.thinking-busy) { gap: 6px; }
-.clarify-outputting { color: rgb(var(--c-txt3)); }
 </style>

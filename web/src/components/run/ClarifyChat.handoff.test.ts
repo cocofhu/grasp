@@ -836,6 +836,53 @@ describe('follow process stays on the confirmed conversation', () => {
     w.unmount()
   })
 
+  it('a live follow node stays on 思考中… while its message streams and after a later tool', async () => {
+    const at = '2026-10-22T09:00:00Z'
+    const w = mountChat({
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+      followProcess: [{
+        nodeId: 'implement',
+        iteration: 1,
+        label: '实现',
+        live: true,
+        startedAt: at,
+        parts: [
+          { kind: 'thought', text: '先看导出' },
+          { kind: 'message', text: '导出改好了' },
+        ],
+      }],
+    })
+    await flushPromises()
+    const tail = () => w.get('[data-testid="clarify-follow-process-node"]').get('[data-testid="clarify-busy-status"]')
+    expect(tail().attributes('data-state')).toBe('thinking')
+    expect(tail().text()).toContain('思考中')
+    expect(tail().find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-follow-agent-message"]').text()).toContain('导出改好了')
+    expect(w.text()).not.toContain('输出中')
+    await w.setProps({
+      followProcess: [{
+        nodeId: 'implement',
+        iteration: 1,
+        label: '实现',
+        live: true,
+        startedAt: at,
+        parts: [
+          { kind: 'thought', text: '先看导出' },
+          { kind: 'message', text: '导出改好了' },
+          { kind: 'tool', title: 'Read', status: 'running' },
+          { kind: 'thought', text: '再核对调用' },
+        ],
+      }],
+    })
+    await flushPromises()
+    expect(tail().text()).toContain('思考中')
+    expect(tail().find('[data-testid="thinking-lamp"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-follow-agent-message"]').text()).toContain('导出改好了')
+    expect(w.text()).not.toContain('输出中')
+    w.unmount()
+  })
+
   it('settles 思考中 and 生成中 once the confirmed turn has ended', async () => {
     const w = mountChat({ turns: [] })
     await flushPromises()

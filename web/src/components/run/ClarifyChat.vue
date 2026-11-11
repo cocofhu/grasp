@@ -1026,12 +1026,8 @@ type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean;
  * composer never reads as broken.
  */
 const followProcessRows = computed(() => (props.followProcess || []).filter((seg) => seg.live || seg.parts.length))
-function followProcessOutputting(parts: AgentPart[]): boolean {
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const part = parts[i]!
-    if (part.kind === 'tool') return false
-    if ((part.kind === 'message' || part.kind === 'thought') && part.text?.trim()) return part.kind === 'message'
-  }
+/** A live follow-up node stays on 思考中…. Message parts do not switch the tail. */
+function followProcessOutputting(_parts: AgentPart[]): boolean {
   return false
 }
 const followTailView = computed<FollowTailView | null>(() => {
@@ -1683,8 +1679,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
           <!--
             Turn still running: the live status sits at the end of the reply (where
-            the next step will appear), never only at the top. Same lamp +
-            思考中… / plain 输出中 styles as before.
+            the next step will appear), never only at the top. It stays the
+            thinking lamp and 思考中… while visible message text is streaming.
           -->
           <ClarifyThinkingRow
             v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
@@ -2369,9 +2365,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 /* Earlier nodes read as context: weaker than the live conversation. */
 .clarify-prior-body { opacity: .72; }
 .clarify-prior-body:hover { opacity: 1; }
-.clarify-outputting {
-  color: rgb(var(--c-txt3));
-}
 
 /* Streaming caret at message tail (Demo phase 3) */
 .clarify-stream-caret {
