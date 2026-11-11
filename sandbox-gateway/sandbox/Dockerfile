@@ -53,25 +53,52 @@ RUN set -eu; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
-# Docker Engine + CLI + Buildx + Compose 插件（true → 清华；false → download.docker.com）
+# Docker Engine + CLI + Buildx + Compose 插件。
+# 清华 docker-ce 会对部分云厂商 IP / curl UA / IPv6 路径返回 403；国内多源回退，官方源垫底。
 RUN set -eu; \
-    if [ "$USE_CN_MIRROR" = "true" ]; then \
-      curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list; \
-    else \
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list; \
-    fi; \
+    arch="$(dpkg --print-architecture)"; \
+    codename="$(lsb_release -cs)"; \
+    key=/usr/share/keyrings/docker-archive-keyring.gpg; \
+    list=/etc/apt/sources.list.d/docker.list; \
+    curl_gpg() { \
+      local url="$1"; \
+      rm -f /tmp/docker.gpg; \
+      curl -fsSL --http1.1 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 45 \
+        "$url" -o /tmp/docker.gpg \
+      || curl -fsSL -4 --http1.1 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 45 \
+        "$url" -o /tmp/docker.gpg; \
+    }; \
+    try_docker_repo() { \
+      local repo="$1" i; \
+      rm -f "$key" /tmp/docker.gpg; \
+      curl_gpg "${repo}/gpg" || return 1; \
+      gpg --batch --yes --dearmor -o "$key" /tmp/docker.gpg || return 1; \
+      echo "deb [arch=${arch} signed-by=${key}] ${repo} ${codename} stable" > "$list"; \
+      for i in 1 2 3; do \
+        if apt-get update && apt-get install -y \
+          docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then \
+          echo "docker-ce installed from ${repo}"; \
+          return 0; \
+        fi; \
+        echo "docker-ce apt ${repo} attempt $i failed; waiting..."; \
+        sleep 10; \
+      done; \
+      return 1; \
+    }; \
     ok=0; \
-    for i in 1 2 3 4 5; do \
-      if apt-get update && apt-get install -y \
-        docker-ce \
-        docker-ce-cli \
-        containerd.io \
-        docker-buildx-plugin \
-        docker-compose-plugin; then ok=1; break; fi; \
-      echo "apt install attempt $i failed; waiting for mirror re-sync..."; sleep 20; \
-    done; \
+    if [ "$USE_CN_MIRROR" = "true" ]; then \
+      for repo in \
+        https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu \
+        https://mirrors.aliyun.com/docker-ce/linux/ubuntu \
+        https://mirrors.ustc.edu.cn/docker-ce/linux/ubuntu; do \
+        if try_docker_repo "$repo"; then ok=1; break; fi; \
+        echo "docker-ce ${repo} failed; trying next mirror..."; \
+      done; \
+    fi; \
+    if [ "$ok" != 1 ]; then \
+      if try_docker_repo https://download.docker.com/linux/ubuntu; then ok=1; fi; \
+    fi; \
+    rm -f /tmp/docker.gpg; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
@@ -225,7 +252,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Go (阿里云优先；golang.google.cn 会回源 dl.google.com，国内 CI 易超时)
-ENV GO_VERSION=1.26.10
+ENV GO_VERSION=1.26.11
 ENV GO_ARCH=amd64
 RUN set -eux; \
     file="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \

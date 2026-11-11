@@ -16,20 +16,6 @@ spec.loader.exec_module(runner)
 
 
 class MatrixContracts(unittest.TestCase):
-    def test_fixture_execution_initialization_failure_never_falls_back_to_server_startup(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            config = root/'config.json'
-            config.write_text('{}')
-            with mock.patch.object(runner.subprocess, 'run', side_effect=runner.subprocess.CalledProcessError(1, 'storage-admin')) as command:
-                with self.assertRaises(runner.subprocess.CalledProcessError):
-                    runner.initialize_fixture_execution(config, root, root, {'PATH': '/usr/bin'}, root/'storage-admin')
-            self.assertEqual(command.call_count, 1)
-            args = command.call_args.args[0]
-            self.assertEqual(args[1:4], ['--mode', 'execution-init', '--offline'])
-            self.assertNotIn('--resume', args)
-            self.assertEqual(json.loads((root/'execution-control.json').read_text())['storage']['blobs_root'], str(root/'execution-control'))
-
     def test_every_directed_pair_is_exercised_once(self):
         names = ['cursor', 'claude_code', 'codebuddy', 'trae', 'opencode', 'codex', 'deepseek_harness', 'kimi_code']
         walk = runner.directed_walk(names)

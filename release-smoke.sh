@@ -67,7 +67,6 @@ trap cleanup EXIT INT TERM
 
 docker compose -f "$COMPOSE_FILE" config --quiet >>"$LOG" 2>&1
 docker compose -f "$COMPOSE_FILE" pull >>"$LOG" 2>&1
-bash scripts/init-execution.sh release "$COMPOSE_FILE" --offline >>"$LOG" 2>&1
 docker compose -f "$COMPOSE_FILE" up -d --wait >>"$LOG" 2>&1
 docker compose -f "$COMPOSE_FILE" exec -T grasp \
   /app/grasp doctor --run-demo --timeout 5m >>"$LOG" 2>&1

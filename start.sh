@@ -11,11 +11,12 @@
 #   ./start.sh pull        refresh compose images + the sandbox runtime
 #   ./start.sh dev         local source stack (build server/web/gateway)
 #   ./start.sh dev -d      local source stack, detached
-#   ./start.sh init-execution --offline      initialize a new stopped release stack
-#   ./start.sh dev init-execution --offline  same, for the source stack
 #   ./start.sh sandbox     build universal-sandbox:local (dev only)
 #   ./start.sh gateway     rebuild local sandbox-gateway image (dev only)
 #   ./start.sh runtime     rebuild the sandbox runtime bundle (dev only)
+#
+# Sandbox image build (dev/sandbox): USE_CN_MIRROR defaults to true (Tsinghua).
+# If that build fails, start.sh retries once with USE_CN_MIRROR=false.
 #
 # Requires Docker Compose on a Linux host (services use network_mode: host).
 set -euo pipefail
@@ -202,22 +203,47 @@ up_release() {
   fi
 }
 
-ensure_dev_sandbox_image() {
+docker_build_sandbox_image() {
+  local sandbox_image="$1"
+  local gateway_dir="$2"
+  local cn_mirror="$3"
+  local providers="$4"
+  docker build --network=host \
+    -t "$sandbox_image" \
+    --build-arg AGENT_PROVIDERS="$providers" \
+    --build-arg USE_CN_MIRROR="$cn_mirror" \
+    -f "${gateway_dir}/sandbox/Dockerfile" \
+    "${gateway_dir}/sandbox"
+}
+
+build_dev_sandbox_image() {
   local sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
   local gateway_dir="${SANDBOX_GATEWAY_DIR:-./sandbox-gateway}"
-  if docker image inspect "$sandbox_image" >/dev/null 2>&1; then
-    return 0
-  fi
+  local cn_mirror="${USE_CN_MIRROR:-true}"
+  local providers="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}"
   if [[ ! -f "${gateway_dir}/sandbox/Dockerfile" ]]; then
     echo "error: missing ${gateway_dir}/sandbox/Dockerfile (needed to build ${sandbox_image})" >&2
     exit 1
   fi
-  echo "building local sandbox image ${sandbox_image} (first run is slow)..."
-  docker build --network=host \
-    -t "$sandbox_image" \
-    --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}" \
-    -f "${gateway_dir}/sandbox/Dockerfile" \
-    "${gateway_dir}/sandbox"
+  echo "building local sandbox image ${sandbox_image} (USE_CN_MIRROR=${cn_mirror}; first run is slow)..."
+  if docker_build_sandbox_image "$sandbox_image" "$gateway_dir" "$cn_mirror" "$providers"; then
+    return 0
+  fi
+  if [[ "$cn_mirror" == "true" ]]; then
+    echo "warning: CN mirror build failed; retrying with USE_CN_MIRROR=false" >&2
+    docker_build_sandbox_image "$sandbox_image" "$gateway_dir" "false" "$providers"
+  else
+    echo "error: failed to build ${sandbox_image}" >&2
+    exit 1
+  fi
+}
+
+ensure_dev_sandbox_image() {
+  local sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
+  if docker image inspect "$sandbox_image" >/dev/null 2>&1; then
+    return 0
+  fi
+  build_dev_sandbox_image
 }
 
 # Sandbox runtime bundle (backend, preview-inject, startup scripts) the dev
@@ -298,32 +324,20 @@ case "$cmd" in
     "${COMPOSE[@]}" -f "$RELEASE_COMPOSE_FILE" --profile local-storage down --remove-orphans || true
     up_release 1
     ;;
-  init-execution)
-    bash scripts/init-execution.sh release "$RELEASE_COMPOSE_FILE" "$@"
-    ;;
   dev)
     sub="${1:-up}"
     case "$sub" in
       -d|up-d|detach) up_dev 1 ;;
       up|"") up_dev 0 ;;
-      init-execution)
-        shift
-        bash scripts/init-execution.sh dev "$DEV_COMPOSE_FILE" "$@"
-        ;;
       *)
-        echo "usage: ./start.sh dev [-d|init-execution --offline]" >&2
+        echo "usage: ./start.sh dev [-d]" >&2
         exit 1
         ;;
     esac
     ;;
   sandbox)
-    gateway_dir="${SANDBOX_GATEWAY_DIR:-./sandbox-gateway}"
     sandbox_image="${GRASP_GATEWAY_SANDBOX_IMAGE:-universal-sandbox:local}"
-    docker build --network=host \
-      -t "$sandbox_image" \
-      --build-arg AGENT_PROVIDERS="${AGENT_PROVIDERS:-cursor,claude_code,codebuddy,trae,opencode,codex,kimi_code}" \
-      -f "${gateway_dir}/sandbox/Dockerfile" \
-      "${gateway_dir}/sandbox"
+    build_dev_sandbox_image
     echo "built ${sandbox_image}"
     ;;
   gateway)
@@ -341,7 +355,7 @@ case "$cmd" in
     ;;
   *)
     echo "unknown: $cmd" >&2
-    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|init-execution --offline|dev|sandbox|gateway|runtime]" >&2
+    echo "usage: ./start.sh [up|-d|pull|logs|gw-logs|down|restart|dev|sandbox|gateway|runtime]" >&2
     exit 1
     ;;
 esac

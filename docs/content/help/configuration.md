@@ -16,9 +16,7 @@ Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/
 ## 本地快速路径
 
 ```bash
-./start.sh init-execution --offline # 仅全新安装，全部写入者已停止
 ./start.sh -d          # 发布镜像栈
-# 源码栈用 ./start.sh dev init-execution --offline，再启动：
 ./start.sh dev -d      # 源码 + HMR
 ```
 
@@ -75,9 +73,9 @@ GRASP_S3_BUCKET=grasp
 GRASP_S3_PREFIX=application
 ```
 
-保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空；必须显式设置 `GRASP_LOCAL_OBJECTSTORE=1`，只缺少 S3 地址会报错，不会创建空白本地存储。全新安装先执行 `./start.sh init-execution --offline`，源码栈使用 `./start.sh dev init-execution --offline`；命令先确认应用已停止，再准备 SeaweedFS 和原本地凭据，最后初始化独立执行控制。然后执行 `./start.sh -d`（迁移版本镜像）或 `./start.sh dev -d`（源码）。已有数据库按前述升级流程处理，普通启动和重启不自动初始化。
+保留 `GRASP_S3_ENDPOINT`、访问密钥和会话令牌为空；必须显式设置 `GRASP_LOCAL_OBJECTSTORE=1`，只缺少 S3 地址会报错，不会创建空白本地存储。执行 `./start.sh -d`（迁移版本镜像）或 `./start.sh dev -d`（源码）时会先准备 SeaweedFS 和原本地凭据，再启动应用。已有数据库按前述升级流程处理。
 
-脚本自动创建私有 bucket，生成只允许该 bucket 的应用密钥，并在确认服务就绪后启动 Grasp。默认 S3 地址为 `http://127.0.0.1:8333`，仅绑定本机；端口可用 `GRASP_LOCAL_OBJECTSTORE_PORT` 修改。管理界面、Filer 和 Master 端口不发布到宿主。正文组件的凭据不会自动用作独立执行控制配置。
+脚本自动创建私有 bucket，生成只允许该 bucket 的应用密钥，并在确认服务就绪后启动 Grasp。默认 S3 地址为 `http://127.0.0.1:8333`，仅绑定本机；端口可用 `GRASP_LOCAL_OBJECTSTORE_PORT` 修改。管理界面、Filer 和 Master 端口不发布到宿主。
 
 SeaweedFS 以非 root 身份运行。普通用户启动时沿用宿主 UID/GID；root 启动时沿用已有数据的非 root 属主，新数据默认使用 `10001:10001`，并仅调整私有数据目录与 IAM 挂载的属主。客户端密钥保持宿主用户可读的 `0600`。可用 `GRASP_LOCAL_OBJECTSTORE_UID` / `GRASP_LOCAL_OBJECTSTORE_GID` 指定非 root 身份；普通用户需先确保挂载目录属于自己的 UID/GID。
 

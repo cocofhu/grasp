@@ -202,8 +202,6 @@ func newStack(t *testing.T) *stack {
 			"GRASP_SANDBOX_GATEWAY_API_KEY="+gateKey,
 			"SBGW_API_KEYS="+gateKey,
 			"GRASP_STORAGE_DRIVER=local",
-			"GRASP_EXECUTION_CONTROL_DRIVER=local",
-			"GRASP_EXECUTION_CONTROL_BLOBS_ROOT=/execution-control",
 		),
 	}
 	jar, _ := cookiejar.New(nil)
@@ -227,11 +225,6 @@ func (s *stack) compose(args ...string) string {
 
 func (s *stack) up() {
 	s.t.Helper()
-	// This fixture owns a fresh SQL/payload/control/workdir set. Ordinary
-	// restart below deliberately reuses that identity and never initializes it.
-	s.compose("run", "--rm", "--no-deps", "--entrypoint", "node", "-v",
-		filepath.Join(s.root, "scripts", "init-execution.mjs")+":/opt/grasp-init-execution.mjs:ro",
-		"grasp", "/opt/grasp-init-execution.mjs", "--offline")
 	s.compose("up", "-d", "--wait")
 	s.login()
 }

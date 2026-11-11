@@ -76,7 +76,7 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_WORKSPACE_MAX_SCOPE_RESERVED_BYTES` | `workspace_operations.max_scope_reserved_bytes` | int | `8589934592` | Public | Durable upload reservation bytes per Solo/workflow scope |
 | `GRASP_WORKSPACE_MAX_DURATION` | `workspace_operations.max_duration` | duration | `30m` | Public | Maximum file capture or isolated restore operation duration |
 | `GRASP_WORKSPACE_MAX_WORKERS` | `workspace_operations.max_workers` | integer | `2` | Public | Concurrent workspace file jobs (1–64) |
-| `GRASP_EXECUTION_CONTROL_DRIVER` | `execution_control.driver` | enum | `Not set` | Public | Independent execution continuity store: local / s3 / cos; unset keeps history readable and execution disabled until explicit offline initialization |
+| `GRASP_EXECUTION_CONTROL_DRIVER` | `execution_control.driver` | enum | `Not set` | Public | Independent execution control store for grasp-storage-admin offline modes only: local / s3 / cos; the server ignores it and executes immediately |
 | `GRASP_EXECUTION_CONTROL_BLOBS_ROOT` | `execution_control.blobs_root` | path | `Not set` | Public | Independent persistent control directory, disjoint from SQL, payload and backup directories |
 | `GRASP_EXECUTION_CONTROL_S3_ENDPOINT` | `execution_control.s3.endpoint` | URL | `Not set` | Public | Independent control S3 HTTP(S) origin; real conditional writes are required |
 | `GRASP_EXECUTION_CONTROL_S3_REGION` | `execution_control.s3.region` | string | `us-east-1` | Public | Independent control object storage region |

@@ -27,6 +27,7 @@ const box = vi.hoisted(() => ({
     reasoningEfforts?: string[]
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
+  environmentStopping: undefined as undefined | import('vue').Ref<boolean>,
   phase: undefined as undefined | import('vue').Ref<string>,
   link: undefined as undefined | import('vue').Ref<string>,
   currentModelId: undefined as undefined | import('vue').Ref<string>,
@@ -71,6 +72,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     loadError: ref(''),
     actionError: box.actionError,
     status: box.status,
+    environmentStopping: box.environmentStopping,
     closed: computed(() => box.status?.value === 'closed'),
     canSend: computed(() => box.status?.value === 'starting' || box.status?.value === 'running'),
     currentModelId: box.currentModelId,
@@ -100,6 +102,7 @@ const sessionState = (box.session = ref<NonNullable<typeof box.session>['value']
   repos: [] as Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>,
 }))
 const statusState = (box.status = ref('running'))
+const environmentStopping = (box.environmentStopping = ref(false))
 const phaseState = (box.phase = ref(''))
 const linkState = (box.link = ref('open'))
 const currentModelId = (box.currentModelId = ref(''))
@@ -427,6 +430,35 @@ describe('SoloSessionPane', () => {
     currentReasoningEffort.value = ''
     modelChangePending.value = false
     resetCliCatalog()
+  })
+
+  it('shows only the stopping sentence and keeps the stopped bar after the environment halts', async () => {
+    environmentStopping.value = true
+    const stopping = mountPane(pages)
+    try {
+      await flushPromises()
+      expect(stopping.get('[data-testid="solo-closed-bar"] p').text()).toBe('正在停止环境，聊天和工作区会保留。')
+      expect(stopping.get('[data-testid="solo-closed-bar"]').text()).not.toContain('不再接收')
+      expect(stopping.get('[data-testid="solo-closed-bar"]').text()).not.toContain('恢复环境')
+      expect(stopping.find('[data-testid="solo-send"]').exists()).toBe(false)
+      expect(stopping.find('textarea').exists()).toBe(false)
+    } finally {
+      stopping.unmount()
+      environmentStopping.value = false
+    }
+
+    statusState.value = 'stopped'
+    const stopped = mountPane(pages)
+    try {
+      await flushPromises()
+      expect(stopped.get('[data-testid="solo-closed-bar"] p').text()).toBe('环境已停止，聊天和工作区已保留。')
+      expect(stopped.get('[data-testid="solo-closed-bar"]').text()).toContain('恢复环境')
+      expect(stopped.find('[data-testid="solo-send"]').exists()).toBe(false)
+      expect(stopped.find('textarea').exists()).toBe(false)
+    } finally {
+      stopped.unmount()
+      statusState.value = 'running'
+    }
   })
 
   it('hides the selector on a closed session and disables it when sending is blocked', async () => {

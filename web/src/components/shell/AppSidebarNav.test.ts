@@ -2,7 +2,7 @@
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resetBrandSettingsForTest } from '@/lib/composables/useBrandSettings'
+import { resetBrandSettingsForTest, setExecutionMode } from '@/lib/composables/useBrandSettings'
 import { nextTick, reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
@@ -99,6 +99,8 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
 const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
   renameSoloSession: vi.fn(),
+  deleteRun: vi.fn(),
+  deleteSoloSession: vi.fn(),
   closeSoloSession: vi.fn(),
   stopSoloEnvironment: vi.fn(),
   resumeSoloEnvironment: vi.fn(),
@@ -119,6 +121,9 @@ const workspaceMocks = vi.hoisted(() => {
 vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
+    renameSoloSession: (...args: unknown[]) => apiMocks.renameSoloSession(...args),
+    deleteRun: (...args: unknown[]) => apiMocks.deleteRun(...args),
+    deleteSoloSession: (...args: unknown[]) => apiMocks.deleteSoloSession(...args),
     closeSoloSession: (...args: unknown[]) => apiMocks.closeSoloSession(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
     listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
@@ -240,6 +245,8 @@ beforeEach(() => {
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
   apiMocks.renameSoloSession.mockReset()
+  apiMocks.deleteRun.mockReset()
+  apiMocks.deleteSoloSession.mockReset()
   apiMocks.closeSoloSession.mockReset()
   apiMocks.stopSoloEnvironment.mockReset()
   apiMocks.resumeSoloEnvironment.mockReset()
@@ -253,6 +260,7 @@ beforeEach(() => {
     return Promise.resolve({ items, total: items.length })
   })
   apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
+  useSoloSessions().endEnvironmentChange('solo-1')
   workspaceMocks.ensureLoaded.mockReset()
   workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
   workspaceMocks.workspace.value = { name: 'ws' }
@@ -455,6 +463,7 @@ describe('AppSidebarNav', () => {
     stop.click()
     await flushPromises()
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(useSoloSessions().environmentChanges.value.get('solo-1')).toBe('stopping')
     expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
     expect(row.attributes('data-motion')).toBe('spin')
     const pending = await open()
@@ -465,6 +474,7 @@ describe('AppSidebarNav', () => {
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledTimes(1)
     stopped({ ...session, status: 'stopped', waiting: 1 })
     await flushPromises()
+    expect(useSoloSessions().environmentChanges.value.has('solo-1')).toBe(false)
     expect(row.find('[data-testid="nav-solo-environment-phase"]').exists()).toBe(false)
     const resume = await open()
     expect(resume.textContent).toContain('恢复环境')
@@ -490,6 +500,53 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
+  it('marks a stopped Solo row with the stop icon and leaves running and stopping marks alone', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        soloSession({ id: 'stopped', title: '已停止会话', status: 'stopped', busy: true }),
+        soloSession({ id: 'running', title: '运行中', status: 'running', busy: true }),
+        soloSession({
+          id: 'stopping',
+          title: '正在停',
+          status: 'running',
+          busy: false,
+          sandbox: { id: 7, name: 'sbx', status: 'running', desiredState: 'stopped', connected: true, hasCodeServer: false },
+        }),
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav({ realIcon: true })
+    await flushPromises()
+
+    const stopped = wrapper.get('[data-kind="solo"][data-key="stopped"]')
+    expect(stopped.attributes('data-motion')).toBeUndefined()
+    expect(stopped.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+    expect(stopped.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+    const icon = stopped.get('[data-testid="nav-solo-stopped"]')
+    expect(icon.attributes('data-icon')).toBe('stop')
+    expect(icon.attributes('width')).toBe('14')
+    expect(icon.attributes('height')).toBe('14')
+    expect(icon.classes()).toContain('text-txt2')
+    expect(icon.attributes('title')).toBe('已停止')
+    expect(icon.attributes('aria-label')).toBe('已停止')
+    expect(icon.attributes('aria-hidden')).not.toBe('true')
+    expect(icon.attributes('interactive')).not.toBe('false')
+    expect(stopped.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
+
+    const running = wrapper.get('[data-kind="solo"][data-key="running"]')
+    expect(running.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(running.attributes('data-motion')).toBe('pulse')
+    expect(running.get('[data-testid="inbox-motion-pulse"]').attributes('data-icon')).toBe('inbox-reply')
+
+    const stopping = wrapper.get('[data-kind="solo"][data-key="stopping"]')
+    expect(stopping.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(stopping.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
+    expect(stopping.attributes('data-motion')).toBe('spin')
+    expect(stopping.get('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it.each([{ status: 'starting' as const }, { busy: true }, { waiting: 1 }])('disables environment actions while the session is occupied: %j', async (patch) => {
     apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession(patch)], maxSandboxes: 5 })
     const wrapper = mountNav()
@@ -510,10 +567,431 @@ describe('AppSidebarNav', () => {
     await flushPromises()
     const row = wrapper.get('[data-testid="sidebar-recent-solo"]')
     await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
-    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(el => el.textContent?.trim())).toEqual(['快照', '释放环境'])
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(el => el.textContent?.trim())).toEqual(['重命名', '快照', '释放环境', '删除会话'])
+    const blocked = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(blocked.disabled).toBe(true)
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')?.textContent).toContain('请先释放环境')
+    blocked.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="nav-history-delete-confirm"]')).toBeNull()
     ;(document.querySelector('[data-testid="nav-solo-menu-release"]') as HTMLButtonElement).click()
     expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/solo/solo-1', query: { workspace: 'release' } })
     expect(apiMocks.closeSoloSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  function finishedRun(patch: Record<string, unknown> = {}) {
+    return {
+      id: 'run-h',
+      workflowId: 'wf-h',
+      workflowName: '工作流',
+      title: 'hello',
+      status: 'cancelled',
+      trigger: 'manual',
+      startedAt: '2026-11-01T00:00:00Z',
+      durationSec: 1,
+      progress: 100,
+      ...patch,
+    }
+  }
+
+  function stubHistoryRuns(items: Array<Record<string, unknown>>) {
+    apiMocks.listRuns.mockImplementation((params?: { status?: string }) => {
+      const status = String(params?.status ?? '')
+      if (status.includes('completed')) return Promise.resolve({ items, total: items.length })
+      const unfinished = unfinishedRunsFromInbox()
+      return Promise.resolve({ items: unfinished, total: unfinished.length })
+    })
+  }
+
+  function historyMenuLabels() {
+    return [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.textContent?.trim())
+  }
+
+  it.each(['completed', 'failed', 'cancelled'] as const)('opens only workflow view, rename and delete on a %s history run', async (status) => {
+    stubHistoryRuns([finishedRun({ status, title: 'hello' })])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="sidebar-recent-run"]')
+    if (status === 'completed') expect(row.find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 24, clientY: 30 })
+    row.element.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    await nextTick()
+    expect(historyMenuLabels()).toEqual(['工作流视图', '重命名', '删除运行'])
+    expect(document.querySelector('[data-testid="nav-pending-menu-pin"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-history-delete-confirm"]')).toBeNull()
+    const del = document.querySelector('[data-testid="nav-history-menu-delete"]') as HTMLButtonElement
+    expect(del.className).toContain('pending-row-menu__item--danger')
+    wrapper.unmount()
+  })
+
+  it('opens a history run menu from the keyboard and keeps it inside the viewport', async () => {
+    stubHistoryRuns([finishedRun()])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="sidebar-recent-run"]')
+    await row.trigger('keydown', { key: 'F10', shiftKey: true })
+    await nextTick()
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-pending-menu-workflow')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    await row.trigger('contextmenu', { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
+    const menu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    expect(Number.parseFloat(menu.style.left)).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 168)
+    expect(Number.parseFloat(menu.style.top)).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 113)
+    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 1, clientY: 1 }))
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens the history run canvas, including when that run is already open', async () => {
+    stubHistoryRuns([finishedRun()])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const open = async () => {
+      await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+      ;(document.querySelector('[data-testid="nav-pending-menu-workflow"]') as HTMLButtonElement).click()
+      await nextTick()
+    }
+    await open()
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-h', query: { view: 'canvas' } })
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    routeState.path = '/runs/run-h'
+    routeState.query = { wf: 'wf-h' }
+    await open()
+    expect(routerMocks.replace).toHaveBeenLastCalledWith({ path: '/runs/run-h', query: { wf: 'wf-h', view: 'canvas' } })
+    wrapper.unmount()
+  })
+
+  it('renames a history run in place and keeps invalid or failed drafts', async () => {
+    stubHistoryRuns([finishedRun({ title: 'hello' })])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const openRename = async () => {
+      await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
+      ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+      await nextTick()
+    }
+    await openRename()
+    let input = wrapper.get('[data-testid="sidebar-recent-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('hello')
+    wrapper.get('[data-editing="true"]').element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 8 }))
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    await input.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+
+    await input.setValue('   ')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+    expect((wrapper.get('[data-testid="sidebar-recent-rename-input"]').element as HTMLInputElement).value).toBe('   ')
+    expect(useToast().toasts.value.some((item) => item.message === '名字不能为空')).toBe(true)
+
+    const tooLong = '字'.repeat(81)
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue(tooLong)
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+    expect(useToast().toasts.value.some((item) => item.message === '最长 80 字')).toBe(true)
+
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue('hello')
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="sidebar-recent-rename-input"]').exists()).toBe(false)
+
+    await openRename()
+    input = wrapper.get('[data-testid="sidebar-recent-rename-input"]')
+    await input.setValue('新的名字')
+    apiMocks.updateRunTitle.mockRejectedValueOnce(new Error('offline'))
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-rename-input"]').element).toBeTruthy()
+    expect((wrapper.get('[data-testid="sidebar-recent-rename-input"]').element as HTMLInputElement).value).toBe('新的名字')
+    expect(useToast().toasts.value.some((item) => item.message === '保存失败')).toBe(true)
+
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-h', title: '新的名字' })
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-h', '新的名字')
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('新的名字')
+    expect(wrapper.find('[data-testid="sidebar-recent-rename-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lets a later history read replace a sidebar rename', async () => {
+    stubHistoryRuns([finishedRun({ title: 'hello' })])
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue('侧栏名字')
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-h', title: '侧栏名字' })
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('侧栏名字')
+
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('侧栏名字')
+
+    stubHistoryRuns([finishedRun({ title: '详情里改的名字', lastActivityAt: '2026-11-11T08:00:00Z' })])
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toContain('详情里改的名字')
+    expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).not.toContain('侧栏名字')
+    wrapper.unmount()
+  })
+
+  it('confirms before deleting a history run and leaves the run page for the run list', async () => {
+    stubHistoryRuns([finishedRun()])
+    routeState.path = '/runs/run-h'
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 10, clientY: 10 })
+    ;(document.querySelector('[data-testid="nav-history-menu-delete"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(apiMocks.deleteRun).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('将永久删除该次运行及关联数据')
+    expect(document.body.textContent).toContain('仅清理这一次 Run')
+    ;(document.querySelector('[data-testid="nav-history-delete-dismiss"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(apiMocks.deleteRun).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="sidebar-recent-run"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 10, clientY: 10 })
+    ;(document.querySelector('[data-testid="nav-history-menu-delete"]') as HTMLButtonElement).click()
+    await nextTick()
+    apiMocks.deleteRun.mockRejectedValueOnce(new Error('offline'))
+    ;(document.querySelector('[data-testid="nav-history-delete-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sidebar-recent-run"]').exists()).toBe(true)
+    expect(document.querySelector('[data-testid="nav-history-delete-error"]')?.textContent).toContain('offline')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+
+    apiMocks.deleteRun.mockResolvedValueOnce({ status: 'deleted' })
+    ;(document.querySelector('[data-testid="nav-history-delete-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(apiMocks.deleteRun).toHaveBeenCalledTimes(2)
+    expect(apiMocks.deleteRun).toHaveBeenLastCalledWith('run-h')
+    expect(wrapper.find('[data-testid="sidebar-recent-run"]').exists()).toBe(false)
+    expect(routerMocks.push).toHaveBeenCalledWith('/runs?wf=wf-h')
+    wrapper.unmount()
+  })
+
+  it('does not leave the page when a history run is deleted from somewhere else', async () => {
+    stubHistoryRuns([finishedRun()])
+    routeState.path = '/dashboard'
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('contextmenu', { clientX: 10, clientY: 10 })
+    ;(document.querySelector('[data-testid="nav-history-menu-delete"]') as HTMLButtonElement).click()
+    await nextTick()
+    apiMocks.deleteRun.mockResolvedValueOnce({ status: 'deleted' })
+    ;(document.querySelector('[data-testid="nav-history-delete-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="sidebar-recent-run"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['closed', 'error'] as const)('renames an ended Solo history row: %s', async (status) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status, title: '旧会话', sandboxId: undefined })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 16, clientY: 16 })
+    expect(historyMenuLabels()).not.toContain('置顶')
+    expect(historyMenuLabels()).not.toContain('停止环境')
+    expect(historyMenuLabels()).not.toContain('恢复环境')
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    const input = wrapper.get('[data-testid="sidebar-recent-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('旧会话')
+    await input.setValue('   ')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.renameSoloSession).not.toHaveBeenCalled()
+    expect(useToast().toasts.value.some((item) => item.message === '名字不能为空')).toBe(true)
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue('字'.repeat(81))
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.renameSoloSession).not.toHaveBeenCalled()
+    apiMocks.renameSoloSession.mockRejectedValueOnce(new Error('offline'))
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').setValue('还在编辑')
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="sidebar-recent-rename-input"]').element as HTMLInputElement).value).toBe('还在编辑')
+    apiMocks.renameSoloSession.mockResolvedValueOnce(soloSession({ status, title: '还在编辑', sandboxId: undefined }))
+    await wrapper.get('[data-testid="sidebar-recent-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.renameSoloSession).toHaveBeenCalledWith('solo-1', '还在编辑')
+    expect(wrapper.get('[data-testid="sidebar-recent-solo"]').text()).toContain('还在编辑')
+    wrapper.unmount()
+  })
+
+  it('keeps release off a failed Solo that still has an environment and blocks delete', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'error', sandboxId: 9 })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
+    expect(historyMenuLabels()).toEqual(['重命名', '快照', '删除会话'])
+    expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    const del = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(true)
+    const reason = document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')
+    expect(reason?.textContent).toBe('工作区仍保留在原环境中，请先释放环境后再删除聊天')
+    expect(del.getAttribute('title')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('请先释放环境')
+    del.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="nav-history-delete-confirm"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it.each([
+    { status: 'closed' as const, labels: ['重命名', '快照', '释放环境', '删除会话'] },
+    { status: 'error' as const, labels: ['重命名', '快照', '删除会话'] },
+  ])('shows the bound-environment reason in the menu for a $status Solo', async ({ status, labels }) => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status, sandboxId: 9 })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="sidebar-recent-solo"]')
+    await row.trigger('contextmenu', { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
+    expect(historyMenuLabels()).toEqual(labels)
+    const menu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
+    const reason = menu.querySelector('[data-testid="nav-solo-menu-delete-reason"]')
+    expect(reason?.textContent).toBe('工作区仍保留在原环境中，请先释放环境后再删除聊天')
+    expect(reason?.getAttribute('role')).not.toBe('menuitem')
+    const del = menu.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(true)
+    expect(del.getAttribute('title')).toBeNull()
+    expect(del.getAttribute('aria-describedby')).toBe('nav-solo-delete-reason')
+    expect(menu.textContent).toContain('请先释放环境')
+    if (status === 'error') expect(menu.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    const width = status === 'error' ? 209 : 241
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 280)
+    expect(Number.parseFloat(menu.style.left)).toBeGreaterThanOrEqual(8)
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - width)
+    expect(Number.parseFloat(menu.style.top)).toBeGreaterThanOrEqual(8)
+    del.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('confirms deletion of an ended Solo without an environment and returns to new request', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'error', title: '失败会话' })], maxSandboxes: 5 })
+    routeState.path = '/solo/solo-1'
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 12, clientY: 12 })
+    expect(historyMenuLabels()).toEqual(['重命名', '快照', '删除会话'])
+    const del = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(false)
+    del.click()
+    await nextTick()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('将永久删除该会话及其聊天记录')
+    apiMocks.deleteSoloSession.mockRejectedValueOnce(new Error('offline'))
+    ;(document.querySelector('[data-testid="nav-history-delete-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sidebar-recent-solo"]').exists()).toBe(true)
+    expect(document.querySelector('[data-testid="nav-history-delete-error"]')?.textContent).toContain('offline')
+    apiMocks.deleteSoloSession.mockResolvedValueOnce({ ok: true })
+    ;(document.querySelector('[data-testid="nav-history-delete-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(apiMocks.deleteSoloSession).toHaveBeenCalledTimes(2)
+    expect(apiMocks.deleteSoloSession).toHaveBeenLastCalledWith('solo-1')
+    expect(wrapper.find('[data-testid="sidebar-recent-solo"]').exists()).toBe(false)
+    expect(routerMocks.push).toHaveBeenCalledWith('/dashboard')
+    wrapper.unmount()
+  })
+
+  it('still opens rename and delete for an ended Solo in worktree mode', async () => {
+    setExecutionMode('worktree')
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'closed', title: '树会话' })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 18, clientY: 18 })
+    wrapper.get('[data-testid="sidebar-recent-solo"]').element.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    await nextTick()
+    expect(historyMenuLabels()).toEqual(['重命名', '删除会话'])
+    expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-environment"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows the bound-environment reason in worktree without a release action', async () => {
+    setExecutionMode('worktree')
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'error', sandboxId: 4, title: '失败仍绑定' })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    await wrapper.get('[data-testid="sidebar-recent-solo"]').trigger('contextmenu', { clientX: 18, clientY: 18 })
+    expect(historyMenuLabels()).toEqual(['重命名', '删除会话'])
+    expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-release"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-solo-menu-delete-reason"]')?.textContent).toContain('请先释放环境')
+    const del = document.querySelector('[data-testid="nav-solo-menu-delete"]') as HTMLButtonElement
+    expect(del.disabled).toBe(true)
+    del.click()
+    expect(apiMocks.deleteSoloSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens history rows with a long press and does not navigate when the finger lifts', async () => {
+    stubHistoryRuns([finishedRun()])
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession({ status: 'closed' })], maxSandboxes: 5 })
+    const wrapper = mountNav(true)
+    await wrapper.setProps({ workspaceLists: true })
+    await flushPromises()
+    const run = wrapper.get('[data-testid="sidebar-recent-run"]')
+    await run.trigger('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(historyMenuLabels()).toEqual(['工作流视图', '重命名', '删除运行'])
+    await run.trigger('pointerup', { pointerType: 'touch', clientX: 20, clientY: 20 })
+    await run.trigger('mousedown')
+    await run.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    const solo = wrapper.get('[data-testid="sidebar-recent-solo"]')
+    await solo.trigger('pointerdown', { pointerType: 'touch', clientX: 30, clientY: 40 })
+    await solo.trigger('pointermove', { pointerType: 'touch', clientX: 30, clientY: 60 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    await solo.trigger('pointerdown', { pointerType: 'touch', clientX: 30, clientY: 40 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-solo-menu-snapshots"]')).not.toBeNull()
+    await solo.trigger('pointerup', { pointerType: 'touch', clientX: 30, clientY: 40 })
+    await solo.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -776,13 +1254,14 @@ describe('AppSidebarNav', () => {
     expect(wrapper.text()).not.toContain('快捷工作流')
     // Primary workspace nav still present (plan g1.1)
     expect(wrapper.find('[data-to="/board"]').exists()).toBe(true)
-    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/settings"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/dashboard"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('新需求')
     expect(wrapper.find('[data-to="/board"]').text()).toContain('看板')
+    expect(wrapper.find('[data-to="/runs"]').text()).toContain('全部运行')
     expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
     const workspace = wrapper.find('[data-testid="nav-workspace-chrome"]')
@@ -790,6 +1269,7 @@ describe('AppSidebarNav', () => {
     expect(workspace.findAll('a.nav-item').map((l) => l.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
+      '/runs',
       '/stats',
       '/settings',
     ])
@@ -891,6 +1371,7 @@ describe('AppSidebarNav', () => {
     expect(links.map((link) => link.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
+      '/runs',
       '/stats',
       '/settings',
     ])
@@ -939,7 +1420,7 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('uses workspace chrome and highlights board for the kanban and run list', async () => {
+  it('uses workspace chrome and highlights one workspace item', async () => {
     routeState.path = '/board'
     const board = mountNav()
     await flushPromises()
@@ -947,18 +1428,35 @@ describe('AppSidebarNav', () => {
     expect(board.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
     expect(board.find('[data-to="/board"]').classes()).toContain('active')
     expect(board.find('[data-to="/dashboard"]').classes()).not.toContain('active')
-    expect(board.find('[data-to="/runs"]').exists()).toBe(false)
+    expect(board.find('[data-to="/runs"]').classes()).not.toContain('active')
     board.unmount()
 
-    routeState.path = '/runs'
-    const wrapper = mountNav()
+    for (const path of ['/runs', '/runs?status=failed', '/runs/run-1', '/runs/run-1/live']) {
+      routeState.path = path
+      const wrapper = mountNav()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+      expect(wrapper.find('[data-to="/runs"]').classes()).toContain('active')
+      expect(wrapper.find('[data-to="/board"]').classes()).not.toContain('active')
+      expect(wrapper.find('[data-to="/dashboard"]').classes()).not.toContain('active')
+      wrapper.unmount()
+    }
+
+    routeState.path = '/runs/run-1/nodes/clarify'
+    const conversation = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
-    expect(wrapper.find('[data-to="/board"]').classes()).toContain('active')
-    expect(wrapper.find('[data-to="/dashboard"]').classes()).not.toContain('active')
-    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
-    wrapper.unmount()
+    expect(conversation.find('[data-to="/dashboard"]').classes()).toContain('active')
+    expect(conversation.find('[data-to="/runs"]').classes()).not.toContain('active')
+    expect(conversation.find('[data-to="/board"]').classes()).not.toContain('active')
+    conversation.unmount()
+
+    routeState.path = '/solo/abc'
+    const solo = mountNav()
+    await flushPromises()
+    expect(solo.find('[data-to="/dashboard"]').classes()).toContain('active')
+    expect(solo.find('[data-to="/runs"]').classes()).not.toContain('active')
+    expect(solo.find('[data-to="/board"]').classes()).not.toContain('active')
+    solo.unmount()
     vi.useRealTimers()
   })
 
@@ -1508,12 +2006,13 @@ describe('AppSidebarNav', () => {
 
     routeState.path = '/runs'
     await nextTick()
-    const board = wrapper.get('[data-to="/board"]')
-    expect(board.classes()).toContain('active')
+    const runs = wrapper.get('[data-to="/runs"]')
+    expect(runs.classes()).toContain('active')
+    expect(wrapper.get('[data-to="/board"]').classes()).not.toContain('active')
     expect(pendingRow.classes()).not.toContain('active')
-    expect(getComputedStyle(board.element).fontWeight).toBe('600')
+    expect(getComputedStyle(runs.element).fontWeight).toBe('600')
     expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
-    for (const to of ['/dashboard', '/board', '/stats', '/settings']) {
+    for (const to of ['/dashboard', '/board', '/runs', '/stats', '/settings']) {
       expect(wrapper.get(`[data-to="${to}"]`).find('.nav-row-title').exists()).toBe(false)
     }
 
