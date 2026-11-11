@@ -22,7 +22,7 @@ async function closeOne(id: string) {
   closing.value = id
   error.value = ''
   try {
-    store.upsert(await api.stopSoloEnvironment(id))
+    await store.changeEnvironment(id, 'stopping', () => api.stopSoloEnvironment(id))
     emit('freed')
   } catch (e) {
     error.value = soloErrorText(e, t, te, locale.value)

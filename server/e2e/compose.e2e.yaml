@@ -12,5 +12,3 @@ services:
     volumes:
       - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/db:/data
       - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/app-data:/app/data
-      - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/execution-control:/execution-control
-      - ${GRASP_RESTART_DATA_ROOT:?restart fixture requires its own data root}/execution-maintenance:/execution-maintenance

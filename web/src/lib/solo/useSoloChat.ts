@@ -164,9 +164,17 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return closed.value && environment?.desiredState === 'stopped' && environment.status !== 'stopped' && environment.status !== 'exited'
   })
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
+  // Local click and a committed stop intent both count, until this stop ends.
+  // A confirmed stop (session already stopped) is the existing stopped bar.
+  const environmentStopping = computed(() => {
+    if (status.value === 'stopped' || status.value === 'closed') return false
+    if (sessions.environmentChanges.value.get(sessionId.value) === 'stopping') return true
+    const environment = session.value?.sandbox
+    return !!environment && environment.desiredState === 'stopped'
+  })
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => !closing.value && sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
+  const canSend = computed(() => !closing.value && !environmentStopping.value && sessionOpen.value && historyReady.value && outboxReady.value && !pendingConfirmation.value.length && session.value?.sandbox?.desiredState !== 'stopped')
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -245,10 +253,10 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const st = session.value?.status
     const boot = st === 'starting'
     const catchUp = st === 'running' && (link.value !== 'open' || !historyReady.value)
-    if (!boot && !catchUp && !stopPending.value) return
+    if (!boot && !catchUp && !stopPending.value && !environmentStopping.value) return
     pollTimer = setTimeout(() => {
       pollTimer = undefined
-      if (session.value?.status === 'starting' || stopPending.value) void refreshSession()
+      if (session.value?.status === 'starting' || stopPending.value || environmentStopping.value) void refreshSession()
       else void refetchMessages()
       schedulePoll()
     }, SANDBOX_POLL_MS)
@@ -1134,6 +1142,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       return false
     }
     if (!isCurrent(id, epoch)) return false
+    // Stop can begin while the outbox write is in flight. Do not submit, and
+    // do not leave the unsent text in the transcript or the outbox.
+    if (environmentStopping.value || closing.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') {
+      try { await removeSoloOutbox(scope, send.localId) } catch { /* a later explicit retry stays gated by canSend */ }
+      if (!isCurrent(id, epoch)) return false
+      forgetSend(send)
+      patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
+      return false
+    }
     try {
       const receipt = await transport.sendSoloTurn(id, request)
       if (!disposed && epoch === chatEpoch && id === sessionId.value && receipt.turnId && receipt.clientMessageId === send.localId) {
@@ -1160,11 +1177,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   async function retryPendingSend() {
-    if (retryingSend.value || !sessionId.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') return false
+    if (retryingSend.value || !sessionId.value || environmentStopping.value || closing.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') return false
     const id = sessionId.value, epoch = chatEpoch
     retryingSend.value = true
     try {
       for (const key of [...pendingConfirmation.value]) {
+        if (environmentStopping.value || closing.value || !sessionOpen.value || session.value?.sandbox?.desiredState === 'stopped') return false
         const send = openSends.find(row => row.localId === key)
         if (!send?.request) continue
         const receipt = await transport.sendSoloTurn(id, send.request)
@@ -1261,6 +1279,13 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   watch(sessionId, () => void load(), { immediate: true })
+  watch(() => sessions.sessions.value.find((row) => row.id === sessionId.value), (row) => {
+    const cur = session.value
+    if (!row || !cur) return
+    if (row.updatedAt && cur.updatedAt && row.updatedAt < cur.updatedAt) return
+    if (row.status === cur.status && row.error === cur.error && row.sandboxId === cur.sandboxId && row.sandbox?.desiredState === cur.sandbox?.desiredState && row.sandbox?.status === cur.sandbox?.status) return
+    patchSession({ status: row.status, error: row.error, sandboxId: row.sandboxId, sandbox: row.sandbox, updatedAt: row.updatedAt || cur.updatedAt })
+  })
   watch(closing, (pending, wasPending) => {
     // Fence reads issued before the close, including its final response.
     settings.invalidate()
@@ -1278,7 +1303,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }, { flush: 'sync' })
   watch([busy, link], scheduleStallCheck)
-  watch(stopPending, schedulePoll)
+  watch([stopPending, environmentStopping], schedulePoll)
 
   onBeforeUnmount(() => {
     diagnostic('ws_closed')
@@ -1314,6 +1339,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     status,
     closing,
     stopPending,
+    environmentStopping,
     closed,
     canSend,
     currentModelId,

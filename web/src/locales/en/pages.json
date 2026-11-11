@@ -4990,7 +4990,8 @@
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
         "environment_authorization_blocked": "Current authorization could not be verified. Recovery was blocked; chat, workspace and the original environment are retained.",
-        "environment_stop_pending": "The environment has not yet confirmed it stopped. Chat and workspace are retained, and its status will be checked again."
+        "environment_stop_pending": "The environment has not yet confirmed it stopped. Chat and workspace are retained, and its status will be checked again.",
+        "environment_retained": "The workspace is still kept in its environment. Release the environment before deleting the chat."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",
@@ -5040,6 +5041,7 @@
         "stopPending": "Stop is not confirmed. Workspace retained.",
         "retryStop": "Retry stop",
         "stopping": "Stopping…",
+        "stoppingNotice": "Stopping the environment. Chat and workspace will be retained.",
         "resuming": "Resuming…"
       },
       "workflows": {

@@ -52,23 +52,10 @@ services:
       GRASP_S3_SECRET_ACCESS_KEY: ${GRASP_S3_SECRET_ACCESS_KEY:-}
       GRASP_S3_SESSION_TOKEN: ${GRASP_S3_SESSION_TOKEN:-}
       GRASP_S3_PATH_STYLE: ${GRASP_S3_PATH_STYLE:-}
-      # Independent continuity marker; never falls back to payload credentials.
-      GRASP_EXECUTION_CONTROL_DRIVER: ${GRASP_EXECUTION_CONTROL_DRIVER:-local}
-      GRASP_EXECUTION_CONTROL_BLOBS_ROOT: ${GRASP_EXECUTION_CONTROL_BLOBS_ROOT:-/execution-control}
-      GRASP_EXECUTION_CONTROL_S3_ENDPOINT: ${GRASP_EXECUTION_CONTROL_S3_ENDPOINT:-}
-      GRASP_EXECUTION_CONTROL_S3_REGION: ${GRASP_EXECUTION_CONTROL_S3_REGION:-}
-      GRASP_EXECUTION_CONTROL_S3_BUCKET: ${GRASP_EXECUTION_CONTROL_S3_BUCKET:-}
-      GRASP_EXECUTION_CONTROL_S3_PREFIX: ${GRASP_EXECUTION_CONTROL_S3_PREFIX:-}
-      GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID: ${GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID:-}
-      GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY: ${GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY:-}
-      GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN: ${GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN:-}
-      GRASP_EXECUTION_CONTROL_S3_PATH_STYLE: ${GRASP_EXECUTION_CONTROL_S3_PATH_STYLE:-}
     volumes:
       - ./.localdata/db:/data
       # Agent profiles / org (WORKDIR-relative data/*). Keep separate from SQLite /data.
       - ./.localdata/app-data:/app/data
-      - ./.localdata/execution-control:/execution-control
-      - ./.localdata/execution-maintenance:/execution-maintenance
     depends_on:
       gateway:
         condition: service_healthy

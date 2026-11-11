@@ -78,6 +78,23 @@ describe('Solo session closing', () => {
     expect(api.closeSoloSession).toHaveBeenCalledTimes(1)
   })
 
+  it('does not let an older session list undo a stop that already settled', async () => {
+    const { useSoloSessions } = await import('./useSoloSessions')
+    const store = useSoloSessions()
+    store.upsert(session('one'))
+    const oldList = deferred<SoloSessionList>()
+    api.listSoloSessions.mockReturnValueOnce(oldList.promise)
+    const refresh = store.refresh()
+    const pending = store.changeEnvironment('one', 'stopping', () => Promise.resolve(session('one', 'stopped')))
+    expect(store.environmentChanges.value.get('one')).toBe('stopping')
+    await pending
+    expect(store.environmentChanges.value.size).toBe(0)
+    expect(store.sessions.value[0]?.status).toBe('stopped')
+    oldList.resolve({ sessions: [session('one')], maxSandboxes: 5 })
+    await refresh
+    expect(store.sessions.value[0]?.status).toBe('stopped')
+  })
+
   it('preserves the last known state on network failure and permits an explicit retry', async () => {
     const { useSoloSessions } = await import('./useSoloSessions')
     const store = useSoloSessions()

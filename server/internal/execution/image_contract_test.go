@@ -36,7 +36,7 @@ func TestImageAndCIContract(t *testing.T) {
 		"xvfb",
 		"chrome-devtools-mcp",
 		"openjdk-11-jdk",
-		"GO_VERSION=1.26.10",
+		"GO_VERSION=1.26.11",
 	} {
 		if !strings.Contains(wt, want) {
 			t.Fatalf("worktree image missing %s", want)
