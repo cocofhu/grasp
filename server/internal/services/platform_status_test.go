@@ -220,6 +220,15 @@ func TestPlatformStatus_activeSoloCountsStayFresh(t *testing.T) {
 	if err := db.Create(&sessions).Error; err != nil {
 		t.Fatal(err)
 	}
+	queues := []models.ChatQueue{
+		{ID: "q-a", Surface: soloPendingSurface, SessionKey: "solo-running-a", ActiveTurnID: "turn-1"},
+		{ID: "q-b", Surface: soloPendingSurface, SessionKey: "solo-running-b"},
+		{ID: "q-closed", Surface: soloPendingSurface, SessionKey: "solo-closed", ActiveTurnID: "turn-2"},
+		{ID: "q-other", Surface: "pm", SessionKey: "solo-running-b", ActiveTurnID: "turn-3"},
+	}
+	if err := db.Create(&queues).Error; err != nil {
+		t.Fatal(err)
+	}
 	dash := NewDashboardService(db, NewWorkspaceService(db))
 	q := PlatformStatusQuery{Timezone: "UTC", Now: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)}
 	assertCounts := func(running, queued int64) {
@@ -231,6 +240,11 @@ func TestPlatformStatus_activeSoloCountsStayFresh(t *testing.T) {
 		if got.RunningCount != running || got.QueuedCount != queued {
 			t.Fatalf("running/queued=%d/%d want %d/%d", got.RunningCount, got.QueuedCount, running, queued)
 		}
+	}
+	// starting + busy running-a; idle running-b and closed sessions do not count.
+	assertCounts(2, 0)
+	if err := db.Model(&models.ChatQueue{}).Where("id = ?", "q-b").Update("active_turn_id", "turn-4").Error; err != nil {
+		t.Fatal(err)
 	}
 	assertCounts(3, 0)
 	runs := []models.Run{

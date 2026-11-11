@@ -4,6 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
 - 移除 `./start.sh [dev] init-execution --offline` 离线初始化步骤与 `GRASP_EXECUTION_CONTROL_*` 外部控制目录依赖，`./start.sh -d` 与 `./start.sh dev -d` 启动即可直接创建 Solo 会话和运行工作流。
 - `./start.sh dev` / `sandbox` 构建本地沙箱镜像时，Docker CE 不再只依赖清华源：密钥或软件包 403 时依次回退阿里云、中科大和官方源；整次构建仍失败则自动用 `USE_CN_MIRROR=false` 再打一次。
 - 修复手机上聊天输入框有时异常变高、占掉大半屏幕的问题：输入框宽度变化时重新计算高度，内容为空时恢复默认高度，并在矮屏上限制最大高度。
