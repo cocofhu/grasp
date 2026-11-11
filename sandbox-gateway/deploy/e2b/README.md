@@ -40,7 +40,7 @@ python3 -m venv /tmp/grasp-e2b-builder
   --output /tmp/grasp-e2b-template.json
 ```
 
-使用新的版本化 alias，避免无意更新另一部署引用的 alias。工具只上传当前 checkout 的原始 bootstrap 和 `IMAGE_LEVEL`，保留公开的 `PATH` 与 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` 约定，并校验以下真实依赖：
+使用新的版本化 alias，避免无意更新另一部署引用的 alias。工具直接使用固定 digest 镜像中已有的 bootstrap 和 `IMAGE_LEVEL`，校验其与当前 checkout 的摘要和级别一致；镜像不匹配时须选择对应镜像或重新构建环境镜像。模板准备不再上传或覆盖这两个文件，因此无需 provider 的构建文件上传接口。工具保留公开的 `PATH` 与 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` 约定，并校验以下真实依赖：
 
 - `cursor-agent`、`claude`、`codebuddy`、`traecli`、`opencode`、`codex`、`dsh`、`kimi`。
 - Python、Node/npm、Go、Git、curl/tar、sshd、Docker、code-server、Xvfb、x11vnc、websockify、Chromium 和 `chrome-devtools-mcp`。

@@ -128,12 +128,10 @@ class PrepareTemplateTest(unittest.TestCase):
             with self.assertRaises(tool.PreparationError):
                 tool.validate(self.args(repo_root=root))
 
-    def test_builder_copies_only_environment_contract_and_real_dependency_checks(self):
+    def test_builder_uses_pinned_image_without_file_uploads(self):
         args = self.args()
         builder = tool.configure_template(FakeTemplate, args, tool.validate(args))
-        copies = [action for action in builder.actions if action[0] == "copy"]
-        self.assertEqual([action[1][0] for action in copies], [tool.BOOTSTRAP, tool.IMAGE_LEVEL])
-        self.assertEqual(copies[0][2]["mode"], 0o755)
+        self.assertFalse(any(action[0] == "copy" for action in builder.actions))
         self.assertEqual(builder.actions[0][1], (IMAGE,))
         command = builder.actions[-1][1][0]
         self.assertIn("/etc/profile.d/grasp-e2b-env.sh", command)
@@ -145,6 +143,46 @@ class PrepareTemplateTest(unittest.TestCase):
             script = tool.validation_command(tool.validate(args), disk_required)
             code = script.split("\n", 1)[1].rsplit("GRASP_TEMPLATE_VALIDATE", 1)[0]
             ast.parse(code)  # A real Python script is sent, not a shell placeholder.
+
+    def test_image_validation_rejects_mismatched_bootstrap_and_level_without_overwriting(self):
+        args = self.args()
+        plan = tool.validate(args)
+        source_bootstrap = (args.repo_root / tool.BOOTSTRAP).read_bytes()
+        source_level = str(plan["imageLevel"]) + "\n"
+        script = tool.validation_command(plan, require_disk=False)
+        code = script.split("\n", 1)[1].rsplit("GRASP_TEMPLATE_VALIDATE", 1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bootstrap = root / "grasp-bootstrap.sh"
+            level = root / "etc/grasp-image-level"
+            executable = root / "usr/bin/native-cli"
+            level.parent.mkdir(parents=True)
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            cases = (
+                (source_bootstrap, source_level, None),
+                (b"#!/bin/sh\nexit 1\n", source_level, "bootstrap does not match the source checkout"),
+                (source_bootstrap, str(plan["imageLevel"] + 1) + "\n", "IMAGE_LEVEL does not match the source checkout"),
+            )
+            for image_bootstrap, image_level, error in cases:
+                with self.subTest(error=error):
+                    bootstrap.write_bytes(image_bootstrap)
+                    bootstrap.chmod(0o755)
+                    level.write_text(image_level)
+                    stdout = io.StringIO()
+                    with patch("pathlib.Path", side_effect=lambda path: root / str(path).lstrip("/")), \
+                            patch("shutil.which", return_value="/usr/bin/native-cli"), \
+                            patch("glob.glob", return_value=[str(executable)]), contextlib.redirect_stdout(stdout):
+                        if error:
+                            with self.assertRaises(SystemExit) as caught:
+                                exec(compile(code, "<template-validation>", "exec"), {})
+                            self.assertEqual(str(caught.exception), error)
+                        else:
+                            exec(compile(code, "<template-validation>", "exec"), {})
+                            self.assertEqual(json.loads(stdout.getvalue())["status"], "passed")
+                    self.assertEqual(bootstrap.read_bytes(), image_bootstrap)
+                    self.assertEqual(level.read_text(), image_level)
 
     def test_build_probe_profile_and_cleanup(self):
         report = tool.prepare(self.args(), FakeTemplate, FakeSandbox)

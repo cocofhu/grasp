@@ -137,10 +137,10 @@ def profile_line(name: str, value: str) -> str:
 
 
 def configure_template(template_class: Any, args: argparse.Namespace, plan: dict[str, Any]) -> Any:
-    builder = template_class(file_context_path=args.repo_root.resolve())
-    builder = builder.from_image(args.image).set_user("root").set_envs(BUILD_ENV)
-    builder = builder.copy(BOOTSTRAP, "/grasp-bootstrap.sh", mode=0o755)
-    builder = builder.copy(IMAGE_LEVEL, "/etc/grasp-image-level", mode=0o644)
+    # The pinned environment image already contains bootstrap and IMAGE_LEVEL.
+    # Validate those originals below: overwriting them would hide an incompatible
+    # image and unnecessarily require the provider's build-file upload service.
+    builder = template_class().from_image(args.image).set_user("root").set_envs(BUILD_ENV)
     # SDK set_envs applies to build instructions. Persist only these public
     # environment defaults for login shells; the Go driver also exports them
     # for non-login bootstrap processes. The runtime bundle stays server-owned.
