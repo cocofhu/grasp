@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SoloSessionPane from '@/components/solo/SoloSessionPane.vue'
 import SoloCreateModal from '@/components/solo/SoloCreateModal.vue'
+import SoloSessionList from '@/components/solo/SoloSessionList.vue'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { soloPrefs } from '@/lib/solo/soloPrefs'
 
@@ -34,20 +35,11 @@ function goHome() {
   void router.replace('/dashboard')
 }
 
-// Solo starts from Home. /solo without a session redirects to the first
-// available conversation or back to Home.
-watch(
-  () => [store.loaded.value, sessionId.value, createOpen.value, route.query.new] as const,
-  ([ok, id, creating, newFlag]) => {
-    if (!ok || id || creating || newFlag === '1') return
-    const first = store.active.value[0] ?? store.sessions.value[0]
-    if (first) {
-      void router.replace(`/solo/${first.id}`)
-      return
-    }
-    goHome()
-  },
-)
+function openCreate() {
+  presetAgent.value = ''
+  presetProject.value = ''
+  createOpen.value = true
+}
 
 onMounted(() => void store.refresh())
 </script>
@@ -56,6 +48,9 @@ onMounted(() => void store.refresh())
   <div class="solo-view flex h-full min-h-0" data-testid="solo-view">
     <main class="solo-main min-h-0 min-w-0 flex-1">
       <SoloSessionPane v-if="sessionId" :key="sessionId" :session-id="sessionId" @back="goHome" />
+      <div v-else class="min-h-0 flex-1 overflow-y-auto">
+        <SoloSessionList @create="openCreate" />
+      </div>
     </main>
 
     <SoloCreateModal :open="createOpen" :preset-agent="presetAgent" :preset-project="presetProject" @close="createOpen = false" />

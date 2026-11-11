@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import SoloStatusDot from './SoloStatusDot.vue'
+import SoloSessionList from './SoloSessionList.vue'
 import { relTime } from '@/lib/shared/format'
 import { repoShort } from '@/lib/solo/soloPrefs'
 import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
@@ -17,6 +19,7 @@ const props = withDefaults(defineProps<{ projects?: Project[]; projectIds?: stri
 const emit = defineEmits<{ (e: 'toggle-project', id: string): void; (e: 'new-project'): void }>()
 const { t } = useI18n()
 const store = useSoloSessions()
+const allOpen = ref(false)
 
 const recent = computed(() => store.active.value.slice(0, 3))
 const cards = computed(() => props.projects.slice(0, 8))
@@ -34,7 +37,7 @@ function repoMeta(session: (typeof recent.value)[number]) {
       <div class="home-solo__head">
         <span>{{ t('pages.solo.home.recent') }}</span>
         <span class="home-solo__count">{{ store.active.value.length }}/{{ store.maxSandboxes.value }}</span>
-        <RouterLink to="/solo" class="home-solo__more">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></RouterLink>
+        <button type="button" class="home-solo__more" data-testid="home-solo-view-all" @click="allOpen = true">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></button>
       </div>
       <div class="home-solo__list">
         <RouterLink
@@ -86,6 +89,10 @@ function repoMeta(session: (typeof recent.value)[number]) {
       </div>
       <p v-if="!projects.length" class="mt-2 text-[12px] text-txt3">{{ t('pages.solo.home.projectsEmpty') }}</p>
     </section>
+
+    <AppModal :open="allOpen" :title="t('pages.solo.home.viewAll')" :width="680" :close-label="t('common.buttons.close')" close-on-esc trap-focus @close="allOpen = false">
+      <SoloSessionList embedded @open="allOpen = false" />
+    </AppModal>
   </div>
 </template>
 
