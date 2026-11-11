@@ -1702,19 +1702,12 @@ function agentHasMessage(t: ClarifyTurn): boolean {
 }
 
 /**
- * Streaming agent whose newest step is message text: tail shows 输出中.
- * After a tool or thought step (waiting for the model) it shows 思考中….
+ * A running turn's tail stays on 思考中…. Visible message text stays a
+ * message; it does not switch the tail to 输出中. The row is omitted once
+ * streaming ends, so this is never true.
  */
-function agentTailOutputting(t: ClarifyTurn): boolean {
-  if (t.role !== 'agent' || !t.streaming) return false
-  const parts = t.parts || []
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i]!
-    if (p.kind === 'tool') return false
-    if ((p.kind === 'message' || p.kind === 'thought') && p.text?.trim()) return p.kind === 'message'
-  }
-  if (t.tools?.length) return false
-  return agentHasMessage(t)
+function agentTailOutputting(_t: ClarifyTurn): boolean {
+  return false
 }
 
 /** Thought text to show for this agent row. */
