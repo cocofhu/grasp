@@ -9,7 +9,7 @@ import SoloSessionList from './SoloSessionList.vue'
 import { relTime } from '@/lib/shared/format'
 import { repoShort } from '@/lib/solo/soloPrefs'
 import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
-import { useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloComputing, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { Project } from '@/lib/api/apiTypes'
 
 const props = withDefaults(defineProps<{ projects?: Project[]; projectIds?: string[] }>(), {
@@ -36,7 +36,7 @@ function repoMeta(session: (typeof recent.value)[number]) {
     <section v-if="recent.length" class="home-solo__section">
       <div class="home-solo__head">
         <span>{{ t('pages.solo.home.recent') }}</span>
-        <span class="home-solo__count">{{ store.active.value.length }}/{{ store.maxSandboxes.value }}</span>
+        <span class="home-solo__count">{{ store.active.value.filter(isSoloComputing).length }}/{{ store.maxSandboxes.value }}</span>
         <button type="button" class="home-solo__more" data-testid="home-solo-view-all" @click="allOpen = true">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></button>
       </div>
       <div class="home-solo__list">

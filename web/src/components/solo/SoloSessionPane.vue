@@ -44,6 +44,7 @@ import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
+import { formatBytes, relTime } from '@/lib/shared/format'
 
 const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient> }>()
 const emit = defineEmits<{ back: []; ready: [] }>()
@@ -52,7 +53,7 @@ const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -133,6 +134,14 @@ const moreOpen = ref(false)
 const limitOpen = ref(false)
 const closing = ref(false)
 const restarting = ref(false)
+const confirmStop = ref(false)
+const stopping = ref(false)
+const resuming = ref(false)
+const backupSummary = computed(() => {
+  const v = session.value
+  if (!v?.backupAt) return ''
+  return t('pages.solo.stoppedBar.backup', { time: relTime(v.backupAt), size: formatBytes(v.backupSize || 0) })
+})
 const resources = ref<SoloResources>()
 
 watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
@@ -333,6 +342,29 @@ async function doRestart() {
   }
 }
 
+async function doStop() {
+  stopping.value = true
+  const ok = await chat.stop()
+  stopping.value = false
+  if (ok) confirmStop.value = false
+}
+
+async function doResume() {
+  resuming.value = true
+  actionError.value = ''
+  try {
+    store.upsert(await api.resumeSoloSession(props.sessionId))
+    await chat.load()
+  } catch (e) {
+    if (isSoloLimitError(e)) {
+      limitOpen.value = true
+      void store.refresh()
+    } else actionError.value = soloErrorText(e, t, te, locale.value)
+  } finally {
+    resuming.value = false
+  }
+}
+
 async function doDelete() {
   confirmDelete.value = false
   try {
@@ -527,6 +559,28 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <AppButton v-if="!embedded" size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.closedBar.restart') }}</AppButton>
         </div>
       </div>
+      <div v-else-if="stopped" class="chat-pane-composer py-3" data-testid="solo-stopped-bar">
+        <div class="chat-pane-column">
+          <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <div class="solo-closed">
+            <Icon :name="status === 'stopping' ? 'spinner' : 'stop'" :size="15" class="mt-0.5 shrink-0 text-txt3" />
+            <div class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt2">
+              <p>{{ status === 'stopping' ? t('pages.solo.stoppedBar.stopping') : t('pages.solo.stoppedBar.text') }}</p>
+              <p v-if="status === 'stopped' && session.error" class="mt-1 text-[12px] text-err" data-testid="solo-stopped-error">{{ session.error }}</p>
+              <p v-else-if="status === 'stopped' && backupSummary" class="mt-1 text-[11.5px] text-txt3">{{ backupSummary }}</p>
+            </div>
+            <AppButton
+              v-if="!embedded && status === 'stopped'"
+              size="sm"
+              variant="primary"
+              icon="play"
+              :loading="resuming"
+              data-testid="solo-resume"
+              @click="doResume"
+            >{{ t('pages.solo.stoppedBar.resume') }}</AppButton>
+          </div>
+        </div>
+      </div>
       <div v-else class="chat-pane-composer shrink-0 py-3">
         <div class="chat-pane-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
@@ -558,6 +612,17 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 @update:reasoning-effort="setCurrentReasoningEffort"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
+              <button
+                v-if="!embedded && status === 'running' && !worktreeMode"
+                type="button"
+                class="solo-stop-env"
+                :disabled="busy || queued.length > 0"
+                :title="busy || queued.length ? t('pages.solo.stop.busy') : t('pages.solo.stop.hint')"
+                data-testid="solo-stop-sandbox"
+                @click="confirmStop = true"
+              >
+                <Icon name="stop" :size="12" />{{ t('pages.solo.stop.action') }}
+              </button>
             </template>
             <template #actions>
               <ComposerPrimaryAction
@@ -578,6 +643,17 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </ChatComposer>
         </div>
       </div>
+
+      <AppModal :open="confirmStop" :title="t('pages.solo.stop.title')" :width="440" close-on-esc @close="confirmStop = false">
+        <div class="space-y-2 text-[13px] text-txt2" data-testid="solo-stop-modal">
+          <p>{{ t('pages.solo.stop.body') }}</p>
+          <p class="text-[12px] text-txt3">{{ t('pages.solo.stop.excludes') }}</p>
+        </div>
+        <template #footer>
+          <AppButton variant="ghost" @click="confirmStop = false">{{ t('common.buttons.cancel') }}</AppButton>
+          <AppButton variant="primary" icon="stop" :loading="stopping" data-testid="solo-stop-confirm" @click="doStop">{{ t('pages.solo.stop.confirm') }}</AppButton>
+        </template>
+      </AppModal>
 
       <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
         <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">
@@ -615,7 +691,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </template>
       </AppModal>
 
-      <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; doRestart()" />
+      <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; stopped ? doResume() : doRestart()" />
       <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" @close="closeChatImagePreview" />
       </template>
     </ReviewShell>
@@ -673,6 +749,24 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   flex: 1;
   background: rgb(var(--c-line));
   content: '';
+}
+.solo-stop-env {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: rgb(var(--c-txt3));
+  font-size: 11.5px;
+}
+.solo-stop-env:hover:not(:disabled) {
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+}
+.solo-stop-env:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .solo-closed {
   display: flex;

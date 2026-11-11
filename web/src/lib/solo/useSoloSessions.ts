@@ -9,8 +9,14 @@ const loading = ref(false)
 const error = ref('')
 let inflight: Promise<void> | null = null
 
+/** Open sessions, including stopped ones that can resume. */
 export function isSoloActive(s: Pick<SoloSession, 'status'>): boolean {
-  return s.status === 'starting' || s.status === 'running'
+  return s.status === 'starting' || s.status === 'running' || s.status === 'stopping' || s.status === 'stopped'
+}
+
+/** Sessions holding a sandbox; stopped ones do not count against the quota. */
+export function isSoloComputing(s: Pick<SoloSession, 'status'>): boolean {
+  return s.status === 'starting' || s.status === 'running' || s.status === 'stopping'
 }
 
 /** Closed (cancelled) or failed sessions; the sidebar lists them under「历史执行」. */
@@ -52,7 +58,8 @@ export function useSoloSessions() {
   }
 
   const active = computed(() => sessions.value.filter(isSoloActive))
+  const computing = computed(() => sessions.value.filter(isSoloComputing))
   const ended = computed(() => sessions.value.filter(isSoloEnded))
 
-  return { sessions, active, ended, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
+  return { sessions, active, computing, ended, maxSandboxes, loaded, loading, error, refresh, upsert, remove }
 }

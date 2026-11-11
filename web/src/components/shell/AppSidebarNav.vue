@@ -359,7 +359,7 @@ function soloRowTitle(session: SoloSession): string {
 }
 
 function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
-  if (session.status === 'starting') return 'spin'
+  if (session.status === 'starting' || session.status === 'stopping') return 'spin'
   return session.busy ? 'pulse' : null
 }
 
@@ -750,6 +750,17 @@ function onMenuCancel() {
   closeMenu()
   cancelRunError.value = ''
   cancelTarget.value = it
+}
+
+async function onMenuSoloPower() {
+  const s = menuSolo.value
+  if (!s) return
+  closeMenu()
+  try {
+    soloStore.upsert(s.status === 'stopped' ? await api.resumeSoloSession(s.id) : await api.stopSoloSession(s.id))
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 function closeSoloConfirm() {
@@ -1574,6 +1585,17 @@ const settingsItems = computed(() => (
       >
         <Icon name="copy" :size="14" />
         <span>{{ menuShareLabel }}</span>
+      </button>
+      <button
+        v-if="menuSolo && ((menuSolo.status === 'running' && !menuSolo.busy && !menuSolo.waiting) || menuSolo.status === 'stopped')"
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-solo-power"
+        @click="onMenuSoloPower"
+      >
+        <Icon :name="menuSolo.status === 'stopped' ? 'play' : 'stop'" :size="14" />
+        <span>{{ menuSolo.status === 'stopped' ? t('pages.solo.stoppedBar.resume') : t('pages.solo.stop.action') }}</span>
       </button>
       <button
         type="button"

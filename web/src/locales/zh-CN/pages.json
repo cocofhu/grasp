@@ -4774,7 +4774,9 @@
         "starting": "启动中",
         "running": "运行中",
         "closed": "已关闭",
-        "error": "异常"
+        "error": "异常",
+        "stopping": "停止中",
+        "stopped": "已停止"
       },
       "phase": {
         "preparing": "等待沙箱就绪…",
@@ -4998,6 +5000,21 @@
           "session": "引用会话",
           "github": "引用 Issue / PR"
         }
+      },
+      "stop": {
+        "action": "停止环境",
+        "hint": "备份工作区后停止沙箱，不再占用配额，之后可以恢复",
+        "busy": "请等待当前回复和排队消息结束后再停止",
+        "title": "停止环境",
+        "body": "会先备份工作区，再停止沙箱。停止后不再占用 Solo 配额，对话历史保留，之后可以恢复继续。",
+        "excludes": "依赖和缓存目录（node_modules、.venv、__pycache__、.cache、.pnpm-store）不备份；如果恢复到新沙箱，需要重新安装。",
+        "confirm": "备份并停止"
+      },
+      "stoppedBar": {
+        "text": "环境已停止，工作区已备份。恢复后继续对话。",
+        "stopping": "正在备份工作区并停止沙箱…",
+        "backup": "备份于 {time} · {size}",
+        "resume": "恢复"
       }
     },
     "projects": {

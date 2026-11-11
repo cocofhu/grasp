@@ -134,6 +134,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
 
   const status = computed(() => session.value?.status ?? 'starting')
   const closed = computed(() => status.value === 'closed')
+  const stopped = computed(() => status.value === 'stopping' || status.value === 'stopped')
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
@@ -720,7 +721,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           patchSession({ status: frame.status, error: frame.error || '', sandboxId: frame.sandboxId || cur.sandboxId })
         }
         void refreshSession()
-        if (frame.status === 'closed' || frame.status === 'error') void refetchMessages()
+        // Stop, resume and close append a system notice to the transcript.
+        if (frame.status !== 'starting' && frame.status !== 'stopping') void refetchMessages()
         break
       }
     }
@@ -1064,6 +1066,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return !!v
   }
 
+  async function stop() {
+    const v = await run(() => api.stopSoloSession(sessionId.value))
+    if (v) setSession(v)
+    return !!v
+  }
+
   async function rename(title: string) {
     const v = await run(() => api.renameSoloSession(sessionId.value, title))
     if (v && session.value) session.value = { ...session.value, title: v.title }
@@ -1093,6 +1101,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     actionError,
     status,
     closed,
+    stopped,
     canSend,
     currentModelId,
     currentConfigurationId,
@@ -1107,6 +1116,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     takeQueued,
     reorderQueued,
     close,
+    stop,
     rename,
     refreshSession,
   }

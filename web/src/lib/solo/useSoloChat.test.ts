@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   cancelSoloTurn: vi.fn(),
   closeSoloSession: vi.fn(),
   renameSoloSession: vi.fn(),
+  stopSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
   reorderSoloQueue: vi.fn(),
   setSoloSessionModel: vi.fn(),
@@ -294,6 +295,31 @@ describe('useSoloChat', () => {
     expect(chat.canSend.value).toBe(false)
     expect(await chat.send('x')).toBe(false)
     expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('stops a session and reloads the transcript once the stop settles', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    mocks.stopSoloSession.mockResolvedValueOnce(session({ status: 'stopping' }))
+    expect(await chat.stop()).toBe(true)
+    expect(mocks.stopSoloSession).toHaveBeenCalledWith('s1')
+    expect(chat.stopped.value).toBe(true)
+    expect(chat.canSend.value).toBe(false)
+    mocks.listSoloMessages.mockClear()
+    ws.emit({ type: 'session', event: 'status', status: 'stopping', error: '' })
+    await flushPromises()
+    expect(mocks.listSoloMessages).not.toHaveBeenCalled()
+    mocks.getSoloSession.mockResolvedValue(session({ status: 'stopped' }))
+    ws.emit({ type: 'session', event: 'status', status: 'stopped', error: '' })
+    await flushPromises()
+    expect(chat.status.value).toBe('stopped')
+    expect(mocks.listSoloMessages).toHaveBeenCalled()
+    mocks.stopSoloSession.mockRejectedValueOnce(new Error('busy'))
+    expect(await chat.stop()).toBe(false)
     app.unmount()
   })
 

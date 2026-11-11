@@ -4774,7 +4774,9 @@
         "starting": "Starting",
         "running": "Running",
         "closed": "Closed",
-        "error": "Error"
+        "error": "Error",
+        "stopping": "Stopping",
+        "stopped": "Stopped"
       },
       "phase": {
         "preparing": "Waiting for the sandbox…",
@@ -4998,6 +5000,21 @@
           "session": "Reference a session",
           "github": "Reference an issue / PR"
         }
+      },
+      "stop": {
+        "action": "Stop environment",
+        "hint": "Back up the workspace and stop the sandbox; it no longer uses quota and can be resumed",
+        "busy": "Wait for the current reply and queued messages to finish before stopping",
+        "title": "Stop environment",
+        "body": "The workspace is backed up first, then the sandbox stops. A stopped session no longer uses Solo quota and keeps its history; resume it to continue.",
+        "excludes": "Dependency and cache directories (node_modules, .venv, __pycache__, .cache, .pnpm-store) are not backed up; reinstall them if the session resumes in a new sandbox.",
+        "confirm": "Back up and stop"
+      },
+      "stoppedBar": {
+        "text": "Environment stopped and workspace backed up. Resume to continue the conversation.",
+        "stopping": "Backing up the workspace and stopping the sandbox…",
+        "backup": "Backed up {time} · {size}",
+        "resume": "Resume"
       }
     },
     "projects": {

@@ -58,6 +58,14 @@ Solo、工作流、Agent 测试和 PM 使用同一套聊天展示。悬停消息
 
 这些信息属于该条回复的执行快照，后续切换模型不会改写旧回复。历史消息没有记录的字段显示为未提供，不使用当前选择推测；尚未完成的回复只显示已收到的信息。
 
+## Solo 停止环境的备份位置
+
+Solo 会话「停止环境」时会先把工作区打包备份，再停止沙箱；恢复时原沙箱还在就直接启动（E2B 连进程一起恢复），原沙箱已不存在则新建沙箱并从备份还原。依赖与缓存目录（`node_modules`、`.venv`、`__pycache__`、`.cache`、`.pnpm-store`）不备份。
+
+- 默认存放在服务端本地目录 `data/solo-backups`（正式栈位于 `./.localdata/app-data`，与附件一起备份），可用 `GRASP_SOLO_BACKUP_DIR` 修改。
+- 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID`、`GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 后改存 S3 兼容存储；MinIO、COS 等用 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 指定地址，必要时设 `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true`。只填一部分会启动失败。
+- 单个备份默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`），超过时停止失败、会话继续运行。
+
 ## 数据库与附件同生命周期
 
 正式栈中 SQLite（`./.localdata/db`）与应用数据/默认 blobs（`./.localdata/app-data`，或自定义 `GRASP_BLOBS_ROOT`）必须**成对备份与成对清理**；迁移/升级勿只搬库。否则复合变量附图会出现孤儿 `blob:` 引用（GET `/api/blobs/:id` → 404）。历史孤儿仅界面永久失败占位，本次不做巡检台。详见 [快速开始](../guide/quick-start.md#数据库与附件同生命周期备份--清理)。

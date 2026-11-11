@@ -58,6 +58,14 @@ Solo, workflows, Agent tests and PM share the same chat presentation. Hover a me
 
 Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
 
+## Where Solo stop backups go
+
+Stopping a Solo environment first archives the workspace, then stops the sandbox. Resuming starts the original sandbox when it still exists (E2B also restores its processes); otherwise a new sandbox is created and the workspace is restored from the backup. Dependency and cache directories (`node_modules`, `.venv`, `__pycache__`, `.cache`, `.pnpm-store`) are not backed up.
+
+- By default archives are kept on the server in `data/solo-backups` (under `./.localdata/app-data` in the production stack, backed up with attachments). Change it with `GRASP_SOLO_BACKUP_DIR`.
+- Set `GRASP_SOLO_BACKUP_S3_BUCKET`, `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` and `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` to use S3-compatible storage instead. For MinIO, COS and similar services set `GRASP_SOLO_BACKUP_S3_ENDPOINT`, and `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true` if required. A partial configuration fails startup.
+- One archive is capped at 4 GiB by default (`GRASP_SOLO_BACKUP_MAX_BYTES`); a larger workspace cannot stop and the session keeps running.
+
 ## Database and attachment lifecycle
 
 In the release stack, SQLite (`./.localdata/db`) and app-data / default blobs (`./.localdata/app-data`, or a custom `GRASP_BLOBS_ROOT`) must be **backed up and cleaned as a pair**; do not migrate only the database. Otherwise composite images can keep orphan `blob:` refs (GET `/api/blobs/:id` → 404). Historical orphans only get a permanent UI placeholder; this delivery does not add an inspection console. See [Quick start](../guide/quick-start.md#database-and-attachments-share-one-lifecycle-backup--cleanup).

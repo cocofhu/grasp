@@ -97,6 +97,8 @@ const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
   renameSoloSession: vi.fn(),
   closeSoloSession: vi.fn(),
+  stopSoloSession: vi.fn(),
+  resumeSoloSession: vi.fn(),
   listRuns: vi.fn(),
   listSoloSessions: vi.fn(),
   cancelRun: vi.fn(),
@@ -116,6 +118,8 @@ vi.mock('@/lib/api/api', () => ({
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
     listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
+    stopSoloSession: (...args: unknown[]) => apiMocks.stopSoloSession(...args),
+    resumeSoloSession: (...args: unknown[]) => apiMocks.resumeSoloSession(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
   },
 }))
@@ -401,6 +405,38 @@ describe('AppSidebarNav', () => {
     ])
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('stops an idle Solo session and resumes a stopped one from the row menu', async () => {
+    const solo = (id: string, status: string, busy = false) => ({
+      id, title: id, agentName: 'a', status, restarts: 0, busy, waiting: 0, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
+    })
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [solo('run', 'running'), solo('busy', 'running', true), solo('off', 'stopped')], maxSandboxes: 5 })
+    apiMocks.stopSoloSession.mockResolvedValue(solo('run', 'stopping'))
+    apiMocks.resumeSoloSession.mockRejectedValueOnce(new Error('quota full'))
+    const wrapper = mountNav()
+    await flushPromises()
+    const section = wrapper.get('[data-testid="nav-pending-approvals"]')
+    const power = () => document.querySelector<HTMLElement>('[data-testid="nav-pending-menu-solo-power"]')
+
+    await section.get('[data-key="busy"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(power()).toBeNull()
+    document.body.click()
+
+    await section.get('[data-key="run"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(power()?.textContent).toContain('停止环境')
+    power()!.click()
+    await flushPromises()
+    expect(apiMocks.stopSoloSession).toHaveBeenCalledWith('run')
+    expect(section.get('[data-key="run"]').attributes('data-motion')).toBe('spin')
+
+    await section.get('[data-key="off"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(power()?.textContent).toContain('恢复')
+    power()!.click()
+    await flushPromises()
+    expect(apiMocks.resumeSoloSession).toHaveBeenCalledWith('off')
+    expect(useToast().toasts.value.some((item) => item.message === 'quota full')).toBe(true)
+    wrapper.unmount()
   })
 
   it('orders Solo rows by start time, not by last activity', async () => {

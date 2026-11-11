@@ -719,7 +719,7 @@ export interface ProjectInput {
   repoDirName?: string
 }
 
-export type SoloStatus = 'starting' | 'running' | 'closed' | 'error'
+export type SoloStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'closed' | 'error'
 
 export interface SoloSandboxInfo {
   id: number
@@ -774,6 +774,9 @@ export interface SoloSession {
   status: SoloStatus
   error?: string
   restarts: number
+  /** Workspace archive of the last stop (bytes, compressed). */
+  backupSize?: number
+  backupAt?: string
   lastActiveAt?: string
   closedAt?: string
   createdAt: string
