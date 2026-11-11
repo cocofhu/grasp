@@ -160,10 +160,11 @@ export function useSoloLauncher() {
       const saved = await readSoloOutbox(scope).catch(() => { throw new Error(t('pages.solo.outboxUnavailable')) })
       if (disposed || generation !== loadGeneration || principal.value !== owner) return
       authorizedScope.value = scope
-      pendingCreation.value = saved.find((record): record is SoloCreationOutbox => record.kind === 'creation') || null
+      pendingCreation.value = null
       recoveredSession.value = null
       recoveryChecked.value = false
-      if (pendingCreation.value) await checkPendingCreation()
+      const leftover = saved.find((record): record is SoloCreationOutbox => record.kind === 'creation')
+      if (leftover) await settleRestoredCreation(leftover)
     } catch (cause) {
       if (generation === loadGeneration) error.value = String((cause as Error).message || cause)
     } finally {
@@ -244,7 +245,28 @@ export function useSoloLauncher() {
     }
   }
 
-  async function acceptCreation(record: SoloCreationOutbox, session: SoloSession): Promise<SoloSession | null> {
+  /**
+   * A record left over from an earlier visit is reconciled with GET only and
+   * then dropped, so startup never shows a recovery card or POSTs again.
+   */
+  async function settleRestoredCreation(record: SoloCreationOutbox) {
+    if (!ownsRequest(record)) return
+    const generation = ++recoveryGeneration
+    recovering.value = true
+    try {
+      const session = await api.resolveSoloCreation(record.id).catch(() => null)
+      if (!ownsRequest(record) || generation !== recoveryGeneration) return
+      if (session) {
+        await acceptCreation(record, session, false)
+        return
+      }
+      await removeSoloOutbox(record.scope, record.id)
+    } catch { /* Keep the record in storage; it stays hidden until the next load. */ } finally {
+      if (generation === recoveryGeneration) recovering.value = false
+    }
+  }
+
+  async function acceptCreation(record: SoloCreationOutbox, session: SoloSession, navigate = true): Promise<SoloSession | null> {
     if (!ownsRequest(record)) return null
     verifyReceipt(record, session)
     // Continuing an already linked workflow is navigation, not acceptance of
@@ -266,7 +288,7 @@ export function useSoloLauncher() {
     error.value = ''
     soloPrefs.setLastProjects(record.request.repos?.map(repo => repo.projectId) || [])
     store.upsert(session)
-    void router.push(`/solo/${session.id}`)
+    if (navigate) void router.push(`/solo/${session.id}`)
     return session
   }
 

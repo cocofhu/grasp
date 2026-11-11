@@ -29,7 +29,7 @@ test('the home Solo mode starts a Solo without a workflow launch', async ({ page
 })
 
 for (const entry of ['home', 'modal'] as const) {
-  test(`${entry} restores the first creation request after a real reload and retries its frozen nonce only on click`, async ({ page }, testInfo) => {
+  test(`${entry} retries the first creation request's frozen nonce only on click`, async ({ page }, testInfo) => {
     const requests: Record<string, unknown>[] = []
     let legacyCreates = 0
     let receipt: object | undefined
@@ -77,10 +77,9 @@ for (const entry of ['home', 'modal'] as const) {
     await expect(page.getByTestId('solo-creation-recovery')).toBeVisible()
     await expect(page.getByRole('alert')).toContainText('acknowledgement unavailable')
     expect(requests).toHaveLength(1)
-    await page.reload()
+    await page.getByTestId('solo-creation-check').click()
     await expect(page.getByTestId('solo-creation-retry')).toBeEnabled()
     await expect(submit).toBeDisabled()
-    expect(requests).toHaveLength(1)
     await page.screenshot({ path: testInfo.outputPath('solo-creation-recovery.png'), fullPage: true })
     await input.fill('A different draft must not replace the saved request')
     await page.getByTestId('solo-creation-retry').click()
@@ -89,10 +88,44 @@ for (const entry of ['home', 'modal'] as const) {
     expect(requests[1]).toEqual(requests[0])
     expect(legacyCreates).toBe(0)
   })
+
+  test(`${entry} does not show a leftover creation request after a real reload`, async ({ page }) => {
+    let creates = 0
+    let lookups = 0
+    await page.addInitScript(() => { localStorage.setItem('grasp.home.mode', 'solo'); localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
+    await page.route('**/api/**', async route => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      if (!path.startsWith('/api/')) { await route.continue(); return }
+      let response: unknown = { items: [] }
+      if (path === '/api/agents') response = [{ name: 'Solo', acpBackend: 'cursor' }]
+      else if (path === '/api/projects') response = []
+      else if (path === '/api/solo/sessions') response = { items: [], maxSandboxes: 5 }
+      else if (path.startsWith('/api/solo/creation-requests/') && request.method() === 'GET') {
+        lookups++
+        return route.fulfill({ status: 404, json: { code: 'creation_not_found', error: 'not accepted' } })
+      } else if (path === '/api/solo/creation-requests' && request.method() === 'POST') {
+        creates++
+        return route.fulfill({ status: 503, json: { error: 'acknowledgement unavailable' } })
+      }
+      await route.fulfill({ status: 200, json: response })
+    })
+    await page.goto(`/dashboard-home-chat.html${entry === 'modal' ? '?create=1' : ''}`)
+    const input = page.getByTestId(entry === 'modal' ? 'solo-create-text' : 'home-composer-input')
+    await input.fill('Left over first message')
+    await page.getByTestId(entry === 'modal' ? 'solo-create-submit' : 'home-composer-send').click()
+    await expect(page.getByTestId('solo-creation-recovery')).toBeVisible()
+    const lookupsBeforeReload = lookups
+    await page.reload()
+    await expect.poll(() => lookups).toBeGreaterThan(lookupsBeforeReload)
+    await expect(page.getByTestId('solo-creation-recovery')).toHaveCount(0)
+    expect(creates).toBe(1)
+  })
 }
 
-test('a lost first-create acknowledgement opens the accepted chat after reload without another POST', async ({ page }) => {
+test('a lost first-create acknowledgement is settled quietly after reload without another POST', async ({ page }) => {
   let creates = 0
+  let lookups = 0
   let receipt: object | undefined
   await page.addInitScript(() => { localStorage.setItem('grasp.home.mode', 'solo'); localStorage.setItem('grasp.home.lastSoloAgent', 'Solo') })
   await page.route('**/api/**', async route => {
@@ -107,17 +140,18 @@ test('a lost first-create acknowledgement opens the accepted chat after reload w
       creates++
       receipt = { id: 'already-accepted', userId: 'home-preview', clientRequestId: request.postDataJSON().clientRequestId, initialTurnId: 'first-accepted', status: 'starting', agentName: 'Solo' }
       return route.fulfill({ status: 503, json: { error: 'response was lost' } })
-    } else if (path.startsWith('/api/solo/creation-requests/')) response = receipt
+    } else if (path.startsWith('/api/solo/creation-requests/')) { lookups++; response = receipt }
     await route.fulfill({ status: 200, json: response })
   })
   await page.goto('/dashboard-home-chat.html')
   await page.getByTestId('home-composer-input').fill('Run exactly this request once')
   await page.getByTestId('home-composer-send').click()
   await expect(page.getByRole('alert')).toContainText('response was lost')
+  const lookupsBeforeReload = lookups
   await page.reload()
-  await expect(page.getByTestId('solo-creation-retry')).toHaveText('打开已创建的会话')
-  expect(creates).toBe(1)
-  await page.getByTestId('solo-creation-retry').click()
-  await expect(page.getByTestId('solo-chat-page')).toHaveText('already-accepted')
+  await expect.poll(() => lookups).toBeGreaterThan(lookupsBeforeReload)
+  await expect(page.getByTestId('home-composer-input')).toBeVisible()
+  await expect(page.getByTestId('solo-creation-recovery')).toHaveCount(0)
+  await expect(page.getByTestId('solo-chat-page')).toHaveCount(0)
   expect(creates).toBe(1)
 })
