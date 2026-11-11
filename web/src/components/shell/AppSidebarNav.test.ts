@@ -488,6 +488,53 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
+  it('marks a stopped Solo row with the stop icon and leaves running and stopping marks alone', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        soloSession({ id: 'stopped', title: '已停止会话', status: 'stopped', busy: true }),
+        soloSession({ id: 'running', title: '运行中', status: 'running', busy: true }),
+        soloSession({
+          id: 'stopping',
+          title: '正在停',
+          status: 'running',
+          busy: false,
+          sandbox: { id: 7, name: 'sbx', status: 'running', desiredState: 'stopped', connected: true, hasCodeServer: false },
+        }),
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav({ realIcon: true })
+    await flushPromises()
+
+    const stopped = wrapper.get('[data-kind="solo"][data-key="stopped"]')
+    expect(stopped.attributes('data-motion')).toBeUndefined()
+    expect(stopped.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+    expect(stopped.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+    const icon = stopped.get('[data-testid="nav-solo-stopped"]')
+    expect(icon.attributes('data-icon')).toBe('stop')
+    expect(icon.attributes('width')).toBe('14')
+    expect(icon.attributes('height')).toBe('14')
+    expect(icon.classes()).toContain('text-txt2')
+    expect(icon.attributes('title')).toBe('已停止')
+    expect(icon.attributes('aria-label')).toBe('已停止')
+    expect(icon.attributes('aria-hidden')).not.toBe('true')
+    expect(icon.attributes('interactive')).not.toBe('false')
+    expect(stopped.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
+
+    const running = wrapper.get('[data-kind="solo"][data-key="running"]')
+    expect(running.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(running.attributes('data-motion')).toBe('pulse')
+    expect(running.get('[data-testid="inbox-motion-pulse"]').attributes('data-icon')).toBe('inbox-reply')
+
+    const stopping = wrapper.get('[data-kind="solo"][data-key="stopping"]')
+    expect(stopping.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(stopping.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
+    expect(stopping.attributes('data-motion')).toBe('spin')
+    expect(stopping.get('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it.each([{ status: 'starting' as const }, { busy: true }, { waiting: 1 }])('disables environment actions while the session is occupied: %j', async (patch) => {
     apiMocks.listSoloSessions.mockResolvedValue({ sessions: [soloSession(patch)], maxSandboxes: 5 })
     const wrapper = mountNav()
