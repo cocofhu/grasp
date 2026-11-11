@@ -41,8 +41,8 @@ type ProfileConfig struct {
 	Image string `yaml:"image" json:"image"`
 }
 
-// OrphanGCConfig controls periodic observation of driver workloads without a
-// control-plane record. Their disks are retained for explicit reconciliation.
+// OrphanGCConfig controls periodic sweeps of workloads without a control-plane
+// record. Kubernetes workloads and disks are deleted; other drivers only report.
 type OrphanGCConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// IntervalSeconds is the sweep period. Default 300 (5m) when enabled.
@@ -801,7 +801,7 @@ func (c *Config) OrphanGCInterval() time.Duration {
 	return time.Duration(c.OrphanGC.IntervalSeconds) * time.Second
 }
 
-// OrphanGCMinAge returns the minimum workload age before reporting an orphan.
+// OrphanGCMinAge returns the minimum workload age before processing an orphan.
 func (c *Config) OrphanGCMinAge() time.Duration {
 	return time.Duration(c.OrphanGC.MinAgeSeconds) * time.Second
 }

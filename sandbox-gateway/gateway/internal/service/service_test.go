@@ -393,7 +393,7 @@ func TestDestroyByName(t *testing.T) {
 	}
 }
 
-func TestSweepOrphans(t *testing.T) {
+func TestSweepOrphansRetainsOtherDrivers(t *testing.T) {
 	svc, drv, _ := testService(t)
 	sb, err := svc.Create(context.Background(), CreateRequest{})
 	if err != nil {
@@ -411,8 +411,8 @@ func TestSweepOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("retained=%d want 1", n)
+	if n != 0 {
+		t.Fatalf("removed=%d want 0 for non-Kubernetes driver", n)
 	}
 	live, err := drv.List(context.Background())
 	if err != nil {
@@ -426,7 +426,7 @@ func TestSweepOrphans(t *testing.T) {
 		t.Fatal("tracked sandbox must remain")
 	}
 	if !ids["orphan-old"] {
-		t.Fatal("lost store records must not authorize deletion of the only file copy")
+		t.Fatal("non-Kubernetes orphan should be retained")
 	}
 	if !ids["orphan-young"] {
 		t.Fatal("young orphan should be kept")
@@ -437,8 +437,8 @@ func TestSweepOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("second sweep retained=%d want 2", n)
+	if n != 0 {
+		t.Fatalf("second sweep removed=%d want 0 for non-Kubernetes driver", n)
 	}
 }
 

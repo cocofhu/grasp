@@ -110,12 +110,13 @@ kubernetes:
       secretAccessKey: ""     # or SBGW_K8S_VOLUME_ARCHIVE_S3_SECRET_ACCESS_KEY
       pathStyle: true
 
-# Periodically report driver workloads with no matching DB record (orphans).
-# Retain disks and workloads for explicit reconciliation; never delete on probe.
+# Periodically delete Kubernetes sandboxes with no matching gateway DB record,
+# including their Pods, Services, Secret and data PVC. Other drivers only report.
+# The age gate avoids racing in-flight creates / read-replica lag.
 orphanGC:
   enabled: false
   intervalSeconds: 300   # sweep every 5m
-  minAgeSeconds: 600     # report workloads older than 10m; 0 = no age gate
+  minAgeSeconds: 600     # process workloads older than 10m; 0 = no age gate
 
 # Control-plane auth. Requests need `Authorization: Bearer <key>`.
 # Empty list disables v1 auth (local testing only); v2 transport stays disabled.

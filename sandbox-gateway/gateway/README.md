@@ -110,6 +110,16 @@ by `SBGW_*` environment variables (env wins), e.g. `SBGW_DRIVER`,
 `SBGW_LISTEN`, `SBGW_IMAGE`, `SBGW_API_KEYS`, `SBGW_DOCKER_BIND_IP`,
 `SBGW_K8S_KUBECONFIG`, `SBGW_K8S_NAMESPACE`, `SBGW_K8S_ENABLE_LB`.
 
+For Kubernetes, enable `orphanGC.enabled` (or `SBGW_ORPHAN_GC_ENABLED=true`) to
+automatically delete sandboxes absent from this gateway's database. A sweep
+runs at startup and every `intervalSeconds` (default 300), skipping resources
+younger than `minAgeSeconds` (default 600). It only scans resources managed by
+`sandbox-gateway` in the configured namespace. Cleanup removes the Deployment
+and its Pods, Services, Secret and data PVC, including leftover PVCs whose
+Deployment is already gone. Database read failures stop cleanup, and each
+candidate's record is checked again before deletion. The feature is disabled
+by default; other drivers continue to report and retain untracked resources.
+
 ## API
 
 See [`docs/API.md`](docs/API.md). The data-plane contract for the session port
