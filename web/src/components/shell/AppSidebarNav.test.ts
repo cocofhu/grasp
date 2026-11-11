@@ -253,6 +253,7 @@ beforeEach(() => {
     return Promise.resolve({ items, total: items.length })
   })
   apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
+  useSoloSessions().endEnvironmentChange('solo-1')
   workspaceMocks.ensureLoaded.mockReset()
   workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
   workspaceMocks.workspace.value = { name: 'ws' }
@@ -453,6 +454,7 @@ describe('AppSidebarNav', () => {
     stop.click()
     await flushPromises()
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledExactlyOnceWith('solo-1')
+    expect(useSoloSessions().environmentChanges.value.get('solo-1')).toBe('stopping')
     expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
     expect(row.attributes('data-motion')).toBe('spin')
     const pending = await open()
@@ -463,6 +465,7 @@ describe('AppSidebarNav', () => {
     expect(apiMocks.stopSoloEnvironment).toHaveBeenCalledTimes(1)
     stopped({ ...session, status: 'stopped', waiting: 1 })
     await flushPromises()
+    expect(useSoloSessions().environmentChanges.value.has('solo-1')).toBe(false)
     expect(row.find('[data-testid="nav-solo-environment-phase"]').exists()).toBe(false)
     const resume = await open()
     expect(resume.textContent).toContain('恢复环境')
@@ -485,6 +488,53 @@ describe('AppSidebarNav', () => {
     const row = wrapper.get('[data-kind="solo"]')
     expect(row.get('[data-testid="nav-solo-environment-phase"]').text()).toBe(phase)
     expect(row.attributes('data-motion')).toBe('spin')
+    wrapper.unmount()
+  })
+
+  it('marks a stopped Solo row with the stop icon and leaves running and stopping marks alone', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        soloSession({ id: 'stopped', title: '已停止会话', status: 'stopped', busy: true }),
+        soloSession({ id: 'running', title: '运行中', status: 'running', busy: true }),
+        soloSession({
+          id: 'stopping',
+          title: '正在停',
+          status: 'running',
+          busy: false,
+          sandbox: { id: 7, name: 'sbx', status: 'running', desiredState: 'stopped', connected: true, hasCodeServer: false },
+        }),
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav({ realIcon: true })
+    await flushPromises()
+
+    const stopped = wrapper.get('[data-kind="solo"][data-key="stopped"]')
+    expect(stopped.attributes('data-motion')).toBeUndefined()
+    expect(stopped.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+    expect(stopped.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+    const icon = stopped.get('[data-testid="nav-solo-stopped"]')
+    expect(icon.attributes('data-icon')).toBe('stop')
+    expect(icon.attributes('width')).toBe('14')
+    expect(icon.attributes('height')).toBe('14')
+    expect(icon.classes()).toContain('text-txt2')
+    expect(icon.attributes('title')).toBe('已停止')
+    expect(icon.attributes('aria-label')).toBe('已停止')
+    expect(icon.attributes('aria-hidden')).not.toBe('true')
+    expect(icon.attributes('interactive')).not.toBe('false')
+    expect(stopped.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
+
+    const running = wrapper.get('[data-kind="solo"][data-key="running"]')
+    expect(running.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(running.attributes('data-motion')).toBe('pulse')
+    expect(running.get('[data-testid="inbox-motion-pulse"]').attributes('data-icon')).toBe('inbox-reply')
+
+    const stopping = wrapper.get('[data-kind="solo"][data-key="stopping"]')
+    expect(stopping.find('[data-icon="stop"]').exists()).toBe(false)
+    expect(stopping.get('[data-testid="nav-solo-environment-phase"]').text()).toBe('正在停止…')
+    expect(stopping.attributes('data-motion')).toBe('spin')
+    expect(stopping.get('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+
     wrapper.unmount()
   })
 
@@ -774,13 +824,14 @@ describe('AppSidebarNav', () => {
     expect(wrapper.text()).not.toContain('快捷工作流')
     // Primary workspace nav still present (plan g1.1)
     expect(wrapper.find('[data-to="/board"]').exists()).toBe(true)
-    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/settings"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/dashboard"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('新需求')
     expect(wrapper.find('[data-to="/board"]').text()).toContain('看板')
+    expect(wrapper.find('[data-to="/runs"]').text()).toContain('全部运行')
     expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
     const workspace = wrapper.find('[data-testid="nav-workspace-chrome"]')
@@ -788,6 +839,7 @@ describe('AppSidebarNav', () => {
     expect(workspace.findAll('a.nav-item').map((l) => l.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
+      '/runs',
       '/stats',
       '/settings',
     ])
@@ -889,6 +941,7 @@ describe('AppSidebarNav', () => {
     expect(links.map((link) => link.attributes('data-to'))).toEqual([
       '/dashboard',
       '/board',
+      '/runs',
       '/stats',
       '/settings',
     ])
@@ -937,7 +990,7 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('uses workspace chrome and highlights board for the kanban and run list', async () => {
+  it('uses workspace chrome and highlights one workspace item', async () => {
     routeState.path = '/board'
     const board = mountNav()
     await flushPromises()
@@ -945,18 +998,35 @@ describe('AppSidebarNav', () => {
     expect(board.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
     expect(board.find('[data-to="/board"]').classes()).toContain('active')
     expect(board.find('[data-to="/dashboard"]').classes()).not.toContain('active')
-    expect(board.find('[data-to="/runs"]').exists()).toBe(false)
+    expect(board.find('[data-to="/runs"]').classes()).not.toContain('active')
     board.unmount()
 
-    routeState.path = '/runs'
-    const wrapper = mountNav()
+    for (const path of ['/runs', '/runs?status=failed', '/runs/run-1', '/runs/run-1/live']) {
+      routeState.path = path
+      const wrapper = mountNav()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+      expect(wrapper.find('[data-to="/runs"]').classes()).toContain('active')
+      expect(wrapper.find('[data-to="/board"]').classes()).not.toContain('active')
+      expect(wrapper.find('[data-to="/dashboard"]').classes()).not.toContain('active')
+      wrapper.unmount()
+    }
+
+    routeState.path = '/runs/run-1/nodes/clarify'
+    const conversation = mountNav()
     await flushPromises()
-    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
-    expect(wrapper.find('[data-to="/board"]').classes()).toContain('active')
-    expect(wrapper.find('[data-to="/dashboard"]').classes()).not.toContain('active')
-    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
-    wrapper.unmount()
+    expect(conversation.find('[data-to="/dashboard"]').classes()).toContain('active')
+    expect(conversation.find('[data-to="/runs"]').classes()).not.toContain('active')
+    expect(conversation.find('[data-to="/board"]').classes()).not.toContain('active')
+    conversation.unmount()
+
+    routeState.path = '/solo/abc'
+    const solo = mountNav()
+    await flushPromises()
+    expect(solo.find('[data-to="/dashboard"]').classes()).toContain('active')
+    expect(solo.find('[data-to="/runs"]').classes()).not.toContain('active')
+    expect(solo.find('[data-to="/board"]').classes()).not.toContain('active')
+    solo.unmount()
     vi.useRealTimers()
   })
 
@@ -1506,12 +1576,13 @@ describe('AppSidebarNav', () => {
 
     routeState.path = '/runs'
     await nextTick()
-    const board = wrapper.get('[data-to="/board"]')
-    expect(board.classes()).toContain('active')
+    const runs = wrapper.get('[data-to="/runs"]')
+    expect(runs.classes()).toContain('active')
+    expect(wrapper.get('[data-to="/board"]').classes()).not.toContain('active')
     expect(pendingRow.classes()).not.toContain('active')
-    expect(getComputedStyle(board.element).fontWeight).toBe('600')
+    expect(getComputedStyle(runs.element).fontWeight).toBe('600')
     expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
-    for (const to of ['/dashboard', '/board', '/stats', '/settings']) {
+    for (const to of ['/dashboard', '/board', '/runs', '/stats', '/settings']) {
       expect(wrapper.get(`[data-to="${to}"]`).find('.nav-row-title').exists()).toBe(false)
     }
 
