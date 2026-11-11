@@ -151,7 +151,8 @@ ENV PATH=$PATH:/usr/local/mongocli/bin
 # 便于 Cursor Server / SSH 等非 entrypoint 进程也能找到命令。具体 CLI 由末尾的 agent 安装层
 # 按 AGENT_PROVIDERS 装入（见 scripts/install-agent.sh）。
 RUN mkdir -p /root/.local/bin && \
-    echo 'export PATH="/root/.local/bin:$PATH"' > /etc/profile.d/agent-path.sh
+    echo 'case ":$PATH:" in *:/root/.local/bin:*) ;; *) export PATH="/root/.local/bin:$PATH" ;; esac' > /etc/profile.d/agent-path.sh && \
+    echo '[ -f /etc/profile.d/agent-path.sh ] && . /etc/profile.d/agent-path.sh' >> /root/.bashrc
 ENV PATH=/root/.local/bin:$PATH
 
 # GitLab CLI（与 startup.sh 中 GITLAB_TOKEN 自动执行 glab auth login 配合）
