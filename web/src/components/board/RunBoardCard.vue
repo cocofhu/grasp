@@ -26,7 +26,7 @@ const nodeLine = computed(() => {
   }
   return props.run.currentNodeLabel || ''
 })
-const pillStatus = computed(() => (isWorkingWaitingRun(props.run) ? 'running' : runDisplayStatus(props.run)))
+const pillStatus = computed(() => (isWorkingWaitingRun(props.run) ? 'running' : props.run.status))
 const progressWidth = computed(() => `${Math.min(100, Math.max(0, props.run.progress || 0))}%`)
 </script>
 
