@@ -26,13 +26,33 @@ import {
 /** Finished runs requested per page, and the same cap on ended Solo sessions before they merge. */
 const SIDEBAR_HISTORY_RUN_LIMIT = 20
 
-const props = defineProps<{ runTitles?: Record<string, string> }>()
+const props = defineProps<{
+  runTitles?: Record<string, string>
+  /** Finished runs removed locally until the next list read drops them. */
+  dismissedRunIds?: readonly string[]
+  /** Ended sessions removed locally until the shared list drops them. */
+  dismissedSoloIds?: readonly string[]
+  editingRunId?: string | null
+  editingSoloId?: string | null
+  renameDraft?: string
+  renameSaving?: boolean
+  renameInputRef?: (el: unknown) => void
+}>()
 const emit = defineEmits<{
   (e: 'navigate'): void
   (e: 'solo-contextmenu', event: MouseEvent, session: SoloSession): void
   (e: 'solo-menu-keydown', event: KeyboardEvent, session: SoloSession): void
   (e: 'solo-pointerdown', event: PointerEvent, session: SoloSession): void
   (e: 'solo-click', event: MouseEvent): void
+  (e: 'run-contextmenu', event: MouseEvent, run: Run): void
+  (e: 'run-menu-keydown', event: KeyboardEvent, run: Run): void
+  (e: 'run-pointerdown', event: PointerEvent, run: Run): void
+  (e: 'run-click', event: MouseEvent): void
+  (e: 'update:renameDraft', value: string): void
+  (e: 'rename-commit'): void
+  (e: 'rename-cancel'): void
+  (e: 'rename-blur'): void
+  (e: 'history-runs', runs: Run[]): void
 }>()
 const { t } = useI18n()
 const route = useRoute()
@@ -55,11 +75,46 @@ const soloTitle = (session: SoloSession) => session.title?.trim() || t('pages.so
 const soloPath = (session: SoloSession) => `/solo/${encodeURIComponent(session.id)}`
 const soloActive = (session: SoloSession) => route.path === soloPath(session)
 const soloSignature = (list: SoloSession[]) => list.map((s) => [s.id, soloTitle(s), s.status, s.closedAt, s.lastActiveAt, s.updatedAt].join('\u0001')).join('\u0002')
-const entries = computed(() => historyEntries(runs.value, solos.value, SIDEBAR_HISTORY_RUN_LIMIT))
+const visibleRuns = computed(() => {
+  const gone = new Set(props.dismissedRunIds ?? [])
+  return gone.size ? runs.value.filter((run) => !gone.has(run.id)) : runs.value
+})
+const visibleSolos = computed(() => {
+  const gone = new Set(props.dismissedSoloIds ?? [])
+  return gone.size ? solos.value.filter((session) => !gone.has(session.id)) : solos.value
+})
+const entries = computed(() => historyEntries(visibleRuns.value, visibleSolos.value, SIDEBAR_HISTORY_RUN_LIMIT))
+watch(visibleRuns, (next) => emit('history-runs', next), { immediate: true })
 
 function onSoloClick(event: MouseEvent) {
   emit('solo-click', event)
   if (!event.defaultPrevented) emit('navigate')
+}
+
+function onRunClick(event: MouseEvent) {
+  emit('run-click', event)
+  if (!event.defaultPrevented) emit('navigate')
+}
+
+function onRunContextMenu(event: MouseEvent, run: Run) {
+  event.preventDefault()
+  emit('run-contextmenu', event, run)
+}
+
+function onRunMenuKeydown(event: KeyboardEvent, run: Run) {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+  event.preventDefault()
+  emit('run-menu-keydown', event, run)
+}
+
+function onSoloHistoryContextMenu(event: MouseEvent, session: SoloSession) {
+  event.preventDefault()
+  emit('solo-contextmenu', event, session)
+}
+
+function onRenameInput(event: Event) {
+  const value = event.target instanceof HTMLInputElement ? event.target.value : ''
+  emit('update:renameDraft', value)
 }
 
 async function loadRuns() {
@@ -86,15 +141,28 @@ async function loadRuns() {
   } finally { if (runsRequest === controller) runsRequest = null }
 }
 const endedBadly = (run: Run) => run.status === 'failed' || run.status === 'cancelled'
+/** The list's own title. A sidebar rename override must not hide a later read. */
+function storedRunTitle(run: Run) {
+  return displayRunTitle(run.title) || run.workflowName || run.id
+}
 /** Write only real changes, and never while the user is on the list. */
 function applyRuns(next: Run[]) {
   if (recentHold.isHeld()) { heldRuns = next; return }
   heldRuns = null
-  if (sameRecentRows(runs.value, next, runTitle)) return
+  if (sameRecentRows(runs.value, next, storedRunTitle)) return
   runs.value = next
 }
 function applySolos(next: SoloSession[]) {
-  if (recentHold.isHeld()) { heldSolos = next; return }
+  if (recentHold.isHeld()) {
+    heldSolos = next
+    // A rename should show immediately. Removals and reordering wait until the pointer leaves.
+    const byId = new Map(next.map((session) => [session.id, session]))
+    solos.value = solos.value.map((row) => {
+      const fresh = byId.get(row.id)
+      return fresh && fresh.title !== row.title ? { ...row, title: fresh.title } : row
+    })
+    return
+  }
   heldSolos = null
   if (soloSignature(solos.value) === soloSignature(next)) return
   solos.value = next
@@ -131,7 +199,71 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @contextmenu="emit('solo-contextmenu', $event, entry.session)" @keydown="emit('solo-menu-keydown', $event, entry.session)" @pointerdown="emit('solo-pointerdown', $event, entry.session)" @click.capture="onSoloClick($event)"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed' || entry.run.workspaceSave?.state === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t(entry.run.status === 'failed' ? 'common.status.failed' : 'common.status.save_failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item">
+            <template v-if="entry.kind === 'solo'">
+              <div
+                v-if="editingSoloId === entry.session.id"
+                class="workspace-recent-row"
+                :class="{ 'is-active': soloActive(entry.session) }"
+                data-testid="sidebar-recent-solo"
+                :data-solo-id="entry.session.id"
+                :data-status="entry.session.status"
+                data-editing="true"
+                @click.stop
+                @contextmenu.prevent
+              >
+                <input
+                  :ref="(el) => renameInputRef?.(el)"
+                  :value="renameDraft"
+                  type="text"
+                  class="workspace-recent-rename"
+                  data-testid="sidebar-recent-rename-input"
+                  :aria-label="t('nav.pendingRenameLabel')"
+                  :readonly="renameSaving"
+                  @click.stop
+                  @input="onRenameInput"
+                  @keydown.enter.prevent="emit('rename-commit')"
+                  @keydown.esc.prevent.stop="emit('rename-cancel')"
+                  @blur="emit('rename-blur')"
+                />
+                <Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" />
+                <svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg>
+              </div>
+              <RouterLink v-hover-ink v-else :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @contextmenu="onSoloHistoryContextMenu($event, entry.session)" @keydown="emit('solo-menu-keydown', $event, entry.session)" @pointerdown="emit('solo-pointerdown', $event, entry.session)" @click.capture="onSoloClick($event)"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink>
+            </template>
+            <template v-else>
+              <div
+                v-if="editingRunId === entry.run.id"
+                class="workspace-recent-row"
+                :class="{ 'is-active': recentRunActive(entry.run, route) }"
+                :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined"
+                data-testid="sidebar-recent-run"
+                :data-run-id="entry.run.id"
+                :data-status="entry.run.status"
+                data-editing="true"
+                @click.stop
+                @contextmenu.prevent
+              >
+                <input
+                  :ref="(el) => renameInputRef?.(el)"
+                  :value="renameDraft"
+                  type="text"
+                  class="workspace-recent-rename"
+                  data-testid="sidebar-recent-rename-input"
+                  :aria-label="t('nav.pendingRenameLabel')"
+                  :readonly="renameSaving"
+                  @click.stop
+                  @input="onRenameInput"
+                  @keydown.enter.prevent="emit('rename-commit')"
+                  @keydown.esc.prevent.stop="emit('rename-cancel')"
+                  @blur="emit('rename-blur')"
+                />
+                <Icon v-if="entry.run.status === 'failed' || entry.run.workspaceSave?.state === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t(entry.run.status === 'failed' ? 'common.status.failed' : 'common.status.save_failed')" aria-hidden="true" />
+                <svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg>
+              </div>
+              <RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @contextmenu="onRunContextMenu($event, entry.run)" @keydown="onRunMenuKeydown($event, entry.run)" @pointerdown="emit('run-pointerdown', $event, entry.run)" @click.capture="onRunClick($event)"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed' || entry.run.workspaceSave?.state === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t(entry.run.status === 'failed' ? 'common.status.failed' : 'common.status.save_failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink>
+            </template>
+          </div>
         </RecentReorderList>
       </div>
       </div>
@@ -142,6 +274,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 <style scoped>
 .workspace-lists { min-width: 0; font-size: 13px; }
 .workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }
+.workspace-recent-rename { height: 26px; min-width: 0; flex: 1; border: 1px solid rgb(var(--c-accent)); border-radius: 6px; background: rgb(var(--c-base)); color: rgb(var(--c-txt)); padding: 0 6px; font: inherit; font-weight: 400; text-align: start; outline: none; }
 .workspace-list-state { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
 .workspace-list-state button { color: rgb(var(--c-accent-2)); }
 .workspace-recent-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 36px; margin-bottom: 2px; padding: 8px 10px; border-radius: 10px; font-size: 13px; color: light-dark(#27272a, rgb(var(--c-txt2))); --hover-ink-color: rgb(var(--c-txt) / .04); }
