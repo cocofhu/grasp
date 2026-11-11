@@ -6,7 +6,7 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, isRunsSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { isNodeConversationPath, nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
@@ -1025,6 +1025,7 @@ watch(
 function isActive(to: string) {
   if (to === '/dashboard') return isHomeSectionPath(route.path)
   if (to === '/board') return isBoardSectionPath(route.path)
+  if (to === '/runs') return isRunsSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 
