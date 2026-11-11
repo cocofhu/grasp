@@ -15,8 +15,8 @@ export interface PaletteItem {
   agent?: string
 }
 
-export const CONTROL_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch']
-export const COLLAB_TYPES: NodeType[] = ['human_gate']
+const CONTROL_TYPES: NodeType[] = ['input', 'output', 'set_var', 'branch']
+const COLLAB_TYPES: NodeType[] = ['human_gate']
 
 export const NODE_ICONS: Record<NodeType, string> = {
   input: 'input',

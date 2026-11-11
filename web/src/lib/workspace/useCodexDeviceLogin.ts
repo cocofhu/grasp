@@ -3,14 +3,14 @@ import { api, type CodexDeviceLoginPoll } from '@/lib/api/api'
 
 export type CodexDeviceLoginState = 'idle' | 'starting' | 'waiting' | 'success' | 'denied' | 'expired' | 'not_enabled' | 'error'
 
-export interface CodexDeviceLoginFailure {
+interface CodexDeviceLoginFailure {
   /** Server or OpenAI error code; `unknown` when none was given. */
   code: string
   message?: string
   alias?: string
 }
 
-export interface CodexDeviceLoginTarget {
+interface CodexDeviceLoginTarget {
   name?: string
   credentialId?: string
 }
@@ -168,5 +168,3 @@ export function useCodexDeviceLogin(options: { onSuccess?: (result: CodexDeviceL
 
   return { state, userCode, verificationUri, totalSeconds, remainingSeconds, progress, failure, result, busy, start, cancel }
 }
-
-export type CodexDeviceLogin = ReturnType<typeof useCodexDeviceLogin>

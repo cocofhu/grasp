@@ -6,7 +6,7 @@ import { declaredProducts } from '@/lib/workflow/agentCapabilities'
 
 type ProductNode = Pick<WFNode, 'type' | 'caps'>
 
-export type ProductArtifactSpec = { name: string; required: boolean; outputKey?: string }
+type ProductArtifactSpec = { name: string; required: boolean; outputKey?: string }
 
 /** Every structured deliverable of a node, in declaration order. */
 export function productArtifactsForNode(node: ProductNode | null | undefined): ProductArtifactSpec[] {
@@ -26,7 +26,7 @@ export function isProductNode(node: ProductNode | null | undefined): boolean {
 }
 
 /** Run-scoped reserved names: one copy per run; later status writes must not hide it. */
-export const RUN_SCOPED_PRODUCT_NAMES = new Set(['plan.json'])
+const RUN_SCOPED_PRODUCT_NAMES = new Set(['plan.json'])
 
 const FINISHED_NODE_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 

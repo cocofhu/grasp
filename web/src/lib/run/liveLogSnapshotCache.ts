@@ -1,15 +1,15 @@
-import type { AcpEvent, McpCall } from '../shared/types'
+import type { McpCall } from '../shared/types'
 import type { MergedAcpEvent } from './mergeAcpEvents'
 
 /** Session-scoped (SPA visit) displayable snapshot for a run node. */
-export type LiveLogEventPageSnapshot = {
+type LiveLogEventPageSnapshot = {
   events: MergedAcpEvent[]
   nextCursor: string
   hasMore: boolean
   live: boolean
 }
 
-export type LiveLogNodeSnapshot = {
+type LiveLogNodeSnapshot = {
   eventPage?: LiveLogEventPageSnapshot
   mcpCalls?: McpCall[]
 }
@@ -20,10 +20,6 @@ function key(runId: string, nodeId: string): string {
 
 /** Module-level cache — survives RunDetailView hard remount within one SPA visit. */
 const store = new Map<string, LiveLogNodeSnapshot>()
-
-function snapshotCacheKey(runId: string, nodeId: string): string {
-  return key(runId, nodeId)
-}
 
 export function getLiveLogSnapshot(runId: string, nodeId: string): LiveLogNodeSnapshot | undefined {
   return store.get(key(runId, nodeId))
@@ -86,13 +82,6 @@ export function clearLiveLogSnapshotsExceptRun(keepRunId: string): void {
   }
 }
 
-function clearLiveLogSnapshotsForRun(runId: string): void {
-  const prefix = `${runId}\0`
-  for (const k of [...store.keys()]) {
-    if (k.startsWith(prefix)) store.delete(k)
-  }
-}
-
 /** Test helper — wipe the whole session cache. */
 export function clearAllLiveLogSnapshots(): void {
   store.clear()
@@ -108,9 +97,4 @@ export function cloneEventPageSnapshot(
     hasMore: page.hasMore,
     live: page.live,
   }
-}
-
-/** Prefer non-empty page events; used by callers merging REST/WS writes. */
-function eventsFromSnapshot(snap: LiveLogNodeSnapshot | undefined): AcpEvent[] {
-  return snap?.eventPage?.events || []
 }

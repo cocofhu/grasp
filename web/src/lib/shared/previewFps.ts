@@ -3,13 +3,13 @@ import { ref, type Ref } from 'vue'
 const WINDOW_MS = 1000
 
 /** Minimal RFB shape for flip hooking (noVNC 1.5.0 private API). */
-export interface RfbWithDisplay {
+interface RfbWithDisplay {
   _display?: {
     flip?: (...args: unknown[]) => unknown
   }
 }
 
-export interface PreviewFpsCounter {
+interface PreviewFpsCounter {
   fps: Ref<number>
   hasRecentFrames: Ref<boolean>
   attach(rfb: RfbWithDisplay): void

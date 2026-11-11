@@ -47,25 +47,6 @@ func IsChannelUserID(userID string) bool {
 	return false
 }
 
-// ChannelTypeFromUserID returns the registered channel type prefix, or "".
-func ChannelTypeFromUserID(userID string) string {
-	for _, typ := range models.RegisteredChannelTypes() {
-		if strings.HasPrefix(userID, typ+":") {
-			return typ
-		}
-	}
-	return ""
-}
-
-// ChannelPeerID extracts the conversation/user id after type:scene:.
-func ChannelPeerID(userID string) string {
-	parts := strings.SplitN(userID, ":", 3)
-	if len(parts) < 3 {
-		return ""
-	}
-	return parts[2]
-}
-
 // IsSyntheticThreadUserID reports cron/channel synthetic owners that must not trigger UI merge.
 func IsSyntheticThreadUserID(userID string) bool {
 	return IsChannelUserID(userID) || strings.HasPrefix(userID, "cron:")

@@ -32,9 +32,7 @@ export type LiveState =
 
 export type LiveOp = 'generate' | 'insert' | 'steer' | 'refine' | 'accept' | 'discard' | 'mount_failed'
 
-export const LIVE_OPS: readonly LiveOp[] = ['generate', 'insert', 'steer', 'refine', 'accept', 'discard', 'mount_failed']
-
-export const LIVE_ACTIONS = ['bolder', 'quieter', 'polish', 'typeset', 'colorize', 'layout', 'distill', 'adapt', 'animate', 'delight', 'overdrive', 'freeform'] as const
+const LIVE_OPS: readonly LiveOp[] = ['generate', 'insert', 'steer', 'refine', 'accept', 'discard', 'mount_failed']
 
 export type LiveVariant = { n: number; label?: string }
 
@@ -58,7 +56,7 @@ export type LiveSession = {
   updatedAt?: string
 }
 
-export type LiveRef = { sid: string; op: LiveOp | string; variant?: number; prompt?: string; generated?: boolean }
+type LiveRef = { sid: string; op: LiveOp | string; variant?: number; prompt?: string; generated?: boolean }
 
 export type LiveElement = {
   selector: string
@@ -100,7 +98,7 @@ export type LiveView = { current: number; mode: 'inplace' | 'compare'; original?
 export type LiveCmd = 'goto' | 'compare' | 'inplace' | 'accept' | 'discard' | 'retry' | 'retry-accept'
 
 /** A page message: either a request to forward (`event`) or a view update. */
-export type EmbedLiveMessage =
+type EmbedLiveMessage =
   | { kind: 'request'; reqId: string; event: LiveEvent }
   | { kind: 'state'; sid: string; view: LiveView }
 

@@ -16,7 +16,7 @@ export const PAGE_CONTROL_HELLO_MS = 3000
 
 type Frame = Record<string, unknown>
 
-export type PageControlOptions = {
+type PageControlOptions = {
   runId: string
   nodeId: string
   /** postMessage to the preview page. */

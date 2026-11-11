@@ -39,15 +39,6 @@ func newHostKeyCache() *hostKeyCache {
 	return &hostKeyCache{keys: make(map[string]pinnedHostKey)}
 }
 
-func (c *hostKeyCache) get(addr string) ssh.PublicKey {
-	if c == nil {
-		return nil
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.keys[addr].key
-}
-
 // accept trusts key for addr. The first key is pinned to sandboxID. A different
 // sandbox publishing the same address replaces the pin. The same sandbox (or a
 // dial with no sandbox id) must present the pinned key.

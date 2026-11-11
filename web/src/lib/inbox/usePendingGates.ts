@@ -13,7 +13,7 @@ import {
 import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import type { InboxItem } from '@/lib/shared/types'
 
-export type RefreshSource =
+type RefreshSource =
   | 'sidebar-poll'
   | 'visibility'
   | 'focus'
@@ -22,21 +22,21 @@ export type RefreshSource =
   | 'mount'
   | 'manual'
 
-export interface RefreshOptions {
+interface RefreshOptions {
   source?: RefreshSource
   mode?: 'force' | 'peek'
 }
 
-export interface PeekOptions {
+interface PeekOptions {
   source?: RefreshSource
 }
 
-export interface PendingMeta {
+interface PendingMeta {
   added: number
   removed: number
 }
 
-export function itemKey(it: InboxItem): string {
+function itemKey(it: InboxItem): string {
   return `${it.runId}:${it.nodeId}`
 }
 

@@ -124,25 +124,6 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	}
 }
 
-func TestLoadTeamAgentTemplates_AllPackages(t *testing.T) {
-	for _, name := range TeamEmbedPackageNames() {
-		ag, err := loadTeamAgentTemplate(name)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if len(ag.Files) == 0 {
-			t.Fatalf("%s: empty workspace files", name)
-		}
-	}
-	pm, err := loadTeamAgentTemplate(TeamPMEmbedName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !agentHasFilePath(pm, "rules/role.md") || !agentHasFilePath(pm, "skills/pm-orchestrate/SKILL.md") {
-		t.Fatalf("PM template incomplete: %v", filePaths(pm))
-	}
-}
-
 func agentHasFilePath(a Agent, path string) bool {
 	for _, f := range a.Files {
 		if f.Path == path {

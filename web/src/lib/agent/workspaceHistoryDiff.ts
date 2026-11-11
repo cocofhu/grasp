@@ -1,4 +1,4 @@
-export type DiffLineKind = 'add' | 'del' | 'hunk' | 'file' | 'context'
+type DiffLineKind = 'add' | 'del' | 'hunk' | 'file' | 'context'
 
 export function classifyDiffLine(line: string): DiffLineKind {
   if (line.startsWith('@@')) return 'hunk'

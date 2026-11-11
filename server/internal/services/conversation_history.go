@@ -389,14 +389,6 @@ func renderUserInstructions(rows []models.SoloMessage, budget int, via string) s
 	return b.String()
 }
 
-// contextPreamble gives a new CLI its initial task context without relying on
-// the model to remember to call a tool. Original messages remain available via
-// get_history. Current user input is excluded and appended exactly once by Solo.
-func (s *SoloService) contextPreamble(sessionID, exceptMsgID, header string) string {
-	text, _ := s.contextPreambleChecked(sessionID, exceptMsgID, header)
-	return text
-}
-
 func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, error) {
 	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ? AND id <> ?", sessionID, "system", exceptMsgID)
 	var recent, anchors []models.SoloMessage

@@ -23,21 +23,6 @@ import (
 )
 
 func TestPureHelpers(t *testing.T) {
-	if got := artifactKind("a.json"); got != "json" {
-		t.Errorf("artifactKind json = %q", got)
-	}
-	if got := artifactKind("a.yaml"); got != "yaml" {
-		t.Errorf("artifactKind yaml = %q", got)
-	}
-	if got := artifactKind("a.md"); got != "markdown" {
-		t.Errorf("artifactKind md = %q", got)
-	}
-	if got := gitBaseURL("https://gitlab.com/g/p.git"); got != "https://gitlab.com" {
-		t.Errorf("gitBaseURL = %q", got)
-	}
-	if got := gitBaseURL("git@host:g/p.git"); got != "" {
-		t.Errorf("gitBaseURL ssh should be empty, got %q", got)
-	}
 	if got := gitRepoScheme("https://github.com/o/r.git"); got != "https" {
 		t.Errorf("gitRepoScheme https = %q", got)
 	}
@@ -46,27 +31,6 @@ func TestPureHelpers(t *testing.T) {
 	}
 	if got := gitRepoScheme("ssh://git@gitlab.com/o/r.git"); got != "ssh" {
 		t.Errorf("gitRepoScheme ssh:// = %q", got)
-	}
-	if got := gitRepoHost("https://github.com/o/r.git"); got != "github.com" {
-		t.Errorf("gitRepoHost https = %q", got)
-	}
-	if got := gitRepoHost("git@git.example.com:o/r.git"); got != "git.example.com" {
-		t.Errorf("gitRepoHost scp = %q", got)
-	}
-	if got := gitRepoHost("ssh://git@gitlab.com/o/r.git"); got != "gitlab.com" {
-		t.Errorf("gitRepoHost ssh:// = %q", got)
-	}
-	if !isGitLabRepo("https://gitlab.com/o/r.git", "") {
-		t.Error("gitlab.com should be GitLab")
-	}
-	if !isGitLabRepo("https://git.example.com/o/r.git", "https://git.example.com") {
-		t.Error("self-hosted GitLab should match GITLAB_URL")
-	}
-	if isGitLabRepo("https://github.com/o/r.git", "") {
-		t.Error("github.com should not be GitLab")
-	}
-	if isGitLabRepo("https://github.com/o/r.git", "glpat-xxx") {
-		t.Error("GitHub with GITLAB_TOKEN env should not be GitLab repo")
 	}
 	if got := str2(nil); got != "" {
 		t.Errorf("str2(nil) = %q", got)
@@ -424,9 +388,6 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	if raw := p.mcpServers(req); len(raw) == 0 {
 		t.Error("mcpServers should be non-empty when artifact-store present")
 	}
-	if tok := p.gitToken(req); tok != "cred-tok" {
-		t.Errorf("gitToken = %q", tok)
-	}
 	if wd := p.workDir("dev"); wd != "" { // no cursor/ dir exists
 		t.Errorf("workDir = %q, want empty", wd)
 	}
@@ -435,7 +396,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spec: %v", err)
 	}
-	if sp.Env["GITLAB_URL"] != "" || len(sp.GitCredentials) != 1 || p.gitLabURL(req) != "https://gitlab.com" {
+	if sp.Env["GITLAB_URL"] != "" || len(sp.GitCredentials) != 1 {
 		t.Error("Git authorization must use the selected file catalog, not global environment")
 	}
 	removeHome(sp.ConfigHome)
@@ -509,34 +470,6 @@ func TestUpstreamArtifacts(t *testing.T) {
 
 // --- docker-stubbed sandbox paths -----------------------------------------
 
-func TestHarvestReadsFileAndWrites(t *testing.T) {
-	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, _ io.Reader) ([]byte, error) {
-		if strings.Contains(command, "cat") {
-			return []byte("harvested body"), nil
-		}
-		return nil, nil
-	})
-	defer restore()
-
-	store := newMemStore()
-	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	defer host.UnregisterRun("r")
-	p := newACPProvider(host, Options{}).(*acpProvider)
-	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-	out := map[string]any{}
-	var events []models.AcpEvent
-	if err := p.harvest(context.Background(), sb, NodeReq{RunID: "r", NodeID: "n", Token: tok}, "report.md", out, &events); err != nil {
-		t.Fatalf("harvest: %v", err)
-	}
-	if c, ok := store.Get("r", "report.md"); !ok || c != "harvested body" {
-		t.Errorf("harvest stored %q ok=%v", c, ok)
-	}
-	if len(events) != 1 || events[0].Kind != "tool_call" {
-		t.Errorf("harvest event = %+v", events)
-	}
-}
-
 // execHookBody joins SSH argv with ExecScript stdin so tests can match
 // script content after the safeCmd migration (command is only `bash -s`).
 func execHookBody(command string, stdin io.Reader) string {
@@ -548,75 +481,6 @@ func execHookBody(command string, stdin io.Reader) string {
 		return command
 	}
 	return command + "\n" + string(b)
-}
-
-func TestEnsurePushedAndDetectPush(t *testing.T) {
-	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
-		body := execHookBody(command, stdin)
-		switch {
-		case strings.Contains(body, "rev-parse --abbrev-ref"):
-			return []byte("feature-x\n"), nil
-		case strings.Contains(body, "rev-parse HEAD"):
-			return []byte("abc123\n"), nil
-		case strings.Contains(body, "ls-remote"):
-			return []byte("abc123\trefs/heads/feature-x\n"), nil
-		case strings.Contains(body, "glab") && strings.Contains(body, "mr list"):
-			return []byte(`[{"web_url":"https://gitlab.com/g/p/-/merge_requests/1"}]`), nil
-		}
-		return []byte(""), nil
-	})
-	defer restore()
-
-	host := mcp.NewHost(newMemStore())
-	root := writeAgent(t, "git-agent", `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"}}`)
-	p := newACPProvider(host, Options{ProfilesRoot: root, GitCredential: func(string) (GitCredentialValue, bool) {
-		return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "gl-token", Host: "https://gitlab.com"}, true
-	}}).(*acpProvider)
-	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-
-	req := NodeReq{
-		Config: map[string]any{"create_mr": true, "agent_profile": "git-agent"},
-		Vars:   map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`},
-	}
-	p.ensurePushed(context.Background(), sb, req) // best-effort, must not panic
-
-	info := p.detectPush(context.Background(), sb, req)
-	if info == nil || !info.Pushed || info.Branch != "feature-x" {
-		t.Fatalf("detectPush = %+v", info)
-	}
-	if info.MrURL != "https://gitlab.com/g/p/-/merge_requests/1" {
-		t.Errorf("MR url = %q", info.MrURL)
-	}
-}
-
-func TestDetectPushNonGitLabSkipsMR(t *testing.T) {
-	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
-		body := execHookBody(command, stdin)
-		switch {
-		case strings.Contains(body, "rev-parse --abbrev-ref"):
-			return []byte("feature-x\n"), nil
-		case strings.Contains(body, "rev-parse HEAD"):
-			return []byte("abc123\n"), nil
-		case strings.Contains(body, "ls-remote"):
-			return []byte("abc123\trefs/heads/feature-x\n"), nil
-		case strings.Contains(body, "glab") && strings.Contains(body, "mr list"):
-			t.Error("glab should not be called for non-GitLab repo")
-		}
-		return []byte(""), nil
-	})
-	defer restore()
-
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{Env: map[string]string{"GITLAB_TOKEN": "tok"}}).(*acpProvider)
-	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-
-	info := p.detectPush(context.Background(), sb, NodeReq{
-		Config: map[string]any{"create_mr": true, "agent_profile": "git-agent"},
-		Vars:   map[string]any{"repos": `[{"name":"r","url":"https://github.com/o/r.git"}]`},
-	})
-	if info == nil || info.MrURL != "" {
-		t.Fatalf("non-GitLab detectPush should have empty mr_url, got %+v", info)
-	}
 }
 
 func TestCaptureChanges(t *testing.T) {
@@ -733,18 +597,6 @@ func TestDebugFetchPage(t *testing.T) {
 	if page != nil {
 		ev := sandbox.AggregateFrames(page.Events)
 		t.Logf("events=%+v", ev)
-	}
-}
-
-func TestReactHistoryHasDialogue(t *testing.T) {
-	if reactHistoryHasDialogue(nil) || reactHistoryHasDialogue([]models.ReactMessage{{Role: "agent"}}) {
-		t.Fatal("empty parked session is not dialogue")
-	}
-	if !reactHistoryHasDialogue([]models.ReactMessage{{Role: "human", Text: "hi"}}) {
-		t.Fatal("human text is dialogue")
-	}
-	if !reactHistoryHasDialogue([]models.ReactMessage{{Role: "agent", Questions: []models.ReactQuestion{{ID: "q1"}}}}) {
-		t.Fatal("questions are dialogue")
 	}
 }
 

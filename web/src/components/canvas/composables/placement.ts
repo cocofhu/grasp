@@ -15,7 +15,7 @@ export function rectsOverlap(a: Rect, b: Rect, gap = 0): boolean {
   return a.x < b.x + b.width + gap && b.x < a.x + a.width + gap && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap
 }
 
-export interface FreeSpotOptions {
+interface FreeSpotOptions {
   gap?: number
   /** Search step in flow px; defaults to three grid cells. */
   step?: number

@@ -23,7 +23,7 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/settings', icon: 'integration', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
 ]
 
-export const SETTINGS_CHROME_PREFIXES = [
+const SETTINGS_CHROME_PREFIXES = [
   '/notifications',
   '/artifacts',
   '/agents',

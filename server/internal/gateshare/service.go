@@ -2,7 +2,6 @@ package gateshare
 
 import (
 	"errors"
-	"net/url"
 	"strings"
 	"time"
 
@@ -868,22 +867,4 @@ func PublicOriginFromRequest(scheme, host string) string {
 		scheme = "https"
 	}
 	return strings.TrimRight(scheme, ":/") + "://" + host
-}
-
-// ParsePublicAdvertise returns origin (scheme://host) and host from the
-// configured public_advertise URL. Empty / invalid → ("", "").
-func ParsePublicAdvertise(raw string) (origin, host string) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", ""
-	}
-	u, err := url.Parse(raw)
-	if err != nil || strings.TrimSpace(u.Host) == "" {
-		return "", ""
-	}
-	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
-	if scheme != "http" && scheme != "https" {
-		scheme = "https"
-	}
-	return scheme + "://" + u.Host, u.Host
 }

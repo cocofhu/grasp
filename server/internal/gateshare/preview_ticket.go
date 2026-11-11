@@ -157,27 +157,6 @@ func (s *TicketStore) InvalidateByTokenHash(tokenHash string) {
 	_ = s.db.Where("token_hash = ?", tokenHash).Delete(&models.GateSharePreviewTicket{}).Error
 }
 
-// InvalidateByRun deletes tickets whose run_id matches.
-func (s *TicketStore) InvalidateByRun(runID string) {
-	if s == nil || s.db == nil || strings.TrimSpace(runID) == "" {
-		return
-	}
-	_ = s.db.Where("run_id = ?", runID).Delete(&models.GateSharePreviewTicket{}).Error
-}
-
-// InvalidateByRunNode deletes tickets for a run/node pair.
-func (s *TicketStore) InvalidateByRunNode(runID, nodeID string) {
-	if s == nil || s.db == nil {
-		return
-	}
-	runID, nodeID = strings.TrimSpace(runID), strings.TrimSpace(nodeID)
-	if runID == "" || nodeID == "" {
-		return
-	}
-	_ = s.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
-		Delete(&models.GateSharePreviewTicket{}).Error
-}
-
 func normalizePreviewPurpose(p string) string {
 	switch strings.ToLower(strings.TrimSpace(p)) {
 	case PreviewPurposeVNC:

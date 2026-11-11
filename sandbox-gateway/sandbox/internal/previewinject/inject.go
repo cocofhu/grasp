@@ -157,9 +157,3 @@ func (p previewHTML) rewrite(doc []byte, scriptURL string, csp previewCSP) []byt
 	out.Write(doc[at:])
 	return out.Bytes()
 }
-
-// InjectHTML inserts preview-pick before </body>, </html>, or the end of the
-// document. An actual same-origin pick script is kept if the app supplied it.
-func InjectHTML(doc []byte, scriptURL string) []byte {
-	return scanHTML(doc, "").rewrite(doc, ResolveScriptURL(scriptURL), previewCSP{})
-}

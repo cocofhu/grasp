@@ -79,27 +79,6 @@ func TestRuntimeEventHistoryAuthAndRetry(t *testing.T) {
 	}
 }
 
-func TestTimelineUsesAuthenticatedReaderWithoutRepeatedLogin(t *testing.T) {
-	sb, logins := authenticatedRuntimeEventLog(t)
-	timeline := newAcpTimelineStore()
-	reader := sandbox.NewEventLogReader(sb.Host, sb.Port, sb.Password)
-	for i := 0; i < 3; i++ {
-		timeline.refreshFromReader(context.Background(), "r", "n", reader)
-	}
-	entry, ok := timeline.get("r", "n")
-	if !ok || len(entry.events) != 2 || entry.events[0].Text != "hello-snap" {
-		t.Fatalf("timeline=%+v ok=%v", entry, ok)
-	}
-	if logins.Load() != 1 {
-		t.Fatalf("polling allocated %d sessions, want 1", logins.Load())
-	}
-	timeline.refreshFromSandbox(context.Background(), "r", "n", sb.Host, sb.Port, "invalid-token")
-	entry, ok = timeline.get("r", "n")
-	if !ok || len(entry.events) != 2 || entry.events[0].Text != "hello-snap" {
-		t.Fatalf("auth failure erased timeline=%+v ok=%v", entry, ok)
-	}
-}
-
 func TestRuntimeRegistersAuthenticatedTimeline(t *testing.T) {
 	for _, park := range []bool{false, true} {
 		name := "register-live"

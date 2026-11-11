@@ -119,7 +119,7 @@ const PLUMBING_TYPES = new Set(['input', 'output'])
  * agent step. Known type wins; without graph metadata fall back to the wire
  * signature (auto, no task, no events, zero duration).
  */
-export function isPlumbingSegment(s: RunChainWireSegment, type?: string): boolean {
+function isPlumbingSegment(s: RunChainWireSegment, type?: string): boolean {
   if (type) return PLUMBING_TYPES.has(type)
   return (
     (s.kind ?? 'agent') === 'agent' &&

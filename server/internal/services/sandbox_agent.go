@@ -356,18 +356,6 @@ func isAgentSandboxPurpose(p string) bool {
 	return p == SandboxPurposeAgent
 }
 
-// IsAgentPlatformMCP reports whether a single MCP entry is an Agent-session
-// platform MCP (memory/context/scheduler) by name or URL path.
-func IsAgentPlatformMCP(name, url string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case MemoryStoreMCP, ContextStoreMCP, TaskSchedulerMCP:
-		return true
-	}
-	return strings.Contains(url, "/mcp/memory-store") ||
-		strings.Contains(url, "/mcp/context-store") ||
-		strings.Contains(url, "/mcp/task-scheduler/")
-}
-
 // filterAgentPlatformMCP drops artifact-store and platform MCP names so they
 // are not double-injected from Agent mcp[] (platform appends real endpoints).
 func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec {

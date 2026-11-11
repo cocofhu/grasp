@@ -15,7 +15,7 @@ export const BOOT_STAGE_ORDER: BootStageId[] = ['pulling', 'creating', 'acp_read
 /** Product wait ceiling (~120s) for create/ACP stages — not used while pulling (g3.4). */
 export const BOOT_STAGE_TIMEOUT_MS = 120_000
 
-export type SandboxPhaseSignal = {
+type SandboxPhaseSignal = {
   status?: string | null
   containerStatus?: string | null
 } | null | undefined

@@ -118,7 +118,7 @@ func TestIssueRejectsIncompleteClaims(t *testing.T) {
 	}
 }
 
-func TestSessionLookupAndInvalidate(t *testing.T) {
+func TestSessionLookup(t *testing.T) {
 	s := newTestStore(t)
 	token, _, err := s.CreateSession(sessionClaims())
 	if err != nil {
@@ -133,10 +133,6 @@ func TestSessionLookupAndInvalidate(t *testing.T) {
 	}
 	if _, ok := s.LookupSession(strings.TrimPrefix(token, SessionPrefix)); ok {
 		t.Fatal("unprefixed token accepted")
-	}
-	s.InvalidateRun("run-1")
-	if _, ok := s.LookupSession(token); ok {
-		t.Fatal("session survived run invalidation")
 	}
 }
 

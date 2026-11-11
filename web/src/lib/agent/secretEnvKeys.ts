@@ -35,8 +35,6 @@ export const SECRET_ENV_KEYS = [
   'DEEPSEEK_API_KEY',
 ] as const
 
-export type SecretEnvKey = (typeof SECRET_ENV_KEYS)[number]
-
 const SECRET_SET = new Set<string>(SECRET_ENV_KEYS)
 
 export function isSecretEnvKey(key: string): boolean {

@@ -16,7 +16,7 @@ import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
  * clarify_visit_ended frame echoing one of these ids is "ours" to refill; other
  * viewers of the same run never refill or stash.
  */
-export type ClarifyDraftStash = {
+type ClarifyDraftStash = {
   text: string
   images: ClarifyImage[]
   annotations: ReactAnnotation[]
@@ -26,7 +26,7 @@ export type ClarifyDraftStash = {
 export type RescuedPart = { text: string; at: number }
 
 /** What a read returns: the content plus who owns it and how it was trimmed. */
-export type ClarifyStashRead = ClarifyDraftStash & {
+type ClarifyStashRead = ClarifyDraftStash & {
   /** Rescued messages at the head of `text`, oldest send first. */
   parts?: RescuedPart[]
   /** Inline images left out because they exceeded the size budget. */
@@ -42,7 +42,7 @@ const TAB_ID_KEY = 'grasp-clarify-tab-id'
 const LEGACY_LOCAL_PREFIXES = ['grasp-clarify-stash:', 'grasp-clarify-tab-alive:']
 const TAB_CHANNEL = 'grasp-clarify-tab'
 /** How long a starting tab waits for another tab to claim the same id. */
-export const TAB_CHECK_MS = 150
+const TAB_CHECK_MS = 150
 /** Unsent text older than this is dropped on the next sweep. */
 export const STASH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 /** Inline (base64) image bytes kept per entry; ref-only images are always kept. */
@@ -87,7 +87,7 @@ export function budgetImages(images: ClarifyImage[], budget = INLINE_IMAGE_BUDGE
 }
 
 /** budgetImages plus how many inline images did not fit. */
-export function budgetImagesCounted(
+function budgetImagesCounted(
   images: ClarifyImage[],
   budget = INLINE_IMAGE_BUDGET,
 ): { kept: ClarifyImage[]; dropped: number } {

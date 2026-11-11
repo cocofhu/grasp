@@ -52,7 +52,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if len(items) != 9 {
 		t.Fatalf("items: %d", len(items))
 	}
-	updated, err := svc.Update(map[string]int{
+	updated, err := svc.UpdateWithBrand(map[string]int{
 		KeyMaxConcurrentRuns: 7,
 		KeyRunSandboxTTLMin:  45,
 		KeyTestSandboxTTLMin: 15,
@@ -61,7 +61,8 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		KeyNodeAutoRetryMax:  3,
 		KeySandboxMemoryMB:   12288,
 		KeyAgentIdleMin:      30,
-	})
+	}, BrandPatch{})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,19 +79,19 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		t.Fatalf("agent idle: got %s, want 30m", got)
 	}
 	svc.ApplyOnBoot()
-	if _, err := svc.Update(map[string]int{KeyAgentIdleMin: 121}); err == nil || !strings.Contains(err.Error(), "不能大于 120") {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyAgentIdleMin: 121}, BrandPatch{}); err == nil || !strings.Contains(err.Error(), "不能大于 120") {
 		t.Fatalf("expected agent idle max validation error, got %v", err)
 	}
-	if _, err := svc.Update(map[string]int{KeyAgentIdleMin: 1}); err == nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyAgentIdleMin: 1}, BrandPatch{}); err == nil {
 		t.Fatal("expected agent idle min validation error")
 	}
-	if _, err := svc.Update(map[string]int{KeyMaxConcurrentRuns: 0}); err == nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxConcurrentRuns: 0}, BrandPatch{}); err == nil {
 		t.Fatal("expected min validation error")
 	}
-	if _, err := svc.Update(map[string]int{KeyMaxSoloSandboxes: 0}); err == nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxSoloSandboxes: 0}, BrandPatch{}); err == nil {
 		t.Fatal("expected solo sandbox min validation error")
 	}
-	if _, err := svc.Update(map[string]int{KeySandboxMemoryMB: 512}); err == nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeySandboxMemoryMB: 512}, BrandPatch{}); err == nil {
 		t.Fatal("expected sandbox memory min validation error")
 	}
 }
@@ -117,7 +118,7 @@ func TestSettingsServiceEnvLocked(t *testing.T) {
 	if !locked {
 		t.Fatal("expected env locked")
 	}
-	if _, err := svc.Update(map[string]int{KeyMaxConcurrentRuns: 1}); err != nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxConcurrentRuns: 1}, BrandPatch{}); err != nil {
 		t.Fatal(err)
 	}
 	if conc.max != 0 && conc.max != items[0].Value {

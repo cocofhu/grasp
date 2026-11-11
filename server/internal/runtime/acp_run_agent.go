@@ -382,26 +382,6 @@ func captureMultiRepoChanges(ch *sandbox.Changes, out map[string]any) *GitInfo {
 	return git
 }
 
-// harvest copies a declared produces file out of the container and writes it
-// through the run-scoped MCP host into the platform artifact store.
-func (c *acpProvider) harvest(ctx context.Context, sb *sandbox.Sandbox, req NodeReq, produces string, out map[string]any, events *[]models.AcpEvent) error {
-	data, err := sb.ReadFile(ctx, produces)
-	if err != nil {
-		return fmt.Errorf("produces %q not found in sandbox: %w", produces, err)
-	}
-	kind := artifactKind(produces)
-	id, err := c.host.WriteArtifact(req.RunID, req.Token, req.NodeID, produces, string(data), kind)
-	if err != nil {
-		return fmt.Errorf("write_artifact %s: %w", produces, err)
-	}
-	out["artifact_id"] = id
-	*events = append(*events, models.AcpEvent{
-		Kind: "tool_call", Title: "write_artifact(" + produces + ")", Status: "completed",
-		Artifact: &models.ArtifactMeta{Name: produces, Kind: kind},
-	})
-	return nil
-}
-
 // ensurePushed guarantees the implement node's working branch reaches origin so
 // downstream sandboxes (fresh clones) can check it out. It commits any leftover
 // changes the agent didn't commit, then pushes the current branch. Fully
@@ -447,109 +427,8 @@ git diff --cached --quiet 2>/dev/null || git commit -m "chore(approving): implem
 	}
 }
 
-// detectPush inspects the container repo for branch/HEAD and whether the
-// branch exists on the remote (i.e. the agent pushed). MR creation via glab
-// is gated: GitLab repo + GITLAB_TOKEN + create_mr config must all be set.
-func (c *acpProvider) detectPush(ctx context.Context, sb *sandbox.Sandbox, req NodeReq) *GitInfo {
-	dir, repo := c.nodeRepo(req)
-	cd := "cd " + shellArg(dir) + " && "
-	branch, _ := sb.ExecScript(ctx, 10*time.Second, "bash", cd+"git rev-parse --abbrev-ref HEAD 2>/dev/null || true")
-	sha, _ := sb.ExecScript(ctx, 10*time.Second, "bash", cd+"git rev-parse HEAD 2>/dev/null || true")
-	branch, sha = strings.TrimSpace(branch), strings.TrimSpace(sha)
-	if sha == "" {
-		return nil
-	}
-	info := &GitInfo{Branch: branch, PushedSHA: sha}
-
-	remote, _ := sb.ExecScript(ctx, 15*time.Second, "bash",
-		cd+"git ls-remote --heads origin "+shellArg(branch)+" 2>/dev/null || true")
-	info.Pushed = strings.TrimSpace(remote) != ""
-
-	createMR, _ := req.Config["create_mr"].(bool)
-	if info.Pushed && createMR && c.gitToken(req) != "" && isGitLabRepo(repo, c.gitLabURL(req)) {
-		selectedRepo := ""
-		if c.effectiveAgent(req).GitBindings != nil {
-			selectedRepo = repo
-		}
-		if url := c.findOrCreateMR(ctx, sb, dir, branch, selectedRepo); url != "" {
-			info.MrURL = url
-		}
-	}
-	return info
-}
-
-func (c *acpProvider) findOrCreateMR(ctx context.Context, sb *sandbox.Sandbox, dir, branch string, selectedRepo ...string) string {
-	cd := "cd " + shellArg(dir) + " && "
-	cli, repoFlag := "glab ", ""
-	if len(selectedRepo) > 0 && selectedRepo[0] != "" {
-		cli = `python3 "${GRASP_GIT_CREDENTIAL_HELPER:-/root/.grasp/git-credentials/helper.py}" exec-cli glab ` + shellArg(selectedRepo[0]) + " -- "
-		repoFlag = " --repo " + shellArg(selectedRepo[0])
-	}
-	view, err := sb.ExecScript(ctx, 25*time.Second, "bash",
-		cd+cli+"mr list --source-branch "+shellArg(branch)+" -F json"+repoFlag+" 2>/dev/null || true")
-	if err == nil {
-		if url := firstMRURL(view); url != "" {
-			return url
-		}
-	}
-	create, _ := sb.ExecScript(ctx, 40*time.Second, "bash",
-		cd+cli+"mr create --fill --yes --source-branch "+shellArg(branch)+repoFlag+" 2>&1 || true")
-	for _, line := range strings.Split(create, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
-			return line
-		}
-	}
-	return ""
-}
-
-func firstMRURL(jsonOut string) string {
-	url, _ := firstMR(jsonOut)
-	return url
-}
-
-// firstMR parses `glab mr list -F json` output and returns the first MR's web
-// URL and iid (0 when absent/unparseable).
-func firstMR(jsonOut string) (url string, iid int) {
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(jsonOut), &arr); err != nil || len(arr) == 0 {
-		return "", 0
-	}
-	if u, ok := arr[0]["web_url"].(string); ok {
-		url = u
-	}
-	if v, ok := arr[0]["iid"].(float64); ok {
-		iid = int(v)
-	}
-	return url, iid
-}
-
 func shellArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// mrBranches resolves a submit_mr node's source/target branches. Source falls
-// back to vars.branches[repo] so the MR node picks up the implement node's
-// working branch by default; target may be empty (== the repository's default
-// branch, resolved by glab).
-func mrBranches(req NodeReq) (source, target string) {
-	source = strings.TrimSpace(str2(req.Config["source_branch"]))
-
-	if source == "" {
-		repo := strings.TrimSpace(str2(req.Config["repo"]))
-		if repo == "" {
-			if repos := resolveRepos(req); len(repos) == 1 {
-				repo = repos[0].Name
-			}
-		}
-		if repo != "" {
-			if bm := parseBranchesVar(req.Vars["branches"]); bm != nil {
-				source = strings.TrimSpace(bm[repo])
-			}
-		}
-	}
-	target = strings.TrimSpace(str2(req.Config["target_branch"]))
-	return source, target
 }
 
 // AbortRun tears down live react sessions and in-flight agent ACP connections

@@ -174,14 +174,13 @@ func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
 		ConfigHome: home,
 		ConfigRoot: "/root/.cursor",
 		Env: map[string]string{
-			"GITHUB_TOKEN":        "gh",
-			"GITLAB_TOKEN":        "gl",
-			"GIT_SSH_PRIVATE_KEY": "should-strip",
-			"GIT_SSH_KNOWN_HOSTS": "should-strip",
-			BridgePasswordEnv:     testBridgePassword,
+			"GITHUB_TOKEN":    "gh",
+			"GITLAB_TOKEN":    "gl",
+			BridgePasswordEnv: testBridgePassword,
 		},
+		SSHPrivateKey: "-----BEGIN KEY-----\nk\n-----END KEY-----",
+		SSHKnownHosts: "host ssh-ed25519 AAAA",
 	}
-	ApplySSHCredentials(&spec, "-----BEGIN KEY-----\nk\n-----END KEY-----", "host ssh-ed25519 AAAA")
 
 	if _, err := m.Create(context.Background(), spec); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -200,9 +199,6 @@ func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
 	}
 	if env["GITHUB_TOKEN"] != "gh" || env["GITLAB_TOKEN"] != "gl" {
 		t.Fatalf("tokens must remain: %+v", env)
-	}
-	if _, ok := env["GIT_SSH_PRIVATE_KEY"]; ok {
-		t.Fatal("stripped SSH env leaked")
 	}
 	hdr, _ := env["SANDBOX_INJECT_HEADERS"].(string)
 	if !strings.HasPrefix(hdr, "Authorization: Bearer ") {

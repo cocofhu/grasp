@@ -20,7 +20,7 @@ export function clampProgress(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)))
 }
 
-export function isValidDateOnly(v: string): boolean {
+function isValidDateOnly(v: string): boolean {
   if (!v) return true
   if (!DATE_RE.test(v)) return false
   const [y, m, d] = v.split('-').map(Number)
@@ -33,20 +33,20 @@ export function todayLocalISO(): string {
   return toISODate(n)
 }
 
-export function toISODate(d: Date): string {
+function toISODate(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
 
-export function parseISODate(v: string): Date | null {
+function parseISODate(v: string): Date | null {
   if (!isValidDateOnly(v) || !v) return null
   const [y, m, d] = v.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
-export function addDays(iso: string, n: number): string {
+function addDays(iso: string, n: number): string {
   const d = parseISODate(iso)
   if (!d) return iso
   d.setDate(d.getDate() + n)
@@ -67,7 +67,7 @@ export function draftBarRange(d: RequirementDraft): { start: string; end: string
   return { start: s, end: e }
 }
 
-export function hasOwnSchedule(d: RequirementDraft): boolean {
+function hasOwnSchedule(d: RequirementDraft): boolean {
   if (d.kind === 'milestone') return Boolean(d.dueAt)
   return Boolean(d.startAt || d.dueAt)
 }
@@ -193,7 +193,7 @@ export function buildGanttRows(
   return { unscheduled, scheduled }
 }
 
-export interface TimelineWindow {
+interface TimelineWindow {
   start: string
   end: string
   ticks: string[]
@@ -247,7 +247,7 @@ export function computeTimelineWindow(
   return { start: ticks[0], end: ticks[ticks.length - 1], ticks, tickCount: ticks.length }
 }
 
-export function positionPct(iso: string, window: TimelineWindow): number {
+function positionPct(iso: string, window: TimelineWindow): number {
   const a = parseISODate(window.start)
   const b = parseISODate(window.end)
   const t = parseISODate(iso)

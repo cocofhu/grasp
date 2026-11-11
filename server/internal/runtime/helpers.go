@@ -6,20 +6,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// artifactKind infers an artifact kind from its file name.
-func artifactKind(name string) string {
-	switch {
-	case strings.HasSuffix(name, ".json"):
-		return "json"
-	case strings.HasSuffix(name, ".yaml"), strings.HasSuffix(name, ".yml"):
-		return "yaml"
-	case strings.HasSuffix(name, ".html"), strings.HasSuffix(name, ".htm"):
-		return "html"
-	default:
-		return "markdown"
-	}
-}
-
 // toInt coerces a config value into an int.
 func toInt(v any) (int, bool) {
 	switch n := v.(type) {

@@ -37,15 +37,6 @@ var TeamEngineerTemplates = []TeamRoleTemplate{
 	{ID: "deliver", EmbedName: "DeliverAgent", RoleLabelZH: "交付", Summary: "测试评审通过后合入目标分支并创建或复用 MR/PR"},
 }
 
-// TeamEmbedPackageNames lists all packages under team_embed/.
-func TeamEmbedPackageNames() []string {
-	out := []string{TeamPMEmbedName}
-	for _, r := range TeamEngineerTemplates {
-		out = append(out, r.EmbedName)
-	}
-	return out
-}
-
 // AllCreateTemplates returns the built-in templates with their capabilities.
 func AllCreateTemplates() []TeamRoleTemplate {
 	out := make([]TeamRoleTemplate, 0, len(TeamEngineerTemplates))
@@ -122,11 +113,6 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 		Layout:       layout,
 		Capabilities: cfg.Capabilities,
 	}, nil
-}
-
-// LoadTeamAgentTemplate loads an embedded pack by folder name (e.g. ImplementAgent).
-func LoadTeamAgentTemplate(embedName string) (Agent, error) {
-	return loadTeamAgentTemplate(embedName)
 }
 
 // ApplyCreateTemplate overlays an embedded role pack onto a new Agent.

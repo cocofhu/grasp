@@ -1,7 +1,7 @@
 import type { AcpEvent } from '../shared/types'
 
 /** One WS ACP frame buffered while the dialogue surface is unmounted. */
-export type PendingAcpFrame = {
+type PendingAcpFrame = {
   nodeId?: string
   events: AcpEvent[]
   busy?: boolean
@@ -73,5 +73,3 @@ export function createPendingAcpBuffer() {
     },
   }
 }
-
-export type PendingAcpBuffer = ReturnType<typeof createPendingAcpBuffer>

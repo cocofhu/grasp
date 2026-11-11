@@ -2,7 +2,7 @@ import type { WFEdge, WFNode, Workflow } from '../shared/types'
 
 const EXPORT_SCHEMA_VERSION = 1
 
-export const AGENT_PROFILE_KEY = 'agent_profile'
+const AGENT_PROFILE_KEY = 'agent_profile'
 
 function asConfig(config?: Record<string, unknown> | null): Record<string, unknown> | null {
   return config && typeof config === 'object' ? config : null
@@ -20,7 +20,7 @@ export function setAgentProfile(config: Record<string, unknown>, name: string): 
   config[AGENT_PROFILE_KEY] = String(name || '').trim()
 }
 
-export interface ExportEnvelope {
+interface ExportEnvelope {
   schemaVersion: number
   exportedAt: string
   name: string
@@ -117,7 +117,7 @@ export function collectAgentProfiles(nodes: WFNode[]): string[] {
   return [...out]
 }
 
-export type AgentProfileIssue = {
+type AgentProfileIssue = {
   name: string
   reason: 'missing'
 }

@@ -9,14 +9,14 @@ import type { Workflow } from '@/lib/shared/types'
 /** Personal starred-workflow hard limit. Favorites are not shown in the sidebar. */
 export const WORKFLOW_FAVORITES_MAX = 8
 
-export type WorkflowFavoriteEntry = {
+type WorkflowFavoriteEntry = {
   workflowId: string
   /** Epoch ms when the workflow was favorited. */
   favoritedAt: number
 }
 
 /** Hydrated favorite row (current names, not stale snapshots). Not rendered in the sidebar. */
-export type FavoriteWorkflowDisplay = {
+type FavoriteWorkflowDisplay = {
   workflowId: string
   favoritedAt: number
   name: string
@@ -130,7 +130,7 @@ function removeIds(ids: string[]) {
  * Fetch ≤8 workflows by id; 404/missing → silent strip & persist.
  * Network errors keep the local entry (no strip).
  */
-export async function hydrateDisplay(): Promise<void> {
+async function hydrateDisplay(): Promise<void> {
   ensureHydrated()
   const gen = ++hydrateGeneration
   const orderedEntries = listSorted.value
@@ -185,7 +185,7 @@ export async function hydrateDisplay(): Promise<void> {
 }
 
 /** Resolve a Workflow for launch; 404 silently strips the favorite. */
-export async function getFavoriteWorkflow(workflowId: string): Promise<Workflow | null> {
+async function getFavoriteWorkflow(workflowId: string): Promise<Workflow | null> {
   try {
     return await api.getWorkflow(workflowId)
   } catch (e) {

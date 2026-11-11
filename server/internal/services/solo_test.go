@@ -60,20 +60,6 @@ func TestProjectValidation(t *testing.T) {
 	}
 }
 
-func TestSoloRepoSpecs(t *testing.T) {
-	if SoloRepoSpecs(nil, "x") != nil {
-		t.Fatal("nil project has no repos")
-	}
-	p := &models.Project{RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main"}
-	got := SoloRepoSpecs(p, "")
-	if len(got) != 1 || got[0].Name != "app" || got[0].Branch != "main" {
-		t.Fatalf("default branch: %+v", got)
-	}
-	if got := SoloRepoSpecs(p, "feat/x"); got[0].Branch != "feat/x" {
-		t.Fatalf("branch override: %+v", got)
-	}
-}
-
 func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxService, *sandboxtest.FakeGateway, *gorm.DB) {
 	t.Helper()
 	db := newTestDB(t)
@@ -266,7 +252,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if row.Restarts != 1 || !row.NeedsPreamble {
 		t.Fatalf("restart flags: restarts=%d preamble=%v", row.Restarts, row.NeedsPreamble)
 	}
-	if pre := solo.buildPreamble(id, ""); !strings.Contains(pre, "hello there") {
+	if pre := solo.contextPreamble(id, "", soloRestartPreambleHeader); !strings.Contains(pre, "hello there") {
 		t.Fatalf("preamble missing history: %q", pre)
 	}
 

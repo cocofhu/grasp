@@ -7,12 +7,12 @@ import { isGated } from './agentCapabilities'
 
 export const PASS_OUTLET = 'pass'
 export const FAIL_OUTLET = 'fail'
-export const ELSE_OUTLET = 'else'
-export const DEFAULT_OUTLET = ''
+const ELSE_OUTLET = 'else'
+const DEFAULT_OUTLET = ''
 
-export type OutletKind = 'default' | 'pass' | 'fail' | 'case' | 'else' | 'action'
+type OutletKind = 'default' | 'pass' | 'fail' | 'case' | 'else' | 'action'
 
-export interface NodeOutlet {
+interface NodeOutlet {
   /** Edge.sourceHandle value; "" for the plain outlet. */
   id: string
   kind: OutletKind
@@ -30,7 +30,7 @@ export type AgentCapsLookup =
 const DEFAULT: NodeOutlet = { id: DEFAULT_OUTLET, kind: 'default', label: '', labelKey: 'nodes.outlets.default' }
 
 /** Outlets of an agent node whose Agent has caps: pass / fail when it writes a verdict schema. */
-export function agentOutlets(caps: AgentCapabilities | null | undefined): NodeOutlet[] {
+function agentOutlets(caps: AgentCapabilities | null | undefined): NodeOutlet[] {
   if (!isGated(caps)) return [DEFAULT]
   return [
     { id: PASS_OUTLET, kind: 'pass', label: '', labelKey: 'nodes.outlets.pass' },

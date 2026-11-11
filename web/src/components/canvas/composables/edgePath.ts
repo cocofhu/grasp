@@ -15,14 +15,14 @@ export interface NodeBox {
   height: number
 }
 
-export interface EdgeGeometry {
+interface EdgeGeometry {
   path: string
   labelX: number
   labelY: number
   back: boolean
 }
 
-export interface LaneNode {
+interface LaneNode {
   id: string
   x: number
   y: number
@@ -30,7 +30,7 @@ export interface LaneNode {
   width?: number
 }
 
-export interface LaneEdge {
+interface LaneEdge {
   id: string
   source: string
   target: string
@@ -94,12 +94,12 @@ function dedupeCollinear(pts: [number, number][]): [number, number][] {
   return out
 }
 
-export interface BackRoute {
+interface BackRoute {
   points: [number, number][]
   lane: number
 }
 
-export interface EdgeRouteOptions {
+interface EdgeRouteOptions {
   /** Topological loop flag. When omitted, a target left of its source counts as a loop. */
   back?: boolean
   /** Lowest card bottom under the loop's horizontal run, so the lane clears every card it passes. */
@@ -256,7 +256,7 @@ export function backLaneIndexes(nodes: LaneNode[], edges: LaneEdge[], loops?: Se
   return out
 }
 
-export interface CardBox {
+interface CardBox {
   x: number
   y: number
   width: number

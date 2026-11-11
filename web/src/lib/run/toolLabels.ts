@@ -1,9 +1,9 @@
 import type { AgentTool } from '../shared/types'
 
 /** Kind of a tool call; picks its icon and (for Grasp tools) its stage link. */
-export type ToolKind = 'shell' | 'read' | 'edit' | 'search' | 'web' | 'artifact' | 'plan' | 'preview' | 'page' | 'ask' | 'mcp' | 'other'
+type ToolKind = 'shell' | 'read' | 'edit' | 'search' | 'web' | 'artifact' | 'plan' | 'preview' | 'page' | 'ask' | 'mcp' | 'other'
 
-export interface ToolMeta {
+interface ToolMeta {
   /** i18n key under pages.clarify.tools, or '' to show the raw title. */
   labelKey: string
   kind: ToolKind

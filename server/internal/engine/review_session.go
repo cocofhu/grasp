@@ -154,17 +154,6 @@ func (e *Engine) laneSessionKey(runID, producerID, lane string) string {
 	return runID + "|" + producerID + "|" + lane
 }
 
-func (e *Engine) getOrCreateReviewSession(runID, producerID string, kind sessionKind) *reviewSession {
-	return e.getOrCreateLaneSession(runID, producerID, "", "", kind)
-}
-
-func (e *Engine) getOrCreateLaneSession(runID, producerID, lane, linkID string, kind sessionKind) *reviewSession {
-	key := e.laneSessionKey(runID, producerID, lane)
-	return e.reviewSess.GetOrCreate(key, func() *reviewSession {
-		return e.newReviewSession(runID, producerID, lane, linkID, kind)
-	})
-}
-
 func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind sessionKind) *reviewSession {
 	s := &reviewSession{runID: runID, producerID: producerID, kind: kind, lane: lane, linkID: linkID}
 	fullMsg := "复审消息队列已满,请稍候"

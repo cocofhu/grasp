@@ -28,7 +28,7 @@ export type GateApprovalProductEditorExpose = {
   showPreview?: () => void
 }
 
-export type GateApprovalFeedbackChatExpose = {
+type GateApprovalFeedbackChatExpose = {
   flushDraft?: () => Promise<boolean>
   recordIssue?: (payload: {
     body: string
@@ -189,7 +189,7 @@ export type GateApprovalState = {
   renderMarkdown: (md: string) => string
 }
 
-export type GateApprovalContext = {
+type GateApprovalContext = {
   s: GateApprovalState
   productEditorRef: Ref<GateApprovalProductEditorExpose | null>
   feedbackChatRef: Ref<GateApprovalFeedbackChatExpose | null>

@@ -3,7 +3,7 @@ import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
 import { mergeRunDraft } from '@/lib/run/runDraft'
 import type { ClarifyImage, Workflow } from '@/lib/shared/types'
 
-export function askFieldsFromWorkflow(wf: Pick<Workflow, 'nodes'>): InputField[] {
+function askFieldsFromWorkflow(wf: Pick<Workflow, 'nodes'>): InputField[] {
   const input = (wf.nodes || []).find((n) => n.type === 'input')
   const vars = ((input?.config?.variables as any[]) || []).filter((v) => v && v.name && v.ask)
   return vars.map((v) => ({

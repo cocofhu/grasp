@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue'
 
-export interface AuthUser {
+interface AuthUser {
   username: string
   expiresAt: string
   isAdmin?: boolean

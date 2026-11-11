@@ -13,7 +13,7 @@ import type {
   SettingItem,
 } from '../apiTypes'
 
-export type SettingsResponse = {
+type SettingsResponse = {
   items: SettingItem[]
   brand: BrandSettings
   execution_mode?: 'worktree' | 'sandbox'

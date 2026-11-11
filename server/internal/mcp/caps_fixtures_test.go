@@ -52,11 +52,6 @@ var (
 			{Schema: models.SchemaTestResult, Required: true}, {Schema: models.SchemaReview, Required: true},
 		},
 	}
-	capsPlanReview = func() *models.AgentCapabilities {
-		c := capsWriting(models.SchemaPlan)
-		c.Review = true
-		return c
-	}()
 	capsPreview = &models.AgentCapabilities{
 		Interaction: models.InteractionAuto, Review: true,
 		Tools: []string{models.ToolSetPreview},

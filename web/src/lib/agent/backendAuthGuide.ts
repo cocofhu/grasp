@@ -1,16 +1,16 @@
 import type { BackendId } from '@/lib/shared/regionPolicy'
 
-export type AuthApplyLink = {
+type AuthApplyLink = {
   labelKey: string
   url: string
 }
 
-export type AuthKeySpec = {
+type AuthKeySpec = {
   /** Workspace credential env key (one per backend). */
   key: string
 }
 
-export type BackendAuthGuide = {
+type BackendAuthGuide = {
   backend: BackendId
   keys: AuthKeySpec[]
   /** i18n keys for console path steps (ordered). */
@@ -232,16 +232,10 @@ export function authGuideFor(backend: BackendId, region = ''): BackendAuthGuide 
 
 /** Relative path for backend config file written into Agent workspace/files. */
 export const AGENT_SETTINGS_REL_PATH = 'settings.json'
-export const AGENT_OPENCODE_CONFIG_REL_PATH = 'opencode.json'
+const AGENT_OPENCODE_CONFIG_REL_PATH = 'opencode.json'
 
 export function agentConfigRelPath(backend: BackendId): string {
   return backend === 'opencode' ? AGENT_OPENCODE_CONFIG_REL_PATH : AGENT_SETTINGS_REL_PATH
-}
-
-/** Absolute configRoot path for settings.json (UI display). */
-export function settingsFileAbsPath(configRoot: string, backend: BackendId = 'cursor'): string {
-  const root = configRoot.trim() || '/root/.cursor'
-  return `${root}/${agentConfigRelPath(backend)}`
 }
 
 /** Default JSON placeholder when user switches to custom config mode. */
@@ -271,20 +265,6 @@ export function defaultSettingsPlaceholder(backend: BackendId): string {
       )
     default:
       return '{\n  \n}'
-  }
-}
-
-/** i18n key for backend-specific custom-config guidance (optional). */
-export function customConfigNoteKey(backend: BackendId): string {
-  switch (backend) {
-    case 'claude_code':
-      return 'pages.agentStudio.wizard.apiKey.customConfig.notes.claude'
-    case 'codebuddy':
-      return 'pages.agentStudio.wizard.apiKey.customConfig.notes.codebuddy'
-    case 'opencode':
-      return 'pages.agentStudio.wizard.apiKey.customConfig.notes.opencode'
-    default:
-      return 'pages.agentStudio.wizard.apiKey.customConfig.notes.generic'
   }
 }
 

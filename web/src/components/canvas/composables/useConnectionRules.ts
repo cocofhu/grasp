@@ -16,7 +16,7 @@ export interface ConnectionAttempt {
  * Rejection reasons are i18n keys under canvas.rules. An outlet holds one
  * unconditional edge, so connecting it again replaces that edge (`replaces`).
  */
-export type ConnectionResult = { ok: true; replaces?: string } | { ok: false; reason: string }
+type ConnectionResult = { ok: true; replaces?: string } | { ok: false; reason: string }
 
 const OK: ConnectionResult = { ok: true }
 

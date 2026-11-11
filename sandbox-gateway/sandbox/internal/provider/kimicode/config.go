@@ -45,13 +45,6 @@ func LaunchArgv(model string) []string {
 	return []string{"kimi", "acp"}
 }
 
-// RenderConfig builds config.toml. The document names APIKeyEnv and never
-// contains the key. An empty model leaves default_model unset so the CLI
-// keeps its own default.
-func RenderConfig(baseURL, model string) string {
-	return renderConfig(baseURL, model, "")
-}
-
 // canonicalModel preserves the three saved K3 aliases while sending only the
 // exact IDs supported by the Coding Plan API. Unknown IDs must not reach the
 // vendor, which can silently fall back to a different model.
@@ -138,29 +131,6 @@ func renderConfig(baseURL, model, effort string) string {
 		}
 	}
 	return b.String()
-}
-
-// WriteConfig replaces config.toml under dir. The file mode keeps it private
-// even though the body has no secret. dir is the server-chosen config home,
-// never a model id; reject anything that is not an absolute cleaned path.
-func WriteConfig(dir, baseURL, model string) error {
-	return writeConfig(dir, baseURL, model, "")
-}
-
-func writeConfig(dir, baseURL, model, effort string) error {
-	dir = filepath.Clean(strings.TrimSpace(dir))
-	if !filepath.IsAbs(dir) {
-		return fmt.Errorf("kimi config directory must be an absolute path")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	directory, err := os.OpenRoot(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = directory.Close() }()
-	return writeConfigAt(directory, baseURL, model, effort)
 }
 
 // Keep reads and atomic publication on the same opened directory. Reopening

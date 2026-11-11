@@ -39,12 +39,12 @@ export type AgentStudioDraft = {
 }
 
 export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
-export const DEFAULT_WORKSPACE_DIR = '/root/workspace'
+const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
 export const ARTIFACT_STORE = 'artifact-store'
-export const MEMORY_STORE = 'memory-store'
-export const CONTEXT_STORE = 'context-store'
-export const TASK_SCHEDULER = 'task-scheduler'
+const MEMORY_STORE = 'memory-store'
+const CONTEXT_STORE = 'context-store'
+const TASK_SCHEDULER = 'task-scheduler'
 
 export const AGENT_PLATFORM_MCPS = [
   {
@@ -74,7 +74,7 @@ export function kvToRec(kvs: KV[]): Record<string, string> {
   return out
 }
 
-export function normalizeDraftRegions(d: AgentStudioDraft): void {
+function normalizeDraftRegions(d: AgentStudioDraft): void {
   d.env = recToKV(normalizeRegions(kvToRec(d.env), d.acpBackend, 'preserve-special').env)
 }
 
@@ -178,7 +178,7 @@ export function hydrateStudioDraft(a: Agent): AgentStudioDraft {
   return loaded
 }
 
-export type PlatformPresetKind = 'artifact' | 'memory' | 'context' | 'scheduler'
+type PlatformPresetKind = 'artifact' | 'memory' | 'context' | 'scheduler'
 
 export function platformPresetKind(name: string): PlatformPresetKind | null {
   const n = name.trim()

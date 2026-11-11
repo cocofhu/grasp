@@ -42,16 +42,6 @@ func (c *Coordinator) IsDraining() bool {
 	return c.draining
 }
 
-// Deadline is startedAt + grace; waiting loops should stop at this instant.
-func (c *Coordinator) Deadline() time.Time {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if !c.draining {
-		return time.Now().Add(c.grace)
-	}
-	return c.startedAt.Add(c.grace)
-}
-
 // GraceRemainingSeconds returns seconds left until the grace deadline (min 0).
 func (c *Coordinator) GraceRemainingSeconds() int {
 	c.mu.RLock()

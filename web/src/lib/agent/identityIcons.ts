@@ -14,12 +14,12 @@ export type IdentityColorId =
   | 'purple'
   | 'pink'
 
-export interface IdentityColor {
+interface IdentityColor {
   id: IdentityColorId
   hex: string
 }
 
-export interface IdentityIconSpec {
+interface IdentityIconSpec {
   id: string
   zh: string
   aliases: string[]
@@ -36,8 +36,6 @@ export const IDENTITY_COLORS: IdentityColor[] = [
   { id: 'purple', hex: '#8b5cf6' },
   { id: 'pink', hex: '#ec4899' },
 ]
-
-const DEFAULT_COLOR: IdentityColor = IDENTITY_COLORS[0]!
 
 export const IDENTITY_ICONS: IdentityIconSpec[] = [
   { id: 'folder', zh: '文件夹', aliases: ['folder'], body: '<path d="M4 7.2A1.8 1.8 0 0 1 5.8 5.4h3.7l1.7 1.8h7a1.8 1.8 0 0 1 1.8 1.8v8.2a1.8 1.8 0 0 1-1.8 1.8H5.8A1.8 1.8 0 0 1 4 17.2z"/>' },
@@ -82,15 +80,6 @@ export function identityIcon(id: string | undefined | null): IdentityIconSpec | 
 export function identityColor(id: string | undefined | null): IdentityColor | undefined {
   if (!id) return undefined
   return colorById.get(id as IdentityColorId)
-}
-
-export function isIdentityColor(id: string | undefined | null): id is IdentityColorId {
-  return !!id && colorById.has(id as IdentityColorId)
-}
-
-/** Saved color, otherwise black. Unknown ids stay unset so callers can fall back. */
-export function identityColorOrDefault(id: string | undefined | null): IdentityColor {
-  return identityColor(id) ?? DEFAULT_COLOR
 }
 
 export function searchIdentityIcons(query: string): IdentityIconSpec[] {

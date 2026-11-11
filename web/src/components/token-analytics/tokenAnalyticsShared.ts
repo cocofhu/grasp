@@ -3,7 +3,7 @@ import type { TokenStatsWindow } from '@/lib/shared/types'
 import { clientTimezoneParams } from '@/components/token-analytics/tokenStatsShared'
 
 /** Categorical palette for model/workflow series (distinct hues, purple first). */
-export const TOKEN_CHART_PALETTE = [
+const TOKEN_CHART_PALETTE = [
   '#5b4dff',
   '#22a6b3',
   '#f59e0b',
@@ -196,7 +196,7 @@ export function isDrillable(t: Partial<DrillTarget> | null | undefined): t is Dr
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', CNY: '¥' }
 
-export function currencySymbol(currency?: string): string {
+function currencySymbol(currency?: string): string {
   return CURRENCY_SYMBOL[(currency || 'USD').toUpperCase()] ?? ''
 }
 

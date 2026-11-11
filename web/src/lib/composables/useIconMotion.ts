@@ -1,8 +1,8 @@
 import { nextTick, onBeforeUnmount, onMounted, readonly, ref, watch, type Ref } from 'vue'
 
-export type IconMotionState = 'idle' | 'once' | 'busy'
+type IconMotionState = 'idle' | 'once' | 'busy'
 
-export interface IconMotionOptions {
+interface IconMotionOptions {
   duration: () => number
   busy?: () => boolean
   disabled?: () => boolean
@@ -13,7 +13,7 @@ export interface IconMotionOptions {
 }
 
 /** Explicit hosts also work for status rows that are intentionally not controls. */
-export const iconMotionHostSelector = [
+const iconMotionHostSelector = [
   '[data-icon-motion-host]', '.grasp-status-host', 'button', 'a[href]', 'summary',
   'input', 'select', 'textarea', '[role="button"]', '[role="tab"]',
   '[role="menuitem"]', '[role="option"]', '[tabindex]:not([tabindex="-1"])',

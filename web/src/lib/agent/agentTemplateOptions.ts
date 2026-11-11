@@ -5,7 +5,7 @@
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect.vue'
 
-export function blankTemplateOption(label: string, subtitle: string): AgentTemplateOption {
+function blankTemplateOption(label: string, subtitle: string): AgentTemplateOption {
   return { id: 'blank', name: label, subtitle }
 }
 

@@ -926,18 +926,6 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 	return sess
 }
 
-// reactHistoryHasDialogue reports whether history contains a real turn
-// (non-empty text, questions, or images). A clarify session parked for the
-// user's first message has none.
-func reactHistoryHasDialogue(history []models.ReactMessage) bool {
-	for _, m := range history {
-		if strings.TrimSpace(m.Text) != "" || len(m.Questions) > 0 || len(m.Forms) > 0 || len(m.Images) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // clarifyInjectOpenPrompt is true until a clarify dialogue has completed a
 // real opening LLM turn. Failed / interrupted agent bubbles do not count —
 // retry must still receive the open contract (ReactOpen never chatted).

@@ -11,7 +11,7 @@ import {
 } from '@/lib/agent/agentIO'
 import { useToast } from '@/lib/composables/useToast'
 
-export type ConflictAction = 'overwrite' | 'rename' | 'cancel'
+type ConflictAction = 'overwrite' | 'rename' | 'cancel'
 
 export function useAgentImport(opts: {
   dirty: () => boolean

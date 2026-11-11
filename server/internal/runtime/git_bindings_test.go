@@ -1,11 +1,8 @@
 package runtime
 
 import (
-	"context"
 	"encoding/json"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,7 +12,6 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 func gitSelection(ids ...string) *models.GitBindings {
@@ -111,54 +107,7 @@ func TestGitBindingsSSHKnownHostsComeFromEachKey(t *testing.T) {
 	}
 }
 
-func TestGitBindingsScopeRouting(t *testing.T) {
-	rows := []sandbox.GitCredential{
-		{ID: "first", Kind: "github_https"}, {ID: "preferred", Kind: "github_https", Preferred: true},
-		{ID: "exact", Kind: "github_https", Scope: "https://github.com/team/repo.git"},
-		{ID: "enterprise", Kind: "github_https", Scope: "https://git.example:8443"},
-		{ID: "ssh-first", Kind: "ssh"}, {ID: "ssh-preferred", Kind: "ssh", Preferred: true}, {ID: "ssh-repo", Kind: "ssh", Scope: "git@git.example:team/repo"},
-		{ID: "gl", Kind: "gitlab_https"}, {ID: "gl-exact", Kind: "gitlab_https", Scope: "https://gitlab.com/team/repo"},
-	}
-	for _, tc := range []struct{ repo, kind, want string }{
-		{"https://github.com/team/repo", "github_https", "exact"}, {"https://github.com/team/other", "github_https", "first"},
-		{"http://github.com/team/repo", "github_https", "first"}, {"https://git.example:8443/team/a", "github_https", "enterprise"},
-		{"http://git.example:8443/team/a", "github_https", ""}, {"https://unknown/a", "github_https", ""}, {"", "ssh", ""},
-		{"git@git.example:team/repo.git", "ssh", "ssh-repo"}, {"ssh://git@other/team/repo", "ssh", "ssh-first"},
-		{"https://gitlab.com/team/repo.git", "gitlab_https", "gl-exact"}, {"http://gitlab.com/team/repo.git", "gitlab_https", "gl"},
-	} {
-		got, ok := GitCredentialForRepo(rows, tc.repo, tc.kind)
-		if got.ID != tc.want || ok != (tc.want != "") {
-			t.Fatalf("%s %s = %s, %v; want %s", tc.kind, tc.repo, got.ID, ok, tc.want)
-		}
-	}
-	got, ok := GitCredentialForRepo([]sandbox.GitCredential{{ID: "a", Kind: "ssh"}, {ID: "b", Kind: "ssh"}}, "git@host:repo", "ssh")
-	if !ok || got.ID != "a" {
-		t.Fatal("same scope must keep first selected account")
-	}
-	got, ok = gitCredentialForRepo(rows, "git@gitlab.com:team/repo.git", "gitlab_https", true)
-	if !ok || got.ID != "gl-exact" {
-		t.Fatal("SSH GitLab repository must use scoped HTTP API authorization")
-	}
-	if _, ok := GitCredentialForRepo(rows[8:], "git@gitlab.com:team/repo.git", "gitlab_https"); ok {
-		t.Fatal("transport selection ignored scheme")
-	}
-	for _, tc := range []struct {
-		row  sandbox.GitCredential
-		want string
-	}{
-		{sandbox.GitCredential{Kind: "github_https"}, "https://github.com"}, {sandbox.GitCredential{Kind: "gitlab_https"}, "https://gitlab.com"},
-		{sandbox.GitCredential{Kind: "gitlab_https", Scope: "http://host:8080/repo"}, "http://host:8080"}, {sandbox.GitCredential{Kind: "ssh"}, ""},
-	} {
-		if got := GitCredentialBaseURL(tc.row); got != tc.want {
-			t.Fatalf("origin = %q want %q", got, tc.want)
-		}
-	}
-	if parseGitScope("https://%zz").host != "" {
-		t.Fatal("invalid URL parsed")
-	}
-}
-
-func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
+func TestGitBindingsWorkflowSpecUsesSelectedCatalog(t *testing.T) {
 	root := writeAgent(t, "dev", `{"acpBackend":"cursor","gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com/team/repo"},{"credentialId":"gh"}],"preferredCredentialId":"gh"},"credentialBindings":{"GITLAB_TOKEN":"gl"},"env":{"GITLAB_URL":"https://unselected"}}`)
 	p := newACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, GitCredential: selectedGitTestValue, ModelBinding: testModelBinding}).(*acpProvider)
 	req := NodeReq{RunID: "git-run", NodeID: "n", Token: "token", Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"repo","url":"https://gitlab.com/team/repo.git"}]`, "GITLAB_URL": "https://other"}}
@@ -170,91 +119,9 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 	if !spec.GitBindingsConfigured || len(spec.GitCredentials) != 2 || spec.GitCredentials[0].ID != "gl" || spec.Env["GITLAB_TOKEN"] != "" || spec.Env["GITLAB_URL"] != "" {
 		t.Fatalf("spec = %+v", spec)
 	}
-	if p.gitToken(req) != "gl-secret" || p.gitLabURL(req) != "https://gitlab.com" {
-		t.Fatal("MR gate read workspace/default authorization")
-	}
-	other := req
-	other.Vars = map[string]any{"repos": `[{"name":"other","url":"https://gitlab.com/team/other.git"}]`}
-	if p.gitToken(other) != "" || p.gitLabURL(other) != "" {
-		t.Fatal("repository scope applied to another repo")
-	}
-	var scripts []string
-	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
-		body := execHookBody(command, stdin)
-		scripts = append(scripts, body)
-		if strings.Contains(body, "mr create") {
-			return []byte("https://gitlab.com/team/repo/-/merge_requests/9\n"), nil
-		}
-		return []byte("[]"), nil
-	})
-	defer restore()
-	sb := &sandbox.Sandbox{Host: "127.0.0.1", Port: 1, Password: "test"}
-	if got := p.findOrCreateMR(context.Background(), sb, "/root/workspace/repo", "feature", "https://gitlab.com/team/repo.git"); !strings.Contains(got, "/9") {
-		t.Fatalf("MR = %s", got)
-	}
-	for _, script := range scripts {
-		if !strings.Contains(script, `"${GRASP_GIT_CREDENTIAL_HELPER:-/root/.grasp/git-credentials/helper.py}" exec-cli glab`) || !strings.Contains(script, "--repo 'https://gitlab.com/team/repo.git'") || strings.Contains(script, "gl-secret") || strings.Contains(script, "workspace-unselected") {
-			t.Fatalf("unsafe/wrong MR script: %s", script)
-		}
-	}
 	p.opts.GitCredential = func(string) (GitCredentialValue, bool) { return GitCredentialValue{}, false }
 	if _, err := p.spec(req); err == nil {
 		t.Fatal("invalid selected authorization did not block workflow sandbox")
-	}
-	if p.gitToken(req) != "" {
-		t.Fatal("invalid selected authorization fell back in MR gate")
-	}
-}
-
-func TestFindOrCreateMRUsesSessionGitHelper(t *testing.T) {
-	const defaultHelper = "/root/.grasp/git-credentials/helper.py"
-	for _, mode := range []string{"sandbox", "empty", "worktree"} {
-		t.Run(mode, func(t *testing.T) {
-			dir := t.TempDir()
-			bin := filepath.Join(dir, "bin")
-			if err := os.Mkdir(bin, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			// Inspect the argument received by Python, so shell quoting and the
-			// unset/empty fallback are exercised without a sandbox installation.
-			shim := `#!/bin/sh
-[ "$1" = "$EXPECT_HELPER" ] && [ "$2" = exec-cli ] && [ "$3" = glab ] || exit 1
-[ "$4" = https://gitlab.example/team/repo.git ] && [ "$5" = -- ] && [ "$6" = mr ] || exit 1
-case "$7" in
-  list) printf '[]\n' ;;
-  create) printf 'https://gitlab.example/team/repo/-/merge_requests/7\n' ;;
-  *) exit 1 ;;
-esac
-`
-			if err := os.WriteFile(filepath.Join(bin, "python3"), []byte(shim), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			env := []string{"PATH=" + bin + ":" + os.Getenv("PATH")}
-			expect := defaultHelper
-			switch mode {
-			case "empty":
-				env = append(env, "GRASP_GIT_CREDENTIAL_HELPER=")
-			case "worktree":
-				expect = filepath.Join(dir, "session's private home", "helper.py")
-				env = append(env, "GRASP_GIT_CREDENTIAL_HELPER="+expect)
-			}
-			env = append(env, "EXPECT_HELPER="+expect)
-			calls := 0
-			restore := sandbox.SetExecHook(func(ctx context.Context, _ string, _ int, _ string, stdin io.Reader) ([]byte, error) {
-				calls++
-				cmd := exec.CommandContext(ctx, "bash", "-s")
-				cmd.Stdin = stdin
-				cmd.Env = env
-				return cmd.CombinedOutput()
-			})
-			defer restore()
-			p := newACPProvider(mcp.NewHost(newMemStore()), Options{}).(*acpProvider)
-			sb := &sandbox.Sandbox{Host: "127.0.0.1", Port: 1, Password: "test"}
-			got := p.findOrCreateMR(context.Background(), sb, dir, "feature", "https://gitlab.example/team/repo.git")
-			if got != "https://gitlab.example/team/repo/-/merge_requests/7" || calls != 2 {
-				t.Fatalf("MR=%q calls=%d", got, calls)
-			}
-		})
 	}
 }
 

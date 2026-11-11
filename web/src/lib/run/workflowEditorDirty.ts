@@ -1,19 +1,19 @@
 import type { WFEdge, WFNode } from '../shared/types'
 
 /** Frozen graph snapshot used as the dirty baseline (nodes + edges). */
-export type GraphBaseline = {
+type GraphBaseline = {
   nodes: WFNode[]
   edges: WFEdge[]
 }
 
 /** Frozen metadata snapshot (does not affect toolbar / run-before-save). */
-export type MetaBaseline = {
+type MetaBaseline = {
   name: string
   description: string
   needsRepo: boolean
 }
 
-export type WorkflowDirtySource = {
+type WorkflowDirtySource = {
   nodes: WFNode[]
   edges: WFEdge[]
   name: string
@@ -71,7 +71,7 @@ export function isMetaDirty(
 }
 
 /** saveDraft branch: noop → skip PUT; meta → PUT keep status; graph → PUT (may draft). */
-export type SaveDraftBranch = 'noop' | 'meta' | 'graph'
+type SaveDraftBranch = 'noop' | 'meta' | 'graph'
 
 export function saveDraftBranch(graphDirty: boolean, metaDirty: boolean): SaveDraftBranch {
   if (graphDirty) return 'graph'

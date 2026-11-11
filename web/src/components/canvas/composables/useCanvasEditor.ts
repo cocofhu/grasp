@@ -1,4 +1,4 @@
-import { computed, inject, ref, type InjectionKey, type Ref } from 'vue'
+import { computed, ref, type InjectionKey, type Ref } from 'vue'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
 import { useCanvasHistory } from './useCanvasHistory'
 import { useCanvasClipboard } from './useCanvasClipboard'
@@ -13,7 +13,7 @@ export type AddLink =
   | { kind: 'edge'; edgeId: string }
   | { kind: 'after'; nodeId: string }
 
-export interface CanvasEditorOptions {
+interface CanvasEditorOptions {
   graph: GraphLike
   /** Workspace Agents; null while loading. */
   agents: Ref<CanvasAgent[] | null>
@@ -24,7 +24,7 @@ export interface CanvasEditorOptions {
   notify?: (message: string, action?: NotifyAction) => void
 }
 
-export interface NotifyAction {
+interface NotifyAction {
   label: string
   run: () => void
 }
@@ -414,7 +414,3 @@ export function useCanvasEditor(opts: CanvasEditorOptions) {
 export type CanvasEditor = ReturnType<typeof useCanvasEditor>
 
 export const CANVAS_EDITOR: InjectionKey<CanvasEditor> = Symbol('canvas-editor')
-
-export function useInjectedEditor(): CanvasEditor | null {
-  return inject(CANVAS_EDITOR, null)
-}

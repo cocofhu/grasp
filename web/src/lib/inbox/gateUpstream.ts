@@ -1,6 +1,6 @@
 import { OUTPUT_KEY_TO_ARTIFACT } from '@/lib/run/structuredArtifacts'
 
-export type GateUpstreamRef = { nodeId: string; key: string }
+type GateUpstreamRef = { nodeId: string; key: string }
 
 /** Used by gate editor primary-product resolution. */
 
@@ -14,13 +14,13 @@ export type GatePrimaryProductRef = {
   outputKey?: string
 }
 
-export type NodeExecLike = {
+type NodeExecLike = {
   iteration?: number
   status?: string
   outputs?: Record<string, any>
 }
 
-export type ResolveUpstreamResult = {
+type ResolveUpstreamResult = {
   outputs: Record<string, any> | null
   /** Iteration used for the preview banner (pointer N; null without a pointer). */
   selectedIteration: number | null
@@ -119,7 +119,7 @@ export function listPrimaryProducts(bodyTemplate: string): GatePrimaryProductRef
   return out
 }
 
-export type NodeConfigLike = {
+type NodeConfigLike = {
   id: string
   config?: Record<string, unknown>
 }

@@ -8,7 +8,7 @@ export type HomeLaunchModel = {
   reasoningEffort: string
 }
 
-export type HomeLaunchDecision =
+type HomeLaunchDecision =
   | { action: 'omit'; notice?: 'default' }
   | { action: 'block'; notice: 'blocked' | 'invalid' }
   | { action: 'send'; model: HomeLaunchModel }

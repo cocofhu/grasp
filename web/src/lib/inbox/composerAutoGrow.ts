@@ -44,7 +44,7 @@ export function measureWrappedTextHeight(el: HTMLTextAreaElement, text: string):
   return h
 }
 
-export type ComposerAutoGrowOpts = {
+type ComposerAutoGrowOpts = {
   min: number
   max: number
   /** Placeholder / hint used when the draft is empty. */

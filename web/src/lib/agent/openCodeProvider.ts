@@ -1,21 +1,21 @@
 import type { BackendId } from '@/lib/shared/regionPolicy'
 import { openCodeCatalogKnowsProvider } from '@/lib/agent/openCodeCatalog'
 
-export const OPENCODE_PROVIDER_ENV = 'GRASP_OPENCODE_PROVIDER'
-export const OPENCODE_BASE_URL_ENV = 'GRASP_OPENCODE_BASE_URL'
-export const OPENCODE_MODEL_VISION_ENV = 'GRASP_OPENCODE_MODEL_VISION'
+const OPENCODE_PROVIDER_ENV = 'GRASP_OPENCODE_PROVIDER'
+const OPENCODE_BASE_URL_ENV = 'GRASP_OPENCODE_BASE_URL'
+const OPENCODE_MODEL_VISION_ENV = 'GRASP_OPENCODE_MODEL_VISION'
 export const OPENCODE_MODEL_ENV = 'ACP_BRIDGE_MODEL'
-export const DEFAULT_OPENCODE_PROVIDER = 'openai'
+const DEFAULT_OPENCODE_PROVIDER = 'openai'
 
 /**
  * A vendor id from the OpenCode catalog (models.dev), or `custom` for a gateway
  * absent from it. The catalog holds hundreds and grows without us, so ids are not
  * enumerated here — the picker reads them from the server.
  */
-export type OpenCodeProviderId = string
+type OpenCodeProviderId = string
 
 /** The id `custom` is ours, not the catalog's: it carries a base URL and model. */
-export const OPENCODE_CUSTOM_PROVIDER = 'custom'
+const OPENCODE_CUSTOM_PROVIDER = 'custom'
 
 /**
  * Vendors offered when the catalog cannot be reached, so an offline install still
@@ -85,14 +85,14 @@ export function openCodeModelFromCatalog(
   return models.some((m) => m.id === id)
 }
 
-export type OpenCodeFields = {
+type OpenCodeFields = {
   provider: OpenCodeProviderId
   baseURL: string
   model: string
   vision: boolean
 }
 
-export function openCodeEnvEnabled(value: string | undefined): boolean {
+function openCodeEnvEnabled(value: string | undefined): boolean {
   switch ((value || '').trim().toLowerCase()) {
     case '1':
     case 'true':

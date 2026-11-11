@@ -17,7 +17,7 @@ export type PageResult = {
   state?: PageState
 }
 
-export type ExecutorOptions = {
+type ExecutorOptions = {
   /** Hides Grasp's own UI while the page is read so it never shows up as page content. */
   hideOwnUi?: (hidden: boolean) => void
   settleIdleMs?: number
@@ -101,7 +101,7 @@ function abortError(signal?: AbortSignal): PageResult | null {
 }
 
 /** Resolves once the DOM has been quiet for idleMs, or after maxMs. */
-export function waitForSettle(idleMs: number, maxMs: number, signal?: AbortSignal): Promise<void> {
+function waitForSettle(idleMs: number, maxMs: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     let idle: ReturnType<typeof setTimeout>
     const done = () => {

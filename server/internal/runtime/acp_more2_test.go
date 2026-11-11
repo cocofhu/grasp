@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,9 +56,6 @@ func TestProviderBudgetHelpers(t *testing.T) {
 	}
 
 	// gitToken with no ProfilesRoot -> empty.
-	if pd.gitToken(NodeReq{Config: map[string]any{"agent_profile": "x"}}) != "" {
-		t.Error("gitToken with no profiles root should be empty")
-	}
 }
 
 func TestTruncateText(t *testing.T) {
@@ -109,9 +105,6 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 		t.Fatalf("mcpServers HTTP entry missing type:http (codebuddy skips url-only): %s", s)
 	}
 	// gitToken resolves from workspace credentials.
-	if tok := p.gitToken(req); tok != "tok" {
-		t.Errorf("gitToken = %q, want tok", tok)
-	}
 	// No profile -> nil specs / nil json.
 	if p.mcpServers(NodeReq{}) != nil {
 		t.Error("no-profile mcpServers should be nil")
@@ -165,46 +158,6 @@ func TestSnapshotEvents(t *testing.T) {
 	got = p.snapshotEvents(context.Background(), sb, bracketed)
 	if len(got) != 4 || got[0].Text != "Q" || got[1].Text != "hello-snap" || got[2].Kind != models.AcpKindTimeline || got[3].Kind != models.AcpKindTurnEnd {
 		t.Fatalf("expected re-bracketed snapshot, got %+v", got)
-	}
-}
-
-func TestFindOrCreateMRCreatePath(t *testing.T) {
-	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
-		var script string
-		if stdin != nil {
-			b, _ := io.ReadAll(stdin)
-			script = string(b)
-		}
-		body := command + "\n" + script
-		switch {
-		case strings.Contains(body, "glab mr list"):
-			return []byte("[]"), nil // no existing MR -> take create path
-		case strings.Contains(body, "glab mr create"):
-			return []byte("Creating merge request\nhttps://gitlab.com/g/p/-/merge_requests/9\n"), nil
-		}
-		return []byte(""), nil
-	})
-	defer restore()
-	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{}).(*acpProvider)
-	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-	if url := p.findOrCreateMR(context.Background(), sb, "/root/workspace/p", "feature-x"); url != "https://gitlab.com/g/p/-/merge_requests/9" {
-		t.Fatalf("create MR url = %q", url)
-	}
-}
-
-func TestFirstMRURL(t *testing.T) {
-	if firstMRURL(`[{"web_url":"http://x/1"}]`) != "http://x/1" {
-		t.Error("firstMRURL")
-	}
-	if firstMRURL(`[]`) != "" {
-		t.Error("firstMRURL empty")
-	}
-	if firstMRURL(`not-json`) != "" {
-		t.Error("firstMRURL bad")
-	}
-	if firstMRURL(`[{"other":1}]`) != "" {
-		t.Error("firstMRURL no web_url")
 	}
 }
 

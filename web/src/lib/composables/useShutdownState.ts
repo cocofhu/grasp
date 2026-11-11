@@ -4,9 +4,9 @@ import { applyHealthCommit } from './useServiceCommit'
 
 const BASE = ((import.meta as any).env?.VITE_API_BASE ?? '/api').replace(/\/$/, '')
 
-export type ShutdownMode = 'normal' | 'draining' | 'offline'
+type ShutdownMode = 'normal' | 'draining' | 'offline'
 
-export interface ShutdownHealth {
+interface ShutdownHealth {
   status: string
   ready?: boolean
   message?: string

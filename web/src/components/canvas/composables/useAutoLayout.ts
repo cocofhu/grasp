@@ -7,7 +7,7 @@ export type Size = { width: number; height: number }
 
 export const AGENT_NODE_WIDTH = 240
 export const NODE_WIDTH = 200
-export const LAYOUT_DURATION_MS = 280
+const LAYOUT_DURATION_MS = 280
 
 let elk: InstanceType<typeof ELK> | null = null
 function engine() {

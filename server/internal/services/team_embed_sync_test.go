@@ -20,7 +20,11 @@ func TestTeamEmbedMatchesAgentsSource(t *testing.T) {
 	agentsRoot := filepath.Join(repoRoot, "agents")
 	embedRoot := filepath.Join(repoRoot, "server/internal/services/team_embed")
 
-	for _, name := range services.TeamEmbedPackageNames() {
+	names := []string{services.TeamPMEmbedName}
+	for _, r := range services.TeamEngineerTemplates {
+		names = append(names, r.EmbedName)
+	}
+	for _, name := range names {
 		srcDir := filepath.Join(agentsRoot, name)
 		embDir := filepath.Join(embedRoot, name)
 		if st, err := os.Stat(srcDir); err != nil || !st.IsDir() {

@@ -30,15 +30,6 @@ func ClearSessionCookie(c *gin.Context) {
 	c.SetCookie(CookieName, "", -1, "/", "", secure, true)
 }
 
-// SessionToken reads the cf_session cookie from the request.
-func SessionToken(c *gin.Context) string {
-	token, err := c.Cookie(CookieName)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(token)
-}
-
 // SessionTokens returns each distinct cf_session value in request order.
 // Cookies ignore ports, so script on an app preview port can add its own
 // cf_session with a narrower Path and the browser sends both.

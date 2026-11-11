@@ -48,15 +48,6 @@ func IsPlatformAuthEnvKey(k string) bool {
 	return false
 }
 
-// SecretEnvKeys lists env keys that may only be supplied by workspace
-// credentials: the credential preset keys plus the CLI auth keys they map to.
-// Agent env, shared Agent env, run env and platform sandbox.env never carry them.
-func SecretEnvKeys() []string {
-	out := make([]string, 0, len(credentialEnvKeys)+len(cliAuthEnvKeys))
-	out = append(out, credentialEnvKeys...)
-	return append(out, cliAuthEnvKeys...)
-}
-
 // IsSecretEnvKey reports whether k (exact name) is in SecretEnvKeys.
 func IsSecretEnvKey(k string) bool {
 	k = strings.TrimSpace(k)
@@ -114,4 +105,13 @@ func StripSecretEnvKeys(env map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// SecretEnvKeys lists env keys that may only be supplied by workspace
+// credentials: the credential preset keys plus the CLI auth keys they map to.
+// Agent env, shared Agent env, run env and platform sandbox.env never carry them.
+func SecretEnvKeys() []string {
+	out := make([]string, 0, len(credentialEnvKeys)+len(cliAuthEnvKeys))
+	out = append(out, credentialEnvKeys...)
+	return append(out, cliAuthEnvKeys...)
 }

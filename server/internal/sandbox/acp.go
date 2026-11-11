@@ -816,19 +816,6 @@ func parseErrorMessage(raw json.RawMessage) string {
 	return m.Message
 }
 
-// parseQueueBusy extracts the busy flag from a {op:"queue_state", busy, ...}
-// frame. ok is false when the frame carries no busy field, so callers can
-// ignore malformed/partial snapshots rather than treating them as idle.
-func parseQueueBusy(raw json.RawMessage) (busy, ok bool) {
-	var m struct {
-		Busy *bool `json:"busy"`
-	}
-	if err := json.Unmarshal(raw, &m); err != nil || m.Busy == nil {
-		return false, false
-	}
-	return *m.Busy, true
-}
-
 // WaitForACPReady polls the bridge WebSocket until it accepts a connection.
 // Each probe logs in (POST /api/login) and dials /ws with the returned session
 // cookie, matching the ACP client's handshake. An empty password is an error.

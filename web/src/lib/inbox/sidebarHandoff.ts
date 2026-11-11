@@ -18,16 +18,16 @@ export const SIDEBAR_EARLY_AUTO_MS = 2_000
 
 export type SidebarRunGroup = 'running' | 'auto'
 
-export type SidebarFlightLanding = 'row' | 'heading'
+type SidebarFlightLanding = 'row' | 'heading'
 
-export type SidebarFlightDecision =
+type SidebarFlightDecision =
   | { type: 'stay' }
   | { type: 'place' }
   | { type: 'leave' }
   | { type: 'fly-in'; landing: SidebarFlightLanding }
   | { type: 'fly-back'; landing: SidebarFlightLanding }
 
-export interface SidebarFlightInput {
+interface SidebarFlightInput {
   /** Group last painted, or null when this run was not on screen. */
   previous: SidebarRunGroup | null
   /** Group it belongs in now, or null when it left the unfinished list. */
@@ -71,7 +71,7 @@ export function decideSidebarFlight(input: SidebarFlightInput): SidebarFlightDec
   return { type: 'place' }
 }
 
-export interface SidebarHandoffMark {
+interface SidebarHandoffMark {
   fromNodeId: string
   confirmedAuto: boolean
   /** Automatic node this handoff settled on, when already known. */
@@ -82,7 +82,7 @@ export interface SidebarHandoffMark {
   held?: boolean
 }
 
-export interface SidebarEnterTarget {
+interface SidebarEnterTarget {
   nodeId?: string
   name?: string
 }
@@ -243,7 +243,7 @@ export function applySidebarEnter(
   noteSidebarHandoffOutcome(runId, 'human', undefined, now)
 }
 
-export interface SidebarChainView {
+interface SidebarChainView {
   status?: unknown
   current?: { id?: string; name?: string; mode?: string; kind?: string } | null
 }

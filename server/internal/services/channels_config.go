@@ -168,33 +168,6 @@ func (s *ChannelConfigService) List() ([]ChannelConfigDTO, error) {
 	return out, nil
 }
 
-// GetByID returns one channel DTO or ErrChannelNotFound.
-func (s *ChannelConfigService) GetByID(id string) (ChannelConfigDTO, error) {
-	var row models.ChannelConfig
-	if err := s.db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ChannelConfigDTO{}, ErrChannelNotFound
-		}
-		return ChannelConfigDTO{}, err
-	}
-	return s.attachRuntime(s.toChannelDTO(row)), nil
-}
-
-// GetPrimary returns the primary channel, or nil when there is none.
-func (s *ChannelConfigService) GetPrimary() (*ChannelConfigDTO, error) {
-	var r models.ChannelConfig
-	err := s.db.Where("is_primary = ?", true).
-		Order("created_at asc").First(&r).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	dto := s.attachRuntime(s.toChannelDTO(r))
-	return &dto, nil
-}
-
 // Create inserts a new config. First channel (or first while no primary) becomes
 // primary; when a primary already exists the new row is secondary.
 // Primary election and agent uniqueness run inside a transaction with row locks

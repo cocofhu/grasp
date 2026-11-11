@@ -152,12 +152,6 @@ func authSpecFor(b AcpBackend) authSpec {
 	}
 }
 
-// MergeAuthEnv maps agent-configured API keys into CLI env names and applies
-// CodeBuddy / Trae region (intl vs CN) normalization.
-func MergeAuthEnv(backend AcpBackend, env map[string]string) (map[string]string, error) {
-	return mergeAuthEnv(backend, env, true)
-}
-
 // SettingsFileExists reports whether settings.json is present at the root of the
 // given workspace. Auth gate treats file presence as sufficient; content
 // is not validated or rewritten by the gate.
@@ -192,13 +186,6 @@ func AuthConfigFileExists(workDirSrc string, backend AcpBackend) bool {
 		return OpenCodeConfigFileExists(workDirSrc)
 	}
 	return false
-}
-
-// ResolveSettingsWorkDir picks which workspace root's settings.json wins for the
-// auth gate, matching BuildConfigHome layering: Agent overlay if present, else
-// workspace-shared extend. Empty sharedWorkDir falls back to the Agent directory only.
-func ResolveSettingsWorkDir(agentWorkDir, sharedWorkDir string) string {
-	return ResolveAuthWorkDir(agentWorkDir, sharedWorkDir, BackendCursor)
 }
 
 // ResolveAuthWorkDir is ResolveSettingsWorkDir with backend-aware config files.

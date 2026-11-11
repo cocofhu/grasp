@@ -4,7 +4,7 @@
  * reasons) or are synthesized client-side for socket drops.
  */
 
-export type VncCloseReason = 'idle' | 'desktop-closed' | 'superseded' | 'evicted' | 'disconnect' | string
+type VncCloseReason = 'idle' | 'desktop-closed' | 'superseded' | 'evicted' | 'disconnect' | string
 
 export const VNC_RECONNECT_MAX_ATTEMPTS = 6
 const BASE_DELAY_MS = 1_000

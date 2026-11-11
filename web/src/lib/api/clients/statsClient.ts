@@ -24,7 +24,7 @@ export type GlobalTokenStatsParams = {
   runId?: string
 }
 
-export type TokenUsageEventsParams = GlobalTokenStatsParams & {
+type TokenUsageEventsParams = GlobalTokenStatsParams & {
   page?: number
   pageSize?: number
   sort?: 'time' | 'total' | 'cost' | string

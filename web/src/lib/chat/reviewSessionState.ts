@@ -2,7 +2,7 @@ import { createReviewStateCursor, type ReviewStateVersion, type SessionFrameItem
 import type { AcpEvent, Run } from '@/lib/shared/types'
 
 export type ReviewSessionSnapshot = NonNullable<Run['reactSessions']>[string]
-export type ReviewSessionRun = Pick<Run, 'reactSessions' | 'reviewSessionGeneration'>
+type ReviewSessionRun = Pick<Run, 'reactSessions' | 'reviewSessionGeneration'>
 export type ReviewSessionFrame = ReviewStateVersion & Record<string, unknown> & {
   event?: string
   nodeId?: string
@@ -20,7 +20,7 @@ export type ReviewRecoveryCheckpoint = {
   readonly nodes: ReadonlyMap<string, Clock>
   readonly sessions: ReadonlyMap<string, string>
 }
-export type ReviewRecoveryTask = (checkpoint: ReviewRecoveryCheckpoint, signal: AbortSignal) => Promise<void>
+type ReviewRecoveryTask = (checkpoint: ReviewRecoveryCheckpoint, signal: AbortSignal) => Promise<void>
 type ReviewSessionInput =
   | { kind: 'review'; frame: ReviewSessionFrame }
   | { kind: 'acp'; nodeId: string; events?: readonly AcpEvent[] }

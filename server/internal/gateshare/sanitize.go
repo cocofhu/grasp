@@ -367,16 +367,8 @@ func sanitizeForms(forms []models.ReactForm) []PreviewForm {
 	return out
 }
 
-// SanitizeTurns redacts conversation history for the public ReAct sidebar.
-// Image bytes / blob URLs are replaced with opaque dialogue-scoped indexes;
-// text, annotations, questions and forms pass through verbatim to match the
-// approval page. Image-only human turns are kept.
-func SanitizeTurns(msgs []models.ReactMessage) []PreviewTurn {
-	turns, _ := SanitizeTurnsFrom(msgs, 0)
-	return turns
-}
-
-// SanitizeTurnsFrom is SanitizeTurns with a starting opaque image index.
+// SanitizeTurnsFrom keeps the public fields of each turn, numbering opaque
+// images from imageBase.
 func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn, int) {
 	if len(msgs) == 0 {
 		return nil, imageBase
@@ -464,13 +456,6 @@ func sanitizeTools(tools []models.ReactTool) []models.ReactTool {
 	return out
 }
 
-// SanitizeQueueItems redacts pending FIFO rows for the public ReAct sidebar.
-// Carries sanitized annotations and opaque image indexes (aligned with ActiveItem).
-func SanitizeQueueItems(items []map[string]any) []PreviewQueueItem {
-	out, _ := SanitizeQueueItemsFrom(items, 0)
-	return out
-}
-
 // SanitizeQueueItemsFrom is SanitizeQueueItems with a starting opaque image index.
 func SanitizeQueueItemsFrom(items []map[string]any, imageBase int) ([]PreviewQueueItem, int) {
 	if len(items) == 0 {
@@ -503,12 +488,6 @@ func SanitizeQueueItemsFrom(items []map[string]any, imageBase int) ([]PreviewQue
 		return nil, idx
 	}
 	return out, idx
-}
-
-// SanitizeActiveItem redacts the in-flight turn for polling resume.
-func SanitizeActiveItem(m map[string]any) *PreviewActiveItem {
-	item, _ := SanitizeActiveItemFrom(m, 0)
-	return item
 }
 
 // SanitizeActiveItemFrom is SanitizeActiveItem with a starting opaque image index.

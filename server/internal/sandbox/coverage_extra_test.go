@@ -6,22 +6,6 @@ import (
 	"testing"
 )
 
-func TestSupportsPreviewAndChanges(t *testing.T) {
-	var nilC *Capabilities
-	if nilC.supportsPreview() || nilC.supportsChanges() {
-		t.Fatal("nil caps should be false")
-	}
-	c := &Capabilities{}
-	if c.supportsPreview() || c.supportsChanges() {
-		t.Fatal("empty caps should be false")
-	}
-	c.Preview.VNC = true
-	c.Changes.Endpoint = "/api/changes"
-	if !c.supportsPreview() || !c.supportsChanges() {
-		t.Fatal("expected supports true")
-	}
-}
-
 func TestAggregateFrames(t *testing.T) {
 	frames := []json.RawMessage{
 		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"hello"}}}}`),

@@ -1,7 +1,7 @@
 import type { OutputCard } from '@/lib/shared/types'
 
 /** Fields the visual-HTML recognizer needs — keeps the helper a pure function. */
-export type VisualHtmlCardInput = Pick<
+type VisualHtmlCardInput = Pick<
   OutputCard,
   'outputKey' | 'artifactName' | 'structuredArtifactName' | 'markdown' | 'jsonSnapshot'
 >
@@ -34,7 +34,7 @@ export function parseOutputCardDoc(card: Pick<OutputCard, 'jsonSnapshot'>): unkn
   }
 }
 
-export type IsVisualHtmlCardOptions = {
+type IsVisualHtmlCardOptions = {
   /** Already-fetched artifact body, if any. */
   artifactHtml?: string
   /**

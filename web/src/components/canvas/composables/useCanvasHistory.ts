@@ -4,12 +4,12 @@ import type { WFEdge, WFNode } from '@/lib/shared/types'
 export const HISTORY_LIMIT = 100
 export const COALESCE_MS = 500
 
-export interface GraphSnapshotTarget {
+interface GraphSnapshotTarget {
   nodes: WFNode[]
   edges: WFEdge[]
 }
 
-export interface CanvasHistoryOptions {
+interface CanvasHistoryOptions {
   limit?: number
   coalesceMs?: number
 }
@@ -140,5 +140,3 @@ export function useCanvasHistory(graph: GraphSnapshotTarget, opts: CanvasHistory
     },
   }
 }
-
-export type CanvasHistory = ReturnType<typeof useCanvasHistory>

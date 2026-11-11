@@ -11,8 +11,8 @@ import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 
 export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
-export type SoloPhase = '' | 'preparing' | 'running'
-export type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
+type SoloPhase = '' | 'preparing' | 'running'
+type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
 const SANDBOX_POLL_MS = 2500
 // Bridge liveness is not forwarded, so a long tool call can be silent: a quiet
@@ -47,7 +47,7 @@ function queueItem(raw: any): SoloQueueItem {
  * active turn streamed over the session WebSocket (which replays the running
  * turn on reconnect, so a dropped socket only pauses the view).
  */
-export type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
+type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
   | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
   soloChatProtocols?: string[]
 }

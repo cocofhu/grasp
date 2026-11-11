@@ -1,4 +1,4 @@
-import type { Project, SessionRepo, SoloRepoChoice, SoloSession } from '@/lib/api/apiTypes'
+import type { SessionRepo, SoloRepoChoice, SoloSession } from '@/lib/api/apiTypes'
 
 type RepoSource = Pick<SoloSession, 'repos' | 'project' | 'projectId' | 'branch'> | null | undefined
 
@@ -49,8 +49,4 @@ export function soloCreateChoices(ids: string[], branches: Record<string, string
 
 export function branchOfRepo(repo: Pick<SessionRepo, 'branch'>, remoteDefault: string): string {
   return repo.branch?.trim() || remoteDefault
-}
-
-export function selectedProjectNames(ids: string[], projects: Pick<Project, 'id' | 'name'>[]): string[] {
-  return ids.map((id) => projects.find((project) => project.id === id)?.name || id)
 }

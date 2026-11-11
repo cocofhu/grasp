@@ -218,20 +218,6 @@ func PackConfigHomeTarGz(hostDir string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// PackSSHInjectTarGz builds a .tar.gz containing optional id_rsa and/or
-// known_hosts entries for extraction into SSHInjectStagingDir. Returns
-// (nil, nil) when both inputs are empty after trim.
-func PackSSHInjectTarGz(privateKey, knownHosts string) ([]byte, error) {
-	return PackSSHInjectBundle(privateKey, knownHosts)
-}
-
-// PackSSHInjectBundle packs the legacy host SSH files. Per-repository
-// credential manifests are no longer produced; Agent Git authorization is the
-// git/ catalog from packGitInjectBundle.
-func PackSSHInjectBundle(privateKey, knownHosts string) ([]byte, error) {
-	return packGitInjectBundle(privateKey, knownHosts, false, nil)
-}
-
 // packGitInjectBundle preserves legacy host SSH files while carrying an
 // explicit Agent catalog (including an empty selection) as root-only files.
 func packGitInjectBundle(privateKey, knownHosts string, configured bool, credentials []GitCredential) ([]byte, error) {

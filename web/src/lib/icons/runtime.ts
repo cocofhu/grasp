@@ -9,7 +9,7 @@ const HOST = 'button,a[href],summary,[role="button"],[role="tab"],[data-icon-hos
 const ICON = '.app-icon[data-icon]'
 const escapeAttribute = (value: string) => value.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-export type RuntimeIconOptions = { className?: string; busy?: boolean; enter?: boolean }
+type RuntimeIconOptions = { className?: string; busy?: boolean; enter?: boolean }
 
 /** All names and paths come from the checked-in catalog; caller content never becomes SVG markup. */
 export function runtimeIcon(name: string, size = 16, options: RuntimeIconOptions = {}): string {

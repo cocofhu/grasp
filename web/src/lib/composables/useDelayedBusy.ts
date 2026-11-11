@@ -5,13 +5,13 @@ import {
   type LoadingMode,
 } from '../shared/loadingTypes'
 
-export type DelayedBusyOptions = {
+type DelayedBusyOptions = {
   mode?: LoadingMode | (() => LoadingMode) | Ref<LoadingMode>
   showAfterMs?: number
   minVisibleMs?: number
 }
 
-export type DelayedBusyController = {
+type DelayedBusyController = {
   busy: Ref<boolean>
   showUi: Ref<boolean>
   setBusy: (next: boolean) => void

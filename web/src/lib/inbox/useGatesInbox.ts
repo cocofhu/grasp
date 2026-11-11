@@ -81,7 +81,7 @@ import {
   type HomeApproveHandoff,
 } from '@/lib/run/homeApproveHandoff'
 import type GateApproval from '@/components/run/GateApproval.vue'
-import type { AcpEvent, AgentPart, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
+import type { AcpEvent, AgentPart, Gate, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
 import { ingestDialogue, ingestDialogues } from '@/lib/chat/dialogueStore'
 import {
@@ -3813,7 +3813,6 @@ async function onClarifyQueueReorder(itemIds: string[]) {
     console.warn('reactQueueReorder failed', e?.message || e)
   }
 }
-
 
 function onFocus() {
   peek({ source: 'focus' })

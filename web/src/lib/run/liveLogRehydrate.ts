@@ -3,7 +3,7 @@ export const REHYDRATE_TIMEOUT_MS = 10_000
 
 export type RehydrateStatus = 'idle' | 'loading' | 'ready' | 'error'
 
-export type NodeEventsFetchResult = 'ok' | 'error' | 'stale'
+type NodeEventsFetchResult = 'ok' | 'error' | 'stale'
 
 /** Boot "waiting for first event" is only valid after a successful rehydrate. */
 export function allowBootEmptyState(rehydrate: RehydrateStatus | undefined | null): boolean {
@@ -33,7 +33,7 @@ export function resolveRehydrateAfterFetch(
   return result === 'ok' ? 'ready' : 'error'
 }
 
-export type RehydrateOrchestratorOptions = {
+type RehydrateOrchestratorOptions = {
   timeoutMs?: number
   /** Resolve ok/error; AbortError (or aborted signal) is treated as stale. */
   fetch: (signal: AbortSignal) => Promise<'ok' | 'error'>

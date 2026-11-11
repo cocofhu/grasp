@@ -20,7 +20,7 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof LoadingTimeoutError || (err instanceof Error && err.name === 'LoadingTimeoutError')
 }
 
-export type TimeoutController = {
+type TimeoutController = {
   signal: AbortSignal
   readonly timedOut: boolean
   abort: () => void
@@ -76,7 +76,7 @@ export function terminalFromCatch(err: unknown, timedOut: boolean): LoadingTermi
   return 'error'
 }
 
-export type GenerationGate = {
+type GenerationGate = {
   next: () => number
   isCurrent: (mine: number) => boolean
   readonly current: number

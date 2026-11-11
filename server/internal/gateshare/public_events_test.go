@@ -96,26 +96,6 @@ func TestSanitizeToolTitle(t *testing.T) {
 	}
 }
 
-func TestSanitizeTurnsReducesAgentTools(t *testing.T) {
-	turns := SanitizeTurns([]models.ReactMessage{
-		{Role: "agent", Text: "ok", Tools: []models.ReactTool{{Title: "Read src/secret.ts", Status: "completed"}, {Title: "/x", Status: "nope"}}},
-		{Role: "human", Text: "hi", Tools: []models.ReactTool{{Title: "Shell"}}},
-	})
-	if len(turns) != 2 {
-		t.Fatalf("turns: %+v", turns)
-	}
-	want := []models.ReactTool{{Title: "Read", Status: "completed"}, {Title: "tool"}}
-	if len(turns[0].Tools) != 2 || turns[0].Tools[0] != want[0] || turns[0].Tools[1] != want[1] {
-		t.Fatalf("agent tools: %+v", turns[0].Tools)
-	}
-	if turns[0].Parts != nil {
-		t.Fatalf("no parts expected: %+v", turns[0].Parts)
-	}
-	if turns[1].Tools != nil {
-		t.Fatalf("human turns carry no tools: %+v", turns[1].Tools)
-	}
-}
-
 func TestSanitizeLiveEventsCapsTools(t *testing.T) {
 	var ev []models.AcpEvent
 	for i := 0; i < models.MaxReactTools+5; i++ {
@@ -133,14 +113,6 @@ func TestSanitizeLiveEventsKeepsLongThought(t *testing.T) {
 	ev := SanitizeLiveEvents([]models.AcpEvent{{Kind: "thought", Text: long}})
 	if len(ev) != 1 || ev[0].Text != long {
 		t.Fatalf("thought cut: got %d runes", len([]rune(ev[0].Text)))
-	}
-}
-
-func TestSanitizeTurnsKeepsTextVerbatim(t *testing.T) {
-	long := strings.Repeat("长", 20000) + " http://10.1.2.3/api/x run-0123abcd"
-	turns := SanitizeTurns([]models.ReactMessage{{Role: "agent", Text: long}})
-	if len(turns) != 1 || turns[0].Text != long {
-		t.Fatal("turn text must match the approval page verbatim")
 	}
 }
 
@@ -295,31 +267,5 @@ func TestFilterPublicBrokerFrameLive(t *testing.T) {
 	}
 	if _, ok := FilterPublicBrokerFrame(raw, "other", base(0)); ok {
 		t.Fatal("other node must drop")
-	}
-}
-
-func TestSanitizeTurnsReducesAgentParts(t *testing.T) {
-	turns := SanitizeTurns([]models.ReactMessage{
-		{Role: "agent", Text: "ok", Parts: []models.AcpPart{
-			{Kind: "tool", Title: "Read src/secret.ts", Status: "completed", Summary: "src/secret.ts", Input: "in", Output: "out"},
-			{Kind: "message", Text: "ok"},
-		}},
-		{Role: "human", Text: "hi", Parts: []models.AcpPart{{Kind: "message", Text: "x"}}},
-	})
-	if len(turns) != 2 || len(turns[0].Parts) != 2 || turns[1].Parts != nil {
-		t.Fatalf("turns: %+v", turns)
-	}
-	if turns[0].Parts[0] != (models.AcpPart{Kind: "tool", Title: "Read", Status: "completed"}) {
-		t.Fatalf("tool part: %+v", turns[0].Parts[0])
-	}
-	var many []models.AcpPart
-	for range maxPublicParts + 5 {
-		many = append(many, models.AcpPart{Kind: "message", Text: "m"})
-	}
-	if got := SanitizeParts(many); len(got) != maxPublicParts {
-		t.Fatalf("cap: %d", len(got))
-	}
-	if SanitizeParts([]models.AcpPart{{Kind: "x"}}) != nil {
-		t.Fatal("unknown kinds dropped")
 	}
 }

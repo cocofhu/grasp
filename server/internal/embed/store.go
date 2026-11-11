@@ -215,27 +215,6 @@ func (s *Store) ExchangeTicket(ticket string) (*Claims, string, time.Time, error
 	return claims, token, exp, nil
 }
 
-// CreateSession mints a drawer bearer token for already-validated claims.
-func (s *Store) CreateSession(c Claims) (string, time.Time, error) {
-	if s == nil || s.db == nil {
-		return "", time.Time{}, errors.New("embed store unavailable")
-	}
-	var (
-		token string
-		exp   time.Time
-	)
-	now := s.now()
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var err error
-		token, exp, err = createSessionTx(tx, c, now)
-		return err
-	})
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	return token, exp, nil
-}
-
 func createSessionTx(tx *gorm.DB, c Claims, now time.Time) (string, time.Time, error) {
 	if !validClaims(c) {
 		return "", time.Time{}, ErrInvalid
@@ -284,15 +263,6 @@ func (s *Store) LookupSession(token string) (*Claims, bool) {
 		Lane:           row.Lane,
 		ExpiresAt:      row.ExpiresAt,
 	}, true
-}
-
-// InvalidateRun drops every ticket and session for a run.
-func (s *Store) InvalidateRun(runID string) {
-	if s == nil || s.db == nil || strings.TrimSpace(runID) == "" {
-		return
-	}
-	_ = s.db.Where("run_id = ?", runID).Delete(&models.EmbedTicket{}).Error
-	_ = s.db.Where("run_id = ?", runID).Delete(&models.EmbedSession{}).Error
 }
 
 // InvalidateShare drops sessions derived from a share link token hash.

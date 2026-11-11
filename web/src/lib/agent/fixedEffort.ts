@@ -1,7 +1,7 @@
 import catalog from './opencodeVariants.json'
 import providerCatalog from '../../../../server/internal/modelrouting/provider_efforts.json'
 
-export type OpenCodeVariantModel = { spell: string; variants: string[] }
+type OpenCodeVariantModel = { spell: string; variants: string[] }
 
 export const openCodeVariantCatalog = catalog as Record<string, OpenCodeVariantModel>
 

@@ -1,23 +1,8 @@
 /** Shared ECharts chart chrome aligned with Token Analytics (用量统计). */
 import { theme } from '@/lib/shared/theme'
 import { fmtCompactTokenCount } from '@/lib/run/tokenUsage'
-import { cssTokenColor } from '@/components/run/mermaidTheme'
 
-/** Fallbacks match `--c-elevated` in global.css when the token cannot be read. */
-export const RANK_TRACK_LIGHT = 'rgb(244, 244, 245)'
-export const RANK_TRACK_DARK = 'rgb(28, 28, 33)'
-
-/**
- * Unfilled rank-bar track for canvas. `rgb(var(--c-elevated))` is not a color
- * ECharts can paint, so resolve the channel token (or the theme fallback) to rgb.
- * Reads `theme` so chart option computeds rerun after a light/dark toggle.
- */
-export function rankTrackColor(): string {
-  const light = theme.value === 'light'
-  return cssTokenColor('--c-elevated', light ? RANK_TRACK_LIGHT : RANK_TRACK_DARK)
-}
-
-export const CHART_AXIS = {
+const CHART_AXIS = {
   axisLine: { show: false },
   axisTick: { show: false },
   axisLabel: { color: '#9aa1ad', fontSize: 10 },
@@ -54,9 +39,9 @@ export const TREND_CHART_GRID = {
   containLabel: false,
 }
 
-export const ECHARTS_TOOLTIP_CLASS = 'token-stats-echarts-tooltip'
+const ECHARTS_TOOLTIP_CLASS = 'token-stats-echarts-tooltip'
 
-export type ChartTone = {
+type ChartTone = {
   axisLabel: string
   splitLine: string
   legend: string

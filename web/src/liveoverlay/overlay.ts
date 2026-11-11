@@ -116,7 +116,7 @@ function isEditable(t: EventTarget | null): boolean {
 }
 
 /** Union of visible child boxes (display:contents wrappers have none). */
-export function wrapperRect(w: Wrapper): DOMRect | null {
+function wrapperRect(w: Wrapper): DOMRect | null {
   let l = Infinity
   let t = Infinity
   let r = -Infinity
@@ -135,7 +135,7 @@ export function wrapperRect(w: Wrapper): DOMRect | null {
 }
 
 /** Theme matching the page background, or '' when the page paints none. */
-export function pageTheme(): 'light' | 'dark' | '' {
+function pageTheme(): 'light' | 'dark' | '' {
   for (const el of [document.body, document.documentElement]) {
     if (!el) continue
     const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]*)\)/)

@@ -240,23 +240,6 @@ func copyOutputs(outputs map[string]any) map[string]any {
 	return out
 }
 
-// OmitLargeJSONSnapshots drops keys ending in "_json" (inline structured
-// product snapshots such as clarified_requirement_json). Smaller rendered
-// markdown keys and page HTML snapshots are kept for this round.
-func OmitLargeJSONSnapshots(outputs map[string]any) map[string]any {
-	if outputs == nil {
-		return nil
-	}
-	out := make(map[string]any, len(outputs))
-	for k, v := range outputs {
-		if strings.HasSuffix(k, "_json") {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 // ClarifyContext loads the react conversation for inbox-context clarify branch.
 func (s *RunService) ClarifyContext(runID, nodeID string, iteration int) (models.ReactConversation, models.Run, bool) {
 	var conv models.ReactConversation

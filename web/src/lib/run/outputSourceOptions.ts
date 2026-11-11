@@ -1,7 +1,7 @@
 import type { WFEdge, WFNode } from '../shared/types'
 import { productArtifactsForNode } from './productNodeArtifacts'
 
-export interface OutputSourceOption {
+interface OutputSourceOption {
   value: string
   label: string
 }

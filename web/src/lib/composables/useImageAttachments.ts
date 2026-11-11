@@ -14,7 +14,7 @@ import {
   type ReadAttachment,
 } from '@/lib/shared/attachments'
 
-export type AttachNotice = { kind: 'error' | 'ok'; text: string } | null
+type AttachNotice = { kind: 'error' | 'ok'; text: string } | null
 
 /** Shared paste/upload/preview/delete attachment logic (any type + 50 MiB gate). */
 export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number; attachments?: Ref<ClarifyImage[]>; retainUrl?: boolean }) {

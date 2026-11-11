@@ -2,7 +2,7 @@
 const NODE_CONVERSATION = /^\/runs\/([^/]+)\/nodes\/([^/]+)\/?$/
 
 /** Placeholder when a launch does not yet know the parked node id. */
-export const UNKNOWN_CONVERSATION_NODE = 'incoming'
+const UNKNOWN_CONVERSATION_NODE = 'incoming'
 
 export function nodeConversationPath(runId: string, nodeId?: string): string {
   const node = (nodeId || '').trim() || UNKNOWN_CONVERSATION_NODE

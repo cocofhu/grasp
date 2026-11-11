@@ -22,6 +22,23 @@ func TestIsPlatformAuthEnvKey(t *testing.T) {
 	}
 }
 
+func TestOverlayEnv(t *testing.T) {
+	got := OverlayEnv(
+		map[string]string{"FEATURE": "s", "SHARED": "1", " ": "x"},
+		map[string]string{"FEATURE": "a"},
+	)
+	if got["FEATURE"] != "a" || got["SHARED"] != "1" || len(got) != 2 {
+		t.Fatalf("agent wins: %#v", got)
+	}
+}
+
+func TestStripSecretEnvKeys(t *testing.T) {
+	got := StripSecretEnvKeys(map[string]string{"GITHUB_TOKEN": "t", "CURSOR_API_KEY": "c", "ACP_DEEPSEEK_API_KEY": "dsh", "ACP_DEEPSEEK_HARNESS_API_KEY": "dsh-harness", "FEATURE": "1"})
+	if len(got) != 1 || got["FEATURE"] != "1" {
+		t.Fatalf("got %#v", got)
+	}
+}
+
 func TestIsSecretEnvKey(t *testing.T) {
 	for _, k := range SecretEnvKeys() {
 		if !IsSecretEnvKey(k) {
@@ -40,22 +57,5 @@ func TestIsSecretEnvKey(t *testing.T) {
 		if IsSecretEnvKey(k) {
 			t.Fatalf("%s must not be secret env key", k)
 		}
-	}
-}
-
-func TestOverlayEnv(t *testing.T) {
-	got := OverlayEnv(
-		map[string]string{"FEATURE": "s", "SHARED": "1", " ": "x"},
-		map[string]string{"FEATURE": "a"},
-	)
-	if got["FEATURE"] != "a" || got["SHARED"] != "1" || len(got) != 2 {
-		t.Fatalf("agent wins: %#v", got)
-	}
-}
-
-func TestStripSecretEnvKeys(t *testing.T) {
-	got := StripSecretEnvKeys(map[string]string{"GITHUB_TOKEN": "t", "CURSOR_API_KEY": "c", "ACP_DEEPSEEK_API_KEY": "dsh", "ACP_DEEPSEEK_HARNESS_API_KEY": "dsh-harness", "FEATURE": "1"})
-	if len(got) != 1 || got["FEATURE"] != "1" {
-		t.Fatalf("got %#v", got)
 	}
 }

@@ -41,7 +41,7 @@ function cleanIds(ids: string[]): string[] {
 }
 
 /** Ordered repository ids from the last launch. Falls back to the old single id. */
-export function readLastProjects(): string[] {
+function readLastProjects(): string[] {
   try {
     const raw = localStorage.getItem(PROJECTS_KEY)
     if (raw) {
@@ -55,7 +55,7 @@ export function readLastProjects(): string[] {
   return one ? [one] : []
 }
 
-export function writeLastProjects(ids: string[]) {
+function writeLastProjects(ids: string[]) {
   const clean = cleanIds(ids)
   try {
     if (clean.length) localStorage.setItem(PROJECTS_KEY, JSON.stringify(clean))

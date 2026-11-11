@@ -49,7 +49,7 @@ export function reviewDefaultRightPx(workspace: number): number {
   return clampOuterRight(raw, workspace, false).width
 }
 
-export type OuterSashMem = { width: number; fullOpen: boolean }
+type OuterSashMem = { width: number; fullOpen: boolean }
 
 export function clampOuterRight(
   px: number,

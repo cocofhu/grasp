@@ -9,8 +9,8 @@ export interface FlowViewport {
 export const DEFAULT_FLOW_VIEWPORT: FlowViewport = { x: 0, y: 0, zoom: 1 }
 
 /** Dot spacing and diameter, matching the previous Background props. */
-export const DOT_GAP = 16
-export const DOT_SIZE = 1.2
+const DOT_GAP = 16
+const DOT_SIZE = 1.2
 
 export interface NodeBounds {
   x: number
@@ -19,7 +19,7 @@ export interface NodeBounds {
   height: number
 }
 
-export interface DotGeometry {
+interface DotGeometry {
   cx: number
   cy: number
   r: number

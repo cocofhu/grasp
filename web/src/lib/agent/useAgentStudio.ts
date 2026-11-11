@@ -21,7 +21,7 @@ import {
 import { capabilityIssueKey, validateCapabilities } from '@/lib/workflow/agentCapabilities'
 import { isProtectedOnboardingAgentName } from '@/lib/pm/onboardingWizard'
 
-export type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'data' | 'test'
+type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'data' | 'test'
 const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'capabilities', 'meta', 'data', 'test']
 
 function isStudioTab(q: unknown): q is StudioTab {

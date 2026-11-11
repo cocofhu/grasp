@@ -5,7 +5,7 @@ import { EMBED_IMAGE_MESSAGE } from './embedChat'
 /** Provided by the embed chat so ClarifyChat opens the page-level window instead of AppModal. */
 export const EMBED_IMAGE_PREVIEW_KEY: InjectionKey<EmbedImagePreview> = Symbol('embedImagePreview')
 
-export type EmbedImagePreview = {
+type EmbedImagePreview = {
   open: (src: string, label: string) => void
   close: () => void
 }
@@ -48,7 +48,7 @@ function clipLabel(label: string): string {
   return label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180)
 }
 
-export type EmbedImagePreviewApi = EmbedImagePreview & { dispose: () => void }
+type EmbedImagePreviewApi = EmbedImagePreview & { dispose: () => void }
 
 /**
  * Chat iframe side. `post` notifies the preview page to open or close the shell

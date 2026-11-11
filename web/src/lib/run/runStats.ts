@@ -15,7 +15,7 @@ const HUMAN_WAIT_TYPES: ReadonlySet<NodeType> = new Set(['human_gate'])
 export type SingleDimension = 'process' | 'node' | 'type'
 export type MultiDimension = 'node' | 'type'
 
-export interface ProcessAtom {
+interface ProcessAtom {
   nodeId: string
   idxInNode: number
   iteration: number
@@ -31,7 +31,7 @@ export interface ProcessAtom {
   usageByModel?: TokenUsageByModel | null
 }
 
-export interface StatItem {
+interface StatItem {
   key: string
   label: string
   type: NodeType
@@ -48,7 +48,7 @@ export interface StatItem {
   totalTokens: number | null
 }
 
-export interface SingleRunSummary {
+interface SingleRunSummary {
   wallSec: number
   nodeSumSec: number
   gapSec: number
@@ -59,14 +59,14 @@ export interface SingleRunSummary {
   tokenRate: string | null
 }
 
-export interface MultiRunItem extends StatItem {
+interface MultiRunItem extends StatItem {
   /** Average duration across runs that contain this key (rounded seconds). */
   avgSec: number
   /** Number of selected runs that contribute at least one process for this key. */
   runHits: number
 }
 
-export interface MultiRunSummary {
+interface MultiRunSummary {
   wallSumSec: number
   processCount: number
   selectedCount: number

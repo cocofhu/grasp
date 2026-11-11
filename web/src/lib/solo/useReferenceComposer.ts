@@ -5,7 +5,7 @@ import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, par
 import type { ReferenceTab } from './useReferenceSearch'
 
 /** What the composer needs from a mounted ReferencePicker. */
-export type ReferencePickerHandle = {
+type ReferencePickerHandle = {
   move: (delta: number) => void
   confirm: () => boolean
   cycleTab: (delta: number) => void

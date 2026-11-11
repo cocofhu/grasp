@@ -9,7 +9,7 @@
  * onopen, protocol, readyState.
  */
 
-export type CtrlTextHandler = (data: string) => void
+type CtrlTextHandler = (data: string) => void
 
 type MsgHandler = ((ev: MessageEvent) => void) | null
 type EvHandler = ((ev: Event) => void) | null

@@ -23,7 +23,7 @@ type Sent = {
 export type RestoreUnsent = (sent: Sent, notice: string, opts?: { autoRetryOnResume?: boolean }) => void
 
 /** The chat surface hosts reach through reviewChatRef. */
-export type VisitEndedChat = { restoreUnsentQueued?: RestoreUnsent } | null | undefined
+type VisitEndedChat = { restoreUnsentQueued?: RestoreUnsent } | null | undefined
 
 /**
  * Notice for a clarify reply refused with 409 clarify_visit_ended, or null for

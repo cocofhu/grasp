@@ -26,7 +26,7 @@ let seq = 0
  * Rows with server identity. Streaming agent rows run, the rest are sealed;
  * a sealed reply without an outcome is ok (interrupted when flagged).
  */
-export function dialogueRows(turns: RowInput[], iteration = 1): DialogueRow[] {
+function dialogueRows(turns: RowInput[], iteration = 1): DialogueRow[] {
   const replies: Record<string, number> = {}
   return turns.map((t, i) => {
     const phase = t.phase ?? (t.role === 'agent' && t.streaming ? 'running' : 'sealed')

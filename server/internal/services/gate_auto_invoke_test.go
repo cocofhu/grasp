@@ -250,45 +250,6 @@ func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 	}
 }
 
-func TestResolveMainThreadPrefersWritableUser(t *testing.T) {
-	db := setupPmDB(t)
-	skills := NewAgentService(t.TempDir())
-	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("GateAutoThread", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
-		t.Fatal(err)
-	}
-	pm := NewPmService(db, skills)
-	en := true
-	agent := "pm-agent"
-	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := pm.CreateThread("qq:guild:ch1", "频道", agent, models.ChatThreadKindUser); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pm.CreateCronThread(agent, "cron"); err != nil {
-		t.Fatal(err)
-	}
-	human, err := pm.CreateThread("alice", "主会话", agent, models.ChatThreadKindUser)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
-	got, err := svc.resolveMainThread()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ID != human.ID {
-		t.Fatalf("want human thread %s, got %s (user=%s kind=%s)", human.ID, got.ID, got.UserID, got.Kind)
-	}
-}
-
 func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
@@ -322,32 +283,5 @@ func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 	})
 	if !ok {
 		t.Fatalf("truthy after set_var should enqueue, reason=%s", reason)
-	}
-}
-
-func TestResolveMainThreadCreatesWhenAbsent(t *testing.T) {
-	db := setupPmDB(t)
-	skills := NewAgentService(t.TempDir())
-	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("GateAutoCreateThr", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
-		t.Fatal(err)
-	}
-	pm := NewPmService(db, skills)
-	en := true
-	agent := "pm-agent"
-	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
-	got, err := svc.resolveMainThread()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.UserID != gateAutoThreadUser || got.Kind != models.ChatThreadKindUser {
-		t.Fatalf("created thread=%+v", got)
 	}
 }

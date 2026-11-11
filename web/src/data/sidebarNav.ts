@@ -1,7 +1,7 @@
 import { isNodeConversationPath } from '@/lib/run/nodeConversation'
 
 export type SidebarNavItem = { to: string; icon: string; labelKey: string }
-export type SidebarNavGroup = { titleKey?: string; items: SidebarNavItem[] }
+type SidebarNavGroup = { titleKey?: string; items: SidebarNavItem[] }
 
 /** Workspace primary nav: Home / Board / Workflows / Usage / Settings. Pending items live under the nav, not as a tab. */
 export const sidebarNavGroups: SidebarNavGroup[] = [

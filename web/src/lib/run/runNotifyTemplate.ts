@@ -16,9 +16,7 @@ export const RUN_NOTIFY_PLACEHOLDERS = [
   '{title}',
 ] as const
 
-export type RunNotifyPlaceholder = (typeof RUN_NOTIFY_PLACEHOLDERS)[number]
-
-export interface RunNotifyPreviewContext {
+interface RunNotifyPreviewContext {
   workspace: string
   workflow: string
   runId: string

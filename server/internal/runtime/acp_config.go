@@ -244,30 +244,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 // The name is used only to gate the convention doc rule and as the UI default.
 const reservedArtifactStore = "artifact-store"
 
-// gitToken uses only the Agent's explicitly selected Git authorizations.
-func (c *acpProvider) gitToken(req NodeReq) string {
-	credential, _ := c.selectedGitLabCredential(req)
-	return credential.Secret
-}
-
-func (c *acpProvider) gitLabURL(req NodeReq) string {
-	credential, ok := c.selectedGitLabCredential(req)
-	if !ok {
-		return ""
-	}
-	return GitCredentialBaseURL(credential)
-}
-
-func (c *acpProvider) selectedGitLabCredential(req NodeReq) (sandbox.GitCredential, bool) {
-	agent := c.effectiveAgent(req)
-	credentials, err := ResolveGitBindings(agent.GitBindings, c.opts.GitCredential)
-	if err != nil {
-		return sandbox.GitCredential{}, false
-	}
-	repoURL := c.nodeRepoURL(req)
-	return gitCredentialForRepo(credentials, repoURL, sandbox.RepoCredentialGitLabHTTPS, true)
-}
-
 // mcpVars are the run-scoped template variables substituted into the Agent's
 // MCP config and env values at runtime. They are the only way the dynamic
 // artifact-store URL/token reach the user-authored mcp.json — so the token is
