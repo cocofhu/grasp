@@ -5,6 +5,7 @@ import StatusPill from '@/components/ui/StatusPill.vue'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { runBoardTitle, runIdShort } from '@/lib/run/runBoard'
+import { isWorkingWaitingRun } from '@/lib/run/recentRuns'
 import type { Run } from '@/lib/shared/types'
 
 const props = defineProps<{ run: Run }>()
@@ -25,6 +26,7 @@ const nodeLine = computed(() => {
   }
   return props.run.currentNodeLabel || ''
 })
+const pillStatus = computed(() => (isWorkingWaitingRun(props.run) ? 'running' : runDisplayStatus(props.run)))
 const progressWidth = computed(() => `${Math.min(100, Math.max(0, props.run.progress || 0))}%`)
 </script>
 
@@ -39,7 +41,7 @@ const progressWidth = computed(() => `${Math.min(100, Math.max(0, props.run.prog
         {{ title }}
       </div>
       <div class="flex shrink-0 flex-col items-end gap-1">
-        <StatusPill :status="run.status" size="sm" />
+        <StatusPill :status="pillStatus" size="sm" />
         <PriorityBadge v-if="run.priority === 'high' || run.priority === 'low'" :priority="run.priority" />
       </div>
     </div>
