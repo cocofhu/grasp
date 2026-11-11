@@ -170,7 +170,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (status.value === 'stopped' || status.value === 'closed') return false
     if (sessions.environmentChanges.value.get(sessionId.value) === 'stopping') return true
     const environment = session.value?.sandbox
-    return !!environment && environment.desiredState === 'stopped' && status.value !== 'stopped'
+    return !!environment && environment.desiredState === 'stopped'
   })
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
