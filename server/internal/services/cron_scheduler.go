@@ -126,7 +126,7 @@ func (s *CronScheduler) tick(ctx context.Context) {
 	cutoff := now.Add(-stale)
 	var jobs []models.AgentCronJob
 	query := s.db.Where("enabled = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now)
-	if s.execution != nil {
+	if s.execution != nil && !s.execution.LocalOnly() {
 		if err := s.execution.Check(ctx); err != nil {
 			return
 		}

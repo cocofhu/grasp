@@ -105,7 +105,6 @@ Initialize only a new installation with no SQL file. `--offline` confirms that a
 ./start.sh restart     # restart in background
 ./start.sh down        # stop and remove containers
 ./start.sh pull        # update service images and pre-pull sandbox runtime
-./start.sh dev init-execution --offline  # initialize a new, stopped source stack once
 ./start.sh dev -d      # run source stack (Go + Vite HMR)
 ```
 
@@ -159,7 +158,6 @@ Service configuration precedence: environment variables > mounted config file > 
 - Preserve the original `Host` header, including a non-default port, behind a reverse proxy (e.g. nginx `proxy_set_header Host $http_host`). Temporary approval share links and the origin check for signed-in requests use it. See [SECURITY.md](SECURITY.md).
 - Workspace pages cannot be embedded in an iframe. To embed them in a portal, list its origin in `GRASP_FRAME_ANCESTORS`; see [CONFIGURATION.md](server/CONFIGURATION.md).
 - SQLite (`./.localdata/db`) and attachments (`./.localdata/app-data`) are mounted separately. Back them up and clean them up together so existing runs do not end up with broken `blob:` references.
-- Execution control (`./.localdata/execution-control`) and initialization receipts (`./.localdata/execution-maintenance`) have separate persistent mounts; the source stack uses `.devdata` equivalents. Preserve both, and keep the control marker outside SQL/payload restore operations. Remote control storage uses its own `GRASP_EXECUTION_CONTROL_*` settings and credentials, never the payload `GRASP_S3_*` values.
 
 ## Docs
 

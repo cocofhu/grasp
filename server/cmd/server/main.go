@@ -134,19 +134,13 @@ func main() {
 		log.Fatal().Err(err).Msg("persistent payload storage init failed")
 	}
 	defer storage.Close()
-	authorityCtx, authorityCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	executionController, executionStartupError := openExecutionController(authorityCtx, cfg, db)
-	authorityCancel()
-	if executionStartupError != nil {
-		log.Warn().Err(executionStartupError).Msg("execution disabled; history remains available; initialize independent execution control offline and restart")
-	} else {
-		gatewayCtx, gatewayCancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
-		err := awaitExecutionGateway(gatewayCtx, cfg, sbxGateway)
+	executionController := executionlineage.NewLocalController(db)
+	gatewayCtx, gatewayCancel := context.WithTimeout(context.Background(), cfg.SandboxCreateTimeout())
+	if err := awaitExecutionGateway(gatewayCtx, cfg, sbxGateway); err != nil {
 		gatewayCancel()
-		if err != nil {
-			log.Fatal().Err(err).Msg("sandbox gateway not ready; startup reconciliation skipped")
-		}
+		log.Fatal().Err(err).Msg("sandbox gateway not ready; startup reconciliation skipped")
 	}
+	gatewayCancel()
 	workspaceCtx, workspaceCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	workspaceRuntime, workspaceStartupError := workspaceRuntimeConfiguration(workspaceCtx, workspaceLimits, executionController)
 	workspaceCancel()
@@ -486,10 +480,8 @@ func main() {
 	eng.Start()
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
-	if executionStartupError == nil {
-		sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
-		soloSvc.ReconcileSandboxReferences()
-	}
+	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
+	soloSvc.ReconcileSandboxReferences()
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	var workspaceRun func(context.Context) error
 	if workspaceRuntime != nil {

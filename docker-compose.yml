@@ -52,16 +52,6 @@ services:
       GRASP_S3_SECRET_ACCESS_KEY: ${GRASP_S3_SECRET_ACCESS_KEY:-}
       GRASP_S3_SESSION_TOKEN: ${GRASP_S3_SESSION_TOKEN:-}
       GRASP_S3_PATH_STYLE: ${GRASP_S3_PATH_STYLE:-}
-      GRASP_EXECUTION_CONTROL_DRIVER: ${GRASP_EXECUTION_CONTROL_DRIVER:-local}
-      GRASP_EXECUTION_CONTROL_BLOBS_ROOT: ${GRASP_EXECUTION_CONTROL_BLOBS_ROOT:-/execution-control}
-      GRASP_EXECUTION_CONTROL_S3_ENDPOINT: ${GRASP_EXECUTION_CONTROL_S3_ENDPOINT:-}
-      GRASP_EXECUTION_CONTROL_S3_REGION: ${GRASP_EXECUTION_CONTROL_S3_REGION:-}
-      GRASP_EXECUTION_CONTROL_S3_BUCKET: ${GRASP_EXECUTION_CONTROL_S3_BUCKET:-}
-      GRASP_EXECUTION_CONTROL_S3_PREFIX: ${GRASP_EXECUTION_CONTROL_S3_PREFIX:-}
-      GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID: ${GRASP_EXECUTION_CONTROL_S3_ACCESS_KEY_ID:-}
-      GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY: ${GRASP_EXECUTION_CONTROL_S3_SECRET_ACCESS_KEY:-}
-      GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN: ${GRASP_EXECUTION_CONTROL_S3_SESSION_TOKEN:-}
-      GRASP_EXECUTION_CONTROL_S3_PATH_STYLE: ${GRASP_EXECUTION_CONTROL_S3_PATH_STYLE:-}
       # 可选:GitHub OAuth App 的 Client ID(勾选 Enable Device Flow),开启「用 GitHub 登录」。
       GRASP_GITHUB_OAUTH_CLIENT_ID: ${GRASP_GITHUB_OAUTH_CLIENT_ID:-}
       # 应用预览 noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
@@ -81,8 +71,6 @@ services:
       # data 里放 skill profiles(agent.json 等),UI 保存 Agent 时要写回,故可写。
       - ./data:/app/data
       - ./.devdata/db:/data
-      - ./.devdata/execution-control:/execution-control
-      - ./.devdata/execution-maintenance:/execution-maintenance
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
       # ConfigHome 宿主目录,与宿主保持同一绝对路径供网关 bind-mount,见上方说明。

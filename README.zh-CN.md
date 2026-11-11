@@ -105,13 +105,10 @@ cp .env.example .env
 ./start.sh restart     # 重启服务（后台）
 ./start.sh down        # 停止并移除容器
 ./start.sh pull        # 更新服务镜像并预拉沙箱镜像
-./start.sh dev init-execution --offline  # 仅首次：初始化已停止的空源码栈
 ./start.sh dev -d      # 启动源码开发栈（Go + Vite HMR）
 ```
 
 如需指定镜像版本或 digest，可在 `.env` 中覆盖，参考 [`.env.example`](.env.example)。
-
-执行控制目录 `.localdata/execution-control` 和原初始化收据目录 `.localdata/execution-maintenance` 分别持久挂载，与 SQL、正文目录分离；源码栈使用对应的 `.devdata` 目录。保留这些目录，控制标记不能随 SQL / 正文备份回滚。远端控制存储使用独立的 `GRASP_EXECUTION_CONTROL_*` 配置和凭据，不复用正文的 `GRASP_S3_*`。
 
 ### 导入角色包
 

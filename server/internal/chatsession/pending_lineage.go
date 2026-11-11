@@ -82,7 +82,7 @@ func (p *PendingStore) insertPreparedPending(tx *gorm.DB, row models.ChatPending
 }
 
 func (p *PendingStore) pendingTransaction(ctx context.Context, surface, key string, turns []PendingTurn, body func(*gorm.DB) error) error {
-	if p.execution == nil {
+	if p.execution == nil || p.execution.LocalOnly() {
 		return p.db.WithContext(ctx).Transaction(body)
 	}
 	entities, err := p.pendingEntities(p.db.WithContext(ctx), surface, key, turns)
@@ -96,7 +96,7 @@ func (p *PendingStore) loadPending(ctx context.Context, surface string) ([]model
 	if _, inside := p.db.Statement.ConnPool.(gorm.TxCommitter); inside {
 		return nil, ErrPayloadInTransaction
 	}
-	if p.execution != nil {
+	if p.execution != nil && !p.execution.LocalOnly() {
 		var err error
 		ctx, err = p.execution.PrepareContext(ctx)
 		if err != nil {
@@ -106,7 +106,7 @@ func (p *PendingStore) loadPending(ctx context.Context, surface string) ([]model
 	// Raw cells release the SQL cursor before any object reader. Pending
 	// restored receipt IDs are excluded before even attempting their body GET.
 	query := p.db.WithContext(ctx).Table("chat_pending_turns").Where("surface = ?", surface).Order("session_key asc, position asc")
-	if p.execution != nil {
+	if p.execution != nil && !p.execution.LocalOnly() {
 		query = query.Where("NOT EXISTS (SELECT 1 FROM execution_quarantines q WHERE q.entity_kind = 'legacy_pending' AND q.entity_id = chat_pending_turns.id AND q.review_state = 'pending')")
 	}
 	var sources []pendingLineageSource
@@ -120,7 +120,7 @@ func (p *PendingStore) loadPending(ctx context.Context, surface string) ([]model
 	rows := make([]models.ChatPendingTurn, 0, len(sources))
 	checked := map[string]bool{}
 	for _, source := range sources {
-		if p.execution != nil && !checked[source.SessionKey] {
+		if p.execution != nil && !p.execution.LocalOnly() && !checked[source.SessionKey] {
 			entities, err := p.pendingEntities(p.db.WithContext(ctx), surface, source.SessionKey, nil)
 			if err != nil {
 				return nil, err

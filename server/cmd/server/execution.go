@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strconv"
 
 	"github.com/cocofhu/grasp/internal/config"
@@ -14,22 +13,6 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 	"gorm.io/gorm"
 )
-
-func openExecutionController(ctx context.Context, cfg *config.Config, db *gorm.DB) (*executionlineage.Controller, error) {
-	if cfg.ExecutionControl == nil {
-		return executionlineage.NewController(ctx, db, nil)
-	}
-	protected := []string{}
-	if cfg.Database.Driver != "mysql" {
-		protected = append(protected, filepath.Dir(cfg.Database.Path))
-	}
-	authority, err := executionlineage.OpenConfigured(ctx, *cfg.ExecutionControl, []config.StorageConfig{cfg.Storage}, protected)
-	if err != nil {
-		closed, cause := executionlineage.NewController(ctx, db, nil)
-		return closed, errors.Join(cause, err)
-	}
-	return executionlineage.NewController(ctx, db, authority)
-}
 
 func awaitExecutionGateway(ctx context.Context, cfg *config.Config, gateway *sandbox.GatewayClient) error {
 	if cfg.Sandbox.UsesGatewayTransport() {

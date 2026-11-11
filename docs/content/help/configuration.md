@@ -16,9 +16,7 @@ Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/
 ## 本地快速路径
 
 ```bash
-./start.sh init-execution --offline # 仅全新安装，全部写入者已停止
 ./start.sh -d          # 发布镜像栈
-# 源码栈用 ./start.sh dev init-execution --offline，再启动：
 ./start.sh dev -d      # 源码 + HMR
 ```
 

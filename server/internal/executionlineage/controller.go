@@ -35,6 +35,29 @@ type contextualPermit struct {
 	permit     Permit
 }
 
+func NewLocalController(db *gorm.DB) *Controller {
+	return &Controller{
+		db: db,
+		startup: Marker{
+			Version:     1,
+			NamespaceID: "00000000-0000-4000-8000-000000000001",
+			DatasetID:   "00000000-0000-4000-8000-000000000001",
+			Lineage:     "00000000-0000-4000-8000-000000000001",
+			Revision:    2,
+			State:       Active,
+			OperationID: "00000000-0000-4000-8000-000000000001",
+		},
+	}
+}
+
+func (c *Controller) LocalOnly() bool {
+	return c != nil && c.closed == nil && c.authority == nil
+}
+
+func (c *Controller) localOnly() bool {
+	return c.LocalOnly()
+}
+
 func NewController(ctx context.Context, db *gorm.DB, authority *Authority) (*Controller, error) {
 	c := &Controller{db: db, authority: authority}
 	if db == nil || authority == nil {
@@ -68,6 +91,9 @@ func (c *Controller) DatasetID() string {
 // transaction. It cannot run with a transaction-bound Controller database.
 // There is no background cache or process-local generation authority.
 func (c *Controller) Prepare(ctx context.Context) (Permit, error) {
+	if c.localOnly() {
+		return Permit{data: &permitData{marker: c.startup}}, nil
+	}
 	if c == nil || c.closed != nil || c.authority == nil {
 		if c != nil && c.closed != nil {
 			return Permit{}, errors.Join(ErrUnavailable, c.closed)
@@ -130,6 +156,15 @@ func (c *Controller) CheckPrepared(ctx context.Context, db *gorm.DB, entities ..
 // maintenance SHARE lock prevents an offline transition from crossing an
 // already admitted SQL publication. Native calls occur after releasing SQL.
 func (c *Controller) GuardTx(tx *gorm.DB, permit Permit, entities ...Entity) error {
+	if c.localOnly() {
+		if _, inside := tx.Statement.ConnPool.(gorm.TxCommitter); !inside {
+			return ErrTransaction
+		}
+		if permit.data == nil || permit.data.marker != c.startup {
+			return ErrUnavailable
+		}
+		return nil
+	}
 	if c == nil || c.closed != nil || c.authority == nil || permit.data == nil || permit.data.marker != c.startup {
 		return ErrUnavailable
 	}

@@ -16,9 +16,7 @@ That document is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-ch
 ## Local quick path
 
 ```bash
-./start.sh init-execution --offline # fresh install only; all writers stopped
 ./start.sh -d          # published image stack
-# For source, run ./start.sh dev init-execution --offline before:
 ./start.sh dev -d      # source + HMR
 ```
 
