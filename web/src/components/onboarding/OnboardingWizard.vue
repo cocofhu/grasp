@@ -795,6 +795,7 @@ function editWorkflow() {
                       :summary="templateFor(m.templateId)?.summary"
                       :name-placeholder="t('pages.onboarding.team.namePlaceholder')"
                       :model-placeholder="modelPlaceholder"
+                      :default-model-backend="selectedModel?.backend"
                       :model-configurations="models"
                       :issue="memberIssue(m.templateId)"
                       @update:model="m.modelConfigurationId = $event"
