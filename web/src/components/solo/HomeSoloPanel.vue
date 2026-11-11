@@ -34,7 +34,7 @@ function repoMeta(session: (typeof recent.value)[number]) {
     <section v-if="recent.length" class="home-solo__section">
       <div class="home-solo__head">
         <span>{{ t('pages.solo.home.recent') }}</span>
-        <span class="home-solo__count">{{ computeCount }}/{{ store.maxSandboxes.value }}</span>
+        <span class="home-solo__count">{{ Math.max(computeCount, store.usedSandboxes.value) }}/{{ store.maxSandboxes.value }}</span>
         <RouterLink to="/solo" class="home-solo__more">{{ t('pages.solo.home.viewAll') }}<Icon name="chevron-right" :size="12" /></RouterLink>
       </div>
       <div class="home-solo__list">

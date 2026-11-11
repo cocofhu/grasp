@@ -803,6 +803,8 @@ export interface SoloResources {
 export interface SoloSessionList {
   sessions: SoloSession[]
   maxSandboxes: number
+  /** Workspace-wide Solo quota in use, including other owners and unconfirmed stops. */
+  usedSandboxes?: number
 }
 
 export interface SoloRepoChoice {

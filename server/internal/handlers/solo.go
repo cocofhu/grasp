@@ -166,7 +166,7 @@ func (h *Handlers) ListSoloSessions(c *gin.Context) {
 		writeSoloErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sessions": rows, "maxSandboxes": h.Sbx.MaxSoloSandboxes()})
+	c.JSON(http.StatusOK, gin.H{"sessions": rows, "maxSandboxes": h.Sbx.MaxSoloSandboxes(), "usedSandboxes": h.Sbx.UsedSoloSandboxes()})
 }
 
 // CreateSoloSession handles POST /api/solo/sessions.

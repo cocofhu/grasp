@@ -102,6 +102,9 @@ func (s *SandboxService) activeSoloSandboxCount() int {
 	return int(n)
 }
 
+// UsedSoloSandboxes returns the workspace-wide quota the next Solo admission sees.
+func (s *SandboxService) UsedSoloSandboxes() int { return s.activeSoloSandboxCount() }
+
 func countSoloCompute(db *gorm.DB, exclude uint) (int64, error) {
 	return countSoloComputeReserved(db, exclude, "")
 }

@@ -4790,6 +4790,8 @@
       "closeSession": "Close",
       "limitTitle": "Solo sandbox limit reached",
       "limitHint": "Up to {max} Solo sandboxes can run at once. Close a session you no longer need and try again.",
+      "limitUsage": "{used} of {max} Solo sandbox slots are in use. Close a session you no longer need and try again.",
+      "limitOthers": "{count} more are held by other members' sessions or environments whose stop is not yet confirmed.",
       "limitFreed": "A slot is free, you can start again",
       "status": {
         "starting": "Starting",
