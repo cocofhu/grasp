@@ -442,6 +442,20 @@ func TestSweepOrphans(t *testing.T) {
 	}
 }
 
+func TestSweepOrphansStopsOnCancel(t *testing.T) {
+	svc, drv, _ := testService(t)
+	drv.SeedOrphan("orphan", time.Now().Add(-time.Hour))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if n, err := svc.SweepOrphans(ctx); n != 0 || err == nil {
+		t.Fatalf("cancelled sweep removed=%d err=%v", n, err)
+	}
+	live, _ := drv.List(context.Background())
+	if len(live) != 1 {
+		t.Fatalf("orphan must survive a cancelled sweep, live=%d", len(live))
+	}
+}
+
 func TestStartNotFound(t *testing.T) {
 	svc, _, _ := testService(t)
 	if err := svc.Start(context.Background(), "nope"); err == nil {

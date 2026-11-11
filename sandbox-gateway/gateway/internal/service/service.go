@@ -614,7 +614,7 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("list driver workloads: %w", err)
 	}
-	records, err := s.store.List(context.Background(), ListFilter{})
+	records, err := s.store.List(ctx, ListFilter{})
 	if err != nil {
 		return 0, fmt.Errorf("list store records: %w", err)
 	}
@@ -625,6 +625,9 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 
 	removed := 0
 	for _, h := range live {
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
 		if h == nil || h.ID == "" {
 			continue
 		}
@@ -638,6 +641,13 @@ func (s *SandboxService) SweepOrphans(ctx context.Context) (int, error) {
 				Dur("age", time.Since(h.CreatedAt)).
 				Msg("orphan gc: skip young workload")
 			continue
+		}
+		// A record may have appeared since the inventory query. Only a confirmed
+		// not-found authorizes deletion; database failures stop the sweep.
+		if _, err := s.store.Get(ctx, h.ID); err == nil {
+			continue
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return removed, fmt.Errorf("recheck orphan %s: %w", h.ID, err)
 		}
 		log.Info().
 			Str("sandbox_id", h.ID).
