@@ -1,6 +1,5 @@
-import type { WorkflowCatalogItem } from '../apiTypes'
+import type { RepoChoice, WorkflowCatalogItem } from '../apiTypes'
 import type { Workflow, WorkflowVersion, WorkflowNotifyPolicy, WorkflowGraph } from '../../shared/types'
-import type { RepoRow } from '../../../components/ui/ReposEditor.vue'
 import { req } from '../httpCore'
 
 export const workflowsClient = {
@@ -16,7 +15,7 @@ export const workflowsClient = {
       method: wf.id ? 'PUT' : 'POST',
       body: JSON.stringify(wf),
     }),
-  createWorkflowFromBaseline: (name: string, repos: RepoRow[]) =>
+  createWorkflowFromBaseline: (name: string, repos: RepoChoice[]) =>
     req<Workflow>('/workflows/from-baseline', {
       method: 'POST',
       body: JSON.stringify({ name, repos }),

@@ -101,10 +101,13 @@ type Workspace struct {
 // WorkflowDef is the editable workflow head. Graph/Name/Description always
 // equal the WorkflowVersion row numbered Version (the latest save).
 type WorkflowDefaults struct {
-	InheritWorkspace bool                    `json:"inheritWorkspace"`
-	Variables        []WorkspaceVariable     `json:"variables"`
-	NotifyPolicy     *WorkspaceNotifyPolicy  `json:"notifyPolicy,omitempty"`
-	GateAuto         *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
+	InheritWorkspace bool                `json:"inheritWorkspace"`
+	Variables        []WorkspaceVariable `json:"variables"`
+	// Repos are the repositories bound to the workflow, in clone order. A run
+	// takes all of them unless the launcher picks a subset.
+	Repos        []RepoChoice            `json:"repos,omitempty"`
+	NotifyPolicy *WorkspaceNotifyPolicy  `json:"notifyPolicy,omitempty"`
+	GateAuto     *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
 }
 
 type WorkflowGateAutoPolicy struct {
@@ -200,6 +203,9 @@ type Run struct {
 	// after Agent env and before platform reserved/auth write-backs. Plaintext
 	// in DB for injection; GET/audit must mask Secret entries.
 	SandboxEnv []EnvEntry `gorm:"serializer:json" json:"sandboxEnv,omitempty"`
+	// Repos are the repositories this run clones, frozen at start from the
+	// workflow's bound repositories and the launcher's choice.
+	Repos []SessionRepo `gorm:"serializer:json" json:"repos,omitempty"`
 	// FirstMessage is the launcher's opening message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once the node parks, so the caller does not have to poll for the
@@ -915,6 +921,9 @@ type Sandbox struct {
 	ACPPort                 int    `json:"-"`
 	CodeServerPort          int    `json:"-"`
 	RepoURL                 string `json:"repoUrl,omitempty"`
+	// Repos are the repositories a Solo or test sandbox cloned; their current
+	// credentials must still match GitBindingsFingerprint to keep chatting.
+	Repos []SessionRepo `gorm:"serializer:json" json:"-"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic

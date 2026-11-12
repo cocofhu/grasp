@@ -10,8 +10,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
-	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/google/uuid"
 )
@@ -30,13 +28,13 @@ type TeamBootstrapRequest struct {
 	Prefix                string              `json:"prefix"`
 	PMName                string              `json:"pmName"`
 	Background            string              `json:"background"`
-	ModelConfigurationID  string              `json:"modelConfigurationId"`
-	ModelConfigurationIDs []string            `json:"modelConfigurationIds,omitempty"`
-	GitBindings           *models.GitBindings `json:"gitBindings,omitempty"`
-	Region                string              `json:"region,omitempty"`
-	GitURL                string              `json:"gitUrl,omitempty"`
-	MCP                   []MCPServer         `json:"mcp,omitempty"`
-	Env                   map[string]string   `json:"env,omitempty"`
+	ModelConfigurationID  string            `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string          `json:"modelConfigurationIds,omitempty"`
+	Region                string            `json:"region,omitempty"`
+	// RepoID is an optional repository the PM's sandbox clones.
+	RepoID string            `json:"repoId,omitempty"`
+	MCP    []MCPServer       `json:"mcp,omitempty"`
+	Env    map[string]string `json:"env,omitempty"`
 }
 
 // TeamBootstrapEvent is one progress log line for the UI.
@@ -73,7 +71,7 @@ type TeamBootstrapSession struct {
 
 // TeamSandbox is the SandboxService surface used by team bootstrap (g3.3).
 type TeamSandbox interface {
-	Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error)
+	Open(ctx context.Context, profile string, repos []models.SessionRepo) (*models.Sandbox, error)
 	GetView(ctx context.Context, id uint) (*SandboxView, error)
 }
 
@@ -83,8 +81,10 @@ type TeamService struct {
 	Skills    *AgentService
 	Pm        *PmService
 	Sbx       TeamSandbox
-	// Credentials resolves the selected model and Git authorization references.
+	// Credentials resolves the selected model references.
 	Credentials *CredentialService
+	// Projects resolves the PM sandbox's repository.
+	Projects *ProjectService
 
 	mu         sync.Mutex
 	sessions   map[string]*TeamBootstrapSession
@@ -190,9 +190,8 @@ type normalizedTeamReq struct {
 	AcpBackend            string
 	ModelConfigurationID  string
 	ModelConfigurationIDs []string
-	GitBindings           *models.GitBindings
 	Region                string
-	GitURL                string
+	Repo                  *models.SessionRepo
 	MCP                   []MCPServer
 	Env                   map[string]string
 }
@@ -224,12 +223,17 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 	if err != nil {
 		return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
 	}
-	bindings, err := models.NormalizeGitBindings(req.GitBindings)
-	if err != nil {
-		return normalizedTeamReq{}, err
-	}
-	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
-		return normalizedTeamReq{}, err
+	var repo *models.SessionRepo
+	if id := strings.TrimSpace(req.RepoID); id != "" {
+		if s.Projects == nil {
+			return normalizedTeamReq{}, errors.New("project service unavailable")
+		}
+		p, err := s.Projects.Get(id)
+		if err != nil {
+			return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
+		}
+		snap := SessionRepoFromProject(p, "", 0)
+		repo = &snap
 	}
 	mcp := req.MCP
 	if len(mcp) == 0 {
@@ -243,9 +247,6 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		}
 		env[k] = v
 	}
-	if _, ok := env["GIT_REPOS"]; !ok {
-		env["GIT_REPOS"] = "${vars.repos}"
-	}
 	return normalizedTeamReq{
 		WorkspaceName:         workspace.Name,
 		Prefix:                prefix,
@@ -254,9 +255,8 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		AcpBackend:            configuration.Backend,
 		ModelConfigurationID:  configuration.ID,
 		ModelConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...),
-		GitBindings:           bindings,
 		Region:                strings.TrimSpace(req.Region),
-		GitURL:                strings.TrimSpace(req.GitURL),
+		Repo:                  repo,
 		MCP:                   mcp,
 		Env:                   env,
 	}, nil
@@ -319,7 +319,6 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 			Name:                  name,
 			ModelConfigurationID:  req.ModelConfigurationID,
 			ModelConfigurationIDs: req.ModelConfigurationIDs,
-			GitBindings:           req.GitBindings,
 			MCP:                   req.MCP,
 			Env:                   req.Env,
 			Region:                req.Region,
@@ -363,7 +362,6 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 			Name:                  name,
 			ModelConfigurationID:  req.ModelConfigurationID,
 			ModelConfigurationIDs: req.ModelConfigurationIDs,
-			GitBindings:           req.GitBindings,
 			MCP:                   req.MCP,
 			Env:                   req.Env,
 			Region:                req.Region,
@@ -415,9 +413,9 @@ func (s *TeamService) finishBootstrap(ctx context.Context, sessionID string, req
 	}
 	if s.Sbx != nil && pmName != "" {
 		s.appendEvent(sessionID, "sys", "starting sandbox for "+pmName)
-		var repos []sandbox.RepoSpec
-		if req.GitURL != "" {
-			repos = sandbox.ReposFromURL(req.GitURL)
+		var repos []models.SessionRepo
+		if req.Repo != nil {
+			repos = []models.SessionRepo{*req.Repo}
 		}
 		sb, err := s.Sbx.Open(ctx, pmName, repos)
 		if err != nil {
@@ -513,7 +511,6 @@ type CreateFromTemplateArgs struct {
 	Name                  string
 	ModelConfigurationID  string
 	ModelConfigurationIDs []string
-	GitBindings           *models.GitBindings
 	MCP                   []MCPServer
 	Env                   map[string]string
 	Region                string
@@ -546,16 +543,8 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		return Agent{}, err
 	}
 	backend := configuration.Backend
-	tmpl.InheritModel, tmpl.InheritGit = false, false
+	tmpl.InheritModel = false
 	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), args.ModelConfigurationIDs...)}
-	bindings, err := models.NormalizeGitBindings(args.GitBindings)
-	if err != nil {
-		return Agent{}, err
-	}
-	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
-		return Agent{}, err
-	}
-	tmpl.GitBindings = bindings
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
@@ -596,14 +585,13 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	}
 	tmpl.Name = req.PMName
 	backend := req.AcpBackend
-	tmpl.InheritModel, tmpl.InheritGit = false, false
+	tmpl.InheritModel = false
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 		tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
 	}
 	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: req.ModelConfigurationID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)}
-	tmpl.GitBindings = req.GitBindings
 
 	mergedEnv := map[string]string{}
 	for k, v := range tmpl.Env {
@@ -642,9 +630,9 @@ func teamPMContextMarkdown(req normalizedTeamReq) string {
 	b.WriteString(fmt.Sprintf("- 工作区：`%s`（你与 %d 名工程师在此协作）\n", req.WorkspaceName, len(TeamEngineerTemplates)))
 	b.WriteString("- PM：`" + req.PMName + "`\n")
 	b.WriteString("- 工程师命名：`{前缀}{角色}`（" + teamRoleLabels() + "）\n\n")
-	if req.GitURL != "" {
+	if req.Repo != nil {
 		b.WriteString("## 仓库\n\n")
-		b.WriteString("- Git URL：`" + req.GitURL + "`\n\n")
+		b.WriteString("- " + req.Repo.Name + "：`" + req.Repo.RepoURL + "`，克隆在 `/root/workspace/" + req.Repo.RepoDirName + "/`\n\n")
 	}
 	b.WriteString("## 工作方式\n\n")
 	b.WriteString("先 `pm_list_workspace_agents` 确认编制，再按工作流分派工程师；缺人时用模板补齐，勿覆盖重名。\n")

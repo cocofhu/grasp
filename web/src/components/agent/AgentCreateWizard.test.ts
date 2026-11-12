@@ -23,10 +23,6 @@ const defaultConfigurations = [
   { id: 'cfg-opencode', name: 'OpenCode日常模型', backend: 'opencode', state: 'active', revision: 1, binding: { kind: 'connection', connectionId: 'service-opencode', modelId: 'vendor/main' } },
 ]
 const defaultConnections = [{ id: 'service-opencode', name: 'OpenCode模型服务', providerId: 'deepseek', protocol: 'openai-chat-completions', baseUrl: 'https://models.example.test/v1', credentialId: 'model-key', auth: { scheme: 'bearer' }, models: [{ id: 'vendor/main', source: 'manual' }], state: 'active', revision: 1 }]
-/** Concurrent noise: run-tags 404 must not break git help (g3/g4). */
-const listRunTags = vi.fn(async () => {
-  throw Object.assign(new Error('not found'), { status: 404 })
-})
 const getSharedAgentConfig = vi.fn(async () => ({
   env: {},
   files: [],
@@ -51,7 +47,6 @@ vi.mock('@/lib/api/api', () => ({
         { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现工程师', summary: '实现' },
       ],
     }),
-    listRunTags: () => listRunTags(),
     getSharedAgentConfig: () => getSharedAgentConfig(),
     openCodeProviders: async () => ({ providers: [] }),
     openCodeModels: async () => ({ models: [] }),
@@ -96,7 +91,7 @@ function railLabels(): string[] {
   )
 }
 
-async function useLocalBindings(kind: 'model' | 'git') {
+async function useLocalBindings(kind: 'model') {
   const toggle = document.body.querySelector<HTMLButtonElement>(`[data-testid="agent-inherit-${kind}"]`)
   if (toggle?.getAttribute('aria-checked') === 'true') { toggle.click(); await flushPromises() }
 }
@@ -104,7 +99,6 @@ async function useLocalBindings(kind: 'model' | 'git') {
 async function openSelect(testId: string) {
   await flushPromises()
   if (testId === 'model-binding-configuration-select') await useLocalBindings('model')
-  if (testId === 'git-credential-add') await useLocalBindings('git')
   const trigger = document.body.querySelector<HTMLButtonElement>(`[data-testid="${testId}"] [data-test="app-select-trigger"]`)
   expect(trigger).toBeTruthy()
   trigger!.click()
@@ -140,15 +134,15 @@ beforeEach(() => {
 })
 afterEach(() => { document.body.innerHTML = '' })
 
-describe('AgentCreateWizard 4-step IA', () => {
+describe('AgentCreateWizard 3-step IA', () => {
   it('combines coding tool and model selection in one runtime step', () => {
-    expect(WIZARD_STEPS.map((s) => s.id)).toEqual(['basics', 'acp', 'git', 'review'])
+    expect(WIZARD_STEPS.map((s) => s.id)).toEqual(['basics', 'acp', 'review'])
   })
 
   it('renders a combined tool-and-model sidebar item without ENV/ACP/capability steps', async () => {
     const wrapper = mountWizard()
     const labels = railLabels()
-    expect(labels).toEqual(['基础信息', '工具与模型', 'Git', '确认创建'])
+    expect(labels).toEqual(['基础信息', '工具与模型', '确认创建'])
     expect(labels.join(' ')).not.toContain('ACP')
     expect(labels.join(' ')).not.toContain('ENV')
     expect(labels.join(' ')).not.toMatch(/MCP|Rules|Skills|Commands|Prompts/)
@@ -182,8 +176,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     expect(document.body.querySelector('[data-testid="agent-model-region"] [data-test="app-select-trigger"]')?.textContent).toContain('国内站')
     await chooseModel('cfg-codebuddy')
     buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
     await wrapper.vm.$nextTick()
     buttonByText('创建并进入 Studio').click()
     await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
@@ -226,8 +218,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     await chooseModel()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
-    await wrapper.vm.$nextTick()
     buttonByText('创建并进入 Studio').click()
     await wrapper.vm.$nextTick()
     await vi.waitFor(() => {
@@ -252,8 +242,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     await chooseModel()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
-    await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('确认创建')
     expect(document.body.textContent).not.toContain('鉴权提醒')
@@ -272,78 +260,9 @@ describe('AgentCreateWizard 4-step IA', () => {
     wrapper.unmount()
   })
 
-  it('Git step help stacks on wizard and does not close or reset it', async () => {
-    const wrapper = mountWizard()
-    fillName('help-agent')
-    await wrapper.vm.$nextTick()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    await chooseModel()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-
-    expect(document.body.textContent).toContain('Git')
-    expect(document.body.textContent).not.toContain('不会验证变量引用的实际值')
-    await useLocalBindings('git')
-    const helpLink = document.body.querySelector('[data-testid="git-credential-help"]') as HTMLButtonElement
-    expect(helpLink?.textContent?.trim()).toBe('Git 配置帮助')
-    helpLink.click()
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
-
-    expect(document.body.textContent).toContain('环境变量与凭据')
-    expect(document.body.textContent).toContain('不会验证变量引用的实际值')
-    expect(document.body.querySelectorAll('[data-test="env-credential-help"]')).toHaveLength(1)
-    expect(document.body.querySelector('.wiz-root')).toBeTruthy()
-    expect(railLabels()).toEqual(['基础信息', '工具与模型', 'Git', '确认创建'])
-
-    const gotIt = document.body.querySelector('[data-test="env-help-got-it"]') as HTMLButtonElement
-    gotIt.click()
-    await wrapper.vm.$nextTick()
-
-    expect(document.body.querySelector('[data-test="env-credential-help"]')).toBeFalsy()
-    expect(document.body.querySelector('.wiz-root')).toBeTruthy()
-    expect(document.body.textContent).toContain('Git')
-    expect(railLabels()).toEqual(['基础信息', '工具与模型', 'Git', '确认创建'])
-    wrapper.unmount()
-  })
-
-  it('opens Git credential help even when listRunTags would 404', async () => {
-    listRunTags.mockRejectedValue(new Error('not found'))
-    const unhandled: unknown[] = []
-    const onUnhandled = (reason: unknown) => {
-      unhandled.push(reason)
-    }
-    process.on('unhandledRejection', onUnhandled)
-
-    const wrapper = mountWizard()
-    fillName('help-under-404')
-    await wrapper.vm.$nextTick()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    await chooseModel()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-
-    // Simulate concurrent TagFilter-style call while user opens help
-    void listRunTags().catch(() => {})
-    await useLocalBindings('git')
-    const helpLink = document.body.querySelector('[data-testid="git-credential-help"]') as HTMLButtonElement
-    helpLink.click()
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
-
-    expect(document.body.textContent).toContain('环境变量与凭据')
-    expect(document.body.querySelector('[data-test="env-credential-help"]')).toBeTruthy()
-    expect(unhandled.some((e) => String(e).includes('is not iterable'))).toBe(false)
-
-    process.off('unhandledRejection', onUnhandled)
-    wrapper.unmount()
-  })
-
   it('renders equivalent English site semantics and a combined step label', async () => {
     const wrapper = mountWizard('en')
-    expect(railLabels()).toEqual(['Basics', 'Tool & model', 'Git', 'Confirm'])
+    expect(railLabels()).toEqual(['Basics', 'Tool & model', 'Confirm'])
     fillName('region-agent')
     await wrapper.vm.$nextTick()
     buttonByText('Next').click()
@@ -400,8 +319,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     await chooseModel()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
     buttonByText('创建并进入 Studio').click()
     await vi.waitFor(() => {
       expect(createAgent).toHaveBeenCalled()
@@ -412,69 +329,8 @@ describe('AgentCreateWizard 4-step IA', () => {
     wrapper.unmount()
   })
 
-  it('selects a saved model and Git credentials, then posts only their references without secrets', async () => {
-    listCredentials.mockResolvedValue({
-      items: [
-        {
-          id: 'c1',
-          name: '团队共享',
-          type: 'ai',
-          purpose: 'tool_auth',
-          toolId: 'cursor',
-          provider: 'cursor',
-          envKey: 'GRASP_CURSOR_API_KEY',
-          configured: true,
-        },
-        {
-          id: 'revoked',
-          name: '已撤销',
-          type: 'ai',
-          provider: 'cursor',
-          envKey: 'GRASP_CURSOR_API_KEY',
-          configured: true,
-          revokedAt: '2026-01-01T00:00:00Z',
-        },
-        {
-          id: 'g1',
-          name: 'org-read',
-          type: 'git',
-          purpose: 'git',
-          provider: 'github',
-          envKey: 'GITHUB_TOKEN',
-          configured: true,
-        },
-        {
-          id: 'gl1',
-          name: 'gl-read',
-          type: 'git',
-          purpose: 'git',
-          provider: 'gitlab',
-          envKey: 'GITLAB_TOKEN',
-          configured: true,
-        },
-        {
-          id: 's1',
-          name: '部署私钥',
-          type: 'ssh',
-          purpose: 'ssh',
-          provider: 'ssh',
-          secretKind: 'ssh_private_key',
-          envKey: 'GIT_SSH_PRIVATE_KEY',
-          configured: true,
-        },
-        {
-          id: 's2',
-          name: '镜像私钥',
-          type: 'ssh',
-          purpose: 'ssh',
-          provider: 'ssh',
-          secretKind: 'ssh_private_key',
-          envKey: 'GIT_SSH_PRIVATE_KEY',
-          knownHosts: 'mirror.example.test ssh-ed25519 AAAA',
-          configured: true,
-        },
-      ],
-    })
+  it('selects a saved model, then posts only its reference without secrets or Git authorization', async () => {
+    listCredentials.mockResolvedValue({ items: [{ id: 'c1', name: '团队共享', type: 'ai', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true }] })
     listModelConfigurations.mockResolvedValue({ items: [{ id: 'cfg-creds', name: '团队模型', backend: 'cursor', state: 'active', revision: 1, binding: { kind: 'platform', credentialId: 'c1', modelId: 'composer-1' } }] })
     createAgent.mockClear()
     const wrapper = mountWizard()
@@ -483,87 +339,25 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-
     await chooseModel('cfg-creds')
-    expect(document.body.querySelector('[data-testid="model-binding-advanced"]')).toBeNull()
     expect(document.body.querySelector('[data-testid="model-binding-credential"]')).toBeNull()
     expect(document.body.querySelector('[data-test="api-key-input"]')).toBeNull()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-
-    await chooseSelect('git-credential-add', 'g1')
-    await chooseSelect('git-credential-add', 'gl1')
-    await chooseSelect('git-credential-add', 's1')
-    await chooseSelect('git-credential-add', 's2')
-    expect(document.body.querySelectorAll('[data-testid^="git-credential-row-"]')).toHaveLength(4)
-    expect(document.body.querySelector('[data-testid^="git-hosts-"]')).toBeNull()
-    expect(document.body.textContent).not.toContain('GIT_REPOS')
-    expect(document.body.textContent).not.toContain('可添加多个已保存的授权，并设置首选。')
-    expect(document.body.textContent).not.toContain('所选授权均可在沙箱中使用。')
-    expect(document.body.textContent).not.toContain('首选')
-    expect(document.body.querySelector('[data-test="git-choice-github_https"]')).toBeNull()
-    const scope = document.body.querySelector<HTMLInputElement>('[data-testid="git-scope-s1"]')!
-    scope.value = 'git.example.test'; scope.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-    buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-
+    expect(document.body.querySelector('[data-testid="agent-git-credential-picker"]')).toBeNull()
     expect(document.body.textContent).toContain('团队模型')
-    expect(document.body.textContent).toContain('部署私钥')
-    expect(document.body.textContent).not.toContain('首选')
-    expect(document.body.textContent).not.toContain('API Key · 未配置')
     buttonByText('创建并进入 Studio').click()
     await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
     const payload = createAgent.mock.calls.at(-1)?.[0] as Record<string, any>
-    expect(payload).not.toHaveProperty('aiCredentialId')
     expect(payload).toHaveProperty('modelBinding', { kind: 'configuration', configurationId: 'cfg-creds' })
-    expect(payload).not.toHaveProperty('openCodeCredentialId')
-    expect(payload.gitBindings).toEqual({ items: [{ credentialId: 'g1' }, { credentialId: 'gl1' }, { credentialId: 's1', scope: 'git.example.test' }, { credentialId: 's2' }] })
-    expect(payload).not.toHaveProperty('gitCredentialType')
-    expect(payload).not.toHaveProperty('gitCredentialId')
-    expect(payload).not.toHaveProperty('sshHostsCredentialId')
-    expect(payload.env).not.toHaveProperty('GITHUB_TOKEN')
-    expect(payload.env).not.toHaveProperty('GITLAB_TOKEN')
-    expect(payload.env).not.toHaveProperty('GIT_SSH_PRIVATE_KEY')
-    expect(payload.env).not.toHaveProperty('GIT_SSH_KNOWN_HOSTS')
+    for (const field of ['aiCredentialId', 'openCodeCredentialId', 'gitBindings', 'inheritGit', 'gitCredentialId'])
+      expect(payload).not.toHaveProperty(field)
     expect(payload.env).not.toHaveProperty('GRASP_CURSOR_API_KEY')
     listCredentials.mockResolvedValue({ items: [] })
     wrapper.unmount()
   })
 })
 
-
-describe('AgentCreateWizard explicit Git selection', () => {
-  it('keeps an invalid scope in the draft, blocks Next, and Skip clears the full selected list', async () => {
-    listCredentials.mockResolvedValue({ items: [...defaultCredentials, { id: 'gh-1', name: '团队 GitHub', type: 'git', purpose: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true }] })
-    const wrapper = mountWizard()
-    await flushPromises()
-    fillName('skip-git-agent')
-    buttonByText('下一步').click()
-    await flushPromises()
-    await chooseModel()
-    buttonByText('下一步').click()
-    await flushPromises()
-    await chooseSelect('git-credential-add', 'gh-1')
-    const scope = document.body.querySelector<HTMLInputElement>('[data-testid="git-scope-gh-1"]')!
-    scope.value = 'ssh://git@github.com/org/repo'; scope.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-    expect(buttonByText('下一步').disabled).toBe(true)
-    buttonByText('上一步').click()
-    await flushPromises()
-    buttonByText('下一步').click()
-    await flushPromises()
-    expect(document.body.querySelector<HTMLInputElement>('[data-testid="git-scope-gh-1"]')!.value).toBe('ssh://git@github.com/org/repo')
-    buttonByText('跳过').click()
-    await flushPromises()
-    expect(buttonByText('创建并进入 Studio').disabled).toBe(false)
-    buttonByText('创建并进入 Studio').click()
-    await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
-    expect(createAgent.mock.calls.at(-1)![0]).toMatchObject({ gitBindings: { items: [] } })
-    expect(createAgent.mock.calls.at(-1)![0]).not.toHaveProperty('gitCredentialId')
-    wrapper.unmount()
-  })
-})
 
 describe('AgentCreateWizard reusable model configurations', () => {
   it('keeps the combined-page draft when going back, reviews it and stores only its reference', async () => {
@@ -579,14 +373,11 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await chooseSelect('model-binding-configuration-select', 'cfg-prod')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeTruthy()
+    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeNull()
     buttonByText('上一步').click()
     await flushPromises()
     expect(document.body.querySelector('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')?.textContent).toContain('日常开发')
-    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')?.textContent).toContain('日常开发')
     buttonByText('下一步').click()
-    await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
     await wrapper.vm.$nextTick()
     expect(document.body.textContent).toContain('日常开发')
     expect(document.body.textContent).not.toContain('鉴权提醒')
@@ -625,8 +416,6 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await chooseOpenOption('cfg-claude')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
-    await wrapper.vm.$nextTick()
     buttonByText('创建并进入 Studio').click()
     await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
     expect(createAgent.mock.calls.at(-1)?.[0]).toMatchObject({ acpBackend: 'claude_code', modelBinding: { kind: 'configuration', configurationId: 'cfg-claude' } })
@@ -634,7 +423,7 @@ describe('AgentCreateWizard reusable model configurations', () => {
     wrapper.unmount()
   })
 
-  it('blocks a selected model whose credential was revoked while the user was on the Git step', async () => {
+  it('blocks a selected model whose credential was revoked while the user was on the review step', async () => {
     const wrapper = mountWizard()
     await flushPromises()
     fillName('revoked-agent')
@@ -644,7 +433,7 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await chooseModel('cfg-cursor')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeTruthy()
+    expect(buttonByText('创建并进入 Studio')).toBeTruthy()
     listCredentials.mockResolvedValue({ items: defaultCredentials.map((key) => key.id === 'key-cursor' ? { ...key, revokedAt: '2026-10-24T00:00:00Z' } : key) })
     buttonByText('上一步').click()
     await flushPromises()
@@ -653,7 +442,6 @@ describe('AgentCreateWizard reusable model configurations', () => {
     buttonByText('下一步').click()
     await flushPromises()
     expect(document.body.querySelector('[data-testid="agent-tool-model-step"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-testid="git-credential-help"]')).toBeNull()
     expect(document.body.querySelector('[data-testid="model-binding-inherit"]')).toBeNull()
     expect(createAgent).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -663,33 +451,28 @@ describe('AgentCreateWizard reusable model configurations', () => {
 
 describe('Agent creation default inheritance', () => {
   async function openInheritedWizard(name: string) {
-    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'cfg-codebuddy' }, gitBindings: { items: [{ credentialId: 'default-gh' }] }, files: [], mcp: [], env: {}, layout: {} })
-    listCredentials.mockResolvedValue({ items: [...defaultCredentials, { id: 'default-gh', name: 'Default GitHub', type: 'git', purpose: 'git', provider: 'github', host: 'https://github.com', configured: true }] })
+    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'cfg-codebuddy' }, files: [], mcp: [], env: {}, layout: {} })
     const wrapper = mountWizard(); await flushPromises(); fillName(name)
     buttonByText('下一步').click(); await flushPromises()
     return wrapper
   }
-  it('creates with independently inherited model and Git defaults without posting an empty model ID', async () => {
+  it('creates with the inherited model default without posting an empty model ID', async () => {
     const wrapper = await openInheritedWizard('inherited-agent')
     const inheritModel = document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!
     expect(inheritModel.getAttribute('aria-checked')).toBe('true')
     expect(document.body.querySelector('[data-testid="model-binding-inherited-summary"]')?.textContent).toContain('codebuddy日常模型')
     expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')).toBeNull()
     buttonByText('下一步').click(); await flushPromises()
-    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')!.getAttribute('aria-checked')).toBe('true')
-    expect(document.body.querySelector('[data-testid="git-credential-row-default-gh"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-testid="git-remove-default-gh"]')).toBeNull()
-    expect(document.body.querySelector('[data-testid="git-credential-add"]')).toBeNull()
-    buttonByText('下一步').click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeNull()
     expect(document.body.textContent).toContain('codebuddy日常模型')
-    expect(document.body.textContent).toContain('Default GitHub')
     buttonByText('创建并进入 Studio').click(); await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
     const payload = createAgent.mock.calls.at(-1)![0] as Record<string, unknown>
-    expect(payload).toMatchObject({ inheritModel: true, inheritGit: true })
+    expect(payload).toMatchObject({ inheritModel: true })
     expect(payload).not.toHaveProperty('modelBinding')
+    expect(payload).not.toHaveProperty('inheritGit')
     wrapper.unmount()
   })
-  it('retains a local model when toggling inheritance and makes Git skip explicitly disable inheritance', async () => {
+  it('retains a local model when toggling inheritance', async () => {
     const wrapper = await openInheritedWizard('skip-inherited-git')
     await chooseModel('cfg-cursor')
     document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
@@ -697,10 +480,8 @@ describe('Agent creation default inheritance', () => {
     document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
     expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')?.textContent).toContain('cursor日常模型')
     buttonByText('下一步').click(); await flushPromises()
-    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-git"]')!.click(); await flushPromises()
-    buttonByText('跳过').click(); await flushPromises()
     buttonByText('创建并进入 Studio').click(); await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
-    expect(createAgent.mock.calls.at(-1)![0]).toMatchObject({ inheritModel: false, inheritGit: false, modelBinding: { kind: 'configuration', configurationId: 'cfg-cursor' }, gitBindings: { items: [] } })
+    expect(createAgent.mock.calls.at(-1)![0]).toMatchObject({ inheritModel: false, modelBinding: { kind: 'configuration', configurationId: 'cfg-cursor' } })
     wrapper.unmount()
   })
   it('blocks inheritance when defaults have no named model and allows selecting a local model instead', async () => {
@@ -724,7 +505,7 @@ describe('Agent creation default inheritance', () => {
     expect(document.body.querySelector('[data-testid="model-binding-inherited-summary"]')?.textContent).toContain('cursor日常模型')
     expect(buttonByText('下一步').disabled).toBe(false)
     buttonByText('下一步').click(); await flushPromises()
-    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeTruthy()
+    expect(buttonByText('创建并进入 Studio')).toBeTruthy()
     wrapper.unmount()
   })
 
@@ -753,8 +534,6 @@ describe('Agent creation default inheritance', () => {
     await chooseModel()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('跳过').click()
-    await wrapper.vm.$nextTick()
     expect(document.body.textContent).toContain('已选图标')
     expect(document.querySelector('[data-testid="wizard-identity-review"]')?.textContent).toContain('紫')
     buttonByText('创建并进入 Studio').click()
@@ -771,8 +550,6 @@ describe('Agent creation default inheritance', () => {
     await flushPromises()
     await chooseModel()
     buttonByText('下一步').click()
-    await plain.vm.$nextTick()
-    buttonByText('跳过').click()
     await plain.vm.$nextTick()
     expect(document.body.textContent).toContain('不选图标，使用首字母')
     buttonByText('创建并进入 Studio').click()

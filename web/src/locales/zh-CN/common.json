@@ -253,8 +253,7 @@
       "paragraph": "段落",
       "number": "数字",
       "bool": "布尔",
-      "select": "下拉",
-      "repos": "仓库列表"
+      "select": "下拉"
     },
     "edgeKinds": {
       "success": {
@@ -397,6 +396,14 @@
       "workflow_version_required": "请重新选择已发布的工作流",
       "workspace_import_forbidden": "请在 Solo 会话中导入代码",
       "workspace_import_unavailable": "工作区导入暂不可用"
+    },
+    "repoChoices": {
+      "loading": "正在加载仓库…",
+      "empty": "还没有登记仓库。先到「设置 → 仓库」添加，并在那里配置凭据和提交身份。",
+      "deleted": "仓库已删除",
+      "defaultBranch": "默认分支",
+      "branch": "{name} 的分支",
+      "manage": "管理仓库"
     }
   }
 }

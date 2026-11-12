@@ -63,6 +63,13 @@ describe('buildEnvelope', () => {
     expect(defaults.gateAuto.enabledMcps).toEqual(['pm-progress'])
     expect(defaults.variables[0].value).toBe('private-token')
   })
+  it('drops workspace-specific repository bindings from the export', () => {
+    const defaults = { inheritWorkspace: true, repos: [{ projectId: 'p1', branch: 'main' }] }
+    const env = buildEnvelope({ name: 'Portable', description: '', needsRepo: false, defaults }, { nodes: [], edges: [] })
+    expect(env.defaults).toMatchObject({ inheritWorkspace: true })
+    expect(env.defaults).not.toHaveProperty('repos')
+    expect(defaults.repos).toHaveLength(1)
+  })
 })
 
 describe('agent profile helpers', () => {

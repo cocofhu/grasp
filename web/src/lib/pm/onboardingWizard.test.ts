@@ -65,16 +65,16 @@ describe('onboardingWizard', () => {
     expect(freshOnboardingDraft().theme).toBe('dark')
   })
 
-  it('submits model configuration and a detached Git selection without secrets', () => {
+  it('submits the model configuration and repository credential reference without secrets', () => {
     const d = freshOnboardingDraft()
     d.modelConfigurationId = 'model-main'
-    d.gitBindings = { items: [{ credentialId: 'git-team', scope: 'github.com' }] }
+    d.repoUrl = 'https://github.com/org/web.git'
+    d.repoCredentialId = 'git-team'
     const body = assembleBootstrapBody(d)
     expect(body.modelConfigurationId).toBe('model-main')
-    expect(body.gitBindings).toEqual(d.gitBindings)
-    d.gitBindings.items[0]!.scope = 'other.example'
-    expect(body.gitBindings.items[0]!.scope).toBe('github.com')
+    expect(body.repoCredentialId).toBe('git-team')
     for (const field of [
+      'gitBindings',
       'apiKey',
       'acpBackend',
       'cliModel',
@@ -95,17 +95,20 @@ describe('onboardingWizard', () => {
     expect(assembleBootstrapBody(d).language).toBe('zh-CN')
   })
 
-  it('sends git identity and can turn preview flags off', () => {
+  it('sends the repository commit identity and can turn preview flags off', () => {
     const d = freshOnboardingDraft()
     expect(gitIdentityConfigured(d)).toBe(false)
-    d.gitUserName = ' Ada Lovelace '
-    d.gitUserEmail = ' ada@example.com '
+    d.commitName = ' Ada Lovelace '
+    d.commitEmail = ' ada@example.com '
     d.vncPreview = false
     d.browserMcp = false
+    expect(gitIdentityConfigured(d)).toBe(false)
+    expect(assembleBootstrapBody(d)).not.toHaveProperty('commitName')
+    d.repoUrl = 'https://github.com/org/web.git'
     expect(gitIdentityConfigured(d)).toBe(true)
     const body = assembleBootstrapBody(d)
-    expect(body.gitUserName).toBe('Ada Lovelace')
-    expect(body.gitUserEmail).toBe('ada@example.com')
+    expect(body.commitName).toBe('Ada Lovelace')
+    expect(body.commitEmail).toBe('ada@example.com')
     expect(body.vncPreview).toBe(false)
     expect(body.browserMcp).toBe(false)
   })
@@ -123,22 +126,19 @@ describe('onboardingWizard', () => {
     expect(body.repoBranch).toBe('develop')
   })
 
-  it('skipping Git drops repo and credentials but keeps identity', () => {
+  it('skipping Git drops the repository with its credential and identity', () => {
     const d = freshOnboardingDraft()
     d.repoUrl = 'https://github.com/org/web.git'
-    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
-    d.gitUserName = 'Ada'
-    d.gitUserEmail = 'ada@example.com'
+    d.repoCredentialId = 'git-team'
+    d.commitName = 'Ada'
+    d.commitEmail = 'ada@example.com'
     expect(gitConfigured(d)).toBe(true)
     d.gitSkipped = true
     expect(gitConfigured(d)).toBe(false)
     expect(repoConfigured(d)).toBe(false)
     const body = assembleBootstrapBody(d)
-    expect(body).not.toHaveProperty('repoUrl')
-    expect(body).not.toHaveProperty('gitCredentialType')
-    expect(body).not.toHaveProperty('githubToken')
-    expect(body.gitUserName).toBe('Ada')
-    expect(body.gitBindings).toEqual({ items: [] })
+    for (const field of ['repoUrl', 'repoCredentialId', 'commitName', 'commitEmail', 'gitCredentialType', 'githubToken'])
+      expect(body).not.toHaveProperty(field)
   })
 
   it('sends every canonical name and a per-agent model', () => {
@@ -234,14 +234,16 @@ describe('onboardingWizard', () => {
     expect(repoConfigured(d)).toBe(true)
   })
 
-  it('Git availability uses selected credential references and respects skip', () => {
+  it('Git availability needs a repository with a credential and respects skip', () => {
     const d = freshOnboardingDraft()
     expect(gitConfigured(d)).toBe(false)
-    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
+    d.repoCredentialId = 'git-team'
+    expect(gitConfigured(d)).toBe(false)
+    d.repoUrl = 'https://github.com/org/web.git'
     expect(gitConfigured(d)).toBe(true)
     d.gitSkipped = true
     expect(gitConfigured(d)).toBe(false)
-    expect(assembleBootstrapBody(d).gitBindings).toEqual({ items: [] })
+    expect(assembleBootstrapBody(d)).not.toHaveProperty('repoCredentialId')
   })
 
   it('treats only a workspace without workflows or agents as needing onboarding', () => {

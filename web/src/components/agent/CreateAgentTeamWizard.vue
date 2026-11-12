@@ -5,12 +5,13 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
-import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import { boundConfigurationIds } from '@/lib/agent/modelBindings'
 import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { api, type ModelBinding, type ModelConfiguration, type TeamBootstrapSession } from '@/lib/api/api'
+import type { Project } from '@/lib/api/apiTypes'
+import { repoShort } from '@/lib/solo/soloPrefs'
 import {
   TEAM_ENGINEER_COUNT,
   TEAM_WIZARD_STEPS,
@@ -39,7 +40,12 @@ const fieldError = ref('')
 const submitError = ref('')
 const submitting = ref(false)
 const modelValid = ref(false)
-const gitValid = ref(true)
+const projects = ref<Project[]>([])
+const repoOptions = computed(() => [
+  { value: '', label: t('pages.agentStudio.teamWizard.repo.none') },
+  ...projects.value.map((p) => ({ value: p.id, label: p.name, hint: repoShort(p.repoUrl) })),
+])
+const selectedRepo = computed(() => projects.value.find((p) => p.id === draft.value.repoId))
 const resourceManagerOpen = ref(false)
 const resourcesVersion = ref(0)
 const models = ref<ModelConfiguration[]>([])
@@ -55,6 +61,7 @@ async function refreshResources() {
   resourceManagerOpen.value = false
   resourcesVersion.value++
   if (returningFromManager) modelValid.value = false
+  void api.listProjects().then((rows) => { projects.value = rows }).catch(() => { projects.value = [] })
   try {
     models.value = (await api.listModelConfigurations()).items || []
     if (returningFromManager && configurationId) {
@@ -93,7 +100,6 @@ watch(
     submitError.value = ''
     submitting.value = false
     modelValid.value = false
-    gitValid.value = true
     void refreshResources()
     stepAnimKey.value++
     nextTick(() => document.getElementById('team-wiz-name')?.focus())
@@ -120,7 +126,7 @@ function goSkip() {
   const step = currentStep.value
   if (!step.skip || submitting.value) return
   draft.value.skipped[step.id] = true
-  if (step.id === 'git') { draft.value.gitBindings = { items: [] }; draft.value.gitUrl = '' }
+  if (step.id === 'repo') draft.value.repoId = ''
   draft.value.step++
   stepAnimKey.value++
 }
@@ -136,7 +142,6 @@ function goNext() {
     fieldError.value = ''
   }
   if (currentStep.value.id === 'model' && (!draft.value.modelConfigurationId || !modelValid.value)) return
-  if (currentStep.value.id === 'git' && !gitValid.value) return
   if (currentStep.value.id === 'review') {
     void submit()
     return
@@ -347,18 +352,13 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
                 </template>
 
-                <template v-else-if="currentStep.id === 'git'">
-                  <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.git.meta') }}</p>
-                  <label class="mb-4 block">
-                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.teamWizard.git.url') }}</span>
-                    <input
-                      v-model="draft.gitUrl"
-                      class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                      placeholder="https://github.com/org/repo.git"
-                    />
-                  </label>
-                  <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" @validity="gitValid = $event" />
-                  <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
+                <template v-else-if="currentStep.id === 'repo'">
+                  <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.repo.meta') }}</p>
+                  <div class="block max-w-md">
+                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.teamWizard.repo.label') }}</span>
+                    <AppSelect v-model="draft.repoId" :options="repoOptions" :aria-label="t('pages.agentStudio.teamWizard.repo.label')" searchable data-testid="team-wizard-repo" />
+                  </div>
+                  <RouterLink to="/settings/projects" class="mt-3 inline-block text-[12px] text-accent-2">{{ t('pages.agentStudio.teamWizard.repo.manage') }}</RouterLink>
                 </template>
 
                 <template v-else-if="currentStep.id === 'mcp'">
@@ -444,7 +444,7 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                     <div>{{ t('pages.agentStudio.teamWizard.review.team') }}：<strong class="text-txt">{{ draft.teamName }}</strong></div>
                     <div>PM：<strong class="text-txt">{{ draft.pmName }}</strong></div>
                     <div>{{ c.model }}：<strong class="text-txt">{{ selectedModel?.name || draft.modelConfigurationId }}</strong></div>
-                    <div>Git：<strong class="text-txt">{{ draft.gitBindings.items.length }} · {{ draft.gitUrl || t('pages.agentStudio.teamWizard.review.none') }}</strong></div>
+                    <div>{{ t('pages.agentStudio.teamWizard.repo.label') }}：<strong class="text-txt">{{ selectedRepo?.name || t('pages.agentStudio.teamWizard.review.none') }}</strong></div>
                     <div>MCP：<strong class="text-txt">{{ mcpNames }}</strong></div>
                     <div>Env：<strong class="text-txt">{{ envSummary }}</strong></div>
                     <div class="mt-2">

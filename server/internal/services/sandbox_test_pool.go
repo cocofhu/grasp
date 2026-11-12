@@ -58,14 +58,14 @@ func (s *SandboxService) findReusable(ctx context.Context, profile string) *mode
 // List to observe the transition. repos empty/nil = empty workspace.
 // Existing live sandboxes for the same agent are reused when no repos are
 // configured (see findReusable); any configured clone list forces a fresh sandbox.
-func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error) {
+func (s *SandboxService) Open(ctx context.Context, profile string, repos []models.SessionRepo) (*models.Sandbox, error) {
 	agent, ok := s.skills.Get(profile)
 	if !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
 	// Shared workspace files and ordinary defaults remain independent of authorization.
 	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, repos)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	row := &models.Sandbox{
 		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
-		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
+		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		s.host.UnregisterRun(runID)
@@ -119,11 +119,11 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 // OpenWithEffective is like Open but injects a pre-merged effective Agent
 // (shared extend → Agent overlay) and optionally overlays shared workspace
 // files under BaseWorkDirSrc. Used by shared-context chat tests.
-func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, repos []sandbox.RepoSpec, effective Agent, sharedWorkDir string) (*models.Sandbox, error) {
+func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, repos []models.SessionRepo, effective Agent, sharedWorkDir string) (*models.Sandbox, error) {
 	if _, ok := s.skills.Get(profile); !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective, repos)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	row := &models.Sandbox{
 		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
-		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
+		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		s.host.UnregisterRun(runID)
@@ -150,11 +150,11 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	return row, nil
 }
 
-func firstTestRepoURL(repos []sandbox.RepoSpec) string {
+func firstRepoURL(repos []models.SessionRepo) string {
 	if len(repos) == 0 {
 		return ""
 	}
-	return repos[0].URL
+	return repos[0].RepoURL
 }
 
 // startContainer performs the slow part of Open in the background: build the
@@ -162,7 +162,7 @@ func firstTestRepoURL(repos []sandbox.RepoSpec) string {
 // record to running. Any failure flips it to "error" (with a short TTL so the
 // idle sweeper reclaims the dead row). Runs on a detached context since the
 // originating HTTP request has already returned.
-func (s *SandboxService) startContainer(id uint, name, profile, runID, token string, repos []sandbox.RepoSpec, agent Agent, sharedWorkDir string) {
+func (s *SandboxService) startContainer(id uint, name, profile, runID, token string, snapshots []models.SessionRepo, agent Agent, sharedWorkDir string) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
@@ -218,7 +218,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		return
 	}
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
-	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
+	runtime.StripGitAuthorizationEnv(env, creds)
+	repos, repoCreds := s.repoGit(snapshots)
+	gitCredentials, err := runtime.ResolveRepoCredentials(repoCreds, s.gitCredential)
 	if err != nil {
 		fail(err)
 		return
@@ -272,10 +274,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	// code-server (8744) and ACP bridge (8765) accept the same secret for
 	// proxied auto-login and direct host:port access.
 	sandbox.ApplyPasswords(env, token)
-	// This interactive path has no workflow `repos` variable to reference, so
-	// wire GIT_REPOS explicitly here. Overrides any stray "${vars.repos}" the
-	// Agent env may carry (unresolved in this path).
-	env["GIT_REPOS"] = sandbox.EncodeRepos(repos)
+	sandbox.ApplyRepoEnv(env, repos)
 	env["GRASP_RUN_ID"] = runID
 	env["GRASP_LAUNCH_KIND"] = "test"
 
@@ -494,7 +493,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		}
 		effective = selected
 	}
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective, row.Repos)
 	if err != nil {
 		return nil, nil, err
 	}

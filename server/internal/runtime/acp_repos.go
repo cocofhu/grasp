@@ -10,93 +10,6 @@ import (
 	"github.com/cocofhu/grasp/internal/textutil"
 )
 
-type repoEntry struct {
-	Name   string `json:"name"`
-	URL    string `json:"url,omitempty"`
-	Branch string `json:"branch,omitempty"`
-}
-
-// ReposVarURLs returns the clone URLs listed in a repos variable value, in
-// order, skipping entries without a URL.
-func ReposVarURLs(v any) []string {
-	var out []string
-	for _, r := range parseReposVar(v) {
-		if r.URL != "" {
-			out = append(out, r.URL)
-		}
-	}
-	return out
-}
-
-func parseReposVar(v any) []repoEntry {
-	if v == nil || models.IsBlankVar(v) {
-		return nil
-	}
-	switch t := v.(type) {
-	case string:
-		s := strings.TrimSpace(t)
-		if s == "" {
-			return nil
-		}
-		var repos []repoEntry
-		if json.Unmarshal([]byte(s), &repos) == nil {
-			out := make([]repoEntry, 0, len(repos))
-			for _, r := range repos {
-				r.Name = strings.TrimSpace(r.Name)
-				r.URL = strings.TrimSpace(r.URL)
-				r.Branch = strings.TrimSpace(r.Branch)
-
-				if r.Name == "" {
-					r.Name = repoNameFromURL(r.URL)
-				}
-				if !safeRepoName(r.Name) {
-					continue
-				}
-				out = append(out, r)
-			}
-			return out
-		}
-
-		wire := sandbox.DecodeRepos(s)
-		if len(wire) == 0 {
-			return nil
-		}
-		out := make([]repoEntry, 0, len(wire))
-		for _, r := range wire {
-			if !safeRepoName(r.Name) {
-				continue
-			}
-			out = append(out, repoEntry{Name: r.Name, URL: r.URL, Branch: r.Branch})
-		}
-		return out
-	case []any:
-		out := make([]repoEntry, 0, len(t))
-		for _, item := range t {
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			url := strings.TrimSpace(str2(m["url"]))
-			name := strings.TrimSpace(str2(m["name"]))
-
-			if name == "" {
-				name = repoNameFromURL(url)
-			}
-			if !safeRepoName(name) {
-				continue
-			}
-			out = append(out, repoEntry{
-				Name:   name,
-				URL:    url,
-				Branch: strings.TrimSpace(str2(m["branch"])),
-			})
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
 func repoWorkspacePath(name string) string {
 	name = strings.TrimSpace(name)
 
@@ -108,32 +21,14 @@ func repoWorkspacePath(name string) string {
 
 // safeRepoName reports whether name is safe to use as a flat workspace subdir
 // (<workspace>/<name>/). It rejects empty names, "."/"..", and any name with a
-// path separator so a malicious or mistyped `repos[].name` can never escape the
-// workspace root when clones/paths are derived from it. Unsafe entries are
-// dropped at parse time (parseReposVar) so they never reach GIT_REPOS, prompts,
-// or git/glab commands; startup.sh applies the same guard defensively.
+// path separator so a repository directory can never escape the workspace
+// root when clones/paths are derived from it; startup.sh applies the same guard.
 func safeRepoName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" || name == "." || name == ".." {
 		return false
 	}
 	return !strings.ContainsAny(name, "/\\")
-}
-
-// repoNameFromURL derives a workspace subdir name from a clone URL: the last
-// path segment without a trailing ".git". Empty when it can't be derived.
-func repoNameFromURL(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	raw = strings.TrimSuffix(raw, "/")
-	seg := raw
-	if i := strings.LastIndexAny(seg, "/:"); i >= 0 {
-		seg = seg[i+1:]
-	}
-	seg = strings.TrimSuffix(seg, ".git")
-	return strings.TrimSpace(seg)
 }
 
 // parseBranchesVar parses the run-scoped `branches` variable (name→branch map)
@@ -189,36 +84,54 @@ func parseGoMapBranches(s string) map[string]string {
 	return m
 }
 
-// resolveRepos builds the (flat) clone list from vars.repos. Every repository —
-// including a lone one — is cloned to <workspace>/<name>/; the workspace root is
-// never a git repo. Returns nil when no usable repos are configured (a pure
-// artifact flow / empty workspace). Each repo's checkout branch resolves from
-// vars.branches[name] (downstream continuity) over the entry's own branch.
+// resolveRepos builds the (flat) clone list from the run's repositories. Every
+// repository — including a lone one — is cloned to <workspace>/<name>/; the
+// workspace root is never a git repo. Returns nil for a run without
+// repositories (a pure artifact flow / empty workspace). Each repo's checkout
+// branch resolves from vars.branches[name] (downstream continuity) over the
+// branch picked at launch.
 func resolveRepos(req NodeReq) []sandbox.RepoSpec {
-	entries := parseReposVar(req.Vars["repos"])
-	if len(entries) == 0 {
-		return nil
-	}
-	branches := parseBranchesVar(req.Vars["branches"])
+	repos, _ := CloneRepos(req.Repos, parseBranchesVar(req.Vars["branches"]), nil)
+	return repos
+}
+
+func (c *acpProvider) repoGit(req NodeReq) ([]sandbox.RepoSpec, []RepoCredential) {
+	return CloneRepos(req.Repos, parseBranchesVar(req.Vars["branches"]), c.opts.Project)
+}
+
+// CloneRepos turns frozen repositories into the clone list, in order, skipping
+// unusable and repeated directories. branches overrides a checkout branch by
+// directory. project, when set, adds each repository's current commit author
+// and credential; a repository deleted since the snapshot keeps neither.
+func CloneRepos(repos []models.SessionRepo, branches map[string]string, project func(id string) (*models.Project, bool)) ([]sandbox.RepoSpec, []RepoCredential) {
 	seen := map[string]bool{}
-	out := make([]sandbox.RepoSpec, 0, len(entries))
-	for _, e := range entries {
-		name := strings.TrimSpace(e.Name)
-		repoURL := strings.TrimSpace(e.URL)
-		if name == "" || repoURL == "" || seen[name] {
+	var specs []sandbox.RepoSpec
+	var creds []RepoCredential
+	for _, r := range repos {
+		name := strings.TrimSpace(r.RepoDirName)
+		if name == "" {
+			name = sandbox.RepoNameFromURL(r.RepoURL)
+		}
+		repoURL := strings.TrimSpace(r.RepoURL)
+		if !safeRepoName(name) || repoURL == "" || seen[name] {
 			continue
 		}
-		branch := e.Branch
-		if b := strings.TrimSpace(branches[name]); b != "" {
-			branch = b
-		}
 		seen[name] = true
-		out = append(out, sandbox.RepoSpec{Name: name, URL: repoURL, Branch: branch})
+		spec := sandbox.RepoSpec{Name: name, URL: repoURL, Branch: strings.TrimSpace(r.Branch)}
+		if b := strings.TrimSpace(branches[name]); b != "" {
+			spec.Branch = b
+		}
+		if project != nil {
+			if p, ok := project(r.ProjectID); ok && p != nil {
+				spec.AuthorName, spec.AuthorEmail = p.CommitName, p.CommitEmail
+				if id := strings.TrimSpace(p.CredentialID); id != "" {
+					creds = append(creds, RepoCredential{Repo: name, URL: repoURL, CredentialID: id})
+				}
+			}
+		}
+		specs = append(specs, spec)
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return specs, creds
 }
 
 // firstRepoURL returns the clone URL of the run's first configured repo (for

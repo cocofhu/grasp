@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
+import RepoCredentialSelect from '@/components/workspace/RepoCredentialSelect.vue'
 import { api } from '@/lib/api/api'
 import type { Project } from '@/lib/api/apiTypes'
 import {
@@ -117,6 +118,42 @@ async function save() {
       <p class="project-form__hint">
         {{ t('pages.projects.form.repoDirHint', { dir: draft.repoDirName.trim() || dirPlaceholder }) }}
       </p>
+    </section>
+
+    <section class="project-form__section">
+      <h3 class="project-form__title">{{ t('pages.projects.form.sectionAccess') }}</h3>
+      <div class="block">
+        <span class="label">{{ t('pages.projects.form.credential.label') }}</span>
+        <RepoCredentialSelect v-model="draft.credentialId" :repo-url="draft.repoUrl" data-testid="project-form-credential" />
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label class="block">
+          <span class="label">{{ t('pages.projects.form.commitName') }}</span>
+          <input
+            v-model="draft.commitName"
+            class="input w-full"
+            :class="{ 'project-form__bad': show('commitName') }"
+            maxlength="120"
+            :placeholder="t('pages.projects.form.commitNamePlaceholder')"
+            data-testid="project-form-commit-name"
+          />
+          <span v-if="show('commitName')" class="project-form__err">{{ t('pages.projects.form.commitNameInvalid') }}</span>
+        </label>
+        <label class="block">
+          <span class="label">{{ t('pages.projects.form.commitEmail') }}</span>
+          <input
+            v-model="draft.commitEmail"
+            class="input w-full"
+            :class="{ 'project-form__bad': show('commitEmail') }"
+            type="email"
+            spellcheck="false"
+            :placeholder="t('pages.projects.form.commitEmailPlaceholder')"
+            data-testid="project-form-commit-email"
+          />
+          <span v-if="show('commitEmail')" class="project-form__err">{{ t('pages.projects.form.commitEmailInvalid') }}</span>
+        </label>
+      </div>
+      <p class="project-form__hint">{{ t('pages.projects.form.commitHint') }}</p>
     </section>
 
     <div v-if="error" class="project-form__error" role="alert">{{ error }}</div>

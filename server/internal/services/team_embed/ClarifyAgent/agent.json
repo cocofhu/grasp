@@ -11,9 +11,6 @@
       }
     }
   ],
-  "env": {
-    "GIT_REPOS": "${vars.repos}"
-  },
   "capabilities": {
     "interaction": "clarify",
     "tools": [

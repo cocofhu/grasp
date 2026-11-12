@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentEnvPanel from './AgentEnvPanel.vue'
-import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
 import AgentMcpPanel from './AgentMcpPanel.vue'
 import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 
@@ -69,18 +68,4 @@ describe('Agent Studio help buttons', () => {
     expectOutlineHelpButton(wrapper, '[data-test="mcp-help-link"]')
   })
 
-  it('Git 凭据卡帮助为描边按钮', () => {
-    const wrapper = mount(AgentGitCredentialPicker, {
-      props: {
-        modelValue: { items: [] },
-        items: [],
-      },
-      global: {
-        plugins: [createI18nPlugin()],
-        stubs: { AppModal: true },
-      },
-    })
-
-    expect(wrapper.get('[data-testid="git-credential-help"]').text()).toBe('Git 配置帮助')
-  })
 })

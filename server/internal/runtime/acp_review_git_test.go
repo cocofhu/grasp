@@ -86,7 +86,7 @@ func TestPushWorkingBranchesOmitsGitAdd(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
-	req := NodeReq{Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
+	req := NodeReq{Repos: []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://h/app.git"}}}
 	p.pushWorkingBranches(context.Background(), sb, req)
 	if add.Load() {
 		t.Fatal("pushWorkingBranches must not git add -A")
@@ -119,7 +119,7 @@ func TestCheckGitClarifyCommitsOnlyLiveEdits(t *testing.T) {
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	clarify := &models.AgentCapabilities{Interaction: models.InteractionClarify}
 	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: clarify,
-		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
+		Repos: []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://h/app.git"}}}
 	p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Name: "sb", WorkspaceDir: "/root/workspace"}}
 	p.CheckGit(context.Background(), req)
 	if probed.Load() {
@@ -247,7 +247,7 @@ func TestCheckGitDirtyWithoutACPStillPushes(t *testing.T) {
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 	req := NodeReq{RunID: "r", NodeID: "n", NodeType: "agent", Caps: testImplementCaps,
-		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`}}
+		Repos: []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://h/app.git"}}}
 	p.sessions[reactKey(req)] = &reactSession{sb: sb}
 	turn := p.CheckGit(context.Background(), req)
 	if turn.Msg != "" {
@@ -302,7 +302,7 @@ func TestRunAgentReviewConfirmGitWrapUp(t *testing.T) {
 		RunID: runID, NodeID: nodeID, NodeType: "agent", Caps: testImplementCaps, Token: tok,
 		KeepAliveForReview: true,
 		Config:             map[string]any{"prompt": "build"},
-		Vars:               map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`},
+		Repos:              []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://h/app.git"}},
 	})
 	if _, err := p.RunAgent(context.Background(), req); err != nil {
 		t.Fatalf("RunAgent: %v", err)

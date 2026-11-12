@@ -1,13 +1,8 @@
-import type { AgentGitBindings, CredentialItem } from '@/lib/api/api'
+import type { CredentialItem } from '@/lib/api/api'
 import { defaultGitCredentialHost, normalizeGitCredentialHost, kindOfItem } from '@/lib/workspace/credentialKinds'
-import { credentialUsable } from './modelRouting'
+import { credentialUsable } from '@/lib/agent/modelRouting'
 
 export const GIT_AUTH_ENV_KEYS = new Set(['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS', 'GITHUB_URL', 'GITLAB_URL', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GLAB_TOKEN', 'GITLAB_ACCESS_TOKEN'])
-
-/** Copies only the current binding fields; retired keys from older saves are dropped. */
-export function cloneGitBindings(value: AgentGitBindings): AgentGitBindings {
-  return { items: value.items.map(({ credentialId, scope }) => (scope === undefined ? { credentialId } : { credentialId, scope })) }
-}
 
 export function gitCredentialKind(item?: CredentialItem) {
   const kind = item ? kindOfItem(item) : undefined
@@ -18,7 +13,7 @@ export function usableGitCredential(item?: CredentialItem): boolean {
   return !!item && !!gitCredentialKind(item) && credentialUsable(item)
 }
 
-/** Optional Agent scope can narrow a Git credential, never change its origin. */
+/** A scope (or a repository URL) may narrow a Git credential, never change its origin or transport. */
 export function validCredentialGitScope(scope: string, credential?: CredentialItem): boolean {
   const kind = gitCredentialKind(credential)?.id
   if (!validGitScope(scope, kind)) return false
@@ -30,11 +25,6 @@ export function validCredentialGitScope(scope: string, credential?: CredentialIt
     const scoped = new URL(scope.includes('://') ? scope : `${expected.protocol}//${scope}`)
     return scoped.origin === expected.origin
   } catch { return false }
-}
-
-/** Save the explicit selection; credentials are never inferred from other layers. */
-export function setDraftGitBindings<T extends { gitBindings?: AgentGitBindings }>(draft: T, value: AgentGitBindings): void {
-  draft.gitBindings = cloneGitBindings(value)
 }
 
 function validScopeHost(raw: string): boolean {
@@ -81,4 +71,9 @@ export function validGitScope(raw: string, kind?: string): boolean {
     return !!parts && kind !== 'github' && kind !== 'gitlab' && validScopeHost(parts[2]) && validScopePath(parts[3])
   }
   return validScopeHost(value)
+}
+
+/** A repository credential must be usable and match the repository's transport and host. */
+export function credentialFitsRepo(repoUrl: string, credential?: CredentialItem): boolean {
+  return !!repoUrl.trim() && usableGitCredential(credential) && validCredentialGitScope(repoUrl.trim(), credential)
 }

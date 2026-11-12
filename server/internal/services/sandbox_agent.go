@@ -88,7 +88,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
 	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, nil)
 	if err != nil {
 		return nil, false, err
 	}
@@ -159,7 +159,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 // agentContainerExtra carries the Solo-only knobs of startAgentContainer.
 // The zero value keeps the PM / cron behavior.
 type agentContainerExtra struct {
-	Repos []sandbox.RepoSpec
+	Repos []models.SessionRepo
 	// Resident leaves destroy_at NULL so the sweeper never reclaims the sandbox.
 	Resident bool
 	// LaunchKind is solo, test, or assistant. Empty means assistant.

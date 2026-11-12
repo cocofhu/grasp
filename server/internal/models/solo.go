@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Project is one Git repository registered for Solo sessions. It stores only
-// identity, display text and the clone location. Access and environment come
-// from the Agent that starts the session, never from the repository row.
+// Project is one Git repository shared by Solo sessions and workflows. It owns
+// the clone location, the credential that authorizes it and the commit author.
+// Other environment still comes from the Agent.
 type Project struct {
 	ID          string `gorm:"primaryKey" json:"id"`
 	Name        string `gorm:"size:191;uniqueIndex" json:"name"`
@@ -16,7 +16,14 @@ type Project struct {
 	// DefaultBranch is checked out when a session does not pick a branch.
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 	// RepoDirName is the clone directory under the sandbox workspace.
-	RepoDirName string     `json:"repoDirName,omitempty"`
+	RepoDirName string `json:"repoDirName,omitempty"`
+	// CredentialID is the Git token or SSH key from workspace credentials that
+	// authorizes this repository only; empty clones without authorization.
+	CredentialID string `json:"credentialId,omitempty"`
+	// CommitName / CommitEmail are the author for commits in this repository;
+	// empty fields keep the sandbox default.
+	CommitName  string     `json:"commitName,omitempty"`
+	CommitEmail string     `json:"commitEmail,omitempty"`
 	CreatedBy   string     `json:"createdBy,omitempty"`
 	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
@@ -38,9 +45,17 @@ const (
 // SoloArtifactRunPrefix reserves the run namespace used by resident Solo sandboxes.
 const SoloArtifactRunPrefix = "solo-"
 
-// SessionRepo is one repository frozen into a Solo session at start. It is
-// stored inside the session, not as its own table, and only records what to
-// clone. Agent permissions and environment are resolved again on each start.
+// RepoChoice picks one repository by project id. An empty Branch keeps the
+// repository's default branch.
+type RepoChoice struct {
+	ProjectID string `json:"projectId"`
+	Branch    string `json:"branch,omitempty"`
+}
+
+// SessionRepo is one repository frozen into a Solo session or a run at start.
+// It is stored inside its owner, not as its own table, and only records what
+// to clone. Authorization and commit author are read from the repository again
+// on each sandbox start.
 type SessionRepo struct {
 	Position    int    `json:"position"`
 	ProjectID   string `json:"projectId"`

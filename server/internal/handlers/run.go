@@ -33,6 +33,9 @@ type startRunBody struct {
 	LaunchConfigurationID *string `json:"launchConfigurationId"`
 	LaunchModelID         *string `json:"launchModelId"`
 	LaunchReasoningEffort *string `json:"launchReasoningEffort"`
+	// Repos picks a subset of the workflow's bound repositories; omitted
+	// takes all of them.
+	Repos *[]models.RepoChoice `json:"repos"`
 }
 
 // firstMessageBody is the opening message as a client sends it: references
@@ -74,9 +77,9 @@ func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessa
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil {
-		return engine.LaunchChoice{}
+		return engine.LaunchChoice{Repos: b.Repos}
 	}
-	choice := engine.LaunchChoice{Set: true}
+	choice := engine.LaunchChoice{Set: true, Repos: b.Repos}
 	if b.LaunchConfigurationID != nil {
 		choice.ConfigurationID = strings.TrimSpace(*b.LaunchConfigurationID)
 	}

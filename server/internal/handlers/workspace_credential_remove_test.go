@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -121,8 +122,8 @@ func TestRemoveCredentialHTTPDeletesGitAndBindingFailsClosed(t *testing.T) {
 	hn.h.Credentials = credentials
 
 	git := postCredential(t, hn, map[string]any{"purpose": "git", "provider": "github", "name": "GitHub", "value": "ghp-synthetic"})
-	bindings := &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: git.ID}}}
-	if _, err := runtime.ResolveGitBindings(bindings, credentials.ResolveGitValue); err != nil {
+	repos := []runtime.RepoCredential{{Repo: "web", URL: "https://github.com/acme/web.git", CredentialID: git.ID}}
+	if _, err := runtime.ResolveRepoCredentials(repos, credentials.ResolveGitValue); err != nil {
 		t.Fatalf("git binding did not resolve before removal: %v", err)
 	}
 	removed := hn.do(http.MethodDelete, "/api/workspace/credentials/"+git.ID+"/account", nil)
@@ -130,7 +131,7 @@ func TestRemoveCredentialHTTPDeletesGitAndBindingFailsClosed(t *testing.T) {
 		t.Fatalf("git delete=%d %s", removed.Code, removed.Body.String())
 	}
 	assertCredentialNotListed(t, hn, git.ID)
-	if _, err := runtime.ResolveGitBindings(bindings, credentials.ResolveGitValue); err == nil || !strings.Contains(err.Error(), "missing") || strings.Contains(err.Error(), "ghp-synthetic") {
+	if _, err := runtime.ResolveRepoCredentials(repos, credentials.ResolveGitValue); !errors.Is(err, runtime.ErrRepoCredentialMissing) || strings.Contains(err.Error(), "ghp-synthetic") {
 		t.Fatalf("git binding did not fail closed: %v", err)
 	}
 

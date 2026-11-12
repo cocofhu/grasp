@@ -9,11 +9,7 @@ import (
 )
 
 // SoloRepoChoice is one repository selected when a Solo session starts.
-// An empty Branch keeps that repository's own default branch.
-type SoloRepoChoice struct {
-	ProjectID string `json:"projectId"`
-	Branch    string `json:"branch"`
-}
+type SoloRepoChoice = models.RepoChoice
 
 // soloChoices prefers an explicit repos list (including an empty one, which
 // means an empty workspace). A missing list falls back to the legacy single
@@ -48,15 +44,17 @@ func (s *SoloService) resolveSessionRepos(in SoloCreateInput) ([]models.SessionR
 			return nil, nil, err
 		}
 		projects = append(projects, p)
-		snaps = append(snaps, sessionRepoFromProject(p, choice.Branch, i))
+		snaps = append(snaps, SessionRepoFromProject(p, choice.Branch, i))
 	}
-	if err := validateSessionRepos(snaps); err != nil {
+	if err := ValidateSessionRepos(snaps); err != nil {
 		return nil, nil, err
 	}
 	return snaps, projects, nil
 }
 
-func sessionRepoFromProject(p *models.Project, branch string, position int) models.SessionRepo {
+// SessionRepoFromProject freezes a repository at a position, on branch or its
+// default branch.
+func SessionRepoFromProject(p *models.Project, branch string, position int) models.SessionRepo {
 	b := strings.TrimSpace(branch)
 	if b == "" {
 		b = strings.TrimSpace(p.DefaultBranch)
@@ -82,7 +80,8 @@ func resolvedRepoDir(dir, repoURL string) string {
 	return name
 }
 
-func validateSessionRepos(repos []models.SessionRepo) error {
+// ValidateSessionRepos rejects clone directories used twice and unusable branches.
+func ValidateSessionRepos(repos []models.SessionRepo) error {
 	if err := validateRepoDirs(repos); err != nil {
 		return err
 	}
@@ -139,26 +138,5 @@ func legacySessionRepos(row *models.SoloSession) []models.SessionRepo {
 	if p == nil || strings.TrimSpace(p.RepoURL) == "" {
 		return nil
 	}
-	return []models.SessionRepo{sessionRepoFromProject(p, row.Branch, 0)}
-}
-
-// SoloRepoSpecsList converts a frozen snapshot into the sandbox clone list.
-// Branch and directory were resolved when the snapshot was written.
-func SoloRepoSpecsList(repos []models.SessionRepo) []sandbox.RepoSpec {
-	out := make([]sandbox.RepoSpec, 0, len(repos))
-	for _, repo := range repos {
-		url := strings.TrimSpace(repo.RepoURL)
-		if url == "" {
-			continue
-		}
-		name := strings.TrimSpace(repo.RepoDirName)
-		if name == "" {
-			name = resolvedRepoDir("", url)
-		}
-		out = append(out, sandbox.RepoSpec{Name: name, URL: url, Branch: strings.TrimSpace(repo.Branch)})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return []models.SessionRepo{SessionRepoFromProject(p, row.Branch, 0)}
 }

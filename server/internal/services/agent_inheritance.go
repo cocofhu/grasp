@@ -2,11 +2,11 @@ package services
 
 import "encoding/json"
 
-// Missing inheritance switches use the workspace defaults. Explicit false is
+// A missing inheritance switch uses the workspace default. Explicit false is
 // a local configuration choice and is always preserved when saving/exporting.
 func (c *agentConfig) UnmarshalJSON(data []byte) error {
 	type plain agentConfig
-	next := plain{InheritModel: true, InheritGit: true}
+	next := plain{InheritModel: true}
 	if err := json.Unmarshal(data, &next); err != nil {
 		return err
 	}
@@ -22,7 +22,7 @@ func (e *agentExportJSON) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	type plain agentExportJSON
-	next := plain{InheritModel: true, InheritGit: true}
+	next := plain{InheritModel: true}
 	if err := json.Unmarshal(data, &next); err != nil {
 		return err
 	}

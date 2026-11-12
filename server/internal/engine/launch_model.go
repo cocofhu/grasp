@@ -8,13 +8,15 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-// LaunchChoice is the optional model selection on a start-run request.
-// Set is false when the caller omitted it. An empty ModelID is the primary model.
+// LaunchChoice is the optional model and repository selection on a start-run
+// request. Set is false when the caller omitted the model. An empty ModelID is
+// the primary model. Nil Repos takes every repository bound to the workflow.
 type LaunchChoice struct {
 	Set             bool
 	ConfigurationID string
 	ModelID         string
 	ReasoningEffort string
+	Repos           *[]models.RepoChoice
 }
 
 // normalizeLaunchModel checks a launch choice against the first clarify

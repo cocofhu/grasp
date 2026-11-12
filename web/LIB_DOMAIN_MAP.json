@@ -12,7 +12,6 @@
       "cliModelEnv.ts",
       "cliModelView.ts",
       "fixedEffort.ts",
-      "gitBindings.ts",
       "identityIcons.ts",
       "modelBindings.ts",
       "modelCapabilities.ts",
@@ -274,6 +273,7 @@
     ],
     "workspace": [
       "credentialKinds.ts",
+      "gitCredentials.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
       "useCodexDeviceLogin.ts",
@@ -283,7 +283,7 @@
     ]
   },
   "totals": {
-    "agent": 24,
+    "agent": 23,
     "api": 5,
     "artifacts": 1,
     "chat": 12,
@@ -295,6 +295,6 @@
     "shared": 39,
     "solo": 15,
     "workflow": 3,
-    "workspace": 7
+    "workspace": 8
   }
 }

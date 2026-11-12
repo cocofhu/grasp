@@ -88,6 +88,9 @@ type Options struct {
 	SelectedCredential SelectedCredentialFunc
 	// GitCredential also resolves the credential host for repository authorization.
 	GitCredential GitCredentialFunc
+	// Project reads a repository's current credential and commit author by id.
+	// Nil or a miss clones the run's snapshot without either.
+	Project func(id string) (*models.Project, bool)
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
@@ -111,7 +114,6 @@ type Options struct {
 type SharedAgentView struct {
 	AcpBackend   string
 	ModelBinding *modelrouting.Binding
-	GitBindings  *models.GitBindings
 	MCP          []SharedMCPView
 	Env          map[string]string
 	Layout       SharedLayoutView
@@ -147,6 +149,8 @@ type NodeReq struct {
 	Caps   *models.AgentCapabilities
 	Config map[string]any
 	Vars   map[string]any
+	// Repos are the run's repositories frozen at start, in clone order.
+	Repos []models.SessionRepo
 	// PromptImages are vars-referenced image attachments collected by the engine
 	// for the node's first streamChat turn (react open / agent / rehydrate).
 	PromptImages []models.PromptImage

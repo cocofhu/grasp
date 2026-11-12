@@ -183,6 +183,12 @@ func main() {
 	externalMcpSvc := services.NewExternalMcpService(db)
 	mcpKeySvc := services.NewWorkspaceMcpApiKeyService(db)
 	credentialSvc := services.NewCredentialService(db)
+	projectSvc := services.NewProjectService(db)
+	projectSvc.SetGitCredentialResolver(credentialSvc.ResolveGitValue)
+	projectLookup := func(id string) (*models.Project, bool) {
+		p, err := projectSvc.Get(id)
+		return p, err == nil
+	}
 	codexLogins := runtime.NewCodexLoginHub(nil)
 	codexLoginMgr := services.NewCodexLoginManager(credentialSvc, codexLogins, services.CodexLoginManagerConfig{
 		RefreshLead: cfg.CodexRefreshLead(), CheckInterval: cfg.CodexCheckInterval(), AuthBaseURL: cfg.CodexAuthBaseURL(),
@@ -207,10 +213,7 @@ func main() {
 		_, err = resolveModelBinding(configuration.Backend, binding)
 		return configuration.Backend, err
 	}
-	sharedAgentSvc.SetBindingResolvers(resolveModelConfiguration, func(bindings *models.GitBindings) error {
-		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
-		return err
-	})
+	sharedAgentSvc.SetModelResolver(resolveModelConfiguration)
 	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	sshKeyPath := sandbox.DataPlaneKeyPath(cfg.SecretsKeyFile())
@@ -268,7 +271,7 @@ func main() {
 				})
 			}
 			return runtime.SharedAgentView{
-				AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding, GitBindings: cfg.GitBindings,
+				AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding,
 				MCP: mcp,
 				Env: cfg.Env,
 				Layout: runtime.SharedLayoutView{
@@ -282,6 +285,7 @@ func main() {
 		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
 		GitCredential:        credentialSvc.ResolveGitValue,
+		Project:              projectLookup,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -375,10 +379,6 @@ func main() {
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
 	agentSvc.SetSharedAgent(sharedAgentSvc)
 	agentSvc.SetModelConfigurationResolver(resolveModelConfiguration)
-	agentSvc.SetGitBindingResolver(func(bindings *models.GitBindings) error {
-		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
-		return err
-	})
 	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
 		_, err := resolveModelBinding(backend, binding)
 		return err
@@ -412,11 +412,12 @@ func main() {
 		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
 		GitCredential:        credentialSvc.ResolveGitValue,
+		Project:              projectLookup,
 	})
 	sbxSvc.SetCodexLogins(codexLogins)
 	// Register resident teardown before any startup reconciliation can report a
 	// missing sandbox. Older releases could leave active sessions dangling.
-	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, projectSvc)
 	soloSvc.SetBlobStore(blobStore)
 	soloBackups, err := solobackup.New(cfg.SoloBackup)
 	if err != nil {
@@ -660,6 +661,8 @@ func main() {
 		return state, nil
 	}
 	h.Team.Credentials = credentialSvc
+	h.Team.Projects = projectSvc
+	h.Onboarding.Projects = projectSvc
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)
 	}

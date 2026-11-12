@@ -62,7 +62,7 @@ func soloRouteFixture(t *testing.T) (*SandboxService, *models.Sandbox, Agent, Ag
 	agent, _ := s.skills.Get("agentA")
 	agent = s.effectiveAgent(agent)
 	agent.ModelBinding = modelrouting.ConfigurationReference("sandbox-fixture")
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestSoloRouteSwitchRejectsBusyGitAndImageChanges(t *testing.T) {
 	if err := s.db.Model(row).Update("git_bindings_fingerprint", "old-git").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AlignSoloModelRoute(context.Background(), row.ID, target); err == nil || !strings.Contains(err.Error(), "Git 授权") {
+	if _, err := s.AlignSoloModelRoute(context.Background(), row.ID, target); err == nil || !strings.Contains(err.Error(), "仓库凭据") {
 		t.Fatalf("must preserve Git permission guard: %v", err)
 	}
 	if err := s.db.Model(row).Update("git_bindings_fingerprint", s.live[row.ID].gitBindingsFingerprint).Error; err != nil {

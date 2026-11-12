@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getRun: vi.fn(),
   reactReply: vi.fn(),
   createWorkflowFromBaseline: vi.fn(),
+  listProjects: vi.fn(async () => [{ id: 'p1', name: 'repo', repoUrl: 'https://github.com/org/repo.git' }]),
   listModelConfigurations: vi.fn(),
   listModelConnections: vi.fn(),
   listCredentials: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('@/lib/api/api', async () => {
       getRun: mocks.getRun,
       reactReply: mocks.reactReply,
       createWorkflowFromBaseline: mocks.createWorkflowFromBaseline,
+      listProjects: mocks.listProjects,
       listModelConfigurations: mocks.listModelConfigurations,
       listModelConnections: mocks.listModelConnections,
       listCredentials: mocks.listCredentials,
@@ -1553,9 +1555,7 @@ describe('DashboardView home composer', () => {
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('首页新建')
-    const url = wrapper.find('input[placeholder*="https"]')
-    expect(url.exists()).toBe(true)
-    await url.setValue('https://github.com/org/repo')
+    await wrapper.get('[data-testid="repo-choice-toggle-p1"]').setValue(true)
     await flushPromises()
     mocks.listWorkflows.mockResolvedValue([approveWf, created])
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
@@ -1578,8 +1578,7 @@ describe('DashboardView home composer', () => {
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('X')
-    const url = wrapper.find('input[placeholder*="https"]')
-    await url.setValue('https://example.com/r.git')
+    await wrapper.get('[data-testid="repo-choice-toggle-p1"]').setValue(true)
     await flushPromises()
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
     await flushPromises()
@@ -1679,8 +1678,7 @@ describe('DashboardView home composer', () => {
     await teleported('home-workflow-select-create').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('下拉新建')
-    const url = wrapper.find('input[placeholder*="https"]')
-    await url.setValue('https://github.com/org/from-select')
+    await wrapper.get('[data-testid="repo-choice-toggle-p1"]').setValue(true)
     await flushPromises()
     mocks.listWorkflows.mockResolvedValue([approveWf, created])
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
@@ -1786,8 +1784,7 @@ describe('DashboardView home composer', () => {
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="home-create-workflow-name"]').setValue('刷新保持')
-    const url = wrapper.find('input[placeholder*="https"]')
-    await url.setValue('https://github.com/org/reload-keep')
+    await wrapper.get('[data-testid="repo-choice-toggle-p1"]').setValue(true)
     await flushPromises()
     await wrapper.get('[data-testid="home-create-submit"]').trigger('click')
     await flushPromises()

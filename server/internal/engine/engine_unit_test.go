@@ -134,13 +134,6 @@ func TestComputeRunTitle(t *testing.T) {
 	if got := varValueToTitleString(map[string]any{"foo": "bar"}, "string"); got != "" {
 		t.Fatalf("non-composite map should not become a title: got %q", got)
 	}
-	reposJSON := `[{"branch":"","name":"approving","url":"https://git.example/approving.git"}]`
-	if got := varValueToTitleString(reposJSON, "repos"); got != "approving" {
-		t.Fatalf("repos json title: got %q", got)
-	}
-	if got := computeRunTitle(models.Graph{Variables: []models.Variable{{Name: "repos", Type: "repos", Ask: true}}}, []models.RunVariable{{Name: "repos", Type: "repos", Value: reposJSON}}); got != "approving" {
-		t.Fatalf("first ask repos: got %q", got)
-	}
 
 	gDefault := models.Graph{Variables: []models.Variable{{Name: "env", Type: "select", Ask: true, Value: "prod"}}}
 	out, err := resolveStartVars(gDefault, map[string]any{}, nil)
@@ -173,10 +166,9 @@ func TestApplyRunTitleOverride(t *testing.T) {
 	}
 }
 
-func TestStartRunTitleOverrideBeatsReposAsk(t *testing.T) {
-	reposJSON := `[{"name":"approving","url":"https://git.example/approving.git"}]`
+func TestStartRunTitleOverrideBeatsAskVariable(t *testing.T) {
 	g := models.Graph{
-		Variables: []models.Variable{{Name: "repos", Type: "repos", Ask: true, Value: reposJSON}},
+		Variables: []models.Variable{{Name: "topic", Type: "string", Ask: true, Value: "approving"}},
 		Nodes:     []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 		Edges:     []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
 	}

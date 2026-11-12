@@ -661,19 +661,19 @@ func splitGitHubQuery(query string) (string, []string, error) {
 }
 
 // githubToken picks the credential the sandbox's git-credentials helper would
-// use for owner/repo: an exact repository scope beats a host scope; the first
-// equal match wins. Empty means anonymous.
+// use for owner/repo among the scope's repositories: an exact repository scope
+// beats a host scope; the first equal match wins. A credential that no longer
+// resolves is skipped. Empty means anonymous.
 func (s *SoloService) githubToken(row *models.SoloSession, owner, repo string) string {
-	if row.AgentName == "" || s.sbx == nil || s.sbx.gitCredential == nil {
+	if s.sbx == nil || s.sbx.gitCredential == nil {
 		return ""
 	}
-	agent, err := s.sessionAgent(row)
-	if err != nil || agent.GitBindings == nil {
-		return ""
-	}
-	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.sbx.gitCredential)
-	if err != nil {
-		return ""
+	_, repoCreds := s.sbx.repoGit(effectiveSessionRepos(row))
+	var credentials []sandbox.GitCredential
+	for _, rc := range repoCreds {
+		if resolved, err := runtime.ResolveRepoCredentials([]runtime.RepoCredential{rc}, s.sbx.gitCredential); err == nil {
+			credentials = append(credentials, resolved...)
+		}
 	}
 	return pickGitHubToken(credentials, owner, repo)
 }

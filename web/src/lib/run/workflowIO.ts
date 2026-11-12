@@ -70,9 +70,13 @@ export function buildEnvelope(
     delete cfg.inputs
     return { ...n, config: cfg }
   })
-  // Runtime defaults are portable metadata. Secret values must be supplied again after import.
+  // Runtime defaults are portable metadata. Secret values must be supplied again after import;
+  // bound repositories are workspace records and are bound again in the target workspace.
   const defaults = meta.defaults ? JSON.parse(JSON.stringify(meta.defaults)) as NonNullable<Workflow['defaults']> : undefined
-  if (defaults) defaults.variables = exportVariables(defaults.variables || [])
+  if (defaults) {
+    defaults.variables = exportVariables(defaults.variables || [])
+    delete defaults.repos
+  }
   return {
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),

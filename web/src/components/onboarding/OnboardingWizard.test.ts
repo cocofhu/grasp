@@ -41,12 +41,13 @@ const ModelPicker = {
   emits: ['update:modelValue', 'validity'],
   template: '<div class="model-picker-stub" />',
 }
-const GitPicker = {
-  name: 'AgentGitCredentialPicker',
-  props: ['modelValue'],
-  emits: ['update:modelValue', 'validity'],
-  template: '<div class="git-picker-stub" />',
+const RepoPicker = {
+  name: 'RepoCredentialSelect',
+  props: ['modelValue', 'repoUrl', 'items', 'disabled'],
+  emits: ['update:modelValue'],
+  template: '<div class="repo-credential-stub" />',
 }
+const githubToken = { id: 'gh', name: 'GitHub', purpose: 'git', provider: 'github', type: 'git', secretKind: 'token', configured: true, enabled: true }
 const ResourcesPanel = {
   name: 'WorkspaceCredentialsPanel',
   props: { inline: Boolean, scope: String, view: String, setup: Boolean, configurationId: String },
@@ -98,7 +99,7 @@ async function mountWizard(props: Record<string, unknown> = {}) {
         Icon: true,
         AppButton: { props: { disabled: Boolean }, template: '<button type="button" :disabled="disabled" v-bind="$attrs"><slot /></button>' },
         ModelBindingEditor: ModelPicker,
-        AgentGitCredentialPicker: GitPicker,
+        RepoCredentialSelect: RepoPicker,
         WorkspaceCredentialsPanel: ResourcesPanel,
       },
     },
@@ -261,17 +262,18 @@ describe('OnboardingWizard', () => {
     const panel = w.getComponent(ResourcesPanel)
     expect(panel.props()).toMatchObject({ inline: true, scope: 'git', view: 'credentials' })
     expect(w.findAll('[role="dialog"]')).toHaveLength(1)
+    expect(w.findComponent(RepoPicker).exists()).toBe(false)
     const credential = { id: 'new-git', purpose: 'git', provider: 'github', type: 'git', secretKind: 'token', configured: true, enabled: true }
     panel.vm.$emit('credentialSaved', credential)
     await flushPromises()
-    expect(w.findComponent(GitPicker).props('modelValue')).toEqual({ items: [{ credentialId: 'new-git' }] })
+    expect((w.vm as any).draft.repoCredentialId).toBe('new-git')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-git')
-    expect(w.findComponent(GitPicker).exists()).toBe(false)
     expect(w.findComponent(ResourcesPanel).exists()).toBe(false)
+    expect(w.getComponent(RepoPicker).props('modelValue')).toBe('new-git')
     await w.get('[data-testid="onboarding-prev"]').trigger('click')
     await flushPromises()
-    expect(w.findComponent(GitPicker).props('modelValue')).toEqual({ items: [{ credentialId: 'new-git' }] })
+    expect((w.vm as any).draft.repoCredentialId).toBe('new-git')
     w.unmount()
   })
   it('blocks missing or invalid model configuration before Git', async () => {
@@ -288,18 +290,27 @@ describe('OnboardingWizard', () => {
     expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
     w.unmount()
   })
-  it('validates selected credentials and requires Git identity even when cloning is optional', async () => {
+  it('checks the commit identity and credential only when cloning a repository', async () => {
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: 'model-key', purpose: 'model_api', configured: true }, githubToken] })
     const w = await mountWizard()
-    await toGitCredentials(w)
-    w.findComponent(GitPicker).vm.$emit('validity', false)
+    await toGit(w)
+    const vm = w.vm as any
+    vm.draft.commitEmail = 'not-an-email'
+    vm.draft.repoCredentialId = 'gh'
     await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-gitCredentials')
-    w.findComponent(GitPicker).vm.$emit('validity', true)
+    expect(activeStep(w)).toBe('onboarding-rail-team')
+    await w.get('[data-testid="onboarding-prev"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-git')
-    await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(mocks.error).toHaveBeenCalledWith('pages.onboarding.toastBadGitUser')
     await identity(w)
+    await w.get('[data-testid="onboarding-repo-url"]').setValue('git@github.com:team/repo.git')
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-git')
+    expect(mocks.error).toHaveBeenLastCalledWith('pages.onboarding.gitCredentials.invalid')
+    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-team')
     w.unmount()
@@ -359,7 +370,7 @@ describe('OnboardingWizard', () => {
     expect(vm.modelValid).toBe(true)
     expect(vm.draft.modelConfigurationId).toBe('model-main')
     expect(vm.draft.repoUrl).toBe('https://github.com/team/repo.git')
-    expect(vm.draft.gitUserName).toBe('Ada Lovelace')
+    expect(vm.draft.commitName).toBe('Ada Lovelace')
     expect(mocks.listCredentials).toHaveBeenCalledTimes(2)
     expect(mocks.listModelConnections).toHaveBeenCalledTimes(2)
     expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(2)
@@ -384,28 +395,25 @@ describe('OnboardingWizard', () => {
     expect(mocks.bootstrapOnboarding).not.toHaveBeenCalled()
     w.unmount()
   })
-  it('submits configuration and multiple Git references without inline secrets', async () => {
+  it('submits configuration and the repository credential reference without inline secrets', async () => {
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: 'model-key', purpose: 'model_api', configured: true }, githubToken] })
     const w = await mountWizard()
-    await toGitCredentials(w)
-    const selected = {
-      items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
-    }
-    w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
-    await next(w)
+    await toGit(w)
     await identity(w)
-    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://git.example/team/repo.git')
+    await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
     await w.get('[data-testid="onboarding-repo-branch"]').setValue('main')
+    w.getComponent(RepoPicker).vm.$emit('update:modelValue', 'gh')
     await next(w)
     await next(w)
     await next(w)
     const body = mocks.bootstrapOnboarding.mock.calls[0][0]
     expect(body).toMatchObject({
       modelConfigurationId: 'model-main',
-      gitBindings: selected,
-      repoUrl: 'https://git.example/team/repo.git',
+      repoUrl: 'https://github.com/team/repo.git',
       repoBranch: 'main',
-      gitUserName: 'Ada Lovelace',
-      gitUserEmail: 'ada@example.com',
+      repoCredentialId: 'gh',
+      commitName: 'Ada Lovelace',
+      commitEmail: 'ada@example.com',
     })
     for (const field of [
       'apiKey',
@@ -415,29 +423,28 @@ describe('OnboardingWizard', () => {
       'cliModel',
       'openCodeModel',
       'gitCredentialType',
+      'gitBindings',
+      'gitUserName',
+      'gitUserEmail',
     ])
       expect(body).not.toHaveProperty(field)
     expect(w.emitted('completed')).toHaveLength(1)
     w.unmount()
   })
-  it('skipping Git sends an empty selection and drops the clone request', async () => {
+  it('skipping Git drops the repository with its credential and identity', async () => {
     const w = await mountWizard()
-    await toGitCredentials(w)
-    w.findComponent(GitPicker).vm.$emit('update:modelValue', {
-      items: [{ credentialId: 'gh' }],
-    })
-    await next(w)
+    await toGit(w)
     await identity(w)
     await w.get('[data-testid="onboarding-repo-url"]').setValue('https://github.com/team/repo.git')
+    ;(w.vm as any).draft.repoCredentialId = 'gh'
     await w.get('[data-testid="onboarding-git-skip"]').trigger('click')
     await next(w)
     expect(activeStep(w)).toBe('onboarding-rail-team')
     await next(w)
     await next(w)
     const body = mocks.bootstrapOnboarding.mock.calls[0][0]
-    expect(body.gitBindings).toEqual({ items: [] })
-    expect(body).not.toHaveProperty('repoUrl')
-    expect(body.gitUserName).toBe('Ada Lovelace')
+    for (const field of ['repoUrl', 'repoCredentialId', 'commitName', 'commitEmail', 'gitBindings'])
+      expect(body).not.toHaveProperty(field)
     w.unmount()
   })
   it('keeps canonical names read-only and sends every role with its model', async () => {

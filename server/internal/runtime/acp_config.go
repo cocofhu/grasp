@@ -106,8 +106,6 @@ type agentLayout struct {
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
 	InheritModel       bool                  `json:"inheritModel"`
-	InheritGit         bool                  `json:"inheritGit"`
-	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
 	AcpBackend         string                `json:"acpBackend"`
@@ -116,11 +114,11 @@ type agentFile struct {
 	Layout             agentLayout           `json:"layout"`
 }
 
-// Missing switches inherit workspace defaults; an explicit false keeps the
+// A missing switch inherits workspace defaults; an explicit false keeps the
 // Agent's local choice, even when a local binding is also stored.
 func (f *agentFile) UnmarshalJSON(data []byte) error {
 	type plain agentFile
-	next := plain{InheritModel: true, InheritGit: true}
+	next := plain{InheritModel: true}
 	if err := json.Unmarshal(data, &next); err != nil {
 		return err
 	}
@@ -130,7 +128,7 @@ func (f *agentFile) UnmarshalJSON(data []byte) error {
 
 // agentConfig reads the Agent's agent.json (best effort; defaults on miss).
 func (c *acpProvider) agentConfig(profile string) agentFile {
-	f := agentFile{InheritModel: true, InheritGit: true}
+	f := agentFile{InheritModel: true}
 	if profile == "" || c.opts.ProfilesRoot == "" {
 		return f
 	}
@@ -165,21 +163,16 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	agent := c.agentConfig(models.AgentProfile(req.Config))
 	shared, ok := c.sharedView(req)
 	if !ok {
-		if agent.InheritModel || agent.InheritGit {
+		if agent.InheritModel {
 			if c.opts.SharedAgent != nil {
 				shared = c.opts.SharedAgent()
 			}
-			if agent.InheritModel {
-				if agent.Layout.ConfigRoot == "" || agent.Layout.ConfigRoot == ResolveConfigRoot(NormalizeBackend(agent.AcpBackend), "") {
-					agent.Layout.ConfigRoot = ResolveConfigRoot(NormalizeBackend(shared.AcpBackend), "")
-				}
-				agent.ModelBinding, agent.AcpBackend = shared.ModelBinding, shared.AcpBackend
-				agent.Env = envauth.OverlayEnv(nil, agent.Env)
-				ApplyInheritedModelEnv(agent.Env, shared.Env)
+			if agent.Layout.ConfigRoot == "" || agent.Layout.ConfigRoot == ResolveConfigRoot(NormalizeBackend(agent.AcpBackend), "") {
+				agent.Layout.ConfigRoot = ResolveConfigRoot(NormalizeBackend(shared.AcpBackend), "")
 			}
-			if agent.InheritGit {
-				agent.GitBindings = shared.GitBindings
-			}
+			agent.ModelBinding, agent.AcpBackend = shared.ModelBinding, shared.AcpBackend
+			agent.Env = envauth.OverlayEnv(nil, agent.Env)
+			ApplyInheritedModelEnv(agent.Env, shared.Env)
 		}
 		return agent
 	}
@@ -190,9 +183,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	out := agent
 	if agent.InheritModel {
 		out.ModelBinding, out.AcpBackend = shared.ModelBinding, shared.AcpBackend
-	}
-	if agent.InheritGit {
-		out.GitBindings = shared.GitBindings
 	}
 	// Env: shared base, Agent overlay.
 	out.Env = envauth.OverlayEnv(ModelIndependentEnv(shared.Env), agent.Env)
@@ -262,8 +252,6 @@ func (c *acpProvider) mcpVars(req NodeReq) map[string]string {
 		}
 		m["vars."+k] = str2(v)
 	}
-
-	m["vars.repos"] = sandbox.EncodeRepos(resolveRepos(req))
 	return m
 }
 

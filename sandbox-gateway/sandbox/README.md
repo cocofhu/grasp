@@ -183,6 +183,7 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `GIT_REPOS` | 空 | 多仓，逗号分隔，每项 `name\|url\|branch`（`branch`/`name` 可省）；各 clone 到 `WORKSPACE_DIR/<name>/` |
+| `GIT_REPO_AUTHORS` | 空 | 逐仓提交作者，JSON 数组 `[{"name","userName","userEmail"}]`，`name` 为克隆目录名；clone 后写入该仓库的 `git config user.*` |
 
 ### 4. Git 凭据与用户信息
 

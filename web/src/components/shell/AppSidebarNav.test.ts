@@ -1666,13 +1666,13 @@ describe('AppSidebarNav', () => {
       '补充空状态文案',
       'w',
       'w',
-      'approving',
+      'w',
     ])
     expect(rows[0].text()).not.toContain('需求澄清')
     expect(rows[4].text()).not.toContain('[')
     expect(rows[0].attributes('title')).toBe('把登录做清楚 · 需求澄清')
     expect(rows[2].attributes('title')).toBe('w · 需求澄清')
-    expect(rows[4].attributes('title')).toBe('approving · 人工门禁')
+    expect(rows[4].attributes('title')).toBe('w · 人工门禁')
     expect(rows[0].attributes('data-motion')).toBeUndefined()
     expect(rows[0].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     await rows[1].trigger('click')

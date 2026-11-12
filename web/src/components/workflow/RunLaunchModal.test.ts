@@ -67,7 +67,7 @@ function mountModal(open = true, extraProps: Record<string, unknown> = {}) {
           template: '<textarea data-testid="paragraph" :value="text" @input="$emit(\'update:text\', $event.target.value)" />',
         },
         HardLoadLayer: true,
-        ReposEditor: true,
+        RepoChoiceList: true,
       },
     },
   })
@@ -117,7 +117,7 @@ describe('RunLaunchModal', () => {
           AppModal: { props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ParagraphInput: true,
           HardLoadLayer: true,
-          ReposEditor: true,
+          RepoChoiceList: true,
           PrioritySegmented: true,
         },
       },

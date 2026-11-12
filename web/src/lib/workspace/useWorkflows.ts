@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
-import type { RepoRow } from '@/components/ui/ReposEditor.vue'
+import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import { api } from '@/lib/api/api'
 import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
@@ -47,7 +47,9 @@ const menuPosition = ref<{ top: string; left: string } | null>(null)
 const newWorkflowMenuOpen = ref(false)
 const baselineModalOpen = ref(false)
 const baselineName = ref('')
-const baselineRepos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
+const baselineRepos = ref<RepoChoice[]>([])
+const baselineProjects = ref<Project[]>([])
+const baselineProjectsLoading = ref(false)
 const creatingBaseline = ref(false)
 const baselineCreateError = ref('')
 const onboardingGateOpen = ref(false)
@@ -148,12 +150,7 @@ function askFields(w: Workflow): InputField[] {
     desc: v.desc,
     type: v.type === 'string' ? 'text' : v.type,
     required: v.required,
-    default:
-      v.type === 'repos'
-        ? JSON.stringify(Array.isArray(v.value) ? v.value : [])
-        : v.value == null
-          ? ''
-          : String(v.value),
+    default: v.value == null ? '' : String(v.value),
     editable: v.editable,
     options: v.options,
   }))
@@ -261,9 +258,17 @@ async function openBaselineModal() {
   newWorkflowMenuOpen.value = false
   if (!(await ensureOnboardingAgents())) return
   baselineName.value = ''
-  baselineRepos.value = [{ name: '', url: '', branch: '' }]
+  baselineRepos.value = []
   baselineCreateError.value = ''
   baselineModalOpen.value = true
+  baselineProjectsLoading.value = true
+  try {
+    baselineProjects.value = await api.listProjects()
+  } catch (e: any) {
+    baselineCreateError.value = String(e?.message || e)
+  } finally {
+    baselineProjectsLoading.value = false
+  }
 }
 
 function closeBaselineModal() {
@@ -274,7 +279,7 @@ function closeBaselineModal() {
 
 const hasValidBaselineRepo = computed(() =>
   baselineName.value.trim() !== '' &&
-  baselineRepos.value.some((repo) => repo.url.trim() !== ''),
+  baselineRepos.value.length > 0,
 )
 
 async function createFromBaseline() {
@@ -441,7 +446,7 @@ watch(workspaceReady, () => {
     closeMenu()
     baselineModalOpen.value = false
     baselineName.value = ''
-    baselineRepos.value = [{ name: '', url: '', branch: '' }]
+    baselineRepos.value = []
     baselineCreateError.value = ''
     creatingBaseline.value = false
     onboardingGateOpen.value = false
@@ -472,6 +477,6 @@ onUnmounted(() => {
   document.removeEventListener('scroll', onScrollClose, true)
 })
 return {
-router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, creatingBaseline, baselineCreateError, onboardingGateOpen, onboardingGateMissing, closeOnboardingGate, finishOnboardingFromGate, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingNotifyWfId, wfNotifyMode, wfNotifyHas, persistWorkflowNotify, setWorkflowNotifyMode, toggleWorkflowNotifyEvent, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
+router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, baselineProjects, baselineProjectsLoading, creatingBaseline, baselineCreateError, onboardingGateOpen, onboardingGateMissing, closeOnboardingGate, finishOnboardingFromGate, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingNotifyWfId, wfNotifyMode, wfNotifyHas, persistWorkflowNotify, setWorkflowNotifyMode, toggleWorkflowNotifyEvent, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
 }
 }

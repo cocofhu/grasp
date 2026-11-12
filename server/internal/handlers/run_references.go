@@ -4,17 +4,13 @@ import (
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
-// reposVarName is the workflow variable that lists the run's repositories.
-const reposVarName = "repos"
-
 // SearchWorkflowReferences handles GET /api/workflows/:id/references/search
-// for the home composer in workflow mode. GitHub searches the workflow's
-// default repositories with the first clarify Agent's credential.
+// for the home composer in workflow mode. GitHub searches the workflow's bound
+// repositories with their own credentials.
 func (h *Handlers) SearchWorkflowReferences(c *gin.Context) {
 	user, ok := h.soloReady(c)
 	if !ok {
@@ -34,8 +30,8 @@ func (h *Handlers) SearchWorkflowReferences(c *gin.Context) {
 }
 
 // SearchRunNodeReferences handles GET /api/runs/:id/nodes/:nodeId/references/search
-// for a run chat. GitHub searches the run's repositories with the node
-// Agent's credential (a gate's upstream producer for gate hot-revise).
+// for a run chat. GitHub searches the run's repositories with their own
+// credentials.
 func (h *Handlers) SearchRunNodeReferences(c *gin.Context) {
 	user, ok := h.soloReady(c)
 	if !ok {
@@ -54,8 +50,8 @@ func (h *Handlers) SearchRunNodeReferences(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
-// workflowReferenceScope is the launch scope of a workflow: its default repos
-// (workspace value overridden by the graph's) and its first clarify Agent.
+// workflowReferenceScope is the launch scope of a workflow: its bound
+// repositories and its first clarify Agent.
 func (h *Handlers) workflowReferenceScope(user, workflowID string) (*models.SoloSession, bool) {
 	if h.WF == nil {
 		return nil, false
@@ -64,20 +60,15 @@ func (h *Handlers) workflowReferenceScope(user, workflowID string) (*models.Solo
 	if !ok {
 		return nil, false
 	}
-	var repos any
-	if h.Workspace != nil {
-		for _, v := range h.Workspace.VariablesForWorkflow(wf.ID) {
-			if v.Name == reposVarName && !models.IsBlankVar(v.Value) {
-				repos = v.Value
+	var repos []models.SessionRepo
+	if wf.Defaults != nil && h.Solo != nil {
+		for _, choice := range wf.Defaults.Repos {
+			if snap, err := h.Solo.Projects().Snapshot([]models.RepoChoice{choice}); err == nil {
+				repos = append(repos, snap...)
 			}
 		}
 	}
-	for _, v := range wf.Graph.Variables {
-		if v.Name == reposVarName && !models.IsBlankVar(v.Value) {
-			repos = v.Value
-		}
-	}
-	return services.ReferenceScope(user, h.firstClarifyAgent(wf.Graph), runtime.ReposVarURLs(repos)), true
+	return services.ReferenceScope(user, h.firstClarifyAgent(wf.Graph), repos), true
 }
 
 // firstClarifyAgent walks the graph from its start and returns the Agent of
@@ -110,7 +101,7 @@ func (h *Handlers) firstClarifyAgent(g models.Graph) string {
 	return ""
 }
 
-// runReferenceScope is the scope of one run chat: the run's repos variable and
+// runReferenceScope is the scope of one run chat: the run's repositories and
 // the Agent of the node that answers (a gate's upstream producer).
 func (h *Handlers) runReferenceScope(user, runID, nodeID string) (*models.SoloSession, bool) {
 	if h.Runs == nil {
@@ -131,13 +122,7 @@ func (h *Handlers) runReferenceScope(user, runID, nodeID string) (*models.SoloSe
 			}
 		}
 	}
-	var repos any
-	for _, v := range h.Runs.Variables(runID) {
-		if v.Name == reposVarName {
-			repos = v.Value
-		}
-	}
-	return services.ReferenceScope(user, models.AgentProfile(node.Config), runtime.ReposVarURLs(repos)), true
+	return services.ReferenceScope(user, models.AgentProfile(node.Config), run.Repos), true
 }
 
 // prepareRunReferences validates the @ picks of a run chat message for the

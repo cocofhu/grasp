@@ -84,7 +84,7 @@ func sandboxTestAppliedBindings(t *testing.T, s *SandboxService, row *models.San
 	if !ok {
 		t.Fatal("missing fixture Agent")
 	}
-	model, git, err := s.currentBindingFingerprints(s.effectiveAgent(agent))
+	model, git, err := s.currentBindingFingerprints(s.effectiveAgent(agent), row.Repos)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1026,7 +1026,7 @@ func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	db.Create(live)
 	ds.setStatus(live.Name, "running")
 
-	repos := []sandbox.RepoSpec{{Name: "web", URL: "https://h/web.git"}}
+	repos := []models.SessionRepo{{RepoDirName: "web", RepoURL: "https://h/web.git"}}
 	got, err := s.Open(ctx, "agentA", repos)
 	if err != nil {
 		t.Fatalf("open with repos: %v", err)
@@ -1048,14 +1048,14 @@ func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	}
 }
 
-func TestFirstTestRepoURL(t *testing.T) {
-	if firstTestRepoURL(nil) != "" {
+func TestFirstRepoURL(t *testing.T) {
+	if firstRepoURL(nil) != "" {
 		t.Fatal("nil repos")
 	}
-	if firstTestRepoURL([]sandbox.RepoSpec{}) != "" {
+	if firstRepoURL([]models.SessionRepo{}) != "" {
 		t.Fatal("empty repos")
 	}
-	if got := firstTestRepoURL([]sandbox.RepoSpec{{URL: "https://a.git"}, {URL: "https://b.git"}}); got != "https://a.git" {
+	if got := firstRepoURL([]models.SessionRepo{{RepoURL: "https://a.git"}, {RepoURL: "https://b.git"}}); got != "https://a.git" {
 		t.Fatalf("first = %q", got)
 	}
 }

@@ -77,6 +77,8 @@ func ValidateImport(raw []byte) (models.ExportEnvelope, error) {
 			return models.ExportEnvelope{}, err
 		}
 		env.Defaults.Variables = vars
+		// Repository IDs are workspace-local; bind them again after import.
+		env.Defaults.Repos = nil
 	}
 	return env, nil
 }

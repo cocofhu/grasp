@@ -12,7 +12,7 @@ set -e
 #           自建实例通过 GITHUB_URL / GITLAB_URL 与 repo host 精确匹配）。
 #   SSH   — 平台从工作区凭据注入 ~/.ssh（单独运行镜像时可用 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
 # 主要环境变量：WORKSPACE_DIR, ROOT_PASSWORD, CODE_SERVER_PORT, SSH_KEY, SKIP_INNER_DOCKER,
-#   GIT_REPOS(多仓 name|url|branch),
+#   GIT_REPOS(多仓 name|url|branch), GIT_REPO_AUTHORS(逐仓提交作者 JSON),
 #   GITHUB_TOKEN, GITHUB_URL, GITLAB_TOKEN, GITLAB_URL, GIT_SSH_PRIVATE_KEY, GIT_SSH_KNOWN_HOSTS（仅单独运行镜像）,
 #   SANDBOX_INJECT（含 SSH staging + ConfigHome，须早于 clone）,
 #   AGENT_PROVIDER, ACP_BRIDGE_PORT, ACP_BRIDGE_PASSWORD, ACP_BRIDGE_MODEL
@@ -351,6 +351,24 @@ repo_name_from_url() {
     printf '%s' "${u%.git}"
 }
 
+# GIT_REPO_AUTHORS 是 JSON 数组 [{"name","userName","userEmail"}]，name 为克隆目录名。
+# 命中的仓库写入自己的 user.name / user.email，未配置的字段沿用全局默认。
+apply_repo_author() {
+    [ -n "${GIT_REPO_AUTHORS:-}" ] || return 0
+    python3 - "$1" "$2" "$GIT_REPO_AUTHORS" <<'PY' || echo "无法设置仓库 $1 的提交作者" >&2
+import json, subprocess, sys
+name, dest, authors = sys.argv[1], sys.argv[2], sys.argv[3]
+for author in json.loads(authors or "[]"):
+    if not isinstance(author, dict) or author.get("name") != name:
+        continue
+    for key, field in (("user.name", "userName"), ("user.email", "userEmail")):
+        value = author.get(field)
+        if isinstance(value, str) and value.strip():
+            subprocess.run(["git", "-C", dest, "config", key, value.strip()], check=True)
+PY
+    return 0
+}
+
 # --- 契约注入（须早于 git 凭据 / clone：SSH meta 文件要在 clone 前落地）--------
 # 业务方在服务启动前把配置/文件注入沙箱。两种方式：
 #   1) 声明式 SANDBOX_INJECT="src[|dest],src2[|dest2],..."
@@ -472,7 +490,7 @@ if [ ! -f /tmp/grasp-ssh-inject/git/manifest.json ]; then
 fi
 
 # --- 凭据配置（clone 前；此时 SSH 文件与 Token env 均已就绪）----------------
-# 仓库只提供 GIT_REPOS 克隆清单。访问凭据只来自 Agent catalog，旧的逐仓库授权文件在 catalog 安装时清掉。
+# 仓库只提供 GIT_REPOS 克隆清单。访问凭据只来自平台下发的 catalog（每个仓库自己的凭据），旧的逐仓库授权文件在 catalog 安装时清掉。
 configure_git_catalog /tmp/grasp-ssh-inject/git
 configure_git_credentials
 rm -rf /tmp/grasp-ssh-inject
@@ -527,6 +545,7 @@ if [ -n "$GIT_REPOS" ]; then
             fi
         fi
         if git -C "$_dest" rev-parse --git-dir >/dev/null 2>&1; then
+            apply_repo_author "$_name" "$_dest"
             _entry_json="{\"name\":\"$_name\",\"path\":\"$_dest\"}"
             if [ -n "$_manifest" ]; then _manifest="$_manifest,$_entry_json"; else _manifest="$_entry_json"; fi
         fi

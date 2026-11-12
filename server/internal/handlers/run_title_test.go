@@ -12,11 +12,10 @@ import (
 
 func TestStartRunAcceptsTitleOverride(t *testing.T) {
 	h := newHarness(t)
-	reposJSON := `[{"name":"approving","url":"https://git.example/approving.git"}]`
 	if err := h.h.WF.Save(&models.WorkflowDef{
 		ID: "wf-title", Name: "WF Title",
 		Graph: models.Graph{
-			Variables: []models.Variable{{Name: "repos", Type: "repos", Ask: true, Value: reposJSON}},
+			Variables: []models.Variable{{Name: "topic", Type: "string", Ask: true, Value: "approving"}},
 			Nodes:     []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 			Edges:     []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
 		},

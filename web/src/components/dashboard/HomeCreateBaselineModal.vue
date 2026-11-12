@@ -4,8 +4,9 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import Icon from '@/components/ui/Icon.vue'
-import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
+import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import { api } from '@/lib/api/api'
+import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 
@@ -20,20 +21,22 @@ const { ensureLoaded } = useWorkspaceContext()
 const loading = ref(false)
 const loadError = ref('')
 const baselineName = ref('')
-const baselineRepos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
+const baselineRepos = ref<RepoChoice[]>([])
+const projects = ref<Project[]>([])
 const creating = ref(false)
 const createError = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
-const canSubmit = computed(() => !!baselineName.value.trim() && baselineRepos.value.some((repo) => !!repo.url.trim()))
+const canSubmit = computed(() => !!baselineName.value.trim() && baselineRepos.value.length > 0)
 let generation = 0
 async function load() {
   const gen = ++generation
   loading.value = true
   loadError.value = ''
   try {
-    const workspace = await ensureLoaded()
+    const [workspace, list] = await Promise.all([ensureLoaded(), api.listProjects()])
     if (gen !== generation) return
     if (!workspace) throw new Error(t('pages.dashboard.create.loadFailed'))
+    projects.value = list
     loading.value = false
     await nextTick()
     nameInput.value?.focus()
@@ -60,7 +63,7 @@ async function submit() {
 watch(() => props.open, (open) => {
   if (!open) { generation++; return }
   baselineName.value = ''
-  baselineRepos.value = [{ name: '', url: '', branch: '' }]
+  baselineRepos.value = []
   createError.value = ''
   void load()
 }, { immediate: true })
@@ -79,7 +82,7 @@ watch(() => props.open, (open) => {
         <label class="label" for="home-create-workflow-name">{{ t('pages.workspace.newWorkflow.nameLabel') }}</label>
         <input id="home-create-workflow-name" ref="nameInput" v-model="baselineName" class="input" autocomplete="off" data-testid="home-create-workflow-name" :placeholder="t('pages.workspace.newWorkflow.namePlaceholder')" :disabled="creating" />
       </div>
-      <ReposEditor :repos="baselineRepos" :min-rows="1" :editable="!creating" @update:repos="baselineRepos = $event" />
+      <RepoChoiceList v-model="baselineRepos" :projects="projects" :disabled="creating" />
       <div v-if="createError" class="mt-3 flex gap-2 text-[12px] text-err" role="alert" data-testid="home-create-error"><Icon name="alert" :size="14" />{{ createError }}</div>
     </div>
     <template #footer>

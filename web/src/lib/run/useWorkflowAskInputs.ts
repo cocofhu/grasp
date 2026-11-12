@@ -11,12 +11,7 @@ function askFieldsFromWorkflow(wf: Pick<Workflow, 'nodes'>): InputField[] {
     desc: v.desc,
     type: v.type === 'string' ? 'text' : v.type,
     required: v.required,
-    default:
-      v.type === 'repos'
-        ? JSON.stringify(Array.isArray(v.value) ? v.value : [])
-        : v.value == null
-          ? ''
-          : String(v.value),
+    default: v.value == null ? '' : String(v.value),
     editable: v.editable,
     options: v.options,
   }))
@@ -29,22 +24,12 @@ function fieldOptions(f: InputField): string[] {
     .filter(Boolean)
 }
 
-export function isAskValueBlank(type: string | undefined, value: string): boolean {
-  const v = String(value ?? '').trim()
-  if (!v) return true
-  if (type === 'repos') {
-    try {
-      const parsed = JSON.parse(v)
-      if (Array.isArray(parsed) && parsed.length === 0) return true
-    } catch {
-      /* non-JSON non-empty still counts as filled */
-    }
-  }
-  return false
+export function isAskValueBlank(value: string): boolean {
+  return !String(value ?? '').trim()
 }
 
 export function missingRequiredAskField(wf: Pick<Workflow, 'nodes'>): InputField | undefined {
-  return askFieldsFromWorkflow(wf).find((f) => f.required && isAskValueBlank(f.type, f.default || ''))
+  return askFieldsFromWorkflow(wf).find((f) => f.required && isAskValueBlank(f.default || ''))
 }
 
 export async function seedAskLaunchFields(wf: Pick<Workflow, 'id' | 'nodes'>): Promise<{

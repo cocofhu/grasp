@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
-import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
 import AgentIconPicker from '@/components/agent/AgentIconPicker.vue'
@@ -26,9 +25,7 @@ const {
   createError,
   pendingAcp,
   showAcpConfirm,
-  envHelpOpen,
   stepAnimKey,
-  credentialItems,
   currentStep,
   progressPct,
   reviewItems,
@@ -43,24 +40,20 @@ const {
   confirmAcpSwitch,
   cancelAcpSwitch,
   goPrev,
-  goSkip,
   goNext,
   chipClass,
   WIZARD_STEPS,
 } = useAgentCreateWizard(props, emit)
 
-const gitSelectionValid = ref(true)
 const modelSelectionValid = ref(false)
 const canUseSelectedModel = computed(() => modelSelectionValid.value && effectiveModel.value?.kind === 'configuration' && !!effectiveModel.value.configurationId)
 function resetModelSelection() {
   modelSelectionValid.value = false
   draft.value.modelBinding = { kind: 'configuration', configurationId: '' }
 }
-watch(() => draft.value.gitBindings?.items.length, (count) => { if (!count) gitSelectionValid.value = true }, { immediate: true })
 watch(draft, resetModelSelection, { immediate: true })
 function proceed() {
   if ((currentStep.value.id === 'acp' || currentStep.value.id === 'review') && !canUseSelectedModel.value) return
-  if ((currentStep.value.id === 'git' || currentStep.value.id === 'review') && !gitSelectionValid.value) return
   goNext()
 }
 </script>
@@ -190,12 +183,8 @@ function proceed() {
 
                 <template v-else-if="currentStep.id === 'acp'">
                   <div class="tool-model-layout" data-testid="agent-tool-model-step">
-                    <AgentRuntimeBindings :draft="draft" section="model" inheritance :defaults="sharedConfig" :disabled="creating" @defaults-loaded="sharedConfig = $event" @model-validity="modelSelectionValid = $event" />
+                    <AgentRuntimeBindings :draft="draft" inheritance :defaults="sharedConfig" :disabled="creating" @defaults-loaded="sharedConfig = $event" @model-validity="modelSelectionValid = $event" />
                   </div>
-                </template>
-
-                <template v-else-if="currentStep.id === 'git'">
-                  <AgentRuntimeBindings :draft="draft" section="git" inheritance :defaults="sharedConfig" :items="credentialItems" :disabled="creating" @defaults-loaded="sharedConfig = $event" @git-validity="gitSelectionValid = $event" @help="envHelpOpen = true" />
                 </template>
 
                 <template v-else-if="currentStep.id === 'review'">
@@ -242,10 +231,7 @@ function proceed() {
                 <AppButton variant="outline" :disabled="draft.step === 0 || creating" @click="goPrev">
                   {{ t('pages.agentStudio.wizard.prev') }}
                 </AppButton>
-                <AppButton v-if="currentStep.skip && currentStep.id !== 'acp'" variant="outline" :disabled="creating" @click="goSkip">
-                  {{ t('pages.agentStudio.wizard.skip') }}
-                </AppButton>
-                <AppButton variant="primary" :disabled="creating || ((currentStep.id === 'git' || currentStep.id === 'review') && !gitSelectionValid) || ((currentStep.id === 'acp' || currentStep.id === 'review') && !canUseSelectedModel)" @click="proceed">
+                <AppButton variant="primary" :disabled="creating || ((currentStep.id === 'acp' || currentStep.id === 'review') && !canUseSelectedModel)" @click="proceed">
                   {{
                     creating
                       ? t('pages.agentStudio.wizard.creating')
@@ -265,14 +251,6 @@ function proceed() {
           </div>
         </div>
       </div>
-
-      <EnvCredentialHelpModal
-        :open="open && envHelpOpen"
-        section="git"
-        :backend="draft.acpBackend"
-        elevated
-        @close="envHelpOpen = false"
-      />
 
       <div v-if="showAcpConfirm" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60" @click="cancelAcpSwitch" />

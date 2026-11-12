@@ -46,11 +46,18 @@ func gitBindingsFingerprint(credentials []sandbox.GitCredential) string {
 	return sandbox.SpecFingerprint(sandbox.Spec{GitBindingsConfigured: true, GitCredentials: credentials})
 }
 
-func (s *SandboxService) currentBindingFingerprints(agent Agent) (model, git string, err error) {
+// repoGit is the clone list of repos with each repository's current commit
+// author and credential.
+func (s *SandboxService) repoGit(repos []models.SessionRepo) ([]sandbox.RepoSpec, []runtime.RepoCredential) {
+	return runtime.CloneRepos(repos, nil, s.project)
+}
+
+func (s *SandboxService) currentBindingFingerprints(agent Agent, repos []models.SessionRepo) (model, git string, err error) {
 	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.ModelBinding.ConfigurationID) == "" {
 		return "", "", fmt.Errorf("请先为 Agent 选择模型配置")
 	}
-	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.gitCredential)
+	_, repoCreds := s.repoGit(repos)
+	credentials, err := runtime.ResolveRepoCredentials(repoCreds, s.gitCredential)
 	if err != nil {
 		return "", "", err
 	}
@@ -78,7 +85,7 @@ func checkAppliedBindings(model, git string, row *models.Sandbox, live *liveSand
 		return fmt.Errorf("模型或凭据已变更或尚未同步，请重新打开沙箱")
 	}
 	if git != appliedGit {
-		return fmt.Errorf("Git 授权已变更或尚未同步，请重新打开沙箱")
+		return fmt.Errorf("仓库凭据已变更或尚未同步，请重新打开沙箱")
 	}
 	return nil
 }

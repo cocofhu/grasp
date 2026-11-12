@@ -1,4 +1,4 @@
-import type { SessionRepo, SoloRepoChoice, SoloSession } from '@/lib/api/apiTypes'
+import type { SessionRepo, RepoChoice, SoloSession } from '@/lib/api/apiTypes'
 
 type RepoSource = Pick<SoloSession, 'repos' | 'project' | 'projectId' | 'branch'> | null | undefined
 
@@ -37,7 +37,7 @@ export function repoTriggerLabel(ids: string[], nameOf: (id: string) => string, 
 }
 
 /** Create payload. Empty branch overrides are omitted so each repository keeps its default. */
-export function soloCreateChoices(ids: string[], branches: Record<string, string | undefined>): SoloRepoChoice[] {
+export function soloCreateChoices(ids: string[], branches: Record<string, string | undefined>): RepoChoice[] {
   return ids
     .map((id) => id.trim())
     .filter(Boolean)

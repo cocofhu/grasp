@@ -7,7 +7,6 @@ import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
 import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
 import StudioTabStrip from '@/components/agent/StudioTabStrip.vue'
-import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
   draftPayloadJson,
@@ -35,7 +34,6 @@ const draft = ref<AgentStudioDraft | null>(null)
 const originalJson = ref('')
 const subTab = ref<SubTab>('files')
 const justSaved = ref(false)
-const gitHelpOpen = ref(false)
 const filesPanelRef = ref<InstanceType<typeof AgentFilesPanel> | null>(null)
 
 const dirty = computed(() => {
@@ -59,7 +57,6 @@ function sharedToDraft(cfg: SharedAgentConfig): AgentStudioDraft {
     name: '__workspace_shared__',
     acpBackend: cfg.acpBackend || 'cursor',
     modelBinding: cfg.modelBinding,
-    gitBindings: cfg.gitBindings,
     files: cfg.files || [],
     mcp: cfg.mcp || [],
     env: cfg.env || {},
@@ -94,7 +91,6 @@ async function save(): Promise<boolean> {
     const payload = fromDraft(draft.value)
     const saved = await api.putSharedAgentConfig({
       ...(payload.modelBinding ? { acpBackend: payload.acpBackend, modelBinding: payload.modelBinding } : {}),
-      ...(payload.gitBindings?.items.length ? { gitBindings: payload.gitBindings } : {}),
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -224,10 +220,9 @@ defineExpose({ dirty, save })
         data-testid="shared-agent-meta"
       >
         <div class="max-w-3xl space-y-4">
-          <AgentRuntimeBindings :draft="draft" hide-manage-link @help="gitHelpOpen = true" />
+          <AgentRuntimeBindings :draft="draft" />
         </div>
       </div>
-      <EnvCredentialHelpModal :open="gitHelpOpen" section="git" :backend="draft.acpBackend" @close="gitHelpOpen = false" />
     </template>
   </div>
 </template>

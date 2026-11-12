@@ -21,7 +21,6 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     defaults: {
       variables: [
         { name: 'feature', type: 'paragraph', value: '', desc: '需求描述', ask: true, required: true, editable: true },
-        { name: 'repos', type: 'repos', value: [], desc: '仓库列表(平级,每个 clone 到 /root/workspace/<name>/;留空则纯产物流)', ask: true, required: false, editable: true },
       ],
     },
   },

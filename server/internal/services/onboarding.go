@@ -27,7 +27,7 @@ var (
 	// ErrOnboardingModelRequired is returned when no saved model configuration is selected.
 	ErrOnboardingModelRequired = errors.New("modelConfigurationId is required")
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
-	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
+	ErrBaselineReposRequired = errors.New("at least one repository is required")
 	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
 	// duplicated, miss a required template, or use a name other than the
 	// language's canonical Agent name.
@@ -42,17 +42,19 @@ var (
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
-	ModelConfigurationID  string              `json:"modelConfigurationId"`
-	ModelConfigurationIDs []string            `json:"modelConfigurationIds,omitempty"`
-	GitBindings           *models.GitBindings `json:"gitBindings,omitempty"`
+	ModelConfigurationID  string   `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string `json:"modelConfigurationIds,omitempty"`
 	// Language is the wizard's UI language (zh-CN | en); it names the default
 	// workflow and its start/end nodes. Empty means Chinese.
-	Language     string `json:"language,omitempty"`
-	Region       string `json:"region,omitempty"`
-	RepoURL      string `json:"repoUrl,omitempty"`
-	RepoBranch   string `json:"repoBranch,omitempty"`
-	GitUserName  string `json:"gitUserName,omitempty"`
-	GitUserEmail string `json:"gitUserEmail,omitempty"`
+	Language string `json:"language,omitempty"`
+	Region   string `json:"region,omitempty"`
+	// RepoURL, when set, becomes a repository bound to the default workflow,
+	// with its own credential and commit author.
+	RepoURL          string `json:"repoUrl,omitempty"`
+	RepoBranch       string `json:"repoBranch,omitempty"`
+	RepoCredentialID string `json:"repoCredentialId,omitempty"`
+	CommitName       string `json:"commitName,omitempty"`
+	CommitEmail      string `json:"commitEmail,omitempty"`
 	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
 	VncPreview *bool `json:"vncPreview"`
 	BrowserMcp *bool `json:"browserMcp"`
@@ -82,17 +84,11 @@ type OnboardingBootstrapResult struct {
 	Published   bool     `json:"published"`
 }
 
-// BaselineRepo is one repository injected into the embedded default workflow.
-type BaselineRepo struct {
-	URL    string `json:"url"`
-	Name   string `json:"name,omitempty"`
-	Branch string `json:"branch,omitempty"`
-}
-
 // CreateBaselineWorkflowRequest is the body for POST /api/workflows/from-baseline.
+// Repos are the repositories bound to the new workflow.
 type CreateBaselineWorkflowRequest struct {
-	Name  string         `json:"name"`
-	Repos []BaselineRepo `json:"repos"`
+	Name  string              `json:"name"`
+	Repos []models.RepoChoice `json:"repos"`
 }
 
 // OnboardingService configures the built-in team, a role-free Solo Agent and 默认工作流.
@@ -101,6 +97,7 @@ type OnboardingService struct {
 	SharedAgent *SharedAgentService
 	WF          *WorkflowService
 	Credentials *CredentialService
+	Projects    *ProjectService
 }
 
 // NewOnboardingService wires dependencies. Credentials are resolved by reference.
@@ -115,7 +112,10 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if err := s.WF.validateWorkflowName(name, ""); err != nil {
 		return models.WorkflowDef{}, err
 	}
-	repos := normalizeBaselineRepos(req.Repos)
+	repos, err := s.boundRepos(req.Repos)
+	if err != nil {
+		return models.WorkflowDef{}, err
+	}
 	if len(repos) == 0 {
 		return models.WorkflowDef{}, ErrBaselineReposRequired
 	}
@@ -127,7 +127,6 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if set == "" {
 		return models.WorkflowDef{}, ErrOnboardingAgentsIncomplete
 	}
-	applyBaselineRepos(&envelope.Graph, repos)
 	if set == "en" {
 		rebindBaselineProfilesToEnglish(&envelope.Graph)
 	}
@@ -141,10 +140,10 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	wf := models.WorkflowDef{
 		ID:          "wf-" + uuid.NewString()[:8],
 		Name:        name,
-		Description: "从默认基线创建。仓库可在启动运行时调整。",
+		Description: "从默认基线创建。启动运行时可以挑选仓库和分支。",
 		NeedsRepo:   true,
 		Graph:       envelope.Graph,
-		Defaults:    envelope.Defaults,
+		Defaults:    withBoundRepos(envelope.Defaults, repos),
 	}
 	if err := s.WF.Save(&wf); err != nil {
 		return models.WorkflowDef{}, err
@@ -268,61 +267,11 @@ func (s *CredentialService) requireModelConfigurationSet(defaultID string, ids [
 	return configuration, nil
 }
 
-func normalizeBaselineRepos(input []BaselineRepo) []BaselineRepo {
-	out := make([]BaselineRepo, 0, len(input))
-	seen := map[string]bool{}
-	for _, repo := range input {
-		url := strings.TrimSpace(repo.URL)
-		if url == "" {
-			continue
-		}
-		base := strings.TrimSpace(repo.Name)
-		if base == "" || base == "." || base == ".." || strings.ContainsAny(base, "/\\") {
-			base = sandbox.RepoNameFromURL(url)
-		}
-		if base == "" || base == "." || base == ".." || strings.ContainsAny(base, "/\\") {
-			base = "repo"
-		}
-		name := base
-		for suffix := 2; seen[name]; suffix++ {
-			name = fmt.Sprintf("%s-%d", base, suffix)
-		}
-		seen[name] = true
-		out = append(out, BaselineRepo{URL: url, Name: name, Branch: strings.TrimSpace(repo.Branch)})
-	}
-	return out
-}
-
-func applyBaselineRepos(graph *models.Graph, repos []BaselineRepo) {
-	if graph == nil {
-		return
-	}
-	value := make([]any, 0, len(repos))
-	for _, repo := range repos {
-		value = append(value, map[string]any{
-			"url": repo.URL, "name": repo.Name, "branch": repo.Branch,
-		})
-	}
-	for i := range graph.Variables {
-		if graph.Variables[i].Name == "repos" {
-			graph.Variables[i].Value = value
-			return
-		}
-	}
-}
-
 // Bootstrap binds the selected saved models and Git authorizations to the chosen
 // role templates, then publishes the default workflow. It never starts a run.
 func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (OnboardingBootstrapResult, error) {
 	configuration, err := s.Credentials.requireModelConfigurationSet(req.ModelConfigurationID, req.ModelConfigurationIDs)
 	if err != nil {
-		return OnboardingBootstrapResult{}, err
-	}
-	gitBindings, err := models.NormalizeGitBindings(req.GitBindings)
-	if err != nil {
-		return OnboardingBootstrapResult{}, err
-	}
-	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveGitValue); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 	loc := onboardingLocaleFor(req.Language)
@@ -366,9 +315,8 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		}
 		backend := selected.Backend
 		tmpl.AcpBackend = backend
-		tmpl.InheritModel, tmpl.InheritGit = false, false
+		tmpl.InheritModel = false
 		tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: selected.ID, ConfigurationIDs: append([]string(nil), configurationIDs...)}
-		tmpl.GitBindings = gitBindings
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 			tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
@@ -383,6 +331,10 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		templates = append(templates, tmpl)
 	}
 
+	repo, err := s.onboardingRepo(req)
+	if err != nil {
+		return OnboardingBootstrapResult{}, err
+	}
 	if err := s.writeWorkspaceSettings(req); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -405,7 +357,6 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 			Name:         OnboardingSoloAgentName,
 			AcpBackend:   configuration.Backend,
 			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)},
-			GitBindings:  gitBindings,
 			Capabilities: &models.AgentCapabilities{Interaction: models.InteractionAuto, Tools: []string{
 				models.ToolAskQuestion, models.ToolAskForm, models.ToolSetArtifactPreview, models.ToolSetPreview,
 			}},
@@ -422,9 +373,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		}
 	}
 
-	applyOnboardingRepo(&envelope.Graph, req.RepoURL, req.RepoBranch)
-
-	wf, err := s.upsertDefaultWorkflow(envelope)
+	wf, err := s.upsertDefaultWorkflow(envelope, repo)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -611,12 +560,6 @@ func (s *OnboardingService) writeWorkspaceSettings(req OnboardingBootstrapReques
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
 	}
-	if v := strings.TrimSpace(req.GitUserName); v != "" {
-		cfg.Env["GIT_USER_NAME"] = v
-	}
-	if v := strings.TrimSpace(req.GitUserEmail); v != "" {
-		cfg.Env["GIT_USER_EMAIL"] = v
-	}
 	if boolOrDefault(req.VncPreview, true) {
 		cfg.Env["VNC_PREVIEW"] = "1"
 	} else {
@@ -637,7 +580,9 @@ func boolOrDefault(p *bool, def bool) bool {
 	return *p
 }
 
-func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope) (models.WorkflowDef, error) {
+// upsertDefaultWorkflow saves the default workflow. A non-empty repo is bound
+// to it, also on an existing workflow that does not bind it yet.
+func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope, repo string) (models.WorkflowDef, error) {
 	graph := envelope.Graph
 	if err := graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
@@ -655,13 +600,18 @@ func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope
 		}
 	}
 	desc := strings.TrimSpace(envelope.Description)
+	var repos []models.RepoChoice
+	if repo != "" {
+		repos = []models.RepoChoice{{ProjectID: repo}}
+	}
 	// Template defaults only seed a new workflow; an existing one keeps the
-	// user's defaults (including an unset or per_node sandbox mode).
+	// user's defaults.
 	if existing != nil {
 		existing.Name = envelope.Name
 		existing.Description = desc
 		existing.NeedsRepo = true
 		existing.Graph = graph
+		existing.Defaults = withBoundRepos(existing.Defaults, repos)
 		if err := s.WF.Save(existing); err != nil {
 			return models.WorkflowDef{}, err
 		}
@@ -673,7 +623,7 @@ func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope
 		Description: desc,
 		NeedsRepo:   true,
 		Graph:       graph,
-		Defaults:    envelope.Defaults,
+		Defaults:    withBoundRepos(envelope.Defaults, repos),
 	}
 	if err := s.WF.Save(&wf); err != nil {
 		return models.WorkflowDef{}, err
@@ -681,26 +631,96 @@ func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope
 	return wf, nil
 }
 
-// applyOnboardingRepo fills the default workflow's `repos` variable from the
-// wizard. An empty URL leaves the shipped blank row so the launcher still asks
-// for a repo at run start; the name is derived the same way the sandbox does.
-func applyOnboardingRepo(graph *models.Graph, url, branch string) {
-	url = strings.TrimSpace(url)
-	if url == "" || graph == nil {
-		return
+// withBoundRepos returns a copy of defaults that also binds repos, keeping
+// the repositories already bound and their order.
+func withBoundRepos(defaults *models.WorkflowDefaults, repos []models.RepoChoice) *models.WorkflowDefaults {
+	if len(repos) == 0 {
+		return defaults
 	}
-	name := sandbox.RepoNameFromURL(url)
-	if name == "" {
-		name = "repo"
+	out := models.WorkflowDefaults{InheritWorkspace: true}
+	if defaults != nil {
+		out = *defaults
 	}
-	row := map[string]any{"url": url, "name": name, "branch": strings.TrimSpace(branch)}
-	for i := range graph.Variables {
-		if graph.Variables[i].Name != "repos" {
+	out.Repos = append([]models.RepoChoice(nil), out.Repos...)
+	for _, r := range repos {
+		bound := false
+		for _, b := range out.Repos {
+			bound = bound || b.ProjectID == r.ProjectID
+		}
+		if !bound {
+			out.Repos = append(out.Repos, r)
+		}
+	}
+	return &out
+}
+
+// boundRepos checks that every chosen repository exists.
+func (s *OnboardingService) boundRepos(choices []models.RepoChoice) ([]models.RepoChoice, error) {
+	out := make([]models.RepoChoice, 0, len(choices))
+	seen := map[string]bool{}
+	for _, c := range choices {
+		id := strings.TrimSpace(c.ProjectID)
+		if id == "" || seen[id] {
 			continue
 		}
-		graph.Variables[i].Value = []any{row}
-		return
+		if s.Projects == nil {
+			return nil, errors.New("project service unavailable")
+		}
+		if _, err := s.Projects.Get(id); err != nil {
+			return nil, err
+		}
+		seen[id] = true
+		out = append(out, models.RepoChoice{ProjectID: id, Branch: strings.TrimSpace(c.Branch)})
 	}
+	return out, nil
+}
+
+// onboardingRepo saves the wizard's repository and returns its id; empty when
+// the wizard skipped it. A repository with the same URL is reused and takes
+// the credential and commit author entered here.
+func (s *OnboardingService) onboardingRepo(req OnboardingBootstrapRequest) (string, error) {
+	url := strings.TrimSpace(req.RepoURL)
+	if url == "" {
+		return "", nil
+	}
+	if s.Projects == nil {
+		return "", errors.New("project service unavailable")
+	}
+	in := ProjectInput{
+		RepoURL: url, DefaultBranch: req.RepoBranch,
+		CredentialID: req.RepoCredentialID, CommitName: req.CommitName, CommitEmail: req.CommitEmail,
+	}
+	list, err := s.Projects.List()
+	if err != nil {
+		return "", err
+	}
+	for _, p := range list {
+		if strings.TrimSpace(p.RepoURL) != url {
+			continue
+		}
+		in.Name, in.Description, in.RepoDirName = p.Name, p.Description, p.RepoDirName
+		if strings.TrimSpace(in.DefaultBranch) == "" {
+			in.DefaultBranch = p.DefaultBranch
+		}
+		updated, err := s.Projects.Update(p.ID, in)
+		if err != nil {
+			return "", err
+		}
+		return updated.ID, nil
+	}
+	base := sandbox.RepoNameFromURL(url)
+	if base == "" {
+		base = "repo"
+	}
+	in.Name = base
+	for suffix := 2; s.Projects.nameTaken(in.Name, ""); suffix++ {
+		in.Name = fmt.Sprintf("%s-%d", base, suffix)
+	}
+	created, err := s.Projects.Create(in, "")
+	if err != nil {
+		return "", err
+	}
+	return created.ID, nil
 }
 
 // applyOnboardingAgentRegion writes the Studio-managed region env key into an

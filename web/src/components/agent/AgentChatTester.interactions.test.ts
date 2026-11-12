@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   wsUrl: vi.fn(() => 'ws://chat'),
   eventLog: vi.fn(),
   destroy: vi.fn(),
+  listProjects: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -24,6 +25,7 @@ vi.mock('@/lib/api/api', async () => {
       sandboxChatWsUrl: mocks.wsUrl,
       sandboxEventLog: mocks.eventLog,
       destroySandbox: mocks.destroy,
+      listProjects: mocks.listProjects,
     },
   }
 })
@@ -63,7 +65,7 @@ function mountTester(props: Record<string, unknown> = {}) {
         Icon: true,
         AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
         AppModal: ModalStub,
-        ReposEditor: { template: '<div data-testid="repos"/>' },
+        RepoChoiceList: { template: '<div data-testid="repos"/>' },
         AcpStatusPill: { props: ['busy'], template: '<div data-testid="acp">{{busy}}</div>' },
         ChatImageThumb: {
           props: ['src', 'label', 'testId'],
@@ -93,6 +95,7 @@ describe('AgentChatTester interactions', () => {
     mocks.getSandbox.mockResolvedValue({ id: 7, name: 'sandbox', status: 'running' })
     mocks.eventLog.mockResolvedValue({ events: [] })
     mocks.destroy.mockResolvedValue(undefined)
+    mocks.listProjects.mockResolvedValue([{ id: 'p1', name: 'repo', repoUrl: 'https://repo' }])
   })
 
   afterEach(() => {
@@ -105,11 +108,11 @@ describe('AgentChatTester interactions', () => {
     const w = mountTester({ createTest: create })
     const vm = w.vm as any
     vm.launchMode = 'clone'
-    vm.repos = [{ name: ' repo ', url: ' https://repo ', branch: ' main ' }, { name: '', url: 'x', branch: '' }]
+    await flushPromises()
+    expect(mocks.listProjects).toHaveBeenCalledTimes(1)
+    vm.repos = [{ projectId: 'p1', branch: 'main' }, { projectId: 'gone' }]
     await vm.start()
-    expect(create).toHaveBeenCalledWith('cursor', {
-      repos: [{ name: 'repo', url: 'https://repo', branch: 'main' }],
-    })
+    expect(create).toHaveBeenCalledWith('cursor', { repos: [{ projectId: 'p1', branch: 'main' }] })
     expect(socket).toBeTruthy()
     socket!.onopen?.()
     await flushPromises()

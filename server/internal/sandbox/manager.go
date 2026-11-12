@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,10 +170,66 @@ type GitCredential struct {
 const SSHInjectStagingDir = "/tmp/grasp-ssh-inject"
 
 // RepoSpec is one repository cloned into the sandbox at <workspace>/<Name>/.
+// AuthorName / AuthorEmail become the clone's local user.name / user.email;
+// empty fields keep the sandbox-wide default.
 type RepoSpec struct {
-	Name   string
-	URL    string
-	Branch string
+	Name        string
+	URL         string
+	Branch      string
+	AuthorName  string
+	AuthorEmail string
+}
+
+// EnvRepoAuthors carries per-repository commit authors to startup.sh as a JSON
+// array of {"name","userName","userEmail"} keyed by clone directory.
+const EnvRepoAuthors = "GIT_REPO_AUTHORS"
+
+type repoAuthor struct {
+	Name      string `json:"name"`
+	UserName  string `json:"userName,omitempty"`
+	UserEmail string `json:"userEmail,omitempty"`
+}
+
+// EncodeRepoAuthors serializes the authors of repos that set one. Empty when
+// none does, so the variable can be left out.
+func EncodeRepoAuthors(repos []RepoSpec) string {
+	var out []repoAuthor
+	for _, r := range repos {
+		name, user, email := strings.TrimSpace(r.Name), strings.TrimSpace(r.AuthorName), strings.TrimSpace(r.AuthorEmail)
+		if name == "" || user == "" && email == "" {
+			continue
+		}
+		out = append(out, repoAuthor{Name: name, UserName: user, UserEmail: email})
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	body, _ := json.Marshal(out)
+	return string(body)
+}
+
+// DecodeRepoAuthors parses EnvRepoAuthors; malformed values yield nil.
+func DecodeRepoAuthors(s string) map[string][2]string {
+	var in []repoAuthor
+	if json.Unmarshal([]byte(strings.TrimSpace(s)), &in) != nil {
+		return nil
+	}
+	out := make(map[string][2]string, len(in))
+	for _, a := range in {
+		out[a.Name] = [2]string{a.UserName, a.UserEmail}
+	}
+	return out
+}
+
+// ApplyRepoEnv sets the clone list and commit authors for repos, replacing
+// whatever an Agent or platform env put there.
+func ApplyRepoEnv(env map[string]string, repos []RepoSpec) {
+	env["GIT_REPOS"] = EncodeRepos(repos)
+	if authors := EncodeRepoAuthors(repos); authors != "" {
+		env[EnvRepoAuthors] = authors
+	} else {
+		delete(env, EnvRepoAuthors)
+	}
 }
 
 // RepoNameFromURL derives a workspace subdir name from a clone URL: the last
@@ -187,19 +244,6 @@ func RepoNameFromURL(raw string) string {
 		seg = seg[i+1:]
 	}
 	return strings.TrimSpace(strings.TrimSuffix(seg, ".git"))
-}
-
-// ReposFromURL builds a single-entry repo list from one clone URL.
-func ReposFromURL(url string) []RepoSpec {
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return nil
-	}
-	name := RepoNameFromURL(url)
-	if name == "" {
-		name = "repo"
-	}
-	return []RepoSpec{{Name: name, URL: url}}
 }
 
 // EncodeRepos serializes repos into the GIT_REPOS env var consumed by the

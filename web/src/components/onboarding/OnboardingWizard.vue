@@ -6,9 +6,10 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import { api, type CredentialItem, type ModelBinding, type ModelConfiguration } from '@/lib/api/api'
 import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
-import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
+import RepoCredentialSelect from '@/components/workspace/RepoCredentialSelect.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
-import { usableGitCredential } from '@/lib/agent/gitBindings'
+import { credentialFitsRepo, usableGitCredential } from '@/lib/workspace/gitCredentials'
+import { validCommitEmail, validCommitName } from '@/lib/solo/projectForm'
 import { bindingProblem, credentialUsable, useRoutingCopy } from '@/lib/agent/modelRouting'
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { getRegionPolicy } from '@/lib/shared/regionPolicy'
@@ -70,7 +71,6 @@ const phase = ref<'wizard' | 'success'>('wizard')
 const result = ref<OnboardingBootstrapResult | null>(null)
 const stepAnimKey = ref(0)
 const modelValid = ref(false)
-const gitValid = ref(true)
 const resourceEditing = ref(false)
 const resourcesLoading = ref(false)
 const resourcesError = ref('')
@@ -102,7 +102,7 @@ const themeOptions: { id: ThemeName; labelKey: string }[] = [
 const selectedModel = computed(() => models.value.find((row) => row.id === draft.value.modelConfigurationId))
 const regionPolicy = computed(() => selectedModel.value ? getRegionPolicy(selectedModel.value.backend as import('@/lib/shared/regionPolicy').BackendId) : undefined)
 const backendSummary = computed(() => selectedModel.value?.name || draft.value.modelConfigurationId)
-const gitCredLabel = computed(() => `${draft.value.gitBindings.items.length} ${t('pages.agentStudio.gitCredentials.title')}`)
+const gitCredLabel = computed(() => credentials.value.find((item) => item.id === draft.value.repoCredentialId)?.name || draft.value.repoCredentialId)
 const modelBinding = computed<ModelBinding>({ get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId }), set: (value) => { draft.value.modelConfigurationId = value.configurationId; draft.value.region = regionPolicy.value?.defaultRegion || '' } })
 async function refreshResources() {
   const request = ++resourceRequest
@@ -148,9 +148,7 @@ function completeCredentialStep(credential: CredentialItem) {
   void refreshResources()
 }
 function selectSavedGit(credential: CredentialItem) {
-  if (usableGitCredential(credential) && !draft.value.gitBindings.items.some(item => item.credentialId === credential.id)) {
-    draft.value.gitBindings.items.push({ credentialId: credential.id })
-  }
+  if (usableGitCredential(credential) && !draft.value.repoCredentialId) draft.value.repoCredentialId = credential.id
   void refreshResources()
 }
 watch([activeIndex, () => props.open], async () => {
@@ -162,7 +160,7 @@ watch([activeIndex, () => props.open], async () => {
 const summaryItems = computed(() => [
   { id: 'backend', label: t('pages.onboarding.steps.model'), value: backendSummary.value, ok: true },
   { id: 'repo', label: t('pages.onboarding.repo.chip'), value: repoOk.value ? repoDirName.value : t('pages.onboarding.workflow.repoSkip'), ok: repoOk.value },
-  { id: 'git-user', label: t('pages.onboarding.gitUser.chip'), value: draft.value.gitUserName, ok: true },
+  { id: 'git-user', label: t('pages.onboarding.gitUser.chip'), value: identityOk.value ? draft.value.commitName : t('pages.onboarding.gitUser.default'), ok: identityOk.value },
   { id: 'git-cred', label: t('pages.onboarding.workflow.gitCred'), value: gitOk.value ? gitCredLabel.value : t('pages.onboarding.workflow.gitSkip'), ok: gitOk.value },
   { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsWithSolo', { n: enabledTeam.value.length }), ok: true },
   { id: 'workflow', label: t('pages.onboarding.workflow.wfLabel'), value: t('pages.onboarding.workflow.wfValue'), ok: true, wide: true },
@@ -204,7 +202,6 @@ watch(
     phase.value = 'wizard'
     result.value = null
     modelValid.value = false
-    gitValid.value = true
     showTeamErrors.value = false
     resourceEditing.value = false
     leaving.value = false
@@ -288,15 +285,17 @@ function validateModel(): boolean {
 }
 
 function validateGit(): boolean {
-  if (gitIdentityConfigured(draft.value)) return true
-  toast.error(t('pages.onboarding.toastNeedGitUser'))
-  return false
-}
-
-function validateGitCredentials(): boolean {
-  if (draft.value.gitSkipped || gitValid.value) return true
-  toast.error(t('pages.onboarding.gitCredentials.invalid'))
-  return false
+  if (!repoConfigured(draft.value)) return true
+  if (!validCommitName(draft.value.commitName) || !validCommitEmail(draft.value.commitEmail)) {
+    toast.error(t('pages.onboarding.toastBadGitUser'))
+    return false
+  }
+  const id = draft.value.repoCredentialId
+  if (id && !resourcesLoading.value && !credentialFitsRepo(draft.value.repoUrl, credentials.value.find((item) => item.id === id))) {
+    toast.error(t('pages.onboarding.gitCredentials.invalid'))
+    return false
+  }
+  return true
 }
 
 function validateTeam(): boolean {
@@ -330,7 +329,6 @@ function goNext() {
   if (id === 'credentials' && !validateCredentials()) return
   if (id === 'model' && !validateModel()) return
   if (id === 'git' && !validateGit()) return
-  if (id === 'gitCredentials' && !validateGitCredentials()) return
   if (id === 'team' && !validateTeam()) return
   if (id === 'workflow') {
     void submitBootstrap()
@@ -353,7 +351,6 @@ async function submitBootstrap() {
     ['prefs', validatePrefs],
     ['credentials', validateCredentials],
     ['model', validateModel],
-    ['gitCredentials', validateGitCredentials],
     ['git', validateGit],
     ['team', validateTeam],
   ]
@@ -513,12 +510,12 @@ function editWorkflow() {
                       <Icon :name="gitOk ? 'check' : 'alert'" :size="14" />
                       <span>{{ gitOk ? t('pages.onboarding.success.gitOk') : t('pages.onboarding.success.gitSkip') }}</span>
                     </li>
-                    <li class="onb-status is-ok" data-testid="onboarding-success-git-user">
+                    <li v-if="identityOk" class="onb-status is-ok" data-testid="onboarding-success-git-user">
                       <Icon name="check" :size="14" />
                       <span>{{
                         t('pages.onboarding.success.gitUserOk', {
-                          name: draft.gitUserName,
-                          email: draft.gitUserEmail,
+                          name: draft.commitName,
+                          email: draft.commitEmail,
                         })
                       }}</span>
                     </li>
@@ -688,34 +685,7 @@ function editWorkflow() {
                 <template v-else-if="currentStep.id === 'git'">
                   <p class="onb-lede">{{ t('pages.onboarding.git.meta') }}</p>
                   <section class="mt-6" data-testid="onboarding-section-git">
-                    <div class="onb-sub">
-                      {{ t('pages.onboarding.gitUser.section') }}
-                    </div>
-                    <div class="mt-2 grid gap-3 sm:grid-cols-2">
-                      <label class="block">
-                        <span class="onb-label">{{ t('pages.onboarding.gitUser.nameLabel') }} <span class="text-err">*</span></span>
-                        <input
-                          v-model="draft.gitUserName"
-                          type="text"
-                          autocomplete="off"
-                          :placeholder="t('pages.onboarding.gitUser.namePlaceholder')"
-                          class="onb-input"
-                          data-testid="onboarding-git-user-name"
-                        />
-                      </label>
-                      <label class="block">
-                        <span class="onb-label">{{ t('pages.onboarding.gitUser.emailLabel') }} <span class="text-err">*</span></span>
-                        <input
-                          v-model="draft.gitUserEmail"
-                          type="email"
-                          autocomplete="off"
-                          :placeholder="t('pages.onboarding.gitUser.emailPlaceholder')"
-                          class="onb-input"
-                          data-testid="onboarding-git-user-email"
-                        />
-                      </label>
-                    </div>
-                    <div class="mt-5 flex items-center gap-3">
+                    <div class="flex items-center gap-3">
                       <div class="onb-sub flex-1">
                         {{ t('pages.onboarding.git.repoCredSection') }}
                       </div>
@@ -754,15 +724,45 @@ function editWorkflow() {
                       <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
                         {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
+                      <div class="mt-4 block" data-testid="onboarding-repo-credential">
+                        <span class="onb-label">{{ t('pages.projects.form.credential.label') }}</span>
+                        <RepoCredentialSelect v-model="draft.repoCredentialId" :repo-url="draft.repoUrl" :items="credentials" :disabled="resourcesLoading" />
+                      </div>
+                      <div class="onb-sub mt-5">
+                        {{ t('pages.onboarding.gitUser.section') }}
+                      </div>
+                      <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                        <label class="block">
+                          <span class="onb-label">{{ t('pages.onboarding.gitUser.nameLabel') }}</span>
+                          <input
+                            v-model="draft.commitName"
+                            type="text"
+                            autocomplete="off"
+                            maxlength="120"
+                            :placeholder="t('pages.onboarding.gitUser.namePlaceholder')"
+                            class="onb-input"
+                            data-testid="onboarding-git-user-name"
+                          />
+                        </label>
+                        <label class="block">
+                          <span class="onb-label">{{ t('pages.onboarding.gitUser.emailLabel') }}</span>
+                          <input
+                            v-model="draft.commitEmail"
+                            type="email"
+                            autocomplete="off"
+                            :placeholder="t('pages.onboarding.gitUser.emailPlaceholder')"
+                            class="onb-input"
+                            data-testid="onboarding-git-user-email"
+                          />
+                        </label>
+                      </div>
+                      <p class="onb-hint">{{ t('pages.projects.form.commitHint') }}</p>
                     </template>
                   </section>
                 </template>
 
                 <template v-else-if="currentStep.id === 'gitCredentials'">
                   <p class="onb-lede">{{ t('pages.onboarding.gitCredentials.meta') }}</p>
-                  <section v-show="!resourceEditing" class="mt-6" data-testid="onboarding-section-git-credentials">
-                    <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" hide-manage-link :disabled="resourceEditing" @validity="gitValid = $event" />
-                  </section>
                   <WorkspaceCredentialsPanel class="mt-6" inline scope="git" view="credentials" @changed="refreshResources" @credential-saved="selectSavedGit" @editing="resourceEditing = $event" />
                 </template>
 

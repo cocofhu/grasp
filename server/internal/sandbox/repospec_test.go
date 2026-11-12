@@ -21,24 +21,6 @@ func TestRepoNameFromURL(t *testing.T) {
 	}
 }
 
-func TestReposFromURL(t *testing.T) {
-	if r := ReposFromURL(""); r != nil {
-		t.Errorf("empty url should yield nil, got %+v", r)
-	}
-	if r := ReposFromURL("   "); r != nil {
-		t.Errorf("blank url should yield nil, got %+v", r)
-	}
-	r := ReposFromURL("https://h/org/web.git")
-	if len(r) != 1 || r[0] != (RepoSpec{Name: "web", URL: "https://h/org/web.git"}) {
-		t.Fatalf("ReposFromURL = %+v", r)
-	}
-	// A URL whose last segment can't be derived falls back to "repo".
-	r2 := ReposFromURL("https://host")
-	if len(r2) != 1 || r2[0].Name != "host" {
-		t.Errorf("host-only url = %+v", r2)
-	}
-}
-
 func TestEncodeRepos(t *testing.T) {
 	// name|url with an optional |branch, comma-separated.
 	got := EncodeRepos([]RepoSpec{

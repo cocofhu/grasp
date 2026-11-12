@@ -1,5 +1,4 @@
-import type { Agent, AgentCapabilities, AgentFile, AgentIcon, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
-import { cloneGitBindings } from './gitBindings'
+import type { Agent, AgentCapabilities, AgentFile, AgentIcon, MCPServer, ModelBinding } from '@/lib/api/api'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 import {
@@ -17,7 +16,6 @@ export { ACP_BACKENDS }
 export type WizardStepId =
   | 'basics'
   | 'acp'
-  | 'git'
   | 'env'
   | 'mcp'
   | 'rules'
@@ -44,8 +42,6 @@ export type WizardSkipped = Partial<Record<WizardStepId, boolean>>
 
 export type WizardDraft = {
   inheritModel?: boolean
-  inheritGit?: boolean
-  gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   step: number
   name: string
@@ -74,11 +70,10 @@ type WizardStepDef = {
   skip: boolean
 }
 
-/** Basics → coding tool and model (acp) → Git → review. */
+/** Basics → coding tool and model (acp) → review. */
 export const WIZARD_STEPS: WizardStepDef[] = [
   { id: 'basics', labelKey: 'pages.agentStudio.wizard.steps.basics', skip: false },
   { id: 'acp', labelKey: 'pages.agentStudio.wizard.steps.acp', skip: false },
-  { id: 'git', labelKey: 'pages.agentStudio.wizard.steps.git', skip: true },
   { id: 'review', labelKey: 'pages.agentStudio.wizard.steps.review', skip: false },
 ]
 
@@ -103,8 +98,6 @@ function blankAgentCapabilities(): AgentCapabilities {
 export function freshDraft(): WizardDraft {
   return {
     inheritModel: true,
-    inheritGit: true,
-    gitBindings: { items: [] },
     step: 0,
     name: '',
     description: '',
@@ -252,8 +245,6 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   return {
     name,
     ...(draft.inheritModel !== undefined ? { inheritModel: draft.inheritModel } : {}),
-    ...(draft.inheritGit !== undefined ? { inheritGit: draft.inheritGit } : {}),
-    gitBindings: cloneGitBindings(draft.gitBindings || { items: [] }),
     acpBackend: draft.acpBackend,
     ...(!draft.inheritModel || draft.modelBinding?.configurationId?.trim()
       ? { modelBinding: { kind: 'configuration' as const, configurationId: draft.modelBinding?.configurationId || '', ...(draft.modelBinding?.allConfigurations ? { allConfigurations: true } : draft.modelBinding?.configurationIds ? { configurationIds: [...draft.modelBinding.configurationIds] } : {}) } }
@@ -300,17 +291,15 @@ type ReviewSummaryItem = {
 /** Aliases resolved by the wizard. Ids are the fallback when a name is unknown. */
 type WizardReviewNames = {
   model?: string
-  gitItems?: Record<string, string>
 }
 
-/** Build confirmation-page summary chips aligned to the 4-step wizard. */
+/** Build confirmation-page summary chips aligned to the 3-step wizard. */
 export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames = {}): ReviewSummaryItem[] {
   const normalizedEnv = normalizeRegions(kvToRec(draft.env), draft.acpBackend, 'strict').env
   const region = regionSummary(normalizedEnv, draft.acpBackend, 'strict')
   const name = draft.name.trim() || '—'
   const authConfigured = !!draft.modelBinding?.configurationId
   const apiKeySkipped = !authConfigured
-  const gitParts = (draft.gitBindings?.items || []).map((item) => names.gitItems?.[item.credentialId] || item.credentialId)
 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
@@ -348,12 +337,6 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
       kind: authConfigured ? 'ok' : 'empty',
       labelKey: 'pages.agentStudio.wizard.review.modelSource_configuration',
       detail: names.model || draft.modelBinding?.configurationId,
-    },
-    {
-      key: 'git',
-      kind: gitParts.length ? 'ok' : 'empty',
-      labelKey: 'pages.agentStudio.wizard.review.git',
-      detail: gitParts.length ? gitParts.join(' · ') : undefined,
     },
   ]
   if (apiKeySkipped && !authConfigured) {

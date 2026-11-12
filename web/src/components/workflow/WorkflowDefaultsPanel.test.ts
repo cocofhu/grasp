@@ -11,7 +11,8 @@ import common from '@/locales/zh-CN/common.json'
 import type { Agent } from '@/lib/api/api'
 import type { Workflow } from '@/lib/shared/types'
 import WorkflowDefaultsPanel from './WorkflowDefaultsPanel.vue'
-vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }) } }))
+const listProjects = vi.hoisted(() => vi.fn(async () => [] as Array<Record<string, unknown>>))
+vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }), listProjects } }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: { value: 'ws' }, ensureLoaded: async () => ({ id: 'ws' }) }) }))
 function setup(defaults?: Workflow['defaults'], agents: Agent[] = []) {
   const workflow = reactive({ id: 'w', name: 'Test', description: '', status: 'draft', version: 1, updatedAt: '', nodes: [], edges: [], defaults } as Workflow)
@@ -28,6 +29,33 @@ describe('Workflow defaults', () => {
     const { wrapper } = setup()
     await flushPromises()
     expect(wrapper.find('[data-testid="workflow-sandbox-settings"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('binds repositories in order with optional branches and removes the field when none remain', async () => {
+    listProjects.mockResolvedValueOnce([
+      { id: 'p1', name: 'web', repoUrl: 'https://github.com/org/web.git', defaultBranch: 'main' },
+      { id: 'p2', name: 'api', repoUrl: 'https://github.com/org/api.git' },
+    ])
+    const { workflow, wrapper } = setup({ inheritWorkspace: true })
+    await flushPromises()
+    const section = wrapper.get('[data-testid="workflow-repos-settings"]')
+    await section.get('[data-testid="repo-choice-toggle-p2"]').setValue(true)
+    await section.get('[data-testid="repo-choice-toggle-p1"]').setValue(true)
+    expect(workflow.defaults!.repos).toEqual([{ projectId: 'p2' }, { projectId: 'p1' }])
+    await section.get('[data-testid="repo-choice-branch-p1"]').setValue('release')
+    await section.get('[data-testid="repo-choice-branch-p1"]').trigger('change')
+    expect(workflow.defaults!.repos).toEqual([{ projectId: 'p2' }, { projectId: 'p1', branch: 'release' }])
+    await section.get('[data-testid="repo-choice-toggle-p2"]').setValue(false)
+    await section.get('[data-testid="repo-choice-toggle-p1"]').setValue(false)
+    expect(workflow.defaults).not.toHaveProperty('repos')
+    wrapper.unmount()
+  })
+  it('keeps a binding to a deleted repository visible so it can be removed', async () => {
+    const { workflow, wrapper } = setup({ inheritWorkspace: true, repos: [{ projectId: 'gone' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="repo-choice-gone"]').text()).toContain(common.common.repoChoices.deleted)
+    await wrapper.get('[data-testid="repo-choice-toggle-gone"]').setValue(false)
+    expect(workflow.defaults).not.toHaveProperty('repos')
     wrapper.unmount()
   })
   it('preserves independent variables and explicit disabled policies on ordinary edits', async () => {

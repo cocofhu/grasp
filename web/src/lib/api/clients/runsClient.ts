@@ -20,6 +20,7 @@ import type {
   PreviewIssue,
   PreviewPort,
   ReferenceInput,
+  RepoChoice,
   SandboxView,
 } from '../apiTypes'
 
@@ -149,6 +150,8 @@ export const runsClient = {
        * every other start path, including a non-clarify workflow.
        */
       launchModel?: { configurationId?: string; modelId?: string; reasoningEffort?: string } | null
+      /** Subset of the workflow's bound repositories; omitted clones all of them. */
+      repos?: RepoChoice[]
     },
   ) =>
     req<{ id: string; status: string; priority?: string }>(`/workflows/${workflowId}/runs`, {
@@ -163,6 +166,7 @@ export const runsClient = {
         ...(startRunFirstMessage(opts?.firstMessage) ?? {}),
         ...(opts?.publishedSnapshot ? { publishedSnapshot: true } : {}),
         ...(startRunLaunchModel(opts?.launchModel) ?? {}),
+        ...(opts?.repos ? { repos: opts.repos } : {}),
       }),
       ...(opts?.signal ? { signal: opts.signal } : {}),
     }),

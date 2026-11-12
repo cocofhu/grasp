@@ -13,7 +13,7 @@ func TestLaunchModelUsesLiveInheritedConfigurations(t *testing.T) {
 	eng, db, _ := setupEngineGraphP(t, graph)
 	seedLaunchModels(t, db)
 	shared := services.NewSharedAgentService(t.TempDir())
-	shared.SetBindingResolvers(func(*modelrouting.Binding) (string, error) { return "codex", nil }, nil)
+	shared.SetModelResolver(func(*modelrouting.Binding) (string, error) { return "codex", nil })
 	if err := shared.Save(services.SharedAgentConfig{ModelBinding: &modelrouting.Binding{
 		Kind: "configuration", ConfigurationID: "group", AllConfigurations: true,
 	}}); err != nil {

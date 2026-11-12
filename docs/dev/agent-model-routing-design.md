@@ -1,6 +1,6 @@
 # Agent、模型配置与凭据
 
-本文记录 Agent 模型路由的当前数据与交互契约。模型配置是模型路由的唯一来源；Agent 可显式继承默认配置中的模型组列表和 Git 授权。
+本文记录 Agent 模型路由的当前数据与交互契约。模型配置是模型路由的唯一来源；Agent 可显式继承默认配置中的模型组列表。Git 授权属于仓库，见下文。
 
 ## 数据关系
 
@@ -12,7 +12,9 @@ Agent
  │                         ├─ platform → 该工具的 Credential + 模型 ID
  │                         └─ connection → ModelConnection + 模型 ID + 工具角色配置
  │                                           └─ Credential
- └─ gitBindings → 多个 Git / SSH Credential + 适用范围
+
+Project（仓库）
+ └─ credentialId → 一个 Git / SSH Credential + 提交用户名、邮箱
 ```
 
 - Credential 只保存加密秘密及用途、发行方、工具、秘密种类；模型服务地址、协议和模型目录属于 ModelConnection。
@@ -20,8 +22,8 @@ Agent
 - ModelConfiguration 保存名称、backend、具体 binding、启停状态和 revision。内部只允许 platform 或 connection；工具创建后不可修改。
 - Agent.modelBinding 使用 `{kind:"configuration", configurationId, configurationIds?}`。`configurationId` 指定默认组；可选 `configurationIds` 是包含默认组的有序、无重复绑定列表，缺省表示现有单组引用。列表可跨编码工具；Agent.acpBackend 对应默认组，实际会话按所选组确定工具。不在 Agent 上重复保存 Key、连接或模型角色。
 - Agent 草稿允许 modelBinding 为空，表示未配置；没有可执行的默认模型。运行入口在创建或复用沙箱前验证配置及其依赖。
-- SharedAgent 保存通用文件、MCP、环境和布局，以及可显式继承的模型组和 Git 授权默认项；Agent 使用独立开关决定是否继承。
-- 仓库登记只保存克隆信息。访问方式、凭据绑定和环境变量只来自当前有效 Agent，历史仓库配置不会自动迁移。
+- SharedAgent 保存通用文件、MCP、环境和布局，以及可显式继承的模型组默认项；Agent 使用开关决定是否继承。
+- 仓库登记保存克隆信息、访问凭据和提交身份。
 
 ## 凭据与模型页面
 
@@ -29,21 +31,19 @@ Agent
 
 先创建凭据，可使用服务商预设、带 Logo 的厂商选择或自定义 API Base 与 Key。再创建模型配置：选择编码工具 → 选择可用凭据 → 选择模型。工具、凭据都显示 Logo。新建凭据后返回当前模型草稿。
 
-Agent 向导使用“基础信息 → 工具与模型 → Git → 确认创建”。编辑和创建可增加多个启用模型组并明确选择默认组；默认组变化同步默认 CLI 和配置目录。初始化、默认配置和团队创建保存同一模型引用格式，不提供直接来源绑定。
+Agent 向导使用“基础信息 → 工具与模型 → 确认创建”。编辑和创建可增加多个启用模型组并明确选择默认组；默认组变化同步默认 CLI 和配置目录。初始化、默认配置和团队创建保存同一模型引用格式，不提供直接来源绑定。
 
 初始化向导可打开凭据/模型管理创建组合，再将选中的配置绑定到各角色。角色可显式选择另一条模型配置。默认工作流的必需角色缺失或未配置时返回可操作错误，不从共享默认补建。
 
-## 多个 Git 授权
+## 仓库 Git 授权
 
-`gitBindings.items` 保存 credentialId、可选 scope、SSH known-hosts 凭据引用。未开启 Git 继承时，缺省和空列表均表示没有 Git 授权。旧数据中的 preferredCredentialId 会被忽略。
+Git 授权属于仓库（Project），不属于 Agent。仓库保存地址、默认分支、目录名、`credentialId`（GitHub / GitLab Token 或 SSH 密钥）以及提交用户名、邮箱。保存时校验凭据存在、未吊销、与地址的协议一致，Token 的 Host 与地址主机一致。
 
-GitHub / GitLab 凭据保存 `host`，默认分别为 `https://github.com` / `https://gitlab.com`，也可填写自建站点及端口。Host 与 Token 在同一凭据中管理，不使用独立的 GitLab URL 凭据。Agent scope 只能细化同一 Host 内的仓库，不能把凭据用于另一站点或改变协议。
+GitHub / GitLab 凭据保存 `host`，默认分别为 `https://github.com` / `https://gitlab.com`，也可填写自建站点及端口。Host 与 Token 在同一凭据中管理，不使用独立的 GitLab URL 凭据。
 
-Agent 默认配置保存完整 `modelBinding` 和 `gitBindings`。每个 Agent 通过 `inheritModel`、`inheritGit` 分别明确选择是否继承；关闭时使用本地选择，开启时动态使用默认项且不复制密钥。默认模型的 CLI 由默认组确定。缺失或失效的默认引用报错，不回退到本地或另一账号；默认项变化也参与沙箱指纹校验及共享节点切换。
+工作流在 `defaults.repos` 绑定仓库（`{projectId, branch?}`，有序）；启动运行时可以传 `repos` 选择其中一部分并改分支，结果快照到 `Run.Repos`，省略时取全部绑定仓库。Solo 会话同样保存仓库快照。导入工作流时丢弃绑定，因为仓库 ID 只在本工作区有效。
 
-所选授权全部放入沙箱受限文件，禁止用全局 Token 环境代替用户选择。按协议、主机和仓库路径选择一个身份，仓库范围优先于主机范围；同范围按列表顺序使用先出现的授权。认证失败不尝试其他账号。所选凭据失效时明确报错。
-
-工作流独立沙箱在创建时注入；共享沙箱在节点切换时替换整组授权，包括切为空。Solo 在每轮边界按实际所选组检查模型指纹，使用 reprime 更新原执行环境的工具、配置目录和授权并重连 ACP；工作区保持。容器模式保留同一容器；worktree 模式只替换本地 backend 进程，保留原目录、文件和 launch 持有关系，成功或回滚后保存新的 ACP 端口，最终关闭才释放目录。宿主环境中的其他账号不会替代所选授权。Git 指纹变化继续要求重新打开，不借模型切换更新其他权限。容器模式下工具专用镜像不同也明确拒绝原地切换。
+沙箱每次启动都按快照里的仓库实时读取凭据和提交身份：凭据以 `repo:<目录名>` 进入受限 catalog，只对该仓库地址生效；提交身份经 `GIT_REPO_AUTHORS` 写入各仓库的 `git config`。凭据失效时明确报错，不尝试其他账号，也不使用宿主环境中的 Token。仓库凭据参与沙箱 Git 指纹，变化时要求重新打开会话；工作流共享沙箱在节点切换时重新配置整组仓库凭据。
 
 ## 会话选择与历史交接
 

@@ -7,7 +7,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
-import ReposEditor from '@/components/ui/ReposEditor.vue'
+import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import NewWorkflowMenu from '@/components/workflow/NewWorkflowMenu.vue'
 import CopyWorkflowModal from '@/components/workflow/CopyWorkflowModal.vue'
 import ExportVersionModal from '@/components/workflow/ExportVersionModal.vue'
@@ -31,6 +31,8 @@ const {
   baselineModalOpen,
   baselineName,
   baselineRepos,
+  baselineProjects,
+  baselineProjectsLoading,
   creatingBaseline,
   baselineCreateError,
   onboardingGateOpen,
@@ -283,11 +285,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
           :placeholder="t('pages.workspace.newWorkflow.namePlaceholder')"
         />
       </div>
-      <ReposEditor
-        :repos="baselineRepos"
-        :min-rows="1"
-        @update:repos="baselineRepos = $event"
-      />
+      <RepoChoiceList v-model="baselineRepos" :projects="baselineProjects" :loading="baselineProjectsLoading" />
       <div
         v-if="baselineCreateError"
         class="mt-3 flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"

@@ -459,25 +459,26 @@
         "vendorTitle": "模型厂商 API Key"
       },
       "git": {
-        "meta": "Agent 提交代码时需要署名；仓库可以现在填，也可以跳过。",
+        "meta": "设置一个代码仓库和它的访问凭据、提交身份；生成后它会绑定到默认工作流。也可以跳过，之后在「设置 → 仓库」里添加。",
         "repoCredSection": "仓库与访问凭据",
         "skip": "跳过",
         "unskip": "现在配置",
-        "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到工作区「凭据」里补。",
+        "skippedHint": "已跳过：之后可以在「设置 → 仓库」里添加仓库，并在工作流设置里绑定。",
         "foot": "凭据只保存在本工作区，导出 Agent 时不会带上。"
       },
       "gitCredentials": {
-        "meta": "私有仓库需要访问凭据：选择已有凭据，或在下方新建。公开仓库可以直接下一步。",
+        "meta": "私有仓库需要访问凭据：可以在下方新建，下一步为仓库选择。公开仓库可以直接下一步。",
         "invalid": "所选的 Git 凭据不可用，请重新选择"
       },
       "gitUser": {
-        "section": "提交署名",
+        "section": "提交身份（可选）",
         "nameLabel": "姓名",
         "emailLabel": "邮箱",
         "namePlaceholder": "例如 张三",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "Agent 提交代码时用这个姓名和邮箱署名。",
-        "chip": "提交署名"
+        "hint": "Agent 在这个仓库里提交时用这个姓名和邮箱署名。",
+        "chip": "提交署名",
+        "default": "沙箱默认"
       },
       "preview": {
         "section": "预览",
@@ -575,10 +576,10 @@
         "noReview": "未选测试评审：实现完成后直接进入下一步。",
         "summary": "将写入",
         "keyOn": "已配置",
-        "repoSkip": "运行时填写",
+        "repoSkip": "未设置",
         "gitSkip": "已跳过",
         "reuseHint": "同名资源将复用并更新，不会重复创建；不会自动开跑。",
-        "gitCred": "Git 凭据",
+        "gitCred": "仓库凭据",
         "agentsValue": "{n} 个",
         "wfLabel": "工作流",
         "wfValue": "默认工作流（发布）",
@@ -590,14 +591,14 @@
         "title": "配置已生成",
         "desc": "已保存工作区凭据，创建了下列 Agent，并发布了「默认工作流」。",
         "runOnce": "运行一次",
-        "runOnceHint": "填写需求和仓库，马上跑一遍默认工作流。",
+        "runOnceHint": "填写需求，马上跑一遍默认工作流。",
         "editWorkflow": "去编辑工作流",
         "editWorkflowHint": "在画布里调整节点、提示词和分支。",
-        "limit": "还没有设置仓库，运行时再填即可。私有仓库请到工作区「凭据」里配置访问凭据。",
-        "repoOk": "已设置默认仓库 {dir}，运行时仍可修改。",
+        "limit": "还没有设置仓库。之后可以在「设置 → 仓库」里添加，再到工作流设置里绑定。",
+        "repoOk": "已登记仓库 {dir} 并绑定到默认工作流。",
         "publishedLine": "默认工作流（已发布）",
         "gitOk": "已保存 Git 凭据（内容已隐藏）。",
-        "gitSkip": "未配置 Git 凭据。私有仓库请到工作区「凭据」里补充访问令牌或 SSH 密钥。",
+        "gitSkip": "仓库未配置访问凭据。私有仓库请到「设置 → 仓库」里为它选择凭据。",
         "gitUserOk": "提交署名：{name} <{email}>。",
         "preview": "预览设置：{vnc}，{mcp}。",
         "created": "已创建",
@@ -605,7 +606,6 @@
       },
       "toastOk": "生成成功，未自动开跑",
       "toastNeedKey": "请先填写 API Key",
-      "toastNeedGitUser": "请填写提交者姓名和邮箱",
       "toastErr": "生成失败",
       "railSub": "几分钟配好模型、团队和默认工作流。",
       "railFoot": "所有配置之后都能在工作区设置里修改。",
@@ -645,7 +645,8 @@
       "credentialsSetup": {
         "description": "选择凭据类型并填写账号，保存后继续配置编码工具。",
         "required": "请先配置至少一个可用的编码工具凭据或 API 账号。"
-      }
+      },
+      "toastBadGitUser": "提交用户名或邮箱格式不正确"
     },
     "tokenByModel": {
       "tipTitle": "用量提示",
@@ -1634,24 +1635,7 @@
           "locked": "锁定",
           "lockedTitle": "启动时锁定为默认值",
           "add": "添加变量",
-          "help": "所有节点共享、引擎逐步持久化;在任意节点用 {syntax} 引用,用「赋值」节点修改。勾选{askAtLaunch}的变量即运行入参(如仓库列表用 {repos})。"
-        },
-        "repos": {
-          "itemLabel": "仓库 {n}",
-          "namePlaceholder": "仓名(留空自动用地址名)",
-          "urlPlaceholder": "仓库地址 https://…/repo.git",
-          "branchPlaceholder": "分支(可空)",
-          "add": "添加仓库",
-          "remove": "删除该仓"
-        },
-        "repoSelect": {
-          "any": "（留空 · 现网默认语义）",
-          "empty": "工作流尚未配置 repos 变量;可手输仓名 / {'{{vars.repos}}'} / {'{{vars.target_repo}}'},或留空走默认。",
-          "placeholder": "留空 / 仓名 / {'{{vars.repos}}'} / {'{{vars.target_repo}}'}",
-          "toggle": "展开选项",
-          "reposListHint": "执行时按列表逐仓 · 无需勾选",
-          "literalGroup": "字面仓名",
-          "hint": "可选手输或粘贴模板。填 {'{{vars.repos}}'} 时按执行时列表逐仓提交;留空则保持现网默认(多仓 Agent 引导 / 单仓回落)。"
+          "help": "所有节点共享、引擎逐步持久化;在任意节点用 {syntax} 引用,用「赋值」节点修改。勾选{askAtLaunch}的变量即运行入参。"
         },
         "assignments": {
           "selectVar": "选择变量…",
@@ -2772,7 +2756,7 @@
           "team": "团队信息",
           "acp": "Agent",
           "apiKey": "API Key",
-          "git": "Git",
+          "repo": "仓库",
           "mcp": "MCP",
           "env": "环境变量",
           "review": "确认创建"
@@ -2788,10 +2772,6 @@
         },
         "acp": {
           "meta": "该配置用于 PM 及后续工程师的默认 ACP。先选启动方式，与安装引导、新建 Agent 相同。"
-        },
-        "git": {
-          "meta": "可选。点选 GitHub / GitLab / SSH，可跳过；Token 在工作区凭据中配置。",
-          "url": "仓库 URL"
         },
         "mcp": {
           "meta": "写入团队默认 mcp[]；创建 PM / 工程师时一并带上。默认已放入 artifact-store。",
@@ -2838,6 +2818,12 @@
           "done": "完成",
           "retry": "重试",
           "keepCreated": "仅保留已创建资源"
+        },
+        "repo": {
+          "meta": "可选。PM 沙箱会克隆所选仓库，凭据和提交身份取自仓库配置。",
+          "label": "仓库",
+          "none": "不克隆仓库",
+          "manage": "管理仓库"
         }
       },
       "wizard": {
@@ -2858,7 +2844,6 @@
           "basics": "基础信息",
           "acp": "工具与模型",
           "apiKey": "模型",
-          "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
           "rules": "Rules",
@@ -3019,7 +3004,6 @@
           "customConfigWritten": "自定义配置 · 已写入",
           "authReminder": "鉴权提醒",
           "authReminderDetail": "运行前需配置鉴权，可在 Studio Env 补全。此提醒不阻止创建。",
-          "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
           "rulesDefault": "Rules · 将写入默认规则",
@@ -3224,25 +3208,6 @@
           "gitlab_https": "GitLab HTTPS",
           "ssh": "SSH"
         }
-      },
-      "gitCredentials": {
-        "title": "Git 授权",
-        "add": "添加 Git 授权",
-        "empty": "尚未添加 Git 授权",
-        "noneAvailable": "没有可添加的 Git 授权",
-        "remove": "移除",
-        "options": "配置范围",
-        "scope": "适用站点或仓库",
-        "scopePlaceholder": "例如：git.example.com 或仓库 URL",
-        "scopeHint": "留空使用服务商默认站点。仓库地址优先于站点范围。",
-        "scopeInvalid": "请输入有效的主机或仓库地址，并与凭据的 Host、协议一致。",
-        "unavailable": "授权不可用，请移除或在凭据页恢复。",
-        "inherited": "使用工作区默认授权",
-        "legacy": "当前使用原有授权",
-        "manage": "管理凭据",
-        "help": "Git 配置帮助",
-        "loading": "正在加载授权…",
-        "retry": "重试"
       }
     },
     "runLaunch": {
@@ -3282,14 +3247,8 @@
       "envRemove": "删除行",
       "envEmpty": "未填写运行级 env（与上线前行为一致）。",
       "envInvalid": "拒绝启动：{keys}",
-      "repos": {
-        "itemLabel": "仓库 {n}",
-        "namePlaceholder": "仓名(留空自动用地址名)",
-        "urlPlaceholder": "仓库地址 https://…/repo.git",
-        "branchPlaceholder": "分支(可空)",
-        "add": "添加仓库",
-        "remove": "删除该仓"
-      }
+      "reposLabel": "仓库",
+      "reposHint": "工作流设置里绑定的仓库。取消勾选的本次不克隆；分支留空使用仓库默认分支。"
     },
     "workflowIO": {
       "export": {
@@ -4396,18 +4355,12 @@
         },
         "clone": {
           "title": "克隆仓库",
-          "desc": "配置 Git 仓库列表，多仓平级 clone 到 /root/workspace/<仓库名>/。"
+          "desc": "从「设置 → 仓库」选择仓库，多仓平级克隆到 /root/workspace/ 下各自的目录。"
         }
       },
       "repos": {
-        "sectionLabel": "Git 仓库列表",
-        "hint": "每行需填写仓名与仓库地址；分支可选。与工作流启动弹窗 repos 编辑器一致。",
-        "itemLabel": "仓库 {n}",
-        "namePlaceholder": "仓名（必填）",
-        "urlPlaceholder": "仓库地址 https://…/repo.git",
-        "branchPlaceholder": "分支（可空）",
-        "add": "添加仓库",
-        "remove": "删除该仓"
+        "sectionLabel": "仓库",
+        "hint": "勾选「设置 → 仓库」里登记的仓库；凭据和提交身份取自仓库配置，分支留空使用默认分支。"
       },
       "repoPlaceholder": "可选:git clone URL(留空则空工作区)",
       "stepSandbox": {
@@ -4669,7 +4622,9 @@
       "inherit": "继承默认凭据",
       "doNotInject": "不注入",
       "unavailable": "不可用",
-      "manageCredentials": "管理凭据"
+      "manageCredentials": "管理凭据",
+      "repos": "仓库",
+      "reposHint": "每次运行默认克隆的仓库，按顺序平级放在 /root/workspace/ 下各自的目录。凭据和提交身份在「设置 → 仓库」里配置；启动时可以取消部分仓库或改分支。"
     },
     "chatNavigation": {
       "ariaLabel": "对话定位",
@@ -4934,7 +4889,11 @@
         "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
-        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。"
+        "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
+        "commit_name_invalid": "提交用户名不能包含尖括号或换行，且不超过 120 个字符",
+        "commit_email_invalid": "提交邮箱格式不正确",
+        "credential_invalid": "仓库凭据不可用：请确认凭据未吊销，且与仓库地址的协议和主机一致",
+        "credential_unavailable": "凭据服务不可用，请稍后重试"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",
@@ -5023,7 +4982,26 @@
         "repoDir": "目录名",
         "repoDirPlaceholder": "默认取仓库名",
         "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
-        "save": "保存"
+        "save": "保存",
+        "sectionAccess": "访问与提交",
+        "commitName": "提交用户名",
+        "commitNamePlaceholder": "留空使用沙箱默认",
+        "commitNameInvalid": "不能包含尖括号或换行，最多 120 个字符",
+        "commitEmail": "提交邮箱",
+        "commitEmailPlaceholder": "you{'@'}example.com",
+        "commitEmailInvalid": "邮箱格式不正确",
+        "commitHint": "Agent 在这个仓库里提交时用这个用户名和邮箱署名；留空使用沙箱默认身份。",
+        "credential": {
+          "label": "访问凭据",
+          "none": "不使用凭据（公开仓库）",
+          "loading": "正在加载凭据…",
+          "retry": "重试",
+          "hint": "克隆和推送这个仓库时使用。只列出与仓库地址的协议和主机匹配的 Git 令牌或 SSH 密钥。",
+          "noneFits": "没有与这个地址匹配的凭据，私有仓库请先添加。",
+          "mismatch": "所选凭据已吊销，或与仓库地址的协议、主机不一致，请重新选择。",
+          "missing": "所选凭据已删除，请重新选择。",
+          "manage": "管理凭据"
+        }
       }
     },
     "settingsOverview": {

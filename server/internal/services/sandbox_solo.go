@@ -115,7 +115,11 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	} else if agent.ModelBinding != nil {
 		agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: agent.ModelBinding.ConfigurationID}
 	}
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	snapshots := opts.Repos
+	if len(snapshots) == 0 && opts.Project != nil {
+		snapshots = []models.SessionRepo{SessionRepoFromProject(opts.Project, opts.Branch, 0)}
+	}
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, snapshots)
 	if err != nil {
 		return nil, err
 	}
@@ -123,14 +127,6 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, ErrSoloSandboxLimit{Max: maxN}
 	}
 
-	snapshots := opts.Repos
-	if len(snapshots) == 0 && opts.Project != nil {
-		snapshots = []models.SessionRepo{sessionRepoFromProject(opts.Project, opts.Branch, 0)}
-	}
-	repos := SoloRepoSpecsList(snapshots)
-	if opts.Restore != nil {
-		repos = nil
-	}
 	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
 	token := uuid.NewString()
 	if s.host != nil {
@@ -149,7 +145,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	row := &models.Sandbox{
 		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
-		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
+		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstRepoURL(snapshots), Repos: snapshots,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		if s.host != nil {
@@ -157,7 +153,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		}
 		return nil, err
 	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, Restore: opts.Restore}
+	extra := agentContainerExtra{Repos: snapshots, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, Restore: opts.Restore}
 	id := row.ID
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }
@@ -166,7 +162,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		extra.OnFail = func(err error) { opts.OnFail(id, err) }
 	}
 	log.Info().Str("name", name).Str("profile", profile).Str("session", sessionID).
-		Int("repos", len(repos)).Uint("id", id).Msg("solo sandbox creating")
+		Int("repos", len(snapshots)).Uint("id", id).Msg("solo sandbox creating")
 	go s.startAgentContainer(id, name, profile, sessionID, runID, token, platformSpecs, agent, extra)
 	return row, nil
 }

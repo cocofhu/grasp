@@ -92,9 +92,6 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 	for k, v := range cfg.Env {
 		env[k] = v
 	}
-	if _, ok := env["GIT_REPOS"]; !ok {
-		env["GIT_REPOS"] = "${vars.repos}"
-	}
 	mcp := cfg.MCP
 	if len(mcp) == 0 {
 		mcp = DefaultPlatformMCP()
@@ -104,7 +101,7 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 		layout = *cfg.Layout
 	}
 	return Agent{
-		InheritModel: cfg.InheritModel, InheritGit: cfg.InheritGit,
+		InheritModel: cfg.InheritModel,
 		Name:         embedName,
 		AcpBackend:   NormalizeAcpBackend(cfg.AcpBackend),
 		Files:        files,

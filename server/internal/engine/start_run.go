@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -147,6 +146,10 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	if err != nil {
 		return nil, err
 	}
+	repos, err := e.snapshotRunRepos(def, launch.Repos)
+	if err != nil {
+		return nil, err
+	}
 
 	runID := "run-" + uuid.NewString()[:8]
 	if inputs == nil {
@@ -195,6 +198,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		Tags:       append([]string{}, tags...),
 		Priority:   priority,
 		SandboxEnv: sandboxEnv,
+		Repos:      repos,
 		Trace:      []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
@@ -378,8 +382,6 @@ func computeRunTitle(g models.Graph, seeded []models.RunVariable) string {
 
 func varValueToTitleString(val any, typ string) string {
 	switch typ {
-	case "repos":
-		return reposTitleString(val)
 	case "bool":
 		if b, ok := val.(bool); ok {
 			return strconv.FormatBool(b)
@@ -409,58 +411,6 @@ func varValueToTitleString(val any, typ string) string {
 	return s
 }
 
-func reposTitleString(val any) string {
-	names := repoNamesFromVar(val)
-	switch len(names) {
-	case 0:
-		return ""
-	case 1:
-		return names[0]
-	case 2:
-		return names[0] + " · " + names[1]
-	default:
-		return fmt.Sprintf("%s · %s 等 %d 个仓库", names[0], names[1], len(names))
-	}
-}
-
-func repoNamesFromVar(val any) []string {
-	var items []any
-	switch t := val.(type) {
-	case string:
-		s := strings.TrimSpace(t)
-		if s == "" || !strings.HasPrefix(s, "[") {
-			return nil
-		}
-		if json.Unmarshal([]byte(s), &items) != nil {
-			return nil
-		}
-	case []any:
-		items = t
-	default:
-		raw, err := json.Marshal(val)
-		if err != nil || json.Unmarshal(raw, &items) != nil {
-			return nil
-		}
-	}
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		name := strings.TrimSpace(fmt.Sprint(m["name"]))
-		if name == "" || name == "<nil>" {
-			url := strings.TrimSpace(fmt.Sprint(m["url"]))
-			if i := strings.LastIndex(url, "/"); i >= 0 {
-				name = strings.TrimSuffix(url[i+1:], ".git")
-			}
-		}
-		if name != "" && name != "<nil>" {
-			names = append(names, name)
-		}
-	}
-	return names
-}
 
 func isBlank(v any) bool {
 	return models.IsBlankVar(v)

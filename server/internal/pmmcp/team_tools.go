@@ -40,7 +40,6 @@ func (h *Host) callTeamTools(sess *Session, skill *services.AgentService, name s
 			TemplateID:           templateID,
 			Name:                 agentName,
 			ModelConfigurationID: modelConfigurationID,
-			GitBindings:          leader.GitBindings,
 			MCP:                  leader.MCP,
 			Env:                  leader.Env,
 		})

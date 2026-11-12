@@ -18,7 +18,7 @@ func TestScopedReferencesSearchAndPrepare(t *testing.T) {
 	if err := db.Create(&models.SoloSession{ID: "bob1", UserID: "bob", Title: "bob 的", Status: models.SoloStatusClosed}).Error; err != nil {
 		t.Fatal(err)
 	}
-	scope := ReferenceScope("alice", " agentA ", []string{"https://github.com/acme/web.git", " "})
+	scope := ReferenceScope("alice", " agentA ", []models.SessionRepo{{RepoURL: "https://github.com/acme/web.git"}, {RepoURL: " "}})
 	if scope.AgentName != "agentA" || len(scope.Repos) != 1 {
 		t.Fatalf("scope: %+v", scope)
 	}

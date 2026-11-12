@@ -35,7 +35,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 
 import { useRunDetail } from '@/lib/run/useRunDetail'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
-import { formatRepoNames, runRepoNames } from '@/lib/run/runTitle'
+import { formatRepoNames } from '@/lib/run/runTitle'
 import { api } from '@/lib/api/api'
 import type { Agent } from '@/lib/api/apiTypes'
 
@@ -253,7 +253,7 @@ onBeforeRouteLeave(() => artifactEditor.confirmLeave())
 onBeforeRouteUpdate((to, from) => to.path === from.path || artifactEditor.confirmLeave())
 
 const followCanvas = ref(true)
-const runRepos = computed(() => formatRepoNames(runRepoNames(run.value.vars)))
+const runRepos = computed(() => formatRepoNames((run.value.repos ?? []).map((repo) => repo.name)))
 const canvasIterations = computed(() => {
   const m: Record<string, number> = {}
   for (const [id, nr] of Object.entries(run.value.nodeRuns)) if (nr.iteration) m[id] = nr.iteration

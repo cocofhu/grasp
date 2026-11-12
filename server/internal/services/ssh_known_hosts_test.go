@@ -53,7 +53,7 @@ func TestSSHKeyCredentialStoresKnownHosts(t *testing.T) {
 	if err != nil || updated.KnownHosts != "" || updated.SecretRevision != 4 {
 		t.Fatalf("clear known hosts = %+v, %v", updated, err)
 	}
-	rows, err := runtime.ResolveGitBindings(serviceGitSelection(created.ID), s.ResolveGitValue)
+	rows, err := runtime.ResolveRepoCredentials([]runtime.RepoCredential{{Repo: "r", URL: "git@a.example:team/r.git", CredentialID: created.ID}}, s.ResolveGitValue)
 	if err != nil || len(rows) != 1 || rows[0].Kind != sandbox.RepoCredentialSSH || rows[0].KnownHosts != "" || rows[0].Secret != "rotated-key" {
 		t.Fatalf("cleared known hosts still injected: %+v, %v", rows, err)
 	}

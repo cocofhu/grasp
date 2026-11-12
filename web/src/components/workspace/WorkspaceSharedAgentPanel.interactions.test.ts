@@ -12,10 +12,10 @@ const cfg = { files: [], mcp: [], env: { FEATURE: 'on' }, layout: { configRoot: 
 function setup() { return mount(WorkspaceSharedAgentPanel, { global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { AgentFilesPanel: { template: '<div data-testid="files" />' }, AgentEnvPanel: { props: ['draft'], template: '<div data-testid="env"><input data-testid="shared-feature" v-model="draft.env[0].v" /></div>' }, AgentMcpPanel: { template: '<div data-testid="mcp" />' } } } }) }
 beforeEach(() => { vi.clearAllMocks(); mocks.getSharedAgentConfig.mockResolvedValue(cfg); mocks.putSharedAgentConfig.mockImplementation(async body => body); for (const method of ['listModelConfigurations', 'listModelConnections', 'listCredentials', 'listToolCapabilities'] as const) mocks[method].mockResolvedValue({ items: [] }) })
 describe('shared Agent defaults', () => {
- it('edits environment while keeping model and Git defaults empty until explicitly configured', async () => {
+ it('edits environment while keeping the model default empty until explicitly configured', async () => {
   const w = setup(); await flushPromises(); await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
   expect(w.find('[data-testid="model-binding-editor"]').exists()).toBe(true)
-  expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(true)
+  expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(false)
   expect(w.find('[data-testid="coding-tool-picker"]').exists()).toBe(false)
   expect(w.find('[data-testid="meta-config-root"]').exists()).toBe(false)
   expect(w.find('[data-testid="meta-workspace-dir"]').exists()).toBe(false)

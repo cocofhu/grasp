@@ -84,7 +84,9 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 		return nil, err
 	}
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
-	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
+	runtime.StripGitAuthorizationEnv(env, creds)
+	repos, repoCreds := s.repoGit(extra.Repos)
+	gitCredentials, err := runtime.ResolveRepoCredentials(repoCreds, s.gitCredential)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +148,11 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	}
 	env["GRASP_LAUNCH_KIND"] = kind
 	sandbox.ApplyPasswords(env, sharedToken)
-	env["GIT_REPOS"] = sandbox.EncodeRepos(extra.Repos)
+	if extra.Restore != nil {
+		// The restored archive already holds the clones and their authors.
+		repos = nil
+	}
+	sandbox.ApplyRepoEnv(env, repos)
 	if initial := strings.TrimSpace(extra.InitialChatModel); initial != "" {
 		env[runtime.EnvInitialChatModel] = initial
 	}

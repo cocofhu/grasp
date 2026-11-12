@@ -28,8 +28,6 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 
 type agentBody struct {
 	InheritModel       bool                      `json:"inheritModel"`
-	InheritGit         bool                      `json:"inheritGit"`
-	GitBindings        *models.GitBindings       `json:"gitBindings"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding"`
 	Name               string                    `json:"name"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
@@ -52,7 +50,7 @@ func (b *agentBody) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	type plain agentBody
-	next := plain{InheritModel: true, InheritGit: true}
+	next := plain{InheritModel: true}
 	if err := json.Unmarshal(data, &next); err != nil {
 		return err
 	}
@@ -65,9 +63,8 @@ func (b *agentBody) UnmarshalJSON(data []byte) error {
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		InheritModel: b.InheritModel, InheritGit: b.InheritGit,
-		GitBindings: b.GitBindings,
-		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
+		InheritModel: b.InheritModel,
+		Name:         name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 		Icon: b.Icon,
 	}

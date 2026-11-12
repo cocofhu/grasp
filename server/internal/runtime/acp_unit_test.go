@@ -306,10 +306,8 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 	if _, exists := cfg["modelBinding"]; !exists {
 		cfg["modelBinding"] = map[string]string{"kind": "configuration", "configurationId": "test-model"}
 	}
-	for _, key := range []string{"inheritModel", "inheritGit"} {
-		if _, exists := cfg[key]; !exists {
-			cfg[key] = false
-		}
+	if _, exists := cfg["inheritModel"]; !exists {
+		cfg["inheritModel"] = false
 	}
 	encoded, err := json.Marshal(cfg)
 	if err != nil {
@@ -322,16 +320,19 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 }
 
 func TestAgentConfigAndMCP(t *testing.T) {
-	root := writeAgent(t, "dev", `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"},"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
+	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
 		GitCredential: func(string) (GitCredentialValue, bool) {
 			return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "cred-tok", Host: "https://gitlab.com"}, true
 		},
+		Project: func(id string) (*models.Project, bool) {
+			return &models.Project{ID: id, CredentialID: "gl"}, id == "p"
+		},
 	}).(*acpProvider)
 	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
-		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
+		Config: map[string]any{"agent_profile": "dev"}, Repos: []models.SessionRepo{{ProjectID: "p", RepoDirName: "p", RepoURL: "https://gitlab.com/g/p.git"}}}
 
 	cfg := p.agentConfig("dev")
 	if len(cfg.MCP) != 1 {
@@ -353,7 +354,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 		t.Fatalf("spec: %v", err)
 	}
 	if sp.Env["GITLAB_URL"] != "" || len(sp.GitCredentials) != 1 {
-		t.Error("Git authorization must use the selected file catalog, not global environment")
+		t.Error("Git authorization must use the repository's file catalog, not global environment")
 	}
 	removeHome(sp.ConfigHome)
 }
@@ -363,7 +364,7 @@ func TestSpecDoesNotDeriveGitLabURLFromGitHubRepo(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{ProfilesRoot: root}).(*acpProvider)
 	req := NodeReq{RunID: "run-gh", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
-		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"app","url":"https://github.com/acme/app.git"}]`}}
+		Config: map[string]any{"agent_profile": "dev"}, Repos: []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://github.com/acme/app.git"}}}
 
 	sp, err := p.spec(req)
 	if err != nil {
@@ -467,7 +468,7 @@ func TestCaptureChanges(t *testing.T) {
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 	out := map[string]any{}
 	git := p.captureChanges(context.Background(), sb, NodeReq{
-		Vars: map[string]any{"repos": `[{"name":"app","url":"https://h/app.git"}]`},
+		Repos: []models.SessionRepo{{RepoDirName: "app", RepoURL: "https://h/app.git"}},
 	}, out)
 	if git == nil || git.Branch != "feat" || !git.Pushed {
 		t.Fatalf("captureChanges git = %+v", git)

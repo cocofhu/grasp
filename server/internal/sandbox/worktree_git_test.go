@@ -93,6 +93,60 @@ func TestWorktreeAgentPushUsesSelectedCredential(t *testing.T) {
 	}
 }
 
+func TestWorktreeRepoAuthorStaysOutOfTheUsersRepository(t *testing.T) {
+	t.Setenv(execution.EnvMode, execution.ModeWorktree)
+	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
+	isolateWorktreeGit(t)
+	execution.ResetForTest()
+	t.Cleanup(execution.ResetForTest)
+	t.Cleanup(execution.SetLookPathForTest(func(string) error { return nil }))
+	var backendEnv map[string]string
+	t.Cleanup(SetWorktreeBackendForTest(func(_ context.Context, env map[string]string, _ string) (int, func(), error) {
+		backendEnv = env
+		return 9, func() {}, nil
+	}))
+	repo := initWorktreeRepo(t)
+	gitWorktreeRun(t, repo, "config", "--local", "--unset", "user.name")
+	gitWorktreeRun(t, repo, "config", "--local", "--unset", "user.email")
+	other := initWorktreeRepo(t)
+	gitWorktreeRun(t, other, "config", "--local", "--unset", "user.name")
+	gitWorktreeRun(t, other, "config", "--local", "--unset", "user.email")
+	repos := []RepoSpec{
+		{Name: "app", URL: repo, Branch: "main", AuthorName: "App Bot", AuthorEmail: "app@example.com"},
+		{Name: "lib", URL: other, Branch: "main"},
+	}
+	sb, err := NewManager(nil, ManagerOptions{}).Create(context.Background(), Spec{
+		Name: "authors", GitBindingsConfigured: true,
+		Env: map[string]string{
+			BridgePasswordEnv: "pw", "AGENT_PROVIDER": "codex", envRunID: "run-authors", envLaunchKind: execution.LaunchRun,
+			"GIT_REPOS": EncodeRepos(repos), EnvRepoAuthors: EncodeRepoAuthors(repos),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sb.Destroy(context.Background()); execution.End("run-authors") })
+	ident := func(name string) string {
+		cmd := exec.Command("git", "var", "GIT_AUTHOR_IDENT")
+		cmd.Dir = filepath.Join(sb.WorkspaceDir, name)
+		cmd.Env = envList(backendEnv)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git var in %s: %v: %s", name, err, out)
+		}
+		return string(out)
+	}
+	if got := ident("app"); !strings.Contains(got, "App Bot <app@example.com>") {
+		t.Fatalf("app author = %q", got)
+	}
+	if got := ident("lib"); !strings.Contains(got, "sandbox <sandbox@localhost>") {
+		t.Fatalf("lib author = %q", got)
+	}
+	if out, _ := exec.Command("git", "-C", repo, "config", "--local", "--get", "user.name").Output(); len(out) != 0 {
+		t.Fatalf("the user's repository config was changed: %q", out)
+	}
+}
+
 func TestWorktreeGitSessionsKeepAuthorizationSeparate(t *testing.T) {
 	t.Setenv(execution.EnvMode, execution.ModeWorktree)
 	t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
