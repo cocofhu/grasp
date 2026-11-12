@@ -68,7 +68,7 @@ OpenCode 官方将 `--refresh` 用于更新缓存目录，并建议用 `opencode
 
 ### 共享运行沙箱：`reprime.sh`
 
-在工作流编辑页的「工作流默认配置」中打开「共享沙箱」（`defaults.sandbox.mode = shared`，默认关闭），保存后新启动的运行复用同一个沙箱；无需额外的平台开关。
+工作流的每次运行都复用同一个沙箱，无需配置。
 换到下一个节点时，如果它的 env、配置根或凭据和上一个节点不同，Grasp 会经 SSH 执行 `bash /opt/grasp-runtime/current/scripts/reprime.sh`，
 并从 stdin 传入一个 tar.gz：
 

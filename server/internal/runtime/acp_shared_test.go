@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -73,9 +72,9 @@ func newSharedHarness(t *testing.T, chat func(attempt int) chatFunc) *sharedHarn
 	return &sharedHarness{p: p, mgr: mgr, reg: reg, runID: runID, tok: tok}
 }
 
-func (h *sharedHarness) req(node, mode string) NodeReq {
+func (h *sharedHarness) req(node string) NodeReq {
 	return reqWithProfile(NodeReq{RunID: h.runID, NodeID: node, NodeType: "agent", Token: h.tok,
-		Config: map[string]any{"prompt": "go"}, Vars: map[string]any{}, SandboxMode: mode})
+		Config: map[string]any{"prompt": "go"}, Vars: map[string]any{}})
 }
 
 func (h *sharedHarness) run(t *testing.T, req NodeReq) {
@@ -87,9 +86,9 @@ func (h *sharedHarness) run(t *testing.T, req NodeReq) {
 
 func TestSharedSandboxReusedAcrossNodes(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	h.run(t, h.req("n1", models.SandboxModeShared))
-	h.run(t, h.req("n2", models.SandboxModeShared))
-	h.run(t, h.req("n3", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
+	h.run(t, h.req("n2"))
+	h.run(t, h.req("n3"))
 	if got := h.mgr.createCount(); got != 1 {
 		t.Fatalf("containers created = %d, want 1", got)
 	}
@@ -114,35 +113,19 @@ func TestSharedSandboxReusedAcrossNodes(t *testing.T) {
 
 func TestSharedSandboxSameNodeSkipsReprime(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	h.run(t, h.req("n1", models.SandboxModeShared))
-	h.run(t, h.req("n1", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
+	h.run(t, h.req("n1"))
 	if h.mgr.createCount() != 1 || h.mgr.reprimeCount() != 0 {
 		t.Fatalf("creates=%d reprimes=%d, want 1/0", h.mgr.createCount(), h.mgr.reprimeCount())
 	}
 }
 
-func TestPerNodeModeUnchanged(t *testing.T) {
-	h := newSharedHarness(t, nil)
-	h.run(t, h.req("n1", ""))
-	h.run(t, h.req("n2", models.SandboxModePerNode))
-	if h.mgr.createCount() != 2 || h.mgr.reprimeCount() != 0 {
-		t.Fatalf("creates=%d reprimes=%d, want 2/0", h.mgr.createCount(), h.mgr.reprimeCount())
-	}
-	if h.p.shared.get(h.runID) != nil {
-		t.Fatal("per-node run recorded a shared sandbox")
-	}
-	// Without a retirer the per-node path destroys and deregisters as before.
-	if !h.reg.balanced() {
-		t.Fatalf("registry unbalanced: %+v", h.reg)
-	}
-}
-
 func TestSharedSandboxHeldByParkedSessionFallsBack(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	first := h.req("n1", models.SandboxModeShared)
+	first := h.req("n1")
 	first.KeepAliveForReview = true
 	h.run(t, first)
-	h.run(t, h.req("gate", models.SandboxModeShared))
+	h.run(t, h.req("gate"))
 	if h.mgr.createCount() != 2 {
 		t.Fatalf("creates = %d, want 2 (parked holder forces own sandbox)", h.mgr.createCount())
 	}
@@ -151,7 +134,7 @@ func TestSharedSandboxHeldByParkedSessionFallsBack(t *testing.T) {
 	}
 	// Closing the parked session frees the shared sandbox for the next node.
 	h.p.RetireSession(h.runID, "n1")
-	h.run(t, h.req("n3", models.SandboxModeShared))
+	h.run(t, h.req("n3"))
 	if h.mgr.createCount() != 2 || h.mgr.reprimeCount() != 1 {
 		t.Fatalf("creates=%d reprimes=%d, want 2/1", h.mgr.createCount(), h.mgr.reprimeCount())
 	}
@@ -167,7 +150,7 @@ func TestSharedSandboxRetryKeepsContainer(t *testing.T) {
 		}
 	})
 	h.p.opts.SandboxMaxAttempts = 3
-	h.run(t, h.req("n1", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
 	if got := h.mgr.createCount(); got != 1 {
 		t.Fatalf("containers created = %d, want 1 (retry reuses the shared sandbox)", got)
 	}
@@ -175,9 +158,9 @@ func TestSharedSandboxRetryKeepsContainer(t *testing.T) {
 
 func TestSharedSandboxReprimeFailureReplacesContainer(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	h.run(t, h.req("n1", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
 	h.mgr.failNext = true
-	h.run(t, h.req("n2", models.SandboxModeShared))
+	h.run(t, h.req("n2"))
 	if got := h.mgr.createCount(); got != 2 {
 		t.Fatalf("containers created = %d, want 2", got)
 	}
@@ -191,8 +174,8 @@ func TestSharedSandboxRetiredAtRunEnd(t *testing.T) {
 	h := newSharedHarness(t, nil)
 	reg := &retiringRegistry{}
 	h.p.registry = reg
-	h.run(t, h.req("n1", models.SandboxModeShared))
-	h.run(t, h.req("n2", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
+	h.run(t, h.req("n2"))
 	if reg.retired != 0 {
 		t.Fatalf("retired mid-run: %d", reg.retired)
 	}
@@ -215,9 +198,9 @@ func TestSharedSandboxRetiredAtRunEnd(t *testing.T) {
 
 func TestSharedSandboxIncompatibleWorkspaceFallsBack(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	h.run(t, h.req("n1", models.SandboxModeShared))
+	h.run(t, h.req("n1"))
 	h.p.shared.get(h.runID).sb.WorkspaceDir = "/elsewhere"
-	h.run(t, h.req("n2", models.SandboxModeShared))
+	h.run(t, h.req("n2"))
 	if h.mgr.createCount() != 2 || h.mgr.reprimeCount() != 0 {
 		t.Fatalf("creates=%d reprimes=%d, want 2/0", h.mgr.createCount(), h.mgr.reprimeCount())
 	}
@@ -226,16 +209,12 @@ func TestSharedSandboxIncompatibleWorkspaceFallsBack(t *testing.T) {
 func TestAdoptSharedSandbox(t *testing.T) {
 	h := newSharedHarness(t, nil)
 	sb := &sandbox.Sandbox{Name: "adopted"}
-	h.p.adoptSharedSandbox(h.req("n1", ""), sb)
-	if h.p.shared.get(h.runID) != nil {
-		t.Fatal("per-node reattach adopted as shared")
-	}
-	h.p.adoptSharedSandbox(h.req("n1", models.SandboxModeShared), sb)
+	h.p.adoptSharedSandbox(h.req("n1"), sb)
 	ss := h.p.shared.get(h.runID)
 	if ss == nil || ss.fingerprint != "" || ss.owner == "" {
 		t.Fatalf("adopted: %+v", ss)
 	}
-	h.p.adoptSharedSandbox(h.req("n2", models.SandboxModeShared), &sandbox.Sandbox{Name: "other"})
+	h.p.adoptSharedSandbox(h.req("n2"), &sandbox.Sandbox{Name: "other"})
 	if h.p.shared.get(h.runID).sb.Name != "adopted" {
 		t.Fatal("second adopt replaced the shared sandbox")
 	}

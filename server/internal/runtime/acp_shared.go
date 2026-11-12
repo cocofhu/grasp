@@ -13,9 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Shared run sandbox (sandbox mode "shared"; newly created workflows default to
-// it, an unset mode means per-node): every node of a run reuses one container
-// instead of getting its own. A node opening the
+// Shared run sandbox: every node of a run reuses one container instead of
+// getting its own. A node opening the
 // sandbox re-primes it when its env / config home / credentials differ from
 // the previous node's (reprime.sh restarts the backend with the new ones),
 // then connects a fresh agent session on the default bridge chat. Releasing
@@ -23,7 +22,7 @@ import (
 //
 // While one node keeps its session parked (review, a downstream gate waiting
 // for reject, a takeover), another node cannot take the container over, so it
-// falls back to a sandbox of its own just like per-node mode.
+// falls back to a sandbox of its own.
 
 // sharedRunSandbox is the one sandbox of a shared-mode run.
 type sharedRunSandbox struct {
@@ -310,7 +309,7 @@ func (c *acpProvider) syncSharedBranches(ctx context.Context, sb *sandbox.Sandbo
 // adoptSharedSandbox records a shared sandbox reattached after a control-plane
 // restart. Its priming is unknown, so the next other node re-primes it.
 func (c *acpProvider) adoptSharedSandbox(req NodeReq, sb *sandbox.Sandbox) {
-	if c.shared == nil || req.SandboxMode != models.SandboxModeShared || sb == nil {
+	if c.shared == nil || sb == nil {
 		return
 	}
 	if c.shared.get(req.RunID) != nil {

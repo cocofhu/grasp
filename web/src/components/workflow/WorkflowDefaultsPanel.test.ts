@@ -24,35 +24,10 @@ async function chooseType(wrapper: VueWrapper, value: string) {
   await wrapper.get(`[data-test="app-select-option-${value}"]`).trigger('click')
 }
 describe('Workflow defaults', () => {
-  it('starts with independent sandboxes and switches the workflow with one control', async () => {
-    const { workflow, wrapper } = setup()
+  it('has no sandbox mode control', async () => {
+    const { wrapper } = setup()
     await flushPromises()
-    const toggle = wrapper.get('[data-testid="workflow-shared-sandbox-switch"]')
-    expect(toggle.attributes('aria-checked')).toBe('false')
-    expect(workflow.defaults).toBeUndefined()
-    await toggle.trigger('click')
-    expect(toggle.attributes('aria-checked')).toBe('true')
-    expect(workflow.defaults).toEqual({ inheritWorkspace: true, variables: [], sandbox: { mode: 'shared' } })
-    await toggle.trigger('click')
-    expect(workflow.defaults!.sandbox).toEqual({ mode: 'per_node' })
-    wrapper.unmount()
-  })
-  it('loads the saved shared mode and preserves every other workflow default when toggled', async () => {
-    const original: Workflow['defaults'] = {
-      inheritWorkspace: false,
-      variables: [{ name: 'LOCAL', type: 'string', value: 'keep' }],
-      sandbox: { mode: 'shared' },
-      notifyPolicy: { enabled: false, channelIds: ['channel'], defaultEvents: ['failed'] },
-      gateAuto: { enabled: false, agentName: 'reviewer', variable: 'review', prompt: 'Keep prompt', enabledMcps: ['pm-progress'] },
-    }
-    const { workflow, wrapper } = setup(structuredClone(original))
-    await flushPromises()
-    const toggle = wrapper.get('[data-testid="workflow-shared-sandbox-switch"]')
-    expect(toggle.attributes('aria-checked')).toBe('true')
-    await toggle.trigger('click')
-    expect(workflow.defaults).toEqual({ ...original, sandbox: { mode: 'per_node' } })
-    await toggle.trigger('click')
-    expect(workflow.defaults).toEqual(original)
+    expect(wrapper.find('[data-testid="workflow-sandbox-settings"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('preserves independent variables and explicit disabled policies on ordinary edits', async () => {
@@ -175,11 +150,6 @@ describe('Workflow defaults', () => {
   it('toggles each settings row once and keeps notification and approval sections mounted', async () => {
     const { workflow, wrapper } = setup()
     await flushPromises()
-    const sandbox = wrapper.get('[data-testid="workflow-shared-sandbox-row"]')
-    await sandbox.get('h3').trigger('click')
-    expect(workflow.defaults?.sandbox?.mode).toBe('shared')
-    await sandbox.get('[data-testid="workflow-shared-sandbox-switch"]').trigger('click')
-    expect(workflow.defaults?.sandbox?.mode).toBe('per_node')
     await wrapper.get('[data-testid="workflow-inherit-row"]').get('span').trigger('click')
     expect(workflow.defaults?.inheritWorkspace).toBe(false)
     const notify = wrapper.get('[data-testid="workflow-notify-expansion"]')

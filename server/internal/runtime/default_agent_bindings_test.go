@@ -150,7 +150,7 @@ func TestRunAgentInheritedDefaultsReprimeSharedSandbox(t *testing.T) {
 		}
 		return r, err
 	}
-	req := h.req("n1", models.SandboxModeShared)
+	req := h.req("n1")
 	req.WorkflowID = "workflow"
 	h.run(t, req)
 	shared.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: "second"}

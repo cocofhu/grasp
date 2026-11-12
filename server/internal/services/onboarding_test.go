@@ -80,27 +80,24 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	if !wf.ShowOnHome {
 		t.Fatal("default workflow should be visible on Home")
 	}
-	assertSharedSandbox(t, wf)
+	assertInheritsWorkspace(t, wf)
 	assertDefaultWorkflowGraph(t, wf.Graph)
 }
 
-func assertSharedSandbox(t *testing.T, wf models.WorkflowDef) {
+func assertInheritsWorkspace(t *testing.T, wf models.WorkflowDef) {
 	t.Helper()
-	if wf.Defaults == nil || wf.Defaults.Sandbox == nil || wf.Defaults.Sandbox.Mode != models.SandboxModeShared {
-		t.Fatalf("defaults = %+v, want sandbox.mode=shared", wf.Defaults)
-	}
-	if !wf.Defaults.InheritWorkspace {
-		t.Fatalf("defaults.inheritWorkspace = false, want true")
+	if wf.Defaults == nil || !wf.Defaults.InheritWorkspace {
+		t.Fatalf("defaults = %+v, want inheritWorkspace", wf.Defaults)
 	}
 }
 
-func TestOnboardingBootstrapKeepsExistingWorkflowSandboxMode(t *testing.T) {
+func TestOnboardingBootstrapKeepsExistingWorkflowDefaults(t *testing.T) {
 	cases := []struct {
 		name     string
 		defaults *models.WorkflowDefaults
 	}{
 		{name: "unset", defaults: nil},
-		{name: "per_node", defaults: &models.WorkflowDefaults{InheritWorkspace: true, Sandbox: &models.WorkflowSandboxPolicy{Mode: models.SandboxModePerNode}}},
+		{name: "own", defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "REGION", Value: "east"}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,8 +129,8 @@ func TestOnboardingBootstrapKeepsExistingWorkflowSandboxMode(t *testing.T) {
 				}
 				return
 			}
-			if wf.Defaults == nil || wf.Defaults.Sandbox == nil || wf.Defaults.Sandbox.Mode != models.SandboxModePerNode {
-				t.Fatalf("defaults = %+v, want per_node kept", wf.Defaults)
+			if wf.Defaults == nil || wf.Defaults.InheritWorkspace || len(wf.Defaults.Variables) != 1 || wf.Defaults.Variables[0].Name != "REGION" {
+				t.Fatalf("defaults = %+v, want existing defaults kept", wf.Defaults)
 			}
 		})
 	}
@@ -585,8 +582,8 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	if stored.Status() != "published" || !stored.ShowOnHome {
 		t.Fatalf("persisted status=%s showOnHome=%v (plan g1.1)", stored.Status(), stored.ShowOnHome)
 	}
-	assertSharedSandbox(t, wf)
-	assertSharedSandbox(t, stored)
+	assertInheritsWorkspace(t, wf)
+	assertInheritsWorkspace(t, stored)
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "首页可见工作流",

@@ -7,9 +7,9 @@ import (
 )
 
 // runNodeSandboxRow returns the latest run sandbox row of a run's node. When
-// the node has none of its own and the run uses a shared sandbox (sandbox mode
-// "shared"), the run's shared sandbox serves every node and is returned
-// instead. Runs without a shared sandbox see the plain run+node lookup.
+// the node has none of its own, the run's shared sandbox serves every node and
+// is returned instead. Runs without a shared sandbox see the plain run+node
+// lookup.
 func runNodeSandboxRow(db *gorm.DB, runID, nodeID string) (models.Sandbox, error) {
 	var row models.Sandbox
 	err := db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
