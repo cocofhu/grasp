@@ -7,7 +7,7 @@
 #
 # Usage (repo root):
 #   ./scripts/e2e-docker.sh
-#   SBGW_IMAGE=universal-sandbox:local ./scripts/e2e-docker.sh
+#   SBGW_DOCKER_IMAGE=universal-sandbox:local ./scripts/e2e-docker.sh
 #
 # Nested DinD (pod → docker → sandbox) needs SKIP_INNER_DOCKER=1; this script
 # always passes it so the e2e does not depend on inner dockerd.
@@ -17,21 +17,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 GW="${GW:-http://127.0.0.1:8080}"
-IMAGE="${SBGW_IMAGE:-}"
+IMAGE="${SBGW_DOCKER_IMAGE:-}"
 if [ -z "$IMAGE" ]; then
   if docker image inspect universal-sandbox:e2e2 >/dev/null 2>&1; then
     IMAGE=universal-sandbox:e2e2
   elif docker image inspect universal-sandbox:local >/dev/null 2>&1; then
     IMAGE=universal-sandbox:local
   else
-    echo "error: no sandbox image. Build one or set SBGW_IMAGE=..." >&2
+    echo "error: no sandbox image. Build one or set SBGW_DOCKER_IMAGE=..." >&2
     exit 1
   fi
 fi
 
 echo "==> sandbox image: $IMAGE"
 # Compose config uses ...; tag local image to that ref so
-# SBGW_IMAGE override is not required inside the gateway container.
+# SBGW_DOCKER_IMAGE override is not required inside the gateway container.
 REF=universal-sandbox:local
 docker tag "$IMAGE" "$REF"
 

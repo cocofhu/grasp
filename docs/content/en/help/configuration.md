@@ -1,17 +1,29 @@
 ---
 title: Configuration
-description: Configuration highlights; full details live in source CONFIGURATION.md.
+description: Grasp, gateway and sandbox configuration sources, defaults and precedence.
 ---
 
 Grasp platform service configuration is primarily YAML / environment variables (local examples: `server/config.example.yaml` and the root `.env.example`). Runtime credentials such as ACP and Git credentials are managed only in Settings → Credentials.
 
 ## Full documentation
 
-Treat the in-repo docs as authoritative (avoids drift between this site and source):
+Choose the reference for the component you are configuring:
 
-- [server/CONFIGURATION.md](https://github.com/cocofhu/approving/blob/main/server/CONFIGURATION.md)
+- [Grasp and sandbox configuration / defaults (Chinese)](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md): platform, gateway, E2B and sandbox runtime options, including defaults, Compose overrides, the minimum connection setup and troubleshooting.
+- [Grasp environment reference](https://github.com/cocofhu/grasp/blob/main/server/CONFIGURATION.md): environment variables and their YAML fields.
+- [E2B deployment (Chinese)](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md): template preparation, gateway configuration and startup.
 
-That document is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-check`.
+The environment reference is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-check`.
+
+## Defaults and precedence
+
+Use two YAML files: Grasp platform configuration and the selected backend's gateway configuration. Grasp reads `CONFIG_PATH` (default `config.yaml`); select the gateway file explicitly with `SBGW_CONFIG` or `-config`. Docker, Kubernetes and E2B have separate examples. Mixed backend sections, unknown fields and inactive backend environment variables fail startup.
+
+Ordinary settings use environment > YAML > defaults. Settings-page controls use environment > saved database value > YAML > defaults. Environment values lock the corresponding UI field.
+
+Grasp defaults to `http://127.0.0.1:8899` with `direct` transport, an empty image and memory override `0`, following the gateway or selected template. Setting memory back to `0` clears the override for future sandboxes. Docker and Kubernetes each default to `2 CPU / 4096 MiB / 25 GiB`. E2B has no built-in template or resource defaults: copy actual build results.
+
+E2B uses an explicit `apiURL`, optional `sandboxURL` and named `templates`. Self-hosted deployments use their own API and private sandbox proxy origins, without an implicit cloud address. In `templates.standard`, `standard` is your local template name; `templateID` is returned by E2B. One template is selected automatically; several require `defaultTemplate`. A named Grasp connection can select a template with `profile`. Grasp need not repeat its name or memory. See the [build and paired configuration examples](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md).
 
 ## Local quick path
 

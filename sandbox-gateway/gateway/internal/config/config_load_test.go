@@ -1,52 +1,138 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
-func TestDefault(t *testing.T) {
-	c := Default()
-	if c.Server.Listen != ":8080" {
-		t.Fatalf("listen=%q", c.Server.Listen)
-	}
-	if c.Driver != "docker" {
-		t.Fatalf("driver=%q", c.Driver)
-	}
-	if c.Database.Driver != "sqlite" || c.Database.Path != "gateway.db" {
-		t.Fatalf("db=%+v", c.Database)
-	}
-	if c.Image.Ref == "" {
-		t.Fatal("image.ref empty")
-	}
-	if c.Docker.BindIP != "127.0.0.1" || c.Docker.NamePrefix != "sbx-" {
-		t.Fatalf("docker=%+v", c.Docker)
-	}
-	if c.K8s.Namespace != "sandboxes" || !c.K8s.EnableLoadBalancer {
-		t.Fatalf("k8s=%+v", c.K8s)
-	}
-}
-
-func TestEnvironmentProfilesValidateBeforeStartup(t *testing.T) {
-	for _, profiles := range []map[string]ProfileConfig{
-		{"": {Image: "approved-image"}},
-		{"universal": {Image: " "}},
-	} {
-		cfg := Default()
-		cfg.Profiles = profiles
-		if err := cfg.validate(); err == nil {
-			t.Fatal("invalid environment profile accepted")
-		}
-	}
-	cfg := Default()
-	cfg.Profiles = map[string]ProfileConfig{"universal": {Image: "approved-image"}}
-	if err := cfg.validate(); err != nil {
+func loadYAML(t *testing.T, value string) (*Config, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gateway.yaml")
+	if err := os.WriteFile(path, []byte(value), 0600); err != nil {
 		t.Fatal(err)
 	}
+	return Load(path)
 }
-
+func TestBackendDefaultsAndIsolation(t *testing.T) {
+	for _, driver := range []string{"docker", "kubernetes"} {
+		c, err := loadYAML(t, "driver: "+driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.DefaultImage() != "universal-sandbox:local" || c.Server.Listen != ":8080" || c.Database.Driver != "sqlite" || c.Database.Path != "gateway.db" {
+			t.Fatal("incorrect defaults")
+		}
+		cpu, mem, disk, err := c.ResourcePolicy().Resolve(c.DefaultImage(), 0, 0, 0)
+		if err != nil || cpu != 2 || mem != 4096 || disk != 25 {
+			t.Fatal("incorrect resources")
+		}
+		if c.FinalizeTimeout() != 20*time.Minute || c.OrphanGCInterval() != 5*time.Minute || c.OrphanGCMinAge() != 10*time.Minute {
+			t.Fatal("incorrect timeouts")
+		}
+		if driver == "docker" && (c.Kubernetes != nil || c.E2B != nil || c.Docker.BindIP != "127.0.0.1") {
+			t.Fatal("backend defaults leaked")
+		}
+		if driver == "kubernetes" && (c.Docker != nil || c.E2B != nil || c.Kubernetes.StorageClass != "") {
+			t.Fatal("backend defaults leaked")
+		}
+	}
+	if _, err := Load(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
+		t.Fatal("missing explicit file accepted")
+	}
+	if _, err := Load(t.TempDir()); err == nil {
+		t.Fatal("directory accepted")
+	}
+}
+func TestStrictConfiguration(t *testing.T) {
+	for _, body := range []string{
+		"driver: unknown", "driver: [broken", "driver: docker\n---\ndriver: docker",
+		"driver: docker\ne2b: {}", "driver: kubernetes\ndocker: {}", "driver: docker\nkubernetes: {}", "driver: docker\ndocker: null",
+		"image: {ref: old}", "profiles: {}", "driver: docker\ndocker: {imag: typo}",
+		"driver: e2b\ne2b: {domain: e2b.app}", "database: {driver: invalid}",
+		"docker: {image: ''}", "docker: {profiles: {universal: {image: ''}}}", "docker: {profiles: {'': {image: x}}}",
+		"docker: {resources: {default: {memoryMB: 0}}}", "docker: {resources: {max: {cpuCores: 1}}}",
+		"docker: {resources: {default: {cpuCores: .nan}}}", "docker: {resources: {max: {diskGi: -1}}}",
+		"server: {listen: ''}", "server: {finalizeTimeoutSeconds: 0}", "server: {finalizeTimeoutSeconds: 99999999999}",
+		"orphanGC: {intervalSeconds: 0}", "orphanGC: {minAgeSeconds: -1}", "database: {port: 65536}",
+		"driver: kubernetes\nkubernetes: {cpuRequestCores: -1}",
+		"driver: kubernetes\nkubernetes: {memoryRequestRatio: 2}",
+		"driver: kubernetes\nkubernetes: {imagePullPolicy: sometimes}",
+	} {
+		t.Run(body, func(t *testing.T) {
+			if _, err := loadYAML(t, body); err == nil {
+				t.Fatal("accepted invalid config")
+			}
+		})
+	}
+	if _, err := loadYAML(t, "server: {finalizeTimeoutSeconds: secret-value}"); err == nil || strings.Contains(err.Error(), "secret-value") {
+		t.Fatal("error leaked input")
+	}
+}
+func TestBackendYAMLAndEnvironment(t *testing.T) {
+	t.Setenv("SBGW_DRIVER", "kubernetes")
+	t.Setenv("SBGW_LISTEN", ":7777")
+	for k, v := range map[string]string{
+		"SBGW_DB_DRIVER": "mysql", "SBGW_DB_PATH": "custom.db", "SBGW_DB_DSN": "test-dsn", "SBGW_DB_HOST": "db", "SBGW_DB_PORT": "3307", "SBGW_DB_USER": "user", "SBGW_DB_PASSWORD": "test-password", "SBGW_DB_NAME": "name",
+		"SBGW_API_KEYS": "first, second, ,third", "SBGW_K8S_IMAGE": "custom:image", "SBGW_K8S_IN_CLUSTER": "true", "SBGW_K8S_KUBECONFIG": "/kube", "SBGW_K8S_NAMESPACE": "custom", "SBGW_K8S_ENABLE_LB": "false", "SBGW_K8S_STORAGE_CLASS": "fast", "SBGW_K8S_IMAGE_PULL_POLICY": "Always",
+		"SBGW_ORPHAN_GC_ENABLED": "true", "SBGW_ORPHAN_GC_INTERVAL_SEC": "60", "SBGW_ORPHAN_GC_MIN_AGE_SEC": "0", "SBGW_FINALIZE_TIMEOUT_SEC": "100", "SBGW_LOG_LEVEL": "info", "SBGW_LOG_PRETTY": "false", "SBGW_CONFIG": "unused",
+	} {
+		t.Setenv(k, v)
+	}
+	c, err := loadYAML(t, `driver: kubernetes
+kubernetes:
+  image: overridden:image
+  cpuRequestCores: 0
+  memoryRequestMB: 0
+  pvcAnnotations: {example.com/owner: gateway}
+  profiles: {universal: {image: custom:image}}
+  resources:
+    default: {cpuCores: 4, memoryMB: 8192, diskGi: 50}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DefaultImage() != "custom:image" || c.Server.Listen != ":7777" || c.Database.Driver != "mysql" || c.Database.Port != 3307 || len(c.Auth.APIKeys) != 3 {
+		t.Fatal("environment overlay failed")
+	}
+	if c.Kubernetes.CPURequestCores != 0 || c.Kubernetes.MemoryRequestMB != 0 || c.Kubernetes.Resources.Default.DiskGi != 50 || c.Kubernetes.PVCAnnotations["example.com/owner"] != "gateway" {
+		t.Fatal("YAML overwritten by defaults")
+	}
+	if !c.Kubernetes.InCluster || c.Kubernetes.EnableLoadBalancer || c.Kubernetes.StorageClass != "fast" || c.EnvironmentProfiles()["universal"].Image != "custom:image" {
+		t.Fatal("backend overlay failed")
+	}
+	if _, err := loadYAML(t, "driver: docker"); err == nil {
+		t.Fatal("conflicting driver accepted")
+	}
+}
+func TestEnvironmentRejectsTyposInactiveBackendsAndBadValues(t *testing.T) {
+	for k, v := range map[string]string{"SBGW_IMAGE": "old", "SBGW_DOKCER_IMAGE": "typo", "SBGW_E2B_API_URL": "https://api.example", "SBGW_DB_PORT": "bad", "SBGW_ORPHAN_GC_ENABLED": "perhaps"} {
+		t.Run(k, func(t *testing.T) {
+			t.Setenv(k, v)
+			if _, err := Load(""); err == nil || !strings.Contains(err.Error(), k) {
+				t.Fatal("invalid environment accepted")
+			}
+		})
+	}
+	t.Setenv("SBGW_DOCKER_IMAGE", "custom:image")
+	t.Setenv("SBGW_DOCKER_NETWORK", "test-net")
+	t.Setenv("SBGW_DOCKER_BIND_IP", "0.0.0.0")
+	t.Setenv("SBGW_DB_PORT", "")
+	t.Setenv("SBGW_ORPHAN_GC_ENABLED", "")
+	t.Setenv("SBGW_API_KEYS", "")
+	c, err := Load("")
+	if err != nil || c.DefaultImage() != "custom:image" || c.Docker.Network != "test-net" || c.Docker.BindIP != "0.0.0.0" {
+		t.Fatal("docker overrides failed")
+	}
+}
 func TestPortsConfigAll(t *testing.T) {
 	p := PortsConfig{
 		Session: 8765, CodeServer: 8744, SSH: 22, CDP: 9222, NoVNC: 6080,
@@ -99,254 +185,59 @@ func TestPortsConfigAll(t *testing.T) {
 	}
 }
 
-func TestResourceDefaults(t *testing.T) {
-	c := Default()
-	rd := c.ResourceDefaults()
-	if rd.DefaultCPUCores != c.K8s.CPUCores || rd.MaxDiskGi != c.K8s.MaxDataDiskGi {
-		t.Fatalf("%+v vs %+v", rd, c.K8s)
+func TestPublishedBackendExamplesLoad(t *testing.T) {
+	for driver, path := range map[string]string{
+		"docker":     "../../config.docker.example.yaml",
+		"kubernetes": "../../config.kubernetes.example.yaml",
+		"e2b":        "../../../deploy/e2b/gateway.example.yaml",
+	} {
+		t.Run(driver, func(t *testing.T) {
+			if driver == "e2b" {
+				t.Setenv("SBGW_E2B_API_KEY", "test-key")
+			}
+			c, err := Load(path)
+			if err != nil || c.Driver != driver {
+				t.Fatalf("example failed: %v", err)
+			}
+			if _, _, _, err := c.ResourcePolicy().Resolve(c.DefaultImage(), 0, 0, 0); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
-func TestLoadMissingFile(t *testing.T) {
-	cfg, err := Load(filepath.Join(t.TempDir(), "no-such.yaml"))
+func TestKubernetesDeploymentConfigLoads(t *testing.T) {
+	f, err := os.Open("../../../deploy/k8s/stack.example.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Driver != "docker" {
-		t.Fatalf("defaults expected, got %q", cfg.Driver)
-	}
-}
-
-func TestLoadEmptyPath(t *testing.T) {
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Server.Listen != ":8080" {
-		t.Fatalf("%+v", cfg.Server)
-	}
-}
-
-func TestLoadValidYAML(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	content := `
-server:
-  listen: ":9090"
-driver: kubernetes
-image:
-  ref: my/img:1
-database:
-  driver: sqlite
-  path: /tmp/x.db
-docker:
-  bindIP: "10.0.0.1"
-kubernetes:
-  namespace: ns1
-  cpuRequestRatio: 2.5
-auth:
-  apiKeys: ["a", "b"]
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Server.Listen != ":9090" || cfg.Driver != "kubernetes" {
-		t.Fatalf("%+v", cfg)
-	}
-	if cfg.Image.Ref != "my/img:1" {
-		t.Fatalf("image=%q", cfg.Image.Ref)
-	}
-	if cfg.Docker.BindIP != "10.0.0.1" {
-		t.Fatalf("bindIP=%q", cfg.Docker.BindIP)
-	}
-	if cfg.K8s.Namespace != "ns1" {
-		t.Fatalf("ns=%q", cfg.K8s.Namespace)
-	}
-	// normalizeResourcePolicy clamps ratio > 1
-	if cfg.K8s.CPURequestRatio != 1 {
-		t.Fatalf("ratio clamp=%v", cfg.K8s.CPURequestRatio)
-	}
-	if len(cfg.Auth.APIKeys) != 2 {
-		t.Fatalf("keys=%v", cfg.Auth.APIKeys)
-	}
-}
-
-func TestLoadPVCAnnotations(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	content := `
-driver: kubernetes
-image:
-  ref: my/img:1
-kubernetes:
-  pvcAnnotations:
-    csi.ugreen.com/deletion-policy: "purge"
-    example.com/owner: sandbox-gateway
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := cfg.K8s.PVCAnnotations["csi.ugreen.com/deletion-policy"]; got != "purge" {
-		t.Fatalf("deletion-policy=%q want purge; annotations=%v", got, cfg.K8s.PVCAnnotations)
-	}
-	if got := cfg.K8s.PVCAnnotations["example.com/owner"]; got != "sandbox-gateway" {
-		t.Fatalf("owner=%q; annotations=%v", got, cfg.K8s.PVCAnnotations)
-	}
-}
-
-func TestLoadBadYAML(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bad.yaml")
-	if err := os.WriteFile(path, []byte("driver: [unterminated"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected parse error")
-	}
-	if !strings.Contains(err.Error(), "parse config") {
-		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestLoadInvalidDriver(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	if err := os.WriteFile(path, []byte("driver: firecracker\nimage:\n  ref: x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "invalid driver") {
-		t.Fatalf("want invalid driver, got %v", err)
-	}
-}
-
-func TestApplyEnv(t *testing.T) {
-	t.Setenv("SBGW_LISTEN", ":7777")
-	t.Setenv("SBGW_DRIVER", "kubernetes")
-	t.Setenv("SBGW_DB_DRIVER", "mysql")
-	t.Setenv("SBGW_DB_PATH", "/tmp/p.db")
-	t.Setenv("SBGW_DB_DSN", "user:pass@tcp(h:3306)/db")
-	t.Setenv("SBGW_DB_HOST", "dbhost")
-	t.Setenv("SBGW_DB_PORT", "3307")
-	t.Setenv("SBGW_DB_USER", "u")
-	t.Setenv("SBGW_DB_PASSWORD", "p")
-	t.Setenv("SBGW_DB_NAME", "n")
-	t.Setenv("SBGW_IMAGE", "env/img:latest")
-	t.Setenv("SBGW_API_KEYS", "k1, k2, ,k3")
-	t.Setenv("SBGW_DOCKER_BIND_IP", "1.2.3.4")
-	t.Setenv("SBGW_DOCKER_NETWORK", "mynet")
-	t.Setenv("SBGW_K8S_IN_CLUSTER", "true")
-	t.Setenv("SBGW_K8S_KUBECONFIG", "/tmp/kube")
-	t.Setenv("SBGW_K8S_NAMESPACE", "fromenv")
-	t.Setenv("SBGW_K8S_ENABLE_LB", "false")
-	t.Setenv("SBGW_K8S_STORAGE_CLASS", "fast")
-	t.Setenv("SBGW_ORPHAN_GC_ENABLED", "true")
-	t.Setenv("SBGW_ORPHAN_GC_INTERVAL_SEC", "120")
-	t.Setenv("SBGW_ORPHAN_GC_MIN_AGE_SEC", "60")
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Server.Listen != ":7777" || cfg.Driver != "kubernetes" {
-		t.Fatalf("%+v %+v", cfg.Server, cfg.Driver)
-	}
-	if cfg.Database.Driver != "mysql" || cfg.Database.Host != "dbhost" || cfg.Database.Port != 3307 {
-		t.Fatalf("%+v", cfg.Database)
-	}
-	if cfg.Image.Ref != "env/img:latest" {
-		t.Fatalf("image=%q", cfg.Image.Ref)
-	}
-	if len(cfg.Auth.APIKeys) != 3 || cfg.Auth.APIKeys[0] != "k1" {
-		t.Fatalf("keys=%v", cfg.Auth.APIKeys)
-	}
-	if cfg.Docker.BindIP != "1.2.3.4" || cfg.Docker.Network != "mynet" {
-		t.Fatalf("%+v", cfg.Docker)
-	}
-	if !cfg.K8s.InCluster || cfg.K8s.Namespace != "fromenv" || cfg.K8s.EnableLoadBalancer {
-		t.Fatalf("%+v", cfg.K8s)
-	}
-	if cfg.K8s.StorageClass != "fast" || cfg.K8s.Kubeconfig != "/tmp/kube" {
-		t.Fatalf("%+v", cfg.K8s)
-	}
-	if !cfg.OrphanGC.Enabled || cfg.OrphanGC.IntervalSeconds != 120 || cfg.OrphanGC.MinAgeSeconds != 60 {
-		t.Fatalf("orphanGC=%+v", cfg.OrphanGC)
-	}
-}
-
-func TestSplitCSV(t *testing.T) {
-	got := splitCSV(" a, b ,,c ")
-	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
-		t.Fatalf("%v", got)
-	}
-	if len(splitCSV("")) != 0 {
-		t.Fatal("empty")
-	}
-}
-
-func TestParseBool(t *testing.T) {
-	if !parseBool("true", false) {
-		t.Fatal("true")
-	}
-	if parseBool("false", true) {
-		t.Fatal("false")
-	}
-	if !parseBool("nope", true) {
-		t.Fatal("def true")
-	}
-	if parseBool("nope", false) {
-		t.Fatal("def false")
-	}
-}
-
-func TestNormalizeResourcePolicyRatioClampViaLoad(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	yaml := `
-driver: docker
-image:
-  ref: x
-kubernetes:
-  cpuRequestRatio: 5
-  memoryRequestRatio: 9
-  cpuCores: 0
-  memoryMB: 0
-  dataDiskGi: 0
-`
-	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.K8s.CPURequestRatio != 1 || cfg.K8s.MemoryRequestRatio != 1 {
-		t.Fatalf("ratios: %v %v", cfg.K8s.CPURequestRatio, cfg.K8s.MemoryRequestRatio)
-	}
-	if cfg.K8s.CPUCores != 2 || cfg.K8s.MemoryMB != 4096 || cfg.K8s.DataDiskGi != 25 {
-		t.Fatalf("defaults filled: %+v", cfg.K8s)
-	}
-}
-
-func TestValidateInvalidDBDriver(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	if err := os.WriteFile(path, []byte("driver: docker\nimage:\n  ref: x\ndatabase:\n  driver: postgres\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "database.driver") {
-		t.Fatalf("got %v", err)
-	}
-}
-
-func TestValidateMissingImageRef(t *testing.T) {
-	cfg := Default()
-	cfg.Image.Ref = ""
-	if err := cfg.validate(); err == nil {
-		t.Fatal("expected error")
+	defer f.Close()
+	decoder := yaml.NewDecoder(f)
+	for {
+		var manifest struct {
+			Kind     string
+			Metadata struct{ Name string }
+			Data     map[string]string
+		}
+		if err := decoder.Decode(&manifest); err == io.EOF {
+			t.Fatal("deployment is missing the gateway ConfigMap")
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if manifest.Kind != "ConfigMap" || manifest.Metadata.Name != "sandbox-gateway-config" {
+			continue
+		}
+		c, err := loadYAML(t, manifest.Data["config.yaml"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Driver != "kubernetes" || c.DefaultImage() != "ghcr.io/cocofhu/universal-sandbox:3.3.0" || c.Kubernetes.EnableLoadBalancer {
+			t.Fatal("incorrect deployment configuration")
+		}
+		cpu, memory, disk, err := c.ResourcePolicy().Resolve(c.DefaultImage(), 0, 0, 0)
+		if err != nil || cpu != 2 || memory != 4096 || disk != 25 {
+			t.Fatal("incorrect deployment resource defaults")
+		}
+		return
 	}
 }

@@ -25,9 +25,9 @@ func AgentIdleTimeout() time.Duration { return time.Duration(agentIdleTimeout.Lo
 var defaultMemoryMB atomic.Int64
 
 // SetDefaultMemoryMB updates the memory limit applied to sandboxes whose Spec
-// leaves it unset. Non-positive values are ignored.
+// leaves it unset. Zero clears the override and follows the gateway.
 func SetDefaultMemoryMB(mb int) {
-	if mb > 0 {
+	if mb >= 0 {
 		defaultMemoryMB.Store(int64(mb))
 	}
 }

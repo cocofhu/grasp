@@ -7,6 +7,12 @@ repository so a single clone can run the full stack with Docker Compose.
 - Universal sandbox image: `sandbox/`
 - Local config: `deploy/config/config.local.yaml`
 
+Configuration keys, defaults, precedence and E2B setup are collected in
+[Grasp and sandbox configuration (中文)](../CONFIGURATION.md). This distinguishes
+gateway resources from Grasp's request overrides and from sandbox-internal
+environment variables. The complete runtime variable table is in
+[sandbox/README.md](sandbox/README.md#环境变量).
+
 Public data-plane ports: session / ide / ssh / app. CDP `:9222` and noVNC `:6080`
 stay on the container or ClusterIP network (no host/LB publish). Users reach
 noVNC only through Grasp VNC WebSockets. See `SECURITY.md` and `GATEWAY.md`

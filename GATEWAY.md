@@ -5,6 +5,10 @@ control plane creates and destroys sandboxes. Grasp can use the returned
 endpoints directly, or carry SSH, HTTP and WebSocket traffic through an
 authenticated gateway connection for Docker, Kubernetes and E2B.
 
+For operator configuration, see [Grasp and sandbox configuration / defaults
+(中文)](CONFIGURATION.md): supported keys, environment overrides, Docker/Kubernetes
+resource defaults, E2B template fields and the current minimum connection setup.
+
 Source layout:
 
 - `sandbox-gateway/gateway/` — Go control plane
@@ -65,12 +69,12 @@ for the deployment-file location, node-wide scope and rollout checks.
 E2B template CPU/memory and minimum initial available workspace capacity must
 match a configured profile; disk capacity is not a resizable PVC or hard quota.
 The gateway Stop/Start operations explicitly pause/resume with memory; provider
-routing must pass readiness again. Newly created guests default to provider
-auto-pause on lease expiry (`e2b.autoPause`); existing guests keep their creation
-policy. Provider auto-resume remains disabled; Grasp explicitly resumes paused
-Solo sandboxes on next use. Grasp Stop still destroys its sandbox. Reinstall
-with `preserveData=true` reports an unsupported operation; snapshot migration
-is outside this gateway contract.
+routing must pass readiness again. New E2B guests default to `e2b.autoPause: true`
+(`SBGW_E2B_AUTO_PAUSE`): expiry pauses with a memory snapshot instead of killing
+the guest. Existing guests retain their creation policy. Provider auto-resume
+is disabled; Grasp explicitly resumes paused Solo sandboxes on next use. Grasp
+Stop still destroys its sandbox. Reinstall with `preserveData=true` reports an
+unsupported operation; snapshot migration is outside this gateway contract.
 
 ## Gateway transport and multiple deployments
 
@@ -155,21 +159,29 @@ an in-use binding or losing its gateway produces a connection error rather
 than falling back to a saved local port. On restart Grasp resolves new local
 listeners from sandbox IDs instead of reusing persisted port numbers.
 
-Optional gateway-side `profiles` map environment names to approved image
-identities (each deployment configures its own image):
+Optional environment profiles belong to the selected backend. For Docker:
 
 ```yaml
-profiles:
-  universal:
-    image: universal-sandbox:local
+driver: docker
+docker:
+  image: universal-sandbox:local
+  profiles:
+    universal:
+      image: universal-sandbox:local
 ```
 
-For E2B this image identity must also appear in `e2b.templates`; the existing
-template CPU/memory/free-capacity validation still applies. For Docker/K8s it
-is an OCI image. A selected profile overrides Grasp's legacy image selection;
-it does not select an Agent/coding tool. Unknown profiles and conflicting
-image overrides are rejected. Runtime bundles still ship with the Grasp
-server; changing sandbox logic does not require a new environment image.
+Kubernetes uses `kubernetes.profiles`. E2B automatically advertises the names
+under `e2b.templates`; it needs no separate profile-to-image map. One E2B
+template is selected automatically, while multiple templates require
+`e2b.defaultTemplate`. A Grasp named connection can select one with `profile`.
+This selects an environment, not an Agent/coding tool.
+
+Grasp leaves its image unset and memory override at `0` by default. The gateway
+fills resources from the **selected** template or its Docker/Kubernetes defaults.
+An explicit E2B resource override must match that template exactly. Docker/K8s
+requests must stay within the backend's `resources.max`. Unknown profiles and
+conflicting image overrides fail before provisioning. Runtime bundles still
+ship with Grasp; sandbox logic changes do not require a new environment image.
 
 Discovery reports actual lifecycle/storage semantics: Docker cold stop with
 no disk quota, Kubernetes cold stop with PVC storage, E2B memory pause with

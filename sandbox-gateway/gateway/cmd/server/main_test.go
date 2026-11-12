@@ -18,8 +18,7 @@ import (
 )
 
 func healthTestConfig(server *httptest.Server) *config.Config {
-	cfg := config.Default()
-	cfg.Driver = "e2b"
+	cfg, _ := config.DefaultForDriver("e2b")
 	cfg.Server.Listen = strings.TrimPrefix(server.URL, "http://")
 	return cfg
 }
@@ -170,7 +169,7 @@ func TestHealthcheckMainExitsWithoutConstructingE2BDriver(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := healthTestConfig(server)
-	cfg.Image.Ref = "approved-image"
+	cfg.E2B.DefaultTemplate = "approved-image"
 	cfg.E2B.APIKey = "synthetic-provider-key"
 	cfg.E2B.OwnerID = "test-owner"
 	// This is syntactically valid configuration, but initializing a driver's
@@ -180,9 +179,9 @@ func TestHealthcheckMainExitsWithoutConstructingE2BDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.E2B.StateDir = filepath.Join(file, "cannot-create-state")
-	cfg.E2B.Templates = []config.E2BTemplateConfig{{Image: "approved-image", TemplateID: "prepared-template", CPUCores: 2, MemoryMB: 3072, DiskGi: 20}}
+	cfg.E2B.Templates = map[string]config.E2BTemplateConfig{"approved-image": {TemplateID: "prepared-template", CPUCores: 2, MemoryMB: 3072, DiskGi: 20}}
 	// Config uses YAML tags, so build the public YAML/JSON names explicitly.
-	configJSON := fmt.Sprintf(`{"driver":"e2b","server":{"listen":%q},"image":{"ref":"approved-image"},"e2b":{"apiKey":"synthetic-provider-key","ownerID":"test-owner","stateDir":%q,"templates":[{"image":"approved-image","templateID":"prepared-template","cpuCores":2,"memoryMB":3072,"diskGi":20}]}}`, cfg.Server.Listen, cfg.E2B.StateDir)
+	configJSON := fmt.Sprintf(`{"driver":"e2b","server":{"listen":%q},"e2b":{"apiURL":"https://api.example","apiKey":"synthetic-provider-key","ownerID":"test-owner","stateDir":%q,"templates":{"approved-image":{"templateID":"prepared-template","cpuCores":2,"memoryMB":3072,"diskGi":20}}}}`, cfg.Server.Listen, cfg.E2B.StateDir)
 	filename := filepath.Join(t.TempDir(), "healthcheck.json")
 	if err := os.WriteFile(filename, []byte(configJSON), 0600); err != nil {
 		t.Fatal(err)

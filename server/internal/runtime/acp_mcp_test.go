@@ -28,7 +28,7 @@ func TestCursorLiveMCP(t *testing.T) {
 	if apiKey == "" {
 		t.Fatal("GRASP_CURSOR_API_KEY required")
 	}
-	// Empty → DefaultSandboxImage (universal-sandbox:local).
+	// Empty → the gateway default.
 	image := os.Getenv("GRASP_SANDBOX_IMAGE")
 	model := getenvOr("GRASP_ACP_BRIDGE_MODEL", "cursor-grok-4.5-high-fast")
 

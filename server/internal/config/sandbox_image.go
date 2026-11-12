@@ -9,18 +9,10 @@ import (
 // universal-sandbox that ships every product CLI, including Codex.
 var knownSandboxBackends = []string{"cursor", "claude_code", "codebuddy", "trae", "opencode", "codex", "deepseek_harness", "kimi_code"}
 
-// DefaultSandboxImage is the local tag built from sandbox-gateway/sandbox
-// (see ./start.sh sandbox). backend is ignored: one image serves every
-// acpBackend; runtime AGENT_PROVIDER selects the live CLI.
-func DefaultSandboxImage(backend string) string {
-	_ = backend
-	return "universal-sandbox:local"
-}
-
 // ResolveSandboxImage picks the sandbox image for an acpBackend:
 //  1. sandbox.image / GRASP_SANDBOX_IMAGE when non-empty (global force)
 //  2. sandbox.images[backend] / GRASP_SANDBOX_IMAGE_<BACKEND>
-//  3. DefaultSandboxImage(backend)
+//  3. Empty: let the selected gateway choose its default image or template.
 func (c *Config) ResolveSandboxImage(backend string) string {
 	if c != nil {
 		if img := strings.TrimSpace(c.Sandbox.Image); img != "" {
@@ -35,7 +27,7 @@ func (c *Config) ResolveSandboxImage(backend string) string {
 				return img
 			}
 		}
-		return DefaultSandboxImage(b)
+		return ""
 	}
-	return DefaultSandboxImage(backend)
+	return ""
 }

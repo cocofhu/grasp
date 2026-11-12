@@ -30,7 +30,7 @@ import (
 func main() {
 	logging.Init("sandbox-gateway")
 
-	configPath := flag.String("config", envOr("SBGW_CONFIG", "config.yaml"), "path to config YAML")
+	configPath := flag.String("config", envOr("SBGW_CONFIG", ""), "path to config YAML")
 	healthcheck := flag.Bool("healthcheck", false, "check the configured local gateway and exit without initializing its driver")
 	flag.Parse()
 
@@ -56,7 +56,7 @@ func main() {
 		Str("db_host", cfg.Database.Host).
 		Str("db_name", cfg.Database.Name).
 		Bool("db_dsn_set", cfg.Database.DSN != "").
-		Str("image", cfg.Image.Ref).
+		Str("image", cfg.DefaultImage()).
 		Str("listen", cfg.Server.Listen).
 		Msg("gateway starting")
 
@@ -67,12 +67,12 @@ func main() {
 	st := store.New(db)
 
 	svc := service.New(drv, st, service.Config{
-		Image:            cfg.Image.Ref,
-		Ports:            cfg.Image.Ports.Public(),
-		InternalPorts:    cfg.Image.Ports.Internal(),
-		SessionPort:      cfg.Image.Ports.Session,
+		Image:            cfg.DefaultImage(),
+		Ports:            cfg.Ports.Public(),
+		InternalPorts:    cfg.Ports.Internal(),
+		SessionPort:      cfg.Ports.Session,
 		FinalizeTimeout:  cfg.FinalizeTimeout(),
-		Resources:        cfg.ResourceDefaults(),
+		Resources:        cfg.ResourcePolicy(),
 		OrphanGCInterval: cfg.OrphanGCInterval(),
 		OrphanGCMinAge:   cfg.OrphanGCMinAge(),
 	})
@@ -88,7 +88,7 @@ func main() {
 		go svc.RunOrphanGC(context.Background())
 	}
 
-	h := api.NewHandler(svc, cfg.Image.Ports)
+	h := api.NewHandler(svc, cfg.Ports)
 	r := api.NewRouter(h, cfg)
 	if err := r.Run(cfg.Server.Listen); err != nil {
 		log.Fatal().Err(err).Str("listen", cfg.Server.Listen).Msg("http server failed")
@@ -158,41 +158,42 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 			Network:       cfg.Docker.Network,
 			NamePrefix:    cfg.Docker.NamePrefix,
 			ShmSize:       cfg.Docker.ShmSize,
-			InternalPorts: cfg.Image.Ports.Internal(),
+			InternalPorts: cfg.Ports.Internal(),
 		}), nil
 	case "kubernetes":
 		return k8sdriver.New(k8sdriver.Options{
-			InCluster:          cfg.K8s.InCluster,
-			Kubeconfig:         cfg.K8s.Kubeconfig,
-			Namespace:          cfg.K8s.Namespace,
-			NamePrefix:         cfg.K8s.NamePrefix,
-			StorageClass:       cfg.K8s.StorageClass,
-			DataDiskGi:         cfg.K8s.DataDiskGi,
-			PVCAnnotations:     cfg.K8s.PVCAnnotations,
-			ImagePullSecret:    cfg.K8s.ImagePullSecret,
-			ImagePullPolicy:    cfg.K8s.ImagePullPolicy,
-			EnableLoadBalancer: cfg.K8s.EnableLoadBalancer,
-			CPUCores:           cfg.K8s.CPUCores,
-			MemoryMB:           cfg.K8s.MemoryMB,
-			CPURequestCores:    cfg.K8s.CPURequestCores,
-			MemoryRequestMB:    cfg.K8s.MemoryRequestMB,
-			CPURequestRatio:    cfg.K8s.CPURequestRatio,
-			MemoryRequestRatio: cfg.K8s.MemoryRequestRatio,
-			PublicPorts:        cfg.Image.Ports.Public(),
-			InternalPorts:      cfg.Image.Ports.Internal(),
+			InCluster:          cfg.Kubernetes.InCluster,
+			Kubeconfig:         cfg.Kubernetes.Kubeconfig,
+			Namespace:          cfg.Kubernetes.Namespace,
+			NamePrefix:         cfg.Kubernetes.NamePrefix,
+			StorageClass:       cfg.Kubernetes.StorageClass,
+			DataDiskGi:         cfg.Kubernetes.Resources.Default.DiskGi,
+			PVCAnnotations:     cfg.Kubernetes.PVCAnnotations,
+			ImagePullSecret:    cfg.Kubernetes.ImagePullSecret,
+			ImagePullPolicy:    cfg.Kubernetes.ImagePullPolicy,
+			EnableLoadBalancer: cfg.Kubernetes.EnableLoadBalancer,
+			CPUCores:           cfg.Kubernetes.Resources.Default.CPUCores,
+			MemoryMB:           cfg.Kubernetes.Resources.Default.MemoryMB,
+			CPURequestCores:    cfg.Kubernetes.CPURequestCores,
+			MemoryRequestMB:    cfg.Kubernetes.MemoryRequestMB,
+			CPURequestRatio:    cfg.Kubernetes.CPURequestRatio,
+			MemoryRequestRatio: cfg.Kubernetes.MemoryRequestRatio,
+			PublicPorts:        cfg.Ports.Public(),
+			InternalPorts:      cfg.Ports.Internal(),
 		})
 	case "e2b":
 		profiles := make([]e2bdriver.TemplateProfile, 0, len(cfg.E2B.Templates))
-		for _, template := range cfg.E2B.Templates {
+		for _, name := range cfg.TemplateNames() {
+			template := cfg.E2B.Templates[name]
 			profiles = append(profiles, e2bdriver.TemplateProfile{
-				Image: template.Image, TemplateID: template.TemplateID,
+				Image: name, TemplateID: template.TemplateID,
 				CPUCores: template.CPUCores, MemoryMB: template.MemoryMB, DiskGi: template.DiskGi,
 			})
 		}
 		return e2bdriver.New(e2bdriver.Options{
 			ClientOptions: e2bdriver.ClientOptions{
 				APIURL: cfg.E2B.APIURL, SandboxURL: cfg.E2B.SandboxURL,
-				Domain: cfg.E2B.Domain, APIKey: cfg.E2B.APIKey,
+				APIKey: cfg.E2B.APIKey,
 			},
 			OwnerID: cfg.E2B.OwnerID, StateDir: cfg.E2B.StateDir, Profiles: profiles,
 			BootTimeout:   time.Duration(cfg.E2B.BootTimeoutSeconds) * time.Second,

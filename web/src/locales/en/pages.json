@@ -2013,6 +2013,7 @@
       }
     },
     "settings": {
+      "followGateway": "Follow gateway",
       "title": "General",
       "subtitle": "Manage workspace information, brand copy, run concurrency, and sandbox resources.",
       "saved": "Saved",
@@ -2067,7 +2068,7 @@
       },
       "summaries": {
         "run_sandbox_max_retention_hours": "The total retention limit after a node finishes. Sandboxes are reclaimed when it expires.",
-        "sandbox_memory_mb": "Memory available to each new sandbox, shared by the browser, builds, and tests.",
+        "sandbox_memory_mb": "0 uses gateway or template memory. Enter MiB only to override it for new sandboxes.",
         "agent_idle_timeout_minutes": "Try recovery, then end the turn when an agent has no output, CPU, or disk activity for this long."
       },
       "labels": {
@@ -2077,7 +2078,7 @@
         "test_sandbox_ttl_minutes": "Test sandbox idle TTL",
         "max_test_sandboxes": "Max test sandboxes",
         "max_solo_sandboxes": "Max Solo sandboxes",
-        "sandbox_memory_mb": "Sandbox memory limit",
+        "sandbox_memory_mb": "Sandbox memory override",
         "agent_idle_timeout_minutes": "Agent no-activity limit"
       },
       "settings": {
@@ -2087,7 +2088,7 @@
         "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
         "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
         "max_solo_sandboxes": "How many Solo session sandboxes can run at once. Solo sandboxes are never reclaimed when idle, so close a session to start a new one once this is reached (min 1).",
-        "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
+        "sandbox_memory_mb": "0 follows the gateway defaults or selected E2B template. An override must be at least 1024 MiB, within Docker/K8s resource caps, and exactly match E2B template memory. The browser, Docker and builds share this memory; exceeding it can trigger OOM. Applies to new sandboxes. Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
         "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC."
       },
       "units": {

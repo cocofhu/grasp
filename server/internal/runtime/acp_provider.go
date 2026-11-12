@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -105,7 +104,7 @@ func isTurnTimeoutErr(err error) bool {
 
 // acpProvider is the ACP + Docker sandbox backend. Each agent/react node runs
 // in a fresh container launched from the preset image
-// (universal-sandbox:local). The in-container ACP agent is
+// (the gateway default when unset). The in-container ACP agent is
 // driven via the acp-bridge WebSocket bridge (ACP JSON-RPC). Declared produces
 // are harvested from the container workspace and written through the run-scoped
 // artifact-store MCP, satisfying the produces contract the engine enforces.
@@ -345,7 +344,7 @@ func resolveProviderImage(opts Options, backend AcpBackend) string {
 			return img
 		}
 	}
-	return config.DefaultSandboxImage(b)
+	return ""
 }
 
 func (c *acpProvider) Name() string {

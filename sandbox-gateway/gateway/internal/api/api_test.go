@@ -45,10 +45,10 @@ func testRouter(t *testing.T, apiKeys []string) (*gin.Engine, *fake.Driver, *ser
 		SessionPort:     8765,
 		WorkspaceDir:    "/root/workspace",
 		FinalizeTimeout: 5 * time.Second,
-		Resources: config.ResourceDefaults{
+		Resources: config.ResourcePolicy{Defaults: config.ResourceDefaults{
 			DefaultCPUCores: 2, DefaultMemoryMB: 4096, DefaultDiskGi: 25,
 			MaxCPUCores: 8, MaxMemoryMB: 16384, MaxDiskGi: 500,
-		},
+		}},
 	})
 	// Create/Reinstall return before the driver finishes. A still-running
 	// provision writes sqlite (WAL) into TempDir while RemoveAll runs.

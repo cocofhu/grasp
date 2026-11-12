@@ -1,4 +1,4 @@
-# E2B 独立部署
+# E2B 独立部署与配置
 
 E2B 是 sandbox-gateway 的第三种显式驱动，适用于 E2B Cloud 或自托管 E2B/Embed。使用仓库根目录的 [compose.e2b.yaml](../../../compose.e2b.yaml) 启动；原有 Docker、Kubernetes、`start.sh` 和其他 Compose 配置不读取本目录，默认行为不变。
 
@@ -77,6 +77,8 @@ docker compose -f compose.yaml -f compose.override.yaml up -d --no-deps orchestr
 
 模板必须来自可审计的 Grasp **环境 OCI 镜像**，使用 `@sha256:` 固定内容。模板包含系统包、真实 Agent CLI、SSH、code-server、Chromium、原始 `grasp-bootstrap.sh` 和 `IMAGE_LEVEL`；Grasp 的 backend、页面脚本等运行时逻辑仍由服务端在创建时下发，更新逻辑无需重建环境模板。
 
+构建命令中的 `--image` 是实际 OCI 镜像引用；`--name` 是 gateway 配置中的模板名称，会作为输出 `gatewayTemplates` 的键。`--alias` 用于 E2B 构建管理，实际 `templateID` 由 E2B 返回。这几个名字的用途不同，配置时按下文的对应关系填写。
+
 在仓库根目录执行。API key 通过操作者环境提供，不写入配置样例、命令参数或结果文件。自托管环境按实际部署设置 `E2B_API_URL` 与 `E2B_SANDBOX_URL`；Cloud 可使用 SDK 的默认域名。
 
 ```bash
@@ -88,7 +90,7 @@ python3 -m venv /tmp/grasp-e2b-builder
 /tmp/grasp-e2b-builder/bin/python sandbox-gateway/deploy/e2b/prepare-template.py \
   --image "${SANDBOX_OCI_IMAGE:?Set an immutable OCI image with sha256 digest}" \
   --alias grasp-production-v1 \
-  --logical-image universal-sandbox:e2b \
+  --name standard \
   --cpu-count 2 \
   --memory-mb 3072 \
   --minimum-workspace-gib 20 \
@@ -102,7 +104,7 @@ python3 -m venv /tmp/grasp-e2b-builder
 
 不复制 E2E wire fixture，不创建替代 vendor CLI，不调用真实模型，也不将缺失 CLI 视为成功。具备可执行文件不代表已经完成 Cursor、Trae、Kimi 等厂商账号授权；实际使用仍遵守原有 workspace 凭据配置。
 
-构建完成后，工具用返回的**实际 templateID** 创建一个禁止公网入站、禁止出网、300 秒到期销毁的临时探针 guest，确认 templateID、CPU/RAM、bootstrap 摘要、IMAGE_LEVEL、依赖与实际可用工作区空间，然后删除这个 guest。成功 JSON 包含 `templateID`、`buildID`、测得的 `workspaceAvailableBytes` 和可复制到 gateway YAML 的 `gatewayProfile`。失败不会输出 provider 原始错误体或凭据；清理失败会保留本次探针的 `probeSandboxID` 并返回失败，须由操作者检查这一个 guest。
+构建完成后，工具用返回的**实际 templateID** 创建一个禁止公网入站、禁止出网、300 秒到期销毁的临时探针 guest，确认 templateID、CPU/RAM、bootstrap 摘要、IMAGE_LEVEL、依赖与实际可用工作区空间，然后删除这个 guest。成功 JSON 包含 `templateID`、`buildID`、测得的 `workspaceAvailableBytes` 和可复制到 gateway YAML 的 `gatewayTemplates`。失败不会输出 provider 原始错误体或凭据；清理失败会保留本次探针的 `probeSandboxID` 并返回失败，须由操作者检查这一个 guest。
 
 `diskGi: 20` 表示创建时 `/root/workspace` 所在文件系统**至少有 20 GiB 可用空间**。它不是 PVC 大小、磁盘配额，也不是每次创建都能调整的资源。CPU、RAM 和磁盘空间均须由预构建模板满足；不匹配的请求会被拒绝。工具不显式设置或依赖 `min_free_disk_mb`，也不据此声称 Embed 已扩容；该 SDK 参数在部分 Embed 部署中受服务端功能开关影响。空间不足时，调整实际 provider/builder 的受支持磁盘配置、重新从固定 OCI 构建，并重跑探针。gateway 每次新建 guest 还会重新检查可用容量。
 
@@ -113,39 +115,91 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s sandbox-gateway/deploy/e2b -p 'test_*.py' -v
 ```
 
-## 配置 gateway 与 Grasp
+## 两份配置文件
 
-复制 [gateway.example.yaml](gateway.example.yaml) 到 checkout 外的部署目录，填入成功结果的 `gatewayProfile`，并让 `image.ref` 与该 profile 的 `image` 相同。示例是 2 CPU、3072 MiB、初始可用 20 GiB。不要把逻辑 `image` 当作在 create 时临时转换 OCI 的指令；只有显式登记的准备好模板可以使用。部署引用实际 templateID，alias 用于构建管理。
+只使用本目录的 E2B 示例，不复制 Docker 或 Kubernetes 的配置：
 
-`e2b.ownerID` / `E2B_GATEWAY_OWNER_ID` 是该部署稳定且唯一的身份。gateway 只操作匹配其保留 owner/id/driver metadata 的 guest。不要在重启时更换身份，或让两个同时运行的 gateway 共用同一个身份与恢复目录。
+- [grasp.example.yaml](grasp.example.yaml) → `/absolute/private/grasp.yaml`：平台服务、网关连接与沙箱保留策略。
+- [gateway.example.yaml](gateway.example.yaml) → `/absolute/private/gateway.e2b.yaml`：E2B 地址、owner、持久化目录和模板。
 
-Compose 读取的变量如下；敏感值请由 Secret 管理或受保护的环境文件提供，文件放在 checkout 外：
+### 镜像如何变成模板
 
-| 变量 | 用途 |
-| --- | --- |
-| `E2B_GATEWAY_CONFIG` | 已填实际模板 profile 的 gateway YAML **绝对路径** |
-| `E2B_GATEWAY_OWNER_ID` | 稳定且唯一的部署身份 |
-| `E2B_API_KEY` | E2B 控制面凭据；仅交给 gateway |
-| `E2B_API_URL`、`E2B_SANDBOX_URL`、`E2B_DOMAIN` | 可选 provider 地址；自托管使用实际控制/私有流量来源，Cloud 默认 `e2b.app` |
-| `SANDBOX_GATEWAY_API_KEY` | Grasp→gateway 的独立 Bearer token |
-| `GRASP_PUBLIC_ADVERTISE` | 用户访问的平台 HTTPS 来源，例如 `https://grasp.example.com` |
-| `GRASP_MCP_ADVERTISE` | guest 能访问的受控回连来源，只开放上述精确回连路径 |
-| `GRASP_AUTH_USERS`、`GRASP_SECRETS_KEY` | 原有平台账户散列配置与固定加密主密钥 |
-| `GRASP_SANDBOX_IMAGE` | 与 profile 相同；默认 `universal-sandbox:e2b` |
-| `GRASP_SANDBOX_MEMORY_MB` | 与 profile 相同；默认 `3072` |
-| `GRASP_DATA_DIR` | 原有 Grasp 数据父目录，内部包含 `profiles/`；默认 `./data` |
+构建工具的 `--image` 是不可变 OCI 镜像输入；E2B 以它构建环境模板，并返回 `templateID`。`--alias grasp-production-v1` 是 E2B 构建管理名称；`--name standard` 是你在本 gateway 中给模板取的名字。`standard` 不会被拉取或构建成 Docker 镜像。
 
-Compose 固定启用 `GRASP_SANDBOX_PRIVATE_ENDPOINTS=true`，将 gateway 配置映射为 `/etc/sandbox-gateway/config.yaml`，设置 `SBGW_E2B_STATE_DIR=/data/e2b` 并共享宿主机 loopback。直接部署二进制时，对应变量使用 `SBGW_E2B_API_KEY`、`SBGW_E2B_OWNER_ID`、`SBGW_E2B_API_URL`、`SBGW_E2B_SANDBOX_URL`、`SBGW_E2B_DOMAIN`、`SBGW_E2B_STATE_DIR` 和 `SBGW_API_KEYS`；模板 profile 保持在 YAML 中。
+构建成功的结果包含：
 
-Compose 按 gateway 健康检查安排首次启动顺序。显式 private-endpoints 模式下，Grasp 自身还会在打开数据库和执行沙箱 reconcile 前，等待 gateway `/healthz` 确认 E2B 驱动已就绪，最长等待 `sandbox.sandbox_create_timeout_seconds`（`GRASP_SANDBOX_CREATE_TIMEOUT_SEC`）；超时则退出。这个检查也覆盖 Docker 宿主重启和直接启动二进制，防止 gateway 尚未恢复本地端口时把仍然存活的沙箱当作已消失。
+```json
+{
+  "gatewayTemplates": {
+    "standard": {
+      "templateID": "实际构建返回的模板ID",
+      "cpuCores": 2,
+      "memoryMB": 3072,
+      "diskGi": 20
+    }
+  }
+}
+```
+
+将 `gatewayTemplates` 的内容填写到 gateway YAML 的 `e2b.templates`。实际 ID 与规格来自成功构建和探针验证；示例的 `2/3072/20` 不是 E2B 程序默认值。
+
+```yaml
+driver: e2b
+e2b:
+  apiURL: https://api.e2b.example.com
+  sandboxURL: https://sandbox.e2b.example.com
+  ownerID: my-grasp-deployment
+  stateDir: /data/e2b
+  templates:
+    standard:
+      templateID: replace-with-resolved-template-id
+      cpuCores: 2
+      memoryMB: 3072
+      diskGi: 20
+```
+
+一份模板自动成为默认；有多份时填写 `defaultTemplate: standard`。模板名自动作为 gateway profile 发布，Grasp 的命名连接可以通过 `profile: standard` 指定它。
+
+Grasp **不填写 `image`，内存覆盖保持 `sandbox_memory_mb: 0`**。这样 gateway 使用选中模板的 CPU、内存和初始可用工作区，无须在 Grasp 复制模板名与内存。普通创建 API 仍支持 `image`：E2B 下它表示上述模板名称。显式资源覆盖必须与选中模板完全一致，不匹配时创建前报错；选中另一模板时，省略值自动取那一份模板的规格。
+
+### 自建地址与云服务地址
+
+| 字段 | 自建 E2B / Embed | E2B Cloud |
+| --- | --- | --- |
+| `e2b.apiURL` | 你的 E2B 控制 API 来源，例如 `https://api.e2b.example.com` | 显式填 `https://api.e2b.app` |
+| `e2b.sandboxURL` | 你的沙箱私有流量代理来源，例如 `https://sandbox.e2b.example.com` | 通常留空，使用 provider 返回的沙箱域名 |
+| `e2b.apiKey` | 自建服务颁发的 API key | 云服务 API key |
+
+`apiURL` 必填，没有隐式云服务目标。`sandboxURL` 留空但 provider 又不返回有效域名时会报错。两项 URL 均为 HTTP(S) 来源，不带业务路径、query 或账号密码。Grasp 网页的 `public_advertise` 和沙箱回连的 `mcp_advertise` 单独设置，不是 E2B 地址。
+
+### Compose 启动
+
+在 checkout 外保存权限受保护的环境文件，例如 `/absolute/private/grasp-e2b.env`：
+
+```dotenv
+GRASP_CONFIG=/absolute/private/grasp.yaml
+E2B_GATEWAY_CONFIG=/absolute/private/gateway.e2b.yaml
+E2B_API_KEY=replace-with-provider-key
+E2B_GATEWAY_OWNER_ID=my-grasp-deployment
+SANDBOX_GATEWAY_API_KEY=replace-with-shared-gateway-key
+GRASP_AUTH_USERS=admin:replace-with-password-hash
+GRASP_SECRETS_KEY=replace-with-stable-encryption-key
+GRASP_PUBLIC_ADVERTISE=https://grasp.example.com
+GRASP_MCP_ADVERTISE=https://grasp.example.com
+```
+
+在 gateway YAML 填好实际 `apiURL`、`sandboxURL` 和模板。Compose 可通过 `E2B_API_URL` / `E2B_SANDBOX_URL` 覆盖文件地址；不设时保留 YAML。上述两个 key 用途不同：`E2B_API_KEY` 用于 gateway 调用 provider，`SANDBOX_GATEWAY_API_KEY` 是 Grasp 和 gateway 共享的鉴权 key。密码散列与加密密钥的生成见 [Grasp 配置示例](../../../server/config.example.yaml)。不要提交部署文件或密钥。
+
+Compose 固定使用 host network，网关监听 `127.0.0.1:8899`，Grasp 使用 `direct` transport 和 private endpoints。`GRASP_PORT` 默认 `8080`，`GRASP_GATEWAY_PORT` 默认 `8899`，`GRASP_DATA_DIR` 默认 `./data`。`/data/e2b` 与两个服务的数据库由命名卷持久化。`GRASP_SANDBOX_IMAGE` 和 `GRASP_SANDBOX_MEMORY_MB` 仅作为可选显式覆盖，不再注入模板名或内存默认值。
 
 ```bash
-# --env-file 指向 checkout 外、权限受保护的部署环境文件。
 docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml config --quiet
 docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up -d --build
 ```
 
-不要使用会展开输出全部环境变量的 `docker compose config` 作为公开诊断。首次部署须通过新建会话实测 SSH/终端、文件、真实 Agent/MCP 往返、IDE HTTP/WS、预览根路径/HMR、Pick/Page Control/Live、noVNC/CDP，并确认浏览器响应和服务日志没有 E2B 流量凭据。Agent 只有在 capability 中授予 `set_preview` 时才能注册平台预览；在沙箱内启动 HTTP 服务并返回 200 不等于预览已注册，应同时检查 Solo resources 中的预览端口。测试完成后销毁自建 guest 并核对 provider 列表。
+直接部署二进制时，使用 `-config gateway.e2b.yaml` 和 `CONFIG_PATH=grasp.yaml`。provider 环境变量改用 `SBGW_E2B_API_KEY`、`SBGW_E2B_API_URL`、`SBGW_E2B_SANDBOX_URL`、`SBGW_E2B_OWNER_ID`、`SBGW_E2B_STATE_DIR`；完整字段、默认值和优先级见 [配置总览](../../../CONFIGURATION.md#e2b-字段与默认值)。
+
+首次部署应在目标 provider 上验证创建、暂停/恢复、SSH、文件、Agent/MCP 往返、IDE、预览及 CDP/noVNC。模板构建探针不替代这些运行验证。
 
 ## 状态与生命周期
 

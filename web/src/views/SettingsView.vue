@@ -234,7 +234,7 @@ const overviewStats = computed<SettingsStatItem[]>(() => {
     tone: testRatio.value >= 1 ? 'warn' : 'neutral',
   })
   const memory = itemOf('sandbox_memory_mb')
-  stats.push({ key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value, unit: settingUnit('sandbox_memory_mb') })
+  stats.push({ key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value === 0 ? t('pages.settings.followGateway') : memory?.value, unit: memory?.value === 0 ? undefined : settingUnit('sandbox_memory_mb') })
   return stats
 })
 

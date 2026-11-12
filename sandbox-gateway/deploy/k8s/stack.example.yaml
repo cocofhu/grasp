@@ -1,13 +1,14 @@
 # Copy outside the repository and customize before applying. Secrets are
 # created separately as described in README.md. Image tags are examples;
-# pin reviewed release digests for production.
+# pin reviewed release digests for production. Grasp and gateway must include
+# the backend configuration split documented in ../../../CONFIGURATION.md;
+# replace the control-plane image tags below with builds containing that change.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sandbox-gateway-config
   namespace: grasp-system
 data:
-  sandbox-image: ghcr.io/cocofhu/universal-sandbox:3.3.0
   config.yaml: |
     server:
       listen: ":8080"
@@ -16,19 +17,17 @@ data:
       driver: sqlite
       path: /data/gateway.db
     kubernetes:
+      image: ghcr.io/cocofhu/universal-sandbox:3.3.0
       inCluster: true
       namespace: grasp-sandboxes
       namePrefix: sbx-
       storageClass: replace-with-your-storage-class
-      dataDiskGi: 25
-      maxDataDiskGi: 500
       imagePullSecret: ""  # optional Secret in grasp-sandboxes
       imagePullPolicy: IfNotPresent
       enableLoadBalancer: false
-      cpuCores: 2
-      maxCPUCores: 8
-      memoryMB: 4096
-      maxMemoryMB: 16384
+      resources:
+        default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+        max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
       cpuRequestCores: 0.25
       memoryRequestMB: 512
     orphanGC:
@@ -78,11 +77,6 @@ spec:
                 secretKeyRef:
                   name: grasp-secrets
                   key: gateway-api-key
-            - name: SBGW_IMAGE
-              valueFrom:
-                configMapKeyRef:
-                  name: sandbox-gateway-config
-                  key: sandbox-image
           ports:
             - name: http
               containerPort: 8080
@@ -140,6 +134,7 @@ data:
     sandbox:
       gateway_url: http://sandbox-gateway.grasp-system.svc.cluster.local:8080
       gateway_transport: gateway
+      sandbox_memory_mb: 0  # use the gateway's resource defaults
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -196,11 +191,6 @@ spec:
                 secretKeyRef:
                   name: grasp-secrets
                   key: gateway-api-key
-            - name: GRASP_SANDBOX_IMAGE
-              valueFrom:
-                configMapKeyRef:
-                  name: sandbox-gateway-config
-                  key: sandbox-image
           ports:
             - name: http
               containerPort: 8080

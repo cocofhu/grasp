@@ -1,0 +1,35 @@
+# Docker gateway. Copy to gateway.docker.yaml and pass -config explicitly.
+# Only Docker fields belong in this file; use config.kubernetes.example.yaml
+# or ../deploy/e2b/gateway.example.yaml for a different backend.
+# Values below are program defaults. SBGW_* overrides: ../../CONFIGURATION.md.
+driver: docker
+server:
+  listen: ":8080" # use 127.0.0.1:8899 alongside Grasp on the same host
+  finalizeTimeoutSeconds: 1200
+database:
+  driver: sqlite
+  path: gateway.db
+ports:
+  session: 8765
+  codeServer: 8744
+  ssh: 22
+  cdp: 9222 # internal only
+  novnc: 6080 # internal only
+  app: [80, 443, 2222, 3000, 3306, 4200, 5000, 5173, 5432, 5500, 6379, 8000, 8080, 8443, 8888, 9090, 9200, 9229]
+docker:
+  image: universal-sandbox:local # real OCI image, built from ../sandbox
+  bindIP: "127.0.0.1"
+  network: ""
+  namePrefix: sbx-
+  shmSize: 1g
+  resources:
+    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
+  # diskGi validates requests; Docker does not enforce a disk quota.
+  profiles: {} # optional named environments, e.g. universal: {image: my/image:tag}
+auth:
+  apiKeys: [] # set SBGW_API_KEYS; required for authenticated gateway transport
+orphanGC:
+  enabled: false
+  intervalSeconds: 300
+  minAgeSeconds: 600

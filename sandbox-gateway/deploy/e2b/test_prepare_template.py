@@ -89,7 +89,7 @@ class FakeSandbox:
 class PrepareTemplateTest(unittest.TestCase):
     def args(self, **changes):
         result = tool.parser().parse_args([
-            "--image", IMAGE, "--alias", "grasp-prod-v1", "--logical-image", "universal-sandbox:e2b",
+            "--image", IMAGE, "--alias", "grasp-prod-v1", "--name", "standard",
             "--cpu-count", "2", "--memory-mb", "3072",
         ])
         for name, value in changes.items():
@@ -112,7 +112,7 @@ class PrepareTemplateTest(unittest.TestCase):
         for image in ("ubuntu:latest", IMAGE[:-1], IMAGE.replace("sha256", "sha512"), "https://" + IMAGE):
             with self.subTest(image=image), self.assertRaises(tool.PreparationError):
                 tool.validate(self.args(image=image))
-        for changes in ({"alias": "bad;echo x"}, {"logical_image": "bad\nimage"}, {"cpu_count": 0},
+        for changes in ({"alias": "bad;echo x"}, {"name": "bad\nimage"}, {"cpu_count": 0},
                         {"memory_mb": -1}, {"minimum_workspace_gib": 0}, {"request_timeout": 0}):
             with self.subTest(changes=changes), self.assertRaises(tool.PreparationError):
                 tool.validate(self.args(**changes))
@@ -189,9 +189,9 @@ class PrepareTemplateTest(unittest.TestCase):
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["templateID"], "template-123")
         self.assertEqual(report["buildID"], "build-456")
-        self.assertEqual(report["gatewayProfile"], {
-            "image": "universal-sandbox:e2b", "templateID": "template-123",
-            "cpuCores": 2, "memoryMB": 3072, "diskGi": 20,
+        self.assertEqual(report["gatewayTemplates"], {
+            "standard": {"templateID": "template-123",
+            "cpuCores": 2, "memoryMB": 3072, "diskGi": 20},
         })
         self.assertNotIn("min_free_disk_mb", FakeTemplate.build_args[1])
         self.assertFalse(FakeSandbox.kwargs["network"]["allow_public_traffic"])
@@ -205,14 +205,14 @@ class PrepareTemplateTest(unittest.TestCase):
         FakeSandbox.probe["workspaceAvailableBytes"] = 19 * (1 << 30)
         report = tool.prepare(self.args(), FakeTemplate, FakeSandbox)
         self.assertEqual(report["status"], "failed")
-        self.assertNotIn("gatewayProfile", report)
+        self.assertNotIn("gatewayTemplates", report)
         self.assertEqual(report["probeCleanup"], "deleted")
 
     def test_provider_resource_mismatch_fails_and_cleans_up(self):
         FakeSandbox.memory_mb = 1024
         report = tool.prepare(self.args(), FakeTemplate, FakeSandbox)
         self.assertEqual(report["status"], "failed")
-        self.assertNotIn("gatewayProfile", report)
+        self.assertNotIn("gatewayTemplates", report)
         self.assertEqual(report["probeCleanup"], "deleted")
 
     def test_probe_errors_never_print_provider_bodies_or_credentials(self):
@@ -229,13 +229,13 @@ class PrepareTemplateTest(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["stage"], "cleanup")
         self.assertEqual(report["probeSandboxID"], "owned-probe-123")
-        self.assertNotIn("gatewayProfile", report)
+        self.assertNotIn("gatewayTemplates", report)
         self.assertNotIn("DO_NOT_PRINT", json.dumps(report))
 
     def test_dry_run_needs_no_sdk_or_provider_and_writes_private_safe_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "result.json"
-            argv = ["--image", IMAGE, "--alias", "grasp-prod-v1", "--logical-image", "universal-sandbox:e2b",
+            argv = ["--image", IMAGE, "--alias", "grasp-prod-v1", "--name", "standard",
                     "--cpu-count", "2", "--memory-mb", "3072", "--dry-run", "--output", str(output)]
             stdout = io.StringIO()
             with patch.object(tool, "load_sdk", side_effect=AssertionError("SDK must not load")), \

@@ -47,7 +47,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--image", required=True, help="OCI environment image pinned with @sha256:<64 lowercase hex>")
     result.add_argument("--alias", required=True, help="Explicit build name; use a new versioned alias")
-    result.add_argument("--logical-image", required=True, help="Gateway image identity, e.g. universal-sandbox:e2b")
+    result.add_argument("--name", required=True, help="Gateway template name, e.g. standard")
     result.add_argument("--cpu-count", required=True, type=int)
     result.add_argument("--memory-mb", required=True, type=int, help="Prepared guest memory in MiB")
     result.add_argument("--minimum-workspace-gib", type=int, default=20, help="Required initially available workspace bytes / 2**30; not a quota or disk sizing request")
@@ -63,8 +63,8 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         raise PreparationError("--image must be an OCI reference pinned by a complete sha256 digest")
     if not ALIAS_PATTERN.fullmatch(args.alias):
         raise PreparationError("--alias must contain 1-63 lowercase letters, digits or hyphens and start with a letter or digit")
-    if not args.logical_image or len(args.logical_image) > 256 or any(c.isspace() or ord(c) < 32 for c in args.logical_image):
-        raise PreparationError("--logical-image must be a nonempty gateway image identity without whitespace")
+    if not args.name or len(args.name) > 256 or any(c.isspace() or ord(c) < 32 for c in args.name):
+        raise PreparationError("--name must be a nonempty gateway template name without whitespace")
     if min(args.cpu_count, args.memory_mb, args.minimum_workspace_gib, args.request_timeout) <= 0:
         raise PreparationError("CPU, memory, minimum workspace and request timeout must be positive integers")
     root = args.repo_root.resolve()
@@ -76,7 +76,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "image": args.image,
         "alias": args.alias,
-        "logicalImage": args.logical_image,
+        "name": args.name,
         "cpuCount": args.cpu_count,
         "memoryMB": args.memory_mb,
         "minimumInitialWorkspaceGiB": args.minimum_workspace_gib,
@@ -200,9 +200,9 @@ def prepare(args: argparse.Namespace, template_class: Any, sandbox_class: Any) -
                 or probe["workspaceAvailableBytes"] < args.minimum_workspace_gib * (1 << 30)):
             raise PreparationError("the private guest did not confirm required environment and initial disk capacity")
         report.update(status="passed", stage="complete", workspaceAvailableBytes=probe["workspaceAvailableBytes"],
-                      gatewayProfile={"image": args.logical_image, "templateID": built.template_id,
+                      gatewayTemplates={args.name: {"templateID": built.template_id,
                                       "cpuCores": args.cpu_count, "memoryMB": args.memory_mb,
-                                      "diskGi": args.minimum_workspace_gib})
+                                      "diskGi": args.minimum_workspace_gib}})
     except Exception as exc:
         report["errorClass"] = type(exc).__name__
         if isinstance(exc, PreparationError):
@@ -214,7 +214,7 @@ def prepare(args: argparse.Namespace, template_class: Any, sandbox_class: Any) -
                 report["probeCleanup"] = "deleted"
             except Exception as exc:
                 report.update(status="failed", stage="cleanup", cleanupErrorClass=type(exc).__name__)
-                report.pop("gatewayProfile", None)
+                report.pop("gatewayTemplates", None)
     return report
 
 

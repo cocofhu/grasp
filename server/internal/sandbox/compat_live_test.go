@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/cocofhu/grasp/internal/config"
 )
 
 // TestCompatLiveGatewayCreate verifies create against the deployed gateway:
@@ -30,7 +28,7 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 		model = "cursor-grok-4.5-high-fast"
 	}
 
-	wantImage := config.DefaultSandboxImage("cursor")
+	wantImage := "universal-sandbox:local"
 	gw := NewGatewayClient(base, os.Getenv("GRASP_SANDBOX_GATEWAY_API_KEY"))
 	m := NewManager(gw, ManagerOptions{
 		Image:          wantImage,

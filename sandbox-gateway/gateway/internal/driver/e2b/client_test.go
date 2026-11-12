@@ -20,8 +20,7 @@ func newControlTestClient(t *testing.T, handler http.HandlerFunc) (*Client, *htt
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client, err := NewClient(ClientOptions{APIURL: server.URL, SandboxURL: server.URL,
-		APIKey: testProviderSecret, HTTPClient: server.Client()})
+	client, err := NewClient(ClientOptions{APIURL: server.URL, SandboxURL: server.URL, APIKey: testProviderSecret, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,19 +51,18 @@ func assertSafeControlError(t *testing.T, err error) {
 
 func TestClientOptionsValidateOriginsAndKeepCredentialsOutOfURLs(t *testing.T) {
 	for _, opts := range []ClientOptions{
-		{}, {APIKey: "bad\nkey"}, {APIKey: "key", APIURL: "https://user:password@api.example"},
+		{}, {APIKey: "key"}, {APIKey: "bad\nkey"}, {APIKey: "key", APIURL: "https://user:password@api.example"},
 		{APIKey: "key", APIURL: "https://api.example/path"}, {APIKey: "key", APIURL: "ftp://api.example"},
-		{APIKey: "key", APIURL: "https://api.example?secret=value"}, {APIKey: "key", SandboxURL: "https://proxy.example/#fragment"},
-		{APIKey: "key", SandboxURL: "https://proxy.example:65536"}, {APIKey: "key", Domain: "bad..example"},
-		{APIKey: "key", Domain: "-bad.example"}, {APIKey: "key", Domain: "a." + strings.Repeat("b", 64)},
+		{APIKey: "key", APIURL: "https://api.example?secret=value"}, {APIKey: "key", APIURL: "https://api.example", SandboxURL: "https://proxy.example/#fragment"},
+		{APIKey: "key", APIURL: "https://api.example", SandboxURL: "https://proxy.example:65536"},
 	} {
 		if _, err := NewClient(opts); err == nil {
-			t.Fatalf("accepted invalid client options: APIURL=%q SandboxURL=%q Domain=%q", opts.APIURL, opts.SandboxURL, opts.Domain)
+			t.Fatalf("accepted invalid client options: APIURL=%q SandboxURL=%q", opts.APIURL, opts.SandboxURL)
 		}
 	}
-	client, err := NewClient(ClientOptions{APIKey: testProviderSecret})
+	client, err := NewClient(ClientOptions{APIURL: "https://api.e2b.app", APIKey: testProviderSecret})
 	if err != nil || client.apiOrigin.String() != "https://api.e2b.app" {
-		t.Fatalf("unexpected default API origin: %v", err)
+		t.Fatalf("unexpected explicit API origin: %v", err)
 	}
 	if client.http.Timeout != 60*time.Second {
 		t.Fatal("default HTTP transport has no bounded request timeout")
@@ -297,7 +295,7 @@ type controlRoundTripFunc func(*http.Request) (*http.Response, error)
 func (f controlRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestTransportErrorAndCancellationPreserveOnlySafeCauses(t *testing.T) {
-	client, err := NewClient(ClientOptions{APIKey: testProviderSecret, HTTPClient: &http.Client{
+	client, err := NewClient(ClientOptions{APIURL: "https://api.example", APIKey: testProviderSecret, HTTPClient: &http.Client{
 		Transport: controlRoundTripFunc(func(r *http.Request) (*http.Response, error) { return nil, errors.New(testProviderSecret) }),
 	}})
 	if err != nil {
@@ -314,7 +312,7 @@ func TestTransportErrorAndCancellationPreserveOnlySafeCauses(t *testing.T) {
 }
 
 func TestSandboxEndpointsSupportPrivateCloudAndEmbed(t *testing.T) {
-	cloud, err := NewClient(ClientOptions{APIKey: "key", Domain: "fallback.example"})
+	cloud, err := NewClient(ClientOptions{APIKey: "key", APIURL: "https://api.e2b.app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,9 +323,9 @@ func TestSandboxEndpointsSupportPrivateCloudAndEmbed(t *testing.T) {
 		t.Fatal("cloud private routing or credential separation is wrong")
 	}
 	sb.Domain = ""
-	u, _, err = cloud.SandboxEndpoint(sb, 22)
-	if err != nil || u.Host != "22-sandbox-a.fallback.example" {
-		t.Fatal("domain fallback is wrong")
+	_, _, err = cloud.SandboxEndpoint(sb, 22)
+	if err == nil {
+		t.Fatal("missing provider domain must require sandboxURL")
 	}
 	sb.Domain = "untrusted/path?secret=value"
 	if _, _, err = cloud.SandboxEndpoint(sb, 22); err == nil {

@@ -22,17 +22,17 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_MAX_RUNS` | `engine.max_concurrent_runs` | integer | `5` | Public | Maximum concurrent runs |
 | `GRASP_PROFILES_ROOT` | `engine.profiles_root` | path | `data/profiles` | Public | Agent profile root |
 | `GRASP_NODE_AUTO_RETRY` | `engine.node_auto_retry_max` | integer | `3` | Public | Node automatic retry limit |
-| `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Sandbox image (recommended; one image ships every coding-tool CLI, including DeepSeek Harness, Kimi Code, and Codex (ChatGPT login or a Responses model connection); runtime switches by Agent backend) |
-| `GRASP_SANDBOX_IMAGE_CURSOR` | `sandbox.images.cursor` | image | `Not set` | Public | Optional cursor-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_CLAUDE_CODE` | `sandbox.images.claude_code` | image | `Not set` | Public | Optional claude_code-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_CODEBUDDY` | `sandbox.images.codebuddy` | image | `Not set` | Public | Optional codebuddy-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_TRAE` | `sandbox.images.trae` | image | `Not set` | Public | Optional trae-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_DEEPSEEK_HARNESS` | `sandbox.images.deepseek_harness` | image | `Not set` | Public | Optional DeepSeek Harness-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_KIMI_CODE` | `sandbox.images.kimi_code` | image | `Not set` | Public | Optional Kimi Code-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
-| `GRASP_SANDBOX_IMAGE_OPENCODE` | `sandbox.images.opencode` | image | `Not set` | Public | Optional opencode-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
+| `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Optional sandbox image override; empty follows the gateway (one image ships every coding-tool CLI, including DeepSeek Harness, Kimi Code, and Codex (ChatGPT login or a Responses model connection); runtime switches by Agent backend) |
+| `GRASP_SANDBOX_IMAGE_CURSOR` | `sandbox.images.cursor` | image | `Not set` | Public | Optional cursor-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_CLAUDE_CODE` | `sandbox.images.claude_code` | image | `Not set` | Public | Optional claude_code-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_CODEBUDDY` | `sandbox.images.codebuddy` | image | `Not set` | Public | Optional codebuddy-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_TRAE` | `sandbox.images.trae` | image | `Not set` | Public | Optional trae-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_DEEPSEEK_HARNESS` | `sandbox.images.deepseek_harness` | image | `Not set` | Public | Optional DeepSeek Harness-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_KIMI_CODE` | `sandbox.images.kimi_code` | image | `Not set` | Public | Optional Kimi Code-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
+| `GRASP_SANDBOX_IMAGE_OPENCODE` | `sandbox.images.opencode` | image | `Not set` | Public | Optional opencode-only image override; empty uses GRASP_SANDBOX_IMAGE / the gateway default |
 | `GRASP_SANDBOX_GATEWAY_URL` | `sandbox.gateway_url` | URL | `http://127.0.0.1:8899` | Public | sandbox-gateway control-plane URL |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | `sandbox.gateway_api_key` | string | `Not set` | Sensitive | Gateway bearer token |
-| `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `sandbox.gateway_transport` | enum | `direct` | Public | Sandbox transport: direct or authenticated gateway; gateway requires an isolated preview origin |
+| `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `sandbox.gateway_transport` | enum | `direct` | Public | Sandbox transport: direct or authenticated gateway; gateway requires an API key and uses the existing preview path proxy without an extra preview domain |
 | `GRASP_SANDBOX_DEFAULT_GATEWAY` | `sandbox.default_gateway` | string | `Not set` | Public | Named gateway for new sandboxes; existing sandboxes retain their binding |
 | `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `sandbox.private_endpoints` | boolean | `false` | Public | Sandbox endpoints are server-only and previews use the Grasp path proxy; gateway transport enables this automatically; legacy direct defaults remain compatible |
 | `GRASP_OPENCODE_CATALOG_URL` | `sandbox.opencode_catalog_url` | URL | `https://models.dev/api.json` | Public | OpenCode model catalog URL; point at a mirror when egress is restricted |
@@ -43,7 +43,7 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_SANDBOX_MAX_ATTEMPTS` | `sandbox.sandbox_max_attempts` | integer | `3` | Public | Maximum attempts for retryable sandbox faults |
 | `GRASP_SANDBOX_RETRY_BACKOFF_SEC` | `sandbox.sandbox_retry_backoff_seconds` | integer | `2` | Public | Base sandbox retry backoff in seconds |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |
-| `GRASP_SANDBOX_MEMORY_MB` | `sandbox.sandbox_memory_mb` | integer | `8192` | Public | Memory limit per sandbox in MiB; editable on the settings page unless this is set |
+| `GRASP_SANDBOX_MEMORY_MB` | `sandbox.sandbox_memory_mb` | integer | `0` | Public | Sandbox memory override in MiB; 0 follows the gateway/template, otherwise at least 1024 and E2B must match its template; env overrides and locks the settings page |
 | `GRASP_SANDBOX_WORK_DIR` | `sandbox.work_dir` | path | `Not set` | Public | Host work directory for ConfigHome |
 | `GRASP_SANDBOX_RUNTIME_BUNDLE` | `sandbox.runtime_bundle` | path | `/app/sandbox-runtime/sandbox-runtime.tgz` | Public | Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh) |
 | `GRASP_AUTH_SESSION_TTL` | `auth.session_ttl` | duration | `168h` | Public | Session lifetime |

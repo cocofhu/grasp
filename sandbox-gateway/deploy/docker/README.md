@@ -4,6 +4,8 @@
 
 本地体验见[快速开始](../../../docs/content/guide/quick-start.md)。下文补齐共享或生产部署的配置、网络、持久化和验收步骤。其他驱动参见 [Kubernetes 指南](../k8s/README.md)与 [E2B 指南](../e2b/README.md)，不要把不同驱动的网络选项混用。
 
+本指南对应当前源码的新配置，Grasp / gateway 必须使用包含本次配置变更的镜像；下方发布 tag 仅作位置示例，部署时替换为对应构建。字段和默认值见[配置总览](../../../CONFIGURATION.md)，gateway YAML 见 [Docker 独立示例](../../gateway/config.docker.example.yaml)。
+
 ## 前提与拓扑
 
 - 安装 Git、Docker Engine、Compose v2；部署账号能访问 Docker socket。准备域名、TLS 反向代理及有足够空间的持久磁盘。密码哈希可在安装了项目所需 Go 的管理机上生成。
@@ -53,6 +55,8 @@ chmod 600 "$grasp_deploy_dir/production.env"
 ```
 
 `.env` / `--env-file` 只是 Compose 的变量输入，**不会自动把所有变量传进容器**。附带的 override 显式转发回连地址、公开地址、鉴权和 transport，并让 gateway 与 Grasp 使用同一把 key；仅在原 `.env` 中添加 `GRASP_MCP_ADVERTISE` 不会改变原 release Compose 的服务环境。确认当前 shell 没有 export 同名旧值，以免覆盖环境文件。其他配置也须添加到服务 `environment`，或挂载配置文件并设置 `CONFIG_PATH`（Grasp）/ `SBGW_CONFIG`（gateway）。应用实际配置优先级为进程环境 > 配置文件 > 默认值。
+
+`SANDBOX_IMAGE` 通过 `SBGW_DOCKER_IMAGE` 只传给 gateway，Grasp 默认省略镜像和资源覆盖。默认资源为 `2 CPU / 4096 MiB / 25 GiB`；需要调整时挂载 Docker gateway YAML，在 `docker.resources.default/max` 中配置。Grasp 设置页内存覆盖为 `0` 才会跟随网关；已有保存值不会自动清除。
 
 ## 2. 配置网络与入口
 

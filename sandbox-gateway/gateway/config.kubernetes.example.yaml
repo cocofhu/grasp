@@ -1,0 +1,42 @@
+# Kubernetes gateway. Copy to gateway.kubernetes.yaml and pass -config explicitly.
+# Contains no Docker or E2B settings. Values below are program defaults.
+driver: kubernetes
+server:
+  listen: ":8080"
+  finalizeTimeoutSeconds: 1200
+database:
+  driver: sqlite
+  path: gateway.db # mount persistent storage, or configure MySQL (see guide)
+ports:
+  session: 8765
+  codeServer: 8744
+  ssh: 22
+  cdp: 9222 # ClusterIP only
+  novnc: 6080 # ClusterIP only
+  app: [80, 443, 2222, 3000, 3306, 4200, 5000, 5173, 5432, 5500, 6379, 8000, 8080, 8443, 8888, 9090, 9200, 9229]
+kubernetes:
+  image: universal-sandbox:local # replace with an OCI image available to nodes
+  inCluster: false # true when using the gateway pod's service account
+  kubeconfig: "" # empty: normal kubeconfig/in-cluster discovery
+  namespace: sandboxes
+  namePrefix: sbx-
+  storageClass: "" # use the cluster's default StorageClass
+  pvcAnnotations: {}
+  imagePullSecret: ""
+  imagePullPolicy: IfNotPresent
+  enableLoadBalancer: true
+  resources:
+    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
+  # Fixed scheduling requests; set each to 0 to use its ratio × limit.
+  cpuRequestCores: 0.25
+  memoryRequestMB: 512
+  cpuRequestRatio: 0.25
+  memoryRequestRatio: 0.25
+  profiles: {}
+auth:
+  apiKeys: [] # inject SBGW_API_KEYS
+orphanGC:
+  enabled: false
+  intervalSeconds: 300
+  minAgeSeconds: 600

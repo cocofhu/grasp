@@ -90,14 +90,15 @@ terminal/preview routes; gateway keys never enter browser URLs or cookies.
 
 ## Environment profiles
 
-Gateway YAML `profiles.<name>.image` optionally maps a stable environment name
+Gateway YAML `docker.profiles.<name>.image` or `kubernetes.profiles.<name>.image` optionally maps a stable environment name
 to a provider image identity. `POST /api/v1/sandboxes` accepts `"profile":
 "universal"` instead of an image. The resolved image is returned in the usual
 sandbox DTO. Unknown/empty profiles and an explicitly conflicting image
-return `400`. With no profile, legacy image selection is unchanged.
+return `400`. With no profile or image, the selected backend supplies its default.
 
-For E2B the image must be approved in `e2b.templates`; the driver retains its
-exact CPU/memory/minimum-free-space checks. Docker/Kubernetes use the mapped
+E2B advertises each key under `e2b.templates` as a profile automatically.
+Omitted resources come from that selected template; explicit resources must
+match its CPU/memory/minimum-free-space specification exactly. Docker/Kubernetes use the mapped
 OCI image and existing resource policy. `provider`/`AGENT_PROVIDER` continue
 selecting the Agent CLI independently of the environment profile.
 
@@ -153,13 +154,13 @@ Body (all fields optional):
 - `env` is the injection channel to the image (see the sandbox README for the
   full variable reference: `WORKSPACE_DIR`, `GIT_REPOS`, `AGENT_PROVIDER`,
   `VNC_PREVIEW`, `BROWSER_MCP`, `ROOT_PASSWORD`, `SSH_KEY`, etc.).
-- `ports` adds application ports on top of the image defaults.
+- `ports` adds application ports on top of the gateway `ports` configuration.
 - `resources` sets per-sandbox limits (same knobs as remote-dev UI):
   - `cpuCores` — CPU limit in cores (maps to k8s `limits.cpu` / docker `--cpus`)
   - `memoryMB` — memory limit in MiB (k8s `limits.memory` / docker `--memory`)
   - `diskGi` — data PVC size in GiB (kubernetes only; docker ignores)
-  - omit or `0` → gateway defaults from `kubernetes.*` in config
-  - values above `maxCPUCores` / `maxMemoryMB` / `maxDataDiskGi` → `400`
+  - omit or `0` → selected backend `resources.default`, or the selected E2B template
+  - Docker/K8s values above backend `resources.max.cpuCores/memoryMB/diskGi` → `400`; E2B mismatches → `400`
 - `config` seeds rules/skills/mcp before services start. Use `hostPath` for the
   Docker driver (same-host bind-mount) or `bundleUrl` (+ optional `headers`)
   which is translated to the image's `SANDBOX_INJECT` contract.

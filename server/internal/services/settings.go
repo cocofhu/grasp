@@ -117,7 +117,7 @@ func knobs() []knob {
 			func(c *config.Config) int { return c.Sandbox.MaxSoloSandboxes }},
 		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, 0, "GRASP_NODE_AUTO_RETRY",
 			func(c *config.Config) int { return c.Engine.NodeAutoRetryMax }},
-		{KeySandboxMemoryMB, "沙箱内存上限", "MiB", 1024, 0, "GRASP_SANDBOX_MEMORY_MB",
+		{KeySandboxMemoryMB, "沙箱内存覆盖", "MiB", 0, 0, "GRASP_SANDBOX_MEMORY_MB",
 			func(c *config.Config) int { return c.Sandbox.MemoryMB }},
 		{KeyAgentIdleMin, "Agent 无动作时限", "分钟", 2, 120, "GRASP_CHAT_IDLE_SEC",
 			func(c *config.Config) int { return (c.Sandbox.ChatIdleTimeoutSeconds + 59) / 60 }},
@@ -181,6 +181,9 @@ func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch
 		v, ok := patch[k.key]
 		if !ok {
 			continue
+		}
+		if k.key == KeySandboxMemoryMB && v > 0 && v < 1024 {
+			return nil, fmt.Errorf("沙箱内存覆盖必须为 0（跟随网关）或至少 1024 MiB")
 		}
 		if v < k.min {
 			return nil, fmt.Errorf("%s 不能小于 %d", k.label, k.min)

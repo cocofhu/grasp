@@ -12,10 +12,9 @@ func TestWithDefaultMemory(t *testing.T) {
 	}
 
 	SetDefaultMemoryMB(8192)
-	SetDefaultMemoryMB(0)
 	SetDefaultMemoryMB(-1)
 	if DefaultMemoryMB() != 8192 {
-		t.Fatalf("non-positive values must be ignored, got %d", DefaultMemoryMB())
+		t.Fatalf("negative values must be ignored, got %d", DefaultMemoryMB())
 	}
 
 	if got := withDefaultMemory(nil); got == nil || got.MemoryMB != 8192 {
@@ -31,6 +30,10 @@ func TestWithDefaultMemory(t *testing.T) {
 		t.Fatalf("input mutated: %+v", in)
 	}
 
+	SetDefaultMemoryMB(0)
+	if DefaultMemoryMB() != 0 || withDefaultMemory(nil) != nil {
+		t.Fatal("zero must restore gateway defaults")
+	}
 	explicit := &GWResources{MemoryMB: 2048}
 	if got := withDefaultMemory(explicit); got != explicit {
 		t.Fatalf("explicit memory must win: got %+v", got)

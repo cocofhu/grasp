@@ -42,7 +42,6 @@ func (e *APIError) Unwrap() error {
 type ClientOptions struct {
 	APIURL     string
 	SandboxURL string
-	Domain     string
 	APIKey     string
 	HTTPClient *http.Client
 }
@@ -50,7 +49,6 @@ type ClientOptions struct {
 type Client struct {
 	apiOrigin     *url.URL
 	sandboxOrigin *url.URL
-	domain        string
 	apiKey        string
 	http          *http.Client
 }
@@ -116,18 +114,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	if strings.TrimSpace(opts.APIKey) == "" || strings.ContainsAny(opts.APIKey, "\r\n") {
 		return nil, errors.New("E2B API key is required and must be a valid header value")
 	}
-	domain := opts.Domain
-	if domain == "" {
-		domain = "e2b.app"
-	}
-	if !validProviderDomain(domain) {
-		return nil, errors.New("invalid E2B domain")
-	}
-	origin := opts.APIURL
-	if origin == "" {
-		origin = "https://api." + domain
-	}
-	apiOrigin, err := parseOrigin(origin)
+	apiOrigin, err := parseOrigin(opts.APIURL)
 	if err != nil {
 		return nil, errors.New("invalid E2B API origin")
 	}
@@ -144,7 +131,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		client = &copyClient
 	}
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{apiOrigin: apiOrigin, sandboxOrigin: sandboxOrigin, domain: domain,
+	return &Client{apiOrigin: apiOrigin, sandboxOrigin: sandboxOrigin,
 		apiKey: opts.APIKey, http: client}, nil
 }
 
@@ -381,9 +368,6 @@ func (c *Client) SandboxEndpoint(sb *Sandbox, port int) (*url.URL, http.Header, 
 		target = *c.sandboxOrigin
 	} else {
 		domain := sb.Domain
-		if domain == "" {
-			domain = c.domain
-		}
 		if !validProviderDomain(domain) {
 			return nil, nil, errors.New("E2B returned an invalid sandbox domain")
 		}

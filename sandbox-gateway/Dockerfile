@@ -24,6 +24,5 @@ COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 
 COPY --from=build /out/sandbox-gateway /usr/local/bin/sandbox-gateway
 
-ENV SBGW_CONFIG=/etc/sandbox-gateway/config.yaml
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/sandbox-gateway"]
