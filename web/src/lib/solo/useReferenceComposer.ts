@@ -1,7 +1,7 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { isComposingKey } from '@/lib/chat/composerKeys'
-import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReferences, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import type { ReferenceTab } from './useReferenceSearch'
 
 /** What the composer needs from a mounted ReferencePicker. */
@@ -102,14 +102,41 @@ export function useReferenceComposer(opts: {
     set(next, applyEdit(tokens.value, text, next), caret + lead.length + 1)
   }
 
-  /** Call after attachment handling; a pasted GitHub link becomes a reference. */
+  /**
+   * Call after attachment handling; pasted GitHub links become references.
+   * Links already referenced are skipped; those past the limit stay as text.
+   */
   function onPaste(e: ClipboardEvent) {
     if (e.defaultPrevented || !enabled()) return
-    const parsed = parseGitHubReference(e.clipboardData?.getData('text/plain') || '')
+    const parsed = parseGitHubReferences(e.clipboardData?.getData('text/plain') || '')
     const el = textarea.value
     if (!parsed || !el || full.value || insideToken(tokens.value, el.selectionStart)) return
     e.preventDefault()
-    addToken(el.selectionStart, el.selectionEnd, { ...parsed, title: '' })
+    const before = input.value
+    let text = before.slice(0, el.selectionStart) + before.slice(el.selectionEnd)
+    let next = applyEdit(tokens.value, before, text)
+    let caret = el.selectionStart
+    const overflow: string[] = []
+    for (const { ref: link, raw } of parsed) {
+      if (next.some((t) => t.ref.kind === link.kind && t.ref.target === link.target)) continue
+      if (next.length >= MAX_REFERENCES) {
+        overflow.push(raw)
+        continue
+      }
+      const ref = { ...link, title: '' }
+      const res = insertToken(text, caret, caret, ref, referenceLabel(ref, defaultRepo.value))
+      next = [...applyEdit(next, text, res.text), res.token].sort((a, b) => a.start - b.start)
+      text = res.text
+      caret = res.caret
+    }
+    if (overflow.length) {
+      const extra = overflow.join(' ')
+      const after = text.slice(0, caret) + extra + text.slice(caret)
+      next = applyEdit(next, text, after)
+      text = after
+      caret += extra.length
+    }
+    set(text, next, caret)
   }
 
   /** True when the key was handled here and the caller must ignore it. */
