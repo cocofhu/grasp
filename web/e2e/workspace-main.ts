@@ -38,6 +38,12 @@ if (assistantMode === 'conversation' && artifactFiles.length) {
   artifactFiles[1].id = 'art-b1b2c3d4'
   artifactFiles[12].name = 'release-notes.md'
 }
+function isHiddenLedger(name: string) {
+  return name === 'feedback_index.json' || name.startsWith('feedback.')
+}
+function visibleArtifactFiles() {
+  return artifactFiles.filter(file => !isHiddenLedger(file.name))
+}
 function artifactContent(file: any) {
   if (file.name === 'review.json') return JSON.stringify({ verdict: 'approve_with_comments', summary: '审批交互已通过回归测试。核心流程完整，可在发布前补齐以下细节。', findings: [{ id: 'F1', severity: 'low', title: '补充键盘操作提示', file: 'ApprovalPanel.vue', line: 42, detail: '审批按钮已支持键盘操作，建议在帮助文档中说明快捷方式。', suggestion: '在操作说明中加入 Tab 与 Enter 的使用方式。' }], action_items: ['补充审批快捷操作说明', '跟进下一轮体验回访'] })
   if (file.name === 'feedback_index.json') return JSON.stringify({ items: [] })
@@ -77,14 +83,15 @@ window.fetch = async (input, init) => {
   else if (/^\/workflows\/[^/]+\/home-visibility$/.test(path)) { data = workflows.find((item) => item.id === path.split('/')[2]); Object.assign(data, body) }
   else if (/^\/workflows\/[^/]+\/notify-policy$/.test(path)) { data = workflows.find((item) => item.id === path.split('/')[2]); data.notifyPolicy = body.notifyPolicy }
   else if (path === '/runs') { const items = url.searchParams.has('status') ? runs.filter((run) => url.searchParams.get('status')!.split(',').includes(run.status)) : runs; data = { items, total: items.length, page: 1, pageSize: 20 } }
-  else if (/^\/runs\/[^/]+$/.test(path)) { const id = path.split('/')[2]; data = { ...(runs.find(run => run.id === id) || runs[0]), id, artifacts: artifactFiles.filter(file => file.runId === id) } }
+  else if (/^\/runs\/[^/]+$/.test(path)) { const id = path.split('/')[2]; data = { ...(runs.find(run => run.id === id) || runs[0]), id, artifacts: visibleArtifactFiles().filter(file => file.runId === id) } }
   else if (path === '/artifacts/tree') {
     if (params.get('artifacts') === 'fail' && artifactTreeAttempts++ === 0) return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } })
-    data = { count: artifactFiles.length, sessionCount: artifactFiles.filter(file => !file.workflowId).length, workflows: workflows.slice(0, 2).map(workflow => ({ workflowId: workflow.id, workflowName: workflow.name, count: artifactFiles.filter(file => file.workflowId === workflow.id).length })).filter(workflow => workflow.count) }
+    const visible = visibleArtifactFiles()
+    data = { count: visible.length, sessionCount: visible.filter(file => !file.workflowId).length, workflows: workflows.slice(0, 2).map(workflow => ({ workflowId: workflow.id, workflowName: workflow.name, count: visible.filter(file => file.workflowId === workflow.id).length })).filter(workflow => workflow.count) }
   }
   else if (path === '/artifacts') {
     const query = (url.searchParams.get('q') || '').toLocaleLowerCase()
-    const items = artifactFiles.filter(file => (!url.searchParams.has('workflowId') || file.workflowId === url.searchParams.get('workflowId')) && (!url.searchParams.has('session') || !file.workflowId) && [file.name, file.nodeId, file.runTitle].some(value => value.toLocaleLowerCase().includes(query)))
+    const items = visibleArtifactFiles().filter(file => (!url.searchParams.has('workflowId') || file.workflowId === url.searchParams.get('workflowId')) && (!url.searchParams.has('session') || !file.workflowId) && [file.name, file.nodeId, file.runTitle].some(value => value.toLocaleLowerCase().includes(query)))
     data = { items, total: new Set(items.map(file => file.runId)).size, page: 1, pageSize: 20 }
   }
   else if (/^\/artifacts\/[^/]+\/versions$/.test(path)) data = assistantMode === 'conversation' && path.includes('artifact-3') ? [{ artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 1, kind: 'html', sizeBytes: 2340, createdAt: '2026-10-20T08:00:00Z' }, { artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 2, kind: 'html', sizeBytes: 2380, createdAt: '2026-10-20T09:00:00Z' }] : []

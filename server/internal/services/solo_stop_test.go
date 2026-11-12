@@ -195,9 +195,9 @@ func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
 	if len(f.exec.restoredArchives()) != 0 {
 		t.Fatal("existing sandbox was restored from backup")
 	}
-	if !f.hasSystem(t, "进程已重新启动") {
-		t.Fatal("cold resume notice missing")
-	}
+	waitFor(t, "cold resume notice", func() bool {
+		return f.hasSystem(t, "进程已重新启动")
+	})
 
 	// A second stop replaces the archive.
 	f.exec.mu.Lock()
