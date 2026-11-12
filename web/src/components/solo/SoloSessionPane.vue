@@ -7,6 +7,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
@@ -42,7 +43,7 @@ import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
-import type { SoloResources } from '@/lib/api/apiTypes'
+import type { SoloBackup, SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { formatBytes, relTime } from '@/lib/shared/format'
@@ -143,6 +144,27 @@ const backupSummary = computed(() => {
   if (!v?.backupAt) return ''
   return t('pages.solo.stoppedBar.backup', { time: relTime(v.backupAt), size: formatBytes(v.backupSize || 0) })
 })
+const backups = ref<SoloBackup[]>([])
+// Empty means the newest archive, which resumes the existing sandbox when it is still there.
+const chosenBackup = ref('')
+const backupOptions = computed(() => backups.value.map((b, i) => ({
+  value: i === 0 ? '' : String(b.id),
+  label: t('pages.solo.stoppedBar.backupOption', { time: relTime(b.createdAt), size: formatBytes(b.size) }),
+  hint: i === 0 ? t('pages.solo.stoppedBar.newest') : t(`pages.solo.stoppedBar.reason.${b.reason}`),
+})))
+async function loadBackups() {
+  chosenBackup.value = ''
+  if (props.embedded || status.value !== 'stopped') {
+    backups.value = []
+    return
+  }
+  try {
+    backups.value = await api.listSoloBackups(props.sessionId)
+  } catch {
+    backups.value = []
+  }
+}
+watch([status, () => props.sessionId], loadBackups, { immediate: true })
 const resources = ref<SoloResources>()
 
 watch(session, (s) => { if (s && !props.embedded) store.upsert(s) })
@@ -367,7 +389,8 @@ async function doResume() {
   resuming.value = true
   actionError.value = ''
   try {
-    store.upsert(await api.resumeSoloSession(props.sessionId))
+    const backupId = Number(chosenBackup.value)
+    store.upsert(await (backupId ? api.resumeSoloSession(props.sessionId, backupId) : api.resumeSoloSession(props.sessionId)))
     await chat.load()
   } catch (e) {
     if (isSoloLimitError(e)) {
@@ -589,7 +612,17 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
               <p>{{ status === 'stopping' ? t('pages.solo.stoppedBar.stopping') : t('pages.solo.stoppedBar.text') }}</p>
               <p v-if="status === 'stopped' && session.error" class="mt-1 text-[12px] text-err" data-testid="solo-stopped-error">{{ session.error }}</p>
               <p v-else-if="status === 'stopped' && backupSummary" class="mt-1 text-[11.5px] text-txt3">{{ backupSummary }}</p>
+              <p v-if="chosenBackup" class="mt-1 text-[11.5px] text-warn" data-testid="solo-backup-warning">{{ t('pages.solo.stoppedBar.olderBackup') }}</p>
             </div>
+            <AppSelect
+              v-if="!embedded && status === 'stopped' && backups.length > 1"
+              v-model="chosenBackup"
+              class="w-48 shrink-0"
+              size="sm"
+              :options="backupOptions"
+              :aria-label="t('pages.solo.stoppedBar.chooseBackup')"
+              data-testid="solo-backup-select"
+            />
             <AppButton
               v-if="!embedded && status === 'stopped'"
               size="sm"

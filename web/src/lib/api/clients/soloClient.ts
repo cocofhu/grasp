@@ -5,6 +5,7 @@ import type {
   ProjectInput,
   ReferenceInput,
   ReferenceSearchResult,
+  SoloBackup,
   SoloCreateBody,
   SoloEnvEntry,
   SoloMessage,
@@ -83,8 +84,11 @@ export const soloClient = {
   /** Backs up the workspace, then stops the sandbox. Returns while stopping. */
   stopSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/stop`, { method: 'POST' }),
-  resumeSoloSession: (id: string) =>
-    req<SoloSession>(`/solo/sessions/${enc(id)}/resume`, { method: 'POST' }),
+  /** Without backupId resumes the sandbox, or restores the newest archive if it is gone. */
+  resumeSoloSession: (id: string, backupId?: number) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/resume`, backupId ? { method: 'POST', body: JSON.stringify({ backupId }) } : { method: 'POST' }),
+  /** Workspace archives, newest first. */
+  listSoloBackups: (id: string) => req<SoloBackup[]>(`/solo/sessions/${enc(id)}/backups`),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   /** Home workflow composer: the workflow's default repos and first clarify Agent. */
   searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>

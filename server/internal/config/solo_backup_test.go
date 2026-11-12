@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSoloBackupEnvAndDefaults(t *testing.T) {
@@ -11,7 +12,8 @@ func TestSoloBackupEnvAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SoloBackup.LocalDir != "data/solo-backups" || c.SoloBackup.MaxBytes != 4<<30 || c.SoloBackup.S3.Enabled() {
+	if c.SoloBackup.LocalDir != "data/solo-backups" || c.SoloBackup.MaxBytes != 4<<30 || c.SoloBackup.S3.Enabled() ||
+		c.SoloBackup.Keep != 5 || c.SoloBackup.Interval() != 6*time.Hour {
 		t.Fatalf("defaults = %+v", c.SoloBackup)
 	}
 
@@ -24,11 +26,13 @@ func TestSoloBackupEnvAndDefaults(t *testing.T) {
 	t.Setenv("GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID", "ak")
 	t.Setenv("GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY", "sk")
 	t.Setenv("GRASP_SOLO_BACKUP_S3_PATH_STYLE", "true")
+	t.Setenv("GRASP_SOLO_BACKUP_KEEP", "3")
+	t.Setenv("GRASP_SOLO_BACKUP_INTERVAL_MINUTES", "-1")
 	c, err = parse(missing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := SoloBackupConfig{LocalDir: "/var/backups", MaxBytes: 1024, S3: SoloBackupS3{
+	want := SoloBackupConfig{LocalDir: "/var/backups", MaxBytes: 1024, Keep: 3, IntervalMinutes: -1, S3: SoloBackupS3{
 		Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "grasp", Prefix: "prod",
 		AccessKeyID: "ak", SecretAccessKey: "sk", PathStyle: true,
 	}}

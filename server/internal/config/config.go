@@ -49,8 +49,21 @@ type Config struct {
 type SoloBackupConfig struct {
 	LocalDir string `yaml:"local_dir"`
 	// MaxBytes caps one compressed archive; a larger workspace cannot stop.
-	MaxBytes int64        `yaml:"max_bytes"`
-	S3       SoloBackupS3 `yaml:"s3"`
+	MaxBytes int64 `yaml:"max_bytes"`
+	// Keep is how many archives each session retains, newest first. 0 = 5.
+	Keep int `yaml:"keep"`
+	// IntervalMinutes archives a running session with new activity once this
+	// long has passed since its last archive. 0 = 360; negative disables.
+	IntervalMinutes int          `yaml:"interval_minutes"`
+	S3              SoloBackupS3 `yaml:"s3"`
+}
+
+// Interval is the scheduled backup period; zero means disabled.
+func (b SoloBackupConfig) Interval() time.Duration {
+	if b.IntervalMinutes < 0 {
+		return 0
+	}
+	return time.Duration(b.IntervalMinutes) * time.Minute
 }
 
 // SoloBackupS3 is an S3-compatible bucket (AWS, MinIO, COS, OSS...).
@@ -673,6 +686,12 @@ func setDefaults(c *Config) {
 	if c.SoloBackup.MaxBytes <= 0 {
 		c.SoloBackup.MaxBytes = 4 << 30
 	}
+	if c.SoloBackup.Keep <= 0 {
+		c.SoloBackup.Keep = 5
+	}
+	if c.SoloBackup.IntervalMinutes == 0 {
+		c.SoloBackup.IntervalMinutes = 360
+	}
 	if c.Storage.MaxFileBytes <= 0 {
 		c.Storage.MaxFileBytes = 128 << 20
 	}
@@ -904,6 +923,12 @@ func applySoloBackupEnv(c *Config) {
 	}
 	if v := env("GRASP_SOLO_BACKUP_MAX_BYTES"); v != "" {
 		b.MaxBytes, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := env("GRASP_SOLO_BACKUP_KEEP"); v != "" {
+		b.Keep, _ = strconv.Atoi(v)
+	}
+	if v := env("GRASP_SOLO_BACKUP_INTERVAL_MINUTES"); v != "" {
+		b.IntervalMinutes, _ = strconv.Atoi(v)
 	}
 	if v := env("GRASP_SOLO_BACKUP_S3_PATH_STYLE"); v != "" {
 		b.S3.PathStyle, _ = strconv.ParseBool(v)

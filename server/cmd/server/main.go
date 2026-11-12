@@ -424,7 +424,9 @@ func main() {
 		log.Fatal().Err(err).Msg("solo backup storage")
 	}
 	soloSvc.SetBackupStore(soloBackups)
-	log.Info().Str("store", soloBackups.Kind()).Msg("solo workspace backups")
+	soloSvc.SetBackupPolicy(cfg.SoloBackup.Keep, cfg.SoloBackup.Interval())
+	log.Info().Str("store", soloBackups.Kind()).Int("keep", cfg.SoloBackup.Keep).
+		Dur("interval", cfg.SoloBackup.Interval()).Msg("solo workspace backups")
 	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
@@ -695,6 +697,7 @@ func main() {
 		}
 		sbxSvc.RunSoloRecovery(sweeperCtx)
 	}()
+	go soloSvc.RunBackupSchedule(sweeperCtx)
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()

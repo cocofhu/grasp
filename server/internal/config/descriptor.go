@@ -59,6 +59,8 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_BLOBS_ROOT", YAML: "storage.blobs_root", Type: "path", Default: "data/blobs", ZH: "本地附件 blob 根目录", EN: "Local attachment blob root directory"},
 		{Env: "GRASP_SOLO_BACKUP_DIR", YAML: "solo_backup.local_dir", Type: "path", Default: "data/solo-backups", ZH: "未配置 S3 时，停止 Solo 会话的工作区备份目录", EN: "Directory for stopped Solo workspace archives when S3 is not configured"},
 		{Env: "GRASP_SOLO_BACKUP_MAX_BYTES", YAML: "solo_backup.max_bytes", Type: "int", Default: "4294967296", ZH: "单个 Solo 工作区压缩备份上限（字节）；超出则不能停止", EN: "Maximum bytes of one compressed Solo workspace archive; larger workspaces cannot stop"},
+		{Env: "GRASP_SOLO_BACKUP_KEEP", YAML: "solo_backup.keep", Type: "int", Default: "5", ZH: "每个 Solo 会话保留的工作区备份份数，更早的自动删除", EN: "Workspace archives kept per Solo session, newest first; older ones are deleted"},
+		{Env: "GRASP_SOLO_BACKUP_INTERVAL_MINUTES", YAML: "solo_backup.interval_minutes", Type: "int", Default: "360", ZH: "运行中且有新对话的 Solo 会话距上次备份满该分钟数后自动备份；负数关闭", EN: "Archive a running Solo session with new activity once this long has passed since its last archive; negative disables"},
 		{Env: "GRASP_SOLO_BACKUP_S3_ENDPOINT", YAML: "solo_backup.s3.endpoint", Type: "URL", Default: "", ZH: "S3 兼容服务地址；留空使用 region 对应的 AWS 地址", EN: "S3-compatible endpoint origin; empty uses the AWS endpoint for the region"},
 		{Env: "GRASP_SOLO_BACKUP_S3_REGION", YAML: "solo_backup.s3.region", Type: "string", Default: "us-east-1", ZH: "S3 区域", EN: "S3 region"},
 		{Env: "GRASP_SOLO_BACKUP_S3_BUCKET", YAML: "solo_backup.s3.bucket", Type: "string", Default: "", ZH: "设置后 Solo 工作区备份写入该 S3 桶，否则写本地目录", EN: "When set, Solo workspace archives go to this S3 bucket instead of the local directory"},

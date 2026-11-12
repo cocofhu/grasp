@@ -4947,7 +4947,15 @@
         "text": "环境已停止，工作区已备份。恢复后继续对话。",
         "stopping": "正在备份工作区并停止沙箱…",
         "backup": "备份于 {time} · {size}",
-        "resume": "恢复"
+        "resume": "恢复",
+        "chooseBackup": "选择恢复的备份版本",
+        "backupOption": "{time} · {size}",
+        "newest": "最新",
+        "reason": {
+          "stop": "停止时",
+          "scheduled": "定时"
+        },
+        "olderBackup": "将用所选备份在新沙箱中恢复工作区，之后的改动会丢失（较新的备份仍保留）。"
       }
     },
     "projects": {

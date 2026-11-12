@@ -735,6 +735,14 @@ export interface SessionRepo {
   branch?: string
 }
 
+/** One workspace archive of a Solo session; the newest few are kept. */
+export interface SoloBackup {
+  id: number
+  size: number
+  reason: 'stop' | 'scheduled'
+  createdAt: string
+}
+
 export interface SoloSession {
   id: string
   userId: string
@@ -766,7 +774,7 @@ export interface SoloSession {
   status: SoloStatus
   error?: string
   restarts: number
-  /** Workspace archive of the last stop (bytes, compressed). */
+  /** Newest workspace archive, the default restore point (bytes, compressed). */
   backupSize?: number
   backupAt?: string
   lastActiveAt?: string

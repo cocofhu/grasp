@@ -38,6 +38,7 @@ const box = vi.hoisted(() => ({
   stop: vi.fn(async () => true),
   send: vi.fn(async () => true),
   resumeSoloSession: vi.fn(),
+  listSoloBackups: vi.fn(async (): Promise<unknown[]> => []),
   load: vi.fn(),
 }))
 
@@ -49,6 +50,7 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     getSoloResources: box.getResources,
     resumeSoloSession: (...args: unknown[]) => box.resumeSoloSession(...args),
+    listSoloBackups: () => box.listSoloBackups(),
     getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
@@ -506,6 +508,46 @@ describe('SoloSessionPane', () => {
     expect(actionError.value).not.toBe('')
     failed.unmount()
     actionError.value = ''
+    sessionState.value = initial
+    statusState.value = 'running'
+  })
+
+  it('resumes from an older backup only when one is chosen', async () => {
+    turns.value = []
+    const initial = sessionState.value
+    statusState.value = 'stopped'
+    sessionState.value = { ...initial, status: 'stopped' } as typeof initial
+    const now = Date.now()
+    box.listSoloBackups.mockResolvedValue([
+      { id: 9, size: 2048, reason: 'stop', createdAt: new Date(now).toISOString() },
+      { id: 7, size: 1024, reason: 'scheduled', createdAt: new Date(now - 3600_000).toISOString() },
+    ])
+    box.resumeSoloSession.mockResolvedValue({ ...initial, status: 'starting' })
+    box.resumeSoloSession.mockClear()
+    const wrapper = mountPane(pages, {
+      AppSelect: {
+        props: ['modelValue', 'options'],
+        emits: ['update:modelValue'],
+        template: '<select data-testid="solo-backup-select" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.hint }}</option></select>',
+      },
+    })
+    await flushPromises()
+    const select = wrapper.get('[data-testid="solo-backup-select"]')
+    expect(select.text()).toContain(pages.pages.solo.stoppedBar.newest)
+    expect(select.text()).toContain(pages.pages.solo.stoppedBar.reason.scheduled)
+    expect(wrapper.find('[data-testid="solo-backup-warning"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="solo-resume"]').trigger('click')
+    await flushPromises()
+    expect(box.resumeSoloSession).toHaveBeenLastCalledWith('s1')
+
+    await select.setValue('7')
+    expect(wrapper.find('[data-testid="solo-backup-warning"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="solo-resume"]').trigger('click')
+    await flushPromises()
+    expect(box.resumeSoloSession).toHaveBeenLastCalledWith('s1', 7)
+    wrapper.unmount()
+    box.listSoloBackups.mockResolvedValue([])
     sessionState.value = initial
     statusState.value = 'running'
   })

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -310,12 +311,33 @@ func (h *Handlers) ResumeSoloSession(c *gin.Context) {
 	if !ok {
 		return
 	}
-	v, err := h.Solo.Resume(c.Request.Context(), c.Param("id"), user)
+	var body struct {
+		BackupID uint `json:"backupId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	v, err := h.Solo.Resume(c.Request.Context(), c.Param("id"), user, body.BackupID)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, v)
+}
+
+// ListSoloBackups handles GET /api/solo/sessions/:id/backups.
+func (h *Handlers) ListSoloBackups(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	rows, err := h.Solo.ListBackups(c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, rows)
 }
 
 // RestartSoloSession handles POST /api/solo/sessions/:id/restart.

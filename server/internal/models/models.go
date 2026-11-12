@@ -1097,7 +1097,7 @@ func AllModels() []any {
 		&LiveSession{},
 		&TokenUsageEvent{},
 		&TokenUsageReport{},
-		&Project{}, &SoloSession{}, &SoloMessage{},
+		&Project{}, &SoloSession{}, &SoloMessage{}, &SoloBackup{},
 		&ChatPendingTurn{},
 	}
 }
