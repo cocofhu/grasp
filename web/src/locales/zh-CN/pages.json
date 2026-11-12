@@ -4212,7 +4212,6 @@
       "noMatchingArtifacts": "无匹配产物",
       "expandAll": "展开",
       "collapseAll": "折叠",
-      "feedbackGroup": "人工反馈台账",
       "pack": "打包",
       "packing": "打包中…",
       "packFailed": "打包失败，请重试",
@@ -4339,31 +4338,6 @@
           "github": "打开 PR",
           "gitlab": "打开 MR",
           "other": "打开链接"
-        }
-      },
-      "feedback": {
-        "total": "共 {n} 轮人工反馈",
-        "empty": "暂无人工反馈",
-        "iterRound": "第 {i} 次执行 · 第 {r} 轮",
-        "roundN": "第 {n} 轮",
-        "annotationCount": "标注 {n}",
-        "attachmentCount": "附件 {n}",
-        "attachments": "附件 ({n})",
-        "targets": "受影响产物",
-        "transcript": "本轮对话",
-        "priorRounds": "此前各轮",
-        "roleHuman": "人工",
-        "roleAgent": "Agent",
-        "interrupted": "本轮未落地",
-        "indexOnly": "该轮为平台自动采纳，无独立产物",
-        "loading": "加载中…",
-        "loadFailed": "无法加载 {name}",
-        "seeIndex": "全部轮次见 {name}",
-        "kind": {
-          "clarify": "澄清",
-          "review": "复审",
-          "gate": "门禁",
-          "preview": "预览问题单"
         }
       },
       "review": {

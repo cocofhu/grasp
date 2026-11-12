@@ -137,7 +137,7 @@ func (e *Engine) SaveRunArtifact(runID, name, content, ifMatch, actor string) (*
 	case name == "" || strings.ContainsAny(name, "/\\#") || strings.Contains(name, ".."):
 		return nil, &ArtifactEditError{Code: ArtifactEditCodeInvalid, Msg: "产物名非法"}
 	case mcp.IsFeedbackArtifactName(name):
-		return nil, &ArtifactEditError{Code: ArtifactEditCodeInvalid, Msg: fmt.Sprintf("产物 %q 为人工反馈台账，由平台自动记录，不可编辑", name)}
+		return nil, &ArtifactEditError{Code: ArtifactEditCodeNotFound, Msg: fmt.Sprintf("产物 %q 不存在", name)}
 	}
 	cur, ok := e.artifactMeta(runID, name)
 	if !ok {

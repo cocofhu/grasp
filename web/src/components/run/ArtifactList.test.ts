@@ -142,9 +142,7 @@ describe('ArtifactList', () => {
     wrapper.unmount()
   })
 
-  // A long review produces one product per round; listing them all inline would
-  // bury the deliverables the list exists to show.
-  it('folds the feedback ledger into one collapsed group', async () => {
+  it('lists formal products and omits feedback ledger files', async () => {
     const wrapper = mountList({
       artifacts: [
         artifact('research.json'),
@@ -153,24 +151,15 @@ describe('ArtifactList', () => {
         artifact('feedback.review.research.i1r2.json', 'f2'),
       ],
     })
-    const rowFor = (name: string) =>
-      wrapper.findAll('button').find((b) => b.text().includes(name))!
-    const ledgerFold = () => wrapper.get('[data-testid="artifact-feedback-group"] + div')
-
-    expect(rowFor('research.json').isVisible()).toBe(true)
-    expect(ledgerFold().classes()).toContain('ui-fold')
-    expect(ledgerFold().classes()).not.toContain('is-open')
-
-    const group = wrapper.get('[data-testid="artifact-feedback-group"]')
-    expect(group.text()).toContain('3')
-
-    await group.trigger('click')
-    expect(ledgerFold().classes()).toContain('is-open')
-    expect(ledgerFold().text()).toContain('feedback_index.json')
-    expect(ledgerFold().text()).toContain('feedback.review.research.i1r2.json')
-
-    await rowFor('feedback_index.json').trigger('click')
-    expect((wrapper.emitted('select')![0][0] as Artifact).name).toBe('feedback_index.json')
+    expect(wrapper.find('[data-testid="artifact-feedback-group"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('research.json')
+    expect(wrapper.text()).not.toContain('feedback_index.json')
+    expect(wrapper.text()).not.toContain('feedback.review.research')
+    expect(wrapper.text()).not.toContain('人工反馈台账')
+    const rows = wrapper.findAll('[data-testid="artifact-list-row"]')
+    expect(rows).toHaveLength(1)
+    await rows[0].trigger('click')
+    expect((wrapper.emitted('select')![0][0] as Artifact).name).toBe('research.json')
     wrapper.unmount()
   })
 

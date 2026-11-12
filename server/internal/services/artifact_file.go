@@ -171,6 +171,9 @@ func (s *ArtifactService) OpenFile(ctx context.Context, id string, revision int)
 	if err := s.db.WithContext(ctx).Table("artifacts").Where("id = ?", id).Take(&row).Error; err != nil {
 		return ArtifactFile{}, err
 	}
+	if !visibleArtifactName(row.Name) {
+		return ArtifactFile{}, gorm.ErrRecordNotFound
+	}
 	if row.Revision < 1 {
 		row.Revision = 1
 	}

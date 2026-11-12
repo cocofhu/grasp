@@ -115,59 +115,15 @@ func TestBuildAgentPromptPerType(t *testing.T) {
 	}
 }
 
-// stubHistory feeds the host the two run-scoped reads FeedbackBrief needs.
-type stubHistory struct {
-	run      models.Run
-	feedback []models.FeedbackEvent
-}
-
-func (s *stubHistory) States(string) []models.StateRun { return nil }
-func (s *stubHistory) Get(string) (models.Run, bool)   { return s.run, true }
-func (s *stubHistory) FeedbackEvents(string) []models.FeedbackEvent {
-	return s.feedback
-}
-
-// Stored feedback an agent is never told to read is the same as no feedback, so
-// the clause must appear when — and only when — the node has rounds in scope.
-func TestBuildAgentPromptInjectsFeedbackOnlyWhenInScope(t *testing.T) {
+func TestBuildAgentPromptOmitsFeedbackLedger(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
-	host.SetHistoryProvider(&stubHistory{
-		run: models.Run{ID: "r1", Graph: models.Graph{
-			Nodes: []models.Node{{ID: "impl", Type: "implement"}, {ID: "other", Type: "implement"}},
-		}},
-		feedback: []models.FeedbackEvent{{
-			RunID: "r1", Kind: models.FeedbackKindReview, NodeID: "impl", Iteration: 2, Round: 3,
-			Text:         "第 3 条证据不足," + strings.Repeat("请补上原始链接。", 40),
-			ArtifactName: "feedback.review.impl.i2r3.json",
-		}},
-	})
 	p := newACPProvider(host, Options{}).(*acpProvider)
-
 	got := p.buildAgentPrompt(NodeReq{
 		RunID: "r1", NodeID: "impl", NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "P"},
 	}, nil)
-	if !strings.Contains(got, "历史人工反馈") || !strings.Contains(got, "list_run_history") {
-		t.Fatalf("node with feedback must be told to read it:\n%s", got)
-	}
-	if !strings.Contains(got, "feedback.review.impl.i2r3.json") {
-		t.Fatalf("the round's product must be cited by name:\n%s", got)
-	}
-	// One line per round, not the body — a long push-back must not push the
-	// node's own instructions out of the context window.
-	if !strings.Contains(got, "第 3 条证据不足") {
-		t.Fatalf("the round needs a readable gist:\n%s", got)
-	}
-	if strings.Contains(got, strings.Repeat("请补上原始链接。", 40)) {
-		t.Fatalf("full opinion text must not be inlined into the prompt:\n%s", got)
-	}
-
-	clean := p.buildAgentPrompt(NodeReq{
-		RunID: "r1", NodeID: "other", NodeType: "agent", Caps: testImplementCaps,
-		Config: map[string]any{"prompt": "P"},
-	}, nil)
-	if strings.Contains(clean, "历史人工反馈") {
-		t.Fatalf("a node with no feedback in scope must not carry the clause:\n%s", clean)
+	if strings.Contains(got, "历史人工反馈") || strings.Contains(got, "feedback_index.json") || strings.Contains(got, "feedback.") {
+		t.Fatalf("startup prompt must not cite the feedback ledger:\n%s", got)
 	}
 }
 

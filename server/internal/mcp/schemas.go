@@ -86,8 +86,8 @@ func toolListed(caps *models.AgentCapabilities, tool string) bool {
 }
 
 // readAllowed reports whether the active Agent may read an artifact: declared
-// reads, its own writes, and the platform feedback ledger. Outside an Agent
-// node (no active node) and within a Solo sandbox's own namespace, reads are unrestricted.
+// reads and its own writes. Outside an Agent node (no active node) and within
+// a Solo sandbox's own namespace, reads are unrestricted.
 func (h *Host) readAllowed(runID, token, name string) bool {
 	name = strings.TrimSpace(name)
 	active := h.ActiveNode(runID)
@@ -95,7 +95,7 @@ func (h *Host) readAllowed(runID, token, name string) bool {
 		return true
 	}
 	caps := h.ActiveCaps(runID)
-	if caps.CanRead(name) || IsFeedbackArtifactName(name) || name == NodeOutcomeArtifactName {
+	if caps.CanRead(name) || name == NodeOutcomeArtifactName {
 		return true
 	}
 	return h.artifactWriterNode(runID, token, name) == active

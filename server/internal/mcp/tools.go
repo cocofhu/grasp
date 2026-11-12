@@ -721,30 +721,26 @@ func artifactTools() []map[string]any {
 			},
 		},
 		{
-			"name": "list_artifacts",
-			"description": "列出本次运行已有产物清单([{name,node,size}])。" +
-				"人工反馈产物(feedback.*)会折叠成 feedback_index.json 一条,先读索引再按需 read_artifact 取单轮详情。",
+			"name":        "list_artifacts",
+			"description": "列出本次运行已有产物清单([{name,node,size}])。",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 		{
 			"name": "list_run_history",
-			"description": "回看本次运行的执行历史概览(渐进式披露)。默认只返回与当前阶段相关的记录:本节点的历次执行、指向本节点的门禁人工反馈、" +
-				"本节点收到的每一轮人工反馈(澄清/复审/门禁/预览问题单),以及回退到本节点的记录;" +
-				"每条都标注了来自哪个节点、第几次执行、第几轮,便于对齐。**历次人工反馈务必遵守,不要在新一轮里回退已确认的意见(如之前要求的样式)。**" +
-				"每轮反馈都带有独立产物名,用 read_artifact 读取该轮的完整原文、标注与附件;执行细节则用 get_history_detail 下钻。",
+			"description": "回看本次运行的执行历史概览(渐进式披露)。默认只返回与当前阶段相关的记录:本节点的历次执行、指向本节点的门禁决定、人改产物,以及回退到本节点的记录。" +
+				"每条都标注了来自哪个节点、第几次执行。门禁决定与人改产物仍在历史里;执行细节用 get_history_detail 下钻。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"all":           map[string]any{"type": "boolean", "description": "可选:true 则返回整条时间线(忽略当前阶段作用域)"},
-					"only_feedback": map[string]any{"type": "boolean", "description": "可选:true 则只返回人工反馈(门禁决定、各轮打回/回答/问题单、人改产物),不含机器回退与普通执行"},
+					"only_feedback": map[string]any{"type": "boolean", "description": "可选:true 则只返回人工反馈(门禁决定、人改产物),不含机器回退与普通执行"},
 					"node_id":       strProp("可选:指定节点 id 作为作用域,默认当前执行节点"),
 				},
 			},
 		},
 		{
-			"name": "get_history_detail",
-			"description": "下钻查看某次执行/门禁的完整细节(状态、错误、输出摘要、关键输出、变量快照;门禁则含人工的动作与填写;" +
-				"并列出该次执行收到的各轮人工反馈及其产物名)。配合 list_run_history 使用。",
+			"name":        "get_history_detail",
+			"description": "下钻查看某次执行/门禁的完整细节(状态、错误、输出摘要、关键输出、变量快照;门禁则含人工的动作与填写)。配合 list_run_history 使用。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{

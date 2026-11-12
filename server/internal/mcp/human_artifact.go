@@ -32,12 +32,6 @@ func ValidateHumanArtifactContent(name, content string) (HumanArtifactNormalized
 	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
 		return HumanArtifactNormalized{}, errors.New("产物名非法")
 	}
-	// The feedback ledger is an append-only record of what humans actually said.
-	// Letting it be edited through the human-artifact path would make it
-	// unciteable evidence, so it is platform-written only.
-	if IsFeedbackArtifactName(name) {
-		return HumanArtifactNormalized{}, fmt.Errorf("产物 %q 为人工反馈台账，由平台自动记录，不可编辑", name)
-	}
 	kind := gatenode.InferArtifactKind(name)
 	out := HumanArtifactNormalized{Name: name, Kind: kind, Content: content, OutKey: gatenode.ArtifactToOutputKey[name]}
 

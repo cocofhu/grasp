@@ -9,16 +9,12 @@ import (
 
 // fakeHistory is an in-memory HistoryProvider for the run-history tools.
 type fakeHistory struct {
-	states   []models.StateRun
-	run      models.Run
-	feedback []models.FeedbackEvent
+	states []models.StateRun
+	run    models.Run
 }
 
 func (f *fakeHistory) States(runID string) []models.StateRun { return f.states }
 func (f *fakeHistory) Get(runID string) (models.Run, bool)   { return f.run, true }
-func (f *fakeHistory) FeedbackEvents(runID string) []models.FeedbackEvent {
-	return f.feedback
-}
 
 // twoGateRun builds a pipeline: input → design → gate1(revise→design) →
 // code → gate2(revise→code) → output, with one resolved feedback per gate.

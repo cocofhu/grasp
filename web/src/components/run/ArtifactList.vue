@@ -11,7 +11,7 @@ import {
 import { downloadZip } from '@/lib/agent/agentIO'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
-import { isFeedbackArtifactName } from './StructuredArtifactView.vue'
+import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import type { Artifact } from '@/lib/shared/types'
 import type { RunSection } from '@/lib/run/artifactGroups'
 
@@ -55,12 +55,12 @@ const artFilter = ref('')
 const collapsedRuns = ref<Set<string>>(new Set())
 const packingRuns = ref<Set<string>>(new Set())
 const scrollEl = ref<HTMLElement | null>(null)
-// A long review produces one product per round; left flat they would bury the
-// actual deliverables, so the ledger gets its own collapsed group.
-const feedbackOpen = ref(false)
 
-const feedbackItems = computed(() => props.artifacts.filter((a) => isFeedbackArtifactName(a.name)))
-const plainItems = computed(() => props.artifacts.filter((a) => !isFeedbackArtifactName(a.name)))
+function listedItems(items: Artifact[]): Artifact[] {
+  return items.filter((a) => !isFeedbackArtifactName(a.name))
+}
+
+const listedArtifacts = computed(() => listedItems(props.artifacts))
 
 const kindIcon: Record<string, string> = { markdown: 'doc', json: 'doc', yaml: 'doc', html: 'dashboard' }
 
@@ -103,16 +103,16 @@ function matchArt(a: Artifact, label: string): boolean {
 
 const headerCount = computed(() => {
   if (props.serverSearch && props.groupTotal != null) return props.groupTotal
-  return props.artifacts.length
+  return listedArtifacts.value.length
 })
 
 const visibleMatchCount = computed(() => {
   if (props.serverSearch) return props.matchTotal ?? props.artifacts.length
-  if (props.scope !== 'platform' || !props.runSections.length) return props.artifacts.length
+  if (props.scope !== 'platform' || !props.runSections.length) return listedArtifacts.value.length
   let count = 0
   for (const sec of props.runSections) {
     const label = runLabel(sec)
-    count += sec.items.filter((a) => matchArt(a, label)).length
+    count += listedItems(sec.items).filter((a) => matchArt(a, label)).length
   }
   return count
 })
@@ -125,12 +125,12 @@ const matchCountLabel = computed(() => {
     if (props.matchTotal >= props.groupTotal) return ''
     return t('pages.artifactList.matchCount', { n: props.matchTotal })
   }
-  if (visibleMatchCount.value === props.artifacts.length) return ''
+  if (visibleMatchCount.value === listedArtifacts.value.length) return ''
   return t('pages.artifactList.matchCount', { n: visibleMatchCount.value })
 })
 
 const platformListEmpty = computed(() => {
-  if (!props.artifacts.length) {
+  if (!listedArtifacts.value.length) {
     if (props.serverSearch && effectiveSearch()) {
       return t('pages.artifactList.noMatchingArtifacts')
     }
@@ -143,10 +143,11 @@ const platformListEmpty = computed(() => {
 })
 
 const visibleRunSections = computed(() => {
-  if (props.serverSearch || props.scope !== 'platform') return props.runSections
+  const sections = props.runSections.map((sec) => ({ ...sec, items: listedItems(sec.items) }))
+  if (props.serverSearch || props.scope !== 'platform') return sections
   const q = artFilter.value.trim()
-  if (!q) return props.runSections
-  return props.runSections.filter((sec) => {
+  if (!q) return sections
+  return sections.filter((sec) => {
     const label = runLabel(sec)
     return sec.items.some((a) => matchArt(a, label))
   })
@@ -176,12 +177,13 @@ function collapseAllRuns() {
 }
 
 function runCountLabel(sec: RunSection): string {
-  if (props.serverSearch) return String(sec.items.length)
+  const items = listedItems(sec.items)
+  if (props.serverSearch) return String(items.length)
   const label = runLabel(sec)
   const q = artFilter.value.trim()
-  if (!q) return String(sec.items.length)
-  const matched = sec.items.filter((a) => matchArt(a, label)).length
-  return `${matched}/${sec.items.length}`
+  if (!q) return String(items.length)
+  const matched = items.filter((a) => matchArt(a, label)).length
+  return `${matched}/${items.length}`
 }
 
 async function packRun(sec: RunSection, event: Event) {
@@ -276,7 +278,7 @@ watch(
       </label>
     </div>
     <div ref="scrollEl" class="scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-      <div v-if="platformListEmpty || (!artifacts.length && scope === 'run')" class="px-2 py-8 text-center text-[12px] text-txt3">
+      <div v-if="platformListEmpty || (!listedArtifacts.length && scope === 'run')" class="px-2 py-8 text-center text-[12px] text-txt3">
         {{ platformListEmpty || emptyText || defaultEmptyText() }}
       </div>
 
@@ -345,7 +347,7 @@ watch(
 
       <template v-else>
         <button
-          v-for="a in plainItems"
+          v-for="a in listedArtifacts"
           :key="a.id"
           type="button"
               class="artifact-file-row"
@@ -367,48 +369,6 @@ watch(
             </div>
           </div>
         </button>
-
-        <div v-if="feedbackItems.length" class="mb-1.5">
-          <button
-            type="button"
-            class="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px] font-normal text-txt3 transition hover:text-txt2"
-            data-testid="artifact-feedback-group"
-            :aria-expanded="feedbackOpen"
-            @click="feedbackOpen = !feedbackOpen"
-          >
-            <Icon :interactive="false"
-              name="chevron-down"
-              :size="12"
-              class="ui-fold-chevron shrink-0 text-txt3"
-              :class="feedbackOpen ? '' : '-rotate-90'"
-            />
-            <span class="min-w-0 flex-1 truncate">{{ t('pages.artifactList.feedbackGroup') }}</span>
-            <span class="shrink-0 text-[10px] tabular-nums text-txt3">{{ feedbackItems.length }}</span>
-          </button>
-          <div class="ui-fold mt-1" :class="{ 'is-open': feedbackOpen }">
-            <div class="ui-fold-inner">
-            <button
-              v-for="a in feedbackItems"
-              :key="a.id"
-              type="button"
-              class="artifact-file-row"
-              data-testid="artifact-list-row"
-              :data-artifact-id="a.id"
-              :aria-current="activeId === a.id ? 'true' : undefined"
-              :class="{ 'is-active': activeId === a.id }"
-              @click="emit('select', a)"
-            >
-              <div class="artifact-file-icon">
-                <Icon name="doc" :size="16" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="artifact-file-name">{{ a.name }}</div>
-                <div class="artifact-file-meta">{{ a.nodeId }} · {{ fmtTime(a.createdAt).slice(5) }}</div>
-              </div>
-            </button>
-            </div>
-          </div>
-        </div>
       </template>
     </div>
   </div>

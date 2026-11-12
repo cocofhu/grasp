@@ -1086,7 +1086,7 @@ func AllModels() []any {
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &ArtifactDelivery{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
-		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
+		&RunPreviewPort{}, &PreviewIssue{},
 		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
 		&AuditEvent{},
