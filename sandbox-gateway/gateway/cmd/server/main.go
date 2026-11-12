@@ -198,6 +198,7 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 			BootTimeout:   time.Duration(cfg.E2B.BootTimeoutSeconds) * time.Second,
 			Lease:         time.Duration(cfg.E2B.LeaseSeconds) * time.Second,
 			RenewInterval: time.Duration(cfg.E2B.RenewIntervalSeconds) * time.Second,
+			AutoPause:     cfg.E2B.AutoPause,
 		})
 	default:
 		return nil, fmt.Errorf("unknown driver %q", cfg.Driver)

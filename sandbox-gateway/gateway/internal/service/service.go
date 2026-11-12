@@ -499,10 +499,36 @@ func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData 
 
 // Status returns the live driver status of a sandbox.
 func (s *SandboxService) Status(ctx context.Context, id string) (driver.Status, error) {
-	if _, err := s.store.Get(context.Background(), id); err != nil {
+	sb, err := s.store.Get(context.Background(), id)
+	if err != nil {
 		return "", err
 	}
-	return s.drv.Status(ctx, id)
+	st, err := s.drv.Status(ctx, id)
+	if err != nil {
+		return st, err
+	}
+	s.syncObservedStatus(sb, st)
+	return st, nil
+}
+
+// syncObservedStatus records lifecycle changes the provider made on its own,
+// such as an expiry pause or kill, so List stops reporting a stale running.
+// Creating and pulling records belong to finalize and are left alone.
+func (s *SandboxService) syncObservedStatus(sb *models.Sandbox, st driver.Status) {
+	next, reason := "", ""
+	switch {
+	case st == driver.StatusStopped && sb.Status == models.StatusRunning:
+		next = models.StatusStopped
+	case st == driver.StatusRunning && sb.Status == models.StatusStopped:
+		next = models.StatusRunning
+	case st == driver.StatusNotFound && (sb.Status == models.StatusRunning || sb.Status == models.StatusStopped):
+		next, reason = models.StatusError, "resource not found"
+	default:
+		return
+	}
+	log.Info().Str("sandbox_id", sb.ID).Str("from", sb.Status).Str("to", next).Msg("sandbox status changed outside the gateway")
+	sb.Status, sb.Error = next, reason
+	s.persist(sb, "persist observed status")
 }
 
 // Logs returns combined PID1 stdout/stderr for a sandbox (non-follow, tailed).

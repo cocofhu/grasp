@@ -44,6 +44,7 @@ type Options struct {
 	BootTimeout   time.Duration
 	Lease         time.Duration
 	RenewInterval time.Duration
+	AutoPause     bool
 }
 
 type Driver struct {
@@ -416,7 +417,7 @@ func (d *Driver) Create(parent context.Context, spec driver.Spec) (result *drive
 	if err = d.save(&e.record); err != nil {
 		return nil, err
 	}
-	s, createErr := d.client.Create(ctx, CreateOptions{TemplateID: p.TemplateID, TimeoutSeconds: int(d.opts.Lease / time.Second), EnvVars: env, Metadata: metadata})
+	s, createErr := d.client.Create(ctx, CreateOptions{TemplateID: p.TemplateID, TimeoutSeconds: int(d.opts.Lease / time.Second), AutoPause: d.opts.AutoPause, EnvVars: env, Metadata: metadata})
 	if s != nil {
 		e.record.UncertainUntil = time.Time{}
 		e.record.Provider = *s
@@ -978,12 +979,53 @@ func (d *Driver) sweepEntry(ctx context.Context, e *entry) {
 			log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B deletion pending retry")
 		}
 	} else if e.record.Phase == "running" {
-		s, err := d.client.Get(bounded, e.record.Provider.ID)
-		if err == nil && d.owns(s, e.record.ID) && s.State != "paused" && s.State != "stopped" {
-			err = d.client.SetTimeout(bounded, s.ID, int(d.opts.Lease/time.Second))
-			if err != nil {
-				log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
-			}
-		}
+		d.renewLease(bounded, e)
 	}
+}
+
+func (d *Driver) renewLease(ctx context.Context, e *entry) {
+	s, err := d.client.Get(ctx, e.record.Provider.ID)
+	if errors.Is(err, ErrNotFound) {
+		return
+	}
+	if err != nil {
+		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal skipped: provider lookup failed")
+		return
+	}
+	if !d.owns(s, e.record.ID) {
+		log.Warn().Str("sandbox_id", e.record.ID).Msg("E2B lease renewal skipped: provider ownership mismatch")
+		return
+	}
+	if s.State == "paused" || s.State == "stopped" {
+		return
+	}
+	d.checkLeaseCap(e, s, time.Now())
+	if err = d.client.SetTimeout(ctx, s.ID, int(d.opts.Lease/time.Second)); err != nil {
+		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
+	}
+}
+
+// checkLeaseCap reports a provider that accepted earlier renewals but kept an
+// earlier expiry, which E2B does silently at the team's maximum sandbox
+// length. A renewed guest expires about one lease after the previous sweep;
+// the margin tolerates one skipped sweep before calling it a cap.
+func (d *Driver) checkLeaseCap(e *entry, s *Sandbox, now time.Time) {
+	if s.EndAt.IsZero() || !s.EndAt.Before(now.Add(d.opts.Lease-3*d.opts.RenewInterval)) {
+		return
+	}
+	if e.leaseCapAt.Equal(s.EndAt) {
+		return
+	}
+	e.leaseCapAt = s.EndAt
+	action := "kill"
+	if d.opts.AutoPause {
+		action = "pause"
+	}
+	log.Warn().
+		Str("sandbox_id", e.record.ID).
+		Time("provider_started_at", s.StartedAt).
+		Time("expires_at", s.EndAt).
+		Dur("lease", d.opts.Lease).
+		Str("on_expiry", action).
+		Msg("E2B lease renewal capped by the provider's maximum sandbox length")
 }

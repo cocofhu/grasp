@@ -197,3 +197,15 @@ func TestE2BConfigurationDoesNotChangeDockerOrKubernetesResources(t *testing.T) 
 		}
 	}
 }
+
+func TestE2BAutoPauseDefaultsOnAndEnvOverrides(t *testing.T) {
+	if !Default().E2B.AutoPause {
+		t.Fatal("E2B autoPause must default to on")
+	}
+	cfg := Default()
+	t.Setenv("SBGW_E2B_AUTO_PAUSE", "false")
+	applyEnv(cfg)
+	if cfg.E2B.AutoPause {
+		t.Fatal("SBGW_E2B_AUTO_PAUSE=false did not disable autoPause")
+	}
+}
