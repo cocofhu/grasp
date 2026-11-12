@@ -283,3 +283,68 @@ func TestSoloCloseDuringRecoveryDoesNotResurrectSession(t *testing.T) {
 		t.Fatalf("closed session resurrected: %+v %v", final, err)
 	}
 }
+
+func TestSoloRunningRowsReleasedOnlyWhenProviderConfirmsAbsence(t *testing.T) {
+	for _, status := range []string{"not_found", "stopped", "probe_failure", "missing_record"} {
+		t.Run(status, func(t *testing.T) {
+			db := newTestDB(t)
+			ds := &dockerState{}
+			svc := newSandboxService(t, db, ds)
+			NewSoloService(db, svc, svc.skills, NewProjectService(db))
+			row := models.Sandbox{Name: "resident", Purpose: SandboxPurposeSolo, Status: "running", ThreadID: "session"}
+			if err := db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&models.SoloSession{ID: "session", UserID: "alice", Status: models.SoloStatusRunning, SandboxID: row.ID}).Error; err != nil {
+				t.Fatal(err)
+			}
+			switch status {
+			case "probe_failure":
+				ds.setStatus(row.Name, "running")
+				ds.fg.FailStatus = true
+			case "missing_record":
+			default:
+				ds.setStatus(row.Name, status)
+			}
+			svc.ReleaseVanishedSoloSandboxes(context.Background())
+			ds.fg.FailStatus = false
+			_, err := svc.Get(row.ID)
+			if status == "not_found" {
+				if err == nil {
+					t.Fatal("confirmed absence kept the sandbox row")
+				}
+				var session models.SoloSession
+				db.First(&session, "id = ?", "session")
+				if session.Status != models.SoloStatusError || session.SandboxID != 0 {
+					t.Fatalf("session still bound to a vanished sandbox: %+v", session)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unconfirmed absence released the sandbox: %v", err)
+			}
+			if status == "stopped" && svc.mgr.Status(context.Background(), row.Name) != "exited" {
+				t.Fatal("paused sandbox was resumed in the background")
+			}
+		})
+	}
+}
+
+func TestSoloPausedSandboxResumesWhenTerminalOpens(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	svc := newSandboxService(t, db, ds)
+	NewSoloService(db, svc, svc.skills, NewProjectService(db))
+	row := models.Sandbox{Name: "paused-resident", Purpose: SandboxPurposeSolo, Profile: "agentA", Status: "running", ThreadID: "session", Token: "token"}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloSession{ID: "session", AgentName: "agentA", UserID: "alice", Status: models.SoloStatusRunning, SandboxID: row.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ds.setStatus(row.Name, "stopped")
+	_, _ = svc.OpenTerminal(context.Background(), row.ID)
+	if st := svc.mgr.Status(context.Background(), row.Name); st != "running" {
+		t.Fatalf("paused Solo sandbox not resumed on terminal open: %s", st)
+	}
+}

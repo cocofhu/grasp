@@ -179,6 +179,13 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 	}
 	if s.mgr != nil && row.Name != "" {
 		if gw := s.mgr.Gateway(); gw != nil && gw.UsesGatewayTransport(row.Name) {
+			addr, err := s.mgr.EndpointAddr(ctx, row.Name, "ide")
+			if err == nil {
+				return addr, nil
+			}
+			if rerr := s.resumePausedSolo(ctx, row); rerr != nil {
+				return "", rerr
+			}
 			return s.mgr.EndpointAddr(ctx, row.Name, "ide")
 		}
 		if addr, eerr := s.mgr.EndpointAddr(ctx, row.Name, "ide"); eerr == nil && strings.TrimSpace(addr) != "" {
@@ -260,10 +267,26 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 		}
 		return sandbox.OpenLocalTerminal(dir)
 	}
-	if s.mgr.Status(ctx, row.Name) != "running" {
-		return nil, fmt.Errorf("container 不在运行")
+	if err := s.resumePausedSolo(ctx, row); err != nil {
+		return nil, err
+	}
+	if status := s.mgr.Status(ctx, row.Name); status != "running" {
+		return nil, fmt.Errorf("container 不在运行(状态:%s)", status)
 	}
 	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, nil)
+}
+
+// resumePausedSolo resumes a Solo sandbox the provider paused on expiry, so
+// opening its terminal or IDE does not have to wait for the next chat turn.
+func (s *SandboxService) resumePausedSolo(ctx context.Context, row *models.Sandbox) error {
+	if row.Purpose != SandboxPurposeSolo || s.mgr == nil || row.Name == "" {
+		return nil
+	}
+	switch s.mgr.Status(ctx, row.Name) {
+	case "exited", "stopped":
+		return s.EnsureSoloRunning(ctx, row.ID)
+	}
+	return nil
 }
 
 // List returns all interactive sandboxes with live-derived status.

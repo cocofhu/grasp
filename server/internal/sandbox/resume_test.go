@@ -36,6 +36,20 @@ func TestProbeStatusPreservesObservationFailures(t *testing.T) {
 	}
 }
 
+func TestStatusReportsObservationFailureAsUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		want string
+	}{{503, "unknown"}, {404, "not_found"}} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(tc.code) }))
+		mgr := NewManager(NewGatewayClient(srv.URL, ""), ManagerOptions{})
+		if got := mgr.Status(context.Background(), "resident"); got != tc.want {
+			t.Errorf("HTTP %d: Status = %q, want %q", tc.code, got, tc.want)
+		}
+		srv.Close()
+	}
+}
+
 func TestResumePreparesExistingContainerAndRetainsItOnFailure(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ready", true: "failed readiness"}[fail], func(t *testing.T) {
