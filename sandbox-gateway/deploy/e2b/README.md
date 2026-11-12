@@ -1,6 +1,6 @@
 # E2B 独立部署与配置
 
-E2B 是 sandbox-gateway 的第三种显式驱动，适用于 E2B Cloud 或自托管 E2B/Embed。使用仓库根目录的 [compose.e2b.yaml](../../../compose.e2b.yaml) 启动；原有 Docker、Kubernetes、`start.sh` 和其他 Compose 配置不读取本目录，默认行为不变。
+E2B 是 sandbox-gateway 的一种独立驱动，适用于 E2B Cloud 或自托管 E2B/Embed。使用仓库根目录的 [compose.e2b.yaml](../../../compose.e2b.yaml) 启动，并分别准备本目录的 Grasp 与 E2B gateway 配置。Docker 和 Kubernetes 使用各自的独立后端示例，配置不能混用。
 
 当前完整真机验收针对自托管 E2B/Embed。Cloud 的控制面与私有流量协议有接口回归覆盖，尚未使用 Cloud 账号做端到端验收；接入 Cloud 时仍须执行下述相同的产品验收。
 
