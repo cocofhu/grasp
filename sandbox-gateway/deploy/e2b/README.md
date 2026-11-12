@@ -98,9 +98,9 @@ docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up
 
 gateway 恢复 guest、连接凭据和本地端口，Grasp 继续使用原有冷会话机制。`per_node` 模式下，server 重启后，等待人工输入的 workflow 可以仍为 `waiting_human`，原 guest 与预览注册也可以保留，但进程内的 Agent 热会话不会因此自动重连；下一次标准回复可能按原有冷恢复路径新建 guest。不能据此宣称 Agent 热会话无缝恢复或原工作区自动继承，跨重启的会话与工作区行为须单独验收。
 
-gateway 的显式 stop/start 对应 E2B 全内存 pause/resume；自动暂停和自动恢复未启用。暂停期间保留原有 loopback 端口，关闭现有转发连接并立即拒绝新连接；恢复成功后重新启用同一批端口。gateway 重启也会先预留所有运行中和暂停 guest 的持久化端口，再请求 provider，防止自身 HTTP 连接抢占端口。运行中的 guest 由 gateway 定期续租，gateway 长时间不可用时仍受 provider lease 上限约束。**Grasp 当前“停止/删除沙箱”继续走 Destroy，不因选择 E2B 自动变成暂停**；现有 reconcile/TTL 语义也未改写。
+gateway 的显式 stop/start 对应 E2B 全内存 pause/resume。新建 guest 默认开启自动暂停（`e2b.autoPause` / `SBGW_E2B_AUTO_PAUSE`，默认 `true`）：到达租约或 provider 最长运行时长时，E2B 做全内存快照并暂停，而不是销毁；关闭后到期即销毁且不留快照。该设置在创建时写入 provider，已存在的 guest 保持创建时的行为。自动恢复未启用，暂停的 guest 由 Grasp 在下次使用时显式恢复。gateway 观察到 provider 侧自行暂停、恢复或销毁时，会同步控制面记录，列表不再显示陈旧的 running。暂停期间保留原有 loopback 端口，关闭现有转发连接并立即拒绝新连接；恢复成功后重新启用同一批端口。gateway 重启也会先预留所有运行中和暂停 guest 的持久化端口，再请求 provider，防止自身 HTTP 连接抢占端口。运行中的 guest 由 gateway 定期续租，gateway 长时间不可用时仍受 provider lease 上限约束。**Grasp 当前“停止/删除沙箱”继续走 Destroy，不因选择 E2B 自动变成暂停**；现有 reconcile/TTL 语义也未改写。
 
-续租只延长 provider 允许范围内的到期时间，不能突破 provider 对单次 guest 生命周期的硬上限；这与 Grasp 的空闲回收期限是两项独立策略。运维必须将目标 provider 的最长运行时长配置为足以覆盖预期的长任务和 Solo 会话，并在目标部署核对续租后实际返回的到期时间。续租请求成功不代表到期时间一定继续延后，本模式不承诺 guest 无限期运行。
+续租只延长 provider 允许范围内的到期时间，不能突破 provider 对单次 guest 生命周期的硬上限；这与 Grasp 的空闲回收期限是两项独立策略。运维必须将目标 provider 的最长运行时长配置为足以覆盖预期的长任务和 Solo 会话，并在目标部署核对续租后实际返回的到期时间。续租请求成功不代表到期时间一定继续延后，本模式不承诺 guest 无限期运行。E2B 会把续租静默截断在 `startedAt + max_length_hours`（自建默认 1 小时）；gateway 发现到期时间未随续租延后时记录 `E2B lease renewal capped by the provider's maximum sandbox length` 告警，包含实际 `expires_at`。自建 E2B 应调高团队的 `max_length_hours`（`project_limits`、`default_limits`，旧版本为 `tiers`），新值只对之后创建或恢复的 guest 生效。
 
 pause/resume 仍需在目标 provider 版本上单独验收。gateway 对恢复阶段的 provider 5xx、临时控制面传输失败和 private relay 发布竞态，会在同一个 provider guest 上做有界重试；启动恢复与显式 start 共用这条路径。仍必须在目标部署检查应用、SSH、IDE、CDP 和 Docker，而不能只看 “provider running”。失败应保留安全状态证据并处理本部署拥有的 guest，不自动降级成新建空白 guest。
 
