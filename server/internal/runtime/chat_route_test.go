@@ -85,7 +85,7 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 
 func TestVisitToolSwitchPreservesSandboxAndSkipsNodeInitialization(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	req := h.req("n1", models.SandboxModeShared)
+	req := h.req("n1")
 	req.KeepAliveForReview = true
 	h.run(t, req)
 	h.p.mu.Lock()

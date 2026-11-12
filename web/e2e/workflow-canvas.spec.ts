@@ -238,39 +238,6 @@ test('edge condition edit saves manually and survives reload; node drag snaps to
   await expect(page.getByTestId('edge-when-input')).toHaveValue('需求已确认')
 })
 
-test('shared sandbox is a single workflow switch and persists both states', async ({ page }) => {
-  const store = freshStore()
-  const variables = [{ name: 'branch', type: 'string', value: 'main' }]
-  store.wf.defaults = { inheritWorkspace: false, variables }
-  await openEditor(page, store)
-  await startFromTemplate(page)
-  await page.getByTestId('editor-defaults').click()
-  const dialog = page.getByRole('dialog')
-  const toggle = dialog.getByRole('switch', { name: '共享沙箱', exact: true })
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect.poll(() => store.wf.defaults).toEqual({
-    inheritWorkspace: false, variables, sandbox: { mode: 'shared' },
-  })
-  await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/shared-sandbox-on.png` })
-
-  await page.reload()
-  await page.getByTestId('editor-defaults').click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await toggle.focus()
-  await page.keyboard.press('Space')
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect.poll(() => store.wf.defaults).toEqual({
-    inheritWorkspace: false, variables, sandbox: { mode: 'per_node' },
-  })
-  await page.reload()
-  await page.getByTestId('editor-defaults').click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-})
-
 for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
   test(`workflow settings use consistent controls and searchable choices at ${width}px ${theme}`, async ({ page }) => {
     const store = freshStore()

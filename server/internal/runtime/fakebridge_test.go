@@ -413,6 +413,9 @@ func newTestProviderBackend(t *testing.T, host *mcp.Host, opts Options, mgr sand
 	opts = ensureTestProfiles(t, opts)
 	p := newBaseACPProvider(host, opts, backend).(*acpProvider)
 	p.mgr = mgr
+	// Without a shared table runs take the per-node path that shared runs fall
+	// back to; sharedHarness installs one to cover the shared path.
+	p.shared = nil
 	reg := &countingRegistry{}
 	p.registry = reg
 	return p, reg

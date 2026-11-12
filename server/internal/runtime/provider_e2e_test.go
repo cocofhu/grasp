@@ -353,6 +353,45 @@ func TestReactReplyRehydratesAfterSessionLoss(t *testing.T) {
 	}
 }
 
+func TestReactReplyRehydrateReusesSharedSandbox(t *testing.T) {
+	p, _, store, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(turn int) turnAction {
+			switch turn {
+			case 0:
+				return turnAction{narration: "need info", questions: []models.ReactQuestion{{ID: "q1", Prompt: "?", Options: []models.ReactOption{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}}}
+			case 1:
+				return turnAction{narration: "context restored"}
+			}
+			return turnAction{narration: "clarified", produces: clarified()}
+		}
+	})
+	p.shared = newSharedSandboxes()
+	if open := clarifyFirstTurn(p, req); len(open.Questions) == 0 {
+		t.Fatal("expected opening question")
+	}
+	p.mu.Lock()
+	sess := p.sessions[reactKey(req)]
+	p.mu.Unlock()
+	if sess == nil {
+		t.Fatal("expected a live react session after open")
+	}
+	sess.acp.Close()
+
+	hist := []models.ReactMessage{{Role: "agent", Text: "need info"}, {Role: "human", Text: "answer"}}
+	if reply := p.ReactReply(context.Background(), req, hist, "answer", nil, true); !reply.Done {
+		t.Fatalf("rehydrated reply should finish, got %+v", reply)
+	}
+	if _, ok := store.Get("run-r", mcp.ClarifiedRequirementArtifactName); !ok {
+		t.Error("clarified requirement not written after rehydrate")
+	}
+	if mgr.createCount() != 1 {
+		t.Errorf("create count = %d, want 1 (rehydrate reconnects to the shared sandbox)", mgr.createCount())
+	}
+	if prime := mgr.bridge(0).promptAt(1); !strings.Contains(prime, "会话恢复") {
+		t.Errorf("rehydrate prime prompt missing recovery marker: %q", prime)
+	}
+}
+
 func TestReactReplyRehydrateFailureNotDone(t *testing.T) {
 	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
 		return func(turn int) turnAction {

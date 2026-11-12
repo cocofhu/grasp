@@ -3,7 +3,6 @@ package runtime
 import (
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -67,11 +66,11 @@ func TestGitCredentialHostEditReprimesSharedWorkflowAndUpdatesAPIOrigin(t *testi
 	h.p.opts.GitCredential = func(string) (GitCredentialValue, bool) {
 		return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "same-token", Host: host}, true
 	}
-	req := h.req("first", models.SandboxModeShared)
+	req := h.req("first")
 	req.Config["agent_profile"] = "host-agent"
 	h.run(t, req)
 	host = "http://git.internal:8080"
-	req = h.req("second", models.SandboxModeShared)
+	req = h.req("second")
 	req.Config["agent_profile"] = "host-agent"
 	req.Vars = map[string]any{"repos": `[{"name":"repo","url":"http://git.internal:8080/team/repo.git"}]`}
 	h.run(t, req)

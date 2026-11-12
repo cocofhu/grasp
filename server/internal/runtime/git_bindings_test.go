@@ -146,10 +146,10 @@ func TestGitBindingsSharedWorkflowReprimesAllSelectedAndClearsPreviousAgent(t *t
 	write("agent-a", gitSelection("gh", "gl"))
 	write("agent-b", gitSelection("gh2"))
 	write("agent-none", gitSelection())
-	req := h.req("first", models.SandboxModeShared)
+	req := h.req("first")
 	req.Config["agent_profile"] = "agent-a"
 	h.run(t, req)
-	req = h.req("second", models.SandboxModeShared)
+	req = h.req("second")
 	req.Config["agent_profile"] = "agent-b"
 	h.run(t, req)
 	if h.mgr.createCount() != 1 || h.mgr.reprimeCount() != 1 {
@@ -158,7 +158,7 @@ func TestGitBindingsSharedWorkflowReprimesAllSelectedAndClearsPreviousAgent(t *t
 	if got := h.mgr.reprimes[0]; !got.GitBindingsConfigured || len(got.GitCredentials) != 1 || got.GitCredentials[0].ID != "gh2" || got.Env["GITHUB_TOKEN"] != "" {
 		t.Fatalf("Agent B authorization leaked: %+v", got.GitCredentials)
 	}
-	req = h.req("third", models.SandboxModeShared)
+	req = h.req("third")
 	req.Config["agent_profile"] = "agent-none"
 	h.run(t, req)
 	if got := h.mgr.reprimes[1]; !got.GitBindingsConfigured || len(got.GitCredentials) != 0 {

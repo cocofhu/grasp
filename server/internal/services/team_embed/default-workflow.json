@@ -5,10 +5,7 @@
   "needsRepo": true,
   "defaults": {
     "inheritWorkspace": true,
-    "variables": [],
-    "sandbox": {
-      "mode": "shared"
-    }
+    "variables": []
   },
   "graph": {
     "variables": [

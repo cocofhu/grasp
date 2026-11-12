@@ -4629,8 +4629,6 @@
     },
     "workspaceDefaults": {
       "title": "Workflow defaults",
-      "sharedSandbox": "Shared sandbox",
-      "sharedSandboxHint": "Nodes in the same run share a sandbox and workspace when enabled.",
       "variablesHint": "Variables on the canvas take precedence.",
       "notifyTitle": "Run notifications",
       "notifyHint": "Enable to customize; disable to inherit workspace settings.",

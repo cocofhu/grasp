@@ -319,32 +319,17 @@ describe('WorkflowEditorView', () => {
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(true)
   })
 
-  it('starts a new workflow with the shared sandbox on and saves it', async () => {
+  it('starts a new workflow with default settings and saves them', async () => {
     const { wrapper } = await mountEditor('/workflows/new/edit')
     expect(apiMocks.getWorkflow).not.toHaveBeenCalled()
-    expect(status(wrapper)).not.toBe('dirty')
-    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('true')
     expect(status(wrapper)).not.toBe('dirty')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }))
     await flushPromises()
     expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
-    expect(apiMocks.saveWorkflow.mock.calls[0]![0]).toMatchObject({ defaults: { inheritWorkspace: true, variables: [], sandbox: { mode: 'shared' } } })
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults).toEqual({ inheritWorkspace: true, variables: [] })
   })
 
-  it('saves per_node when the shared sandbox is turned off on a new workflow', async () => {
-    const { wrapper } = await mountEditor('/workflows/new/edit')
-    await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-testid="workflow-shared-sandbox-row"]').get('h3').trigger('click')
-    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('false')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }))
-    await flushPromises()
-    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults.sandbox).toEqual({ mode: 'per_node' })
-  })
-
-  it('does not inject sandbox defaults into an existing workflow', async () => {
+  it('does not inject defaults into an existing workflow', async () => {
     const { wrapper } = await mountEditor()
     expect(status(wrapper)).toBe('saved')
     await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
@@ -358,7 +343,7 @@ describe('WorkflowEditorView', () => {
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="workflow-shared-sandbox-row"]').get('h3').trigger('click')
+    await wrapper.get('[data-testid="workflow-inherit-row"]').get('span').trigger('click')
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="defaults-close"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(false)
@@ -366,7 +351,7 @@ describe('WorkflowEditorView', () => {
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="workflow-shared-sandbox-switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="workflow-inherit-row"] [role="switch"]').attributes('aria-checked')).toBe('false')
   })
 
   it('still updates the defaults footer when reduced motion is on', async () => {

@@ -1,7 +1,7 @@
 package services
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -47,40 +47,18 @@ func TestRunNodeSandboxRowSharedFallback(t *testing.T) {
 	}
 }
 
-func TestSaveRejectsUnknownSandboxMode(t *testing.T) {
+func TestSaveAcceptsLegacySandboxModeDefaults(t *testing.T) {
 	s := NewWorkflowService(newTestDB(t))
-	wf := &models.WorkflowDef{ID: "wf-sbx", Name: "S", Graph: validGraph(),
-		Defaults: &models.WorkflowDefaults{Sandbox: &models.WorkflowSandboxPolicy{Mode: "pooled"}}}
-	if err := s.Save(wf); err == nil || !strings.Contains(err.Error(), "sandbox mode") {
-		t.Fatalf("err = %v", err)
+	var defaults models.WorkflowDefaults
+	if err := json.Unmarshal([]byte(`{"inheritWorkspace":true,"variables":[],"sandbox":{"mode":"per_node"}}`), &defaults); err != nil {
+		t.Fatal(err)
 	}
-	wf.Defaults.Sandbox.Mode = models.SandboxModeShared
+	wf := &models.WorkflowDef{ID: "wf-legacy", Name: "Legacy", Graph: validGraph(), Defaults: &defaults}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := s.Get("wf-sbx")
-	if got.Defaults == nil || got.Defaults.Sandbox == nil || got.Defaults.Sandbox.Mode != models.SandboxModeShared {
+	got, ok := s.Get(wf.ID)
+	if !ok || got.Defaults == nil || !got.Defaults.InheritWorkspace {
 		t.Fatalf("defaults = %+v", got.Defaults)
-	}
-}
-
-func TestWorkflowSandboxModeTogglePersistsWithoutChangingGraph(t *testing.T) {
-	s := NewWorkflowService(newTestDB(t))
-	wf := &models.WorkflowDef{ID: "wf-toggle", Name: "Toggle", Graph: validGraph(),
-		Defaults: &models.WorkflowDefaults{InheritWorkspace: true,
-			Variables: []models.WorkspaceVariable{{Name: "REGION", Value: "east"}},
-			Sandbox:   &models.WorkflowSandboxPolicy{Mode: models.SandboxModeShared}}}
-	for _, mode := range []string{models.SandboxModeShared, models.SandboxModePerNode, models.SandboxModeShared} {
-		wf.Defaults.Sandbox.Mode = mode
-		if err := s.Save(wf); err != nil {
-			t.Fatal(err)
-		}
-		got, ok := s.Get(wf.ID)
-		if !ok || got.Defaults == nil || got.Defaults.Sandbox == nil || got.Defaults.Sandbox.Mode != mode {
-			t.Fatalf("mode %q did not survive save/reload: %+v", mode, got.Defaults)
-		}
-		if got.Version != 1 || !GraphsEqual(got.Graph, wf.Graph) || !got.Defaults.InheritWorkspace || len(got.Defaults.Variables) != 1 || got.Defaults.Variables[0].Value != "east" {
-			t.Fatalf("mode %q unexpectedly changed workflow: %+v", mode, got)
-		}
 	}
 }

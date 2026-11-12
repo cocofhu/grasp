@@ -34,20 +34,12 @@ function ensureDefaults(): WorkflowDefaults {
   return config
 }
 function setInheritance(value: boolean) { ensureDefaults().inheritWorkspace = value }
-function setSharedSandbox(value: boolean) {
-  const config = ensureDefaults()
-  config.sandbox = { ...config.sandbox, mode: value ? 'shared' : 'per_node' }
-}
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 function isSwitchEvent(event: MouseEvent) {
   const target = event.target
   return target instanceof Element && !!target.closest('[role="switch"]')
-}
-function toggleShared(event: MouseEvent) {
-  if (isSwitchEvent(event)) return
-  setSharedSandbox(defaults.value?.sandbox?.mode !== 'shared')
 }
 function toggleInherit(event: MouseEvent) {
   if (isSwitchEvent(event)) return
@@ -196,22 +188,6 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="space-y-3 text-sm" data-testid="workflow-defaults-panel">
-    <section class="defaults-section" data-testid="workflow-sandbox-settings">
-      <div class="defaults-heading defaults-toggle" data-testid="workflow-shared-sandbox-row" @click="toggleShared">
-        <span class="defaults-icon"><Icon name="server" :size="18" /></span>
-        <div class="min-w-0 flex-1">
-          <h3 class="font-semibold text-txt">{{ t('pages.workspaceDefaults.sharedSandbox') }}</h3>
-          <p class="defaults-hint">{{ t('pages.workspaceDefaults.sharedSandboxHint') }}</p>
-        </div>
-        <AppSwitch
-          :model-value="defaults?.sandbox?.mode === 'shared'"
-          :aria-label="t('pages.workspaceDefaults.sharedSandbox')"
-          data-testid="workflow-shared-sandbox-switch"
-          @update:model-value="setSharedSandbox"
-        />
-      </div>
-    </section>
-
     <section class="defaults-section" data-testid="workflow-variables-settings">
       <div class="defaults-heading">
         <span class="defaults-icon"><Icon name="variable" :size="18" /></span>
