@@ -513,7 +513,8 @@ func (s *SandboxService) Status(ctx context.Context, id string) (driver.Status, 
 
 // syncObservedStatus records lifecycle changes the provider made on its own,
 // such as an expiry pause or kill, so List stops reporting a stale running.
-// Creating and pulling records belong to finalize and are left alone.
+// Creating and pulling records belong to finalize and are left alone, and the
+// update applies only if no lifecycle call changed or deleted the record since.
 func (s *SandboxService) syncObservedStatus(sb *models.Sandbox, st driver.Status) {
 	next, reason := "", ""
 	switch {
@@ -526,9 +527,14 @@ func (s *SandboxService) syncObservedStatus(sb *models.Sandbox, st driver.Status
 	default:
 		return
 	}
-	log.Info().Str("sandbox_id", sb.ID).Str("from", sb.Status).Str("to", next).Msg("sandbox status changed outside the gateway")
-	sb.Status, sb.Error = next, reason
-	s.persist(sb, "persist observed status")
+	changed, err := s.store.TransitionStatus(context.Background(), sb.ID, sb.Status, next, reason)
+	if err != nil {
+		log.Warn().Err(err).Str("sandbox_id", sb.ID).Msg("persist observed status")
+		return
+	}
+	if changed {
+		log.Info().Str("sandbox_id", sb.ID).Str("from", sb.Status).Str("to", next).Msg("sandbox status changed outside the gateway")
+	}
 }
 
 // Logs returns combined PID1 stdout/stderr for a sandbox (non-follow, tailed).

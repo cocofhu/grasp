@@ -106,3 +106,32 @@ func TestListLabelFilter(t *testing.T) {
 		t.Fatalf("want empty, got %v err=%v", got, err)
 	}
 }
+
+func TestTransitionStatusYieldsToConcurrentWrites(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	sb := &models.Sandbox{ID: "a1", Name: "n1", Status: models.StatusRunning, Image: "img"}
+	sb.SetEndpoints(map[int]string{80: "new:80"})
+	if err := st.Create(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := st.TransitionStatus(ctx, "a1", models.StatusStopped, models.StatusRunning, ""); err != nil || changed {
+		t.Fatalf("stale from-status applied: %v %v", changed, err)
+	}
+	if changed, err := st.TransitionStatus(ctx, "a1", models.StatusRunning, models.StatusError, "gone"); err != nil || !changed {
+		t.Fatalf("matching transition not applied: %v %v", changed, err)
+	}
+	got, err := st.Get(ctx, "a1")
+	if err != nil || got.Status != models.StatusError || got.Error != "gone" || got.Endpoints()[80] != "new:80" {
+		t.Fatalf("transition changed more than status: %+v %v", got, err)
+	}
+	if err := st.Delete(ctx, "a1"); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := st.TransitionStatus(ctx, "a1", models.StatusError, models.StatusRunning, ""); err != nil || changed {
+		t.Fatalf("transition touched a deleted record: %v %v", changed, err)
+	}
+	if _, err := st.Get(ctx, "a1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted record resurrected: %v", err)
+	}
+}
