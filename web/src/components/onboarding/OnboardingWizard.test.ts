@@ -70,6 +70,14 @@ const modelRows = [
     state: 'active',
     revision: 1,
   },
+  {
+    id: 'model-off',
+    name: 'Retired model',
+    backend: 'cursor',
+    binding: { kind: 'connection', connectionId: 'conn-off', modelId: 'old' },
+    state: 'disabled',
+    revision: 1,
+  },
 ]
 async function mountWizard(props: Record<string, unknown> = {}) {
   const router = createRouter({
@@ -450,6 +458,42 @@ describe('OnboardingWizard', () => {
       { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
+    w.unmount()
+  })
+  it('drops a per-agent model group after choosing the wizard default again', async () => {
+    const w = await mountWizard()
+    await toTeam(w)
+    const trigger = () => w.get('[data-testid="onboarding-team-model-implement"] [data-test="app-select-trigger"]')
+    const implement = () => (w.vm as { draft: { team: { templateId: string; modelConfigurationId: string }[] } }).draft.team.find((member) => member.templateId === 'implement')
+    expect(trigger().text()).toContain('Main model')
+    await trigger().trigger('click')
+    expect(w.findAll('[role="option"]')).toHaveLength(2)
+    expect(w.find('[data-test="app-select-option-model-off"]').exists()).toBe(false)
+    expect(w.get('[data-test="app-select-option-model-main"]').attributes('aria-selected')).toBe('true')
+    await w.get('[data-test="app-select-option-model-review"]').trigger('click')
+    expect(implement()?.modelConfigurationId).toBe('model-review')
+    expect(trigger().text()).toContain('Review model')
+    await trigger().trigger('click')
+    await w.get('[data-test="app-select-option-model-main"]').trigger('click')
+    expect(implement()?.modelConfigurationId).toBe('')
+    expect(trigger().text()).toContain('Main model')
+    for (let step = 0; step < 3; step++) {
+      await w.get('[data-testid="onboarding-prev"]').trigger('click')
+      await flushPromises()
+    }
+    expect(activeStep(w)).toBe('onboarding-rail-model')
+    await chooseModel(w, 'model-review')
+    await next(w)
+    await next(w)
+    await next(w)
+    expect(activeStep(w)).toBe('onboarding-rail-team')
+    expect(implement()?.modelConfigurationId).toBe('')
+    expect(trigger().text()).toContain('Review model')
+    await next(w)
+    await next(w)
+    const agents = mocks.bootstrapOnboarding.mock.calls[0][0].agents as { templateId: string; modelConfigurationId?: string }[]
+    expect(agents.find((agent) => agent.templateId === 'implement')).not.toHaveProperty('modelConfigurationId')
+    expect(mocks.bootstrapOnboarding.mock.calls[0][0].modelConfigurationId).toBe('model-review')
     w.unmount()
   })
   it('creates an empty Solo separately from the four workflow roles', async () => {
