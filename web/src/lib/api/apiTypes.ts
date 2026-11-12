@@ -681,7 +681,7 @@ export interface WorkflowCatalogItem {
   needsRepo?: boolean
 }
 
-/** A Git repository registered for Solo sessions. Access and environment live on the Agent. */
+/** A registered Git repository with its own access credential and commit author. */
 export interface Project {
   id: string
   name: string

@@ -43,7 +43,7 @@ func modelBindingFingerprint(agent Agent, env map[string]string) string {
 }
 
 func gitBindingsFingerprint(credentials []sandbox.GitCredential) string {
-	return sandbox.SpecFingerprint(sandbox.Spec{GitBindingsConfigured: true, GitCredentials: credentials})
+	return sandbox.SpecFingerprint(sandbox.Spec{GitCredentials: credentials})
 }
 
 // repoGit is the clone list of repos with each repository's current commit

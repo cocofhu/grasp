@@ -25,7 +25,7 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		if err != nil {
 			return nil, err
 		}
-		plan := m.buildMultiInject("", "", "", "", false, nil, data)
+		plan := m.buildMultiInject("", "", nil, data)
 		if plan.runtimeURL == "" {
 			return nil, fmt.Errorf("resuming a sandbox requires the runtime inject store and server URL")
 		}

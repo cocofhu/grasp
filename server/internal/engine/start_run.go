@@ -411,7 +411,6 @@ func varValueToTitleString(val any, typ string) string {
 	return s
 }
 
-
 func isBlank(v any) bool {
 	return models.IsBlankVar(v)
 }

@@ -25,12 +25,12 @@ var (
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
 type TeamBootstrapRequest struct {
-	Prefix                string              `json:"prefix"`
-	PMName                string              `json:"pmName"`
-	Background            string              `json:"background"`
-	ModelConfigurationID  string            `json:"modelConfigurationId"`
-	ModelConfigurationIDs []string          `json:"modelConfigurationIds,omitempty"`
-	Region                string            `json:"region,omitempty"`
+	Prefix                string   `json:"prefix"`
+	PMName                string   `json:"pmName"`
+	Background            string   `json:"background"`
+	ModelConfigurationID  string   `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string `json:"modelConfigurationIds,omitempty"`
+	Region                string   `json:"region,omitempty"`
 	// RepoID is an optional repository the PM's sandbox clones.
 	RepoID string            `json:"repoId,omitempty"`
 	MCP    []MCPServer       `json:"mcp,omitempty"`

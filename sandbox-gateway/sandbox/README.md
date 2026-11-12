@@ -75,7 +75,7 @@ OpenCode 官方将 `--refresh` 用于更新缓存目录，并建议用 `opencode
 - `env`（必需）：下一个节点的 Grasp env，每行一个 `NAME=base64(值)`。
 - `unset`（可选）：上一个节点的 env 名，每行一个。上次 reprime 记在 `/run/grasp-runtime/reprime-keys` 里的名字也会一并清掉。
 - `config/`（可选）：下一个节点的配置根内容，解压到新的 `CONFIG_ROOT`。
-- `ssh/`（可选）：和 `SANDBOX_INJECT` 里 SSH staging 包的布局相同（`id_rsa`、`known_hosts`、`repos/…`）。
+- `ssh/`（可选）：和 `SANDBOX_INJECT` 里 Git catalog 包的布局相同（`git/manifest.json`、`git/<序号>.secret`、`git/<序号>.known_hosts`）。空 catalog 也会下发，用来清掉上一个节点的凭据。
 
 脚本先清掉上一个节点留下的配置根、`~/.git-credentials`、Grasp 写入的 SSH 私钥和仓库凭据、gh/glab 登录，以及 git 的 credential 配置和用户信息。
 然后整体重写 `/run/grasp-runtime/env`，用 `startup.sh` 里的同名函数重新配置凭据（函数在运行时从 `startup.sh` 中抽取，不另存一份），
@@ -195,8 +195,8 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `GITHUB_URL` | 空 | 自建 GitHub 的 `scheme+host`，用于匹配 repo host |
 | `GITLAB_TOKEN` | 空 | GitLab token；已配置则自动 `glab auth login` |
 | `GITLAB_URL` | 空 | GitLab 实例地址（自建建议显式配置；空则默认 `gitlab.com`。不会把 GitHub / `GITHUB_URL` host 当成 GitLab） |
-| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用）。经平台运行时 SSH 只来自工作区凭据，由平台直接写入 `~/.ssh`，不走 env |
-| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底）。经平台运行时同样只来自工作区凭据 |
+| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用），仅单独运行镜像时使用。经平台运行时 Git 凭据只来自仓库绑定的 Git catalog，不走 env |
+| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底），仅单独运行镜像时使用 |
 | `GIT_USER_NAME` | `sandbox` | 全局 `git config user.name` |
 | `GIT_USER_EMAIL` | `sandbox@localhost` | 全局 `git config user.email` |
 

@@ -18,8 +18,8 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 |---|---|---|
 | 编码工具厂商授权 | Cursor、Claude Code、CodeBuddy、Trae、OpenCode（含 OpenCode Go）、DeepSeek Harness 的官方 Key/Token；Codex 平台授权使用登录文件 | 保存为 `tool_auth`，只注入具名模型配置选中的授权；Codex 登录文件写入 `{configRoot}/auth.json` |
 | 模型 API 账号 | 通用模型服务的 Key、Base URL、协议与原始模型 ID | 保存为 `model_api`；通过具名模型配置选择兼容编码工具和连接，不与厂商授权混用 |
-| Git HTTPS | GitHub/GitLab Token、GitLab URL | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
-| Git SSH | 私钥、known_hosts | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
+| Git HTTPS | GitHub/GitLab Token、GitLab URL | 仓库选作访问凭据后，随 Git catalog 注入沙箱，只对该仓库地址生效；不作为普通 env |
+| Git SSH | 私钥、known_hosts | 同上，随 Git catalog 注入，只对该仓库地址生效 |
 | MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
 | 渠道、外部 MCP、工作流 Key | 在工作区凭据页汇总查看 | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
 

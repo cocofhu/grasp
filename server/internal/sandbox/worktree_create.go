@@ -257,46 +257,16 @@ func worktreeSessionStop(stop, cleanupGit func()) func() {
 	}
 }
 
-// authFromSpec copies the credentials this launch already resolved. An explicit
-// catalog does not fall back to host tokens or the legacy SSH key. A
-// repository-scoped catalog row outranks a broader one. Solo, workflow runs,
-// conversation tests, and the assistant all arrive through Create with those
-// fields set.
+// authFromSpec copies the catalog this launch already resolved. A
+// repository-scoped row outranks a broader one, and a miss fails closed.
 func authFromSpec(spec Spec) execution.Auth {
-	auth := execution.Auth{Configured: spec.GitBindingsConfigured}
+	var auth execution.Auth
 	for _, cred := range spec.GitCredentials {
 		auth.Credentials = append(auth.Credentials, execution.Credential{
 			Kind: cred.Kind, Scope: cred.Scope, Secret: cred.Secret, KnownHosts: cred.KnownHosts,
 		})
 	}
-	if spec.GitBindingsConfigured {
-		return auth
-	}
-	auth.SSHPrivateKey = spec.SSHPrivateKey
-	auth.SSHKnownHosts = spec.SSHKnownHosts
-	if spec.Env == nil {
-		return auth
-	}
-	auth.GitHubToken = firstEnv(spec.Env, "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_ENTERPRISE_TOKEN")
-	auth.GitHubURL = spec.Env["GITHUB_URL"]
-	auth.GitLabToken = firstEnv(spec.Env, "GITLAB_TOKEN", "GLAB_TOKEN", "GITLAB_ACCESS_TOKEN")
-	auth.GitLabURL = spec.Env["GITLAB_URL"]
-	if strings.TrimSpace(auth.SSHPrivateKey) == "" {
-		auth.SSHPrivateKey = spec.Env["GIT_SSH_PRIVATE_KEY"]
-	}
-	if strings.TrimSpace(auth.SSHKnownHosts) == "" {
-		auth.SSHKnownHosts = spec.Env["GIT_SSH_KNOWN_HOSTS"]
-	}
 	return auth
-}
-
-func firstEnv(env map[string]string, keys ...string) string {
-	for _, key := range keys {
-		if v := strings.TrimSpace(env[key]); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func envList(overlay map[string]string) []string {

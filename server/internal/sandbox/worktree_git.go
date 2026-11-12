@@ -3,7 +3,6 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +40,7 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 			cleanup()
 		}
 	}()
-	files, err := gitCatalogFiles(worktreeGitCredentials(spec))
+	files, err := gitCatalogFiles(spec.GitCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
@@ -165,45 +164,6 @@ func runWorktreeGitConfig(ctx context.Context, env map[string]string, file, key,
 		return fmt.Errorf("configure worktree Git author: %w", err)
 	}
 	return nil
-}
-
-// Legacy callers still pass their explicitly supplied identity in Spec.Env.
-// Convert it to files as well; never consult the server's ambient credentials.
-func worktreeGitCredentials(spec Spec) []GitCredential {
-	if spec.GitBindingsConfigured {
-		return spec.GitCredentials
-	}
-	auth := authFromSpec(spec)
-	var credentials []GitCredential
-	if auth.GitHubToken != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-github", Kind: RepoCredentialGitHubHTTPS,
-			Scope: legacyWorktreeGitHost(auth.GitHubURL, "https://github.com"), Secret: auth.GitHubToken,
-		})
-	}
-	if auth.GitLabToken != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-gitlab", Kind: RepoCredentialGitLabHTTPS,
-			Scope: legacyWorktreeGitHost(auth.GitLabURL, "https://gitlab.com"), Secret: auth.GitLabToken,
-		})
-	}
-	if auth.SSHPrivateKey != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-ssh", Kind: RepoCredentialSSH, Secret: auth.SSHPrivateKey, KnownHosts: auth.SSHKnownHosts,
-		})
-	}
-	return credentials
-}
-
-func legacyWorktreeGitHost(raw, fallback string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return fallback
-	}
-	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
-		return parsed.Scheme + "://" + parsed.Host
-	}
-	return raw
 }
 
 func worktreeGitIdentity(value, fallback string) string {

@@ -10,11 +10,12 @@ set -e
 #   不依赖当前 clone 仓库属于哪个平台。
 #   HTTPS clone 仍按仓库 URL 的 host 匹配（github.com→GITHUB_TOKEN; gitlab.com→GITLAB_TOKEN;
 #           自建实例通过 GITHUB_URL / GITLAB_URL 与 repo host 精确匹配）。
-#   SSH   — 平台从工作区凭据注入 ~/.ssh（单独运行镜像时可用 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
+#   SSH   — 单独运行镜像时用 env GIT_SSH_*；id_rsa 600；known_hosts 按行追加。
+#   平台启动时只下发 Git catalog（每个仓库自己的凭据），上面这些 env 不会出现。
 # 主要环境变量：WORKSPACE_DIR, ROOT_PASSWORD, CODE_SERVER_PORT, SSH_KEY, SKIP_INNER_DOCKER,
 #   GIT_REPOS(多仓 name|url|branch), GIT_REPO_AUTHORS(逐仓提交作者 JSON),
 #   GITHUB_TOKEN, GITHUB_URL, GITLAB_TOKEN, GITLAB_URL, GIT_SSH_PRIVATE_KEY, GIT_SSH_KNOWN_HOSTS（仅单独运行镜像）,
-#   SANDBOX_INJECT（含 SSH staging + ConfigHome，须早于 clone）,
+#   SANDBOX_INJECT（含 Git catalog + ConfigHome，须早于 clone）,
 #   AGENT_PROVIDER, ACP_BRIDGE_PORT, ACP_BRIDGE_PASSWORD, ACP_BRIDGE_MODEL
 
 # PVC subPath 挂上来的 /tmp 目录默认不是 1777；补 sticky bit，避免 mktemp/多用户写入失败。
@@ -375,7 +376,7 @@ PY
 #      - src：容器内已存在的文件/目录/归档，或 http(s):// URL；
 #      - 归档（.tar/.tar.gz/.tgz/.tar.bz2/.tar.xz/.zip）解压到 dest，其余直接复制到 dest；
 #      - dest 省略时默认 $CONFIG_ROOT（agent 配置根，含 mcp.json / rules/ / skills/）。
-#      - SSH 原文注入目标为 /tmp/grasp-ssh-inject，随后 apply_ssh_file_inject 写入 ~/.ssh。
+#      - 平台的 Git catalog 注入到 /tmp/grasp-ssh-inject/git，随后 configure_git_catalog 安装。
 #   2) 钩子式 /root/.sandbox/init.d/*.sh：按文件名排序、在服务启动前依次 source 执行。
 #
 # 鉴权：本地文件/目录/归档不需要——由「谁能拉起沙箱/挂载文件」隐式授权。
@@ -461,35 +462,7 @@ if [ -d /root/.sandbox/init.d ]; then
 fi
 
 
-# Apply SSH meta/file inject from staging dir (empty fields omitted by packer).
-# id_rsa: whole-file overwrite; known_hosts: append unique lines.
-apply_ssh_file_inject() {
-    local staging="${1:-/tmp/grasp-ssh-inject}"
-    [ -d "$staging" ] || return 0
-    mkdir -p /root/.ssh
-    chmod 700 /root/.ssh
-    if [ -f "$staging/id_rsa" ] && [ -s "$staging/id_rsa" ]; then
-        cp -f "$staging/id_rsa" /root/.ssh/id_rsa
-        chmod 600 /root/.ssh/id_rsa
-        echo "SSH inject: wrote /root/.ssh/id_rsa (600)"
-    fi
-    if [ -f "$staging/known_hosts" ] && [ -s "$staging/known_hosts" ]; then
-        touch /root/.ssh/known_hosts
-        while IFS= read -r _kh_line || [ -n "$_kh_line" ]; do
-            [ -n "$_kh_line" ] || continue
-            grep -qxF "$_kh_line" /root/.ssh/known_hosts 2>/dev/null || printf '%s\n' "$_kh_line" >> /root/.ssh/known_hosts
-        done < "$staging/known_hosts"
-        unset _kh_line
-        chmod 644 /root/.ssh/known_hosts
-        echo "SSH inject: appended /root/.ssh/known_hosts"
-    fi
-    return 0
-}
-if [ ! -f /tmp/grasp-ssh-inject/git/manifest.json ]; then
-    apply_ssh_file_inject /tmp/grasp-ssh-inject
-fi
-
-# --- 凭据配置（clone 前；此时 SSH 文件与 Token env 均已就绪）----------------
+# --- 凭据配置（clone 前；此时 Git catalog 与 Token env 均已就绪）----------------
 # 仓库只提供 GIT_REPOS 克隆清单。访问凭据只来自平台下发的 catalog（每个仓库自己的凭据），旧的逐仓库授权文件在 catalog 安装时清掉。
 configure_git_catalog /tmp/grasp-ssh-inject/git
 configure_git_credentials

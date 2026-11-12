@@ -68,7 +68,7 @@ func TestWorkflowReferenceSearchAndLaunch(t *testing.T) {
 	hn.db.Create(&models.Project{ID: "p-web", Name: "web", RepoURL: "https://github.com/acme/web.git"})
 	hn.db.Create(&models.WorkflowDef{ID: "wf-ref", Name: "ref", Version: 1, PublishedVersion: 1, Defaults: &models.WorkflowDefaults{Repos: []models.RepoChoice{{ProjectID: "p-web"}}}, Graph: models.Graph{
 		Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
-		Edges:     []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
+		Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
 	}})
 	hn.db.Create(&models.WorkflowDef{ID: "wf-bare", Name: "bare", Version: 1, PublishedVersion: 1})
 

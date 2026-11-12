@@ -41,7 +41,7 @@ var reprimeSkipEnv = map[string]bool{
 	"SSH_KEY":                true,
 }
 
-// Explicit bindings never inherit the legacy environment's Git identity.
+// Git identity comes only from the catalog, never from spec env.
 var gitCredentialEnv = map[string]bool{
 	"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITHUB_ENTERPRISE_TOKEN": true, "GH_ENTERPRISE_TOKEN": true,
 	"GITLAB_TOKEN": true, "GLAB_TOKEN": true, "GITLAB_ACCESS_TOKEN": true, "GITHUB_URL": true, "GITLAB_URL": true,
@@ -54,7 +54,7 @@ var gitCredentialEnv = map[string]bool{
 func ReprimeEnvKeys(spec Spec) []string {
 	keys := make([]string, 0, len(spec.Env))
 	for k := range spec.Env {
-		if envNameRE.MatchString(k) && !reprimeSkipEnv[k] && !(spec.GitBindingsConfigured && gitCredentialEnv[k]) {
+		if envNameRE.MatchString(k) && !reprimeSkipEnv[k] && !gitCredentialEnv[k] {
 			keys = append(keys, k)
 		}
 	}
@@ -158,7 +158,7 @@ func packReprimeBundle(spec Spec, prevKeys []string) ([]byte, error) {
 			return nil, fmt.Errorf("pack config home: %w", err)
 		}
 	}
-	sshData, err := packGitInjectBundle(spec.SSHPrivateKey, spec.SSHKnownHosts, spec.GitBindingsConfigured, spec.GitCredentials)
+	sshData, err := packGitInjectBundle(spec.GitCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("pack ssh bundle: %w", err)
 	}
@@ -239,7 +239,7 @@ func copyTarGzInto(tw *tar.Writer, data []byte, prefix string) error {
 }
 
 // SpecFingerprint hashes everything Reprime would apply for spec (env, config
-// home contents, SSH and repo credentials). Equal fingerprints mean a running
+// home contents and the Git catalog). Equal fingerprints mean a running
 // sandbox needs no re-prime. Empty on a config home that cannot be read.
 func SpecFingerprint(spec Spec) string {
 	// HMAC keeps this deterministic change detector out of password-hashing
@@ -248,8 +248,7 @@ func SpecFingerprint(spec Spec) string {
 	for _, k := range ReprimeEnvKeys(spec) {
 		_, _ = fmt.Fprintf(h, "env\x00%s\x00%s\x00", k, spec.Env[k])
 	}
-	_, _ = fmt.Fprintf(h, "root\x00%s\x00ssh\x00%s\x00%s\x00", spec.ConfigRoot, spec.SSHPrivateKey, spec.SSHKnownHosts)
-	_, _ = fmt.Fprintf(h, "git-configured\x00%t\x00", spec.GitBindingsConfigured)
+	_, _ = fmt.Fprintf(h, "root\x00%s\x00", spec.ConfigRoot)
 	for _, credential := range spec.GitCredentials {
 		_, _ = fmt.Fprintf(h, "git\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t\x00",
 			credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Secret, credential.KnownHosts, credential.Preferred)

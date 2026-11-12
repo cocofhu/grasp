@@ -218,17 +218,9 @@ func PackConfigHomeTarGz(hostDir string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// packGitInjectBundle preserves legacy host SSH files while carrying an
-// explicit Agent catalog (including an empty selection) as root-only files.
-func packGitInjectBundle(privateKey, knownHosts string, configured bool, credentials []GitCredential) ([]byte, error) {
-	if configured {
-		privateKey, knownHosts = "", ""
-	}
-	key := strings.TrimSpace(privateKey)
-	hosts := strings.TrimSpace(knownHosts)
-	if key == "" && hosts == "" && !configured {
-		return nil, nil
-	}
+// packGitInjectBundle carries the Git catalog (an empty one included) as
+// root-only files, so startup.sh never falls back to ambient credentials.
+func packGitInjectBundle(credentials []GitCredential) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -251,22 +243,13 @@ func packGitInjectBundle(privateKey, knownHosts string, configured bool, credent
 		name, body string
 		mode       int64
 	}
-	var files []entry
-	if configured {
-		catalog, err := gitCatalogFiles(credentials)
-		if err != nil {
-			return nil, err
-		}
-		for _, file := range catalog {
-			files = append(files, entry{"git/" + file.name, file.body, 0o600})
-		}
+	catalog, err := gitCatalogFiles(credentials)
+	if err != nil {
+		return nil, err
 	}
-	// Preserve the caller's PEM / known_hosts body (not the trimmed copy).
-	if key != "" {
-		files = append(files, entry{"id_rsa", privateKey, 0o600})
-	}
-	if hosts != "" {
-		files = append(files, entry{"known_hosts", knownHosts, 0o644})
+	files := make([]entry, 0, len(catalog))
+	for _, file := range catalog {
+		files = append(files, entry{"git/" + file.name, file.body, 0o600})
 	}
 	for _, f := range files {
 		if err := writeFile(f.name, f.body, f.mode); err != nil {

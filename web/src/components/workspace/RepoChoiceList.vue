@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import { repoShort } from '@/lib/solo/soloPrefs'
@@ -59,15 +60,7 @@ function setBranch(id: string, branch: string) {
         class="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2"
         :data-testid="`repo-choice-${row.id}`"
       >
-        <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            class="shrink-0"
-            :checked="picked.has(row.id)"
-            :disabled="disabled"
-            :data-testid="`repo-choice-toggle-${row.id}`"
-            @change="toggle(row.id, ($event.target as HTMLInputElement).checked)"
-          />
+        <div class="flex min-w-0 flex-1 items-center gap-2" :class="{ 'cursor-pointer': !disabled }" @click="toggle(row.id, !picked.has(row.id))">
           <Icon name="git" :size="13" class="shrink-0 text-txt3" />
           <span class="min-w-0 truncate text-[12.5px] text-txt" :class="{ 'text-err': !row.project }">
             {{ row.project?.name || copy('deleted') }}
@@ -75,7 +68,7 @@ function setBranch(id: string, branch: string) {
           <span v-if="row.project" class="min-w-0 truncate font-mono text-[11px] text-txt3" :title="row.project.repoUrl">
             {{ repoShort(row.project.repoUrl) }}
           </span>
-        </label>
+        </div>
         <input
           v-if="picked.has(row.id) && row.project"
           :value="picked.get(row.id)?.branch || ''"
@@ -86,6 +79,13 @@ function setBranch(id: string, branch: string) {
           :aria-label="copy('branch', { name: row.project.name })"
           :data-testid="`repo-choice-branch-${row.id}`"
           @change="setBranch(row.id, ($event.target as HTMLInputElement).value)"
+        />
+        <AppSwitch
+          :model-value="picked.has(row.id)"
+          :disabled="disabled"
+          :aria-label="row.project?.name || copy('deleted')"
+          :data-testid="`repo-choice-toggle-${row.id}`"
+          @update:model-value="toggle(row.id, $event)"
         />
       </div>
     </div>

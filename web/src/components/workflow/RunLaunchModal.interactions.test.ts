@@ -32,7 +32,7 @@ function mountModal(extra: Record<string, unknown> = {}) {
     global: { plugins: [i18n], stubs: {
       Icon: true,
       AppButton: { template: '<button v-bind="$attrs"><slot /></button>' },
-      AppSwitch: { props: ['modelValue', 'disabled'], emits: ['update:modelValue'], template: '<button role="switch" @click="$emit(\'update:modelValue\', !modelValue)" />' },
+      AppSwitch: { props: ['modelValue', 'disabled'], emits: ['update:modelValue'], template: '<button role="switch" :aria-checked="String(!!modelValue)" @click="$emit(\'update:modelValue\', !modelValue)" />' },
       AppModal: { props: ['open'], emits: ['close'], setup(_: any, { slots, expose }: any) { const scrollAreaEl = document.createElement('div'); Object.defineProperty(scrollAreaEl, 'clientHeight', { value: 240 }); expose({ scrollAreaEl }); return () => _.open ? slots.default?.().concat(slots.footer?.() || []) : null } },
       ParagraphInput: { props: ['text'], emits: ['update:text'], template: '<textarea :value="text" />' },
       PrioritySegmented: { props: ['modelValue'], emits: ['update:modelValue'], template: '<button data-testid="priority" @click="$emit(\'update:modelValue\', \'high\')" />' },
@@ -141,9 +141,9 @@ describe('RunLaunchModal interactions', () => {
     await flushPromises()
     const section = w.get('[data-testid="run-launch-repos"]')
     expect(section.find('[data-testid="repo-choice-p3"]').exists()).toBe(false)
-    expect((section.get('[data-testid="repo-choice-toggle-p1"]').element as HTMLInputElement).checked).toBe(true)
+    expect(section.get('[data-testid="repo-choice-toggle-p1"]').attributes('aria-checked')).toBe('true')
     expect((section.get('[data-testid="repo-choice-branch-p2"]').element as HTMLInputElement).value).toBe('dev')
-    await section.get('[data-testid="repo-choice-toggle-p1"]').setValue(false)
+    await section.get('[data-testid="repo-choice-toggle-p1"]').trigger('click')
     await section.get('[data-testid="repo-choice-branch-p2"]').setValue('release')
     await section.get('[data-testid="repo-choice-branch-p2"]').trigger('change')
     await (w.vm as any).startRun()

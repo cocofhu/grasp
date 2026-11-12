@@ -144,7 +144,7 @@ func TestWorktreeReprimeRetainsSelectedGitCredentialsAndCleansReplacedCatalogs(t
 		return 17000 + index, func() { stopped[index]++ }, nil
 	}))
 	makeSpec := func(backend, selected string) Spec {
-		return Spec{Name: "git-reprime", ConfigRoot: "/root/.codex", ConfigHome: t.TempDir(), GitBindingsConfigured: true,
+		return Spec{Name: "git-reprime", ConfigRoot: "/root/.codex", ConfigHome: t.TempDir(),
 			GitCredentials: []GitCredential{{ID: selected, Kind: RepoCredentialGitHubHTTPS, Scope: "https://github.com/acme/app", Secret: selected}},
 			Env: map[string]string{BridgePasswordEnv: "pw", "AGENT_PROVIDER": backend, envRunID: "git-reprime", envLaunchKind: execution.LaunchSolo,
 				"GH_TOKEN": "spec-unselected-token", "GIT_SSH_COMMAND": "unselected-ssh", "GIT_CONFIG_PARAMETERS": "unselected-config",

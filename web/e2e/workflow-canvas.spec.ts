@@ -43,6 +43,7 @@ async function mockApis(page: Page, store: Store) {
     }
     if (path === '/api/agents') return route.fulfill({ json: CANVAS_AGENTS.map((a) => ({ ...a, files: [], mcp: [], env: {} })) })
     if (path.startsWith('/api/workflows')) return route.fulfill({ json: [] })
+    if (path === '/api/projects') return route.fulfill({ json: [{ id: 'p-web', name: 'web', repoUrl: 'https://github.com/example/web.git', defaultBranch: 'main' }] })
     return route.fulfill({ json: {} })
   })
 }
@@ -250,6 +251,9 @@ for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
     await expect(dialog.locator('select, input[type="checkbox"]')).toHaveCount(0)
     await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-${width}-${theme}.png` })
 
+    await dialog.getByTestId('workflow-repos-settings').getByRole('switch', { name: 'web', exact: true }).click()
+    await dialog.getByTestId('repo-choice-branch-p-web').fill('release')
+    await dialog.getByTestId('repo-choice-branch-p-web').blur()
     await dialog.getByRole('button', { name: '添加变量', exact: true }).click()
     await dialog.getByTestId('workflow-variables-settings').getByRole('textbox', { name: '变量名', exact: true }).fill('COUNT')
     await dialog.getByRole('button', { name: '变量类型', exact: true }).click()
@@ -268,6 +272,7 @@ for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
     await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-expanded-${width}-${theme}.png` })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(() => store.wf.defaults).toMatchObject({
+      repos: [{ projectId: 'p-web', branch: 'release' }],
       variables: [{ name: 'COUNT', type: 'number', value: 12 }],
       gateAuto: { agentName: '测试评审', enabled: false },
     })

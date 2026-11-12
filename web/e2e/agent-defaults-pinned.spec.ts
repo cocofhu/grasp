@@ -12,7 +12,6 @@ const AGENTS = ['alpha', 'beta'].map((name) => ({
   name,
   acpBackend: 'opencode',
   modelBinding: { kind: 'configuration', configurationId: 'opencode-team-model' },
-  gitBindings: { items: [] },
   files: [{ path: 'AGENTS.md', content: `# ${name}\n` }],
   mcp: [{ name: `${name}-fs`, type: 'http', url: 'https://example.com/mcp' }],
   env: {},

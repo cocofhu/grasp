@@ -279,14 +279,13 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	env["GRASP_LAUNCH_KIND"] = "test"
 
 	spec := sandbox.Spec{
-		GitBindingsConfigured: true,
-		GitCredentials:        gitCredentials,
-		Name:                  name,
-		Image:                 resolveSandboxImage(string(backend)),
-		Env:                   env,
-		ConfigHome:            home,
-		ConfigRoot:            configRoot,
-		WorkspaceDir:          agent.Layout.WorkspaceDir,
+		GitCredentials: gitCredentials,
+		Name:           name,
+		Image:          resolveSandboxImage(string(backend)),
+		Env:            env,
+		ConfigHome:     home,
+		ConfigRoot:     configRoot,
+		WorkspaceDir:   agent.Layout.WorkspaceDir,
 	}
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {

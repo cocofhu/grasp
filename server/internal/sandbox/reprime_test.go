@@ -49,9 +49,8 @@ func reprimeSpec(t *testing.T) Spec {
 			"AGENT_PROVIDER": "claude_code", "MULTI": "a\nb 'c'",
 			"SANDBOX_INJECT": "x", "SSH_KEY": "k", "bad-name": "v",
 		},
-		ConfigHome:    home,
-		ConfigRoot:    "/root/.claude",
-		SSHPrivateKey: "PRIVATE",
+		ConfigHome: home,
+		ConfigRoot: "/root/.claude",
 	}
 }
 
@@ -84,8 +83,11 @@ func TestPackReprimeBundle(t *testing.T) {
 	if files["config/rules/r.md"] != "rule" {
 		t.Fatalf("config home not packed: %v", files)
 	}
-	if files["ssh/id_rsa"] != "PRIVATE\n" {
-		t.Fatalf("ssh bundle not packed: %v", files)
+	if strings.TrimSpace(files["ssh/git/manifest.json"]) != "[]" {
+		t.Fatalf("empty Git catalog not packed: %v", files)
+	}
+	if _, ok := files["ssh/id_rsa"]; ok {
+		t.Fatal("reprime packed a global SSH key")
 	}
 	for name := range files {
 		if strings.HasPrefix(name, "ssh/repos/") {
@@ -100,7 +102,7 @@ func TestPackReprimeBundleMinimal(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := untarReprime(t, data)
-	if len(files) != 1 || files["env"] == "" {
+	if len(files) != 2 || files["env"] == "" || strings.TrimSpace(files["ssh/git/manifest.json"]) != "[]" {
 		t.Fatalf("files = %v", files)
 	}
 	if _, err := packReprimeBundle(Spec{ConfigHome: filepath.Join(t.TempDir(), "missing")}, nil); err == nil {

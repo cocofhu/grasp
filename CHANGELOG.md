@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **不兼容变更**：Git 授权改由仓库配置。「设置 → 仓库」里每个仓库可以选择一个访问凭据（GitHub / GitLab Token 或 SSH 密钥，须与仓库地址的协议和主机一致），并填写提交用户名和邮箱；工作流在设置里绑定要克隆的仓库，启动运行时可以取消部分仓库或改分支，所选仓库固定到这次运行。Agent 上的 Git 授权、默认配置里的 Git 授权和「继承 Git」开关已删除，工作流变量的 `repos` 类型和 Agent 环境变量 `GIT_REPOS: ${vars.repos}` 不再生效（Agent 环境变量也不能再设置 `GIT_REPOS`），旧数据不迁移。升级后请：在「设置 → 仓库」登记仓库并选择凭据和提交身份；在每个工作流的设置里绑定仓库；删除输入节点里的 `repos` 变量和 Agent 环境变量里的 `GIT_REPOS`。导入的工作流不带仓库绑定，需要在本工作区重新绑定。
+- **不兼容变更**：Git 授权改由仓库配置。「设置 → 仓库」里每个仓库可以选择一个访问凭据（GitHub / GitLab Token 或 SSH 密钥，须与仓库地址的协议和主机一致），并填写提交用户名和邮箱；工作流在设置里绑定要克隆的仓库，启动运行时可以取消部分仓库或改分支，所选仓库固定到这次运行。Agent 上的 Git 授权、默认配置里的 Git 授权和「继承 Git」开关已删除，工作流变量的 `repos` 类型和 Agent 环境变量 `GIT_REPOS: ${vars.repos}` 不再生效（Agent 环境变量也不能再设置 `GIT_REPOS`），旧数据不迁移。升级后请：在「设置 → 仓库」登记仓库并选择凭据和提交身份；在每个工作流的设置里绑定仓库；删除输入节点里的 `repos` 变量和 Agent 环境变量里的 `GIT_REPOS`。导入的工作流不带仓库绑定，需要在本工作区重新绑定。平台不再把环境变量里的 `GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY` 等 Git 身份交给沙箱，没有为仓库配置凭据时只能匿名克隆；已有的共享沙箱升级后会重新准备一次。单独运行沙箱镜像时仍可用这些变量。
 
 - Solo 支持提问和表单：Agent 授予了「提问 ask_question」或「表单收集 ask_form」时，在 Solo 里调用会在这条回复下方显示可点选的卡片，推荐项默认选中；提交后作为下一条消息发出，格式与工作流澄清一致。引导新建的 Solo Agent 默认授予提问、表单、产物预览和应用预览，`AGENTS.md` 改为使用平台的 `ask_question`。已有的 Solo Agent 不会被改写，可在 Agent 的「能力」里勾选这些工具。
 

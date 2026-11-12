@@ -570,13 +570,12 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		codexConnectionRuns.Store(c.codexHubKey(req), true)
 	}
 	spec := sandbox.Spec{
-		GitBindingsConfigured: true,
-		GitCredentials:        gitCredentials,
-		Image:                 resolveProviderImage(c.opts, backend),
-		Env:                   env,
-		ConfigHome:            home,
-		ConfigRoot:            layout.ConfigRoot,
-		WorkspaceDir:          layout.WorkspaceDir,
+		GitCredentials: gitCredentials,
+		Image:          resolveProviderImage(c.opts, backend),
+		Env:            env,
+		ConfigHome:     home,
+		ConfigRoot:     layout.ConfigRoot,
+		WorkspaceDir:   layout.WorkspaceDir,
 	}
 	return spec, nil
 }

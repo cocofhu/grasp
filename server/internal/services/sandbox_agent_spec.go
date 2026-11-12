@@ -169,14 +169,13 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	}
 
 	spec := sandbox.Spec{
-		GitBindingsConfigured: true,
-		GitCredentials:        gitCredentials,
-		Name:                  name,
-		Image:                 resolveSandboxImage(string(backend)),
-		Env:                   env,
-		ConfigHome:            home,
-		ConfigRoot:            configRoot,
-		WorkspaceDir:          agent.Layout.WorkspaceDir,
+		GitCredentials: gitCredentials,
+		Name:           name,
+		Image:          resolveSandboxImage(string(backend)),
+		Env:            env,
+		ConfigHome:     home,
+		ConfigRoot:     configRoot,
+		WorkspaceDir:   agent.Layout.WorkspaceDir,
 	}
 
 	return &preparedAgentContainer{spec: spec, specs: specs, backend: backend, modelFingerprint: modelFingerprint, codexCredentialID: codexCredentialID, codexVersion: codexVersion}, nil

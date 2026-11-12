@@ -39,7 +39,7 @@ func TestWorktreeAgentPushUsesSelectedCredential(t *testing.T) {
 	srv := authGitServer(t, bare, selected)
 	repoURL := srv.URL + "/repo.git"
 	sb, err := NewManager(nil, ManagerOptions{}).Create(context.Background(), Spec{
-		Name: "push", GitBindingsConfigured: true,
+		Name:           "push",
 		GitCredentials: []GitCredential{{ID: "selected", Kind: RepoCredentialGitHubHTTPS, Scope: repoURL, Secret: selected}},
 		Env: map[string]string{
 			BridgePasswordEnv: "pw", "AGENT_PROVIDER": "codex", envRunID: "run-push", envLaunchKind: execution.LaunchRun,
@@ -116,7 +116,7 @@ func TestWorktreeRepoAuthorStaysOutOfTheUsersRepository(t *testing.T) {
 		{Name: "lib", URL: other, Branch: "main"},
 	}
 	sb, err := NewManager(nil, ManagerOptions{}).Create(context.Background(), Spec{
-		Name: "authors", GitBindingsConfigured: true,
+		Name: "authors",
 		Env: map[string]string{
 			BridgePasswordEnv: "pw", "AGENT_PROVIDER": "codex", envRunID: "run-authors", envLaunchKind: execution.LaunchRun,
 			"GIT_REPOS": EncodeRepos(repos), EnvRepoAuthors: EncodeRepoAuthors(repos),
@@ -177,7 +177,7 @@ func TestWorktreeGitSessionsKeepAuthorizationSeparate(t *testing.T) {
 	m := NewManager(nil, ManagerOptions{})
 	create := func(name, token string) *Sandbox {
 		t.Helper()
-		spec := Spec{Name: name, GitBindingsConfigured: true, Env: map[string]string{
+		spec := Spec{Name: name, Env: map[string]string{
 			BridgePasswordEnv: "pw", "AGENT_PROVIDER": "codex", envRunID: "run-identities", envLaunchKind: execution.LaunchRun,
 			"GIT_REPOS": EncodeRepos([]RepoSpec{{Name: "app", URL: repo, Branch: "main"}}),
 			"GH_TOKEN":  "spec-token", "GIT_CONFIG_PARAMETERS": "unselected-config", "GIT_SSH_COMMAND": "unselected-ssh",
@@ -268,7 +268,7 @@ func TestWorktreeGitCleanupOnBackendStartFailure(t *testing.T) {
 		return 0, nil, errors.New("backend failed")
 	}))
 	_, err := NewManager(nil, ManagerOptions{}).Create(context.Background(), Spec{
-		Name: "start-failed", GitBindingsConfigured: true,
+		Name:           "start-failed",
 		GitCredentials: []GitCredential{{ID: "gh", Kind: RepoCredentialGitHubHTTPS, Scope: "https://github.com", Secret: "selected-token"}},
 		Env:            map[string]string{BridgePasswordEnv: "pw", "AGENT_PROVIDER": "codex", envRunID: "run-start-failed"},
 	})
@@ -280,31 +280,25 @@ func TestWorktreeGitCleanupOnBackendStartFailure(t *testing.T) {
 	}
 }
 
-func TestWorktreeLegacyGitIdentityUsesPrivateFiles(t *testing.T) {
+func TestWorktreeIgnoresGitIdentityInEnv(t *testing.T) {
 	useWorktreeGitHelper(t)
 	t.Setenv("GITHUB_TOKEN", "ambient-github-token")
-	t.Setenv("GIT_SSH_COMMAND", "ambient-ssh")
 	env := map[string]string{}
 	cleanup, err := prepareWorktreeGit(context.Background(), Spec{
-		Env:           map[string]string{"GITHUB_TOKEN": "legacy-selected", "GITHUB_URL": "https://git.example/path"},
-		SSHPrivateKey: "legacy-private-key", SSHKnownHosts: "known-host-entry",
+		Env: map[string]string{"GITHUB_TOKEN": "env-token", "GITHUB_URL": "https://git.example/path", "GIT_SSH_PRIVATE_KEY": "env-private-key"},
 	}, env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	out, err := worktreeCredentialFill(env, t.TempDir(), "https", "git.example", "team/app.git")
-	if err != nil || !strings.Contains(out, "password=legacy-selected") {
-		t.Fatal("legacy spec identity was not converted to a private catalog")
+	out, _ := worktreeCredentialFill(env, t.TempDir(), "https", "git.example", "team/app.git")
+	if strings.Contains(out, "password=env-token") || strings.Contains(out, "password=ambient-github-token") {
+		t.Fatal("Git identity from env reached the worktree credential helper")
 	}
 	for _, value := range envList(env) {
-		if strings.Contains(value, "legacy-selected") || strings.Contains(value, "ambient-github-token") || strings.Contains(value, "legacy-private-key") || strings.Contains(value, "ambient-ssh") {
-			t.Fatal("legacy credentials remained in the backend environment")
+		if strings.Contains(value, "env-token") || strings.Contains(value, "ambient-github-token") || strings.Contains(value, "env-private-key") {
+			t.Fatal("env Git credentials remained in the backend environment")
 		}
-	}
-	key := filepath.Join(filepath.Dir(env["GIT_CONFIG_GLOBAL"]), ".grasp", "git-credentials", "1.secret")
-	if body, err := os.ReadFile(key); err != nil || !strings.Contains(string(body), "legacy-private-key") {
-		t.Fatal("legacy SSH identity was not retained in private files")
 	}
 }
 

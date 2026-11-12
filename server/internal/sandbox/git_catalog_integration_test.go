@@ -19,7 +19,7 @@ func selectedGitCatalog() []GitCredential {
 
 func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T) {
 	credentials := selectedGitCatalog()
-	data, err := packGitInjectBundle("unselected-private-key", "unselected-hosts", true, credentials)
+	data, err := packGitInjectBundle(credentials)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +57,9 @@ func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T)
 	if modes["git/manifest.json"] != 0o600 {
 		t.Fatal("catalog manifest must be private")
 	}
-	for _, name := range []string{"id_rsa", "known_hosts"} {
-		if _, ok := files[name]; ok {
-			t.Fatal("explicit selection retained the inherited global SSH identity")
+	for name := range files {
+		if !strings.HasPrefix(name, "git/") {
+			t.Fatalf("catalog bundle carried a file outside git/: %s", name)
 		}
 	}
 	for name := range files {
@@ -69,24 +69,20 @@ func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T)
 	}
 }
 
-func TestGitCatalogExplicitEmptySurvivesTransport(t *testing.T) {
-	legacy, err := packGitInjectBundle("", "", false, nil)
-	if err != nil || legacy != nil {
-		t.Fatal("unset selection must retain the empty legacy transport")
-	}
-	explicit, err := packGitInjectBundle("legacy-key", "legacy-hosts", true, nil)
+func TestGitCatalogEmptySurvivesTransport(t *testing.T) {
+	empty, err := packGitInjectBundle(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, _ := untar(t, explicit)
+	files, _ := untar(t, empty)
 	if len(files) != 1 || strings.TrimSpace(files["git/manifest.json"]) != "[]" {
-		t.Fatal("explicit empty selection must send a clearing catalog without old keys")
+		t.Fatal("an empty catalog must still send a clearing manifest")
 	}
 	for _, credential := range []GitCredential{
 		{ID: "bad", Kind: "unknown", Secret: "synthetic"},
 		{ID: "empty", Kind: RepoCredentialGitHubHTTPS, Secret: " \n"},
 	} {
-		if _, err := packGitInjectBundle("", "", true, []GitCredential{credential}); err == nil {
+		if _, err := packGitInjectBundle([]GitCredential{credential}); err == nil {
 			t.Fatal("invalid selected credential must not be silently dropped")
 		}
 	}
@@ -101,7 +97,7 @@ func TestGitCatalogMetadataCannotChangeFilePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := packGitInjectBundle("", "", true, credentials)
+	bundle, err := packGitInjectBundle(credentials)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,9 +127,9 @@ func TestGitCatalogMetadataCannotChangeFilePaths(t *testing.T) {
 	}
 }
 
-func TestReprimeSelectedGitCatalogReplacesLegacyEnvironment(t *testing.T) {
+func TestReprimeGitCatalogReplacesEnvironmentIdentity(t *testing.T) {
 	credentials := selectedGitCatalog()
-	spec := Spec{GitBindingsConfigured: true, GitCredentials: credentials, Env: map[string]string{
+	spec := Spec{GitCredentials: credentials, Env: map[string]string{
 		"GITHUB_TOKEN": "unselected-gh", "GITLAB_TOKEN": "unselected-gl", "GH_TOKEN": "unselected-cli",
 		"GIT_SSH_PRIVATE_KEY": "unselected-ssh", "GIT_SSH_KNOWN_HOSTS": "unselected-hosts", "SSH_AUTH_SOCK": "old-agent.sock",
 		"GIT_REPOS": "project|https://github.com/example/project.git|main", "AGENT_PROVIDER": "cursor",
@@ -166,7 +162,7 @@ func TestReprimeSelectedGitCatalogReplacesLegacyEnvironment(t *testing.T) {
 }
 
 func TestSharedSandboxFingerprintIncludesEveryGitAuthorizationChoice(t *testing.T) {
-	base := Spec{GitBindingsConfigured: true, GitCredentials: selectedGitCatalog()}
+	base := Spec{GitCredentials: selectedGitCatalog()}
 	want := SpecFingerprint(base)
 	if want == "" || want != SpecFingerprint(base) {
 		t.Fatal("unchanged Git selection should reuse its initialized sandbox")
@@ -183,14 +179,14 @@ func TestSharedSandboxFingerprintIncludesEveryGitAuthorizationChoice(t *testing.
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
-			spec := Spec{GitBindingsConfigured: true, GitCredentials: append([]GitCredential(nil), base.GitCredentials...)}
+			spec := Spec{GitCredentials: append([]GitCredential(nil), base.GitCredentials...)}
 			change(&spec)
 			if SpecFingerprint(spec) == want {
 				t.Fatal("authorization change must trigger sandbox reinitialization")
 			}
 		})
 	}
-	if SpecFingerprint(Spec{}) == SpecFingerprint(Spec{GitBindingsConfigured: true}) {
-		t.Fatal("explicit no-authorization must not reuse legacy Git authentication")
+	if SpecFingerprint(Spec{}) != SpecFingerprint(Spec{Env: map[string]string{"GITHUB_TOKEN": "ambient", "GIT_SSH_PRIVATE_KEY": "ambient"}}) {
+		t.Fatal("Git identity in env must not affect the sandbox fingerprint")
 	}
 }

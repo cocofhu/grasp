@@ -36,19 +36,12 @@ type RepoCredential struct {
 	KnownHosts string
 }
 
-// Auth is the Git identity already resolved for this launch. Configured means
-// the explicit catalog owns transport: legacy tokens are ignored, and a miss
-// does not fall through to ambient git credentials.
+// Auth is the Git identity already resolved for this launch. It owns
+// transport: a remote no credential matches fails closed instead of falling
+// through to ambient git credentials.
 type Auth struct {
-	Configured    bool
-	Credentials   []Credential
-	Repos         []RepoCredential
-	GitHubToken   string
-	GitHubURL     string
-	GitLabToken   string
-	GitLabURL     string
-	SSHPrivateKey string
-	SSHKnownHosts string
+	Credentials []Credential
+	Repos       []RepoCredential
 }
 
 type gitScope struct {
@@ -62,7 +55,6 @@ type identity struct {
 	secret     string
 	knownHosts string
 	failClosed bool
-	legacySSH  bool
 }
 
 func (a Auth) gitPrefix(raw string) (env []string, prefix []string, cleanup func(), err error) {
@@ -71,13 +63,10 @@ func (a Auth) gitPrefix(raw string) (env []string, prefix []string, cleanup func
 	if !ok || remote.host == "" {
 		return nil, nil, cleanup, nil
 	}
-	id, matched := a.pick(remote)
+	id := a.pick(remote)
 	// Disabling terminal prompts alone still allows an inherited askpass
 	// program to supply an unselected identity or wait for user interaction.
 	env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "SSH_ASKPASS=/bin/false"}
-	if !matched {
-		return env, nil, cleanup, nil
-	}
 	if id.failClosed {
 		if remote.scheme == "ssh" {
 			env = append(env, "GIT_SSH_COMMAND="+failClosedSSH())
@@ -86,9 +75,6 @@ func (a Auth) gitPrefix(raw string) (env []string, prefix []string, cleanup func
 		return append(env, gitConfigEnv([][2]string{{"credential.helper", ""}})...), nil, cleanup, nil
 	}
 	if id.kind == credSSH {
-		if id.legacySSH && strings.TrimSpace(id.knownHosts) == "" {
-			return nil, nil, cleanup, fmt.Errorf("SSH 仓库缺少 known_hosts，无法克隆")
-		}
 		sshEnv, clean, err := sshCommand(id)
 		if err != nil {
 			return nil, nil, cleanup, err
@@ -106,19 +92,16 @@ func failClosedSSH() string {
 	return "ssh -F /dev/null -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"
 }
 
-// pick chooses one identity. A repository credential beats the catalog, which
-// beats legacy host tokens. Equal catalog scopes keep the earlier row.
-func (a Auth) pick(remote gitScope) (identity, bool) {
+// pick chooses one identity. A repository credential beats the catalog, and
+// equal catalog scopes keep the earlier row. No match fails closed.
+func (a Auth) pick(remote gitScope) identity {
 	if id, ok := a.pickRepo(remote); ok {
-		return id, true
+		return id
 	}
-	if a.Configured {
-		if id, ok := a.pickCatalog(remote); ok {
-			return id, true
-		}
-		return identity{failClosed: true}, true
+	if id, ok := a.pickCatalog(remote); ok {
+		return id
 	}
-	return a.pickLegacy(remote)
+	return identity{failClosed: true}
 }
 
 func (a Auth) pickRepo(remote gitScope) (identity, bool) {
@@ -181,49 +164,6 @@ func (a Auth) pickCatalog(remote gitScope) (identity, bool) {
 		return identity{}, false
 	}
 	return identity{kind: best.Kind, secret: best.Secret, knownHosts: best.KnownHosts}, true
-}
-
-func (a Auth) pickLegacy(remote gitScope) (identity, bool) {
-	if remote.scheme == "http" || remote.scheme == "https" {
-		host, port := splitHostPort(remote.host)
-		if token := strings.TrimSpace(a.GitHubToken); token != "" && !strings.ContainsAny(token, "\r\n\x00") &&
-			host == "github.com" && port == "" {
-			return identity{kind: credGitHubHTTPS, secret: token}, true
-		}
-		if token := strings.TrimSpace(a.GitLabToken); token != "" && !strings.ContainsAny(token, "\r\n\x00") &&
-			host == "gitlab.com" && port == "" {
-			return identity{kind: credGitLabHTTPS, secret: token}, true
-		}
-		if token := strings.TrimSpace(a.GitHubToken); token != "" && !strings.ContainsAny(token, "\r\n\x00") &&
-			a.GitHubURL != "" && hostPortMatch(a.GitHubURL, host, port) {
-			return identity{kind: credGitHubHTTPS, secret: token}, true
-		}
-		if token := strings.TrimSpace(a.GitLabToken); token != "" && !strings.ContainsAny(token, "\r\n\x00") &&
-			gitlabFallback(a.GitLabURL, host, port) {
-			return identity{kind: credGitLabHTTPS, secret: token}, true
-		}
-		return identity{}, false
-	}
-	if remote.scheme == "ssh" && strings.TrimSpace(a.SSHPrivateKey) != "" {
-		return identity{kind: credSSH, secret: a.SSHPrivateKey, knownHosts: a.SSHKnownHosts, legacySSH: true}, true
-	}
-	return identity{}, false
-}
-
-func gitlabFallback(gitlabURL, host, port string) bool {
-	if strings.TrimSpace(gitlabURL) == "" {
-		return true
-	}
-	return hostPortMatch(gitlabURL, host, port)
-}
-
-func hostPortMatch(raw, host, port string) bool {
-	scope := scopeOf(raw)
-	if scope.host == "" {
-		return false
-	}
-	gotHost, gotPort := splitHostPort(scope.host)
-	return gotHost == host && gotPort == port
 }
 
 func usableSecret(kind, secret string) bool {

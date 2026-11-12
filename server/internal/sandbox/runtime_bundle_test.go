@@ -192,8 +192,8 @@ func TestManagerCreateRuntimeURL(t *testing.T) {
 	if !strings.HasPrefix(u, "http://api.example.com/sandbox-inject/") || !strings.HasSuffix(u, ".tgz") {
 		t.Fatalf("GRASP_RUNTIME_URL=%q", u)
 	}
-	if _, ok := env["SANDBOX_INJECT"]; ok {
-		t.Fatalf("runtime alone must not set SANDBOX_INJECT: %+v", env)
+	if inj, _ := env["SANDBOX_INJECT"].(string); strings.Contains(inj, ",") || !strings.HasSuffix(inj, "|"+SSHInjectStagingDir) {
+		t.Fatalf("SANDBOX_INJECT must carry only the empty Git catalog: %+v", env)
 	}
 	hdr, _ := env["SANDBOX_INJECT_HEADERS"].(string)
 	token := strings.TrimPrefix(hdr, "Authorization: Bearer ")
@@ -208,14 +208,14 @@ func TestManagerCreateRuntimeURL(t *testing.T) {
 		t.Fatal("created sandbox should be recorded at the served version")
 	}
 
-	// Runtime plus ConfigHome share one token; SANDBOX_INJECT keeps the config part only.
+	// Runtime plus ConfigHome share one token; SANDBOX_INJECT carries the Git catalog and config.
 	home := t.TempDir()
 	_ = os.WriteFile(filepath.Join(home, "mcp.json"), []byte(`{}`), 0o644)
 	if _, err := m.Create(context.Background(), Spec{Name: "grasp-sb-rt2", ConfigHome: home, ConfigRoot: "/root/.cursor", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err != nil {
 		t.Fatal(err)
 	}
 	env, _ = fg.lastCreate["env"].(map[string]any)
-	if inj, _ := env["SANDBOX_INJECT"].(string); strings.Contains(inj, ",") || !strings.HasSuffix(inj, "|/root/.cursor") {
+	if inj, _ := env["SANDBOX_INJECT"].(string); len(strings.Split(inj, ",")) != 2 || !strings.HasSuffix(inj, "|/root/.cursor") {
 		t.Fatalf("SANDBOX_INJECT=%q", inj)
 	}
 	if env["GRASP_RUNTIME_URL"] == nil {

@@ -138,7 +138,7 @@ func TestWorkflowSpecUsesRepositoryCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer removeHome(spec.ConfigHome)
-	if !spec.GitBindingsConfigured || len(spec.GitCredentials) != 1 || spec.GitCredentials[0].ID != "repo:repo" || spec.GitCredentials[0].Scope != "https://gitlab.com/team/repo" {
+	if len(spec.GitCredentials) != 1 || spec.GitCredentials[0].ID != "repo:repo" || spec.GitCredentials[0].Scope != "https://gitlab.com/team/repo" {
 		t.Fatalf("catalog = %+v", spec.GitCredentials)
 	}
 	if spec.Env["GITLAB_TOKEN"] != "" || spec.Env["GITLAB_URL"] != "" || spec.Env["GIT_REPOS"] != "repo|https://gitlab.com/team/repo.git" {
@@ -169,7 +169,7 @@ func TestSharedWorkflowReprimesWhenRepositoryCredentialChanges(t *testing.T) {
 	if h.mgr.createCount() != 1 || h.mgr.reprimeCount() != 1 {
 		t.Fatalf("creates=%d reprimes=%d", h.mgr.createCount(), h.mgr.reprimeCount())
 	}
-	if got := h.mgr.reprimes[0]; !got.GitBindingsConfigured || len(got.GitCredentials) != 0 {
+	if got := h.mgr.reprimes[0]; len(got.GitCredentials) != 0 {
 		t.Fatalf("removed credential survived: %+v", got.GitCredentials)
 	}
 }
