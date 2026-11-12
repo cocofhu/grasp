@@ -32,7 +32,7 @@ cd approving
 
 默认 `./start.sh` / `-d` / `restart` **不会**预拉 sandbox runtime：首次创建沙箱时 Gateway 再按需拉取（可能数 GB），待办 starting / 运行页会显示「正在拉取镜像」。需要提前预热用 `./start.sh pull`。
 
-Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（bind mount：`gateway` / `db` / `app-data`）。`./start.sh restart` 与 `./start.sh down` 会保留该目录。清空数据：`./start.sh down && rm -rf .localdata`。
+Agent / 工作区的应用配置与 SQLite 持久在仓库根 `.localdata` 宿主机目录（bind mount：`gateway` / `db` / `app-data`）。沙箱里的工作文件不在该目录中，需另外导出或备份。`./start.sh restart` 与 `./start.sh down` 会保留该目录。清空应用数据：`./start.sh down && rm -rf .localdata`；该命令不会自动清理所有沙箱。
 
 ### 数据库与附件同生命周期（备份 / 清理）
 
@@ -41,6 +41,7 @@ Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（b
 运维约束：
 
 - **成对备份**：同一备份集须同时包含 `./.localdata/db` 与 `./.localdata/app-data`（或整棵 `.localdata`）。
+- **网关与密钥**：同时备份 `./.localdata/gateway` 和 `.env` 中原 `GRASP_SECRETS_KEY` 及部署配置。丢失或重新生成主密钥会使已有加密凭据无法解密。备份前暂停写入或使用一致性备份；沙箱工作文件单独保存。
 - **成对清理 / 迁移 / 升级**：不要只搬 SQLite 或只删附件目录；自定义 `GRASP_BLOBS_ROOT` 时，须把该路径与数据库一并纳入同一生命周期。
 - **历史孤儿**：已损坏的引用不保证可从附件存储找回；界面仅展示永久失败占位。本次交付**不做**孤儿巡检台、批量扫描页或启动/健康检查告警。
 
@@ -64,6 +65,7 @@ Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（b
 
 ## 下一步
 
+- 共享或生产部署见 [Docker 完整指南](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md)；集群部署见 [Kubernetes 指南及清单](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md)。
 - 登录后进入工作区时，首次引导保留原有窗口，先在「配置凭据」中保存编码工具凭据或 API 账号，再到「配置编码工具」中保存 **编码工具 + 凭据 + 上游模型** 的具名配置。空步骤直接展开配置表单，保存凭据或模型后直接进入下一步；也可使用已有凭据和模型。所有表单在当前步骤内展开。Git 步骤可以就地添加凭据，再填写一个仓库地址并为它选择凭据和提交身份，也可以跳过。完成后生成一组内置 Agent、供 Solo 模式使用的空白 **Solo** Agent 与已发布的 **默认工作流**；填写了仓库时，它登记到「设置 → 仓库」并绑定到默认工作流。Solo 的模型选择器显示配置名称，支持思考强度的模型还可选择其可用档位。全系统只使用一个工作区，侧栏列出全部工作流，原配置入口统一收进设置。
 - 凭据中的编码工具卡片用于保存对应厂商授权：OpenCode CLI 使用 OpenCode 官方 Key，DeepSeek Harness 使用 DeepSeek 官方 Key。通用模型服务的 API Key、地址与协议统一在「API 账号」配置；配置模型时可选择厂商授权或兼容的 API 账号。选择 API 账号后，可搜索服务商返回的模型目录，选择主模型和辅助模型；读取失败可重试，也可填写原始模型 ID。
 - [核心概念](../concepts/) — FSM、gate、sandbox、artifact

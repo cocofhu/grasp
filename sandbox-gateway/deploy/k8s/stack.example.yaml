@@ -1,0 +1,246 @@
+# Copy outside the repository and customize before applying. Secrets are
+# created separately as described in README.md. Image tags are examples;
+# pin reviewed release digests for production.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-gateway-config
+  namespace: grasp-system
+data:
+  sandbox-image: ghcr.io/cocofhu/universal-sandbox:3.3.0
+  config.yaml: |
+    server:
+      listen: ":8080"
+    driver: kubernetes
+    database:
+      driver: sqlite
+      path: /data/gateway.db
+    kubernetes:
+      inCluster: true
+      namespace: grasp-sandboxes
+      namePrefix: sbx-
+      storageClass: replace-with-your-storage-class
+      dataDiskGi: 25
+      maxDataDiskGi: 500
+      imagePullSecret: ""  # optional Secret in grasp-sandboxes
+      imagePullPolicy: IfNotPresent
+      enableLoadBalancer: false
+      cpuCores: 2
+      maxCPUCores: 8
+      memoryMB: 4096
+      maxMemoryMB: 16384
+      cpuRequestCores: 0.25
+      memoryRequestMB: 512
+    orphanGC:
+      enabled: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sandbox-gateway-data
+  namespace: grasp-system
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: replace-with-your-storage-class
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-gateway
+  namespace: grasp-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sandbox-gateway
+  template:
+    metadata:
+      labels:
+        app: sandbox-gateway
+    spec:
+      serviceAccountName: sandbox-gateway
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      containers:
+        - name: gateway
+          image: ghcr.io/cocofhu/sandbox-gateway:3.3.0
+          env:
+            - name: SBGW_CONFIG
+              value: /etc/sandbox-gateway/config.yaml
+            - name: SBGW_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: grasp-secrets
+                  key: gateway-api-key
+            - name: SBGW_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: sandbox-gateway-config
+                  key: sandbox-image
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/sandbox-gateway
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: sandbox-gateway-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: sandbox-gateway-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox-gateway
+  namespace: grasp-system
+spec:
+  selector:
+    app: sandbox-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grasp-config
+  namespace: grasp-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      deployment_mode: production
+      public_advertise: https://grasp.example.com
+      mcp_advertise: http://grasp.grasp-system.svc.cluster.local:8080
+    database:
+      path: /data/grasp.db
+    sandbox:
+      gateway_url: http://sandbox-gateway.grasp-system.svc.cluster.local:8080
+      gateway_transport: gateway
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grasp-data
+  namespace: grasp-system
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: replace-with-your-storage-class
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grasp
+  namespace: grasp-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grasp
+  template:
+    metadata:
+      labels:
+        app: grasp
+    spec:
+      serviceAccountName: grasp
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      containers:
+        - name: grasp
+          image: ghcr.io/cocofhu/grasp:3.3.0
+          env:
+            - name: CONFIG_PATH
+              value: /etc/grasp/config.yaml
+            - name: GRASP_AUTH_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: grasp-secrets
+                  key: auth-users
+            - name: GRASP_SECRETS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: grasp-secrets
+                  key: secrets-key
+            - name: GRASP_SANDBOX_GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: grasp-secrets
+                  key: gateway-api-key
+            - name: GRASP_SANDBOX_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: sandbox-gateway-config
+                  key: sandbox-image
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/grasp
+              readOnly: true
+            - name: data
+              mountPath: /data
+              subPath: db
+            - name: data
+              mountPath: /app/data
+              subPath: app-data
+      volumes:
+        - name: config
+          configMap:
+            name: grasp-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: grasp-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grasp
+  namespace: grasp-system
+spec:
+  selector:
+    app: grasp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -32,7 +32,7 @@ Then open:
 
 Default `./start.sh` / `-d` / `restart` do **not** pre-pull the sandbox runtime. The first time you create a sandbox, the Gateway pulls that image on demand (often multi-GB); Inbox starting and the run page show a “pulling image” loading state. Use `./start.sh pull` to warm it up front.
 
-Agent / workspace and SQLite data live under `.localdata` at the repo root (bind mounts: `gateway` / `db` / `app-data`). `./start.sh restart` and `./start.sh down` keep that directory. To wipe: `./start.sh down && rm -rf .localdata`.
+Agent / workspace application configuration and SQLite data live under `.localdata` at the repo root (bind mounts: `gateway` / `db` / `app-data`). Sandbox working files are separate and need their own exports or backups. `./start.sh restart` and `./start.sh down` keep that directory. To wipe application data: `./start.sh down && rm -rf .localdata`; this does not automatically remove all sandboxes.
 
 ### Database and attachments share one lifecycle (backup / cleanup)
 
@@ -41,6 +41,7 @@ In the release stack (`compose.release.yaml`), **SQLite** is mounted at `./.loca
 Ops rules:
 
 - **Paired backup**: every backup set must include both `./.localdata/db` and `./.localdata/app-data` (or the whole `.localdata` tree).
+- **Gateway and keys**: also preserve `./.localdata/gateway`, the original `GRASP_SECRETS_KEY` from `.env`, and deployment configuration. Losing or regenerating that key makes stored encrypted credentials unreadable. Pause writes or use a consistent backup method; save sandbox working files separately.
 - **Paired cleanup / migration / upgrade**: never move only SQLite or delete only the blobs directory; if you override `GRASP_BLOBS_ROOT`, include that path in the same lifecycle as the database.
 - **Historical orphans**: broken refs are not guaranteed recoverable; the UI only shows a permanent-failure placeholder. This delivery does **not** add an orphan inspection console, bulk scan page, or startup/health-check alerts.
 
@@ -64,6 +65,7 @@ Image tags / digests can be overridden in `.env` — see [`.env.example`](https:
 
 ## Next steps
 
+- For shared or production deployments, use the [Docker guide](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md) or the [Kubernetes guide and manifests](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md).
 - After login, the existing setup window guides you through credentials, coding-tool configuration and Git. Save a coding-tool credential or API account, then name a configuration combining the coding tool, saved credential and upstream model. Empty steps open their forms directly. Saving credentials or a model advances to the next step without a completed-items list. Forms open within the current step, and existing credentials and models can be reused. The Git step lets you add credentials inline, then enter a repository URL with its credential and commit author, or skip it. A repository entered here is registered in Settings → Repositories and bound to the default workflow. The setup creates the default team, an empty **Solo** Agent for Solo conversations, and **Default Workflow**. Solo model selectors show the saved configuration name and offer reasoning levels when supported. The sidebar lists all workflows; shared configuration lives in Settings.
 - Coding-tool credential cards save the tool vendor's authorization: an OpenCode key for OpenCode CLI or a DeepSeek key for DeepSeek Harness. Configure general model API keys, endpoints and protocols in API accounts. Model configurations can use either the tool vendor's authorization or a compatible API account. After selecting an API account, search its model directory to choose primary and auxiliary models. Retry failed reads or enter an original model ID manually.
 - [Core concepts](../concepts/) — FSM, gates, sandbox, artifacts

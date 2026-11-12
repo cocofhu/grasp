@@ -1,0 +1,102 @@
+# New-install example. Review namespaces and privileges before applying.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grasp-system
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grasp-sandboxes
+  labels:
+    app.kubernetes.io/managed-by: sandbox-gateway
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-gateway
+  namespace: grasp-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grasp
+  namespace: grasp-system
+automountServiceAccountToken: false
+---
+# Sandbox Pods use the namespace's default SA; give it no API permissions.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: grasp-sandboxes
+automountServiceAccountToken: false
+---
+# The administrator pre-creates the namespace above. No permission to create
+# arbitrary namespaces is needed. The driver gets/repairs labels on this one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grasp-sandbox-namespace
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [grasp-sandboxes]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grasp-sandbox-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: grasp-sandbox-namespace
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-gateway
+    namespace: grasp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-gateway
+  namespace: grasp-sandboxes
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, create, update, delete]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, create, update, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, create, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, update, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sandbox-gateway
+  namespace: grasp-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-gateway
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-gateway
+    namespace: grasp-system

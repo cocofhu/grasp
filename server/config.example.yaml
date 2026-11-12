@@ -43,7 +43,8 @@ sandbox:
   image: ""
   # 可选：只覆盖某一个 acpBackend 的镜像。
   images: {}
-  # 旧配置默认 direct，保持兼容。gateway 通道要求网关 API key 和独立预览域名。
+  # 旧配置默认 direct，保持兼容。gateway 通道要求网关 API key；预览走 Grasp
+  # /preview/... 路径代理，无需独立预览域名。沙箱仍须能访问 mcp_advertise。
   gateway_transport: direct
   # 命名网关用于新增后端；默认网关只影响新沙箱，已有沙箱保留原绑定。
   # 网关连接/默认值修改后重启 Grasp。完整示例见根目录 GATEWAY.md。

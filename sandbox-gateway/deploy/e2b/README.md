@@ -12,11 +12,66 @@ E2B 是 sandbox-gateway 的第三种显式驱动，适用于 E2B Cloud 或自托
 
 - Grasp 和 gateway 必须在同一 Linux 宿主机共享网络命名空间。此 Compose 使用 `network_mode: host`；guest 的 SSH、ACP、IDE、CDP、noVNC、应用端口均由 gateway 转成宿主机 `127.0.0.1` TCP 端口。它们不能直接作为用户浏览器地址，也不能直接拆到另一台宿主机。
 - E2B 控制面 API key、envd token、traffic token、relay key 留在 gateway；浏览器只通过 Grasp 的 `/preview/...` 路径代理访问注册预览。guest 保留现有按作用域注入的 MCP、模型和 Git 凭据。
-- guest 到 Grasp 的专用回连入口只转发 `/mcp/`、`/sandbox-inject/`，以及 **GET `/embed-api/origin/<runID>`**。最后一条只提供按 run/node 和短期 ticket 校验的嵌入聊天来源查询，不能扩展成整个 `/embed-api/`。运行时包和 ConfigHome 通过受保护的 `/sandbox-inject/` 下发。该入口不转发 `/api/`、登录页或整个 Grasp UI；网络策略只放行这一受控入口。provider 默认禁止内网访问时，由运维为该入口配置所需的精确规则，不要开放整个私有网段。
+- guest 到 Grasp 的专用回连入口只转发 `/mcp/`、`/sandbox-inject/`，以及 **GET `/embed-api/origin/<runID>`**。最后一条只提供按 run/node 和短期 ticket 校验的嵌入聊天来源查询，不能扩展成整个 `/embed-api/`。运行时包和 ConfigHome 通过受保护的 `/sandbox-inject/` 下发。该入口不转发 `/api/`、登录页或整个 Grasp UI；网络策略只放行这一受控入口。provider 默认禁止内网访问时，按下文[内网访问](#内网访问)在 provider 上配置所需的精确规则。
 - 用户平台来源与 guest 回连来源分开配置，例如 `https://grasp.example.com` 和 `https://callback.internal.example.com`。预览不需要额外域名或通配符证书。
 - 只有边缘代理应能访问平台 HTTP listener。用宿主防火墙保护 Grasp 原始端口，gateway 控制面仅监听 loopback；不要把 E2B 管理端口、relay、CDP 或动态本地端口开放到公网。
 
 预览与 Docker/Kubernetes 一样走路径代理：应用页面在 CSP sandbox 的不透明来源中运行，代理只服务当前沙箱代次的注册端口，并在双向剥离 E2B 路由头。路径代理会改写 HTML 中的根路径引用，但应用脚本里写死的根路径请求（例如 `fetch('/api/...')`）和 Vite HMR 的 WebSocket 地址需要应用自行使用相对路径，这与现有 Docker/Kubernetes 预览一致。
+
+## 内网访问
+
+E2B 的沙箱出站规则与 gateway 所在网络分开。宿主机或 gateway 能访问内网 Git、模型服务、DNS 或 Grasp 回连入口，不代表 guest 也能访问。E2B 的默认规则拦截 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 等地址；网关创建 guest 时设置的 `allow_internet_access: true` 不会解除这项限制，`network.allowPublicTraffic: false` 则只控制沙箱公网入站。
+
+支持 `ALLOW_SANDBOX_INTERNAL_CIDRS` 的自托管 E2B/Embed，可在 **provider 的 `orchestrator` 进程环境**中配置逗号分隔的 IP/CIDR 例外。规则顺序是 provider 内建放行、内建内网拦截，再到用户出站规则；仅设置普通 `network.allowOut` 不能覆盖内建拦截。该例外影响节点上的所有沙箱，应使用目标服务的 `/32` 地址，并保留已有例外。它只解除对应防火墙限制，不会配置 DNS 或创建路由。
+
+部署前核对所用 E2B 版本是否支持该变量及其规则顺序，参考上游[配置定义](https://github.com/e2b-dev/runtime/blob/main/packages/orchestrator/pkg/sandbox/network/pool.go)、[默认拦截范围](https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/sandbox-network/firewall.go)和[防火墙实现](https://github.com/e2b-dev/runtime/blob/main/packages/orchestrator/pkg/sandbox/network/firewall.go)。以下步骤用于自托管 provider；E2B Cloud 的底层网络由服务商管理，不能通过 Grasp 的 Compose 设置这个变量。
+
+### 在哪里配置
+
+先从 gateway 的 `e2b.apiURL` / `e2b.sandboxURL` 确认实际 provider 部署。**修改 E2B 本体的部署配置**：此变量不属于 gateway YAML、`SBGW_*`、Grasp 的 `compose.e2b.yaml` 或 guest 的环境变量。
+
+Docker Compose 部署可在 **E2B 宿主机**用以下只读命令定位实际文件。容器名取自该机器的 `docker ps`，`e2b-orchestrator-1` 仅为示例：
+
+```bash
+e2b_orchestrator_container=e2b-orchestrator-1
+docker inspect "$e2b_orchestrator_container" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
+docker inspect "$e2b_orchestrator_container" --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+docker exec "$e2b_orchestrator_container" printenv ALLOW_SANDBOX_INTERNAL_CIDRS
+```
+
+例如标签显示 `/opt/e2b/compose.yaml,/opt/e2b/compose.override.yaml`，就在该部署的 `compose.override.yaml` 中合并 `orchestrator.environment`。下面两项是示例地址；实际编辑时保留已有白名单，再追加所需的 Git、模型或受控回连入口 IP。若使用内网 DNS，其服务器 IP 也需要相应放行。
+
+```yaml
+services:
+  orchestrator:
+    environment:
+      ALLOW_SANDBOX_INTERNAL_CIDRS: "10.20.30.10/32,10.20.30.11/32"
+```
+
+Kubernetes 部署则在 **E2B provider 的 orchestrator 工作负载**中设置同名环境变量；由配置管理或 Helm 管理时修改其源配置。不要把变量加到 Grasp 或 sandbox-gateway 的 Deployment。
+
+### 生效与验证
+
+先安排 provider 维护窗口并按其运维流程保护正在运行的任务。更改 Compose 的环境变量后，需要重建 `orchestrator` 容器才能载入新值，单独执行 `docker compose restart` 不会载入新的容器配置。沿用原来的 Compose 文件、项目名与环境文件；上述目录和文件名的示例对应：
+
+```bash
+cd /opt/e2b
+docker compose -f compose.yaml -f compose.override.yaml config --quiet
+docker compose -f compose.yaml -f compose.override.yaml up -d --no-deps orchestrator
+```
+
+不要用删除卷或销毁整个部署来应用白名单。provider 重启和既有 guest 网络规则的更新行为取决于版本，不能把容器环境变量已更新当作所有沙箱立即生效。
+
+1. 再次只读取 `ALLOW_SANDBOX_INTERNAL_CIDRS`，确认保留原有地址且新增项已进入运行中的 orchestrator。
+2. 在 provider 宿主机核对目标 guest 的实际防火墙规则。使用 `slot-firewall` 的版本中，`filtered_always_allowlist` 应包含所需目标，且其放行规则位于 `filtered_always_denylist` 的拦截规则之前。核对既有 guest，也用新建 guest 验收；仅查看容器环境或空闲网络命名空间不足以证明目标 guest 已生效。
+3. 分别从 provider 宿主机和 **guest 内部**检查 DNS 与应用响应，例如在替换示例域名后运行：
+
+   ```bash
+   getent ahostsv4 git.internal.example.test
+   curl --connect-timeout 5 --max-time 15 -I https://git.internal.example.test/
+   ```
+
+   需要区分 DNS 与连通性时，可用 `curl --resolve git.internal.example.test:443:10.20.30.10` 配合同一 URL 保留域名及证书校验。以目标服务的 HTTP 响应或 TLS 握手为依据，不只看 `ping`、`nc` 或 TCP 端口是否打开；确认响应来自目标服务后，HTTP 401/403 应继续检查认证权限。若地址已放行仍失败，继续核对 guest 的 DNS、provider 宿主机路由及目标服务的防火墙。
 
 ## 准备环境模板
 

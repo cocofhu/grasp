@@ -1,0 +1,24 @@
+# Optional browser entry point. Replace the class, hostname and TLS secret.
+# Configure WebSocket support and long-lived connection timeouts on your
+# chosen controller; those settings are controller-specific.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grasp
+  namespace: grasp-system
+spec:
+  ingressClassName: replace-with-your-ingress-class
+  tls:
+    - hosts: [grasp.example.com]
+      secretName: grasp-tls
+  rules:
+    - host: grasp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grasp
+                port:
+                  number: 8080

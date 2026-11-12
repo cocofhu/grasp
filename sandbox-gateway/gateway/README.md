@@ -77,38 +77,40 @@ gateway/
 
 ## Run (local, Docker driver)
 
+For a complete stack, use the [Docker deployment guide](../deploy/docker/README.md).
+For Kubernetes, use the [full manifests and guide](../deploy/k8s/README.md);
+the older `pods/log` files only add permissions to an existing installation.
+The following starts the control plane alone for development:
+
 ```bash
 cp config.example.yaml config.yaml
 # edit config.yaml: set image.ref to your built universal-sandbox image
 go run ./cmd/server -config config.yaml
 ```
 
-Then:
+Check the control plane:
 
 ```bash
-# create
-curl -s -XPOST localhost:8080/api/v1/sandboxes \
-  -H 'Content-Type: application/json' \
-  -d '{"env":{"AGENT_PROVIDER":"cursor"}}'
-
-# poll until running, read endpoints
-curl -s localhost:8080/api/v1/sandboxes/<id>
-
-# connect directly (examples)
-#   IDE:     open http://<ide-endpoint>
-#   session: ws://<session-endpoint>/ws
-#   shell:   ssh root@<ssh-host> -p <ssh-port>
+curl --fail --silent http://localhost:8080/healthz
 ```
 
+Create the acceptance-test sandbox through Grasp. The environment image needs
+`GRASP_RUNTIME_URL` and the scoped download authorization that Grasp injects;
+a create request containing only `AGENT_PROVIDER` exits during bootstrap.
+Custom API clients must supply the [runtime bootstrap contract](../../GATEWAY.md#minimum-compatible-api)
+and validate callbacks from inside the sandbox before testing its endpoints.
+
 Set `auth.apiKeys` (or `SBGW_API_KEYS=k1,k2`) to require
-`Authorization: Bearer <key>` on `/api/v1/*`.
+`Authorization: Bearer <key>` on `/api/v1/*`. Authenticated v2 transport also
+requires a configured API key; the health endpoint does not require one.
 
 ## Configuration
 
-See [`config.example.yaml`](config.example.yaml). Every value can be overridden
-by `SBGW_*` environment variables (env wins), e.g. `SBGW_DRIVER`,
+See [`config.example.yaml`](config.example.yaml). Supported `SBGW_*` environment
+overrides win over YAML, e.g. `SBGW_DRIVER`,
 `SBGW_LISTEN`, `SBGW_IMAGE`, `SBGW_API_KEYS`, `SBGW_DOCKER_BIND_IP`,
 `SBGW_K8S_KUBECONFIG`, `SBGW_K8S_NAMESPACE`, `SBGW_K8S_ENABLE_LB`.
+Other settings, such as `kubernetes.imagePullSecret`, are configured in YAML.
 
 ## API
 

@@ -16,6 +16,15 @@ For remote Docker, Kubernetes or E2B gateways, Grasp can opt into
 `sandbox.gateway_transport: gateway` without changing browser/Agent protocols.
 See [named connections, profiles and migration](../GATEWAY.md#gateway-transport-and-multiple-deployments).
 
+## Deployment guides
+
+- [Docker](deploy/docker/README.md): production Compose, callbacks, authentication and backup.
+- [Kubernetes](deploy/k8s/README.md): full single-replica manifests, RBAC, storage and ingress.
+- [E2B](deploy/e2b/README.md): provider setup, private-network access and runtime delivery.
+
+The sandbox image requires a runtime bundle supplied by Grasp. Starting the
+gateway alone does not make a bare sandbox create request runnable.
+
 ## Build
 
 ```bash
