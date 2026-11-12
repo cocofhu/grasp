@@ -104,6 +104,26 @@ func TestSoloResumeFromChosenBackupReplacesSandbox(t *testing.T) {
 	}
 }
 
+func TestSoloResumeFromUnreachableBackupKeepsSandbox(t *testing.T) {
+	f := newStopFixture(t)
+	f.stop(t)
+	f.resume(t, 0)
+	stopped := f.stop(t)
+	older := f.backups(t)[1]
+	f.db.Model(&models.SoloBackup{}).Where("id = ?", older.ID).Update("store", solobackup.KindS3)
+
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", older.ID); err != nil {
+		t.Fatal(err)
+	}
+	failed := f.waitStatus(t, models.SoloStatusStopped)
+	if failed.SandboxID != stopped.SandboxID || !strings.Contains(failed.Error, solobackup.KindS3) {
+		t.Fatalf("an unrestorable backup must not replace the sandbox: %+v", failed)
+	}
+	if _, err := f.sbx.Get(stopped.SandboxID); err != nil {
+		t.Fatalf("kept sandbox destroyed: %v", err)
+	}
+}
+
 func TestSoloResumeFromNewestBackupKeepsSandbox(t *testing.T) {
 	f := newStopFixture(t)
 	stopped := f.stop(t)

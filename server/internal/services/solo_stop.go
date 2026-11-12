@@ -114,6 +114,9 @@ func (s *SoloService) deleteBackup(ctx context.Context, key string) {
 // discardBackup removes every archive of a session that is being closed or
 // deleted.
 func (s *SoloService) discardBackup(ctx context.Context, row *models.SoloSession) {
+	s.backupMu.Lock()
+	delete(s.backupTried, row.ID)
+	s.backupMu.Unlock()
 	backups, _ := s.sessionBackups(row.ID)
 	if len(backups) == 0 && row.BackupKey == "" {
 		return
@@ -172,6 +175,17 @@ func (s *SoloService) Resume(ctx context.Context, id, user string, backupID uint
 func (s *SoloService) finishResume(row models.SoloSession, backupID uint) {
 	ctx := context.Background()
 	if row.SandboxID != 0 && backupID != 0 {
+		// The kept sandbox is the newest state; replace it only with an archive
+		// that can actually be restored.
+		chosen, err := s.restorePoint(row.ID, backupID)
+		if err != nil || s.backups == nil {
+			s.failResume(row.ID, errors.New("所选工作区备份不存在"))
+			return
+		}
+		if chosen.Store != s.backups.Kind() {
+			s.failResume(row.ID, fmt.Errorf("工作区备份保存在 %s 存储，当前配置为 %s", chosen.Store, s.backups.Kind()))
+			return
+		}
 		s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("sandbox_id", 0)
 		s.destroySandbox(ctx, row.SandboxID)
 		row.SandboxID = 0
