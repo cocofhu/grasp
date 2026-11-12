@@ -129,15 +129,18 @@ func TestManagerCreateUsesSANDBOXInject(t *testing.T) {
 	if !strings.Contains(inj, "http://api.example.com/sandbox-inject/") || !strings.Contains(inj, ".tgz|/root/.cursor") {
 		t.Fatalf("SANDBOX_INJECT=%q", inj)
 	}
-	if strings.Contains(inj, ",") {
-		t.Fatalf("config-only inject should be single part, got %q", inj)
+	if parts := strings.Split(inj, ","); len(parts) != 2 || !strings.HasSuffix(parts[0], "|"+SSHInjectStagingDir) {
+		t.Fatalf("want the empty Git catalog then ConfigHome, got %q", inj)
 	}
 	hdr, _ := env["SANDBOX_INJECT_HEADERS"].(string)
 	if !strings.HasPrefix(hdr, "Authorization: Bearer ") {
 		t.Fatalf("SANDBOX_INJECT_HEADERS=%q", hdr)
 	}
-	if env["GITHUB_TOKEN"] != "gh-tok" || env["GITLAB_TOKEN"] != "gl-tok" {
-		t.Fatalf("token env lost: %+v", env)
+	if _, ok := env["GITHUB_TOKEN"]; ok {
+		t.Fatalf("env Git tokens must not reach the sandbox: %+v", env)
+	}
+	if _, ok := env["GITLAB_TOKEN"]; ok {
+		t.Fatalf("env Git tokens must not reach the sandbox: %+v", env)
 	}
 	if _, ok := env["GIT_SSH_PRIVATE_KEY"]; ok {
 		t.Fatal("GIT_SSH_PRIVATE_KEY must not appear in create env")
@@ -151,7 +154,7 @@ func TestManagerCreateUsesSANDBOXInject(t *testing.T) {
 	}
 }
 
-func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
+func TestManagerCreateGitCatalogAndConfigMultiInject(t *testing.T) {
 	prev := config.GetConfig()
 	t.Cleanup(func() { config.StoreConfig(prev) })
 	config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "http://api.example.com"}})
@@ -178,8 +181,7 @@ func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
 			"GITLAB_TOKEN":    "gl",
 			BridgePasswordEnv: testBridgePassword,
 		},
-		SSHPrivateKey: "-----BEGIN KEY-----\nk\n-----END KEY-----",
-		SSHKnownHosts: "host ssh-ed25519 AAAA",
+		GitCredentials: []GitCredential{{ID: "gh", Kind: RepoCredentialGitHubHTTPS, Secret: "catalog-token"}},
 	}
 
 	if _, err := m.Create(context.Background(), spec); err != nil {
@@ -189,16 +191,19 @@ func TestManagerCreateSSHAndConfigMultiInject(t *testing.T) {
 	inj, _ := env["SANDBOX_INJECT"].(string)
 	parts := strings.Split(inj, ",")
 	if len(parts) != 2 {
-		t.Fatalf("want SSH+ConfigHome two parts, got %q", inj)
+		t.Fatalf("want Git catalog+ConfigHome two parts, got %q", inj)
 	}
 	if !strings.HasSuffix(parts[0], "|/tmp/grasp-ssh-inject") {
-		t.Fatalf("SSH staging first: %q", parts[0])
+		t.Fatalf("Git catalog staging first: %q", parts[0])
 	}
 	if !strings.HasSuffix(parts[1], "|/root/.cursor") {
 		t.Fatalf("ConfigHome second: %q", parts[1])
 	}
-	if env["GITHUB_TOKEN"] != "gh" || env["GITLAB_TOKEN"] != "gl" {
-		t.Fatalf("tokens must remain: %+v", env)
+	if _, ok := env["GITHUB_TOKEN"]; ok {
+		t.Fatalf("env Git tokens must not reach the sandbox: %+v", env)
+	}
+	if _, ok := env["GITLAB_TOKEN"]; ok {
+		t.Fatalf("env Git tokens must not reach the sandbox: %+v", env)
 	}
 	hdr, _ := env["SANDBOX_INJECT_HEADERS"].(string)
 	if !strings.HasPrefix(hdr, "Authorization: Bearer ") {

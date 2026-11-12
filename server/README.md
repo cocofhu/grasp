@@ -18,8 +18,8 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 |---|---|---|
 | 编码工具厂商授权 | Cursor、Claude Code、CodeBuddy、Trae、OpenCode（含 OpenCode Go）、DeepSeek Harness 的官方 Key/Token；Codex 平台授权使用登录文件 | 保存为 `tool_auth`，只注入具名模型配置选中的授权；Codex 登录文件写入 `{configRoot}/auth.json` |
 | 模型 API 账号 | 通用模型服务的 Key、Base URL、协议与原始模型 ID | 保存为 `model_api`；通过具名模型配置选择兼容编码工具和连接，不与厂商授权混用 |
-| Git HTTPS | GitHub/GitLab Token、GitLab URL | 注入沙箱，由 startup 配置 `git`、`gh`/`glab` |
-| Git SSH | 私钥、known_hosts | 写入 `~/.ssh/id_rsa`、`~/.ssh/known_hosts`，不作为普通 env |
+| Git HTTPS | GitHub/GitLab Token、GitLab URL | 仓库选作访问凭据后，随 Git catalog 注入沙箱，只对该仓库地址生效；不作为普通 env |
+| Git SSH | 私钥、known_hosts | 同上，随 Git catalog 注入，只对该仓库地址生效 |
 | MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
 | 渠道、外部 MCP、工作流 Key | 在工作区凭据页汇总查看 | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
 
@@ -212,9 +212,9 @@ dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文
 | `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<PORT>` | 沙箱内 agent/MCP 客户端回连 run 级 artifact-store MCP 的 base URL。K8s gateway 须改为沙箱可达且挂载 `/mcp` 的实例基址(如 `http://api.example.com`);勿用仅 SPA/无 `/mcp` 路由的入口域名。若误配 `spa.example.com`,加载配置与注入时会改写为 `api.example.com`(见 `RewriteMisconfiguredMCPAdvertise`) |
 | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent profile 规则根(挂入 `{configRoot}/rules`) |
 
-> **GitLab 不是平台配置**:平台不依赖任何固定的 GitLab 地址或令牌。仓库地址由工作流
-> 全局变量 `repo_url` 提供；凭据只在**工作区凭据** UI 中配置，run 执行时
-> 按 run 注入对应沙箱用于 clone/push/MR。`GITLAB_URL` 未显式配置时会自动从 `repo_url` 推导。
+> **GitLab 不是平台配置**:平台不依赖任何固定的 GitLab 地址或令牌。仓库地址来自工作流
+> 绑定的仓库；凭据只在**工作区凭据** UI 中配置并由仓库选择，run 执行时
+> 注入对应沙箱用于 clone/push/MR。
 
 ## 配置(YAML)+ 存储(SQLite)
 
@@ -241,7 +241,7 @@ engine: { max_concurrent_runs, profiles_root }
 sandbox: { image, env, agent_chat_timeout_seconds, ... }
 ```
 
-> GitLab/代码托管**不在**这份服务端配置里：仓库地址走工作流全局变量 `repo_url`，凭据只走
+> GitLab/代码托管**不在**这份服务端配置里：仓库地址和凭据选择走「设置 → 仓库」，凭据本身只走
 > 工作区凭据 UI，不是平台级配置。
 
 环境变量覆盖(env 优先级最高,上表对应字段):`GRASP_PORT`、`GRASP_DB`、
@@ -318,9 +318,9 @@ GRASP_LIVE=1 GRASP_SANDBOX_GATEWAY_URL=http://127.0.0.1:8899 GRASP_CURSOR_API_KE
 
 ## Git 接入（工作区凭据 UI）
 
-Git/代码托管由**用户自己配置**，不是平台级设置。仓库地址来自工作流全局变量 `repo_url`；
-Token、GitLab URL、SSH 私钥与 known_hosts 都保存在工作区凭据中。
-Agent 元信息 env 中的非敏感项（如 `GIT_REPOS`、`GITHUB_URL`）支持模板替换：
+Git/代码托管由**用户自己配置**，不是平台级设置。仓库地址来自「设置 → 仓库」的登记；
+Token、Host、SSH 私钥与 known_hosts 都保存在工作区凭据中，由仓库选择使用哪一个。
+Agent 元信息 env 中的非敏感项（如 `GITHUB_URL`）支持模板替换：
 
 - `${GRASP_ARTIFACT_URL}` / `${GRASP_ARTIFACT_TOKEN}` / `${GRASP_RUN_ID}` / `${GRASP_NODE_ID}` — 运行级变量;
 - `${vars.<全局变量名>}` — 工作流全局变量,如 `${vars.repo_url}`。
@@ -339,7 +339,7 @@ Agent 元信息 env 中的非敏感项（如 `GIT_REPOS`、`GITHUB_URL`）支持
 
 Gitea/Bitbucket/Codeberg 等 **HTTPS 不支持 Token 注入**,请改用 SSH。`startup.sh` 在 clone 前按每个仓库 URL 的 scheme 路由凭据(HTTPS 与 SSH 互斥);SSH 未配 known_hosts 时 fail-fast。仓库列表通过 `GIT_REPOS`(逗号分隔,每项 `name|url|branch`)注入,每个仓 clone 到 `/root/workspace/<name>/`。
 
-`GIT_REPOS` 可在 Agent 元信息里引用工作流的 `repos` 全局变量:`{"GIT_REPOS":"${vars.repos}"}`(`${vars.repos}` 会被展开成上面的 `name|url|branch` 逗号格式)。认证信息只来自工作区凭据；未配置时不会 clone/push。
+仓库在「设置 → 仓库」登记，每个仓库保存地址、默认分支、目录名、访问凭据（工作区凭据里的 Git Token 或 SSH 私钥）和提交用户名/邮箱。工作流在设置里绑定仓库（`defaults.repos`），启动运行时可以取消部分仓库或改分支，所选仓库快照在 Run 上；平台据此生成 `GIT_REPOS` 和 `GIT_REPO_AUTHORS`，凭据只对该仓库地址生效。Agent 环境变量不能设置这两个键，也没有 Agent 级 Git 授权；没有绑定仓库时不会 clone/push。
 
 run 执行时工作区凭据与这些环境变量按 run 注入(kind-agnostic)沙箱用于 clone/push;`GITLAB_URL` 未显式配置
 且首仓确为 GitLab(非 github.com / 非 `GITHUB_URL` host)时由 `repos[0].url` 自动推导(scheme+host,见 `gitBaseURL`)。

@@ -1,4 +1,4 @@
-import type { AgentCapabilities, MessageReference } from '../api/apiTypes'
+import type { AgentCapabilities, MessageReference, RepoChoice, SessionRepo } from '../api/apiTypes'
 
 export type NodeType =
   | 'input'
@@ -62,6 +62,8 @@ export interface WorkflowDefaults {
   variables: WorkspaceVariable[]
   notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
+  /** Registered repositories every run clones by default, in order. */
+  repos?: RepoChoice[]
 }
 
 export interface Workflow {
@@ -1129,7 +1131,7 @@ export interface StateTraceEntry {
 // 全局变量运行期取值
 export interface RunVar {
   name: string
-  type: 'int' | 'string' | 'bool' | 'repos'
+  type: 'int' | 'string' | 'bool'
   value: any
 }
 
@@ -1195,6 +1197,8 @@ export interface Run {
   tags?: string[]
   /** Immutable StartRun sandbox env snapshot (secrets masked as ****). */
   sandboxEnv?: SandboxEnvEntry[]
+  /** Detail only: repositories frozen at start. */
+  repos?: SessionRepo[]
   attempt?: number
   // The graph snapshot this run executed (pinned at start). Lets the run detail
   // canvas render against exactly what ran, independent of later edits/deletion

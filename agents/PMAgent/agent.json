@@ -10,8 +10,5 @@
       }
     }
   ],
-  "name": "PMAgent",
-  "env": {
-    "GIT_REPOS": "${vars.repos}"
-  }
+  "name": "PMAgent"
 }

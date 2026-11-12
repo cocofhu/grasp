@@ -32,7 +32,7 @@ describe('CreateAgentTeamWizard', () => {
         stubs: {
           Icon: true,
           AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
-          AgentGitCredentialPicker: true,
+
           ModelBindingEditor: true,
           WorkspaceCredentialsPanel: true,
         },

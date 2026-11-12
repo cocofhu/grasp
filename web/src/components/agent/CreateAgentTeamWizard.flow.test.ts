@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   listCredentials: vi.fn(),
   listModelConnections: vi.fn(),
   listToolCapabilities: vi.fn(),
+  listProjects: vi.fn(),
 }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
@@ -22,12 +23,6 @@ const ModelPicker = {
   props: ['modelValue'],
   emits: ['update:modelValue', 'validity'],
   template: '<div class="model-picker-stub" />',
-}
-const GitPicker = {
-  name: 'AgentGitCredentialPicker',
-  props: ['modelValue'],
-  emits: ['update:modelValue', 'validity'],
-  template: '<div class="git-picker-stub" />',
 }
 function mountWizard(props: Record<string, unknown> = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
@@ -40,8 +35,8 @@ function mountWizard(props: Record<string, unknown> = {}) {
         Icon: true,
         AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
         ModelBindingEditor: ModelPicker,
-        AgentGitCredentialPicker: GitPicker,
         WorkspaceCredentialsPanel: true,
+        RouterLink: true,
       },
     },
   })
@@ -100,6 +95,7 @@ beforeEach(() => {
     ],
   })
   mocks.bootstrapAgentTeam.mockResolvedValue({ sessionId: 's1' })
+  mocks.listProjects.mockResolvedValue([{ id: 'p1', name: 'web', repoUrl: 'https://git.example/team/web.git' }])
 })
 describe('CreateAgentTeamWizard flow', () => {
   it('requires team basics and preserves edited derived names', async () => {
@@ -146,35 +142,28 @@ describe('CreateAgentTeamWizard flow', () => {
     w.findComponent(ModelPicker).vm.$emit('validity', true)
     vm.goNext()
     await flushPromises()
-    expect(vm.currentStep.id).toBe('git')
+    expect(vm.currentStep.id).toBe('repo')
     for (const field of ['apiKeyInput', 'acpBackend', 'gitCredentialType']) expect(vm.draft).not.toHaveProperty(field)
     w.unmount()
   })
-  it('selects multiple Git credentials and clears them when skipped', async () => {
+  it('picks a saved repository and clears it when skipped', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
     await advance(w, 2)
-    const selected = {
-      items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
-    }
-    w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
-    w.findComponent(GitPicker).vm.$emit('validity', false)
-    vm.goNext()
-    expect(vm.currentStep.id).toBe('git')
-    vm.draft.gitUrl = 'https://git.example/team/repo.git'
-    expect(vm.draft.gitBindings).toEqual(selected)
+    expect(vm.currentStep.id).toBe('repo')
+    expect(w.find('[data-testid="team-wizard-repo"]').exists()).toBe(true)
+    vm.draft.repoId = 'p1'
     vm.goSkip()
     await flushPromises()
     expect(vm.currentStep.id).toBe('mcp')
-    expect(vm.draft.gitBindings).toEqual({ items: [] })
-    expect(vm.draft.gitUrl).toBe('')
+    expect(vm.draft.repoId).toBe('')
     await advance(w, 2)
     vm.goNext()
     await flushPromises()
-    expect(mocks.bootstrapAgentTeam.mock.calls[0][0].gitBindings).toEqual({ items: [] })
-    expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty('gitUrl')
+    for (const field of ['repoId', 'gitBindings', 'gitUrl'])
+      expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty(field)
     w.unmount()
   })
   it.each(['configuration', 'credential', 'connection'])(
@@ -204,22 +193,21 @@ describe('CreateAgentTeamWizard flow', () => {
       w.unmount()
     },
   )
-  it('preserves the Git step and selected model after a healthy resource refresh', async () => {
+  it('preserves the repository step and selected model after a healthy resource refresh', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
     await advance(w, 2)
     expect(mocks.listCredentials).not.toHaveBeenCalled()
-    const gitBindings = { items: [{ credentialId: 'git-team' }] }
-    vm.draft.gitBindings = gitBindings
+    vm.draft.repoId = 'p1'
     vm.resourceManagerOpen = true
     await vm.refreshResources()
     await flushPromises()
-    expect(vm.currentStep.id).toBe('git')
+    expect(vm.currentStep.id).toBe('repo')
     expect(vm.modelValid).toBe(true)
     expect(vm.draft.modelConfigurationId).toBe('model-team')
-    expect(vm.draft.gitBindings).toEqual(gitBindings)
+    expect(vm.draft.repoId).toBe('p1')
     expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
     expect(mocks.listModelConnections).toHaveBeenCalledTimes(1)
     expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(1)
@@ -280,28 +268,27 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(service.headers).toEqual([{ k: 'X-Test', v: 'value' }])
     w.unmount()
   })
-  it('submits only selected configuration and Git references with workspace settings', async () => {
+  it('submits only the selected configuration and repository references with workspace settings', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
     await advance(w, 2)
-    w.findComponent(GitPicker).vm.$emit('update:modelValue', {
-      items: [{ credentialId: 'git-team' }],
-    })
+    vm.draft.repoId = 'p1'
     await advance(w, 3)
     expect(vm.currentStep.id).toBe('review')
     expect(w.text()).toContain('Team model')
+    expect(w.text()).toContain('web')
     vm.goNext()
     await flushPromises()
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
     expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).toMatchObject({
       pmName: '登月项目经理',
       modelConfigurationId: 'model-team',
-      gitBindings: { items: [{ credentialId: 'git-team' }] },
-      env: { GIT_REPOS: '${vars.repos}' },
+      repoId: 'p1',
+      env: {},
     })
-    for (const field of ['teamName', 'apiKey', 'acpBackend', 'gitCredentialType'])
+    for (const field of ['teamName', 'apiKey', 'acpBackend', 'gitCredentialType', 'gitBindings'])
       expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty(field)
     expect(w.emitted('started')?.[0]).toEqual([{ sessionId: 's1' }])
     expect(w.emitted('close')).toHaveLength(1)

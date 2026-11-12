@@ -15,7 +15,6 @@ import (
 type sharedAgentBody struct {
 	AcpBackend   string                `json:"acpBackend"`
 	ModelBinding *modelrouting.Binding `json:"modelBinding"`
-	GitBindings  *models.GitBindings   `json:"gitBindings"`
 	Files        []services.AgentFile  `json:"files"`
 	MCP          []services.MCPServer  `json:"mcp"`
 	Env          map[string]string     `json:"env"`
@@ -36,7 +35,7 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		mcp = []services.MCPServer{}
 	}
 	dto := gin.H{
-		"acpBackend": cfg.AcpBackend, "modelBinding": cfg.ModelBinding, "gitBindings": cfg.GitBindings,
+		"acpBackend": cfg.AcpBackend, "modelBinding": cfg.ModelBinding,
 		"files":  files,
 		"mcp":    mcp,
 		"env":    env,
@@ -66,7 +65,7 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
-		AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding, GitBindings: b.GitBindings,
+		AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		Files:  b.Files,
 		MCP:    b.MCP,
 		Env:    b.Env,
@@ -95,9 +94,8 @@ func (h *Handlers) CreateSharedAgentTest(c *gin.Context) {
 		return
 	}
 	var b struct {
-		AgentName string          `json:"agentName"`
-		Repos     []testRepoInput `json:"repos"`
-		RepoURL   string          `json:"repoUrl"`
+		AgentName string              `json:"agentName"`
+		Repos     []models.RepoChoice `json:"repos"`
 	}
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -115,7 +113,18 @@ func (h *Handlers) CreateSharedAgentTest(c *gin.Context) {
 	}
 	shared := h.SharedAgent.Get()
 	effective := services.ExtendOverlay(shared, agent)
-	repos := resolveTestRepos(b.Repos, b.RepoURL)
+	var repos []models.SessionRepo
+	if len(b.Repos) > 0 {
+		if h.Solo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "repositories unavailable"})
+			return
+		}
+		var err error
+		if repos, err = h.Solo.Projects().Snapshot(b.Repos); err != nil {
+			writeSoloErr(c, err)
+			return
+		}
+	}
 	row, err := h.Sbx.OpenWithEffective(c.Request.Context(), agentName, repos, effective, h.SharedAgent.WorkDir())
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

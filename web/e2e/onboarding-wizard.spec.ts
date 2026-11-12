@@ -68,7 +68,10 @@ const TEMPLATES = [
 
 type BootstrapBody = {
  modelConfigurationId?: string
- gitBindings?: { items: { credentialId: string }[] }
+ repoUrl?: string
+ repoCredentialId?: string
+ commitName?: string
+ commitEmail?: string
  agents?: { templateId: string; name: string; modelConfigurationId?: string }[]
  language?: string
 }
@@ -176,17 +179,17 @@ async function walkToTeam(page: Page, lang = 'zh-CN', withGit = false) {
  await expect(page.locator('select')).toHaveCount(0)
  await next(page)
  await step(page, 'gitCredentials')
- if (withGit) {
-  await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
-  await page.locator('[data-test="app-select-option-github-key"]').click()
-  await expect(page.getByTestId('git-preferred-github-key')).toHaveCount(0)
- }
+ await expect(page.getByTestId('git-credential-add')).toHaveCount(0)
  await next(page)
  await step(page, 'git')
  await page.getByTestId('onboarding-git-user-name').fill('Ada Lovelace')
  await page.getByTestId('onboarding-git-user-email').fill('ada@example.com')
- if (withGit) await page.getByTestId('onboarding-repo-url').fill('https://github.com/example/app.git')
- else await page.getByTestId('onboarding-git-skip').click()
+ if (withGit) {
+  await page.getByTestId('onboarding-repo-url').fill('https://github.com/example/app.git')
+  await page.getByTestId('onboarding-repo-credential').locator('[data-test="app-select-trigger"]').click()
+  await page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"]) [data-test="app-select-option-github-key"]').click()
+  await expect(page.getByTestId('onboarding-repo-credential')).toContainText(gitKey.name)
+ } else await page.getByTestId('onboarding-git-skip').click()
  await next(page)
  await step(page, 'team')
  await expect(page.getByTestId('onboarding-solo-agent')).toContainText('Solo')
@@ -194,7 +197,7 @@ async function walkToTeam(page: Page, lang = 'zh-CN', withGit = false) {
 }
 
 for (const lang of ['zh-CN', 'en']) {
- test(`onboarding selects a saved model and Git references (${lang})`, async ({ page }) => {
+ test(`onboarding selects a saved model and a repository with its credential (${lang})`, async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await walkToTeam(page, lang, true)
   await page.screenshot({ path: path.join(OUT, `solo-default-team-${lang}.png`), animations: 'disabled' })
@@ -209,7 +212,8 @@ for (const lang of ['zh-CN', 'en']) {
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
   await expect(page.getByTestId('onboarding-success-agents')).toContainText('Solo')
   await expect(page.getByTestId('onboarding-success-agents').locator('li')).toHaveCount(6)
-  expect(state.body).toMatchObject({ modelConfigurationId: model.id, gitBindings: { items: [{ credentialId: gitKey.id }] }, language: lang })
+  expect(state.body).toMatchObject({ modelConfigurationId: model.id, repoUrl: 'https://github.com/example/app.git', repoCredentialId: gitKey.id, commitName: 'Ada Lovelace', commitEmail: 'ada@example.com', language: lang })
+  expect(state.body).not.toHaveProperty('gitBindings')
   expect(state.body).not.toHaveProperty('apiKey')
   expect(state.body).not.toHaveProperty('acpBackend')
   expect(state.body?.agents?.find((row) => row.templateId === 'implement')?.name).toBe(lang === 'en' ? 'Implement' : '实现')
@@ -319,13 +323,14 @@ for (const width of [1280, 390]) {
   await expectInlineSetup(page)
   await page.getByTestId('workspace-credential-review-next').click()
   await page.getByTestId('workspace-credential-create-submit').click()
-  await expect(page.getByTestId('git-credential-row-created-key-2')).toContainText('My GitHub account')
+  await expect(page.getByTestId('workspace-credentials-panel')).toContainText('My GitHub account')
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('test-github-secret')
   await next(page)
   await step(page, 'git')
   await page.getByTestId('onboarding-git-user-name').fill('Ada Lovelace')
   await page.getByTestId('onboarding-git-user-email').fill('ada@example.com')
   await page.getByTestId('onboarding-repo-url').fill('https://github.com/example/app.git')
+  await expect(page.getByTestId('onboarding-repo-credential')).toContainText('My GitHub account')
   await next(page)
   await step(page, 'team')
   await next(page)
@@ -333,7 +338,7 @@ for (const width of [1280, 390]) {
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
   await expect(page.getByTestId('onboarding-success-agents')).toContainText('Solo')
   await expect(page.getByTestId('onboarding-success-agents').locator('li')).toHaveCount(6)
-  expect(state.body).toMatchObject({ modelConfigurationId: 'created-model', gitBindings: { items: [{ credentialId: 'created-key-2' }] }, gitUserName: 'Ada Lovelace', repoUrl: 'https://github.com/example/app.git' })
+  expect(state.body).toMatchObject({ modelConfigurationId: 'created-model', repoCredentialId: 'created-key-2', commitName: 'Ada Lovelace', repoUrl: 'https://github.com/example/app.git' })
   expect(JSON.stringify(state.body)).not.toContain('test-cursor-secret')
   expect(JSON.stringify(state.body)).not.toContain('test-github-secret')
   await expect(page.getByRole('dialog')).toHaveCount(1)
@@ -446,7 +451,7 @@ test('the four workflow roles stay locked and an empty Solo is created separatel
  expect(state.body?.agents).toHaveLength(4)
  expect(state.body?.agents?.map((row) => row.templateId)).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
  expect(state.body?.agents?.map((row) => row.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
- expect(state.body?.gitBindings).toEqual({ items: [] })
+ for (const key of ['gitBindings', 'repoUrl', 'repoCredentialId', 'commitName']) expect(state.body).not.toHaveProperty(key)
 })
 
 test('configuration errors keep the wizard open with its selections', async ({ page }) => {

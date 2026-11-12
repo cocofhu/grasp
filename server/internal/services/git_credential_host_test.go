@@ -22,7 +22,7 @@ func TestGitCredentialHostCRUDAndRuntimeResolution(t *testing.T) {
 	if !ok || selected.Host != key.Host || selected.EnvKey != "GITLAB_TOKEN" || selected.Secret != "private-gitlab-token" {
 		t.Fatal("Git resolver did not return the selected credential's host and secret")
 	}
-	before, err := runtime.ResolveGitBindings(serviceGitSelection(key.ID), s.ResolveGitValue)
+	before, err := runtime.ResolveRepoCredentials([]runtime.RepoCredential{{Repo: "r", URL: "https://gitlab.com/team/r.git", CredentialID: key.ID}}, s.ResolveGitValue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +38,8 @@ func TestGitCredentialHostCRUDAndRuntimeResolution(t *testing.T) {
 	if !ok || selected.Host != key.Host || selected.Secret != "rotated-gitlab-token" {
 		t.Fatal("Git resolver used stale host or secret metadata")
 	}
-	after, err := runtime.ResolveGitBindings(serviceGitSelection(key.ID), s.ResolveGitValue)
-	if err != nil || len(after) != 1 || after[0].Scope != key.Host || gitBindingsFingerprint(before) == gitBindingsFingerprint(after) {
+	after, err := runtime.ResolveRepoCredentials([]runtime.RepoCredential{{Repo: "r", URL: "http://git.internal:8080/team/r.git", CredentialID: key.ID}}, s.ResolveGitValue)
+	if err != nil || len(after) != 1 || after[0].Scope != key.Host+"/team/r" || gitBindingsFingerprint(before) == gitBindingsFingerprint(after) {
 		t.Fatal("host edit did not reach the sandbox catalog or authorization fingerprint")
 	}
 	views, err := s.List()

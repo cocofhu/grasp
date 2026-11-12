@@ -141,7 +141,7 @@ if [ "$reprime_tool_only" = 0 ]; then
   FUNCS="repo_scheme repo_host url_host prepare_git_credentials_file glab_auth_login gh_auth_login
   setup_https_credentials setup_ssh_credentials setup_bare_gitlab_credentials setup_bare_github_credentials
   setup_repo_credentials configure_git_credentials configure_git_catalog repo_name_from_url
-  apply_ssh_file_inject"
+  apply_repo_author"
   # shellcheck disable=SC2086
   defs="$(awk -v want="$(echo $FUNCS)" '
     BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) keep[w[i]] = 1 }
@@ -162,6 +162,7 @@ if [ "$reprime_tool_only" = 0 ]; then
   _GIT_CATALOG_CONFIGURED=0
   GIT_CREDENTIAL_HOME="$HOME_DIR"
   GIT_REPOS="${GIT_REPOS:-}"
+  GIT_REPO_AUTHORS="${GIT_REPO_AUTHORS:-}"
   GITLAB_TOKEN="${GITLAB_TOKEN:-}"
   GITHUB_TOKEN="${GITHUB_TOKEN:-}"
   GITLAB_URL="${GITLAB_URL:-}"
@@ -170,9 +171,6 @@ if [ "$reprime_tool_only" = 0 ]; then
   GIT_SSH_KNOWN_HOSTS="${GIT_SSH_KNOWN_HOSTS:-}"
 
   if [ -d "$STAGE/ssh" ]; then
-    if [ ! -f "$STAGE/ssh/git/manifest.json" ]; then
-      apply_ssh_file_inject "$STAGE/ssh"
-    fi
     configure_git_catalog "$STAGE/ssh/git" || { echo "reprime: git catalog failed" >&2; exit 1; }
   fi
   configure_git_credentials || { echo "reprime: git credentials failed" >&2; exit 1; }
@@ -190,7 +188,10 @@ if [ "$reprime_tool_only" = 0 ]; then
       [ -n "$_name" ] || _name=$(repo_name_from_url "$_url")
       case "$_name" in ''|*/*|*\\*|.|..) continue ;; esac
       _dest="$WORKSPACE_DIR/$_name"
-      [ -d "$_dest/.git" ] && continue
+      if [ -d "$_dest/.git" ]; then
+        apply_repo_author "$_name" "$_dest"
+        continue
+      fi
       echo "reprime: cloning ${_name}"
       rm -rf "$_dest"
       mkdir -p "$_dest"
@@ -203,6 +204,7 @@ if [ "$reprime_tool_only" = 0 ]; then
         git -C "$_dest" fetch origin "$_branch" 2>/dev/null || true
         git -C "$_dest" checkout "$_branch" 2>/dev/null || true
       fi
+      apply_repo_author "$_name" "$_dest"
     done
   fi
 fi

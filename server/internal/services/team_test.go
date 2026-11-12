@@ -11,7 +11,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/cocofhu/grasp/internal/filestore"
 	"gorm.io/driver/sqlite"
@@ -54,7 +53,7 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		ModelConfigurationID:  "model-team",
 		ModelConfigurationIDs: []string{"model-team", "model-team-alt"},
 		MCP:                   DefaultPlatformMCP(),
-		Env:                   map[string]string{"GIT_REPOS": "${vars.repos}"},
+		Env:                   map[string]string{"FEATURE": "on"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +197,7 @@ type fakeTeamSandbox struct {
 	mu        sync.Mutex
 }
 
-func (f *fakeTeamSandbox) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error) {
+func (f *fakeTeamSandbox) Open(ctx context.Context, profile string, repos []models.SessionRepo) (*models.Sandbox, error) {
 	if f.openErr != nil {
 		return nil, f.openErr
 	}

@@ -18,7 +18,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -34,38 +33,6 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 		return 0, false
 	}
 	return uint(v), true
-}
-
-// testRepoInput is one row from POST /agents/:name/test {repos: [...]}.
-type testRepoInput struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Branch string `json:"branch"`
-}
-
-// resolveTestRepos picks the clone list for interactive test sandboxes:
-// non-empty repos[] (trimmed, deduped by name, skip partial rows) wins over
-// the single repoUrl (ReposFromURL), then an empty list (pure artifact workspace).
-func resolveTestRepos(repos []testRepoInput, repoURL string) []sandbox.RepoSpec {
-	if len(repos) > 0 {
-		seen := map[string]bool{}
-		out := make([]sandbox.RepoSpec, 0, len(repos))
-		for _, r := range repos {
-			name := strings.TrimSpace(r.Name)
-			url := strings.TrimSpace(r.URL)
-			if name == "" || url == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			out = append(out, sandbox.RepoSpec{
-				Name:   name,
-				URL:    url,
-				Branch: strings.TrimSpace(r.Branch),
-			})
-		}
-		return out
-	}
-	return sandbox.ReposFromURL(repoURL)
 }
 
 // SandboxEvents returns a sandbox's full agent event log, read directly from

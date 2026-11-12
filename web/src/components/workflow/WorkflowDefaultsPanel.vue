@@ -5,12 +5,16 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
+import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import { api } from '@/lib/api/api'
 import type { Agent, ChannelConfig } from '@/lib/api/api'
+import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import type { WorkspaceNotifyPolicy, WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
 const props = defineProps<{ workflow: Workflow; agents: Agent[] }>()
 const { t } = useI18n()
 const channels = ref<ChannelConfig[]>([])
+const projects = ref<Project[]>([])
+const projectsLoading = ref(true)
 const error = ref('')
 const events = ['waiting_human', 'failed', 'completed']
 const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager']
@@ -34,6 +38,11 @@ function ensureDefaults(): WorkflowDefaults {
   return config
 }
 function setInheritance(value: boolean) { ensureDefaults().inheritWorkspace = value }
+function setRepos(value: RepoChoice[]) {
+  const config = ensureDefaults()
+  if (value.length) config.repos = value
+  else delete config.repos
+}
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
@@ -180,7 +189,12 @@ async function loadChannels() {
   try { channels.value = (await api.listChannels()).items || [] }
   catch (cause: any) { error.value = String(cause?.message || cause) }
 }
-onMounted(() => { void loadChannels() })
+async function loadProjects() {
+  try { projects.value = await api.listProjects() }
+  catch (cause: any) { error.value = String(cause?.message || cause) }
+  finally { projectsLoading.value = false }
+}
+onMounted(() => { void loadChannels(); void loadProjects() })
 onBeforeUnmount(() => {
   alive = false
   for (const variable of [...pendingRemoval]) commitRemoval(variable)
@@ -188,6 +202,19 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="space-y-3 text-sm" data-testid="workflow-defaults-panel">
+    <section class="defaults-section" data-testid="workflow-repos-settings">
+      <div class="defaults-heading">
+        <span class="defaults-icon"><Icon name="git" :size="18" /></span>
+        <div class="min-w-0 flex-1">
+          <h3 class="font-semibold text-txt">{{ t('pages.workspaceDefaults.repos') }}</h3>
+          <p class="defaults-hint">{{ t('pages.workspaceDefaults.reposHint') }}</p>
+        </div>
+      </div>
+      <div class="border-t border-line p-4">
+        <RepoChoiceList :model-value="defaults?.repos || []" :projects="projects" :loading="projectsLoading" @update:model-value="setRepos" />
+      </div>
+    </section>
+
     <section class="defaults-section" data-testid="workflow-variables-settings">
       <div class="defaults-heading">
         <span class="defaults-icon"><Icon name="variable" :size="18" /></span>

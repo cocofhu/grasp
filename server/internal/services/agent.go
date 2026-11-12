@@ -37,7 +37,6 @@ type AgentService struct {
 	Vcs                       *WorkspaceVcsService
 	validateModelBinding      func(string, *modelrouting.Binding) error
 	resolveModelConfiguration func(*modelrouting.Binding) (string, error)
-	validateGitBindings       func(*models.GitBindings) error
 	shared                    *SharedAgentService
 }
 
@@ -171,8 +170,6 @@ func DefaultConfigRootForBackend(backend string) string {
 // tree) plus the MCP servers and environment variables it runs with.
 type Agent struct {
 	InheritModel       bool                  `json:"inheritModel"`
-	InheritGit         bool                  `json:"inheritGit"`
-	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
 	Name               string                `json:"name"`
 	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
@@ -200,8 +197,6 @@ type Agent struct {
 // the workspace/ subfolder).
 type agentConfig struct {
 	InheritModel       bool                      `json:"inheritModel"`
-	InheritGit         bool                      `json:"inheritGit"`
-	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
 	AcpBackend         string                    `json:"acpBackend,omitempty"`
@@ -264,9 +259,8 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		env = map[string]string{}
 	}
 	return Agent{
-		InheritModel: cfg.InheritModel, InheritGit: cfg.InheritGit,
+		InheritModel:       cfg.InheritModel,
 		Name:               name,
-		GitBindings:        cfg.GitBindings,
 		CredentialBindings: cfg.CredentialBindings,
 		ModelBinding:       cfg.ModelBinding,
 		AcpBackend:         backend,
@@ -361,7 +355,7 @@ func underRoot(root, rel string) (string, error) {
 }
 
 func (s *AgentService) readConfig(name string) agentConfig {
-	cfg := agentConfig{InheritModel: true, InheritGit: true}
+	cfg := agentConfig{InheritModel: true}
 	b, err := os.ReadFile(filepath.Join(s.root, sanitize(name), "agent.json"))
 	if err != nil {
 		return cfg
@@ -435,14 +429,8 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 		return agentWrite{}, err
 	}
 	var err error
-	a.GitBindings, err = models.NormalizeGitBindings(a.GitBindings)
-	if err != nil {
-		return agentWrite{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
-	}
-	if a.GitBindings != nil {
-		a.CredentialBindings = withoutGitAuthorizationBindings(a.CredentialBindings)
-		a.Env = withoutGitAuthorizationEnv(a.Env)
-	}
+	a.CredentialBindings = withoutGitAuthorizationBindings(a.CredentialBindings)
+	a.Env = withoutGitAuthorizationEnv(a.Env)
 	for key := range a.CredentialBindings {
 		if strings.TrimSpace(key) == "" || strings.TrimSpace(key) != key || envauth.IsPlatformReservedEnvKey(key) {
 			return agentWrite{}, fmt.Errorf("%w: invalid credential binding key %q", ErrInvalidAgent, key)
@@ -482,11 +470,6 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
 		}
 	}
-	if s.validateGitBindings != nil {
-		if err := s.validateGitBindings(effective.GitBindings); err != nil {
-			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
-		}
-	}
 	storedBackend := backend
 	if a.InheritModel {
 		storedBackend = NormalizeAcpBackend(a.AcpBackend)
@@ -496,8 +479,7 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 		layout.ConfigRoot = DefaultConfigRootForBackend(storedBackend)
 	}
 	cfg := agentConfig{
-		InheritModel: a.InheritModel, InheritGit: a.InheritGit,
-		GitBindings:        a.GitBindings,
+		InheritModel:       a.InheritModel,
 		CredentialBindings: a.CredentialBindings,
 		ModelBinding:       a.ModelBinding,
 		AcpBackend:         storedBackend,

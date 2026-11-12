@@ -5,9 +5,9 @@ description: 沙箱内 git clone/push 与合并请求（GitLab glab / GitHub gh�
 
 # Git 操作指引
 
-沙箱使用 Agent 显式选择或开启继承的 Git 授权。GitHub / GitLab 凭据的 Host 与 Token 一起配置，默认是官方站点；自建站点使用凭据中保存的 Host。Token、SSH 私钥与 known_hosts 通过受限文件注入，由 Git credential helper 和 gh/glab 配置按站点或仓库范围选择，不要求全局 Token 环境变量或独立的 GitLab URL。
+Git 授权属于仓库：每个仓库在「设置 → 仓库」里选择自己的凭据和提交身份，只对该仓库地址生效。Token、SSH 私钥与 known_hosts 通过受限文件注入，由 Git credential helper 和 gh/glab 配置按仓库地址选择，沙箱里没有全局 Token 环境变量。提交用户名和邮箱已写入各仓库的 `git config`，不要改。
 
-同一站点的多个账号按仓库范围选择，范围同样具体时使用列表里先出现的授权；认证失败不会换用另一账号。SSH 必须配置 known_hosts，禁止 accept-new。
+没有配置凭据的仓库只能匿名访问；认证失败不会换用另一账号。SSH 必须配置 known_hosts，禁止 accept-new。
 
 Gitea/Bitbucket 等 HTTPS 不支持 Token 注入,请改用 SSH。
 
@@ -28,10 +28,10 @@ git push -u origin HEAD
 
 `submit_mr` 步骤顺序与 DefaultMRContract 一致:**解决冲突 → 推送源分支 → list open → create（仅当无 open）→ 解析幂等错误 → list merged/view → `node_complete(outputs.mr_url)`**。
 
-选型规则（按远端主机与已选凭据的 Host，不按 Token 有无或 CLI 轮询）:
+选型规则（按远端主机与仓库凭据的 Host，不按 Token 有无或 CLI 轮询）:
 
-- **GitLab**（gitlab.com，或与所选 GitLab 凭据的 Host 一致）→ `glab`
-- **GitHub**（github.com，或与所选 GitHub 凭据的 Host 一致，含 GHE）→ `gh pr`
+- **GitLab**（gitlab.com，或与仓库的 GitLab 凭据 Host 一致）→ `glab`
+- **GitHub**（github.com，或与仓库的 GitHub 凭据 Host 一致，含 GHE）→ `gh pr`
 - **匹配不上**（如 Gitea）→ 不支持自动建单:仍须完成冲突解决与 `git push`,再 `node_complete(status=failed)`;摘要须含「冲突已解决」「源分支已推送」及建单/CLI/托管商原因
 
 ### 幂等闭环（gh / glab 对称）
@@ -60,7 +60,7 @@ gh pr list --base <target> --head "$(git rev-parse --abbrev-ref HEAD)" --state m
 # or: gh pr view <n> --json url,state
 ```
 
-成功时合并请求 Web URL（含 GitHub PR）写入 `outputs.mr_url`（字段名不变）。幂等成功路径下允许空 `mr_url`(已合入查不到 / 无历史单已同步)。需预装对应 CLI（`glab` / `gh`）并在 Agent 绑定与远端 Host 匹配的授权。
+成功时合并请求 Web URL（含 GitHub PR）写入 `outputs.mr_url`（字段名不变）。幂等成功路径下允许空 `mr_url`(已合入查不到 / 无历史单已同步)。需预装对应 CLI（`glab` / `gh`），并在仓库设置里选择与远端 Host 匹配的凭据。
 
 > 平台可选路径 `detect_push` + `create_mr` 本迭代仍仅 GitLab；GitHub 依赖 Agent 侧 `gh`，平台不代建 PR。
 

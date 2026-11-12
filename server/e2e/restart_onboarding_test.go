@@ -152,9 +152,6 @@ func TestRestartReattachOnboardingContract(t *testing.T) {
 		if agent.ModelBinding.Kind != "configuration" || agent.ModelBinding.ConfigurationID != configuration.ID {
 			t.Fatalf("Agent %s does not reference the saved configuration", name)
 		}
-		if agent.GitBindings != nil && (len(agent.GitBindings.Items) != 0 || agent.GitBindings.PreferredCredentialID != "") {
-			t.Fatalf("Agent %s received unselected Git authorization", name)
-		}
 		resolved, err := connections.Resolve(agent.AcpBackend, *agent.ModelBinding)
 		if err != nil || resolved.Secret != secret || resolved.CredentialID != connection.CredentialID {
 			t.Fatalf("Agent %s model credential could not be resolved", name)

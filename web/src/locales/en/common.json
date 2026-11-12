@@ -253,8 +253,7 @@
       "paragraph": "Paragraph",
       "number": "Number",
       "bool": "Boolean",
-      "select": "Select",
-      "repos": "Repositories"
+      "select": "Select"
     },
     "edgeKinds": {
       "success": {
@@ -397,6 +396,14 @@
       "workflow_version_required": "Select a published workflow again.",
       "workspace_import_forbidden": "Import code from within a Solo session.",
       "workspace_import_unavailable": "Workspace import is not available right now."
+    },
+    "repoChoices": {
+      "loading": "Loading repositories…",
+      "empty": "No repositories yet. Add one in Settings → Repositories and set its credential and commit author there.",
+      "deleted": "Repository deleted",
+      "defaultBranch": "Default branch",
+      "branch": "Branch for {name}",
+      "manage": "Manage repositories"
     }
   }
 }

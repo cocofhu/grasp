@@ -65,8 +65,8 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 		if a.AcpBackend != "cursor" {
 			t.Fatalf("agent %s backend = %q", name, a.AcpBackend)
 		}
-		if got := a.Env["GIT_REPOS"]; got != "${vars.repos}" {
-			t.Fatalf("agent %s GIT_REPOS = %q, want ${vars.repos}", name, got)
+		if _, ok := a.Env["GIT_REPOS"]; ok {
+			t.Fatalf("agent %s must not wire repositories through env", name)
 		}
 	}
 
@@ -136,62 +136,56 @@ func TestOnboardingBootstrapKeepsExistingWorkflowDefaults(t *testing.T) {
 	}
 }
 
-func reposVarValue(t *testing.T, graph models.Graph) []any {
-	t.Helper()
-	for _, v := range graph.Variables {
-		if v.Name != "repos" {
-			continue
-		}
-		items, ok := v.Value.([]any)
-		if !ok {
-			t.Fatalf("repos value is %T, want a list", v.Value)
-		}
-		return items
-	}
-	t.Fatal("workflow has no repos variable")
-	return nil
-}
-
-func TestOnboardingBootstrapWritesWizardRepoIntoWorkflow(t *testing.T) {
+func TestOnboardingBootstrapBindsWizardRepoWithItsGitSettings(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+	token, err := svc.Credentials.Create(services.CredentialInput{Purpose: "git", Provider: "github", Name: "GitHub", Value: "synthetic-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
 		RepoURL:              "https://github.com/org/web.git",
 		RepoBranch:           "develop",
-	})
+		RepoCredentialID:     token.ID,
+		CommitName:           "Ada Lovelace",
+		CommitEmail:          "ada@example.com",
+	}
+	res, err := svc.Bootstrap(req)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	wf, ok := svc.WF.Get(res.WorkflowID)
-	if !ok {
-		t.Fatal("workflow missing")
+	projects, err := svc.Projects.List()
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("projects = %+v, %v", projects, err)
 	}
-	items := reposVarValue(t, wf.Graph)
-	if len(items) != 1 {
-		t.Fatalf("want 1 repo row, got %d", len(items))
+	p := projects[0]
+	if p.Name != "web" || p.DefaultBranch != "develop" || p.CredentialID != token.ID || p.CommitName != "Ada Lovelace" || p.CommitEmail != "ada@example.com" {
+		t.Fatalf("project = %+v", p)
 	}
-	row, ok := items[0].(map[string]any)
-	if !ok {
-		t.Fatalf("repo row is %T", items[0])
+	wf, _ := svc.WF.Get(res.WorkflowID)
+	if wf.Defaults == nil || len(wf.Defaults.Repos) != 1 || wf.Defaults.Repos[0].ProjectID != p.ID {
+		t.Fatalf("workflow repos = %+v", wf.Defaults)
 	}
-	if row["url"] != "https://github.com/org/web.git" {
-		t.Errorf("url = %v", row["url"])
+	if env := svc.SharedAgent.Get().Env; env["GIT_USER_NAME"] != "" || env["GIT_USER_EMAIL"] != "" {
+		t.Fatalf("commit author leaked into workspace defaults: %+v", env)
 	}
-	if row["name"] != "web" {
-		t.Errorf("name = %v, want derived from URL", row["name"])
+
+	req.CommitName = "Grace Hopper"
+	if _, err := svc.Bootstrap(req); err != nil {
+		t.Fatalf("second bootstrap: %v", err)
 	}
-	if row["branch"] != "develop" {
-		t.Errorf("branch = %v", row["branch"])
+	projects, _ = svc.Projects.List()
+	wf, _ = svc.WF.Get(res.WorkflowID)
+	if len(projects) != 1 || projects[0].CommitName != "Grace Hopper" || len(wf.Defaults.Repos) != 1 {
+		t.Fatalf("re-entry did not reuse the repository: %+v %+v", projects, wf.Defaults)
 	}
 }
 
-func TestOnboardingBootstrapWritesGitIdentityAndPreviewFlags(t *testing.T) {
+func TestOnboardingBootstrapWritesPreviewFlags(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	off := false
 	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
-		GitUserName:          "Ada Lovelace",
-		GitUserEmail:         "ada@example.com",
 		VncPreview:           &off,
 		BrowserMcp:           &off,
 	})
@@ -199,12 +193,6 @@ func TestOnboardingBootstrapWritesGitIdentityAndPreviewFlags(t *testing.T) {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	shared := svc.SharedAgent.Get()
-	if shared.Env["GIT_USER_NAME"] != "Ada Lovelace" {
-		t.Errorf("GIT_USER_NAME = %q", shared.Env["GIT_USER_NAME"])
-	}
-	if shared.Env["GIT_USER_EMAIL"] != "ada@example.com" {
-		t.Errorf("GIT_USER_EMAIL = %q", shared.Env["GIT_USER_EMAIL"])
-	}
 	if shared.Env["VNC_PREVIEW"] != "0" {
 		t.Errorf("VNC_PREVIEW = %q, want 0 so approve nodes do not force the stack on", shared.Env["VNC_PREVIEW"])
 	}
@@ -213,7 +201,7 @@ func TestOnboardingBootstrapWritesGitIdentityAndPreviewFlags(t *testing.T) {
 	}
 }
 
-func TestOnboardingBootstrapLeavesReposBlankWhenRepoSkipped(t *testing.T) {
+func TestOnboardingBootstrapBindsNoRepoWhenSkipped(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
@@ -221,20 +209,12 @@ func TestOnboardingBootstrapLeavesReposBlankWhenRepoSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	wf, ok := svc.WF.Get(res.WorkflowID)
-	if !ok {
-		t.Fatal("workflow missing")
+	wf, _ := svc.WF.Get(res.WorkflowID)
+	if wf.Defaults != nil && len(wf.Defaults.Repos) != 0 {
+		t.Fatalf("skipped repository still bound: %+v", wf.Defaults.Repos)
 	}
-	for i, item := range reposVarValue(t, wf.Graph) {
-		row, ok := item.(map[string]any)
-		if !ok {
-			t.Fatalf("repos[%d] is %T", i, item)
-		}
-		for _, field := range []string{"url", "name", "branch"} {
-			if got, _ := row[field].(string); strings.TrimSpace(got) != "" {
-				t.Errorf("repos[%d].%s = %q, want blank", i, field, got)
-			}
-		}
+	if projects, _ := svc.Projects.List(); len(projects) != 0 {
+		t.Fatalf("skipped repository created %d projects", len(projects))
 	}
 }
 
@@ -360,27 +340,10 @@ func assertDefaultWorkflowGraph(t *testing.T, g models.Graph) {
 	if !readsMR {
 		t.Fatalf("output must read deliver merge_request: %v", results)
 	}
-	var reposVar *models.Variable
-	for i := range g.Variables {
-		if g.Variables[i].Name == "repos" {
-			reposVar = &g.Variables[i]
-			break
+	for _, v := range g.Variables {
+		if v.Name == "repos" {
+			t.Fatal("default workflow still declares a repos variable")
 		}
-	}
-	if reposVar == nil {
-		t.Fatal("missing repos variable")
-	}
-	list, ok := reposVar.Value.([]any)
-	if !ok || len(list) == 0 {
-		t.Fatalf("repos value want []any, got %T %#v", reposVar.Value, reposVar.Value)
-	}
-	first, ok := list[0].(map[string]any)
-	if !ok {
-		t.Fatalf("repos[0] = %T", list[0])
-	}
-	url, _ := first["url"].(string)
-	if strings.TrimSpace(url) != "" {
-		t.Fatalf("repos[0].url = %q, want blank", url)
 	}
 	if err := g.Validate(); err != nil {
 		t.Fatalf("graph validate: %v", err)
@@ -567,7 +530,7 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	}
 	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "首页可见工作流",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	})
 	if err != nil {
 		t.Fatalf("CreateFromBaseline: %v", err)
@@ -587,7 +550,7 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "首页可见工作流",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	}); !errors.Is(err, services.ErrWorkflowNameExists) {
 		t.Fatalf("duplicate name: %v", err)
 	}
@@ -597,13 +560,32 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "无仓库",
-		Repos: []services.BaselineRepo{{URL: "  "}},
+		Repos: []models.RepoChoice{{ProjectID: "  "}},
 	}); !errors.Is(err, services.ErrBaselineReposRequired) {
 		t.Fatalf("empty repos: %v", err)
 	}
 	if n := len(svc.WF.List()); n != 2 {
 		t.Fatalf("empty repos must not insert, got %d workflows", n)
 	}
+	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		Name:  "已删除仓库",
+		Repos: []models.RepoChoice{{ProjectID: "missing"}},
+	}); err == nil {
+		t.Fatal("missing repository accepted")
+	}
+}
+
+// seedRepo registers one repository, reusing it on later calls.
+func seedRepo(t *testing.T, svc *services.OnboardingService) []models.RepoChoice {
+	t.Helper()
+	if list, _ := svc.Projects.List(); len(list) > 0 {
+		return []models.RepoChoice{{ProjectID: list[0].ID}}
+	}
+	p, err := svc.Projects.Create(services.ProjectInput{Name: "app", RepoURL: "https://github.com/acme/app.git"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []models.RepoChoice{{ProjectID: p.ID}}
 }
 
 func baselineAgentProfiles(t *testing.T, wf models.WorkflowDef) map[string]string {
@@ -623,7 +605,7 @@ func TestCreateFromBaselineRejectsIncompleteSet(t *testing.T) {
 	before := len(svc.Skills.List())
 	_, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "db-workbench",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	})
 	if !errors.Is(err, services.ErrOnboardingAgentsIncomplete) {
 		t.Fatalf("want ErrOnboardingAgentsIncomplete, got %v", err)
@@ -641,7 +623,7 @@ func TestCreateFromBaselineBindsEnglishSet(t *testing.T) {
 	saveNamedAgents(t, svc, services.OnboardingAgentNamesEN)
 	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "english-baseline",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	})
 	if err != nil {
 		t.Fatalf("CreateFromBaseline: %v", err)
@@ -667,7 +649,7 @@ func TestCreateFromBaselinePrefersChineseWhenBothSetsExist(t *testing.T) {
 	before := len(svc.Skills.List())
 	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "both-sets",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	})
 	if err != nil {
 		t.Fatalf("CreateFromBaseline: %v", err)
@@ -692,7 +674,7 @@ func TestCreateFromBaselineReusesExistingAgents(t *testing.T) {
 	}
 	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "基线",
-		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+		Repos: seedRepo(t, svc),
 	})
 	if err != nil {
 		t.Fatalf("CreateFromBaseline: %v", err)
@@ -757,12 +739,15 @@ func newOnboardingHarness(t *testing.T) *services.OnboardingService {
 		_, err := services.NewModelConnectionService(db).Resolve(backend, *binding)
 		return err
 	})
-	return services.NewOnboardingService(skills, services.NewSharedAgentService(t.TempDir()), wf, creds)
+	svc := services.NewOnboardingService(skills, services.NewSharedAgentService(t.TempDir()), wf, creds)
+	svc.Projects = services.NewProjectService(db)
+	svc.Projects.SetGitCredentialResolver(creds.ResolveGitValue)
+	return svc
 }
 
 func TestBaselineRequiresConfiguredAgents(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	_, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Missing roles", Repos: []services.BaselineRepo{{URL: "https://github.com/example/app.git"}}})
+	_, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Missing roles", Repos: seedRepo(t, svc)})
 	if !errors.Is(err, services.ErrOnboardingAgentsIncomplete) {
 		t.Fatalf("want ErrOnboardingAgentsIncomplete, got %v", err)
 	}
@@ -774,7 +759,7 @@ func TestBaselineRequiresConfiguredAgents(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err = svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Unconfigured roles", Repos: []services.BaselineRepo{{URL: "https://github.com/example/app.git"}}})
+	_, err = svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Unconfigured roles", Repos: seedRepo(t, svc)})
 	if err == nil || !strings.Contains(err.Error(), "complete onboarding") {
 		t.Fatalf("want actionable missing configuration error, got %v", err)
 	}
@@ -794,7 +779,7 @@ func TestOnboardingRejectsInvalidModelOverrideBeforeSaving(t *testing.T) {
 }
 
 func TestOnboardingRejectsRevokedOrMissingReferences(t *testing.T) {
-	for _, mode := range []string{"missing-model", "revoked-model-key", "missing-git"} {
+	for _, mode := range []string{"missing-model", "revoked-model-key", "missing-git", "bad-commit-email"} {
 		t.Run(mode, func(t *testing.T) {
 			svc := newOnboardingHarness(t)
 			request := services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding"}
@@ -814,12 +799,15 @@ func TestOnboardingRejectsRevokedOrMissingReferences(t *testing.T) {
 					}
 				}
 			case "missing-git":
-				request.GitBindings = &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "missing"}}, PreferredCredentialID: "missing"}
+				request.RepoURL, request.RepoCredentialID = "https://github.com/acme/app.git", "missing"
+			case "bad-commit-email":
+				request.RepoURL, request.CommitEmail = "https://github.com/acme/app.git", "not-an-email"
 			}
 			if _, err := svc.Bootstrap(request); err == nil {
 				t.Fatal("unavailable reference accepted")
 			}
-			if len(svc.Skills.List()) != 0 || len(svc.WF.List()) != 0 {
+			projects, _ := svc.Projects.List()
+			if len(svc.Skills.List()) != 0 || len(svc.WF.List()) != 0 || len(projects) != 0 {
 				t.Fatal("unavailable reference created partial resources")
 			}
 		})

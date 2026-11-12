@@ -10,7 +10,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/modelrouting"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -20,7 +19,6 @@ import (
 type SharedAgentConfig struct {
 	AcpBackend   string                `json:"acpBackend,omitempty"`
 	ModelBinding *modelrouting.Binding `json:"modelBinding,omitempty"`
-	GitBindings  *models.GitBindings   `json:"gitBindings,omitempty"`
 	Files        []AgentFile           `json:"files"`
 	MCP          []MCPServer           `json:"mcp"`
 	Env          map[string]string     `json:"env"`
@@ -31,7 +29,6 @@ type SharedAgentConfig struct {
 type sharedAgentDisk struct {
 	AcpBackend   string                `json:"acpBackend,omitempty"`
 	ModelBinding *modelrouting.Binding `json:"modelBinding,omitempty"`
-	GitBindings  *models.GitBindings   `json:"gitBindings,omitempty"`
 	MCP          []MCPServer           `json:"mcp,omitempty"`
 	Env          map[string]string     `json:"env,omitempty"`
 	Layout       *AgentLayout          `json:"layout,omitempty"`
@@ -45,12 +42,11 @@ type SharedAgentService struct {
 	root         string
 	mu           sync.Mutex
 	resolveModel func(*modelrouting.Binding) (string, error)
-	validateGit  func(*models.GitBindings) error
 }
 
-// SetBindingResolvers validates explicitly selected workspace defaults.
-func (s *SharedAgentService) SetBindingResolvers(model func(*modelrouting.Binding) (string, error), git func(*models.GitBindings) error) {
-	s.resolveModel, s.validateGit = model, git
+// SetModelResolver validates the workspace default model configuration.
+func (s *SharedAgentService) SetModelResolver(model func(*modelrouting.Binding) (string, error)) {
+	s.resolveModel = model
 }
 
 // DefaultSharedAgentRoot derives the shared-config root next to profiles
@@ -96,7 +92,7 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 		mcps = []MCPServer{}
 	}
 	return SharedAgentConfig{
-		AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding, GitBindings: cfg.GitBindings,
+		AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding,
 		Files:  files,
 		MCP:    mcps,
 		Env:    env,
@@ -132,19 +128,6 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	} else {
 		cfg.AcpBackend = ""
 	}
-	git, err := models.NormalizeGitBindings(cfg.GitBindings)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
-	}
-	cfg.GitBindings = git
-	if len(git.Items) > 0 {
-		if s.validateGit == nil {
-			return fmt.Errorf("%w: Git credential resolver unavailable", ErrInvalidAgent)
-		}
-		if err := s.validateGit(git); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidAgent, err)
-		}
-	}
 	cfg.Env = runtime.ModelIndependentEnv(cfg.Env)
 	dir := s.root
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -152,7 +135,7 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	}
 	layout := cfg.Layout.withDefaults()
 	disk := sharedAgentDisk{
-		AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding, GitBindings: cfg.GitBindings,
+		AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding,
 		MCP:    cfg.MCP,
 		Env:    cfg.Env,
 		Layout: &layout,
@@ -199,14 +182,11 @@ func (s *SharedAgentService) WorkDir() string {
 	return ""
 }
 
-// ExtendOverlay merges ordinary defaults and the selected model/Git inheritance.
+// ExtendOverlay merges ordinary defaults and the selected model inheritance.
 func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 	out := agent
 	if agent.InheritModel {
 		out.ModelBinding, out.AcpBackend = shared.ModelBinding, shared.AcpBackend
-	}
-	if agent.InheritGit {
-		out.GitBindings = shared.GitBindings
 	}
 	out.Files = mergeFiles(shared.Files, agent.Files)
 	out.MCP = mergeMCP(shared.MCP, agent.MCP)

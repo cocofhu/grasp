@@ -65,11 +65,10 @@ func errorCode(t *testing.T, body []byte) string {
 
 func TestWorkflowReferenceSearchAndLaunch(t *testing.T) {
 	hn, gh := referenceHarness(t)
-	repos := `[{"name":"web","url":"https://github.com/acme/web.git"}]`
-	hn.db.Create(&models.WorkflowDef{ID: "wf-ref", Name: "ref", Version: 1, PublishedVersion: 1, Graph: models.Graph{
-		Variables: []models.Variable{{Name: "repos", Type: "paragraph", Value: repos}},
-		Nodes:     []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
-		Edges:     []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
+	hn.db.Create(&models.Project{ID: "p-web", Name: "web", RepoURL: "https://github.com/acme/web.git"})
+	hn.db.Create(&models.WorkflowDef{ID: "wf-ref", Name: "ref", Version: 1, PublishedVersion: 1, Defaults: &models.WorkflowDefaults{Repos: []models.RepoChoice{{ProjectID: "p-web"}}}, Graph: models.Graph{
+		Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
+		Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
 	}})
 	hn.db.Create(&models.WorkflowDef{ID: "wf-bare", Name: "bare", Version: 1, PublishedVersion: 1})
 
@@ -128,7 +127,9 @@ func TestRunNodeReferenceSearchAndReply(t *testing.T) {
 	hn, gh := referenceHarness(t)
 	runID := "run-refs"
 	seedDialogueRun(hn, runID)
-	hn.db.Create(&models.RunVariable{RunID: runID, Name: "repos", Type: "paragraph", Value: `[{"name":"api","url":"https://github.com/acme/api.git"}]`})
+	if err := hn.db.Model(&models.Run{ID: runID}).Select("Repos").Updates(&models.Run{Repos: []models.SessionRepo{{RepoURL: "https://github.com/acme/api.git", RepoDirName: "api"}}}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	if res := hn.do(http.MethodGet, "/api/runs/"+runID+"/nodes/react/references/search?lane=github&q=bug", nil); res.Code != http.StatusOK {
 		t.Fatalf("github lane: %d %s", res.Code, res.Body)

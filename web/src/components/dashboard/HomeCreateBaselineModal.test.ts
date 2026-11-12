@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   ensureLoaded: vi.fn(),
   createWorkflowFromBaseline: vi.fn(),
+  listProjects: vi.fn(),
   toastSuccess: vi.fn(),
 }))
 
@@ -24,6 +25,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       createWorkflowFromBaseline: mocks.createWorkflowFromBaseline,
+      listProjects: mocks.listProjects,
     },
   }
 })
@@ -42,6 +44,10 @@ vi.mock('@/lib/composables/useToast', () => ({
 }))
 
 const workspace = { name: 'Grasp', description: '', variables: [] }
+const projects = [
+  { id: 'p1', name: 'web', repoUrl: 'https://github.com/org/web.git', defaultBranch: 'main' },
+  { id: 'p2', name: 'api', repoUrl: 'https://github.com/org/api.git' },
+]
 
 function q(testid: string) {
   const el = document.querySelector(`[data-testid="${testid}"]`)
@@ -64,7 +70,7 @@ function mountModal(open = true) {
     attachTo: document.body,
     global: {
       plugins: [i18n],
-      stubs: { Teleport: false, Transition: false },
+      stubs: { Teleport: false, Transition: false, RouterLink: { template: '<a><slot /></a>' } },
     },
   })
 }
@@ -74,6 +80,8 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     mocks.push.mockReset()
     mocks.ensureLoaded.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
+    mocks.listProjects.mockReset()
+    mocks.listProjects.mockResolvedValue(projects)
     mocks.toastSuccess.mockReset()
     mocks.ensureLoaded.mockResolvedValue(workspace)
     mocks.createWorkflowFromBaseline.mockResolvedValue({ id: 'wf-new', name: '需求对齐工作流' })
@@ -111,8 +119,8 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     wrapper.unmount()
   })
 
-  // plan g2.4 — name required, at least one repo URL, no scratch path
-  it('disables submit until name and a repo URL are filled, then creates via baseline API', async () => {
+  // plan g2.4 — name required, at least one saved repository, no scratch path
+  it('disables submit until a name and a repository are chosen, then creates via baseline API', async () => {
     const wrapper = mountModal()
     await flushPromises()
     const submit = q('home-create-submit')
@@ -120,16 +128,16 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     await q('home-create-workflow-name').setValue('需求对齐工作流')
     await flushPromises()
     expect((q('home-create-submit').element as HTMLButtonElement).disabled).toBe(true)
-    const url = document.querySelector('input[placeholder*="https"]') as HTMLInputElement | null
-    expect(url).toBeTruthy()
-    await new DOMWrapper(url!).setValue('https://github.com/org/repo')
+    await q('repo-choice-toggle-p1').trigger('click')
     await flushPromises()
     expect((q('home-create-submit').element as HTMLButtonElement).disabled).toBe(false)
+    await q('repo-choice-branch-p1').setValue('release')
+    await q('repo-choice-branch-p1').trigger('change')
+    await flushPromises()
     await q('home-create-submit').trigger('click')
     await flushPromises()
     expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith('需求对齐工作流',
-      expect.arrayContaining([expect.objectContaining({ url: 'https://github.com/org/repo' })]),
-    )
+[{ projectId: 'p1', branch: 'release' }])
     expect(mocks.toastSuccess).toHaveBeenCalled()
     expect(wrapper.emitted('created')).toEqual([[{ id: 'wf-new', name: '需求对齐工作流' }]])
     expect(wrapper.emitted('close')).toBeTruthy()
@@ -142,8 +150,7 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     const wrapper = mountModal()
     await flushPromises()
     await q('home-create-workflow-name').setValue('X')
-    const url = document.querySelector('input[placeholder*="https"]') as HTMLInputElement | null
-    await new DOMWrapper(url!).setValue('https://example.com/r.git')
+    await q('repo-choice-toggle-p2').trigger('click')
     await flushPromises()
     await q('home-create-submit').trigger('click')
     await flushPromises()

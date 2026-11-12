@@ -459,25 +459,26 @@
         "vendorTitle": "Model vendor API key"
       },
       "git": {
-        "meta": "Agents sign their commits; add the repository now or skip it.",
+        "meta": "Set up a code repository with its credential and commit author; it is bound to the default workflow. You can skip and add one later in Settings → Repositories.",
         "repoCredSection": "Repository and access credentials",
         "skip": "Skip",
         "unskip": "Configure now",
-        "skippedHint": "Skipped: pick the repository when you start a run, and add private-repo credentials later under Workspace credentials.",
+        "skippedHint": "Skipped: add a repository later in Settings → Repositories and bind it in workflow settings.",
         "foot": "Credentials stay in this workspace and are never included when an Agent is exported."
       },
       "gitCredentials": {
-        "meta": "Private repositories need access credentials: pick an existing one or create one below. For public repositories, just continue.",
+        "meta": "Private repositories need a credential: create one below and pick it for the repository on the next step. Public repositories can skip ahead.",
         "invalid": "The selected Git credential is unavailable. Pick another one."
       },
       "gitUser": {
-        "section": "Commit signature",
+        "section": "Commit author (optional)",
         "nameLabel": "Name",
         "emailLabel": "Email",
         "namePlaceholder": "e.g. Ada Lovelace",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "Agents sign their commits with this name and email.",
-        "chip": "Commit signature"
+        "hint": "Agents sign commits in this repository with this name and email.",
+        "chip": "Commit signature",
+        "default": "Sandbox default"
       },
       "preview": {
         "section": "Preview",
@@ -575,10 +576,10 @@
         "noReview": "Test & review is not selected: the workflow moves on right after Implement.",
         "summary": "Will write",
         "keyOn": "Set",
-        "repoSkip": "Filled at run start",
+        "repoSkip": "Not set",
         "gitSkip": "Skipped",
         "reuseHint": "Resources with the same name are reused and updated, never duplicated. Nothing runs automatically.",
-        "gitCred": "Git credentials",
+        "gitCred": "Repository credential",
         "agentsValue": "{n}",
         "wfLabel": "Workflow",
         "wfValue": "Default Workflow (published)",
@@ -590,14 +591,14 @@
         "title": "Setup ready",
         "desc": "Credentials are saved, the Agents are created and the Default Workflow is published.",
         "runOnce": "Run once",
-        "runOnceHint": "Enter a requirement and repository, then run it.",
+        "runOnceHint": "Enter a requirement and run the default workflow now.",
         "editWorkflow": "Edit workflow",
         "editWorkflowHint": "Adjust nodes, prompts and branches.",
-        "limit": "No repository yet; pick one when you start a run.",
-        "repoOk": "Default repository: {dir}; you can change it per run.",
+        "limit": "No repository yet. Add one later in Settings → Repositories and bind it in workflow settings.",
+        "repoOk": "Registered repository {dir} and bound it to the default workflow.",
         "publishedLine": "Default Workflow (published)",
         "gitOk": "Git credentials saved (values hidden).",
-        "gitSkip": "No Git credentials; add a token or SSH key later for private repositories.",
+        "gitSkip": "The repository has no credential. For a private repository, pick one in Settings → Repositories.",
         "gitUserOk": "Commit signature: {name} <{email}>.",
         "preview": "Preview: {vnc}, {mcp}.",
         "created": "Created",
@@ -605,7 +606,6 @@
       },
       "toastOk": "Generated — Run not started automatically",
       "toastNeedKey": "Please enter an API Key",
-      "toastNeedGitUser": "Please enter a committer name and email",
       "toastErr": "Bootstrap failed",
       "railSub": "Model, team and workflow in a few minutes.",
       "railFoot": "You can change all of this later.",
@@ -645,7 +645,8 @@
       "credentialsSetup": {
         "description": "Choose a credential type and connect your account. Saving continues to coding-tool setup.",
         "required": "Configure at least one usable coding-tool credential or API account first."
-      }
+      },
+      "toastBadGitUser": "Invalid commit name or email"
     },
     "tokenByModel": {
       "tipTitle": "Usage tip",
@@ -1634,24 +1635,7 @@
           "locked": "Locked",
           "lockedTitle": "Locked to default at launch",
           "add": "Add variable",
-          "help": "Shared across nodes; reference with {syntax}; modify with Set variable. {askAtLaunch} makes a run input (e.g. {repos})."
-        },
-        "repos": {
-          "itemLabel": "Repository {n}",
-          "namePlaceholder": "name (blank = from URL)",
-          "urlPlaceholder": "clone URL https://…/repo.git",
-          "branchPlaceholder": "branch (optional)",
-          "add": "Add repository",
-          "remove": "Remove repository"
-        },
-        "repoSelect": {
-          "any": "(empty · legacy default)",
-          "empty": "No repos configured yet; type a name / {'{{vars.repos}}'} / {'{{vars.target_repo}}'}, or leave empty.",
-          "placeholder": "empty / name / {'{{vars.repos}}'} / {'{{vars.target_repo}}'}",
-          "toggle": "Show options",
-          "reposListHint": "per-repo at runtime · no multi-select",
-          "literalGroup": "Literal repo names",
-          "hint": "Type or paste templates. {'{{vars.repos}}'} = engine iterates the runtime list; leave empty for legacy defaults (Agent multi-repo / lone-repo fallback)."
+          "help": "Shared across nodes; reference with {syntax}; modify with Set variable. {askAtLaunch} makes a run input."
         },
         "assignments": {
           "selectVar": "Select variable…",
@@ -2772,7 +2756,7 @@
           "team": "Team info",
           "acp": "Agent",
           "apiKey": "API Key",
-          "git": "Git",
+          "repo": "Repository",
           "mcp": "MCP",
           "env": "Env vars",
           "review": "Confirm"
@@ -2788,10 +2772,6 @@
         },
         "acp": {
           "meta": "Used as the default ACP for the PM and engineers. Pick a start path first — same as onboarding and New Agent."
-        },
-        "git": {
-          "meta": "Optional. Pick GitHub / GitLab / SSH, or skip; tokens are configured in workspace credentials.",
-          "url": "Repository URL"
         },
         "mcp": {
           "meta": "Default mcp[] for the team; applied when creating the PM and engineers. artifact-store is prefilled.",
@@ -2838,6 +2818,12 @@
           "done": "Done",
           "retry": "Retry",
           "keepCreated": "Keep created resources"
+        },
+        "repo": {
+          "meta": "Optional. The PM sandbox clones the selected repository using its credential and commit author.",
+          "label": "Repository",
+          "none": "No repository",
+          "manage": "Manage repositories"
         }
       },
       "wizard": {
@@ -2858,7 +2844,6 @@
           "basics": "Basics",
           "acp": "Tool & model",
           "apiKey": "Model",
-          "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
           "rules": "Rules",
@@ -3019,7 +3004,6 @@
           "customConfigWritten": "Custom config · written",
           "authReminder": "Auth reminder",
           "authReminderDetail": "Auth is required before runs; you can complete it in Studio Env. This reminder does not block create.",
-          "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
           "rulesDefault": "Rules · default will be written",
@@ -3224,25 +3208,6 @@
           "gitlab_https": "GitLab HTTPS",
           "ssh": "SSH"
         }
-      },
-      "gitCredentials": {
-        "title": "Git access",
-        "add": "Add Git credential",
-        "empty": "No Git credentials added",
-        "noneAvailable": "No more Git credentials available",
-        "remove": "Remove",
-        "options": "Configure scope",
-        "scope": "Site or repository",
-        "scopePlaceholder": "e.g. git.example.com or a repository URL",
-        "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
-        "scopeInvalid": "Use a valid host or repository URL that matches this credential’s host and protocol.",
-        "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
-        "inherited": "Using workspace defaults",
-        "legacy": "Using existing authorization",
-        "manage": "Manage credentials",
-        "help": "Git setup help",
-        "loading": "Loading credentials…",
-        "retry": "Retry"
       }
     },
     "runLaunch": {
@@ -3282,14 +3247,8 @@
       "envRemove": "Remove row",
       "envEmpty": "No run-level env (same as before this feature).",
       "envInvalid": "Start rejected: {keys}",
-      "repos": {
-        "itemLabel": "Repository {n}",
-        "namePlaceholder": "name (blank = from URL)",
-        "urlPlaceholder": "clone URL https://…/repo.git",
-        "branchPlaceholder": "branch (optional)",
-        "add": "Add repository",
-        "remove": "Remove repository"
-      }
+      "reposLabel": "Repositories",
+      "reposHint": "Repositories bound in workflow settings. Unchecked ones are not cloned for this run; an empty branch uses the repository's default."
     },
     "workflowIO": {
       "export": {
@@ -4396,18 +4355,12 @@
         },
         "clone": {
           "title": "Clone repositories",
-          "desc": "Configure git repos; each is cloned flat under /root/workspace/NAME/."
+          "desc": "Pick repositories from Settings → Repositories; each is cloned side by side under /root/workspace/."
         }
       },
       "repos": {
-        "sectionLabel": "Git repositories",
-        "hint": "Each row needs a repo name and URL; branch is optional. Same editor as workflow launch.",
-        "itemLabel": "Repo {n}",
-        "namePlaceholder": "Repo name (required)",
-        "urlPlaceholder": "Repository URL https://…/repo.git",
-        "branchPlaceholder": "Branch (optional)",
-        "add": "Add repository",
-        "remove": "Remove repo"
+        "sectionLabel": "Repositories",
+        "hint": "Pick repositories registered in Settings → Repositories. Credentials and commit authors come from each repository; an empty branch uses its default."
       },
       "repoPlaceholder": "Optional: git clone URL (empty = blank workspace)",
       "stepSandbox": {
@@ -4669,7 +4622,9 @@
       "inherit": "Inherit default credential",
       "doNotInject": "Do not inject",
       "unavailable": "Unavailable",
-      "manageCredentials": "Manage credentials"
+      "manageCredentials": "Manage credentials",
+      "repos": "Repositories",
+      "reposHint": "Repositories every run clones by default, in order, side by side under /root/workspace/. Set credentials and commit authors in Settings → Repositories; a launch can drop some or change branches."
     },
     "chatNavigation": {
       "ariaLabel": "Conversation navigation",
@@ -4934,7 +4889,11 @@
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
-        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level."
+        "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
+        "commit_name_invalid": "The commit name cannot contain angle brackets or line breaks and must be at most 120 characters",
+        "commit_email_invalid": "Invalid commit email",
+        "credential_invalid": "The repository credential cannot be used: make sure it is not revoked and matches the address's protocol and host",
+        "credential_unavailable": "The credential service is unavailable. Try again later."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",
@@ -5023,7 +4982,26 @@
         "repoDir": "Directory",
         "repoDirPlaceholder": "Defaults to the repository name",
         "repoDirHint": "Cloned to /root/workspace/{dir} in the sandbox",
-        "save": "Save"
+        "save": "Save",
+        "sectionAccess": "Access and commits",
+        "commitName": "Commit name",
+        "commitNamePlaceholder": "Empty uses the sandbox default",
+        "commitNameInvalid": "No angle brackets or line breaks; at most 120 characters",
+        "commitEmail": "Commit email",
+        "commitEmailPlaceholder": "you{'@'}example.com",
+        "commitEmailInvalid": "Invalid email address",
+        "commitHint": "Agents sign commits in this repository with this name and email. Leave empty for the sandbox default.",
+        "credential": {
+          "label": "Credential",
+          "none": "No credential (public repository)",
+          "loading": "Loading credentials…",
+          "retry": "Retry",
+          "hint": "Used to clone and push this repository. Only Git tokens or SSH keys matching the address's protocol and host are listed.",
+          "noneFits": "No credential matches this address. Add one first for a private repository.",
+          "mismatch": "The selected credential is revoked or does not match the address's protocol or host. Choose another.",
+          "missing": "The selected credential was deleted. Choose another.",
+          "manage": "Manage credentials"
+        }
       }
     },
     "settingsOverview": {

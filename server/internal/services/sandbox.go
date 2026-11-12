@@ -42,6 +42,7 @@ type SandboxService struct {
 	modelBinding         func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	selectedCredential   runtime.SelectedCredentialFunc
 	gitCredential        runtime.GitCredentialFunc
+	project              func(id string) (*models.Project, bool)
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
 	// than guarded by s.mu — avoiding any lock-reentrancy at the read points.
@@ -136,8 +137,10 @@ type SandboxOptions struct {
 	// SelectedCredential resolves an explicitly selected extra environment credential.
 	// A missing id returns ok=false and must not fall back to another row.
 	SelectedCredential runtime.SelectedCredentialFunc
-	// GitCredential resolves the secret and host of a selected Git authorization.
+	// GitCredential resolves the secret and host of a repository's credential.
 	GitCredential runtime.GitCredentialFunc
+	// Project reads a repository's current credential and commit author.
+	Project func(id string) (*models.Project, bool)
 }
 
 // SandboxView is the API shape: the persisted record plus live-derived flags.
@@ -181,6 +184,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		modelBinding:         opts.ModelBinding,
 		selectedCredential:   opts.SelectedCredential,
 		gitCredential:        opts.GitCredential,
+		project:              opts.Project,
 		live:                 map[uint]*liveSandbox{},
 		runActive:            map[string]bool{},
 		lastTouch:            map[uint]time.Time{},

@@ -8,7 +8,6 @@ import { BASE, req } from '../httpCore'
 import { invalidateModelCatalog } from '../modelCatalogEvents'
 import type {
   Agent,
-  AgentGitBindings,
   AgentTemplate,
   CliModelsResponse,
   OpenCodeModelsResponse,
@@ -43,13 +42,14 @@ export const agentsClient = {
   bootstrapOnboarding: (
     body: {
       modelConfigurationId: string
-      gitBindings?: AgentGitBindings
       language?: string
       region?: string
+      /** Registers this repository with its credential and commit author, bound to the default workflow. */
       repoUrl?: string
       repoBranch?: string
-      gitUserName?: string
-      gitUserEmail?: string
+      repoCredentialId?: string
+      commitName?: string
+      commitEmail?: string
       vncPreview?: boolean
       browserMcp?: boolean
       agents?: { templateId: string; name?: string; modelConfigurationId?: string }[]

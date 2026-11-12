@@ -177,6 +177,9 @@ describe('projectForm', () => {
       sshHostsCredentialId: 'h1',
       env: { NODE_ENV: 'test' },
       credentialBindings: { NPM_TOKEN: 'c2' },
+      credentialId: 'gh',
+      commitName: ' Bot ',
+      commitEmail: 'bot@example.com',
       createdAt: '',
       updatedAt: '',
     }
@@ -188,7 +191,12 @@ describe('projectForm', () => {
       repoUrl: 'https://github.com/acme/app.git',
       defaultBranch: 'main',
       repoDirName: 'app',
+      credentialId: 'gh',
+      commitName: 'Bot',
+      commitEmail: 'bot@example.com',
     })
+    // PUT replaces the record, so clearing a field must still send it.
+    expect(inputFromDraft({ ...draft, credentialId: '', commitName: '', commitEmail: '' })).toMatchObject({ credentialId: '', commitName: '', commitEmail: '' })
     expect(body).not.toHaveProperty('gitCredentialType')
     expect(body).not.toHaveProperty('env')
     expect(body).not.toHaveProperty('credentialBindings')
@@ -205,6 +213,12 @@ describe('projectForm', () => {
     expect(draftProblems(d)).toEqual(['branch', 'repoDir'])
     d.defaultBranch = ''
     d.repoDirName = 'app'
+    expect(draftProblems(d)).toEqual([])
+    d.commitName = 'Bot <bot>'
+    d.commitEmail = 'not-an-email'
+    expect(draftProblems(d)).toEqual(['commitName', 'commitEmail'])
+    d.commitName = 'Bot'
+    d.commitEmail = 'bot@example.com'
     expect(draftProblems(d)).toEqual([])
   })
 

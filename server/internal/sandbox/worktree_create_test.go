@@ -187,8 +187,7 @@ func TestWorktreePrivateRepoUsesSpecCredential(t *testing.T) {
 	cloneURL := srv.URL + "/repo.git"
 	m := NewManager(nil, ManagerOptions{})
 	spec := Spec{
-		Name:                  "priv",
-		GitBindingsConfigured: true,
+		Name: "priv",
 		GitCredentials: []GitCredential{{
 			ID: "gh", Kind: RepoCredentialGitHubHTTPS, Scope: cloneURL, Secret: token,
 		}},
@@ -239,8 +238,7 @@ func TestWorktreeRepoCredentialOverridesCatalog(t *testing.T) {
 	cloneURL := srv.URL + "/repo.git"
 	m := NewManager(nil, ManagerOptions{})
 	sb, err := m.Create(context.Background(), Spec{
-		Name:                  "repo-cred",
-		GitBindingsConfigured: true,
+		Name: "repo-cred",
 		GitCredentials: []GitCredential{
 			{ID: "wrong", Kind: RepoCredentialGitHubHTTPS, Scope: srv.URL, Secret: "catalog-token"},
 			{ID: "repo", Kind: RepoCredentialGitHubHTTPS, Scope: cloneURL, Secret: token},
@@ -290,8 +288,7 @@ func TestWorktreeMissingCredentialDoesNotCreateContainer(t *testing.T) {
 	cloneURL := srv.URL + "/repo.git"
 	m := NewManager(nil, ManagerOptions{})
 	_, err := m.Create(context.Background(), Spec{
-		Name:                  "no-cred",
-		GitBindingsConfigured: true,
+		Name: "no-cred",
 		Env: map[string]string{
 			BridgePasswordEnv: "pw",
 			"AGENT_PROVIDER":  "codex",

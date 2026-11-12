@@ -82,9 +82,9 @@
     `WORKSPACE_DIR/<name>/`(根目录不是仓库);`GITLAB_URL`/`GITLAB_TOKEN` 供 glab,
     `GITHUB_URL`/`GITHUB_TOKEN` 供 gh。
     这些都是 reference-only —— 换其它来源/VCS,改对应实现即可。
-  - `GIT_REPOS` 与凭据一样用「环境变量 + 引用」在 Agent 元信息里显式接线:
-    `"GIT_REPOS": "${vars.repos}"`(引用工作流 `repos` 变量,展开为上述格式)。
-    平台不做兜底/特殊注入 —— 没接线即不 clone。
+  - Grasp 平台按仓库登记生成 `GIT_REPOS` 与 `GIT_REPO_AUTHORS`(逐仓提交作者 JSON):
+    工作流在设置里绑定仓库,运行启动时快照所选仓库;每个仓库的访问凭据和提交身份
+    在仓库登记里配置。Agent 环境变量不能设置这两个键;没有绑定仓库即不 clone。
 - 终端/命令:由宿主 `docker exec` 进入容器执行(本镜像因此不内置 SSH 与 DinD)。
 
 ---

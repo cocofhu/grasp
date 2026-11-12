@@ -95,7 +95,7 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 	}
 	if err := h.WF.Save(&wf); err != nil {
 		switch {
-		case errors.Is(err, services.ErrEmptyWorkflowName),
+		case errors.Is(err, services.ErrEmptyWorkflowName), errors.Is(err, services.ErrWorkflowRepo),
 			errors.Is(err, services.ErrSecretPlaceholderOnNewKey),
 			errors.Is(err, services.ErrSecretPlaceholderOnPublicValue):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

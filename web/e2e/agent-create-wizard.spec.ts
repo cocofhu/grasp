@@ -4,15 +4,14 @@ import fs from 'node:fs'
 
 const OUT = path.join('/tmp', 'wizard-e2e-shots')
 
-async function customizeInheritance(page: Page, section: 'model' | 'git') {
-  const toggle = page.getByTestId(`agent-inherit-${section}`)
+async function customizeInheritance(page: Page) {
+  const toggle = page.getByTestId('agent-inherit-model')
   if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
 }
 
 async function selectBindingValue(page: Page, testId: string, value: string) {
-  if (testId === 'model-binding-configuration-select') await customizeInheritance(page, 'model')
-  if (testId === 'git-credential-add') await customizeInheritance(page, 'git')
+  if (testId === 'model-binding-configuration-select') await customizeInheritance(page)
   await page.getByTestId(testId).locator('[data-test="app-select-trigger"]').click()
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   await panel.locator('[data-test="app-select-search"]').fill(value)
@@ -33,7 +32,7 @@ test.beforeAll(() => {
   fs.mkdirSync(OUT, { recursive: true })
 })
 
-test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
+test('新建 Agent 三步向导浏览器验收', async ({ page }) => {
   let created: Record<string, unknown> | undefined
   await page.route('**/api/**', async (route) => {
     // Skip Vite module URLs like /@fs/.../src/lib/api/api.ts (pathname is not /api/...)
@@ -63,7 +62,7 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
   await expect(page.getByTestId('agent-create-wizard-root')).toBeVisible()
 
   const rail = page.locator('.rail-item .lbl strong')
-  await expect(rail).toHaveText(['基础信息', '工具与模型', 'Git', '确认创建'])
+  await expect(rail).toHaveText(['基础信息', '工具与模型', '确认创建'])
   const railText = await rail.allTextContents()
   expect(railText.join(' ')).not.toContain('ACP')
   expect(railText.join(' ')).not.toContain('ENV')
@@ -79,7 +78,7 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await expect(page.getByTestId('model-binding-editor')).toBeVisible()
-  await customizeInheritance(page, 'model')
+  await customizeInheritance(page)
   await expectSavedModelPickerOnly(page)
   await expect(page.getByRole('button', { name: /^下一步/ })).toBeDisabled()
   await selectBindingValue(page, 'model-binding-configuration-select', 'cursor-profile')
@@ -91,46 +90,9 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
   await page.screenshot({ path: path.join(OUT, '03-api-key.png'), fullPage: true })
 
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.locator('.sec-head h3')).toHaveText('Git')
-  await customizeInheritance(page, 'git')
-  const gitBody = await page.locator('.step-pane').innerText()
-  expect(gitBody).not.toContain('未逐仓解析')
-  expect(gitBody).not.toContain('无法在此页面逐仓解析')
-  expect(gitBody).not.toContain('不会验证变量引用的实际值')
-  expect(gitBody).not.toContain('远端 clone / push 权限')
-  await expect(page.getByTestId('git-credential-add')).toBeVisible()
-  await expect(page.locator('[data-test="git-help-link"]')).toBeVisible()
-  await page.screenshot({ path: path.join(OUT, '04-git.png'), fullPage: true })
-
-  await page.locator('[data-test="git-help-link"]').click()
-  await expect(page.getByText('环境变量与凭据')).toBeVisible()
-  await expect(page.getByText(/GITHUB_TOKEN|凭据可通过环境变量/)).toBeVisible()
-  await expect(page.getByText(/不会验证变量引用的实际值|远端 clone/)).toBeVisible()
-  await expect(page.locator('.wiz-rail')).toBeVisible()
-  await expect(page.locator('.sec-head h3')).toHaveText('Git')
-  await page.locator('[data-test="env-help-got-it"]').click()
-  await expect(page.getByText('环境变量与凭据')).toHaveCount(0)
-  await expect(page.locator('.wiz-rail')).toBeVisible()
-  await expect(page.locator('.sec-head h3')).toHaveText('Git')
-
-  await expect(page.getByRole('button', { name: /调整类型/ })).toHaveCount(0)
-  await expect(page.locator('[data-test="git-apply-recommended"]')).toHaveCount(0)
-  await selectBindingValue(page, 'git-credential-add', 'gitlab-access')
-  await selectBindingValue(page, 'git-credential-add', 'github-access')
-  await expect(page.getByTestId('git-preferred-gitlab-access')).toHaveCount(0)
-  await expect(page.getByTestId('git-preferred-github-access')).toHaveCount(0)
-  await expect(page.getByText('可添加多个已保存的授权，并设置首选。')).toHaveCount(0)
-  await expect(page.getByText('所选授权均可在沙箱中使用。')).toHaveCount(0)
-  await page.getByTestId('git-options-gitlab-access').locator('summary').click()
-  await page.getByTestId('git-scope-gitlab-access').fill('git.example.test')
-  await page.getByRole('button', { name: /^上一步/ }).click()
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.getByTestId('git-scope-gitlab-access')).toHaveValue('git.example.test')
-  await expect(page.getByText('首选')).toHaveCount(0)
-  await page.screenshot({ path: path.join(OUT, '06-git-multiple.png'), fullPage: true })
-
-  await page.getByRole('button', { name: /^下一步|^跳过/ }).last().click()
   await expect(page.locator('.sec-head h3')).toHaveText('确认创建')
+  await expect(page.getByTestId('git-credential-add')).toHaveCount(0)
+  await expect(page.getByTestId('agent-git-credential-picker')).toHaveCount(0)
   await expect(page.getByText('鉴权提醒', { exact: true })).toHaveCount(0)
   await expect(page.locator('.step-pane')).toContainText('Cursor 日常模型')
   const reviewText = await page.locator('.step-pane').innerText()
@@ -142,8 +104,7 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
   await expect(page.getByTestId('created-name')).toHaveText('e2e-wizard-agent', { timeout: 10_000 })
   expect(created).toMatchObject({ acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cursor-profile' } })
   for (const key of ['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS']) expect(created?.env || {}).not.toHaveProperty(key)
-  expect(created).not.toHaveProperty('repoIds')
-  expect(created?.gitBindings).toEqual({ items: [{ credentialId: 'gitlab-access', scope: 'git.example.test' }, { credentialId: 'github-access' }] })
+  for (const key of ['repoIds', 'gitBindings', 'inheritGit']) expect(created).not.toHaveProperty(key)
   await expect(page.locator('.wiz-rail')).toHaveCount(0)
 })
 
@@ -179,7 +140,6 @@ test('English template dropdown shows localized names without Chinese or interna
 for (const lang of ['zh-CN', 'en']) {
   test(`DeepSeek Harness selects a saved model configuration (${lang})`, async ({ page }) => {
     const nextLabel = lang === 'en' ? /^Next/ : /^下一步/
-    const skipLabel = lang === 'en' ? /^Skip/ : /^跳过/
     const createLabel = lang === 'en' ? /Create.*Studio/ : /创建并进入 Studio/
     let created: Record<string, unknown> | undefined
     await page.route('**/api/**', async (route) => {
@@ -207,19 +167,18 @@ for (const lang of ['zh-CN', 'en']) {
     await page.locator('#wiz-name-input').fill('deepseek-agent')
     await page.getByRole('button', { name: nextLabel }).click()
     await expect(page.locator('.sec-head h3')).toHaveText(lang === 'en' ? 'Tool & model' : '工具与模型')
-    await expect(page.locator('.rail-item .lbl strong')).toHaveText(lang === 'en' ? ['Basics', 'Tool & model', 'Git', 'Confirm'] : ['基础信息', '工具与模型', 'Git', '确认创建'])
+    await expect(page.locator('.rail-item .lbl strong')).toHaveText(lang === 'en' ? ['Basics', 'Tool & model', 'Confirm'] : ['基础信息', '工具与模型', '确认创建'])
     await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
     await expect(page.locator('.step-pane')).not.toContainText(/configRoot|\/root\//)
     await page.setViewportSize({ width: 760, height: 900 })
     const horizontalOverflow = await page.locator('.step-pane').evaluate((el) => el.scrollWidth - el.clientWidth)
     expect(horizontalOverflow).toBeLessThanOrEqual(1)
     if (lang === 'en') expect(await page.locator('.step-pane').innerText()).not.toMatch(/[\u3400-\u9fff]/)
-    await customizeInheritance(page, 'model')
+    await customizeInheritance(page)
   await expectSavedModelPickerOnly(page)
     await expect(page.getByRole('button', { name: nextLabel })).toBeDisabled()
     await selectBindingValue(page, 'model-binding-configuration-select', 'deepseek-profile')
     await page.getByRole('button', { name: nextLabel }).click()
-    await page.getByRole('button', { name: skipLabel }).click()
     await page.getByRole('button', { name: createLabel }).click()
     await expect(page.getByTestId('created-name')).toHaveText('deepseek-agent')
     expect(created).toMatchObject({ acpBackend: 'deepseek_harness', layout: { configRoot: '/root/.dsh' }, modelBinding: { kind: 'configuration', configurationId: 'deepseek-profile' } })
@@ -252,7 +211,7 @@ test('model-derived coding tools, sites and searchable models work at 320px', as
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
-  await customizeInheritance(page, 'model')
+  await customizeInheritance(page)
   await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   const search = panel.locator('[data-test="app-select-search"]')
@@ -263,7 +222,7 @@ test('model-derived coding tools, sites and searchable models work at 320px', as
   expect(box!.x + box!.width).toBeLessThanOrEqual(320)
   await search.press('Enter')
   await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toContainText('团队生产模型')
-  await customizeInheritance(page, 'model')
+  await customizeInheritance(page)
   await expectSavedModelPickerOnly(page)
   const site = page.getByTestId('agent-model-region').locator('[data-test="app-select-trigger"]')
   await expect(site).toContainText('国际站')
@@ -271,22 +230,16 @@ test('model-derived coding tools, sites and searchable models work at 320px', as
   await expect(site).toContainText('国内站')
   expect(await page.locator('.step-pane').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.locator('.sec-head h3')).toHaveText('Git')
+  await expect(page.locator('.sec-head h3')).toHaveText('确认创建')
   await page.getByRole('button', { name: /^上一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await expect(site).toContainText('国内站')
   await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toContainText('团队生产模型')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await selectBindingValue(page, 'git-credential-add', 'git-key')
-  await expect(page.getByTestId('git-preferred-git-key')).toHaveCount(0)
-  await expect(page.getByTestId('git-credential-row-git-key')).toBeVisible()
-  expect(await page.getByTestId('agent-git-credential-picker').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
-  await page.getByRole('button', { name: /^跳过/ }).click()
   await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
   await expect(page.getByTestId('created-name')).toHaveText('compact-tools-agent')
   expect(created).toMatchObject({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'production-profile' }, env: { GRASP_CODEBUDDY_REGION: 'internal' } })
-  expect(created?.gitBindings).toEqual({ items: [] })
-  expect(created).not.toHaveProperty('repoIds')
+  for (const key of ['repoIds', 'gitBindings', 'inheritGit']) expect(created).not.toHaveProperty(key)
   expect(created?.env || {}).not.toHaveProperty('GITHUB_TOKEN')
   expect(created?.env || {}).not.toHaveProperty('GRASP_TRAE_REGION')
 })

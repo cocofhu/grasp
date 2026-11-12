@@ -18,6 +18,7 @@ const DENIED_EXACT = new Set([
   'CONFIG_ROOT',
   'SSH_KEY',
   'GIT_REPOS',
+  'GIT_REPO_AUTHORS',
 ])
 
 export function isDeniedRunSandboxEnvKey(key: string): boolean {

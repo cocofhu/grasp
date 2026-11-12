@@ -6,6 +6,9 @@ export type ProjectDraft = {
   repoUrl: string
   defaultBranch: string
   repoDirName: string
+  credentialId: string
+  commitName: string
+  commitEmail: string
 }
 
 export function emptyDraft(): ProjectDraft {
@@ -15,6 +18,9 @@ export function emptyDraft(): ProjectDraft {
     repoUrl: '',
     defaultBranch: '',
     repoDirName: '',
+    credentialId: '',
+    commitName: '',
+    commitEmail: '',
   }
 }
 
@@ -25,6 +31,9 @@ export function draftFromProject(p: Project): ProjectDraft {
     repoUrl: p.repoUrl,
     defaultBranch: p.defaultBranch ?? '',
     repoDirName: p.repoDirName ?? '',
+    credentialId: p.credentialId ?? '',
+    commitName: p.commitName ?? '',
+    commitEmail: p.commitEmail ?? '',
   }
 }
 
@@ -35,6 +44,9 @@ export function inputFromDraft(d: ProjectDraft): ProjectInput {
     repoUrl: d.repoUrl.trim(),
     defaultBranch: d.defaultBranch.trim(),
     repoDirName: d.repoDirName.trim(),
+    credentialId: d.credentialId.trim(),
+    commitName: d.commitName.trim(),
+    commitEmail: d.commitEmail.trim(),
   }
 }
 
@@ -56,5 +68,18 @@ export function draftProblems(d: ProjectDraft): string[] {
   if (!isRepoUrl(d.repoUrl)) out.push('repoUrl')
   if (/[\s|,]/.test(d.defaultBranch.trim())) out.push('branch')
   if (d.repoDirName.trim() && !/^[A-Za-z0-9._-]+$/.test(d.repoDirName.trim())) out.push('repoDir')
+  if (!validCommitName(d.commitName)) out.push('commitName')
+  if (!validCommitEmail(d.commitEmail)) out.push('commitEmail')
   return out
+}
+
+/** Same rules as the server: Git rejects these characters in an author name. */
+export function validCommitName(name: string): boolean {
+  const s = name.trim()
+  return [...s].length <= 120 && !/[<>\r\n\0]/.test(s)
+}
+
+export function validCommitEmail(email: string): boolean {
+  const s = email.trim()
+  return !s || /^[^\s<>@]+@[^\s<>@]+$/.test(s)
 }

@@ -188,11 +188,9 @@ func TestPrepareAuthClonesPrivateHTTP(t *testing.T) {
 	cloneURL := srv.URL + "/repo.git"
 
 	got, err := PrepareAuth("priv", []Source{{Name: "app", URL: cloneURL, Branch: "feature"}}, Auth{
-		Configured: true,
 		Credentials: []Credential{{
 			Kind: credGitHubHTTPS, Scope: cloneURL, Secret: token,
 		}},
-		GitHubToken: "ambient-token",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -234,10 +232,7 @@ func TestPrepareAuthRejectsPrivateHTTPWithoutCredential(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	cloneURL := srv.URL + "/repo.git"
-	_, err := PrepareAuth("priv-no", []Source{{Name: "app", URL: cloneURL, Branch: "feature"}}, Auth{
-		Configured:  true,
-		GitHubToken: "ambient-token",
-	})
+	_, err := PrepareAuth("priv-no", []Source{{Name: "app", URL: cloneURL, Branch: "feature"}}, Auth{})
 	if err == nil {
 		t.Fatal("expected clone to fail without a selected credential")
 	}
@@ -529,44 +524,34 @@ func TestRepoCredentialBeatsCatalog(t *testing.T) {
 		t.Fatal("parse")
 	}
 	auth := Auth{
-		Configured: true,
 		Credentials: []Credential{{
 			Kind: credGitHubHTTPS, Scope: "https://git.example/team/app", Secret: "catalog",
 		}},
 		Repos: []RepoCredential{{
 			URL: "https://git.example/team/app.git", Kind: credGitLabHTTPS, Secret: "repo-token",
 		}},
-		GitHubToken: "legacy",
 	}
-	id, ok := auth.pick(remote)
-	if !ok || id.secret != "repo-token" || id.kind != credGitLabHTTPS {
-		t.Fatalf("identity=%+v ok=%v", id, ok)
+	if id := auth.pick(remote); id.secret != "repo-token" || id.kind != credGitLabHTTPS {
+		t.Fatalf("identity=%+v", id)
 	}
-	miss := Auth{Configured: true, GitHubToken: "legacy"}
-	id, ok = miss.pick(remote)
-	if !ok || !id.failClosed || id.secret != "" {
-		t.Fatalf("missing catalog fell through: %+v ok=%v", id, ok)
-	}
-	legacy := Auth{GitHubURL: "https://git.example", GitHubToken: "legacy"}
-	id, ok = legacy.pick(remote)
-	if !ok || id.secret != "legacy" || id.kind != credGitHubHTTPS {
-		t.Fatalf("legacy=%+v ok=%v", id, ok)
+	if id := (Auth{}).pick(remote); !id.failClosed || id.secret != "" {
+		t.Fatalf("empty catalog fell through: %+v", id)
 	}
 	sshRemote, ok := parseScope("git@git.example:team/app.git")
 	if !ok {
 		t.Fatal("ssh parse")
 	}
-	sshAuth := Auth{Configured: true, Credentials: []Credential{{
+	sshAuth := Auth{Credentials: []Credential{{
 		Kind: credSSH, Scope: "git@git.example:team/app.git", Secret: "PRIVATE\nKEY\n",
 		KnownHosts: "git.example ssh-ed25519 AAA",
 	}}}
-	id, ok = sshAuth.pick(sshRemote)
-	if !ok || id.kind != credSSH || !strings.Contains(id.secret, "PRIVATE") {
-		t.Fatalf("ssh identity=%+v ok=%v", id, ok)
+	if id := sshAuth.pick(sshRemote); id.kind != credSSH || !strings.Contains(id.secret, "PRIVATE") {
+		t.Fatalf("ssh identity=%+v", id)
 	}
-	_, _, _, err := (Auth{SSHPrivateKey: "KEY"}).gitPrefix("ssh://git.example/team/app.git")
-	if err == nil || !strings.Contains(err.Error(), "known_hosts") {
-		t.Fatalf("legacy ssh err=%v", err)
+	env, _, cleanup, err := (Auth{}).gitPrefix("ssh://git.example/team/app.git")
+	defer cleanup()
+	if err != nil || !strings.Contains(strings.Join(env, "\n"), "GIT_SSH_COMMAND="+failClosedSSH()) {
+		t.Fatalf("ssh without a credential must fail closed: env=%v err=%v", env, err)
 	}
 }
 

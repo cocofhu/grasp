@@ -3,10 +3,10 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -40,7 +40,7 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 			cleanup()
 		}
 	}()
-	files, err := gitCatalogFiles(worktreeGitCredentials(spec))
+	files, err := gitCatalogFiles(spec.GitCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("prepare worktree Git credentials: %w", err)
 	}
@@ -88,6 +88,9 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 			return nil, fmt.Errorf("configure worktree Git author: %w", err)
 		}
 	}
+	if err := includeWorktreeRepoAuthors(ctx, spec, env, home, gitConfigPath); err != nil {
+		return nil, err
+	}
 	installed := filepath.Join(home, ".grasp", "git-credentials", "helper.py")
 	env["GRASP_GIT_CREDENTIAL_HELPER"] = installed
 	command := "python3 " + quoteWorktreeGit(installed)
@@ -111,43 +114,56 @@ func prepareWorktreeGit(ctx context.Context, spec Spec, env map[string]string) (
 	return cleanup, nil
 }
 
-// Legacy callers still pass their explicitly supplied identity in Spec.Env.
-// Convert it to files as well; never consult the server's ambient credentials.
-func worktreeGitCredentials(spec Spec) []GitCredential {
-	if spec.GitBindingsConfigured {
-		return spec.GitCredentials
+// includeWorktreeRepoAuthors scopes each repository's author to its own Git
+// directory through the private global config. A local source is a worktree
+// of the user's repository, so its config must not be written.
+func includeWorktreeRepoAuthors(ctx context.Context, spec Spec, env map[string]string, home, gitConfigPath string) error {
+	authors := DecodeRepoAuthors(spec.Env[EnvRepoAuthors])
+	if len(authors) == 0 {
+		return nil
 	}
-	auth := authFromSpec(spec)
-	var credentials []GitCredential
-	if auth.GitHubToken != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-github", Kind: RepoCredentialGitHubHTTPS,
-			Scope: legacyWorktreeGitHost(auth.GitHubURL, "https://github.com"), Secret: auth.GitHubToken,
-		})
+	names := make([]string, 0, len(authors))
+	for name := range authors {
+		names = append(names, name)
 	}
-	if auth.GitLabToken != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-gitlab", Kind: RepoCredentialGitLabHTTPS,
-			Scope: legacyWorktreeGitHost(auth.GitLabURL, "https://gitlab.com"), Secret: auth.GitLabToken,
-		})
+	sort.Strings(names)
+	for i, name := range names {
+		if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, "git", "-C", filepath.Join(env["WORKSPACE_DIR"], name), "rev-parse", "--absolute-git-dir")
+		cmd.Env = envList(env)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		file := filepath.Join(home, ".grasp", "authors", strconv.Itoa(i)+".gitconfig")
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return fmt.Errorf("configure worktree Git author: %w", err)
+		}
+		settings := [][2]string{{"user.name", authors[name][0]}, {"user.email", authors[name][1]}}
+		for _, setting := range settings {
+			if strings.TrimSpace(setting[1]) == "" {
+				continue
+			}
+			if err := runWorktreeGitConfig(ctx, env, file, setting[0], strings.TrimSpace(setting[1])); err != nil {
+				return err
+			}
+		}
+		if err := runWorktreeGitConfig(ctx, env, gitConfigPath, "includeIf.gitdir:"+strings.TrimSpace(string(out))+".path", file); err != nil {
+			return err
+		}
 	}
-	if auth.SSHPrivateKey != "" {
-		credentials = append(credentials, GitCredential{
-			ID: "legacy-ssh", Kind: RepoCredentialSSH, Secret: auth.SSHPrivateKey, KnownHosts: auth.SSHKnownHosts,
-		})
-	}
-	return credentials
+	return nil
 }
 
-func legacyWorktreeGitHost(raw, fallback string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return fallback
+func runWorktreeGitConfig(ctx context.Context, env map[string]string, file, key, value string) error {
+	cmd := exec.CommandContext(ctx, "git", "config", "--file", file, "--", key, value)
+	cmd.Env = envList(env)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("configure worktree Git author: %w", err)
 	}
-	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
-		return parsed.Scheme + "://" + parsed.Host
-	}
-	return raw
+	return nil
 }
 
 func worktreeGitIdentity(value, fallback string) string {

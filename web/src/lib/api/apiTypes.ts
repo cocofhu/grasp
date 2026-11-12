@@ -15,11 +15,8 @@ import type {
 } from '../shared/types'
 import type { BackendId } from '../shared/regionPolicy'
 
-export type AgentTestRepo = { name: string; url: string; branch?: string }
-
 export type CreateAgentTestPayload = {
-  repos?: AgentTestRepo[]
-  repoUrl?: string
+  repos?: RepoChoice[]
 }
 
 export interface PaginatedResponse<T> {
@@ -221,16 +218,6 @@ export interface ToolCapability {
   evidence?: { url: string; scope?: string; checkedAt?: string; kind?: string }[]
 }
 
-export interface AgentGitBinding {
-  credentialId: string
-  /** Host or repository URL; empty uses the credential provider's default. */
-  scope?: string
-}
-
-export interface AgentGitBindings {
-  items: AgentGitBinding[]
-}
-
 /** One built-in linear identity icon. Absent means the initial-letter mark. */
 export interface AgentIcon {
   iconId: string
@@ -239,9 +226,6 @@ export interface AgentIcon {
 
 export interface Agent {
   inheritModel?: boolean
-  inheritGit?: boolean
-  /** Local Git selection; missing grants none unless inheritGit is enabled. */
-  gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
   credentialBindings?: Record<string, string | null>
@@ -263,7 +247,6 @@ export interface Agent {
 export interface SharedAgentConfig {
   acpBackend?: BackendId
   modelBinding?: ModelBinding
-  gitBindings?: AgentGitBindings
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -393,8 +376,7 @@ export interface CodexDeviceLoginPoll {
 
 export type CreateSharedAgentTestPayload = {
   agentName: string
-  repos?: AgentTestRepo[]
-  repoUrl?: string
+  repos?: RepoChoice[]
 }
 
 /** Result of POST /workspace/agents/import. */
@@ -440,8 +422,8 @@ export interface TeamBootstrapRequest {
   background: string
   modelConfigurationId: string
   modelConfigurationIds?: string[]
-  gitBindings?: AgentGitBindings
-  gitUrl?: string
+  /** Registered repository the PM sandbox clones; empty starts an empty workspace. */
+  repoId?: string
   mcp?: MCPServer[]
   env?: Record<string, string>
 }
@@ -699,7 +681,7 @@ export interface WorkflowCatalogItem {
   needsRepo?: boolean
 }
 
-/** A Git repository registered for Solo sessions. Access and environment live on the Agent. */
+/** A registered Git repository with its own access credential and commit author. */
 export interface Project {
   id: string
   name: string
@@ -707,6 +689,11 @@ export interface Project {
   repoUrl: string
   defaultBranch?: string
   repoDirName?: string
+  /** Git token or SSH key from workspace credentials; empty clones without authorization. */
+  credentialId?: string
+  /** Commit author in this repository; empty keeps the sandbox default. */
+  commitName?: string
+  commitEmail?: string
   createdBy?: string
   lastUsedAt?: string
   createdAt: string
@@ -719,6 +706,9 @@ export interface ProjectInput {
   repoUrl: string
   defaultBranch?: string
   repoDirName?: string
+  credentialId?: string
+  commitName?: string
+  commitEmail?: string
 }
 
 export type SoloStatus = 'starting' | 'running' | 'stopping' | 'stopped' | 'closed' | 'error'
@@ -806,8 +796,10 @@ export interface SoloSessionList {
   usedSandboxes?: number
 }
 
-export interface SoloRepoChoice {
+/** A registered repository picked for a Solo session, workflow binding or run. */
+export interface RepoChoice {
   projectId: string
+  /** Empty uses the repository's default branch. */
   branch?: string
 }
 
@@ -816,7 +808,7 @@ export interface SoloCreateBody {
   projectId?: string
   branch?: string
   /** Ordered selection. An empty list starts an empty workspace. */
-  repos?: SoloRepoChoice[]
+  repos?: RepoChoice[]
   /** Empty follows the Agent configuration's primary model. */
   initialModelId?: string
   initialConfigurationId?: string

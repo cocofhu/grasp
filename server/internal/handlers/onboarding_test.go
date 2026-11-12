@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -114,16 +115,26 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
 	}
 
-	if w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"name":  "Empty repositories",
-		"repos": []map[string]any{{"url": ""}},
-	}); w.Code != http.StatusBadRequest {
-		t.Fatalf("empty repos: %d %s", w.Code, w.Body.String())
+	app, err := hn.h.Onboarding.Projects.Create(services.ProjectInput{Name: "app", RepoURL: "https://github.com/acme/app.git"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := hn.h.Onboarding.Projects.Create(services.ProjectInput{Name: "api", RepoURL: "https://github.com/acme/api.git"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, repos := range [][]map[string]any{{{"projectId": ""}}, {{"projectId": "missing"}}} {
+		if w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
+			"name":  "Bad repositories",
+			"repos": repos,
+		}); w.Code != http.StatusBadRequest {
+			t.Fatalf("repos %v: %d %s", repos, w.Code, w.Body.String())
+		}
 	}
 
 	if w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
 		"name":  "　 ",
-		"repos": []map[string]any{{"url": "https://github.com/acme/app.git"}},
+		"repos": []map[string]any{{"projectId": app.ID}},
 	}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), services.ErrEmptyWorkflowName.Error()) {
 		t.Fatalf("empty name: %d %s", w.Code, w.Body.String())
 	}
@@ -131,10 +142,9 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
 		"name": "  Requirements pipeline  ",
 		"repos": []map[string]any{
-			{"url": "https://github.com/acme/app.git", "name": "", "branch": "main"},
-			{"url": "https://gitlab.com/acme/app.git", "name": ""},
-			{"url": "https://github.com/acme/ignored.git", "name": "docs"},
-			{"url": "  "},
+			{"projectId": app.ID, "branch": "main"},
+			{"projectId": api.ID},
+			{"projectId": app.ID},
 		},
 	})
 	if w.Code != http.StatusCreated {
@@ -157,17 +167,25 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	if got.Code != http.StatusOK {
 		t.Fatalf("GET created: %d %s", got.Code, got.Body.String())
 	}
-	var fetched map[string]any
+	var fetched struct {
+		ShowOnHome bool                     `json:"showOnHome"`
+		Status     string                   `json:"status"`
+		Defaults   *models.WorkflowDefaults `json:"defaults"`
+	}
 	if err := json.Unmarshal(got.Body.Bytes(), &fetched); err != nil {
 		t.Fatal(err)
 	}
-	if fetched["showOnHome"] != true || fetched["status"] != "published" {
+	if !fetched.ShowOnHome || fetched.Status != "published" {
 		t.Fatalf("persisted from-baseline: %#v", fetched)
+	}
+	want := []models.RepoChoice{{ProjectID: app.ID, Branch: "main"}, {ProjectID: api.ID}}
+	if fetched.Defaults == nil || !reflect.DeepEqual(fetched.Defaults.Repos, want) {
+		t.Fatalf("bound repos = %+v, want %+v", fetched.Defaults, want)
 	}
 	ignored := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
 		"name":       "Client cannot hide",
 		"showOnHome": false,
-		"repos":      []map[string]any{{"url": "https://github.com/acme/other.git"}},
+		"repos":      []map[string]any{{"projectId": api.ID}},
 	})
 	if ignored.Code != http.StatusCreated {
 		t.Fatalf("create with showOnHome false in body: %d %s", ignored.Code, ignored.Body.String())
@@ -179,27 +197,10 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	if ignoredBody["showOnHome"] != true {
 		t.Fatalf("client showOnHome=false must not stick: %#v", ignoredBody)
 	}
-	variables, ok := created["variables"].([]any)
-	if !ok {
-		t.Fatalf("missing variables: %#v", created["variables"])
-	}
-	var repos []any
-	for _, raw := range variables {
-		v, _ := raw.(map[string]any)
-		if v["name"] == "repos" {
-			repos, _ = v["value"].([]any)
-		}
-	}
-	if len(repos) != 3 {
-		t.Fatalf("repos length = %d, want 3: %#v", len(repos), repos)
-	}
-	if second, _ := repos[1].(map[string]any); second["name"] != "app-2" {
-		t.Fatalf("second repo not disambiguated: %#v", second)
-	}
 
 	w = hn.do("POST", "/api/workflows/from-baseline", map[string]any{
 		"name":  "Requirements pipeline",
-		"repos": []map[string]any{{"url": "https://github.com/acme/app.git"}},
+		"repos": []map[string]any{{"projectId": app.ID}},
 	})
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), services.ErrWorkflowNameExists.Error()) {
 		t.Fatalf("duplicate workflow name not rejected: %d %s", w.Code, w.Body.String())
@@ -211,7 +212,7 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	}
 }
 
-func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
+func TestBootstrapPutsGitCredentialOnTheRepository(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
 	seedOnboardingModel(t, hn)
@@ -221,7 +222,10 @@ func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
 	}
 	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
 		"modelConfigurationId": "model-onboarding",
-		"gitBindings":          models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: credential.ID}}, PreferredCredentialID: credential.ID},
+		"repoUrl":              "https://github.com/acme/app.git",
+		"repoCredentialId":     credential.ID,
+		"commitName":           "Ada",
+		"commitEmail":          "ada@example.com",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body)
@@ -230,17 +234,22 @@ func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.SoloAgentID != services.OnboardingSoloAgentName {
-		t.Fatalf("missing default Solo Agent: %+v", result)
+	projects, err := hn.h.Onboarding.Projects.List()
+	if err != nil || len(projects) != 1 || projects[0].CredentialID != credential.ID || projects[0].CommitEmail != "ada@example.com" {
+		t.Fatalf("repository = %+v, %v", projects, err)
 	}
 	for _, name := range append(result.AgentIDs, result.SoloAgentID) {
 		agent, _ := hn.h.Agents.Get(name)
-		if agent.GitBindings == nil || len(agent.GitBindings.Items) != 1 || agent.GitBindings.Items[0].CredentialID != credential.ID || agent.GitBindings.PreferredCredentialID != "" {
-			t.Fatalf("Agent %s lost Git reference", name)
+		if agent.Env["GITHUB_TOKEN"] != "" || len(agent.CredentialBindings) != 0 {
+			t.Fatalf("Agent %s carries Git authorization", name)
 		}
-		if agent.Env["GITHUB_TOKEN"] != "" {
-			t.Fatal("Agent persisted Git secret")
-		}
+	}
+	if w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
+		"modelConfigurationId": "model-onboarding",
+		"repoUrl":              "https://github.com/acme/app.git",
+		"repoCredentialId":     "missing",
+	}); w.Code == http.StatusOK {
+		t.Fatal("missing repository credential accepted")
 	}
 }
 

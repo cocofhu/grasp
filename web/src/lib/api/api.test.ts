@@ -388,7 +388,7 @@ describe('api.createWorkflowFromBaseline', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'wf-base', name: 'Requirements', status: 'published' }))
     await expect(
       api.createWorkflowFromBaseline('Requirements', [
-        { name: '', url: 'https://github.com/acme/app.git', branch: 'main' },
+        { projectId: 'p-app', branch: 'main' },
       ]),
     ).resolves.toMatchObject({ id: 'wf-base', status: 'published' })
     const call = fetchMock.mock.calls[fetchMock.mock.calls.length - 1]
@@ -396,7 +396,7 @@ describe('api.createWorkflowFromBaseline', () => {
     expect(call?.[1]).toMatchObject({ method: 'POST' })
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       name: 'Requirements',
-      repos: [{ name: '', url: 'https://github.com/acme/app.git', branch: 'main' }],
+      repos: [{ projectId: 'p-app', branch: 'main' }],
     })
   })
 })

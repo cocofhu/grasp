@@ -273,7 +273,6 @@ async function createStudioChatTest(
   return api.createSharedAgentTest({
     agentName: profile,
     ...(payload.repos ? { repos: payload.repos } : {}),
-    ...(payload.repoUrl ? { repoUrl: payload.repoUrl } : {}),
   })
 }
 </script>

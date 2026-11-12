@@ -72,7 +72,7 @@ function mountTester() {
       stubs: {
         Icon: true,
         AppButton: { template: '<button><slot /></button>' },
-        ReposEditor: true,
+        RepoChoiceList: true,
         AcpStatusPill: true,
         AppModal: PreviewAppModalStub,
       },

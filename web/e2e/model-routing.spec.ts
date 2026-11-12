@@ -160,9 +160,9 @@ async function captureRuntimeBindings(page: Page, name: string, testInfo: TestIn
   await mkdir(testInfo.outputDir, { recursive: true })
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 960 })
-    if (width === 390 && name === 'agent-inherit-model-git') {
+    if (width === 390 && name === 'agent-inherit-model') {
       await expect(page.getByTestId('studio-mobile-back-files')).toBeVisible()
-    } else if (name === 'agent-inherit-model-git') {
+    } else if (name === 'agent-inherit-model') {
       await expect(page.getByTestId('model-binding-inherited-summary')).toBeVisible()
     } else {
       await expect(page.getByTestId('model-binding-configuration-select')).toBeVisible()
@@ -307,7 +307,6 @@ test('Agent binds a saved tool-credential-model configuration by ID', async ({ p
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await chooseBoundConfiguration(page, 'configured-model')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /^跳过/ }).click()
   await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
   await expect.poll(() => state.agentWrites.length).toBe(1)
   expect(state.agentWrites[0]).toMatchObject({ acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'configured-model' } })
@@ -315,7 +314,7 @@ test('Agent binds a saved tool-credential-model configuration by ID', async ({ p
   expect((state.agentWrites[0]?.env || {}) as object).not.toHaveProperty('ACP_BRIDGE_MODEL')
 })
 
-test('Agent defaults save a model and multiple Git authorizations, and a new Agent inherits them after reload', async ({ page }, testInfo) => {
+test('Agent defaults save a model, and a new Agent inherits it after reload', async ({ page }, testInfo) => {
   const state = await setup(page, [connection('responses-service', 'openai-responses', 'vendor/raw/responses')])
   state.configurations.push({ id: 'team-codex', name: 'Team Codex default', backend: 'codex', binding: { kind: 'connection', connectionId: 'responses-service', modelId: 'vendor/raw/responses' }, state: 'active', revision: 1 })
   state.credentials.push(
@@ -329,25 +328,18 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await expect(page.getByTestId('meta-config-root')).toHaveCount(0)
   await expect(page.getByTestId('meta-workspace-dir')).toHaveCount(0)
   await expect(page.getByTestId('agent-runtime-bindings').locator('a[href="/settings/credentials"]')).toHaveCount(0)
-  for (const id of ['gitlab-team', 'github-team']) {
-    await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
-    await page.locator(`[data-test="app-select-option-${id}"]`).click()
-  }
-  await expect(page.getByTestId('git-preferred-github-team')).toHaveCount(0)
-  await expect(page.getByText('可添加多个已保存的授权，并设置首选。')).toHaveCount(0)
-  await expect(page.getByText('所选授权均可在沙箱中使用。')).toHaveCount(0)
+  await expect(page.getByTestId('git-credential-add')).toHaveCount(0)
   await page.getByTestId('shared-agent-save').click()
   await expect.poll(() => state.sharedWrites.length).toBe(1)
   expect(state.sharedWrites[0]).toMatchObject({
     acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'team-codex' },
     layout: expect.objectContaining({ configRoot: '/root/.codex' }),
-    gitBindings: { items: [{ credentialId: 'gitlab-team' }, { credentialId: 'github-team' }] },
   })
+  expect(state.sharedWrites[0]).not.toHaveProperty('gitBindings')
   await page.reload()
   await page.getByTestId('shared-agent-subtab-meta').click()
   await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
-  await expect(page.getByTestId('git-preferred-github-team')).toHaveCount(0)
-  await captureRuntimeBindings(page, 'agent-default-model-git', testInfo)
+  await captureRuntimeBindings(page, 'agent-default-model', testInfo)
 
   await page.goto('/agent-create-wizard.html')
   await page.locator('#wiz-name-input').fill('inherits-team-defaults')
@@ -356,18 +348,13 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await expect(page.getByTestId('model-binding-inherited-summary')).toContainText('Team Codex default')
   await expect(page.getByTestId('model-binding-configuration-select')).toHaveCount(0)
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.getByTestId('agent-inherit-git')).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByTestId('git-credential-row-gitlab-team')).toBeVisible()
-  await expect(page.getByTestId('git-credential-row-github-team')).toBeVisible()
-  await expect(page.getByTestId('git-credential-add')).toHaveCount(0)
-  await expect(page.getByTestId('git-options-github-team')).toHaveCount(0)
-  await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.step-pane')).toContainText('Team Codex default')
-  await expect(page.locator('.step-pane')).toContainText('GitHub team')
+  await expect(page.locator('.step-pane')).not.toContainText('GitHub team')
   await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
   await expect(page.getByTestId('created-name')).toHaveText('inherits-team-defaults')
   expect(state.agentWrites).toHaveLength(1)
-  expect(state.agentWrites[0]).toMatchObject({ inheritModel: true, inheritGit: true, gitBindings: { items: [] } })
+  expect(state.agentWrites[0]).toMatchObject({ inheritModel: true })
+  for (const key of ['inheritGit', 'gitBindings']) expect(state.agentWrites[0]).not.toHaveProperty(key)
   expect(state.agentWrites[0]).not.toHaveProperty('modelBinding')
   expect(JSON.stringify(state.agentWrites[0])).not.toContain('vendor/raw/responses')
   expect(JSON.stringify(state.agentWrites[0])).not.toContain('gitlab-team')
@@ -380,8 +367,7 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await expect(inheritedCard).toContainText('工作区默认')
   await expect(inheritedCard).not.toContainText('Team Codex default')
   await expect(inheritedCard.locator('[title="Team Codex default"]')).toHaveCount(1)
-  for (const id of ['agent-inherit-model', 'agent-inherit-git', 'model-binding-configuration-select', 'meta-config-root', 'meta-workspace-dir', 'git-credential-row-github-team', 'git-credential-row-gitlab-team', 'git-inherited-preferred-github-team', 'git-credential-add']) await expect(page.getByTestId(id)).toHaveCount(0)
-  await expect(page.getByTestId('agent-git-credential-picker')).toBeHidden()
+  for (const id of ['agent-inherit-model', 'model-binding-configuration-select', 'meta-config-root', 'meta-workspace-dir', 'agent-git-credential-picker']) await expect(page.getByTestId(id)).toHaveCount(0)
   await page.setViewportSize({ width: 1440, height: 960 })
   const card = page.getByTestId('agent-inherit-default')
   const cardSize = () => card.evaluate(element => {
@@ -409,7 +395,7 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await expect(inheritedCard.locator('[data-provider-logo="codex"]')).toBeVisible()
   await expect(inheritedCard).toContainText('工作区默认')
   await expect.poll(cardSize).toEqual(inheritedSize)
-  await captureRuntimeBindings(page, 'agent-inherit-model-git', testInfo)
+  await captureRuntimeBindings(page, 'agent-inherit-model', testInfo)
 })
 
 test('Agent defaults distinguish the default configuration from the configurations allowed for switching', async ({ page }, testInfo) => {
@@ -423,7 +409,7 @@ test('Agent defaults distinguish the default configuration from the configuratio
     { id: 'team-opencode', name: 'Team OpenCode', backend: 'opencode', binding: { kind: 'connection', connectionId: additional.id, modelId: additional.models[0]!.id }, state: 'active', revision: 1 },
     { id: 'disabled-group', name: 'Disabled team model', backend: 'codex', binding: { kind: 'connection', connectionId: primary.id, modelId: primary.models[0]!.id }, state: 'disabled', revision: 1 },
   )
-  state.agents.push({ name: 'Solo', acpBackend: 'codex', inheritModel: true, inheritGit: true, files: [], mcp: [], env: {}, layout: {} })
+  state.agents.push({ name: 'Solo', acpBackend: 'codex', inheritModel: true, files: [], mcp: [], env: {}, layout: {} })
   const openDefaults = async (theme = 'light', lang = 'zh-CN') => {
     await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?view=defaults')}&theme=${theme}&lang=${lang}`)
     await page.getByTestId('shared-agent-subtab-meta').click()
@@ -735,7 +721,6 @@ for (const backend of ['opencode', 'deepseek_harness']) {
     await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
     await chooseBoundConfiguration(page, 'configured-model')
     await page.getByRole('button', { name: /^下一步/ }).click()
-    await page.getByRole('button', { name: /^跳过/ }).click()
     await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
     await expect.poll(() => state.agentWrites.length).toBe(1)
     expect(state.agentWrites[0]).toMatchObject({ acpBackend: backend, modelBinding: { kind: 'configuration', configurationId: 'configured-model' } })
@@ -842,7 +827,7 @@ test('Solo uses real model names and sends exact model IDs and advertised effort
   }
   const state = await setup(page, [service])
   state.configurations.push({ id: 'kimi-config', name: 'TokenHub', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: service.id, modelId: primary, auxiliaryModelIds: [auxiliary] }, state: 'active', revision: 1 })
-  state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, gitBindings: { items: [] }, files: [], mcp: [], env: {}, layout: {} })
+  state.agents.push({ name: 'Solo', acpBackend: 'deepseek_harness', modelBinding: { kind: 'configuration', configurationId: 'kimi-config' }, files: [], mcp: [], env: {}, layout: {} })
   const session = { id: 'solo-named-model', title: 'A Solo task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z', restarts: 0, busy: false, waiting: 0, repos: [], initialModelId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', reasoningEfforts: ['low', 'high'] }
   let createBody: Record<string, unknown> | undefined
   const modelWrites: Record<string, unknown>[] = []

@@ -515,7 +515,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 	}
 	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
-	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.GitCredential)
+	StripGitAuthorizationEnv(env, creds)
+	repos, repoCreds := c.repoGit(req)
+	gitCredentials, err := ResolveRepoCredentials(repoCreds, c.opts.GitCredential)
 	if err != nil {
 		return sandbox.Spec{}, err
 	}
@@ -547,6 +549,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 		env[k] = v
 	}
+	sandbox.ApplyRepoEnv(env, repos)
 
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
@@ -567,13 +570,12 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		codexConnectionRuns.Store(c.codexHubKey(req), true)
 	}
 	spec := sandbox.Spec{
-		GitBindingsConfigured: true,
-		GitCredentials:        gitCredentials,
-		Image:                 resolveProviderImage(c.opts, backend),
-		Env:                   env,
-		ConfigHome:            home,
-		ConfigRoot:            layout.ConfigRoot,
-		WorkspaceDir:          layout.WorkspaceDir,
+		GitCredentials: gitCredentials,
+		Image:          resolveProviderImage(c.opts, backend),
+		Env:            env,
+		ConfigHome:     home,
+		ConfigRoot:     layout.ConfigRoot,
+		WorkspaceDir:   layout.WorkspaceDir,
 	}
 	return spec, nil
 }

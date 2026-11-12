@@ -13,7 +13,7 @@ func TestBuildAgentPromptAuto(t *testing.T) {
 	got := p.buildAgentPrompt(NodeReq{
 		NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "USER_GOAL"},
-		Vars:   map[string]any{"repos": `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`},
+		Repos:  []models.SessionRepo{{RepoDirName: "web", RepoURL: "https://h/web.git"}, {RepoDirName: "api", RepoURL: "https://h/api.git"}},
 	}, []string{"plan.json"})
 	for _, want := range []string{
 		"USER_GOAL",

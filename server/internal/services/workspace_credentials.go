@@ -497,7 +497,7 @@ func (s *CredentialService) Clear(id string) error {
 
 // Remove deletes a credential row. For a model_api account the model
 // connections bound to it go in the same transaction; other references (model
-// configurations, Git bindings) are kept and fail closed when resolved.
+// configurations, repository credentials) are kept and fail closed when resolved.
 // Clear only wipes the secret and keeps the row.
 func (s *CredentialService) Remove(id string) error {
 	id = strings.TrimSpace(id)

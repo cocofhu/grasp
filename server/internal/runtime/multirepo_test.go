@@ -4,73 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
-
-func TestParseReposVar(t *testing.T) {
-	// JSON string form with url + branch.
-	got := parseReposVar(`[{"name":"web","url":"https://h/w.git","branch":"dev"},{"name":"api","url":"https://h/a.git"}]`)
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2 (%+v)", len(got), got)
-	}
-	if got[0].Name != "web" || got[0].URL != "https://h/w.git" || got[0].Branch != "dev" {
-		t.Errorf("entry0 = %+v", got[0])
-	}
-	if got[1].Name != "api" || got[1].URL != "https://h/a.git" || got[1].Branch != "" {
-		t.Errorf("entry1 = %+v", got[1])
-	}
-
-	// Decoded []any form (as it arrives from run vars). A blank name defaults to
-	// the repo derived from the clone URL (so url-only entries are kept).
-	anyForm := []any{
-		map[string]any{"name": "web", "url": "https://h/w.git", "branch": "feat"},
-		map[string]any{"url": "https://h/x.git"}, // no name -> derived "x"
-	}
-	got2 := parseReposVar(anyForm)
-	if len(got2) != 2 || got2[0].Name != "web" || got2[0].Branch != "feat" || got2[1].Name != "x" {
-		t.Errorf("anyForm = %+v", got2)
-	}
-
-	// Wire format (GIT_REPOS / onboarding literal) is accepted alongside JSON.
-	wire := parseReposVar("demo|https://github.com/heroku/nodejs-getting-started.git|main")
-	if len(wire) != 1 || wire[0].Name != "demo" || wire[0].Branch != "main" {
-		t.Errorf("wire form = %+v", wire)
-	}
-
-	// Blank / invalid -> nil (single-repo mode).
-	if parseReposVar("") != nil || parseReposVar(nil) != nil || parseReposVar("not json") != nil {
-		t.Errorf("blank/invalid should be nil")
-	}
-	if r := parseReposVar([]any{}); len(r) != 0 {
-		t.Errorf("empty slice should yield no repos, got %+v", r)
-	}
-
-	// Blank name defaults to the repo derived from the clone URL (both forms).
-	if r := parseReposVar(`[{"url":"https://h/web-svc.git"}]`); len(r) != 1 || r[0].Name != "web-svc" || r[0].URL != "https://h/web-svc.git" {
-		t.Errorf("string blank-name derive = %+v", r)
-	}
-	if r := parseReposVar([]any{map[string]any{"url": "git@github.com:org/api.git"}}); len(r) != 1 || r[0].Name != "api" {
-		t.Errorf("anyForm blank-name derive = %+v", r)
-	}
-	// A blank name with no URL is still dropped.
-	if r := parseReposVar([]any{map[string]any{"branch": "x"}}); len(r) != 0 {
-		t.Errorf("no name/url should be dropped, got %+v", r)
-	}
-
-	// Unsafe names (path separators / traversal) are dropped so a clone can
-	// never escape the workspace root. Both string and []any forms.
-	unsafe := parseReposVar(`[{"name":"../etc","url":"https://h/a.git"},{"name":"a/b","url":"https://h/b.git"},{"name":"ok","url":"https://h/c.git"}]`)
-	if len(unsafe) != 1 || unsafe[0].Name != "ok" {
-		t.Errorf("unsafe names should be dropped, got %+v", unsafe)
-	}
-	unsafe2 := parseReposVar([]any{
-		map[string]any{"name": "..", "url": "https://h/a.git"},
-		map[string]any{"name": "good", "url": "https://h/b.git"},
-	})
-	if len(unsafe2) != 1 || unsafe2[0].Name != "good" {
-		t.Errorf("unsafe []any names should be dropped, got %+v", unsafe2)
-	}
-}
 
 func TestSafeRepoName(t *testing.T) {
 	for _, ok := range []string{"web", "api-svc", "a.b", "repo_1", " trimmed "} {
@@ -94,8 +30,8 @@ func TestRepoNameFromURL(t *testing.T) {
 		"":                                "",
 	}
 	for in, want := range cases {
-		if got := repoNameFromURL(in); got != want {
-			t.Errorf("repoNameFromURL(%q) = %q, want %q", in, got, want)
+		if got := sandbox.RepoNameFromURL(in); got != want {
+			t.Errorf("RepoNameFromURL(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -124,28 +60,27 @@ func TestParseBranchesVar(t *testing.T) {
 // A run that persisted the legacy map form must still clone the
 // implementation branch downstream, not the default branch.
 func TestResolveReposLegacyBranchesVar(t *testing.T) {
-	got := resolveRepos(NodeReq{Vars: map[string]any{
-		"repos":    `[{"name":"grasp","url":"https://github.com/cocofhu/grasp"}]`,
-		"branches": "map[grasp:feature/home-light-theme-character]",
-	}})
+	got := resolveRepos(NodeReq{
+		Repos: []models.SessionRepo{{RepoURL: "https://github.com/cocofhu/grasp", RepoDirName: "grasp"}},
+		Vars:  map[string]any{"branches": "map[grasp:feature/home-light-theme-character]"},
+	})
 	if len(got) != 1 || got[0].Branch != "feature/home-light-theme-character" {
 		t.Fatalf("repos = %+v", got)
 	}
 }
 
 func TestResolveRepos(t *testing.T) {
-	// No vars.repos -> nil (pure artifact flow / empty workspace). repo_url is
-	// no longer consulted.
+	// No repositories -> nil (pure artifact flow / empty workspace).
 	if r := resolveRepos(NodeReq{Vars: map[string]any{"repo_url": "https://h/only.git"}}); r != nil {
 		t.Errorf("no repos should yield nil, got %+v", r)
 	}
 
 	// A single repo is a first-class entry (cloned to <workspace>/<name>/ like
 	// any other). branches map overrides per-repo branch.
-	single := resolveRepos(NodeReq{Vars: map[string]any{
-		"repos":    `[{"name":"web","url":"https://h/web.git"}]`,
-		"branches": `{"web":"feat/web"}`,
-	}})
+	single := resolveRepos(NodeReq{
+		Repos: []models.SessionRepo{{RepoURL: "https://h/web.git"}},
+		Vars:  map[string]any{"branches": `{"web":"feat/web"}`},
+	})
 	if len(single) != 1 || single[0] != (sandbox.RepoSpec{Name: "web", URL: "https://h/web.git", Branch: "feat/web"}) {
 		t.Fatalf("single = %+v", single)
 	}
@@ -153,10 +88,8 @@ func TestResolveRepos(t *testing.T) {
 	// Multiple repos: per-entry branch, with branches map override taking
 	// precedence over the entry's own branch.
 	req := NodeReq{
-		Vars: map[string]any{
-			"repos":    `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git","branch":"main"}]`,
-			"branches": `{"api":"feat/api","web":"feat/web"}`,
-		},
+		Repos: []models.SessionRepo{{RepoURL: "https://h/web.git", RepoDirName: "web"}, {RepoURL: "https://h/api.git", RepoDirName: "api", Branch: "main"}},
+		Vars:  map[string]any{"branches": `{"api":"feat/api","web":"feat/web"}`},
 	}
 	got := resolveRepos(req)
 	if len(got) != 2 {
@@ -175,8 +108,8 @@ func TestResolveRepos(t *testing.T) {
 
 	// Dedupe: a later entry whose name collides with an earlier one is skipped
 	// (first wins). Entries without a URL are dropped.
-	got2 := resolveRepos(NodeReq{Vars: map[string]any{
-		"repos": `[{"name":"web","url":"https://h/web.git"},{"name":"web","url":"https://other/web.git"},{"name":"nourl"}]`,
+	got2 := resolveRepos(NodeReq{Repos: []models.SessionRepo{
+		{RepoURL: "https://h/web.git", RepoDirName: "web"}, {RepoURL: "https://other/web.git", RepoDirName: "web"}, {RepoDirName: "nourl"},
 	}})
 	if len(got2) != 1 || got2[0].URL != "https://h/web.git" {
 		t.Errorf("dedupe = %+v", got2)
@@ -259,9 +192,7 @@ func TestRepoWorkspacePath(t *testing.T) {
 }
 
 func TestFirstRepoURL(t *testing.T) {
-	req := NodeReq{Vars: map[string]any{
-		"repos": `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`,
-	}}
+	req := NodeReq{Repos: []models.SessionRepo{{RepoURL: "https://h/web.git"}, {RepoURL: "https://h/api.git"}}}
 	if got := firstRepoURL(req); got != "https://h/web.git" {
 		t.Errorf("firstRepoURL = %q", got)
 	}
@@ -275,9 +206,7 @@ func TestMultiRepoLayoutText(t *testing.T) {
 	if got := multiRepoLayoutText(NodeReq{}); got != "" {
 		t.Errorf("no repos should yield empty layout, got %q", got)
 	}
-	got := multiRepoLayoutText(NodeReq{Vars: map[string]any{
-		"repos": `[{"name":"web","url":"https://h/web.git"},{"name":"api","url":"https://h/api.git"}]`,
-	}})
+	got := multiRepoLayoutText(NodeReq{Repos: []models.SessionRepo{{RepoURL: "https://h/web.git"}, {RepoURL: "https://h/api.git"}}})
 	if !strings.Contains(got, "/root/workspace/web/") || !strings.Contains(got, "/root/workspace/api/") {
 		t.Errorf("layout text missing repo dirs: %q", got)
 	}

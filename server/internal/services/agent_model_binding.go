@@ -3,7 +3,6 @@ package services
 import (
 	"fmt"
 	"github.com/cocofhu/grasp/internal/modelrouting"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -42,11 +41,7 @@ func (s *AgentService) SetModelConfigurationResolver(resolve func(*modelrouting.
 	s.resolveModelConfiguration = resolve
 }
 
-func (s *AgentService) SetGitBindingResolver(validate func(*models.GitBindings) error) {
-	s.validateGitBindings = validate
-}
-
-// SetSharedAgent supplies the workspace model/Git inheritance defaults.
+// SetSharedAgent supplies the workspace model inheritance defaults.
 func (s *AgentService) SetSharedAgent(shared *SharedAgentService) { s.shared = shared }
 
 func (s *AgentService) Effective(agent Agent) Agent {

@@ -1,7 +1,7 @@
-import type { Agent, AgentCapabilities, AgentIcon, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, AgentIcon, MCPServer, ModelBinding } from '@/lib/api/api'
 import { MODEL_RUNTIME_ENV_KEYS } from './modelRouting'
 import { isSecretEnvKey } from './secretEnvKeys'
-import { cloneGitBindings, GIT_AUTH_ENV_KEYS } from './gitBindings'
+import { GIT_AUTH_ENV_KEYS } from '@/lib/workspace/gitCredentials'
 import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
 import {
   ACP_BACKENDS,
@@ -22,8 +22,6 @@ export type DraftMCP = {
 export type DraftFile = { path: string; content: string }
 export type AgentStudioDraft = {
   inheritModel?: boolean
-  inheritGit?: boolean
-  gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   name: string
   credentialBindings?: Record<string, string | null>
@@ -121,10 +119,8 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
     inheritModel: a.inheritModel ?? true,
-    inheritGit: a.inheritGit ?? true,
     ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
-    gitBindings: cloneGitBindings(a.gitBindings || { items: [] }),
     ...(a.credentialBindings ? { credentialBindings: { ...a.credentialBindings } } : {}),
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
@@ -142,10 +138,8 @@ export function toDraft(a: Agent): AgentStudioDraft {
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
   return {
     ...(d.inheritModel !== undefined ? { inheritModel: d.inheritModel } : {}),
-    ...(d.inheritGit !== undefined ? { inheritGit: d.inheritGit } : {}),
     ...(d.modelBinding && (!d.inheritModel || d.modelBinding.configurationId?.trim()) ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
     name: d.name,
-    gitBindings: cloneGitBindings(d.gitBindings || { items: [] }),
     ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !GIT_AUTH_ENV_KEYS.has(key) && !isSecretEnvKey(key))) } : {}),
     acpBackend: d.acpBackend || 'cursor',
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),

@@ -18,9 +18,8 @@ func TestOnboardingCreatesEmptySoloOutsideWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			bindings := &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: key.ID}}}
 			result, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
-				ModelConfigurationID: "model-onboarding", Language: language, GitBindings: bindings,
+				ModelConfigurationID: "model-onboarding", Language: language, RepoCredentialID: key.ID,
 				RepoURL: "https://github.com/example/app.git",
 				Agents: []services.OnboardingAgentChoice{
 					{TemplateID: "clarify", ModelConfigurationID: "model-onboarding-alt"},
@@ -53,11 +52,8 @@ func TestOnboardingCreatesEmptySoloOutsideWorkflow(t *testing.T) {
 			if len(solo.MCP) != 0 || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
 				t.Fatalf("Solo must have no skills or workflow settings: %+v", solo)
 			}
-			if solo.AcpBackend != "cursor" || solo.InheritModel || solo.InheritGit || solo.ModelBinding == nil || solo.ModelBinding.Kind != "configuration" || solo.ModelBinding.ConfigurationID != "model-onboarding" {
+			if solo.AcpBackend != "cursor" || solo.InheritModel || solo.ModelBinding == nil || solo.ModelBinding.Kind != "configuration" || solo.ModelBinding.ConfigurationID != "model-onboarding" {
 				t.Fatalf("Solo must use the selected default model: %+v", solo)
-			}
-			if !reflect.DeepEqual(solo.GitBindings, bindings) {
-				t.Fatalf("Solo Git bindings = %+v, want %+v", solo.GitBindings, bindings)
 			}
 			if solo.Layout.ConfigRoot != services.DefaultConfigRootForBackend("cursor") || solo.Layout.WorkspaceDir != services.DefaultWorkspaceDir {
 				t.Fatalf("Solo layout is not runnable: %+v", solo.Layout)

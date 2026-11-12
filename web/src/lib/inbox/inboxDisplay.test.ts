@@ -24,12 +24,13 @@ describe('sidebarRunTitle', () => {
     expect(sidebarRunTitle({})).toBe('')
   })
 
-  it('shows repo names and hides other raw JSON', () => {
+  it('hides raw JSON titles', () => {
     expect(
       sidebarRunTitle({
         runTitle: '[{"name":"approving","url":"https://git.example/approving.git"}]',
+        workflowName: 'wf',
       }),
-    ).toBe('approving')
+    ).toBe('wf')
     expect(sidebarRunTitle({ runTitle: '{"foo":1}', workflowName: 'wf' })).toBe('wf')
   })
 })
@@ -80,7 +81,7 @@ describe('conversationToolbarRunName', () => {
         runTitle: '[{"name":"approving","url":"https://git.example/approving.git"}]',
         workflowName: '产品迭代',
       },
-    })).toBe('approving')
+    })).toBe('产品迭代')
   })
 })
 

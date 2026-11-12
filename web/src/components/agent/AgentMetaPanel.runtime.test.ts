@@ -8,25 +8,24 @@ import pages from '@/locales/zh-CN/pages.json'
 import { fromDraft, toDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 import ModelBindingEditor from './ModelBindingEditor.vue'
-import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
 const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listToolCapabilities: vi.fn(), getSharedAgentConfig: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const key = { id: 'cursor-account', name: 'Cursor team', purpose: 'tool_auth', toolId: 'cursor', configured: true }
 const buddy = { id: 'buddy', name: 'Team Buddy', backend: 'codebuddy', state: 'active', binding: { kind: 'platform', credentialId: 'buddy-key', modelId: 'auto' } }
 const configuration = { id: 'cfg', name: 'Team Cursor', backend: 'cursor', state: 'active', binding: { kind: 'platform', credentialId: key.id, modelId: 'gpt-5' } }
 function setup(overrides = {}) {
- const draft = reactive(toDraft({ name: 'a', inheritModel: false, inheritGit: false, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [] }, ...overrides }))
+ const draft = reactive(toDraft({ name: 'a', inheritModel: false, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cfg' }, ...overrides }))
  const w = mount(AgentMetaPanel, { props: { draft, agentName: 'a' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { AgentCredentialBindings: true, EnvCredentialHelpModal: true, Teleport: true } } })
  return { w, draft }
 }
 beforeEach(() => {
- mocks.listCredentials.mockResolvedValue({ items: [key, { id: 'buddy-key', name: 'Buddy account', purpose: 'tool_auth', toolId: 'codebuddy', configured: true }, { id: 'gh', name: 'GitHub team', purpose: 'git', type: 'git', provider: 'github', configured: true }] }); mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, buddy] })
- mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'buddy' }, gitBindings: { items: [{ credentialId: 'gh' }] }, files: [], mcp: [], env: {}, layout: {} })
+ mocks.listCredentials.mockResolvedValue({ items: [key, { id: 'buddy-key', name: 'Buddy account', purpose: 'tool_auth', toolId: 'codebuddy', configured: true }] }); mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, buddy] })
+ mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'buddy' }, files: [], mcp: [], env: {}, layout: {} })
  mocks.listModelConnections.mockResolvedValue({ items: [] }); mocks.listToolCapabilities.mockResolvedValue({ items: [] })
 })
 describe('Agent saved configuration editing', () => {
  it('shows the workspace CLI card by default without enabling inheritance manually', async () => {
-  const { w, draft } = setup({ inheritModel: undefined, inheritGit: undefined }); await flushPromises()
+  const { w, draft } = setup({ inheritModel: undefined }); await flushPromises()
   expect(w.get('[data-testid="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
   expect(w.find('[data-testid="agent-inherit-custom-summary"]').exists()).toBe(false)
   const card = w.get('[data-testid="model-binding-inherited-summary"]')
@@ -35,7 +34,7 @@ describe('Agent saved configuration editing', () => {
   expect(card.text()).not.toContain('Team Buddy')
   expect(card.get('[title="Team Buddy"]').exists()).toBe(true)
   expect(w.find('[data-testid="model-binding-configuration-select"]').exists()).toBe(false)
-  expect(fromDraft(draft)).toMatchObject({ inheritModel: true, inheritGit: true }); w.unmount()
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: true }); w.unmount()
  })
  it('selects a named model without a duplicate coding-tool list', async () => {
   const { w, draft } = setup(); await flushPromises()
@@ -60,10 +59,9 @@ describe('Agent saved configuration editing', () => {
   expect(fromDraft(draft).env).toEqual({ FEATURE: 'on', GRASP_CODEBUDDY_REGION: 'public' }); w.unmount()
  })
  it('uses one inheritance card and restores local selections when its switch turns off', async () => {
-  const localGit = { items: [{ credentialId: 'gh', scope: 'https://github.com/local/project' }] }
-  const { w, draft } = setup({ gitBindings: localGit }); await flushPromises()
+  const { w, draft } = setup(); await flushPromises()
   expect(w.findAll('[data-testid="agent-inherit-default-switch"]')).toHaveLength(1)
-  await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click')
+  await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click'); await flushPromises()
   expect(w.get('[data-testid="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
   expect(w.findAll('[data-testid="agent-inherit-default"]')).toHaveLength(1)
   expect(w.get('[data-testid="agent-inherit-default"] [data-testid="model-binding-inherited-summary"]').text()).toContain('CodeBuddy')
@@ -71,50 +69,45 @@ describe('Agent saved configuration editing', () => {
   expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(false)
   expect(w.find('agent-credential-bindings-stub').exists()).toBe(false)
   expect(draft.modelBinding?.configurationId).toBe('cfg')
-  expect(draft.gitBindings).toEqual(localGit)
-  expect(fromDraft(draft)).toMatchObject({ inheritModel: true, inheritGit: true })
-  await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click')
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: true })
+  await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click'); await flushPromises()
   expect(w.get('[data-testid="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
   expect(w.get('[data-testid="agent-inherit-custom-summary"]').text()).toContain('自定义配置')
   expect(w.get('[data-testid="agent-inherit-custom-summary"]').text()).toContain('仅用于当前 Agent')
   expect(w.find('[data-testid="model-binding-inherited-summary"]').exists()).toBe(false)
   expect(w.get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Cursor')
-  expect(w.get('[data-testid="git-credential-row-gh"]').text()).toContain('GitHub team')
+  expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(false)
   expect(w.find('[data-testid="meta-config-root"]').exists()).toBe(false)
   expect(w.find('[data-testid="meta-workspace-dir"]').exists()).toBe(false)
   expect(w.findAll('a')).toHaveLength(0)
   expect(w.find('agent-credential-bindings-stub').exists()).toBe(false)
   expect(w.find('[data-testid="agent-credential-bindings"]').exists()).toBe(false)
   expect(w.text()).not.toContain(pages.pages.agentStudio.meta.capabilitiesNote)
-  expect(fromDraft(draft)).toMatchObject({ inheritModel: false, inheritGit: false, modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: localGit }); w.unmount()
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: false, modelBinding: { kind: 'configuration', configurationId: 'cfg' } })
+  expect(fromDraft(draft)).not.toHaveProperty('gitBindings'); w.unmount()
  })
- it.each([{ inheritModel: true, inheritGit: false }, { inheritModel: false, inheritGit: true }])('preserves a partial inheritance selection until the common switch is changed: %o', async flags => {
+ it.each([{ inheritModel: true }, { inheritModel: false }])('keeps the stored inheritance choice until the common switch is changed: %o', async flags => {
   const { w, draft } = setup(flags)
   const before = fromDraft(draft)
   await flushPromises()
-  expect(w.get('[data-testid="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-  expect(w.find('[data-testid="agent-inherit-default"]').exists()).toBe(true)
-  expect(w.get('[data-testid="model-binding-inherited-summary"]').text()).toContain(flags.inheritModel ? 'CodeBuddy' : 'Cursor')
-  for (const id of ['agent-inherit-model', 'agent-inherit-git', 'model-binding-configuration-select', 'meta-config-root', 'meta-workspace-dir']) expect(w.find(`[data-testid="${id}"]`).exists()).toBe(false)
+  expect(w.get('[data-testid="agent-inherit-default-switch"]').attributes('aria-checked')).toBe(String(flags.inheritModel))
+  for (const id of ['agent-inherit-model', 'agent-inherit-git', 'meta-config-root', 'meta-workspace-dir']) expect(w.find(`[data-testid="${id}"]`).exists()).toBe(false)
   expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(false)
   expect(w.find('agent-credential-bindings-stub').exists()).toBe(false)
   expect(fromDraft(draft)).toEqual(before)
   expect(!!draft.inheritModel).toBe(flags.inheritModel)
-  expect(!!draft.inheritGit).toBe(flags.inheritGit)
   await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click')
-  expect(fromDraft(draft)).toMatchObject({ inheritModel: false, inheritGit: false, modelBinding: { kind: 'configuration', configurationId: 'cfg' } })
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: !flags.inheritModel, modelBinding: { kind: 'configuration', configurationId: 'cfg' } })
   await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click')
-  expect(fromDraft(draft)).toMatchObject({ inheritModel: true, inheritGit: true })
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: flags.inheritModel })
   w.unmount()
  })
- it('writes named model and multiple Git references independently', async () => {
+ it('writes the named model reference', async () => {
   const { w, draft } = setup(); await flushPromises()
   w.getComponent(ModelBindingEditor).vm.$emit('update:modelValue', { kind: 'configuration', configurationId: 'replacement' })
-  w.getComponent(AgentGitCredentialPicker).vm.$emit('update:modelValue', { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }, { credentialId: 'ssh-2', scope: 'git@b.example:team/y' }] })
   const payload = fromDraft(draft)
   expect(payload.modelBinding).toEqual({ kind: 'configuration', configurationId: 'replacement' })
-  expect(payload.gitBindings?.items).toHaveLength(3)
-  expect(payload.gitBindings?.items).toEqual([{ credentialId: 'gh' }, { credentialId: 'ssh' }, { credentialId: 'ssh-2', scope: 'git@b.example:team/y' }]); expect(payload.gitBindings).not.toHaveProperty('preferredCredentialId'); w.unmount()
+  expect(payload).not.toHaveProperty('gitBindings'); w.unmount()
  })
  it('retains a missing reference with a visible error until a replacement is explicitly selected', async () => {
   const { w, draft } = setup({ modelBinding: { kind: 'configuration', configurationId: 'missing' } }); await flushPromises()

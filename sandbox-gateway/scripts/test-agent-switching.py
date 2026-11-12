@@ -222,7 +222,7 @@ sys.exit(child.wait())
                     binding['auxiliaryModelIds'] = tool['auxiliaryModels']
             self.groups[tool['id']] = self.request('/api/workspace/model-configurations', {'name': 'CI '+tool['id'], 'backend': tool['id'], 'binding': binding, 'state': 'active'})['id']
         ids = list(self.groups.values())
-        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'inheritGit': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'gitBindings': {'items': []}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}, {'path': 'config.toml', 'content': 'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'}]})
+        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}, {'path': 'config.toml', 'content': 'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'}]})
 
     def scenario(self, walk):
         turns = []

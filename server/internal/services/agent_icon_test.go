@@ -14,7 +14,6 @@ func iconAgent(name string, icon *AgentIcon) Agent {
 		Name:         name,
 		AcpBackend:   AcpBackendCursor,
 		InheritModel: false,
-		InheritGit:   false,
 		Icon:         icon,
 	}
 }
@@ -35,7 +34,7 @@ func TestGetLegacyAgentWithoutIcon(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	const raw = `{"inheritModel":false,"inheritGit":false,"acpBackend":"cursor","env":{"KEEP":"yes"}}`
+	const raw = `{"inheritModel":false,"acpBackend":"cursor","env":{"KEEP":"yes"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +167,7 @@ func TestIdentityIconExportImportRoundTrip(t *testing.T) {
 
 func TestImportLegacyZipHasNoIcon(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	meta := []byte(`{"name":"old","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1}`)
+	meta := []byte(`{"name":"old","inheritModel":false,"acpBackend":"cursor","schemaVersion":1}`)
 	raw := buildTestZip(t, meta, nil)
 	imported, err := s.ImportZIP(raw, "old", ImportZIPCreate)
 	if err != nil {
@@ -190,12 +189,12 @@ func TestImportRejectsBadIconAndEmojiWithoutRewriting(t *testing.T) {
 	}
 	before := readAgentJSON(t, root, "lab")
 	cases := []string{
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"nope","color":"black"}}`,
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"teal"}}`,
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"emoji":"x"}`,
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"purple","emoji":"x"}}`,
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"kind":"emoji","iconId":"flask","color":"black"}}`,
-		`{"name":"lab","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"purple","svg":"<svg/>"}}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"nope","color":"black"}}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"teal"}}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"emoji":"x"}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"purple","emoji":"x"}}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"kind":"emoji","iconId":"flask","color":"black"}}`,
+		`{"name":"lab","inheritModel":false,"acpBackend":"cursor","schemaVersion":1,"icon":{"iconId":"flask","color":"purple","svg":"<svg/>"}}`,
 	}
 	for _, meta := range cases {
 		raw := buildTestZip(t, []byte(meta), nil)

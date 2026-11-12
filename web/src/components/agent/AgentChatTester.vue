@@ -11,7 +11,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
-import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
+import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
@@ -20,6 +20,7 @@ import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
+import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import {
   attachmentDisplayName,
   inferImageMimeFromUrl,
@@ -81,7 +82,10 @@ const status = ref<'idle' | 'starting' | 'ready' | 'thinking' | 'closed' | 'erro
 const errorMsg = ref('')
 type LaunchMode = 'empty' | 'clone'
 const launchMode = ref<LaunchMode>('empty')
-const repos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
+const repos = ref<RepoChoice[]>([])
+const projects = ref<Project[]>([])
+const projectsLoading = ref(false)
+let projectsLoaded = false
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 // Old event logs may predate opId. Object identity keeps their anchors stable
@@ -152,14 +156,22 @@ const statusLabel = computed(() => ({
 const acpBusy = computed(() => status.value === 'thinking')
 const acpConnected = computed(() => status.value === 'ready' || status.value === 'thinking')
 
-const validRepos = computed(() => repos.value.filter((r) => r.name.trim() && r.url.trim()))
+const validRepos = computed(() => repos.value.filter((r) => projects.value.some((p) => p.id === r.projectId)))
 const canStart = computed(
   () => launchMode.value === 'empty' || validRepos.value.length > 0,
 )
 
-watch(launchMode, (mode) => {
-  if (mode === 'clone' && repos.value.length === 0) {
-    repos.value = [{ name: '', url: '', branch: '' }]
+watch(launchMode, async (mode) => {
+  if (mode !== 'clone' || projectsLoaded) return
+  projectsLoaded = true
+  projectsLoading.value = true
+  try {
+    projects.value = await api.listProjects()
+  } catch (e: any) {
+    projectsLoaded = false
+    errorMsg.value = String(e?.message || e)
+  } finally {
+    projectsLoading.value = false
   }
 })
 
@@ -207,16 +219,7 @@ async function start() {
   errorMsg.value = ''
   turns.value = []
   try {
-    const payload =
-      launchMode.value === 'clone'
-        ? {
-            repos: validRepos.value.map((r) => ({
-              name: r.name.trim(),
-              url: r.url.trim(),
-              ...(r.branch.trim() ? { branch: r.branch.trim() } : {}),
-            })),
-          }
-        : {}
+    const payload: CreateAgentTestPayload = launchMode.value === 'clone' ? { repos: validRepos.value } : {}
     sandbox.value = await props.createTest(props.profile, payload)
     await waitReady(sandbox.value.id)
   } catch (e: any) {
@@ -1150,7 +1153,7 @@ onBeforeUnmount(() => {
       <div v-if="launchMode === 'clone'" class="w-full max-w-2xl space-y-2">
         <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentChatTester.repos.sectionLabel') }}</div>
         <p class="text-[11.5px] text-txt3">{{ t('pages.agentChatTester.repos.hint') }}</p>
-        <ReposEditor v-model:repos="repos" :min-rows="1" i18n-prefix="pages.agentChatTester.repos" />
+        <RepoChoiceList v-model="repos" :projects="projects" :loading="projectsLoading" />
       </div>
 
       <AppButton variant="primary" icon="play" :disabled="!canStart" @click="start">{{ t('pages.agentChatTester.startTest') }}</AppButton>

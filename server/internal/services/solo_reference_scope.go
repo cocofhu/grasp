@@ -11,13 +11,13 @@ import (
 )
 
 // ReferenceScope stands in for a Solo session outside Solo: the sender, the
-// Agent whose Git credential checks GitHub access, and the repositories that
-// GitHub search covers. Workflow launches and run chats build one per request.
-func ReferenceScope(user, agentName string, repoURLs []string) *models.SoloSession {
+// Agent, and the repositories that GitHub search covers with their own
+// credentials. Workflow launches and run chats build one per request.
+func ReferenceScope(user, agentName string, repos []models.SessionRepo) *models.SoloSession {
 	row := &models.SoloSession{UserID: user, AgentName: strings.TrimSpace(agentName)}
-	for i, u := range repoURLs {
-		if u = strings.TrimSpace(u); u != "" {
-			row.Repos = append(row.Repos, models.SessionRepo{Position: i, RepoURL: u})
+	for _, r := range repos {
+		if strings.TrimSpace(r.RepoURL) != "" {
+			row.Repos = append(row.Repos, r)
 		}
 	}
 	return row

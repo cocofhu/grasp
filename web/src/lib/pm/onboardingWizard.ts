@@ -1,5 +1,3 @@
-import type { AgentGitBindings } from '@/lib/api/apiTypes'
-import { cloneGitBindings } from '@/lib/agent/gitBindings'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import type { ThemeName } from '@/lib/shared/theme'
 import { locale } from '@/lib/shared/locale'
@@ -220,13 +218,14 @@ export type OnboardingDraft = {
   language: AppLocale
   theme: ThemeName
   modelConfigurationId: string
-  gitBindings: AgentGitBindings
   region: string
   repoUrl: string
   repoBranch: string
+  /** Workspace Git credential the repository clones and pushes with. */
+  repoCredentialId: string
   gitSkipped: boolean
-  gitUserName: string
-  gitUserEmail: string
+  commitName: string
+  commitEmail: string
   vncPreview: boolean
   browserMcp: boolean
   team: OnboardingTeamMember[]
@@ -234,13 +233,13 @@ export type OnboardingDraft = {
 type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
 type OnboardingBootstrapBody = {
   modelConfigurationId: string
-  gitBindings: AgentGitBindings
   language: AppLocale
   region?: string
   repoUrl?: string
   repoBranch?: string
-  gitUserName?: string
-  gitUserEmail?: string
+  repoCredentialId?: string
+  commitName?: string
+  commitEmail?: string
   vncPreview?: boolean
   browserMcp?: boolean
   agents?: OnboardingAgentChoice[]
@@ -320,7 +319,7 @@ export function shouldAutoOpenOnboarding(workflows: { name?: string }[], agents:
  *   (not browser/OS). firstInstall/retry keep detectSystemLocale().
  */
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {
-  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', gitBindings: { items: [] }, region: '', repoUrl: '', repoBranch: '', gitSkipped: false, gitUserName: '', gitUserEmail: '', vncPreview: true, browserMcp: true, team: freshOnboardingTeam() }
+  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', region: '', repoUrl: '', repoBranch: '', repoCredentialId: '', gitSkipped: false, commitName: '', commitEmail: '', vncPreview: true, browserMcp: true, team: freshOnboardingTeam() }
 }
 
 /** Mirrors the server's RepoNameFromURL so the wizard can preview the clone dir. */
@@ -336,7 +335,7 @@ export function repoConfigured(draft: OnboardingDraft): boolean {
 }
 
 export function gitIdentityConfigured(draft: OnboardingDraft): boolean {
-  return Boolean(draft.gitUserName.trim() && draft.gitUserEmail.trim())
+  return repoConfigured(draft) && Boolean(draft.commitName.trim() && draft.commitEmail.trim())
 }
 
 /** First-install language defaults to the browser/OS language, not a prior app preference. */
@@ -346,15 +345,19 @@ export function detectSystemLocale(): AppLocale {
 }
 
 export function gitConfigured(draft: OnboardingDraft): boolean {
-  return !draft.gitSkipped && draft.gitBindings.items.length > 0
+  return repoConfigured(draft) && Boolean(draft.repoCredentialId)
 }
 
 export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstrapBody {
-  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, gitBindings: cloneGitBindings(draft.gitSkipped ? { items: [] } : draft.gitBindings), language: draft.language, vncPreview: draft.vncPreview, browserMcp: draft.browserMcp }
+  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, language: draft.language, vncPreview: draft.vncPreview, browserMcp: draft.browserMcp }
   if (draft.region.trim()) body.region = draft.region.trim()
-  if (!draft.gitSkipped && draft.repoUrl.trim()) { body.repoUrl = draft.repoUrl.trim(); if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim() }
-  if (draft.gitUserName.trim()) body.gitUserName = draft.gitUserName.trim()
-  if (draft.gitUserEmail.trim()) body.gitUserEmail = draft.gitUserEmail.trim()
+  if (repoConfigured(draft)) {
+    body.repoUrl = draft.repoUrl.trim()
+    if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()
+    if (draft.repoCredentialId) body.repoCredentialId = draft.repoCredentialId
+    if (draft.commitName.trim()) body.commitName = draft.commitName.trim()
+    if (draft.commitEmail.trim()) body.commitEmail = draft.commitEmail.trim()
+  }
   const names = onboardingRoleNames(draft.language)
   body.agents = ONBOARDING_TEMPLATES.map((template, index) => {
     const member = draft.team.find((item) => item.templateId === template.id)

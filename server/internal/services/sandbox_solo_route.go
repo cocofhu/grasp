@@ -96,13 +96,13 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	if row.Purpose != SandboxPurposeSolo || row.Status != "running" {
 		return false, fmt.Errorf("只能切换运行中的 Solo 沙箱")
 	}
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, row.Repos)
 	if err != nil {
 		return false, err
 	}
-	// Model switching is not permission to refresh unrelated Git grants.
+	// Model switching is not permission to refresh unrelated repository grants.
 	if row.GitBindingsFingerprint != gitFingerprint {
-		return false, fmt.Errorf("Git 授权已变更或尚未同步，请重新打开沙箱")
+		return false, fmt.Errorf("仓库凭据已变更或尚未同步，请重新打开沙箱")
 	}
 	s.mu.Lock()
 	ls := s.live[id]
@@ -178,7 +178,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		return false, fmt.Errorf("目标工具的工作目录与当前会话不一致")
 	}
 	platformSpecs := s.soloPlatformSpecs(&row)
-	extra := agentContainerExtra{Resident: true, LaunchKind: "solo", Repos: SoloRepoSpecsList(effectiveSessionRepos(&session)), InitialChatModel: chatModelID(&session), InitialChatReasoningEffort: &session.CurrentReasoningEffort}
+	extra := agentContainerExtra{Resident: true, LaunchKind: "solo", Repos: effectiveSessionRepos(&session), InitialChatModel: chatModelID(&session), InitialChatReasoningEffort: &session.CurrentReasoningEffort}
 	selectedConfiguration := chatConfigurationID(&session)
 	if selectedConfiguration == "" {
 		if original := s.effectiveAgent(profile); original.ModelBinding != nil {
@@ -197,7 +197,7 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	}
 	if gitBindingsFingerprint(prepared.spec.GitCredentials) != row.GitBindingsFingerprint {
 		_ = os.RemoveAll(prepared.spec.ConfigHome)
-		return false, fmt.Errorf("Git 授权已变更或尚未同步，请重新打开沙箱")
+		return false, fmt.Errorf("仓库凭据已变更或尚未同步，请重新打开沙箱")
 	}
 	modelFingerprint = prepared.modelFingerprint
 	rollbackAvailable := true

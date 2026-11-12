@@ -360,6 +360,9 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	if git != nil {
 		out["git"] = git
 	}
+	if len(r.Repos) > 0 {
+		out["repos"] = r.Repos
+	}
 	if g, ok := h.Runs.PendingGate(r.ID); ok {
 		gateDTO := gin.H{
 			"runId": g.RunID, "nodeId": g.NodeID, "iteration": g.Iteration, "workflowId": g.WorkflowID, "workflowName": g.WorkflowName,

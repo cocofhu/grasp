@@ -83,7 +83,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
-All nodes of a workflow run share one sandbox: they reuse the workspace, installed dependencies, and uncommitted changes, while separate runs remain isolated. There is nothing to configure. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox, it needs a different image, or the working directory is incompatible.
+All nodes of a workflow run share one sandbox: they reuse the workspace, installed dependencies, and uncommitted changes, while separate runs remain isolated. There is nothing to configure. The model is refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox, it needs a different image, or the working directory is incompatible.
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
@@ -105,7 +105,7 @@ First configure a preset or custom service’s API base and key in Credentials, 
 
 The workspace lists and uses only credentials explicitly created with the current data structure. It does not generate empty credential slots. Close and reopen long-lived sandboxes after changing their model or authorization.
 
-Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and Git settings and shows one compact inheritance card. Disabling it restores local selections. Git supports multiple saved authorizations with optional site or repository scopes. An omitted list grants no Git access unless inheritance is enabled. Shared workflow sandboxes replace authorizations when nodes change.
+Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and shows one compact inheritance card. Disabling it restores local selections. Git authorization is not configured on Agents: each repository picks its own credential and commit author in Settings → Repositories, and workflows bind repositories in their settings.
 
 ## @ references in Solo
 
@@ -118,8 +118,8 @@ Use `↑` `↓` to choose, `Enter` to confirm, `Tab` to switch between All, Sess
 
 Workflows support the same references:
 
-- **Home page Workflow composer**: after picking a workflow, type `@` or use the "+" menu. Issues and PRs are searched in the default repositories of the workflow's `repos` variable; without repositories only sessions can be referenced. A message with only references can start a run, which is then titled after the first reference. Switching workflows or back to Solo clears the picked references and keeps the text.
-- **Clarification and review chats and gate hot revisions inside a run**: issues and PRs are searched in the run's `repos` repositories. References go to the current node's agent and are read the same way as in Solo (`read_reference` for sessions, `gh` for GitHub). They are unavailable when the node is finished, inactive or its composer is locked, and the anonymous shared approval page does not offer them.
+- **Home page Workflow composer**: after picking a workflow, type `@` or use the "+" menu. Issues and PRs are searched in the repositories bound to the workflow; without repositories only sessions can be referenced. A message with only references can start a run, which is then titled after the first reference. Switching workflows or back to Solo clears the picked references and keeps the text.
+- **Clarification and review chats and gate hot revisions inside a run**: issues and PRs are searched in the repositories the run cloned. References go to the current node's agent and are read the same way as in Solo (`read_reference` for sessions, `gh` for GitHub). They are unavailable when the node is finished, inactive or its composer is locked, and the anonymous shared approval page does not offer them.
 
 ## Artifact contract and MCP
 

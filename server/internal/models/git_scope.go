@@ -10,48 +10,8 @@ import (
 	"unicode"
 )
 
-// GitBindings is the complete set of Git authorizations for an Agent.
-// An omitted or empty set grants no Git authorization.
-// preferredCredentialId and per-item sshHostsCredentialId from older saves are
-// accepted and then discarded; SSH known hosts come from the SSH key itself.
-type GitBindings struct {
-	Items                 []GitCredentialBinding `json:"items"`
-	PreferredCredentialID string                 `json:"-"`
-}
-
-// GitCredentialBinding stores references and a routing scope, never secrets.
-// Scope is empty, a host (optionally with port), or a complete repository URL.
-type GitCredentialBinding struct {
-	CredentialID string `json:"credentialId"`
-	Scope        string `json:"scope,omitempty"`
-}
-
-var ErrGitBindings = errors.New("invalid Git bindings")
-
-// NormalizeGitBindings validates and copies the set without changing its order
-// or replacing missing credential references with another account.
-// A legacy preferred credential id is ignored and is not required.
-func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
-	if in == nil {
-		return &GitBindings{Items: []GitCredentialBinding{}}, nil
-	}
-	out := &GitBindings{Items: make([]GitCredentialBinding, 0, len(in.Items))}
-	seen := make(map[string]bool, len(in.Items))
-	for _, item := range in.Items {
-		item.CredentialID = strings.TrimSpace(item.CredentialID)
-		if item.CredentialID == "" || seen[item.CredentialID] {
-			return nil, fmt.Errorf("%w: credential ids must be non-empty and unique", ErrGitBindings)
-		}
-		var err error
-		item.Scope, err = NormalizeGitScope(item.Scope)
-		if err != nil {
-			return nil, err
-		}
-		seen[item.CredentialID] = true
-		out.Items = append(out.Items, item)
-	}
-	return out, nil
-}
+// ErrGitScope rejects a repository address that cannot scope a credential.
+var ErrGitScope = errors.New("invalid Git repository scope")
 
 // NormalizeGitScope accepts host and repository scopes. It rejects credentials
 // embedded in URLs, ambiguous URL components, and control/space characters so
@@ -59,7 +19,7 @@ func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
 func NormalizeGitScope(raw string) (string, error) {
 	scope := strings.TrimSpace(raw)
 	bad := func() (string, error) {
-		return "", fmt.Errorf("%w: scope must be a host or a repository URL", ErrGitBindings)
+		return "", fmt.Errorf("%w: scope must be a host or a repository URL", ErrGitScope)
 	}
 	if scope == "" {
 		return "", nil
@@ -130,17 +90,17 @@ func gitScopePath(s string) bool {
 func normalizeGitScopeHost(raw string) (string, error) {
 	u, err := url.Parse("https://" + raw)
 	if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(raw, ":") {
-		return "", fmt.Errorf("%w: invalid scope host", ErrGitBindings)
+		return "", fmt.Errorf("%w: invalid scope host", ErrGitScope)
 	}
 	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if net.ParseIP(host) == nil {
 		for _, part := range strings.Split(host, ".") {
 			if part == "" || strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
-				return "", fmt.Errorf("%w: invalid scope host", ErrGitBindings)
+				return "", fmt.Errorf("%w: invalid scope host", ErrGitScope)
 			}
 			for _, r := range part {
 				if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
-					return "", fmt.Errorf("%w: invalid scope host", ErrGitBindings)
+					return "", fmt.Errorf("%w: invalid scope host", ErrGitScope)
 				}
 			}
 		}
@@ -148,7 +108,7 @@ func normalizeGitScopeHost(raw string) (string, error) {
 	if port := u.Port(); port != "" {
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65535 {
-			return "", fmt.Errorf("%w: invalid scope port", ErrGitBindings)
+			return "", fmt.Errorf("%w: invalid scope port", ErrGitScope)
 		}
 		return net.JoinHostPort(host, port), nil
 	}

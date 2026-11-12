@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { assembleCreatePayload, applyAcpBackend, buildDefaultRule, buildReviewSummary, configRootFor, freshDraft, hasPathDeps, envConfiguredCount, validateBasics, WIZARD_STEPS, ACP_BACKENDS } from './agentCreateWizard'
 describe('Agent creation data contract', () => {
- it('requires one combined tool and named-model step before optional Git', () => {
-  expect(WIZARD_STEPS.map(step => [step.id, step.skip])).toEqual([['basics', false], ['acp', false], ['git', true], ['review', false]])
-  expect(freshDraft()).toMatchObject({ inheritModel: true, inheritGit: true, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: '' }, gitBindings: { items: [] } })
+ it('has one combined tool and named-model step and no Git step', () => {
+  expect(WIZARD_STEPS.map(step => [step.id, step.skip])).toEqual([['basics', false], ['acp', false], ['review', false]])
+  expect(freshDraft()).toMatchObject({ inheritModel: true, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: '' } })
+  expect(freshDraft()).not.toHaveProperty('gitBindings')
  })
  it.each(ACP_BACKENDS)('changes to $id with a matching layout and an empty explicit model selection', backend => {
   const d = freshDraft(); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
@@ -36,16 +37,12 @@ describe('Agent creation data contract', () => {
   const d = freshDraft(); d.name = 'planner'; d.templateId = '需求澄清工程师'
   const p = assembleCreatePayload(d); expect(p.templateId).toBe('需求澄清工程师'); expect(p.files).toEqual([]); expect(p).not.toHaveProperty('capabilities')
  })
- it('serializes only a named model and explicit multi-Git references, excluding derived model and auth env', () => {
+ it('serializes only a named model, excluding derived model and auth env and any Git authorization', () => {
   const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg', allConfigurations: true }
-  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', scope: 'git@a.example:team/x' }, { credentialId: 'ssh-2' }] }
   d.env = [{ k: 'GITHUB_TOKEN', v: 'secret' }, { k: 'OPENAI_API_KEY', v: 'secret' }, { k: 'ACP_BRIDGE_MODEL', v: 'derived' }, { k: 'FEATURE', v: 'on' }]
   const p = assembleCreatePayload(d)
-  expect(p.modelBinding).toEqual(d.modelBinding); expect(p.gitBindings).toEqual(d.gitBindings); expect(p.gitBindings).not.toBe(d.gitBindings)
+  expect(p.modelBinding).toEqual(d.modelBinding); expect(p).not.toHaveProperty('gitBindings'); expect(p).not.toHaveProperty('inheritGit')
   expect(p.env).toEqual({ FEATURE: 'on' }); expect(JSON.stringify(p)).not.toContain('secret')
- })
- it('defaults missing Git bindings to an explicit empty list', () => {
-  const d = freshDraft(); delete d.gitBindings; expect(assembleCreatePayload(d).gitBindings).toEqual({ items: [] })
  })
  it('inherits the default model without submitting an invalid empty local reference', () => {
   const d = freshDraft(); d.name = 'inherited'; d.inheritModel = true
@@ -61,10 +58,9 @@ describe('Agent creation data contract', () => {
  })
  it('normalizes only the selected tool region and reviews configured aliases', () => {
   const d = freshDraft(); applyAcpBackend(d, 'codebuddy'); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
-  d.gitBindings = { items: [{ credentialId: 'gh' }] }
-  const summary = buildReviewSummary(d, { model: 'Team model', gitItems: { gh: 'GitHub team' } })
+  const summary = buildReviewSummary(d, { model: 'Team model' })
   expect(summary.find(row => row.key === 'apiKey')?.detail).toBe('Team model')
-  expect(summary.find(row => row.key === 'git')?.detail).toBe('GitHub team')
+  expect(summary.some(row => row.key === 'git')).toBe(false)
   expect(summary.find(row => row.key === 'icon')?.labelKey).toBe('pages.agentStudio.wizard.review.iconNone')
   d.icon = { iconId: 'flask', color: 'purple' }
   const withIcon = buildReviewSummary(d)

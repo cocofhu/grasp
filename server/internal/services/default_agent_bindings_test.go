@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
 
@@ -23,18 +22,13 @@ func wireDefaultBindingServices(t *testing.T, shared *SharedAgentService, agents
 		_, err = connections.Resolve(cfg.Backend, *binding)
 		return cfg.Backend, err
 	}
-	git := func(bindings *models.GitBindings) error {
-		_, err := runtime.ResolveGitBindings(bindings, NewCredentialService(configurations.db).ResolveGitValue)
-		return err
-	}
-	shared.SetBindingResolvers(resolve, git)
+	shared.SetModelResolver(resolve)
 	agents.SetSharedAgent(shared)
 	agents.SetModelConfigurationResolver(resolve)
 	agents.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
 		_, err := connections.Resolve(backend, *binding)
 		return err
 	})
-	agents.SetGitBindingResolver(git)
 }
 
 func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) {
@@ -43,36 +37,24 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials := NewCredentialService(configurations.db)
-	defaultGit, err := credentials.Create(CredentialInput{Purpose: "git", Provider: "gitlab", Name: "Default GitLab", Value: "synthetic-default-git"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	localGit, err := credentials.Create(CredentialInput{Purpose: "git", Provider: "github", Name: "Local GitHub", Value: "synthetic-local-git"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	selection := func(id string) *models.GitBindings {
-		return &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: id}}, PreferredCredentialID: id}
-	}
 	shared, agents := NewSharedAgentService(t.TempDir()), NewAgentService(t.TempDir())
 	wireDefaultBindingServices(t, shared, agents, connections, configurations)
-	defaults := SharedAgentConfig{AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: defaultModel.ID}, GitBindings: selection(defaultGit.ID), Env: map[string]string{runtime.EnvCodeBuddyRegion: "public"}}
+	defaults := SharedAgentConfig{AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: defaultModel.ID}, Env: map[string]string{runtime.EnvCodeBuddyRegion: "public"}}
 	if err := shared.Save(defaults); err != nil {
 		t.Fatal(err)
 	}
 	if shared.Get().AcpBackend != "opencode" {
 		t.Fatal("default CLI was not derived from its model")
 	}
-	local := Agent{InheritModel: false, InheritGit: false, Name: "local", AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}, GitBindings: selection(localGit.ID), Env: map[string]string{runtime.EnvCodeBuddyRegion: "internal"}}
+	local := Agent{InheritModel: false, Name: "local", AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}, Env: map[string]string{runtime.EnvCodeBuddyRegion: "internal"}}
 	if err := agents.Save(local); err != nil {
 		t.Fatal(err)
 	}
 	local, _ = agents.Get(local.Name)
-	if local.AcpBackend != "codebuddy" || agents.Effective(local).ModelBinding.ConfigurationID != localModel.ID || agents.Effective(local).GitBindings.Items[0].CredentialID != localGit.ID || agents.Effective(local).GitBindings.PreferredCredentialID != "" {
+	if local.AcpBackend != "codebuddy" || agents.Effective(local).ModelBinding.ConfigurationID != localModel.ID {
 		t.Fatal("explicit false did not preserve local selections or CLI was not derived")
 	}
-	local.InheritModel, local.InheritGit = true, true
+	local.InheritModel = true
 	if err := agents.Save(local); err != nil {
 		t.Fatal(err)
 	}
@@ -81,10 +63,10 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if effective.Env[runtime.EnvCodeBuddyRegion] != "public" || stored.Env[runtime.EnvCodeBuddyRegion] != "internal" {
 		t.Fatal("inherited model did not use the default site or overwrote the local site")
 	}
-	if effective.AcpBackend != "opencode" || effective.ModelBinding.ConfigurationID != defaultModel.ID || effective.GitBindings.Items[0].CredentialID != defaultGit.ID || effective.GitBindings.PreferredCredentialID != "" || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("opencode") {
+	if effective.AcpBackend != "opencode" || effective.ModelBinding.ConfigurationID != defaultModel.ID || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("opencode") {
 		t.Fatal("explicit defaults did not determine the effective route")
 	}
-	if stored.AcpBackend != "codebuddy" || stored.ModelBinding.ConfigurationID != localModel.ID || stored.GitBindings.Items[0].CredentialID != localGit.ID || stored.GitBindings.PreferredCredentialID != "" || stored.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
+	if stored.AcpBackend != "codebuddy" || stored.ModelBinding.ConfigurationID != localModel.ID || stored.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
 		t.Fatal("inheritance overwrote local selections")
 	}
 	zip, err := agents.ExportZIP(local.Name)
@@ -92,10 +74,10 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 		t.Fatal(err)
 	}
 	imported, err := agents.ImportZIP(zip, "imported", ImportZIPCreate)
-	if err != nil || !imported.InheritModel || !imported.InheritGit || imported.ModelBinding.ConfigurationID != localModel.ID {
+	if err != nil || !imported.InheritModel || imported.ModelBinding.ConfigurationID != localModel.ID {
 		t.Fatalf("ZIP lost explicit inheritance/local selections: %v", err)
 	}
-	stored.InheritModel, stored.InheritGit = false, false
+	stored.InheritModel = false
 	if err := agents.Save(stored); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +86,7 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if effective.Env[runtime.EnvCodeBuddyRegion] != "internal" {
 		t.Fatal("turning inheritance off did not restore the local site")
 	}
-	if effective.AcpBackend != "codebuddy" || effective.GitBindings.Items[0].CredentialID != localGit.ID || effective.GitBindings.PreferredCredentialID != "" || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
+	if effective.AcpBackend != "codebuddy" || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
 		t.Fatal("turning inheritance off did not restore local configuration")
 	}
 	defaults.ModelBinding = nil
@@ -131,11 +113,6 @@ func TestSharedDefaultsValidateReferencesBeforeWriting(t *testing.T) {
 		if err := shared.Save(candidate); !errors.Is(err, ErrInvalidAgent) {
 			t.Fatalf("invalid model accepted: %v", err)
 		}
-	}
-	candidate := valid
-	candidate.GitBindings = &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: key.ID}}, PreferredCredentialID: key.ID}
-	if err := shared.Save(candidate); !errors.Is(err, ErrInvalidAgent) {
-		t.Fatal("model API credential accepted as default Git authorization")
 	}
 	if err := NewCredentialService(configurations.db).Revoke(key.ID); err != nil {
 		t.Fatal(err)
@@ -178,7 +155,7 @@ func TestBaselineReadinessResolvesInheritedModel(t *testing.T) {
 
 func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
-		for _, change := range []string{"model", "git", "missing model"} {
+		for _, change := range []string{"model", "missing model"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
 				s, row, connections, configurations, _, connection, configuration := boundSandboxFixture(t, purpose, true)
 				shared := NewSharedAgentService(t.TempDir())
@@ -190,11 +167,8 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 					_, err = connections.Resolve(cfg.Backend, *binding)
 					return cfg.Backend, err
 				}
-				shared.SetBindingResolvers(resolve, func(bindings *models.GitBindings) error {
-					_, err := runtime.ResolveGitBindings(bindings, serviceGitValue)
-					return err
-				})
-				defaults := SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}, GitBindings: serviceGitSelection("gh", "gl")}
+				shared.SetModelResolver(resolve)
+				defaults := SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}}
 				if err := shared.Save(defaults); err != nil {
 					t.Fatal(err)
 				}
@@ -208,7 +182,7 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 				agent.AcpBackend = "codebuddy"
 				agent.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}
 				agent.Layout.ConfigRoot = DefaultConfigRootForBackend("codebuddy")
-				agent.InheritModel, agent.InheritGit = true, true
+				agent.InheritModel = true
 				if err := s.skills.Save(agent); err != nil {
 					t.Fatal(err)
 				}
@@ -229,8 +203,6 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 						t.Fatal(err)
 					}
 					defaults.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: other.ID}
-				case "git":
-					defaults.GitBindings = &models.GitBindings{Items: []models.GitCredentialBinding{}}
 				case "missing model":
 					defaults.ModelBinding = nil
 				}

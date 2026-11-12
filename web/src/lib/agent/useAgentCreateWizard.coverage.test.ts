@@ -4,7 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAgentCreateWizard } from './useAgentCreateWizard'
-const mocks = vi.hoisted(() => ({ createAgent: vi.fn(), listAgentTeamTemplates: vi.fn(), listCredentials: vi.fn(), listModelConfigurations: vi.fn() }))
+const mocks = vi.hoisted(() => ({ createAgent: vi.fn(), listAgentTeamTemplates: vi.fn(), listModelConfigurations: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const config = { id: 'cfg', name: 'Team model', backend: 'cursor', state: 'active' }
 const mounted: ReturnType<typeof mount>[] = []
@@ -16,15 +16,15 @@ function setup(open = true, existingNames: string[] = []) {
 }
 beforeEach(() => {
  vi.clearAllMocks(); mocks.createAgent.mockResolvedValue({ name: 'created' }); mocks.listAgentTeamTemplates.mockResolvedValue({ items: [] })
- mocks.listCredentials.mockResolvedValue({ items: [{ id: 'gh', name: 'GitHub team' }] }); mocks.listModelConfigurations.mockResolvedValue({ items: [config] })
+ mocks.listModelConfigurations.mockResolvedValue({ items: [config] })
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('Agent wizard with explicit saved model', () => {
  it('inherits by default and turns off only model inheritance after an explicit local model choice', async () => {
   const { w } = setup(); await flushPromises()
-  expect(w.draft.value).toMatchObject({ inheritModel: true, inheritGit: true })
+  expect(w.draft.value).toMatchObject({ inheritModel: true })
   w.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
-  expect(w.draft.value).toMatchObject({ inheritModel: false, inheritGit: true })
+  expect(w.draft.value).toMatchObject({ inheritModel: false })
   expect(w.effectiveModel.value?.configurationId).toBe('cfg')
  })
  it('resets on opening and focuses the name', async () => {
@@ -39,7 +39,8 @@ describe('Agent wizard with explicit saved model', () => {
   w.draft.value.name = 'taken'; w.goNext(); expect(w.nameError.value).toContain('nameExists')
   w.draft.value.name = 'new'; w.goNext(); expect(w.currentStep.value.id).toBe('acp')
   w.goNext(); expect(w.currentStep.value.id).toBe('acp'); expect(w.createError.value).toContain('missing or disabled')
-  w.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg' }; w.goNext(); expect(w.currentStep.value.id).toBe('git')
+  w.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg' }; w.goNext(); expect(w.currentStep.value.id).toBe('review')
+  w.goPrev(); expect(w.currentStep.value.id).toBe('acp')
  })
  it('requires tool confirmation only for path-dependent content and clears the model on tool changes', async () => {
   const { w } = setup(); await flushPromises()
@@ -50,22 +51,17 @@ describe('Agent wizard with explicit saved model', () => {
   expect(w.draft.value.acpBackend).toBe('codebuddy'); expect(w.draft.value.modelBinding?.configurationId).toBe('')
   w.selectRegion('internal'); expect(w.currentRegion.value).toBe('internal')
  })
- it('clones multiple Git authorizations, reviews aliases and supports an explicit skip', async () => {
+ it('reviews no Git authorization', async () => {
   const { w } = setup(); await flushPromises()
-  const git = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }] }
-  w.onGitBindings(git); git.items[0].credentialId = 'changed'
-  expect(w.draft.value.inheritGit).toBe(false)
-  expect(w.draft.value.gitBindings?.items[0].credentialId).toBe('gh')
-  expect(w.reviewItems.value.find(row => row.key === 'git')?.detail).toContain('GitHub team')
-  w.draft.value.step = 2; w.goSkip(); expect(w.currentStep.value.id).toBe('review'); expect(w.draft.value.gitBindings).toEqual({ items: [] })
-  w.goPrev(); expect(w.currentStep.value.id).toBe('git')
+  expect(w.reviewItems.value.some(row => row.key === 'git')).toBe(false)
  })
  it('creates with the selected configuration and reports API errors without closing', async () => {
   const { w, emit } = setup(); await flushPromises()
   w.draft.value.name = 'valid'; w.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
   mocks.createAgent.mockRejectedValueOnce(new Error('server error')); await w.submitCreate()
   expect(w.createError.value).toBe('server error'); expect(emit).not.toHaveBeenCalled(); expect(w.creating.value).toBe(false)
-  await w.submitCreate(); expect(mocks.createAgent.mock.calls[0][0]).toMatchObject({ modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [] } })
+  await w.submitCreate(); expect(mocks.createAgent.mock.calls[0][0]).toMatchObject({ modelBinding: { kind: 'configuration', configurationId: 'cfg' }})
+  expect(mocks.createAgent.mock.calls[0][0]).not.toHaveProperty('gitBindings')
   expect(emit).toHaveBeenCalledWith('created', { name: 'created' }); expect(emit).toHaveBeenCalledWith('close')
  })
  it('redirects invalid submission to the required step and never substitutes another tool', async () => {
@@ -82,7 +78,7 @@ describe('Agent wizard with explicit saved model', () => {
   failed.w.draft.value.name = 'valid'; await failed.w.submitCreate(); expect(mocks.createAgent).not.toHaveBeenCalled()
  })
  it('locks navigation and close while creating', async () => {
-  const { w, emit } = setup(); w.creating.value = true; w.goNext(); w.goPrev(); w.goSkip(); w.close()
+  const { w, emit } = setup(); w.creating.value = true; w.goNext(); w.goPrev(); w.close()
   expect(w.draft.value.step).toBe(0); expect(emit).not.toHaveBeenCalled()
   w.creating.value = false; w.close(); expect(emit).toHaveBeenCalledWith('close')
  })

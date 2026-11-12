@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 
-const mocks = vi.hoisted(() => ({ startRun: vi.fn(), listRunTags: vi.fn() }))
+const mocks = vi.hoisted(() => ({ startRun: vi.fn(), listRunTags: vi.fn(), getWorkflow: vi.fn(), listProjects: vi.fn() }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, startRun: mocks.startRun, listRunTags: mocks.listRunTags } }
+  return { ...actual, api: { ...actual.api, startRun: mocks.startRun, listRunTags: mocks.listRunTags, getWorkflow: mocks.getWorkflow, listProjects: mocks.listProjects } }
 })
 import RunLaunchModal from './RunLaunchModal.vue'
 
@@ -18,7 +18,6 @@ const fields = [
   { key: 'num', type: 'number' },
   { key: 'text', type: 'text' },
   { key: 'para', type: 'paragraph', required: true },
-  { key: 'repos', type: 'repos' },
   { key: 'other' },
 ]
 function mountModal(extra: Record<string, unknown> = {}) {
@@ -26,17 +25,16 @@ function mountModal(extra: Record<string, unknown> = {}) {
   return mount(RunLaunchModal, {
     props: {
       open: true, workflowId: 'wf', workflowName: 'Flow', fields,
-      runInputs: { sel: 'a', bool: 'false', num: '2', text: 'x', para: 'body', repos: '[{"name":"api","url":"u"}]', other: 'y' },
+      runInputs: { sel: 'a', bool: 'false', num: '2', text: 'x', para: 'body', other: 'y' },
       runImages: { para: [] }, firstMessage: null, ...extra,
     },
     attachTo: document.body,
     global: { plugins: [i18n], stubs: {
       Icon: true,
       AppButton: { template: '<button v-bind="$attrs"><slot /></button>' },
-      AppSwitch: { props: ['modelValue', 'disabled'], emits: ['update:modelValue'], template: '<button role="switch" @click="$emit(\'update:modelValue\', !modelValue)" />' },
+      AppSwitch: { props: ['modelValue', 'disabled'], emits: ['update:modelValue'], template: '<button role="switch" :aria-checked="String(!!modelValue)" @click="$emit(\'update:modelValue\', !modelValue)" />' },
       AppModal: { props: ['open'], emits: ['close'], setup(_: any, { slots, expose }: any) { const scrollAreaEl = document.createElement('div'); Object.defineProperty(scrollAreaEl, 'clientHeight', { value: 240 }); expose({ scrollAreaEl }); return () => _.open ? slots.default?.().concat(slots.footer?.() || []) : null } },
       ParagraphInput: { props: ['text'], emits: ['update:text'], template: '<textarea :value="text" />' },
-      ReposEditor: { name: 'ReposEditor', props: ['repos'], emits: ['update:repos'], template: '<div data-testid="repos-stub"/>' },
       PrioritySegmented: { props: ['modelValue'], emits: ['update:modelValue'], template: '<button data-testid="priority" @click="$emit(\'update:modelValue\', \'high\')" />' },
       HardLoadLayer: { emits: ['retry'], template: '<button data-testid="retry" @click="$emit(\'retry\')" />' },
     } },
@@ -48,16 +46,15 @@ describe('RunLaunchModal interactions', () => {
     vi.clearAllMocks()
     mocks.listRunTags.mockResolvedValue({ tags: ['bug', 'feature'] })
     mocks.startRun.mockResolvedValue({ id: 'run-1' })
+    mocks.getWorkflow.mockResolvedValue({ id: 'wf', name: 'Flow', nodes: [], edges: [] })
+    mocks.listProjects.mockResolvedValue([])
   })
 
-  it('drives field helpers, repositories, booleans, tags and env rows', async () => {
+  it('drives field helpers, booleans, tags and env rows', async () => {
     const w = mountModal()
     await flushPromises()
     const vm = w.vm as any
     expect(vm.fieldOptions(fields[0])).toEqual(['a', 'b'])
-    expect(vm.reposFor('repos')[0].name).toBe('api')
-    vm.onReposUpdate('repos', [{ name: 'web', url: 'v', branch: 'main' }])
-    expect(JSON.parse(w.props('runInputs').repos)[0].name).toBe('web')
     vm.setBoolField(fields[1], true)
     expect(vm.boolDisplayValue('bool')).toBe('true')
     vm.setBoolField({ key: 'bool', editable: false }, false)
@@ -98,11 +95,10 @@ describe('RunLaunchModal interactions', () => {
     w.unmount()
   })
 
-  it('covers malformed repos, validation, close phases and retry errors', async () => {
-    const w = mountModal({ runInputs: { sel: '', para: '', repos: '{bad' }, runImages: { para: [] } })
+  it('covers validation, close phases and retry errors', async () => {
+    const w = mountModal({ runInputs: { sel: '', para: '' }, runImages: { para: [] } })
     await flushPromises()
     const vm = w.vm as any
-    expect(vm.reposFor('repos')).toEqual([])
     await vm.startRun()
     expect(vm.phase).toBe('error')
     vm.envRows = [{ key: 'CURSOR_API_KEY', value: 'x', secret: true }]
@@ -120,6 +116,39 @@ describe('RunLaunchModal interactions', () => {
     expect(w.emitted('stayed')).toBeTruthy()
     vm.phase = 'loading'; vm.onModalClose()
     expect(vm.bodyLayerClass(false)).toContain('hidden')
+    w.unmount()
+  })
+
+  it('hides the repository picker and sends no subset when the workflow binds none', async () => {
+    const w = mountModal()
+    await flushPromises()
+    expect(mocks.getWorkflow).toHaveBeenCalledWith('wf')
+    expect(w.find('[data-testid="run-launch-repos"]').exists()).toBe(false)
+    await (w.vm as any).startRun()
+    await flushPromises()
+    expect(mocks.startRun.mock.calls.at(-1)?.[5]).not.toHaveProperty('repos')
+    w.unmount()
+  })
+
+  it('launches with a chosen subset of the bound repositories and their branches', async () => {
+    mocks.getWorkflow.mockResolvedValue({ id: 'wf', name: 'Flow', nodes: [], edges: [], defaults: { repos: [{ projectId: 'p1' }, { projectId: 'p2', branch: 'dev' }] } })
+    mocks.listProjects.mockResolvedValue([
+      { id: 'p1', name: 'web', repoUrl: 'https://github.com/org/web.git', defaultBranch: 'main' },
+      { id: 'p2', name: 'api', repoUrl: 'https://github.com/org/api.git' },
+      { id: 'p3', name: 'unbound', repoUrl: 'https://github.com/org/other.git' },
+    ])
+    const w = mountModal()
+    await flushPromises()
+    const section = w.get('[data-testid="run-launch-repos"]')
+    expect(section.find('[data-testid="repo-choice-p3"]').exists()).toBe(false)
+    expect(section.get('[data-testid="repo-choice-toggle-p1"]').attributes('aria-checked')).toBe('true')
+    expect((section.get('[data-testid="repo-choice-branch-p2"]').element as HTMLInputElement).value).toBe('dev')
+    await section.get('[data-testid="repo-choice-toggle-p1"]').trigger('click')
+    await section.get('[data-testid="repo-choice-branch-p2"]').setValue('release')
+    await section.get('[data-testid="repo-choice-branch-p2"]').trigger('change')
+    await (w.vm as any).startRun()
+    await flushPromises()
+    expect(mocks.startRun.mock.calls.at(-1)?.[5]).toMatchObject({ repos: [{ projectId: 'p2', branch: 'release' }] })
     w.unmount()
   })
 

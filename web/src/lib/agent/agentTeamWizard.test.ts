@@ -10,31 +10,27 @@ import {
 } from '@/lib/agent/agentTeamWizard'
 
 describe('agentTeamWizard', () => {
-  it('requires model selection before optional Git and workspace settings', () => {
+  it('requires model selection before the optional repository and workspace settings', () => {
     expect(TEAM_WIZARD_STEPS).toHaveLength(6)
-    expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual(['team', 'model', 'git', 'mcp', 'env', 'review'])
+    expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual(['team', 'model', 'repo', 'mcp', 'env', 'review'])
   })
 
-  it('prefills artifact-store and GIT_REPOS', () => {
+  it('prefills artifact-store and no repository env', () => {
     const d = freshTeamDraft()
     expect(d.mcp[0]).toMatchObject(artifactStorePreset())
-    expect(d.env.some((e) => e.k === 'GIT_REPOS')).toBe(true)
+    expect(d.env).toEqual([])
     expect(TEAM_ENGINEER_COUNT).toBe(4)
   })
 
   it('starts without a model and submits only explicit references', () => {
     const d = freshTeamDraft()
     expect(d.modelConfigurationId).toBe('')
-    expect(d.gitBindings).toEqual({ items: [] })
+    expect(d.repoId).toBe('')
     d.modelConfigurationId = 'model-team'
-    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload.modelConfigurationId).toBe('model-team')
-    expect(payload.gitBindings).toEqual(d.gitBindings)
-    for (const field of ['apiKey', 'acpBackend', 'openCodeProvider', 'gitCredentialType'])
+    for (const field of ['apiKey', 'acpBackend', 'openCodeProvider', 'gitCredentialType', 'gitBindings', 'gitUrl', 'repoId'])
       expect(payload).not.toHaveProperty(field)
-    d.gitBindings.items = []
-    expect(payload.gitBindings.items).toEqual([{ credentialId: 'git-team' }])
   })
 
   it('syncs derived names from team name / prefix', () => {
@@ -60,12 +56,12 @@ describe('agentTeamWizard', () => {
     d.teamName = 'Demo'
     syncDerivedNames(d)
     d.background = 'build a workflow team'
-    d.gitUrl = 'https://github.com/org/repo.git'
+    d.repoId = 'proj-1'
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload).not.toHaveProperty('teamName')
     expect(payload.pmName).toBe('Demo项目经理')
     expect(payload.mcp.some((m) => m.name === 'artifact-store')).toBe(true)
-    expect(payload.env.GIT_REPOS).toBe('${vars.repos}')
-    expect(payload.gitUrl).toContain('github.com')
+    expect(payload.env).toEqual({})
+    expect(payload.repoId).toBe('proj-1')
   })
 })

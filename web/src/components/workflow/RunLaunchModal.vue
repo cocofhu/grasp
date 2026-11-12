@@ -10,7 +10,7 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import ParagraphInput from '@/components/ui/ParagraphInput.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
-import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
+import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import PrioritySegmented, { type RunPriority } from '@/components/ui/PrioritySegmented.vue'
 import { api } from '@/lib/api/api'
 import { isCompositeFilled, normalizeCompositeSubmit } from '@/lib/shared/compositeText'
@@ -24,7 +24,7 @@ import {
 } from '@/lib/run/runSandboxEnv'
 import type { ClarifyImage } from '@/lib/shared/types'
 import type { HomeLaunchModel } from '@/lib/run/homeLaunchModel'
-import type { ReferenceInput } from '@/lib/api/apiTypes'
+import type { Project, ReferenceInput, RepoChoice } from '@/lib/api/apiTypes'
 
 export type InputField = {
   key: string
@@ -107,7 +107,13 @@ const tagInput = ref('')
 const tagSuggestions = ref<string[]>([])
 const maxTags = MAX_RUN_TAGS
 const maxTagRunes = MAX_TAG_RUNES
-const reposDraft = ref<Record<string, RepoRow[]>>({})
+/** Repositories bound in workflow settings; the run clones the checked subset. */
+const boundRepos = ref<RepoChoice[]>([])
+const repoProjects = ref<Project[]>([])
+const repoChoices = ref<RepoChoice[]>([])
+const reposLoading = ref(false)
+const reposLoaded = ref(false)
+let reposGen = 0
 const envRows = ref<RunSandboxEnvEntry[]>([])
 let startAbort: AbortController | null = null
 let startGen = 0
@@ -143,7 +149,7 @@ watch(
       const seed = props.initialPriority
       priority.value = seed === 'high' || seed === 'low' || seed === 'normal' ? seed : 'normal'
       scrollAreaMinHeight.value = undefined
-      reposDraft.value = {}
+      void loadRepos()
       tags.value = []
       tagInput.value = ''
       tagSuggestions.value = []
@@ -245,35 +251,28 @@ function fieldPlaceholder(f: InputField, paragraph = false): string {
   return t('pages.runLaunch.inputPlaceholder', { key: f.key })
 }
 
-// reposFor lazily parses a repos field's JSON string value into editable rows,
-// caching the array so v-model edits stay reactive. syncRepos writes it back.
-function reposFor(key: string): RepoRow[] {
-  if (!reposDraft.value[key]) {
-    let arr: any[] = []
-    const raw = props.runInputs[key]
-    if (Array.isArray(raw)) arr = raw as any[]
-    else if (typeof raw === 'string' && raw.trim()) {
-      try {
-        const p = JSON.parse(raw)
-        if (Array.isArray(p)) arr = p
-      } catch {
-        arr = []
-      }
-    }
-    reposDraft.value[key] = arr.map((r) => ({
-      name: r?.name ?? '',
-      url: r?.url ?? '',
-      branch: r?.branch ?? '',
-    }))
+async function loadRepos() {
+  const gen = ++reposGen
+  boundRepos.value = []
+  repoProjects.value = []
+  repoChoices.value = []
+  reposLoaded.value = false
+  if (!props.workflowId) return
+  reposLoading.value = true
+  try {
+    const [wf, projects] = await Promise.all([api.getWorkflow(props.workflowId), api.listProjects()])
+    if (gen !== reposGen) return
+    const bound = wf.defaults?.repos ?? []
+    const ids = new Set(bound.map((r) => r.projectId))
+    boundRepos.value = bound
+    repoProjects.value = projects.filter((p) => ids.has(p.id))
+    repoChoices.value = bound.map((r) => ({ ...r }))
+    reposLoaded.value = true
+  } catch {
+    // Without the binding the server clones every bound repository.
+  } finally {
+    if (gen === reposGen) reposLoading.value = false
   }
-  return reposDraft.value[key]
-}
-function syncRepos(key: string) {
-  ;(props.runInputs as Record<string, any>)[key] = JSON.stringify(reposFor(key))
-}
-function onReposUpdate(key: string, rows: RepoRow[]) {
-  reposDraft.value[key] = rows
-  syncRepos(key)
 }
 
 function boolIsOn(key: string): boolean {
@@ -394,6 +393,7 @@ async function startRun() {
       firstMessage: props.firstMessage ?? ownMessage ?? undefined,
       ...(props.publishedSnapshot ? { publishedSnapshot: true } : {}),
       ...(props.launchModel ? { launchModel: props.launchModel } : {}),
+      ...(reposLoaded.value && boundRepos.value.length ? { repos: repoChoices.value } : {}),
     })
     if (gen !== startGen) return
     successRunId.value = res.id
@@ -512,13 +512,6 @@ async function startRun() {
             :disabled="f.editable === false"
             :placeholder="fieldPlaceholder(f, true)"
           />
-          <ReposEditor
-            v-else-if="f.type === 'repos'"
-            :repos="reposFor(f.key)"
-            :editable="f.editable !== false"
-            i18n-prefix="pages.runLaunch.repos"
-            @update:repos="onReposUpdate(f.key, $event)"
-          />
           <textarea
             v-else
             v-model="runInputs[f.key]"
@@ -526,6 +519,11 @@ async function startRun() {
             class="input min-h-[72px] disabled:opacity-60"
             :placeholder="fieldPlaceholder(f)"
           />
+        </div>
+        <div v-if="reposLoading || boundRepos.length" class="space-y-1.5" data-testid="run-launch-repos">
+          <label class="block text-[12px] font-medium text-txt2">{{ t('pages.runLaunch.reposLabel') }}</label>
+          <p class="text-[11px] leading-relaxed text-txt3">{{ t('pages.runLaunch.reposHint') }}</p>
+          <RepoChoiceList v-model="repoChoices" :projects="repoProjects" :loading="reposLoading" hide-manage-link />
         </div>
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-2">

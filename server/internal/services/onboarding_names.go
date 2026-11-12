@@ -99,14 +99,14 @@ type onboardingLocale struct {
 var (
 	onboardingLocaleZH = onboardingLocale{
 		WorkflowName: OnboardingWorkflowName,
-		WorkflowDesc: "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
+		WorkflowDesc: "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在工作流设置里绑定，运行时可挑选。",
 		InputLabel:   "开始",
 		OutputLabel:  "结束",
 		SoloAgentsMD: "# Solo\n\n需要用户做选择或确认时，调用 artifact-store 的 `ask_question` 工具列出选项并标出推荐项，需要用户填写信息时调用 `ask_form`，调用后结束本轮，等用户在界面回答。不要调用编码工具自带的 AskQuestion：Solo 无法在回合中途回答它，调用会直接失败。\n",
 	}
 	onboardingLocaleEN = onboardingLocale{
 		WorkflowName: OnboardingWorkflowNameEN,
-		WorkflowDesc: "Clarify → Implement → Test & review → Submit MR/PR; a failed review goes back to Implement. Pick the repository when you start a run.",
+		WorkflowDesc: "Clarify → Implement → Test & review → Submit MR/PR; a failed review goes back to Implement. Bind repositories in the workflow settings; pick them when you start a run.",
 		InputLabel:   "Start",
 		OutputLabel:  "End",
 		SoloAgentsMD: "# Solo\n\nWhen you need the user to choose or confirm something, call the artifact-store `ask_question` tool with the options and mark the one you recommend; call `ask_form` when you need the user to fill in values. Then end the turn and wait for the user's answer in the UI. Do not call the coding tool's own AskQuestion: Solo cannot answer it mid-turn, so the call fails.\n",

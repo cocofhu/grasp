@@ -1,29 +1,14 @@
 {
   "schemaVersion": 1,
   "name": "默认工作流",
-  "description": "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
+  "description": "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在工作流设置里绑定，运行时可挑选。",
   "needsRepo": true,
   "defaults": {
     "inheritWorkspace": true,
     "variables": []
   },
   "graph": {
-    "variables": [
-      {
-        "name": "repos",
-        "type": "repos",
-        "value": [
-          {
-            "branch": "",
-            "name": "",
-            "url": ""
-          }
-        ],
-        "desc": "仓库列表(平级,每个 clone 到 /root/workspace/<name>/;留空则纯产物流)",
-        "ask": true,
-        "editable": true
-      }
-    ],
+    "variables": [],
     "nodes": [
       {
         "id": "input",

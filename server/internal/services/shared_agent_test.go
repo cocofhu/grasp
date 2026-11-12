@@ -113,8 +113,8 @@ func TestExtendOverlayNeverInheritsModelOrAuthorizations(t *testing.T) {
 	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily"}
 	agent := Agent{Name: "configured", AcpBackend: "codex", ModelBinding: binding}
 	got := ExtendOverlay(shared, agent)
-	if got.ModelBinding != binding || got.AcpBackend != "codex" || got.GitBindings != nil {
-		t.Fatal("shared baseline changed Agent model or Git selection")
+	if got.ModelBinding != binding || got.AcpBackend != "codex" {
+		t.Fatal("shared baseline changed the Agent model")
 	}
 	if got.Env["ACP_BRIDGE_MODEL"] != "" || got.Env["OPENAI_BASE_URL"] != "" || got.Env["KEEP"] != "shared" {
 		t.Fatalf("unexpected shared environment keys")

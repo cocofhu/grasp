@@ -22,22 +22,27 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxServic
 		return connections.Resolve(backend, *binding)
 	}
 	agent := Agent{Name: "agentA", AcpBackend: "opencode", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}}
+	var repos []models.SessionRepo
 	if git {
 		s.gitCredential = serviceGitValue
-		agent.GitBindings = serviceGitSelection("gh", "gl")
+		s.project = serviceRepoLookup(models.Project{ID: "p-gh", CredentialID: "gh"}, models.Project{ID: "p-gl", CredentialID: "gl"})
+		repos = []models.SessionRepo{
+			{ProjectID: "p-gh", RepoURL: "https://github.com/team/web.git", RepoDirName: "web"},
+			{ProjectID: "p-gl", RepoURL: "https://gitlab.com/team/api.git", RepoDirName: "api"},
+		}
 	}
 	if err := s.skills.Save(agent); err != nil {
 		t.Fatal(err)
 	}
 	agent, _ = s.skills.Get(agent.Name)
-	row := &models.Sandbox{Name: "bound-live-" + purpose, Profile: agent.Name, Purpose: purpose, ThreadID: "bound-thread", Status: "creating", Token: "test-password"}
+	row := &models.Sandbox{Name: "bound-live-" + purpose, Profile: agent.Name, Purpose: purpose, ThreadID: "bound-thread", Status: "creating", Token: "test-password", Repos: repos}
 	if err := s.db.Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
 	if purpose == "test" {
-		s.startContainer(row.ID, row.Name, agent.Name, "bound-run", row.Token, nil, agent, "")
+		s.startContainer(row.ID, row.Name, agent.Name, "bound-run", row.Token, repos, agent, "")
 	} else {
-		s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{Resident: purpose == SandboxPurposeSolo})
+		s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{Resident: purpose == SandboxPurposeSolo, Repos: repos})
 	}
 	if err := s.db.First(row, row.ID).Error; err != nil || row.Status != "running" {
 		t.Fatalf("start failed: %v status=%s error=%s", err, row.Status, row.Error)
@@ -102,7 +107,7 @@ func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
 }
 
 func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
-	s, row, _, _, _, _, _ := boundSandboxFixture(t, SandboxPurposeAgent, true)
+	s, row, _, _, _, _, _ := boundSandboxFixture(t, SandboxPurposeSolo, true)
 	ctx := context.Background()
 	for _, restart := range []bool{false, true} {
 		if restart {
@@ -117,13 +122,10 @@ func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
 		if live.modelBindingFingerprint != row.ModelBindingFingerprint || live.gitBindingsFingerprint != row.GitBindingsFingerprint {
 			t.Fatal("reconnect discarded applied authorization fingerprints")
 		}
-		if got, reused, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{Profile: row.Profile, ThreadID: row.ThreadID, Reuse: true}); err != nil || !reused || got.ID != row.ID {
-			t.Fatalf("unchanged thread was not reused: %v", err)
-		}
 	}
 	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
 	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git must block", nil, 0, nil); err == nil {
-		t.Fatal("chat ignored revoked Git authorization")
+		t.Fatal("chat ignored a revoked repository credential")
 	}
 }
 

@@ -56,14 +56,14 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 // an error, never a default.
 func TestProviderRegistryRouting(t *testing.T) {
 	root := t.TempDir()
-	writeProfileInto(t, root, "cur", `{"inheritModel":false,"inheritGit":false,"acpBackend":"cursor"}`)
-	writeProfileInto(t, root, "cc", `{"inheritModel":false,"inheritGit":false,"acpBackend":"claude_code"}`)
-	writeProfileInto(t, root, "cb", `{"inheritModel":false,"inheritGit":false,"acpBackend":"codebuddy"}`)
-	writeProfileInto(t, root, "tr", `{"inheritModel":false,"inheritGit":false,"acpBackend":"trae"}`)
-	writeProfileInto(t, root, "cx", `{"inheritModel":false,"inheritGit":false,"acpBackend":"codex"}`)
-	writeProfileInto(t, root, "dsh", `{"inheritModel":false,"inheritGit":false,"acpBackend":"deepseek_harness"}`)
-	writeProfileInto(t, root, "weird", `{"inheritModel":false,"inheritGit":false,"acpBackend":"nope"}`)
-	writeProfileInto(t, root, "nobackend", `{"inheritModel":false,"inheritGit":false,"env":{"X":"y"}}`)
+	writeProfileInto(t, root, "cur", `{"inheritModel":false,"acpBackend":"cursor"}`)
+	writeProfileInto(t, root, "cc", `{"inheritModel":false,"acpBackend":"claude_code"}`)
+	writeProfileInto(t, root, "cb", `{"inheritModel":false,"acpBackend":"codebuddy"}`)
+	writeProfileInto(t, root, "tr", `{"inheritModel":false,"acpBackend":"trae"}`)
+	writeProfileInto(t, root, "cx", `{"inheritModel":false,"acpBackend":"codex"}`)
+	writeProfileInto(t, root, "dsh", `{"inheritModel":false,"acpBackend":"deepseek_harness"}`)
+	writeProfileInto(t, root, "weird", `{"inheritModel":false,"acpBackend":"nope"}`)
+	writeProfileInto(t, root, "nobackend", `{"inheritModel":false,"env":{"X":"y"}}`)
 	writeProfileInto(t, root, "broken", `{not-json`)
 
 	host := mcp.NewHost(newMemStore())
@@ -119,7 +119,7 @@ func TestProviderRegistryProviderForMissingBackend(t *testing.T) {
 	reg := NewProviderRegistry(host, Options{})
 	delete(reg.providers, BackendTrae)
 	root := t.TempDir()
-	writeProfileInto(t, root, "tr", `{"inheritModel":false,"inheritGit":false,"acpBackend":"trae"}`)
+	writeProfileInto(t, root, "tr", `{"inheritModel":false,"acpBackend":"trae"}`)
 	reg.profilesRoot = root
 	if _, err := reg.providerFor(reqFor("tr")); err == nil {
 		t.Fatal("missing backend provider must error")

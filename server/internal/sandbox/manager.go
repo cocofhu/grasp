@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -133,15 +134,10 @@ type Spec struct {
 	WorkspaceDir string
 	// Resources are optional per-sandbox CPU/memory/disk limits for the gateway.
 	Resources *GWResources
-	// SSHPrivateKey / SSHKnownHosts are optional literals injected as files
-	// under /tmp/grasp-ssh-inject before git clone (not via ordinary env).
-	// Empty fields are omitted (do not create/clear the corresponding file).
-	SSHPrivateKey string
-	SSHKnownHosts string
-	// GitBindingsConfigured distinguishes legacy host credentials from an
-	// explicitly selected (possibly empty) catalog of Git credentials.
-	GitBindingsConfigured bool
-	GitCredentials        []GitCredential
+	// GitCredentials is the complete Git catalog for this sandbox, resolved
+	// from the bound repositories. An empty catalog still owns transport: Git
+	// identity never comes from Env.
+	GitCredentials []GitCredential
 }
 
 // Repo credential kinds understood by the Agent Git catalog and startup.sh.
@@ -169,10 +165,66 @@ type GitCredential struct {
 const SSHInjectStagingDir = "/tmp/grasp-ssh-inject"
 
 // RepoSpec is one repository cloned into the sandbox at <workspace>/<Name>/.
+// AuthorName / AuthorEmail become the clone's local user.name / user.email;
+// empty fields keep the sandbox-wide default.
 type RepoSpec struct {
-	Name   string
-	URL    string
-	Branch string
+	Name        string
+	URL         string
+	Branch      string
+	AuthorName  string
+	AuthorEmail string
+}
+
+// EnvRepoAuthors carries per-repository commit authors to startup.sh as a JSON
+// array of {"name","userName","userEmail"} keyed by clone directory.
+const EnvRepoAuthors = "GIT_REPO_AUTHORS"
+
+type repoAuthor struct {
+	Name      string `json:"name"`
+	UserName  string `json:"userName,omitempty"`
+	UserEmail string `json:"userEmail,omitempty"`
+}
+
+// EncodeRepoAuthors serializes the authors of repos that set one. Empty when
+// none does, so the variable can be left out.
+func EncodeRepoAuthors(repos []RepoSpec) string {
+	var out []repoAuthor
+	for _, r := range repos {
+		name, user, email := strings.TrimSpace(r.Name), strings.TrimSpace(r.AuthorName), strings.TrimSpace(r.AuthorEmail)
+		if name == "" || user == "" && email == "" {
+			continue
+		}
+		out = append(out, repoAuthor{Name: name, UserName: user, UserEmail: email})
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	body, _ := json.Marshal(out)
+	return string(body)
+}
+
+// DecodeRepoAuthors parses EnvRepoAuthors; malformed values yield nil.
+func DecodeRepoAuthors(s string) map[string][2]string {
+	var in []repoAuthor
+	if json.Unmarshal([]byte(strings.TrimSpace(s)), &in) != nil {
+		return nil
+	}
+	out := make(map[string][2]string, len(in))
+	for _, a := range in {
+		out[a.Name] = [2]string{a.UserName, a.UserEmail}
+	}
+	return out
+}
+
+// ApplyRepoEnv sets the clone list and commit authors for repos, replacing
+// whatever an Agent or platform env put there.
+func ApplyRepoEnv(env map[string]string, repos []RepoSpec) {
+	env["GIT_REPOS"] = EncodeRepos(repos)
+	if authors := EncodeRepoAuthors(repos); authors != "" {
+		env[EnvRepoAuthors] = authors
+	} else {
+		delete(env, EnvRepoAuthors)
+	}
 }
 
 // RepoNameFromURL derives a workspace subdir name from a clone URL: the last
@@ -187,19 +239,6 @@ func RepoNameFromURL(raw string) string {
 		seg = seg[i+1:]
 	}
 	return strings.TrimSpace(strings.TrimSuffix(seg, ".git"))
-}
-
-// ReposFromURL builds a single-entry repo list from one clone URL.
-func ReposFromURL(url string) []RepoSpec {
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return nil
-	}
-	name := RepoNameFromURL(url)
-	if name == "" {
-		name = "repo"
-	}
-	return []RepoSpec{{Name: name, URL: url}}
 }
 
 // EncodeRepos serializes repos into the GIT_REPOS env var consumed by the
@@ -386,7 +425,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 
 	env := map[string]string{}
 	for k, v := range spec.Env {
-		if spec.GitBindingsConfigured && gitCredentialEnv[k] {
+		if gitCredentialEnv[k] {
 			continue
 		}
 		env[k] = v
@@ -440,17 +479,16 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		}
 		runtimeData, runtimeMan = data, man
 	}
-	// Pre-start inject: pack SSH staging (+ ConfigHome) into SANDBOX_INJECT and
-	// the runtime bundle into GRASP_RUNTIME_URL. SSH staging must land before
-	// git clone; startup.sh runs inject first. All share one auth token.
+	// Pre-start inject: pack the Git catalog (+ ConfigHome) into SANDBOX_INJECT
+	// and the runtime bundle into GRASP_RUNTIME_URL. The catalog must land
+	// before git clone; startup.sh runs inject first. All share one auth token.
 	var bundleIDs []string
-	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.GitBindingsConfigured, spec.GitCredentials, runtimeData); inj.ok() {
+	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.GitCredentials, runtimeData); inj.ok() {
 		if len(inj.parts) > 0 {
 			env["SANDBOX_INJECT"] = strings.Join(inj.parts, ",")
 			log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
-				Bool("ssh", strings.TrimSpace(spec.SSHPrivateKey) != "" || strings.TrimSpace(spec.SSHKnownHosts) != "").
 				Int("git_credentials", len(spec.GitCredentials)).
-				Msg("sandbox config+ssh inject via SANDBOX_INJECT")
+				Msg("sandbox config+git inject via SANDBOX_INJECT")
 		}
 		if inj.runtimeURL != "" {
 			env["GRASP_RUNTIME_URL"] = inj.runtimeURL
@@ -573,10 +611,10 @@ type injectPlan struct {
 
 func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
 
-// buildMultiInject registers the optional SSH staging, ConfigHome and runtime
-// bundles under one bearer token. The zero plan means nothing to inject (or no
+// buildMultiInject registers the Git catalog, the optional ConfigHome and
+// runtime bundles under one bearer token. The zero plan means nothing to inject (or no
 // inject store / reachable base URL).
-func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, gitConfigured bool, gitCredentials []GitCredential, runtime []byte) injectPlan {
+func (m *Manager) buildMultiInject(configHome, configRoot string, gitCredentials []GitCredential, runtime []byte) injectPlan {
 	if m.bundles == nil {
 		return injectPlan{}
 	}
@@ -597,8 +635,8 @@ func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts stri
 		plan.ids = append(plan.ids, id)
 		return base + "/sandbox-inject/" + id + ".tgz"
 	}
-	if sshData, err := packGitInjectBundle(sshKey, sshHosts, gitConfigured, gitCredentials); err != nil {
-		log.Warn().Err(err).Msg("pack ssh inject bundle failed")
+	if sshData, err := packGitInjectBundle(gitCredentials); err != nil {
+		log.Warn().Err(err).Msg("pack git inject bundle failed")
 	} else if sshData != nil {
 		u := put(sshData)
 		if u == "" {

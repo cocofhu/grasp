@@ -178,6 +178,39 @@ func newVersionRow(wf *models.WorkflowDef, source string, restoredFrom *int, at 
 	}
 }
 
+// ErrWorkflowRepo rejects a bound repository that is missing or has an
+// unusable branch.
+var ErrWorkflowRepo = errors.New("工作流绑定的仓库无效")
+
+// boundRepos trims and dedupes the bound repositories and checks each exists.
+func (s *WorkflowService) boundRepos(in []models.RepoChoice) ([]models.RepoChoice, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]models.RepoChoice, 0, len(in))
+	seen := map[string]bool{}
+	for _, r := range in {
+		id := strings.TrimSpace(r.ProjectID)
+		if id == "" || seen[id] {
+			continue
+		}
+		var n int64
+		if err := s.db.Model(&models.Project{}).Where("id = ?", id).Count(&n).Error; err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return nil, fmt.Errorf("%w：仓库 %s 不存在", ErrWorkflowRepo, id)
+		}
+		branch := strings.TrimSpace(r.Branch)
+		if strings.ContainsAny(branch, " |,") {
+			return nil, fmt.Errorf("%w：仓库 %s 的分支名不能包含空格、| 或 ,", ErrWorkflowRepo, id)
+		}
+		seen[id] = true
+		out = append(out, models.RepoChoice{ProjectID: id, Branch: branch})
+	}
+	return out, nil
+}
+
 // Save creates or updates a workflow definition from the editor (Source=save).
 func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 	return s.SaveAs(wf, models.VersionSourceSave)
@@ -198,6 +231,9 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 				return err
 			}
 			cp.Variables = vars
+			if cp.Repos, err = s.boundRepos(cp.Repos); err != nil {
+				return err
+			}
 			wf.Defaults = &cp
 		}
 		wf.CreatedAt = time.Now()
@@ -235,6 +271,9 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 			return err
 		}
 		cp.Variables = vars
+		if cp.Repos, err = s.boundRepos(cp.Repos); err != nil {
+			return err
+		}
 		wf.Defaults = &cp
 	}
 	wf.CreatedAt = existing.CreatedAt
