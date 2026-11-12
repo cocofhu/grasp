@@ -177,6 +177,20 @@ describe('SoloSessionPane @ references', () => {
     expect(w.find('[data-testid="solo-composer-references"]').exists()).toBe(false)
   })
 
+  it('turns several pasted links into tokens and keeps those past the limit as text', async () => {
+    const w = mountPane()
+    const el = w.find('textarea').element as HTMLTextAreaElement
+    el.setSelectionRange(0, 0)
+    const urls = [184, 132, 135, 136, 137, 138].map((n) => `https://github.com/acme/web/pull/${n}`)
+    const paste = new Event('paste', { cancelable: true }) as ClipboardEvent
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => urls.join('\n'), items: [], files: [] } })
+    el.dispatchEvent(paste)
+    await flushPromises()
+    expect(paste.defaultPrevented).toBe(true)
+    expect(el.value).toBe(`@#184 @#132 @#135 @#136 @#137 ${urls[5]}`)
+    expect(w.findAll('[data-testid="solo-reference-chip"]').map((c) => c.text())).toEqual(['#184', '#132', '#135', '#136', '#137'].map((n) => expect.stringContaining(n)))
+  })
+
   it('opens the picker from the + menu, and chips can be removed', async () => {
     const w = mountPane()
     await w.find('[data-testid="solo-plus"]').trigger('click')

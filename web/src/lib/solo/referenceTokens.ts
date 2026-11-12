@@ -19,6 +19,22 @@ export function parseGitHubReference(text: string): ReferenceInput | null {
 }
 type ReferenceInput = Pick<MessageReference, 'kind' | 'target'>
 
+/**
+ * Pasted text made only of GitHub links (one or more, whitespace separated),
+ * deduplicated with each link's original text; null if anything else is mixed in.
+ */
+export function parseGitHubReferences(text: string): { ref: ReferenceInput; raw: string }[] | null {
+  const pieces = text.split(/\s+/).filter(Boolean)
+  if (!pieces.length) return null
+  const out: { ref: ReferenceInput; raw: string }[] = []
+  for (const raw of pieces) {
+    const ref = parseGitHubReference(raw)
+    if (!ref) return null
+    if (!out.some((o) => o.ref.kind === ref.kind && o.ref.target === ref.target)) out.push({ ref, raw })
+  }
+  return out
+}
+
 /** Text inserted after @: a session title, or #n for the session's own repo. */
 export function referenceLabel(ref: Pick<MessageReference, 'kind' | 'target' | 'title'>, defaultRepo = ''): string {
   if (ref.kind === 'solo') return ref.title.replace(/\s+/g, ' ').trim() || ref.target

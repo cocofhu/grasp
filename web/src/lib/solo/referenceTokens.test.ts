@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { MAX_REFERENCES, activeTrigger, applyEdit, inlineReferences, insertToken, insideToken, parseGitHubReference, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, inlineReferences, insertToken, insideToken, parseGitHubReference, parseGitHubReferences, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import { githubRepoOf, referenceHref, referenceIcon } from './referenceDisplay'
 
 const solo: MessageReference = { kind: 'solo', target: 's2', title: '登录  重构' }
@@ -15,6 +15,21 @@ describe('parseGitHubReference', () => {
   it('ignores anything else', () => {
     expect(parseGitHubReference('see acme/web#3 please')).toBeNull()
     expect(parseGitHubReference('https://gitlab.com/a/b/issues/1')).toBeNull()
+  })
+})
+
+describe('parseGitHubReferences', () => {
+  it('reads every link in a pasted list, dropping duplicates', () => {
+    const text = 'https://github.com/acme/web/pull/184\nhttps://github.com/acme/web/pull/132\n acme/web#3 https://github.com/acme/web/pull/184/files'
+    expect(parseGitHubReferences(text)).toEqual([
+      { ref: { kind: 'github_pr', target: 'acme/web#184' }, raw: 'https://github.com/acme/web/pull/184' },
+      { ref: { kind: 'github_pr', target: 'acme/web#132' }, raw: 'https://github.com/acme/web/pull/132' },
+      { ref: { kind: 'github_issue', target: 'acme/web#3' }, raw: 'acme/web#3' },
+    ])
+  })
+  it('leaves text mixing links and prose alone', () => {
+    expect(parseGitHubReferences('https://github.com/acme/web/pull/1 and https://github.com/acme/web/pull/2')).toBeNull()
+    expect(parseGitHubReferences('  ')).toBeNull()
   })
 })
 
