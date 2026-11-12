@@ -26,6 +26,7 @@ type fakeSoloRouteRuntime struct {
 	failConnect int
 	readyCalls  int
 	connects    int
+	onConnect   func(call int)
 }
 
 func (f *fakeSoloRouteRuntime) SwitchTool(_ context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, previous []string) error {
@@ -49,6 +50,9 @@ func (f *fakeSoloRouteRuntime) Ready(context.Context, *sandbox.Sandbox) error {
 
 func (f *fakeSoloRouteRuntime) Connect(context.Context, *sandbox.Sandbox, []sandbox.MCPServerSpec) (*sandbox.ACPClient, error) {
 	f.connects++
+	if f.onConnect != nil {
+		f.onConnect(f.connects)
+	}
 	if f.connects == f.failConnect {
 		return nil, errors.New("new ACP unavailable")
 	}
@@ -259,6 +263,87 @@ func TestSoloRouteSwitchFailedRollbackForcesRecovery(t *testing.T) {
 	ops.failReady, ops.failConnect = 0, 0
 	if changed, err := s.AlignSoloModelRoute(context.Background(), row.ID, original); err != nil || !changed || len(ops.specs) != 3 {
 		t.Fatalf("must recover original route in same container: changed=%v err=%v calls=%d", changed, err, len(ops.specs))
+	}
+}
+
+func failSoloSessionSaves(t *testing.T, s *SandboxService) {
+	t.Helper()
+	if err := s.db.Exec("CREATE TRIGGER fail_solo_session_save BEFORE UPDATE ON solo_sessions BEGIN SELECT RAISE(ABORT, 'disk full'); END").Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func forgetSoloRouteRollback(t *testing.T, s *SandboxService, row *models.Sandbox, target Agent) {
+	t.Helper()
+	old := s.live[row.ID]
+	_ = os.RemoveAll(old.home)
+	old.home, old.prepared, old.soloRouteAgent = "", nil, nil
+	old.sb.Image = s.routeImage(target.AcpBackend)
+	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ThreadID).Updates(map[string]any{"applied_configuration_id": "deleted-group", "applied_model_set": true}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSoloRouteFailureStagesKeepTheirOutcome(t *testing.T) {
+	cases := []struct {
+		name        string
+		noRollback  bool
+		saveFails   bool
+		failReady   int
+		failConnect int
+		message     string
+		calls       int
+		keepsRoute  bool
+	}{
+		{name: "save restored", saveFails: true, message: "保存切换状态失败，已恢复原配置", calls: 2, keepsRoute: true},
+		{name: "save rollback failed", saveFails: true, failConnect: 2, message: "保存切换状态失败，恢复原配置失败", calls: 2},
+		{name: "switch without rollback", noRollback: true, failReady: 1, message: "切换工具失败，原配置已失效；工作区已保留，请重新选择模型重试", calls: 1},
+		{name: "save without rollback", noRollback: true, saveFails: true, message: "保存切换状态失败，原配置已失效；工作区已保留，请重试", calls: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, row, original, target, ops := soloRouteFixture(t)
+			if tc.noRollback {
+				forgetSoloRouteRollback(t, s, row, target)
+			}
+			oldFingerprint, oldHome := row.ModelBindingFingerprint, s.live[row.ID].home
+			ops.failReady, ops.failConnect = tc.failReady, tc.failConnect
+			if tc.saveFails {
+				ops.onConnect = func(call int) {
+					if call == 1 {
+						failSoloSessionSaves(t, s)
+					}
+				}
+			}
+			changed, err := s.AlignSoloModelRoute(context.Background(), row.ID, target)
+			if err == nil || changed || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("changed=%v err=%v, want %q", changed, err, tc.message)
+			}
+			if len(ops.specs) != tc.calls {
+				t.Fatalf("switch calls=%d, want %d", len(ops.specs), tc.calls)
+			}
+			if tc.calls == 2 && ops.specs[1].Env["AGENT_PROVIDER"] != original.AcpBackend {
+				t.Fatalf("rollback applied the wrong tool: %+v", ops.specs[1].Env)
+			}
+			if _, err := os.Stat(ops.specs[0].ConfigHome); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("target config not released: %v", err)
+			}
+			var stored models.Sandbox
+			if err := s.db.First(&stored, row.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			live := s.live[row.ID]
+			if tc.keepsRoute {
+				if stored.ModelBindingFingerprint != oldFingerprint || live.modelBindingFingerprint != oldFingerprint || live.home != oldHome || live.acp == nil {
+					t.Fatalf("restored route lost: stored=%q live=%q home=%q", stored.ModelBindingFingerprint, live.modelBindingFingerprint, live.home)
+				}
+			} else if stored.ModelBindingFingerprint != "" || live.modelBindingFingerprint != "" {
+				t.Fatalf("uncertain route must be invalidated: stored=%q live=%q", stored.ModelBindingFingerprint, live.modelBindingFingerprint)
+			}
+			if live.switching {
+				t.Fatal("switch lock leaked")
+			}
+		})
 	}
 }
 
