@@ -107,13 +107,19 @@ type SoloEnvEntry struct {
 // SoloService runs Solo sessions: one Agent, an optional project, a resident
 // sandbox and a FIFO of chat turns per session.
 type SoloService struct {
-	blobs    blob.Store
-	backups  solobackup.Store
-	db       *gorm.DB
-	sbx      *SandboxService
-	agents   *AgentService
-	projects *ProjectService
-	chat     pmChatter
+	blobs   blob.Store
+	backups solobackup.Store
+	// backupKeep and backupInterval come from SetBackupPolicy. backupTried
+	// spaces out scheduled attempts so a failing archive is not retried every tick.
+	backupKeep     int
+	backupInterval time.Duration
+	backupMu       sync.Mutex
+	backupTried    map[string]time.Time
+	db             *gorm.DB
+	sbx            *SandboxService
+	agents         *AgentService
+	projects       *ProjectService
+	chat           pmChatter
 	// modelAlign overrides the sandbox when tests need to record or fail a
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
@@ -189,6 +195,9 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 	}
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
+	}
+	if err := s.adoptLegacyBackups(); err != nil {
+		log.Error().Err(err).Msg("list existing Solo workspace backups")
 	}
 	// A stop interrupted by the previous process never stopped its sandbox
 	// (or did so last, in which case recovery starts it again).
@@ -569,9 +578,16 @@ func (s *SoloService) onSandboxGone(sandboxID uint) {
 	s.db.Where("sandbox_id = ? AND status IN ?", sandboxID,
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
 	for _, r := range rows {
+		updates := map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"}
+		if s.backups != nil {
+			if _, err := s.restorePoint(r.ID, 0); err == nil {
+				// Resume restores the newest archive into a new sandbox.
+				updates["status"], updates["error"] = models.SoloStatusStopped, "沙箱已不存在，可从工作区备份恢复"
+			}
+		}
 		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status IN ?", r.ID, sandboxID,
 			[]string{models.SoloStatusStarting, models.SoloStatusRunning}).
-			Updates(map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"})
+			Updates(updates)
 		if result.Error != nil || result.RowsAffected == 0 {
 			continue
 		}

@@ -65,6 +65,9 @@ Solo 会话「停止环境」时会先把工作区打包备份，再停止沙箱
 - 默认存放在服务端本地目录 `data/solo-backups`（正式栈位于 `./.localdata/app-data`，与附件一起备份），可用 `GRASP_SOLO_BACKUP_DIR` 修改。
 - 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID`、`GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 后改存 S3 兼容存储；MinIO、COS 等用 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 指定地址，必要时设 `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true`。只填一部分会启动失败。
 - 单个备份默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`），超过时停止失败、会话继续运行。
+- 每个会话滚动保留最近 5 份备份（`GRASP_SOLO_BACKUP_KEEP`），更早的连同存储对象一起删除；关闭或删除会话时删除全部备份。
+- 运行中的会话距上次备份满 6 小时且期间有过对话时，会在当前回复结束后自动备份一次（`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`，设为负数关闭）。已暂停的沙箱不会为备份而唤醒。
+- 恢复时可在「恢复」旁选择备份版本。选最新一份时照常恢复原沙箱；选更早的版本会新建沙箱并还原该版本，之后的改动不保留（较新的备份仍在）。沙箱意外消失时，有备份的会话会变为已停止，点「恢复」即可从最新备份还原。
 
 ## 数据库与附件同生命周期
 

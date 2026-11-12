@@ -15,7 +15,6 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/solobackup"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -67,7 +66,7 @@ func (s *SoloService) Stop(ctx context.Context, id, user string) (*SoloSessionVi
 func (s *SoloService) finishStop(row models.SoloSession) {
 	ctx, cancel := context.WithTimeout(context.Background(), soloStopTimeout)
 	defer cancel()
-	key := fmt.Sprintf("solo/%s/%s.tar.gz", row.ID, uuid.NewString())
+	key := newBackupKey(row.ID)
 	obj, err := s.archiveWorkspace(ctx, row.SandboxID, key)
 	if err == nil {
 		if err = s.sbx.StopSolo(ctx, row.SandboxID); err != nil {
@@ -86,15 +85,10 @@ func (s *SoloService) finishStop(row models.SoloSession) {
 		s.publishStatus(row.ID)
 		return
 	}
-	now := time.Now()
-	s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": models.SoloStatusStopped, "error": "",
-		"backup_store": s.backups.Kind(), "backup_key": key, "backup_sha256": obj.SHA256,
-		"backup_size": obj.Size, "backup_at": &now,
-	})
-	if row.BackupKey != "" && row.BackupKey != key {
-		s.deleteBackup(ctx, row.BackupKey)
+	if err := s.recordBackup(ctx, row.ID, key, obj, models.SoloBackupReasonStop, false); err != nil {
+		log.Warn().Err(err).Str("session", row.ID).Msg("solo stop archive not recorded; the stopped sandbox is still resumable")
 	}
+	s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""})
 	s.appendSystem(row.ID, "会话已停止，工作区已备份")
 	s.publishStatus(row.ID)
 }
@@ -117,13 +111,16 @@ func (s *SoloService) deleteBackup(ctx context.Context, key string) {
 	}
 }
 
-// discardBackup removes the archive of a session that is being closed,
-// deleted or restarted from scratch.
+// discardBackup removes every archive of a session that is being closed or
+// deleted.
 func (s *SoloService) discardBackup(ctx context.Context, row *models.SoloSession) {
-	if row.BackupKey == "" {
+	backups, _ := s.sessionBackups(row.ID)
+	if len(backups) == 0 && row.BackupKey == "" {
 		return
 	}
-	s.deleteBackup(ctx, row.BackupKey)
+	for _, b := range backups {
+		s.removeBackup(ctx, b)
+	}
 	s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
 		"backup_store": "", "backup_key": "", "backup_sha256": "", "backup_size": 0, "backup_at": nil,
 	})
@@ -131,14 +128,23 @@ func (s *SoloService) discardBackup(ctx context.Context, row *models.SoloSession
 
 // Resume starts a stopped session. The original sandbox is started when it
 // still exists (E2B keeps processes; Docker/Kubernetes keep files). Otherwise
-// a new sandbox is created and the workspace restored from the archive.
-func (s *SoloService) Resume(ctx context.Context, id, user string) (*SoloSessionView, error) {
+// a new sandbox is created and the workspace restored from the newest archive.
+// A backupID other than the newest replaces the sandbox with that archive.
+func (s *SoloService) Resume(ctx context.Context, id, user string, backupID uint) (*SoloSessionView, error) {
 	row, err := s.Require(id, user)
 	if err != nil {
 		return nil, err
 	}
 	if row.Status != models.SoloStatusStopped {
 		return nil, soloErr(http.StatusConflict, "session_not_stopped", "会话未停止，无需恢复")
+	}
+	if backupID != 0 {
+		if _, err := s.restorePoint(id, backupID); err != nil {
+			return nil, soloErr(http.StatusNotFound, "backup_not_found", "工作区备份不存在")
+		}
+		if newest, err := s.restorePoint(id, 0); err == nil && newest.ID == backupID {
+			backupID = 0
+		}
 	}
 	if s.sbx == nil || s.agents == nil {
 		return nil, errors.New("solo unavailable")
@@ -159,12 +165,17 @@ func (s *SoloService) Resume(ctx context.Context, id, user string) (*SoloSession
 		return nil, soloErr(http.StatusConflict, "session_not_stopped", "会话未停止，无需恢复")
 	}
 	s.publishStatus(id)
-	go s.finishResume(*row)
+	go s.finishResume(*row, backupID)
 	return s.Get(ctx, id, user)
 }
 
-func (s *SoloService) finishResume(row models.SoloSession) {
+func (s *SoloService) finishResume(row models.SoloSession, backupID uint) {
 	ctx := context.Background()
+	if row.SandboxID != 0 && backupID != 0 {
+		s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("sandbox_id", 0)
+		s.destroySandbox(ctx, row.SandboxID)
+		row.SandboxID = 0
+	}
 	if row.SandboxID != 0 {
 		warm, err := s.sbx.ResumeSolo(ctx, row.SandboxID)
 		if err == nil {
@@ -191,23 +202,28 @@ func (s *SoloService) finishResume(row models.SoloSession) {
 		s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("sandbox_id", 0)
 		s.destroySandbox(ctx, row.SandboxID)
 	}
-	if row.BackupKey == "" || s.backups == nil {
+	backup, err := s.restorePoint(row.ID, backupID)
+	if err != nil || s.backups == nil {
 		s.failResume(row.ID, errors.New("沙箱已不存在，且没有可用的工作区备份"))
 		return
 	}
-	if row.BackupStore != s.backups.Kind() {
-		s.failResume(row.ID, fmt.Errorf("工作区备份保存在 %s 存储，当前配置为 %s", row.BackupStore, s.backups.Kind()))
+	if backup.Store != s.backups.Kind() {
+		s.failResume(row.ID, fmt.Errorf("工作区备份保存在 %s 存储，当前配置为 %s", backup.Store, s.backups.Kind()))
 		return
 	}
 	s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
 		"restarts": row.Restarts + 1, "needs_preamble": s.hasDialogue(row.ID), "sandbox_id": 0,
 	})
 	row.Restarts++
-	if err := s.openSandboxWith(ctx, &row, s.restoreFromBackup(row)); err != nil {
+	if err := s.openSandboxWith(ctx, &row, s.restoreFromBackup(backup)); err != nil {
 		s.failResume(row.ID, err)
 		return
 	}
-	s.appendSystem(row.ID, "原沙箱已不存在，正在新沙箱中从备份恢复工作区；依赖目录（如 node_modules）需重新安装")
+	if backupID != 0 {
+		s.appendSystem(row.ID, "正在新沙箱中从所选备份恢复工作区；依赖目录（如 node_modules）需重新安装")
+	} else {
+		s.appendSystem(row.ID, "原沙箱已不存在，正在新沙箱中从备份恢复工作区；依赖目录（如 node_modules）需重新安装")
+	}
 	s.publishStatus(row.ID)
 }
 
@@ -227,8 +243,8 @@ func (s *SoloService) hasDialogue(id string) bool {
 
 // restoreFromBackup extracts the archive and then checks it is the one the
 // stop recorded. Gzip already rejects corrupted bytes during extraction.
-func (s *SoloService) restoreFromBackup(row models.SoloSession) func(context.Context, *sandbox.Sandbox) error {
-	key, want := row.BackupKey, strings.ToLower(row.BackupSHA256)
+func (s *SoloService) restoreFromBackup(b models.SoloBackup) func(context.Context, *sandbox.Sandbox) error {
+	key, want := b.ObjectKey, strings.ToLower(b.SHA256)
 	return func(ctx context.Context, sb *sandbox.Sandbox) error {
 		rc, err := s.backups.Open(ctx, key)
 		if err != nil {

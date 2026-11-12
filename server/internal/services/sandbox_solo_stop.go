@@ -38,6 +38,16 @@ func (s *SandboxService) SoloSandboxIsLocal(id uint) bool {
 	return live != nil && live.sb != nil && live.sb.IsLocal()
 }
 
+// SoloSandboxRunning reports whether the provider has the sandbox running, so
+// a scheduled backup never wakes a paused one.
+func (s *SandboxService) SoloSandboxRunning(ctx context.Context, id uint) bool {
+	row, err := s.Get(id)
+	if err != nil || s.mgr == nil {
+		return false
+	}
+	return s.mgr.Status(ctx, row.Name) == "running"
+}
+
 // ArchiveSoloWorkspace streams the workspace of a running Solo sandbox.
 func (s *SandboxService) ArchiveSoloWorkspace(ctx context.Context, id uint) (io.ReadCloser, error) {
 	sb, err := s.soloHandle(ctx, id)

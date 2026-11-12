@@ -4947,7 +4947,15 @@
         "text": "Environment stopped and workspace backed up. Resume to continue the conversation.",
         "stopping": "Backing up the workspace and stopping the sandbox…",
         "backup": "Backed up {time} · {size}",
-        "resume": "Resume"
+        "resume": "Resume",
+        "chooseBackup": "Choose the backup to restore",
+        "backupOption": "{time} · {size}",
+        "newest": "Newest",
+        "reason": {
+          "stop": "On stop",
+          "scheduled": "Scheduled"
+        },
+        "olderBackup": "The selected backup is restored into a new sandbox; later changes are lost (newer backups are kept)."
       }
     },
     "projects": {

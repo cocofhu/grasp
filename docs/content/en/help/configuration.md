@@ -65,6 +65,9 @@ Stopping a Solo environment first archives the workspace, then stops the sandbox
 - By default archives are kept on the server in `data/solo-backups` (under `./.localdata/app-data` in the production stack, backed up with attachments). Change it with `GRASP_SOLO_BACKUP_DIR`.
 - Set `GRASP_SOLO_BACKUP_S3_BUCKET`, `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` and `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` to use S3-compatible storage instead. For MinIO, COS and similar services set `GRASP_SOLO_BACKUP_S3_ENDPOINT`, and `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true` if required. A partial configuration fails startup.
 - One archive is capped at 4 GiB by default (`GRASP_SOLO_BACKUP_MAX_BYTES`); a larger workspace cannot stop and the session keeps running.
+- Each session keeps its 5 newest archives (`GRASP_SOLO_BACKUP_KEEP`); older ones are deleted together with their stored objects. Closing or deleting a session deletes all of them.
+- A running session with new conversation since its last archive is archived again after 6 hours, once the current reply has finished (`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`; negative disables). A paused sandbox is not woken for a backup.
+- When resuming you can pick a backup next to Resume. The newest resumes the original sandbox as usual; an older one creates a new sandbox from that archive and later changes are not kept (newer backups remain). If the sandbox disappears, a session with a backup becomes stopped and Resume restores the newest archive.
 
 ## Database and attachment lifecycle
 

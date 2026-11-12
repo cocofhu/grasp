@@ -185,7 +185,7 @@ func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
 		t.Fatalf("stopped session still counts against the quota: %d", n)
 	}
 
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	resumed := f.waitStatus(t, models.SoloStatusRunning)
@@ -199,7 +199,7 @@ func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
 		return f.hasSystem(t, "进程已重新启动")
 	})
 
-	// A second stop replaces the archive.
+	// A second stop adds an archive and keeps the earlier one.
 	f.exec.mu.Lock()
 	f.exec.archive = "workspace-archive-v2"
 	f.exec.mu.Unlock()
@@ -208,14 +208,18 @@ func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
 	if again.BackupKey == stopped.BackupKey {
 		t.Fatal("archive key reused")
 	}
-	if rc, err := f.store.Open(context.Background(), stopped.BackupKey); err == nil {
+	if rc, err := f.store.Open(context.Background(), stopped.BackupKey); err != nil {
+		t.Fatalf("previous archive deleted: %v", err)
+	} else {
 		_ = rc.Close()
-		t.Fatal("previous archive not deleted")
+	}
+	if list, err := f.solo.ListBackups(f.id, "alice"); err != nil || len(list) != 2 || list[0].ObjectKey != again.BackupKey || list[1].Reason != models.SoloBackupReasonStop {
+		t.Fatalf("backups not listed newest first: %+v %v", list, err)
 	}
 
 	// E2B pauses: the process and its CLI session survive.
 	f.fg.Driver = "e2b"
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	warm := f.waitStatus(t, models.SoloStatusRunning)
@@ -229,9 +233,16 @@ func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
 	if _, err := f.solo.Close(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if rc, err := f.store.Open(context.Background(), again.BackupKey); err == nil {
-		_ = rc.Close()
-		t.Fatal("close kept the archive")
+	for _, key := range []string{stopped.BackupKey, again.BackupKey} {
+		if rc, err := f.store.Open(context.Background(), key); err == nil {
+			_ = rc.Close()
+			t.Fatal("close kept an archive")
+		}
+	}
+	var left int64
+	f.db.Model(&models.SoloBackup{}).Where("session_id = ?", f.id).Count(&left)
+	if left != 0 {
+		t.Fatalf("close kept %d backup records", left)
 	}
 	if closed := f.row(t); closed.BackupKey != "" || closed.BackupAt != nil {
 		t.Fatalf("close kept backup fields: %+v", closed)
@@ -244,7 +255,7 @@ func TestSoloResumeRestoresBackupIntoNewSandbox(t *testing.T) {
 	stopped := f.stop(t)
 	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
 
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	restored := f.waitStatus(t, models.SoloStatusRunning)
@@ -269,9 +280,9 @@ func TestSoloRestoreFailureKeepsBackup(t *testing.T) {
 	f := newStopFixture(t)
 	stopped := f.stop(t)
 	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
-	f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("backup_sha256", strings.Repeat("0", 64))
+	f.db.Model(&models.SoloBackup{}).Where("object_key = ?", stopped.BackupKey).Update("sha256", strings.Repeat("0", 64))
 
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "restore failure", func() bool {
@@ -283,11 +294,11 @@ func TestSoloRestoreFailureKeepsBackup(t *testing.T) {
 		t.Fatalf("failed restore must keep the archive and unbind: %+v", failed)
 	}
 
-	f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("backup_sha256", stopped.BackupSHA256)
+	f.db.Model(&models.SoloBackup{}).Where("object_key = ?", stopped.BackupKey).Update("sha256", stopped.BackupSHA256)
 	f.exec.mu.Lock()
 	f.exec.failUntar = true
 	f.exec.mu.Unlock()
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "untar failure", func() bool {
@@ -300,16 +311,16 @@ func TestSoloResumeWithoutBackupOrStore(t *testing.T) {
 	f := newStopFixture(t)
 	stopped := f.stop(t)
 	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
-	f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("backup_store", "s3")
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	f.db.Model(&models.SoloBackup{}).Where("session_id = ?", f.id).Update("store", "s3")
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "store mismatch", func() bool {
 		row := f.row(t)
 		return row.Status == models.SoloStatusStopped && strings.Contains(row.Error, "s3")
 	})
-	f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("backup_key", "")
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+	f.db.Where("session_id = ?", f.id).Delete(&models.SoloBackup{})
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "missing backup", func() bool {
@@ -364,7 +375,7 @@ func TestSoloStopFailuresKeepSandboxRunning(t *testing.T) {
 
 func TestSoloStopResumeGuards(t *testing.T) {
 	f := newStopFixture(t)
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err == nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err == nil {
 		t.Fatal("resumed a running session")
 	} else {
 		wantSoloCode(t, err, "session_not_stopped")
@@ -414,7 +425,7 @@ func TestSoloStopRejectsClosedSessionAndQuota(t *testing.T) {
 	f.sbx.SetMaxSoloSandboxes(1)
 	other := models.Sandbox{Name: "busy", Purpose: SandboxPurposeSolo, Status: "running", ThreadID: "other"}
 	f.db.Create(&other)
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err == nil {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err == nil {
 		t.Fatal("resume ignored the Solo quota")
 	} else {
 		wantSoloCode(t, err, "solo_limit")
@@ -429,7 +440,7 @@ func TestSoloStopRejectsClosedSessionAndQuota(t *testing.T) {
 		wantSoloCode(t, err, "session_not_running")
 	}
 	var se *SoloError
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); !errors.As(err, &se) || se.Status != http.StatusConflict {
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); !errors.As(err, &se) || se.Status != http.StatusConflict {
 		t.Fatalf("resume closed: %v", err)
 	}
 }

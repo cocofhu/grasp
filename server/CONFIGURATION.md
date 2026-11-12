@@ -54,6 +54,8 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_BLOBS_ROOT` | `storage.blobs_root` | path | `data/blobs` | Public | Local attachment blob root directory |
 | `GRASP_SOLO_BACKUP_DIR` | `solo_backup.local_dir` | path | `data/solo-backups` | Public | Directory for stopped Solo workspace archives when S3 is not configured |
 | `GRASP_SOLO_BACKUP_MAX_BYTES` | `solo_backup.max_bytes` | int | `4294967296` | Public | Maximum bytes of one compressed Solo workspace archive; larger workspaces cannot stop |
+| `GRASP_SOLO_BACKUP_KEEP` | `solo_backup.keep` | int | `5` | Public | Workspace archives kept per Solo session, newest first; older ones are deleted |
+| `GRASP_SOLO_BACKUP_INTERVAL_MINUTES` | `solo_backup.interval_minutes` | int | `360` | Public | Archive a running Solo session with new activity once this long has passed since its last archive; negative disables |
 | `GRASP_SOLO_BACKUP_S3_ENDPOINT` | `solo_backup.s3.endpoint` | URL | `Not set` | Public | S3-compatible endpoint origin; empty uses the AWS endpoint for the region |
 | `GRASP_SOLO_BACKUP_S3_REGION` | `solo_backup.s3.region` | string | `us-east-1` | Public | S3 region |
 | `GRASP_SOLO_BACKUP_S3_BUCKET` | `solo_backup.s3.bucket` | string | `Not set` | Public | When set, Solo workspace archives go to this S3 bucket instead of the local directory |

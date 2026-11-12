@@ -125,8 +125,8 @@ type SoloSession struct {
 	NeedsPreamble bool       `json:"-"`
 	LastActiveAt  *time.Time `json:"lastActiveAt,omitempty"`
 	ClosedAt      *time.Time `json:"closedAt,omitempty"`
-	// Backup* describe the workspace archive taken by the last stop. It is
-	// kept until the next stop replaces it or the session is closed.
+	// Backup* mirror the newest SoloBackup, the default restore point. All
+	// archives are deleted when the session is closed or deleted.
 	BackupStore  string     `json:"-"`
 	BackupKey    string     `json:"-"`
 	BackupSHA256 string     `json:"-"`
@@ -134,6 +134,25 @@ type SoloSession struct {
 	BackupAt     *time.Time `json:"backupAt,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
+// Reasons a Solo workspace archive was taken.
+const (
+	SoloBackupReasonStop      = "stop"
+	SoloBackupReasonScheduled = "scheduled"
+)
+
+// SoloBackup is one workspace archive of a Solo session. A session keeps the
+// newest few; older ones are pruned together with their stored objects.
+type SoloBackup struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	SessionID string    `gorm:"index" json:"-"`
+	Store     string    `json:"-"`
+	ObjectKey string    `json:"-"`
+	SHA256    string    `json:"-"`
+	Size      int64     `json:"size"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Reference kinds a Solo user turn may attach.
