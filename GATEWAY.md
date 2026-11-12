@@ -14,6 +14,13 @@ Source layout:
   server ships and serves to sandboxes
 - `sandbox-gateway/deploy/config/config.local.yaml` — local compose config
 
+Deployment guides: [Docker](sandbox-gateway/deploy/docker/README.md),
+[Kubernetes](sandbox-gateway/deploy/k8s/README.md),
+[E2B](sandbox-gateway/deploy/e2b/README.md). They cover configuration injection,
+network access, persistent data, upgrades and acceptance checks. Kubernetes
+includes a complete single-replica example; the older `pods/log` manifests
+are incremental permissions only.
+
 ## Local stack
 
 From the repo root (Linux host with Docker Compose):
@@ -48,12 +55,22 @@ including the existing `/preview/...` path proxy. The dedicated
 callback routing, credentials, leases and recovery. `compose.e2b.yaml` does not
 change either existing startup path.
 
+Private-network egress requires configuration on the E2B provider. A gateway
+that can reach an internal service does not grant its guests the same access.
+For supported self-hosted versions, set `ALLOW_SANDBOX_INTERNAL_CIDRS` on the
+provider's orchestrator, preserving existing entries. See
+[private-network setup and verification](sandbox-gateway/deploy/e2b/README.md#内网访问)
+for the deployment-file location, node-wide scope and rollout checks.
+
 E2B template CPU/memory and minimum initial available workspace capacity must
 match a configured profile; disk capacity is not a resizable PVC or hard quota.
 The gateway Stop/Start operations explicitly pause/resume with memory; provider
-routing must pass readiness again. Automatic pause/resume is disabled. Grasp
-Stop still destroys its sandbox. Reinstall with `preserveData=true` reports an
-unsupported operation; snapshot migration is outside this gateway contract.
+routing must pass readiness again. Newly created guests default to provider
+auto-pause on lease expiry (`e2b.autoPause`); existing guests keep their creation
+policy. Provider auto-resume remains disabled; Grasp explicitly resumes paused
+Solo sandboxes on next use. Grasp Stop still destroys its sandbox. Reinstall
+with `preserveData=true` reports an unsupported operation; snapshot migration
+is outside this gateway contract.
 
 ## Gateway transport and multiple deployments
 

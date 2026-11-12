@@ -145,13 +145,15 @@ Service configuration precedence: environment variables > mounted config file > 
 
 ## Deployment notes
 
+- **Docker:** follow the [deployment guide](sandbox-gateway/deploy/docker/README.md) for production Compose overrides, authentication, sandbox callbacks and backups.
+- **Kubernetes:** use the [deployment guide and manifests](sandbox-gateway/deploy/k8s/README.md) for namespaces, RBAC, Secrets, PVCs, services and ingress. The example uses gateway transport with ClusterIP sandboxes; a per-sandbox LoadBalancer is optional.
 - **E2B (third sandbox deployment):** use the independent [E2B deployment guide](sandbox-gateway/deploy/e2b/README.md) and `compose.e2b.yaml` for E2B Cloud or a compatible self-hosted control plane. It requires prepared environment templates and persistent gateway state. Existing Docker and Kubernetes deployments keep their defaults.
 
 - Store API keys and Git credentials only in the workspace credentials settings; never commit them to the repository.
 - Pin images by digest in production; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
 - Preserve the original `Host` header, including a non-default port, behind a reverse proxy (e.g. nginx `proxy_set_header Host $http_host`). Temporary approval share links and the origin check for signed-in requests use it. See [SECURITY.md](SECURITY.md).
 - Workspace pages cannot be embedded in an iframe. To embed them in a portal, list its origin in `GRASP_FRAME_ANCESTORS`; see [CONFIGURATION.md](server/CONFIGURATION.md).
-- SQLite (`./.localdata/db`) and attachments (`./.localdata/app-data`) are mounted separately. Back them up and clean them up together so existing runs do not end up with broken `blob:` references.
+- Back up SQLite (`./.localdata/db`), attachments (`./.localdata/app-data`), gateway state (`./.localdata/gateway`) and the original `GRASP_SECRETS_KEY`/deployment configuration together. The key is in `.env` for `start.sh` deployments. Sandbox workspaces require separate backups; they are not stored in these application data directories.
 
 ## Docs
 

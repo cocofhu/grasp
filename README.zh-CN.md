@@ -145,13 +145,15 @@ flowchart LR
 
 ## 部署注意事项
 
-- **E2B（第三种沙箱部署方式）**：按 [E2B 部署指南](sandbox-gateway/deploy/e2b/README.md) 使用独立的 `compose.e2b.yaml`，连接 E2B Cloud 或兼容的自托管控制面。需要预制环境模板、持久化网关状态和独立的预览泛域名；现有 Docker、Kubernetes 部署保持默认行为。
+- **Docker**：按 [部署指南](sandbox-gateway/deploy/docker/README.md) 配置生产 Compose 覆盖、鉴权、沙箱回连与备份。
+- **Kubernetes**：按 [部署指南及完整示例](sandbox-gateway/deploy/k8s/README.md) 配置命名空间、RBAC、Secret、PVC、Service 和 Ingress。示例通过 gateway transport 访问 ClusterIP 沙箱，不必为每个沙箱配置 LoadBalancer。
+- **E2B（第三种沙箱部署方式）**：按 [E2B 部署指南](sandbox-gateway/deploy/e2b/README.md) 使用独立的 `compose.e2b.yaml`，连接 E2B Cloud 或兼容的自托管控制面。需要预制环境模板和持久化网关状态；预览使用 Grasp 路径代理，无需独立泛域名。
 
 - API Key 与 Git 凭据请仅在工作区凭据设置配置，切勿提交到代码仓库。
 - 生产环境建议通过 digest 固定镜像版本，参见 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
 - 使用反向代理时需保留原始 `Host` 请求头，非默认端口也要保留（例如 nginx 配置 `proxy_set_header Host $http_host`）。临时审批链接和登录请求的来源校验都依赖该字段，详见 [SECURITY.md](SECURITY.md)。
 - 工作区页面默认禁止被 iframe 嵌入。需要嵌入门户时，把门户来源写进 `GRASP_FRAME_ANCESTORS`，详见 [CONFIGURATION.md](server/CONFIGURATION.md)。
-- SQLite 数据库（`./.localdata/db`）与附件目录（`./.localdata/app-data`）分别挂载，备份与清理时需同步处理，否则已有运行记录中的 `blob:` 附件引用会返回 404。
+- 成套备份 SQLite（`./.localdata/db`）、附件（`./.localdata/app-data`）、gateway 状态（`./.localdata/gateway`）和原 `GRASP_SECRETS_KEY`/部署配置。`start.sh` 部署的密钥在 `.env` 中。沙箱工作目录不在这些应用数据目录内，需单独备份。
 
 ## 文档
 

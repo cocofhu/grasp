@@ -1,0 +1,17 @@
+# Merge AFTER compose.release.yaml, from the repository root.
+# Copy and customize outside the repository; see README.md for the env file.
+services:
+  gateway:
+    environment:
+      SBGW_LISTEN: "127.0.0.1:${GRASP_GATEWAY_PORT:-8899}"
+      SBGW_API_KEYS: ${SANDBOX_GATEWAY_API_KEY:?set a private gateway key}
+      SBGW_DOCKER_BIND_IP: "127.0.0.1"
+  grasp:
+    environment:
+      GRASP_DEPLOYMENT_MODE: production
+      GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:?set your own bcrypt accounts}
+      GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:?set and back up a stable encryption key}
+      GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY:?set a private gateway key}
+      GRASP_SANDBOX_GATEWAY_TRANSPORT: gateway
+      GRASP_PUBLIC_ADVERTISE: ${GRASP_PUBLIC_ADVERTISE:?set the browser-facing URL}
+      GRASP_MCP_ADVERTISE: ${GRASP_MCP_ADVERTISE:?set a URL reachable from sandboxes}
