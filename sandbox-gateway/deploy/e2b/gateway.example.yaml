@@ -28,6 +28,9 @@ e2b:
   bootTimeoutSeconds: 600
   leaseSeconds: 3600
   renewIntervalSeconds: 300
+  # Pause with a memory snapshot instead of kill when a guest reaches its lease
+  # or the provider's maximum sandbox length (SBGW_E2B_AUTO_PAUSE).
+  autoPause: true
   templates:
     - image: universal-sandbox:e2b
       templateID: replace-with-resolved-template-id

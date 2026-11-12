@@ -203,6 +203,50 @@ func (s *SandboxService) RunSoloRecovery(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.RecoverSoloSandboxes(ctx)
+			s.ReleaseVanishedSoloSandboxes(ctx)
 		}
 	}
+}
+
+// ReleaseVanishedSoloSandboxes checks residents still recorded as running. A
+// provider can kill an idle guest on expiry without telling Grasp; a confirmed
+// absence is released like any missing resident so the session reports it. A
+// guest the provider paused is left for EnsureSoloRunning on its next use.
+func (s *SandboxService) ReleaseVanishedSoloSandboxes(ctx context.Context) {
+	var rows []models.Sandbox
+	if err := s.db.Where("purpose = ? AND status = ?", SandboxPurposeSolo, "running").Find(&rows).Error; err != nil {
+		return
+	}
+	for i := range rows {
+		if ctx.Err() != nil {
+			return
+		}
+		s.releaseIfVanished(ctx, &rows[i])
+	}
+}
+
+func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sandbox) {
+	if s.soloSessionClosed(row) || s.soloSessionStopped(row) {
+		return
+	}
+	s.mu.Lock()
+	live := s.live[row.ID]
+	local := live != nil && live.sb != nil && live.sb.IsLocal()
+	s.mu.Unlock()
+	if local {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)
+	defer cancel()
+	unlock, err := s.lockSoloRecovery(ctx, row.ID)
+	if err != nil {
+		return
+	}
+	defer unlock()
+	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	if err != nil || status != "not_found" {
+		return
+	}
+	log.Warn().Uint("sandbox", row.ID).Str("name", row.Name).Msg("solo sandbox no longer exists at the provider; releasing it")
+	s.destroyLocalSandbox(ctx, row)
 }

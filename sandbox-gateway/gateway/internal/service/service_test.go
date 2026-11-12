@@ -664,6 +664,55 @@ func TestStatusPassthrough(t *testing.T) {
 	}
 }
 
+func TestStatusRecordsProviderSideChanges(t *testing.T) {
+	svc, drv, st := testService(t)
+	sb, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSvcRunning(t, svc, sb.ID)
+	stored := func() *models.Sandbox {
+		t.Helper()
+		got, err := st.Get(context.Background(), sb.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	// The provider pauses the guest on expiry without a gateway Stop.
+	if err := drv.Stop(context.Background(), sb.ID); err != nil {
+		t.Fatal(err)
+	}
+	if live, err := svc.Status(context.Background(), sb.ID); err != nil || live != driver.StatusStopped {
+		t.Fatalf("status %s: %v", live, err)
+	}
+	if got := stored(); got.Status != models.StatusStopped {
+		t.Fatalf("stored status %q after provider pause", got.Status)
+	}
+
+	if err := drv.Start(context.Background(), sb.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Status(context.Background(), sb.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(); got.Status != models.StatusRunning {
+		t.Fatalf("stored status %q after resume", got.Status)
+	}
+
+	// The provider kills the guest; the record stays but reports the loss.
+	if err := drv.Destroy(context.Background(), sb.ID); err != nil {
+		t.Fatal(err)
+	}
+	if live, err := svc.Status(context.Background(), sb.ID); err != nil || live != driver.StatusNotFound {
+		t.Fatalf("status %s: %v", live, err)
+	}
+	if got := stored(); got.Status != models.StatusError || got.Error == "" {
+		t.Fatalf("stored status %q error %q after provider kill", got.Status, got.Error)
+	}
+}
+
 func TestNewDefaultSessionPort(t *testing.T) {
 	svc, drv, st := testService(t)
 	_ = svc

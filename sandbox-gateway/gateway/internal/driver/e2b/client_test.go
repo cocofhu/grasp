@@ -106,6 +106,22 @@ func TestCreatePrivateSandboxOfficialWireContract(t *testing.T) {
 	}
 }
 
+func TestCreateSendsAutoPause(t *testing.T) {
+	client, _ := newControlTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["autoPause"] != true {
+			t.Error("create did not request pause-on-timeout")
+		}
+		writeControlSandbox(w, http.StatusCreated, "sandbox-a")
+	})
+	if _, err := client.Create(t.Context(), CreateOptions{TemplateID: "team/full:default", TimeoutSeconds: 600, AutoPause: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateMissingPrivateCredentialsReturnsPartialIdentity(t *testing.T) {
 	for _, missing := range []string{"envdAccessToken", "trafficAccessToken", "envdVersion"} {
 		t.Run(missing, func(t *testing.T) {

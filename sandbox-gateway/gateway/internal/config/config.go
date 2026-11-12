@@ -169,16 +169,19 @@ type DockerConfig struct {
 // CPU and memory belong to the template, not the create request. Templates are
 // explicit YAML configuration; there is no inferred or public base-template fallback.
 type E2BConfig struct {
-	APIURL               string              `yaml:"apiURL"`
-	SandboxURL           string              `yaml:"sandboxURL"`
-	Domain               string              `yaml:"domain"`
-	APIKey               string              `yaml:"apiKey" json:"-"`
-	OwnerID              string              `yaml:"ownerID"`
-	StateDir             string              `yaml:"stateDir"`
-	BootTimeoutSeconds   int                 `yaml:"bootTimeoutSeconds"`
-	LeaseSeconds         int                 `yaml:"leaseSeconds"`
-	RenewIntervalSeconds int                 `yaml:"renewIntervalSeconds"`
-	Templates            []E2BTemplateConfig `yaml:"templates"`
+	APIURL               string `yaml:"apiURL"`
+	SandboxURL           string `yaml:"sandboxURL"`
+	Domain               string `yaml:"domain"`
+	APIKey               string `yaml:"apiKey" json:"-"`
+	OwnerID              string `yaml:"ownerID"`
+	StateDir             string `yaml:"stateDir"`
+	BootTimeoutSeconds   int    `yaml:"bootTimeoutSeconds"`
+	LeaseSeconds         int    `yaml:"leaseSeconds"`
+	RenewIntervalSeconds int    `yaml:"renewIntervalSeconds"`
+	// AutoPause makes the provider pause with a memory snapshot, instead of
+	// kill, when a guest reaches its lease or the provider's maximum lifetime.
+	AutoPause bool                `yaml:"autoPause"`
+	Templates []E2BTemplateConfig `yaml:"templates"`
 }
 
 type E2BTemplateConfig struct {
@@ -402,6 +405,7 @@ func Default() *Config {
 			BootTimeoutSeconds:   600,
 			LeaseSeconds:         3600,
 			RenewIntervalSeconds: 300,
+			AutoPause:            true,
 		},
 		K8s: K8sConfig{
 			Namespace:          "sandboxes",
@@ -662,6 +666,9 @@ func applyEnv(c *Config) {
 				*destination = 0 // validateE2B rejects malformed E2B duration overrides.
 			}
 		}
+	}
+	if v := os.Getenv("SBGW_E2B_AUTO_PAUSE"); v != "" {
+		c.E2B.AutoPause = parseBool(v, c.E2B.AutoPause)
 	}
 	// Kubernetes
 	if v := os.Getenv("SBGW_K8S_IN_CLUSTER"); v != "" {

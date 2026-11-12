@@ -47,6 +47,9 @@ type lifecycleProvider struct {
 	partialCreate                                                                                                               bool
 	logs                                                                                                                        string
 	beforeRequest                                                                                                               func(*http.Request)
+	// maxEndAt caps renewals like E2B's per-team maximum sandbox length.
+	maxEndAt  time.Time
+	autoPause bool
 }
 
 func newLifecycleProvider(t *testing.T) *lifecycleProvider {
@@ -69,12 +72,14 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			TemplateID string            `json:"templateID"`
 			Metadata   map[string]string `json:"metadata"`
 			EnvVars    map[string]string `json:"envVars"`
+			AutoPause  bool              `json:"autoPause"`
 		}
 		if json.NewDecoder(r.Body).Decode(&request) != nil {
 			w.WriteHeader(400)
 			return
 		}
 		f.created++
+		f.autoPause = request.AutoPause
 		id := fmt.Sprintf("guest-%d", f.created)
 		s := &sandboxWire{ID: id, TemplateID: request.TemplateID, EnvdVersion: "0.4.6", EnvdAccessToken: "envd-secret", TrafficAccessToken: "traffic-secret", Metadata: request.Metadata, CPUCount: 2, MemoryMB: 3072, State: "running", StartedAt: time.Now().UTC()}
 		f.sandboxes[id] = s
@@ -159,6 +164,15 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			f.connected++
 			_ = json.NewEncoder(w).Encode(s)
 		case "timeout":
+			var body struct {
+				Timeout int `json:"timeout"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			end := time.Now().UTC().Add(time.Duration(body.Timeout) * time.Second)
+			if !f.maxEndAt.IsZero() && end.After(f.maxEndAt) {
+				end = f.maxEndAt
+			}
+			s.EndAt = end
 			f.renewed++
 			w.WriteHeader(204)
 		default:

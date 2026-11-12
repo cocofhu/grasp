@@ -772,12 +772,19 @@ func normalizeGWStatus(s string) string {
 }
 
 // Status returns "running", "exited", "creating", "not_found", … for a sandbox.
+// A failed probe is "unknown"; only a gateway without the record is "not_found".
 func (m *Manager) Status(ctx context.Context, id string) string {
-	st, err := m.ProbeStatus(ctx, id)
-	if err != nil {
+	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return "not_found"
 	}
-	return st
+	st, err := m.ProbeStatus(ctx, id)
+	if err == nil {
+		return st
+	}
+	if GatewayRecordMissing(err) {
+		return "not_found"
+	}
+	return "unknown"
 }
 
 // ProbeStatus preserves observation errors. Lifecycle decisions must use this

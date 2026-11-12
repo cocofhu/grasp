@@ -101,6 +101,7 @@ func (s sandboxWire) sandbox() Sandbox {
 type CreateOptions struct {
 	TemplateID     string
 	TimeoutSeconds int
+	AutoPause      bool
 	EnvVars        map[string]string
 	Metadata       map[string]string
 }
@@ -195,7 +196,7 @@ func (c *Client) Create(ctx context.Context, opts CreateOptions) (*Sandbox, erro
 		Network             map[string]bool   `json:"network"`
 		EnvVars             map[string]string `json:"envVars"`
 		Metadata            map[string]string `json:"metadata"`
-	}{opts.TemplateID, opts.TimeoutSeconds, true, false, map[string]bool{"enabled": false},
+	}{opts.TemplateID, opts.TimeoutSeconds, true, opts.AutoPause, map[string]bool{"enabled": false},
 		true, map[string]bool{"allowPublicTraffic": false}, opts.EnvVars, opts.Metadata}
 	var wire sandboxWire
 	_, err := c.control(ctx, "create", http.MethodPost, "/sandboxes", nil, body, &wire, http.StatusCreated)

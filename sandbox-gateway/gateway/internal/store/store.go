@@ -37,6 +37,15 @@ func (s *Store) Save(ctx context.Context, sb *models.Sandbox) error {
 	return s.sess(ctx).Save(sb).Error
 }
 
+// TransitionStatus sets status and error only while the record still has the
+// status from, so a concurrent lifecycle write or delete wins. It reports
+// whether the record changed.
+func (s *Store) TransitionStatus(ctx context.Context, id, from, to, reason string) (bool, error) {
+	res := s.sess(ctx).Model(&models.Sandbox{}).Where("id = ? AND status = ?", id, from).
+		Updates(map[string]any{"status": to, "error": reason})
+	return res.RowsAffected > 0, res.Error
+}
+
 // Get returns a sandbox by id.
 func (s *Store) Get(ctx context.Context, id string) (*models.Sandbox, error) {
 	var sb models.Sandbox

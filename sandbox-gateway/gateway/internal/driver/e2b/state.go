@@ -38,6 +38,9 @@ type entry struct {
 	statusAt time.Time
 	status   driver.Status
 	record   record
+	// leaseCapAt is the capped provider expiry last reported, so each cap is
+	// logged once rather than on every renewal.
+	leaseCapAt time.Time
 	// cancel is protected by Driver.mu so Destroy can interrupt bootstrap
 	// before waiting for the entry's lifecycle lock.
 	cancel func()
