@@ -30,6 +30,27 @@ func (s *SoloService) CurrentArtifactTurn(runID, nodeID string) (ArtifactTurn, e
 	return ArtifactTurn{SessionID: sb.ThreadID, TurnID: v.Active.ID, SandboxID: sb.ID}, nil
 }
 
+// soloAskRunID is the MCP run namespace of a Solo sandbox ("" when unknown).
+func (s *SoloService) soloAskRunID(sandboxID uint) string {
+	if s.sbx == nil || s.sbx.host == nil || sandboxID == 0 {
+		return ""
+	}
+	sb, err := s.sbx.Get(sandboxID)
+	if err != nil {
+		return ""
+	}
+	return sb.RunID
+}
+
+// takeSoloAsks returns and clears what the Agent raised through ask_question
+// and ask_form on the Solo node.
+func (s *SoloService) takeSoloAsks(runID string) ([]models.ReactQuestion, []models.ReactForm) {
+	if runID == "" {
+		return nil, nil
+	}
+	return s.sbx.host.TakePendingQuestions(runID, "solo"), s.sbx.host.TakePendingForms(runID, "solo")
+}
+
 func (s *SoloService) ArtifactDelivered(_, _ string, turn ArtifactTurn, file models.ArtifactAttachment) {
 	if c := s.lookup(turn.SessionID); c != nil {
 		c.stream.Session("artifact", map[string]any{"userMsgId": turn.TurnID, "file": file}, chatsession.KeepAppend)

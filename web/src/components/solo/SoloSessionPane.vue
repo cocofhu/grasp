@@ -25,6 +25,7 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
+import SoloAskCard from './SoloAskCard.vue'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
@@ -273,6 +274,19 @@ async function send() {
   scrollDown(true)
 }
 
+// --- ask_question / ask_form ------------------------------------------------
+/** The latest reply, when it ended with questions and nothing was sent after it. */
+const askTurnId = computed(() => {
+  const last = turns.value[turns.value.length - 1]
+  return last?.role === 'agent' && !last.streaming && (last.questions?.length || last.forms?.length) && !queued.value.length ? last.id : ''
+})
+async function answerAsk(text: string) {
+  if (!canSend.value || selectionInvalid.value) return
+  followBottom.value = true
+  await chat.send(text)
+  scrollDown(true)
+}
+
 // --- queue ------------------------------------------------------------------
 const queueRows = computed<PendingQueueRow[]>(() =>
   displayQueued.value.map((q) => ({ id: q.id, ...readPreviewMessage(q.text, q.annotations), images: q.images, locked: !!q.local })),
@@ -509,6 +523,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 message-test-id="solo-agent-message"
               />
               <ArtifactFileAttachments :files="turn.files" />
+              <SoloAskCard
+                v-if="turn.id === askTurnId"
+                :questions="turn.questions"
+                :forms="turn.forms"
+                :disabled="!canSend || selectionInvalid"
+                @answer="answerAsk"
+              />
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
                 <div v-for="(p, pi) in turn.plan" :key="pi" class="flex items-center gap-2 text-txt2">

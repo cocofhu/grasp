@@ -36,6 +36,7 @@ const box = vi.hoisted(() => ({
   actionError: undefined as undefined | import('vue').Ref<string>,
   setCurrentModel: undefined as undefined | ReturnType<typeof vi.fn>,
   stop: vi.fn(async () => true),
+  send: vi.fn(async () => true),
   resumeSoloSession: vi.fn(),
   load: vi.fn(),
 }))
@@ -78,7 +79,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     setCurrentReasoningEffort: (...args: unknown[]) => box.setCurrentReasoningEffort?.(...args),
     load: box.load,
     stop: box.stop,
-    send: vi.fn(),
+    send: (...args: unknown[]) => box.send(...args),
     setCurrentModel: (...args: unknown[]) => box.setCurrentModel?.(...args),
     removeQueued: vi.fn(),
   }),
@@ -136,6 +137,40 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('shows the question card only on the latest reply and sends the choice as a message', async () => {
+    const question = { id: 'q1', prompt: '用哪个?', options: [{ id: 'a', label: 'A', recommended: true }, { id: 'b', label: 'B' }] }
+    const earlier = { ...turn('a:a0', 'agent', 'old'), questions: [question] }
+    const latest = { ...turn('a:a1', 'agent', 'pick'), questions: [question] }
+    turns.value = [turn('u:u0', 'user', 'hi'), earlier, turn('u:u1', 'user', 'again'), latest]
+    box.send.mockClear()
+    resetCliCatalog()
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockResolvedValueOnce([
+      { name: 'Coder', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'c1' } },
+    ] as never)
+    vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({
+      items: [{ id: 'c1', name: 'cfg', backend: 'cursor', state: 'active', revision: 1, binding: { kind: 'platform', credentialId: 'k', modelId: 'primary' } }],
+    })
+    vi.mocked(api.cliModels).mockResolvedValueOnce({ models: [{ id: 'primary', name: 'Primary', vendor: 'cursor' }] } as never)
+    currentModelId.value = 'primary'
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="solo-ask-card"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="solo-ask-submit"]').attributes('disabled')).toBeUndefined()
+      await wrapper.get('[data-testid="solo-ask-submit"]').trigger('click')
+      expect(box.send).toHaveBeenCalledWith('我的选择:\n- 用哪个? → A')
+      turns.value = [...turns.value, turn('u:u2', 'user', '我的选择:\n- 用哪个? → A')]
+      await flushPromises()
+      expect(wrapper.find('[data-testid="solo-ask-card"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      turns.value = []
+      currentModelId.value = ''
+      resetCliCatalog()
+    }
+  })
+
   it('passes only the current sandbox generation’s preview resources to the stage', async () => {
     const initial = sessionState.value
     let finishOld!: (value: SoloResources) => void

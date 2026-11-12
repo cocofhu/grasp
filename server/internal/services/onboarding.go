@@ -406,8 +406,11 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 			AcpBackend:   configuration.Backend,
 			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)},
 			GitBindings:  gitBindings,
-			Files:        []AgentFile{{Path: "AGENTS.md", Content: loc.SoloAgentsMD}},
-			Env:          map[string]string{},
+			Capabilities: &models.AgentCapabilities{Interaction: models.InteractionAuto, Tools: []string{
+				models.ToolAskQuestion, models.ToolAskForm, models.ToolSetArtifactPreview, models.ToolSetPreview,
+			}},
+			Files: []AgentFile{{Path: "AGENTS.md", Content: loc.SoloAgentsMD}},
+			Env:   map[string]string{},
 			Layout: AgentLayout{
 				ConfigRoot:   DefaultConfigRootForBackend(configuration.Backend),
 				WorkspaceDir: DefaultWorkspaceDir,

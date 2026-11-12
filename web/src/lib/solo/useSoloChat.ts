@@ -342,6 +342,10 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           }
           agent.files = files
         }
+        if (saved?.role === 'agent') {
+          if (saved.questions?.length) agent.questions = saved.questions
+          if (saved.forms?.length) agent.forms = saved.forms
+        }
         if (history[index + 1]?.role === 'agent') history.splice(index + 1, 1, agent)
         else history.splice(index + 1, 0, agent)
       }

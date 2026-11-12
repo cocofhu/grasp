@@ -1855,9 +1855,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 
 	var usage *models.TokenUsage
 	var byModel models.TokenUsageByModel
+	askRunID := s.soloAskRunID(sandboxID)
+	s.takeSoloAsks(askRunID)
 	if err == nil {
 		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, c.onAcp)
 	}
+	questions, forms := s.takeSoloAsks(askRunID)
 
 	c.mu.Lock()
 	text := strings.TrimSpace(c.text.String())
@@ -1875,6 +1878,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	reply := models.SoloMessage{
 		ID: "reply:" + q.ID, TurnID: q.ID, SessionID: c.id, Role: "assistant", Content: text, Events: events,
 		Status: status, Error: errText, Usage: usage, UsageByModel: byModel,
+		Questions: questions, Forms: forms,
 		Execution:  execution,
 		DurationMs: time.Since(started).Milliseconds(),
 	}
@@ -1885,10 +1889,10 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	for _, file := range deliveries {
 		reply.Files = append(reply.Files, file.ArtifactAttachment)
 	}
-	if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 {
+	if text != "" || len(events) > 0 || err != nil || len(reply.Files) > 0 || len(questions) > 0 || len(forms) > 0 {
 		// Delivery owns the placeholder's files. A tool may finish between the
 		// delivery query above and this upsert; never overwrite its attachments.
-		if perr := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
+		if perr := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"content", "events", "questions", "forms", "status", "error", "usage", "usage_by_model", "execution", "duration_ms", "turn_id"})}).Create(&reply).Error; perr != nil {
 			log.Warn().Err(perr).Str("session", c.id).Msg("solo reply persist failed")
 		}
 	}
