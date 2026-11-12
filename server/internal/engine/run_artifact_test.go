@@ -232,7 +232,7 @@ func TestSaveRunArtifactRejectsReadonlyNames(t *testing.T) {
 	}
 	for name, code := range map[string]string{
 		"shot.png":                    ArtifactEditCodeInvalid,
-		mcp.FeedbackIndexArtifactName: ArtifactEditCodeInvalid,
+		mcp.FeedbackIndexArtifactName: ArtifactEditCodeNotFound,
 		"../etc/passwd":               ArtifactEditCodeInvalid,
 		"plan.json#iter-1":            ArtifactEditCodeInvalid,
 		"missing.md":                  ArtifactEditCodeNotFound,

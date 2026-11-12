@@ -184,8 +184,6 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 	}
 	e.recordAudit(rec)
 
-	e.recordGateFeedback(c, node, gate, action, form, reviewer, opts)
-
 	if e.shareRevoker != nil && node.Type == "human_gate" {
 		e.shareRevoker.RevokeUnusedForGate(runID, nodeID, gate.Iteration)
 	}
@@ -321,8 +319,6 @@ func (e *Engine) snapshotPreviewIssues(c *execCtx, runID, nodeID string) error {
 	e.persistVar(runID, "preview_issues", value)
 	c.setVar("preview_issues_count", len(issues))
 	e.persistVar(runID, "preview_issues_count", len(issues))
-
-	e.recordPreviewFeedback(c, nodeID, issues)
 
 	// Snapshot succeeded — close the lifecycle for this node's open issues.
 	return e.markPreviewIssuesResolvedByNode(runID, nodeID)
@@ -573,11 +569,6 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	}
 
 	logDB(e.db.Save(&conv), runID, "finish react conversation")
-
-	// Force wrap-up stays on this synchronous path, so its confirm round is
-	// recorded here rather than in the FIFO pump.
-	e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindClarify,
-		conv.Iteration, humanMsg, agentMsg))
 
 	r := e.finishNode(c, node, nodeOutcome{status: "completed", result: &t.Result},
 		finishOpts{trigger: triggerConfirm, retire: true, conv: &conv, resumeDetail: "react 完成"})

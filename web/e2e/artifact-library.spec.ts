@@ -7,7 +7,7 @@ for (const theme of ['light', 'dark']) for (const width of [1440, 1024, 768, 390
     await page.setViewportSize({ width, height: 900 })
     await page.goto(`/workspace.html?view=/artifacts&theme=${theme}`)
     const rows = page.getByTestId('artifact-list-row')
-    await expect(rows).toHaveCount(24)
+    await expect(rows).toHaveCount(23)
     await expect(page.getByTestId('artifacts-tree-pane')).toHaveCount(0)
     if (width === 1440) {
       await expect(page.getByTestId('artifact-preview-identity-bar')).toBeVisible()
@@ -21,7 +21,7 @@ for (const theme of ['light', 'dark']) for (const width of [1440, 1024, 768, 390
       await expect(button).toBeVisible()
       expect(await button.evaluate(el => { const b = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)) })).toBe(true)
       await page.getByTestId('artifacts-mobile-back').click()
-      await expect(rows).toHaveCount(24)
+      await expect(rows).toHaveCount(23)
     }
     await page.getByTestId('artifacts-tree-toggle').click()
     const dialog = page.getByRole('dialog', { name: '筛选来源' })
@@ -52,7 +52,7 @@ test('source chooser supports Escape, empty search and session sources', async (
   await expect(page.getByTestId('artifact-list-row')).toHaveCount(2)
   await expect(page.getByTestId('artifacts-breadcrumb')).toContainText('Agent 会话产物')
   await page.getByTestId('artifacts-crumb-root').click()
-  await expect(page.getByTestId('artifact-list-row')).toHaveCount(24)
+  await expect(page.getByTestId('artifact-list-row')).toHaveCount(23)
 })
 
 test('search restores files and deletion refreshes counts and preview', async ({ page }) => {
@@ -63,11 +63,11 @@ test('search restores files and deletion refreshes counts and preview', async ({
   await expect(page.getByTestId('artifact-list-row')).toHaveCount(0)
   await expect(page.getByTestId('artifacts-list-pane')).toContainText('无匹配产物')
   await search.fill('')
-  await expect(page.getByTestId('artifact-list-row')).toHaveCount(24)
+  await expect(page.getByTestId('artifact-list-row')).toHaveCount(23)
   await page.getByTestId('artifact-preview-delete').click()
   await page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true }).click()
-  await expect(page.getByTestId('artifacts-total')).toHaveText('23 个文件')
-  await expect(page.getByTestId('artifact-list-row')).toHaveCount(23)
+  await expect(page.getByTestId('artifacts-total')).toHaveText('22 个文件')
+  await expect(page.getByTestId('artifact-list-row')).toHaveCount(22)
   await expect(page.getByTestId('artifact-preview-identity-bar')).toContainText('评审结论')
   await page.getByTestId('artifact-preview-mode-raw').click()
   await expect(page.getByTestId('artifact-preview-raw-json')).toContainText('审批交互已通过回归测试。')
@@ -81,6 +81,6 @@ for (const state of ['empty', 'fail']) test(`artifact ${state} state is distinct
   } else {
     await expect(page.getByTestId('artifacts-load-failed')).toBeVisible()
     await page.getByTestId('artifacts-retry').click()
-    await expect(page.getByTestId('artifact-list-row')).toHaveCount(24)
+    await expect(page.getByTestId('artifact-list-row')).toHaveCount(23)
   }
 })

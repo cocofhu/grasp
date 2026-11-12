@@ -23,6 +23,17 @@ var (
 	ErrArtifactRunNotTerminal = errors.New("cannot delete artifact: owning run has not ended")
 )
 
+// visibleArtifactName reports whether a stored name is a product callers may
+// list, search, or read. Historical feedback-ledger files stay in the table
+// and are treated as absent.
+func visibleArtifactName(name string) bool {
+	return !mcp.IsFeedbackArtifactName(name)
+}
+
+func excludeHiddenArtifacts(db *gorm.DB, column string) *gorm.DB {
+	return db.Where(column+" <> ? AND "+column+" NOT LIKE ?", mcp.FeedbackIndexArtifactName, mcp.FeedbackArtifactPrefix+"%")
+}
+
 func escapeLikePattern(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `%`, `\%`)
@@ -123,6 +134,9 @@ func (s *ArtifactService) save(runID, nodeID, name, kind, content string) (strin
 
 // GetRecord returns the full artifact row for a run+name lookup.
 func (s *ArtifactService) GetRecord(runID, name string) (models.Artifact, bool) {
+	if !visibleArtifactName(name) {
+		return models.Artifact{}, false
+	}
 	var a models.Artifact
 	if err := s.db.Where("run_id = ? AND name = ?", runID, name).First(&a).Error; err != nil {
 		return models.Artifact{}, false
@@ -143,7 +157,7 @@ func (s *ArtifactService) Get(runID, name string) (string, bool) {
 // Revision, which is how a later execution detects its own write.
 func (s *ArtifactService) Stamps(runID string) []mcp.ArtifactStamp {
 	var arts []models.Artifact
-	s.db.Select("name", "node_id", "revision").Where("run_id = ?", runID).Find(&arts)
+	excludeHiddenArtifacts(s.db.Select("name", "node_id", "revision").Where("run_id = ?", runID), "name").Find(&arts)
 	out := make([]mcp.ArtifactStamp, 0, len(arts))
 	for _, a := range arts {
 		out = append(out, mcp.ArtifactStamp{Name: a.Name, Node: a.NodeID, Revision: a.Revision})
@@ -154,7 +168,7 @@ func (s *ArtifactService) Stamps(runID string) []mcp.ArtifactStamp {
 // List returns the run's artifact metadata (scoped to the run only).
 func (s *ArtifactService) List(runID string) []mcp.ArtifactInfo {
 	var arts []models.Artifact
-	s.db.Where("run_id = ?", runID).Find(&arts)
+	excludeHiddenArtifacts(s.db.Where("run_id = ?", runID), "name").Find(&arts)
 	out := make([]mcp.ArtifactInfo, 0, len(arts))
 	for _, a := range arts {
 		out = append(out, mcp.ArtifactInfo{Name: a.Name, Node: a.NodeID, Size: a.SizeBytes})
@@ -186,14 +200,14 @@ var _ mcp.ArtifactDeleter = (*ArtifactService)(nil)
 // ByRun returns artifact records for a run (for the API). Content is omitted.
 func (s *ArtifactService) ByRun(runID string) []models.Artifact {
 	var arts []models.Artifact
-	s.db.Where("run_id = ?", runID).Omit("Content").Order("created_at").Find(&arts)
+	excludeHiddenArtifacts(s.db.Where("run_id = ?", runID), "name").Omit("Content").Order("created_at").Find(&arts)
 	return arts
 }
 
 // ByRunWithContent returns all artifacts for a run including Content (for pack/download).
 func (s *ArtifactService) ByRunWithContent(runID string) []models.Artifact {
 	var arts []models.Artifact
-	s.db.Where("run_id = ?", runID).Order("created_at").Find(&arts)
+	excludeHiddenArtifacts(s.db.Where("run_id = ?", runID), "name").Order("created_at").Find(&arts)
 	return arts
 }
 
@@ -237,7 +251,7 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 			pattern, pattern, pattern,
 		)
 	}
-	return query
+	return excludeHiddenArtifacts(query, "artifacts.name")
 }
 
 // BySession retains imported files across sandbox generations. The caller
@@ -327,6 +341,7 @@ func (s *ArtifactService) Tree() (ArtifactTree, error) {
 			COALESCE(MAX(workflow_defs.name), MAX(artifacts.workflow_name), '') AS workflow_name,
 			COUNT(*) AS count`).
 		Joins("LEFT JOIN workflow_defs ON workflow_defs.id = artifacts.workflow_id").
+		Where("artifacts.name <> ? AND artifacts.name NOT LIKE ?", mcp.FeedbackIndexArtifactName, mcp.FeedbackArtifactPrefix+"%").
 		Group("COALESCE(artifacts.workflow_id, '')").
 		Order("workflow_name").
 		Scan(&buckets).Error
@@ -349,6 +364,9 @@ func (s *ArtifactService) Tree() (ArtifactTree, error) {
 func (s *ArtifactService) GetByID(id string) (models.Artifact, bool) {
 	var a models.Artifact
 	if err := s.db.First(&a, "id = ?", id).Error; err != nil {
+		return models.Artifact{}, false
+	}
+	if !visibleArtifactName(a.Name) {
 		return models.Artifact{}, false
 	}
 	return a, true

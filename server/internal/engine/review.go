@@ -146,8 +146,6 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 	// a unique automatic successor before this function routes.
 	e.notePendingAuto(c, node)
 
-	humanMsg := lastHumanMessage(conv.Messages)
-
 	if rp, ok := e.provider.(runtime.ReviewProvider); ok && rp.HasLiveSession(runID, nodeID) {
 		// Best effort: a failed finalize turn keeps the products as they are
 		// and finishNode still judges them.
@@ -164,8 +162,6 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 		}
 		e.flushMcpCalls(runID, nodeID)
 		e.flushTokenUsage(runID, nodeID, t.Usage, t.UsageByModel)
-		e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindReview,
-			conv.Iteration, humanMsg, agentMsg))
 	}
 
 	r := e.finishNode(c, node, nodeOutcome{status: "completed", result: &runtime.NodeResult{}},

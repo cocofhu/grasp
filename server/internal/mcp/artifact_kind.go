@@ -19,12 +19,10 @@ var reservedArtifactExpectedKind = map[string]string{
 	MergeRequestArtifactName:         "json",
 	PreflightArtifactName:            "json",
 	NodeOutcomeArtifactName:          "json",
-	FeedbackIndexArtifactName:        "json",
 }
 
 // ExpectedKindForReservedName returns the expected kind for a platform
 // reserved/contract artifact name, or false when name is not reserved.
-// Feedback ledger round files (feedback.*) are treated as json.
 func ExpectedKindForReservedName(name string) (string, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -32,9 +30,6 @@ func ExpectedKindForReservedName(name string) (string, bool) {
 	}
 	if kind, ok := reservedArtifactExpectedKind[name]; ok {
 		return kind, true
-	}
-	if IsFeedbackArtifactName(name) {
-		return "json", true
 	}
 	return "", false
 }

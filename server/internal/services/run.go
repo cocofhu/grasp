@@ -187,12 +187,6 @@ func (s *RunService) TaskStates(runID string) []models.StateRun {
 	return states
 }
 
-// FeedbackEvents returns the run's human feedback rounds in order, satisfying
-// the run-history tools' provider contract.
-func (s *RunService) FeedbackEvents(runID string) []models.FeedbackEvent {
-	return NewFeedbackService(s.db).Events(runID)
-}
-
 // StateRun returns one node's persisted record (used as the event-log fallback
 // once the live sandbox is gone).
 func (s *RunService) StateRun(runID, nodeID string) (models.StateRun, bool) {

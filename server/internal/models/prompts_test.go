@@ -45,9 +45,6 @@ func TestPreviewContractSteersPortUse(t *testing.T) {
 }
 
 func TestPromptTemplates(t *testing.T) {
-	if got := FeedbackHeaderFor(3); !strings.Contains(got, "3") || strings.Contains(got, "{n}") {
-		t.Errorf("FeedbackHeaderFor=%q", got)
-	}
 	if got := PlanIncompleteRetryFor([]string{"a", "b"}); !strings.Contains(got, "- a\n- b") {
 		t.Errorf("PlanIncompleteRetryFor=%q", got)
 	}

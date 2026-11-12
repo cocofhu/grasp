@@ -23,12 +23,6 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 			fmt.Fprintf(&b, "- `%s`\n", n)
 		}
 	}
-	if n, cites := c.host.FeedbackBrief(req.RunID, req.NodeID); n > 0 {
-		b.WriteString(models.FeedbackHeaderFor(n))
-		for _, cite := range cites {
-			fmt.Fprintf(&b, "- %s\n", cite)
-		}
-	}
 	if note, ok := c.stuckNotes.Load(reactKey(req)); ok {
 		b.WriteString(models.StuckRetryNoteFor(note.(string)))
 	}

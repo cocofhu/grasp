@@ -1,7 +1,6 @@
 package models
 
 import (
-	"strconv"
 	"strings"
 )
 
@@ -11,10 +10,6 @@ import (
 // assembles them from the node goal and the Agent's capabilities.
 const (
 	UpstreamArtifactsHeader = "\n\n## 上游产物(只读输入)\n以下产物由上游节点产出,请用 `read_artifact` MCP 工具按名读取(它们不在工作区,不要去文件系统找):\n"
-
-	// FeedbackHeader is injected only when this node actually has human
-	// feedback in scope; a node's first execution has nothing to read.
-	FeedbackHeader = "\n\n## 历史人工反馈(强制先读)\n本节点此前已收到 {n} 轮人工反馈。**开工前必须先调用 `list_run_history` 通读**,再用 `read_artifact` 逐个读取下列反馈产物的完整内容(含原文、标注与附件)。历次已确认的意见务必遵守,不得在新一轮里回退:\n"
 
 	// ClarifyContract is the interaction protocol of a clarify Agent. It never
 	// mentions node_complete: the tool appears only after the human confirms.
@@ -105,11 +100,6 @@ var schemaContracts = map[string]string{
 // SchemaContract returns the field contract of a product schema ("" if unknown).
 func SchemaContract(schema string) string {
 	return schemaContracts[schema]
-}
-
-// FeedbackHeaderFor renders the history-feedback clause for n rounds.
-func FeedbackHeaderFor(n int) string {
-	return strings.ReplaceAll(FeedbackHeader, "{n}", strconv.Itoa(n))
 }
 
 // StuckRetryNoteFor tells a node restarted after the platform stopped it as

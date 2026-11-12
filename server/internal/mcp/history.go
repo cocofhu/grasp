@@ -11,12 +11,11 @@ import (
 )
 
 // HistoryProvider is the read-only source the run-history tools read from. It is
-// satisfied by services.RunService (States + Get + FeedbackEvents) and injected
-// via SetHistoryProvider so the mcp package stays free of a service dependency.
+// satisfied by services.RunService (States + Get) and injected via
+// SetHistoryProvider so the mcp package stays free of a service dependency.
 type HistoryProvider interface {
 	States(runID string) []models.StateRun
 	Get(runID string) (models.Run, bool)
-	FeedbackEvents(runID string) []models.FeedbackEvent
 }
 
 // historyBudgetBytes caps the overview. Breadth is never trimmed by count —
@@ -137,14 +136,11 @@ func reviewedLabel(g models.Graph, ids []string) string {
 
 // RunHistory renders the progressive-disclosure overview of a run's execution
 // history. By default it is scoped to currentNode: that node's own past
-// executions, any resolved-gate feedback whose segment covers currentNode, the
-// human feedback rounds recorded against it, and any rollback that landed on
-// it. all=true drops the scope (full timeline); onlyFeedback=true keeps only
-// human feedback. Each line is self-labeled with the node + iteration so an
-// agent can never confuse which gate/stage a piece of feedback came from.
-//
-// Depth is what stays on demand. ReAct rounds cite their shared cumulative
-// conclusion; gate and preview rounds continue to cite their own product.
+// executions, any resolved-gate decision whose segment covers currentNode,
+// human edits of products in that segment, and any rollback that landed on
+// it. all=true drops the scope (full timeline); onlyFeedback=true keeps gate
+// decisions and human product edits. Each line is self-labeled with the node
+// and iteration so an agent can tell which gate a decision came from.
 func (h *Host) RunHistory(runID, currentNode string, all, onlyFeedback bool) (string, error) {
 	if h.history == nil {
 		return "", errors.New("history unavailable")
@@ -190,7 +186,6 @@ func (h *Host) RunHistory(runID, currentNode string, all, onlyFeedback bool) (st
 	}
 
 	lines = append(lines, traceHistoryLines(run, g, currentNode, all, onlyFeedback)...)
-	lines = append(lines, h.feedbackLines(runID, g, currentNode, all)...)
 
 	if len(lines) == 0 {
 		return "(暂无相关历史)", nil
@@ -235,107 +230,6 @@ func traceHistoryLines(run models.Run, g models.Graph, currentNode string, all, 
 		}
 	}
 	return out
-}
-
-// feedbackLines renders one line per recorded feedback round, each citing the
-// product that holds its full body.
-func (h *Host) feedbackLines(runID string, g models.Graph, currentNode string, all bool) []string {
-	var out []string
-	for _, ev := range h.history.FeedbackEvents(runID) {
-		if !all && !feedbackInScope(g, ev, currentNode) {
-			continue
-		}
-		line := fmt.Sprintf("- #%d.%d [%s %s「%s」] %s: \"%s\"",
-			ev.Iteration, ev.Round, feedbackKindLabel(ev.Kind), ev.NodeID, nodeLabel(g, ev.NodeID),
-			feedbackActionLabel(ev), trunc(feedbackGist(ev), 240))
-		if n := len(ev.Annotations); n > 0 {
-			line += fmt.Sprintf(" · 标注%d", n)
-		}
-		if n := len(ev.Attachments); n > 0 {
-			line += fmt.Sprintf(" 附件%d", n)
-		}
-		if ev.Interrupted {
-			line += " · (该轮修改被中断,未落地)"
-		}
-		if ev.ArtifactName != "" {
-			line += "\n      (结论: read_artifact " + ev.ArtifactName + ")"
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
-// feedbackInScope decides whether a round is relevant to currentNode.
-//
-// Node-bound rounds (clarify / review) belong to the node that was revised.
-// Gate-bound rounds (gate / preview) reach the stages the gate reviews, using
-// the same backward BFS as gate feedback so a design gate's opinion never leaks
-// into a later coding stage.
-func feedbackInScope(g models.Graph, ev models.FeedbackEvent, currentNode string) bool {
-	if currentNode == "" {
-		return false
-	}
-	if ev.NodeID == currentNode {
-		return true
-	}
-	switch ev.Kind {
-	case models.FeedbackKindGate, models.FeedbackKindPreview:
-		return gateReviewScope(g, ev.NodeID)[currentNode]
-	default:
-		return false
-	}
-}
-
-func feedbackKindLabel(kind string) string {
-	switch kind {
-	case models.FeedbackKindClarify:
-		return "澄清"
-	case models.FeedbackKindReview:
-		return "复审"
-	case models.FeedbackKindGate:
-		return "门禁"
-	case models.FeedbackKindPreview:
-		return "预览问题单"
-	default:
-		return "反馈"
-	}
-}
-
-func feedbackActionLabel(ev models.FeedbackEvent) string {
-	switch {
-	case ev.Action == "auto_answer":
-		return "自动采纳推荐项"
-	case ev.Kind == models.FeedbackKindReview:
-		return "人工打回"
-	case ev.Kind == models.FeedbackKindClarify:
-		return "人工回答"
-	case ev.Kind == models.FeedbackKindGate:
-		return "人工决定 action=" + ev.Action
-	case ev.Kind == models.FeedbackKindPreview:
-		return "人工问题单"
-	default:
-		return "人工反馈"
-	}
-}
-
-// feedbackGist picks the one-line body for an overview row.
-func feedbackGist(ev models.FeedbackEvent) string {
-	if s := firstLine(ev.Text); s != "" {
-		return s
-	}
-	for _, a := range ev.Annotations {
-		if n := strings.TrimSpace(a.Note); n != "" {
-			return n
-		}
-	}
-	for _, t := range ev.Turns {
-		if t.Role == "human" {
-			if s := firstLine(t.Text); s != "" {
-				return s
-			}
-		}
-	}
-	return "(无正文)"
 }
 
 // foldHistoryLines keeps the overview under the byte budget by dropping a
@@ -436,9 +330,6 @@ func (h *Host) ExecutionDetail(runID, nodeID string, iteration int, includeLog b
 	if len(chosen.VarsSnapshot) > 0 {
 		b.WriteString("变量快照: " + truncJSON(chosen.VarsSnapshot, 1000) + "\n")
 	}
-	if fb := renderExecutionFeedback(h.history.FeedbackEvents(runID), nodeID, chosen.Iteration); fb != "" {
-		b.WriteString("\n" + fb)
-	}
 	if includeLog && len(chosen.Events) > 0 {
 		b.WriteString("\n事件日志:\n")
 		for _, e := range chosen.Events {
@@ -453,61 +344,6 @@ func (h *Host) ExecutionDetail(runID, nodeID string, iteration int, includeLog b
 		}
 	}
 	return b.String(), nil
-}
-
-// FeedbackBrief returns the number of feedback rounds in scope for a node and
-// one citation per distinct product. ReAct rounds share a cumulative product,
-// so repeating its citation once per audit event is noise.
-//
-// This is what puts the ledger in front of an agent: list_run_history existed
-// long before anything told an agent to call it, so a node re-run after a
-// push-back saw only the original prompt. The prompt clause built from this is
-// injected only when the count is non-zero.
-func (h *Host) FeedbackBrief(runID, nodeID string) (int, []string) {
-	if h.history == nil || strings.TrimSpace(nodeID) == "" {
-		return 0, nil
-	}
-	run, _ := h.history.Get(runID)
-	count := 0
-	var lines []string
-	cited := map[string]bool{}
-	for _, ev := range h.history.FeedbackEvents(runID) {
-		if !feedbackInScope(run.Graph, ev, nodeID) {
-			continue
-		}
-		count++
-		if ev.ArtifactName == "" {
-			continue
-		}
-		if cited[ev.ArtifactName] {
-			continue
-		}
-		cited[ev.ArtifactName] = true
-		lines = append(lines, fmt.Sprintf("`%s` — 第%d次执行截至第%d轮的%s结论: %s",
-			ev.ArtifactName, ev.Iteration, ev.Round, feedbackKindLabel(ev.Kind),
-			trunc(feedbackGist(ev), 120)))
-	}
-	return count, lines
-}
-
-// renderExecutionFeedback lists the feedback audit trail for one node
-// execution, pointing at the current cumulative conclusion where available.
-func renderExecutionFeedback(events []models.FeedbackEvent, nodeID string, iteration int) string {
-	var b strings.Builder
-	for _, ev := range events {
-		if ev.NodeID != nodeID || ev.Iteration != iteration {
-			continue
-		}
-		fmt.Fprintf(&b, "- 第%d轮 %s %s: %s\n", ev.Round, feedbackKindLabel(ev.Kind),
-			feedbackActionLabel(ev), trunc(feedbackGist(ev), 400))
-		if ev.ArtifactName != "" {
-			b.WriteString("  (全轮结论: read_artifact " + ev.ArtifactName + ")\n")
-		}
-	}
-	if b.Len() == 0 {
-		return ""
-	}
-	return "人工反馈轮次(务必遵守,不要回退已确认的意见):\n" + b.String()
 }
 
 // --- shared string helpers -------------------------------------------------

@@ -8,7 +8,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	gatenode "github.com/cocofhu/grasp/internal/models/nodereg"
 	"github.com/cocofhu/grasp/internal/runtime"
-	"github.com/cocofhu/grasp/internal/services"
 	"github.com/rs/zerolog/log"
 )
 
@@ -72,7 +71,7 @@ func (e *Engine) captureDeliverable(c *execCtx, node *models.Node, res runtime.N
 		// "this node already produced something" would suppress the node's
 		// actual deliverable the moment a reviewer pushes back.
 		if a.Node == node.ID && a.Name != mcp.NodeOutcomeArtifactName &&
-			!services.IsFeedbackArtifactName(a.Name) {
+			!mcp.IsFeedbackArtifactName(a.Name) {
 			return
 		}
 	}

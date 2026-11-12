@@ -495,6 +495,17 @@ func lastRetryableHuman(msgs []models.ReactMessage) (text string, images []model
 	}
 }
 
+// lastHumanMessage returns the most recent human turn. Zero value when the
+// dialogue holds none.
+func lastHumanMessage(msgs []models.ReactMessage) models.ReactMessage {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "human" {
+			return msgs[i]
+		}
+	}
+	return models.ReactMessage{}
+}
+
 func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string, refs ...models.MessageReference) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
@@ -755,10 +766,6 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		}
 	}
 
-	// The questions this answer responds to, captured before the human turn is
-	// appended — without them the recorded answer reads as a bare fragment.
-	answered := lastAgentQuestions(conv.Messages)
-
 	now := time.Now().Format(time.RFC3339)
 	var humanMsg models.ReactMessage
 	prompt := item.Effective
@@ -836,7 +843,6 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	agentMsg.Outcome = models.ReplyOutcome(agentMsg)
 	conv.Messages = append(conv.Messages, agentMsg)
 	e.rememberTurnRoute(&conv, &req, t)
-	e.recordFeedback(e.clarifyFeedbackEvent(s, item, conv.Iteration, answered, humanMsg, agentMsg, interrupted))
 
 	if interrupted {
 		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (interrupted)")
@@ -951,10 +957,6 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	// Publish react so UIs that refetch on turn_begin see the human bubble.
 	e.publishReact(s.runID, s.producerID)
 
-	// Snapshot before the agent edits so the ledger can state which products
-	// this specific push-back moved.
-	beforeDigests := e.artifactDigests(s.runID, s.producerID)
-
 	var t runtime.ReactTurn
 	if err := e.prepareLiveTurn(ctx, s.runID, s.producerID, item); err != nil {
 		t = runtime.ReactTurn{Msg: "Live 初始化失败: " + err.Error(), Err: err}
@@ -1009,16 +1011,11 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 			log.Warn().Err(t.Err).Str("run_id", s.runID).Str("producer", s.producerID).
 				Msg("review revise turn failed (session kept for retry)")
 		}
-		// The opinion was still given, so the round is recorded — only without
-		// targets, because nothing landed.
-		e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg, nil, true))
 		e.publishReact(s.runID, s.producerID)
 		return true, nil
 	}
 
 	e.refreshProducerOutputs(c, producer)
-	e.recordFeedback(e.reviewFeedbackEvent(s, item, iter, humanMsg, agentMsg,
-		diffDigests(beforeDigests, e.artifactDigests(s.runID, s.producerID)), false))
 	if item.Source == "gate" && item.GateNodeID != "" {
 		e.refreshGateBodyAfterRevise(c, item.GateNodeID)
 		e.appendTrace(c, models.TraceEntry{NodeID: item.GateNodeID, Event: "resume",

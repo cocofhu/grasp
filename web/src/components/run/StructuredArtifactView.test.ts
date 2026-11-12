@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import zhPages from '@/locales/zh-CN/pages.json'
-import StructuredArtifactView, { isFeedbackArtifactName, isStructuredArtifactName } from './StructuredArtifactView.vue'
+import StructuredArtifactView, { isStructuredArtifactName } from './StructuredArtifactView.vue'
 
 describe('isStructuredArtifactName', () => {
   it('matches the reserved structured JSON artifact names', () => {
@@ -28,23 +28,8 @@ describe('isStructuredArtifactName', () => {
     expect(isStructuredArtifactName('page.html')).toBe(false)
     expect(isStructuredArtifactName('design.md')).toBe(false)
     expect(isStructuredArtifactName('result.json')).toBe(false)
-  })
-
-  // Round names are generated per node and iteration, so the ledger can only be
-  // recognized by prefix — an exact-name whitelist would drop every round into
-  // the raw JSON fallback.
-  it('recognizes the ledger by prefix, not by an exact name', () => {
-    const names = [
-      'feedback_index.json',
-      'feedback.review.research-1.i2r3.json',
-      'feedback.gate.approve.i1r1.json',
-    ]
-    for (const name of names) {
-      expect(isFeedbackArtifactName(name)).toBe(true)
-      expect(isStructuredArtifactName(name)).toBe(true)
-    }
-    expect(isFeedbackArtifactName('feedbackish.json')).toBe(false)
-    expect(isFeedbackArtifactName('research.json')).toBe(false)
+    expect(isStructuredArtifactName('feedback_index.json')).toBe(false)
+    expect(isStructuredArtifactName('feedback.review.research-1.i2r3.json')).toBe(false)
   })
 })
 
