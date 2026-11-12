@@ -43,7 +43,14 @@ func TestOnboardingCreatesEmptySoloOutsideWorkflow(t *testing.T) {
 			if zh := strings.Contains(solo.Files[0].Content, "不要调用"); zh != (language == "zh-CN") {
 				t.Fatalf("Solo instruction is not in %s: %q", language, solo.Files[0].Content)
 			}
-			if len(solo.MCP) != 0 || solo.Capabilities != nil || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
+			if !strings.Contains(solo.Files[0].Content, "ask_question") {
+				t.Fatalf("Solo instruction must point to ask_question: %q", solo.Files[0].Content)
+			}
+			wantTools := []string{models.ToolAskQuestion, models.ToolAskForm, models.ToolSetArtifactPreview, models.ToolSetPreview}
+			if solo.Capabilities == nil || solo.Capabilities.Interaction != models.InteractionAuto || !reflect.DeepEqual(solo.Capabilities.Tools, wantTools) {
+				t.Fatalf("Solo capabilities = %+v, want tools %v", solo.Capabilities, wantTools)
+			}
+			if len(solo.MCP) != 0 || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
 				t.Fatalf("Solo must have no skills or workflow settings: %+v", solo)
 			}
 			if solo.AcpBackend != "cursor" || solo.InheritModel || solo.InheritGit || solo.ModelBinding == nil || solo.ModelBinding.Kind != "configuration" || solo.ModelBinding.ConfigurationID != "model-onboarding" {

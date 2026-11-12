@@ -7,6 +7,8 @@ import type {
   McpCall,
   NodeRunStatus,
   ReactAnnotation,
+  ReactForm,
+  ReactQuestion,
   TokenUsage,
   TokenUsageByModel,
   TokenAccountingStatus,
@@ -890,6 +892,9 @@ export interface SoloMessage {
   references?: MessageReference[]
   /** Raw ACP frames of an assistant turn, replayed into the timeline. */
   events?: unknown[]
+  /** Assistant turn: raised through ask_question / ask_form, answered by the next user message. */
+  questions?: ReactQuestion[]
+  forms?: ReactForm[]
   status?: '' | 'ok' | 'failed' | 'stopped'
   error?: string
   usage?: TokenUsage

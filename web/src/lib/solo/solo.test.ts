@@ -75,6 +75,18 @@ describe('acpTurn', () => {
     expect(turn!.error).toBe(error)
   })
 
+  it('keeps the questions and forms an assistant turn raised', () => {
+    const questions = [{ id: 'q1', prompt: 'Which?', options: [{ id: 'a', label: 'A' }] }]
+    const forms = [{ fields: [{ name: 'url', label: 'URL' }] }]
+    const [asked, plain] = turnsFromMessages([
+      { id: 'a1', sessionId: 's', role: 'assistant', content: 'Pick', createdAt: '', questions, forms },
+      { id: 'a2', sessionId: 's', role: 'assistant', content: 'Done', createdAt: '' },
+    ], label, 'Tool')
+    expect(asked).toMatchObject({ questions, forms })
+    expect(plain!.questions).toBeUndefined()
+    expect(plain!.forms).toBeUndefined()
+  })
+
   it('preserves explicit stopped status and stored diagnostics when replaying errors', () => {
     const [turn] = turnsFromMessages([{
       id: 'a1', sessionId: 's', role: 'assistant', content: '', status: 'stopped', error: 'Stopped by user', createdAt: '',

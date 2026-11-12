@@ -245,7 +245,7 @@ func (h *Host) hideNodeComplete(runID string) bool {
 
 func workflowOnlyTool(name string) bool {
 	switch name {
-	case "ask_question", "ask_form", "node_complete", "list_run_history", "get_history_detail", liveUpdateTool:
+	case "node_complete", "list_run_history", "get_history_detail", liveUpdateTool:
 		return true
 	default:
 		return isPageTool(name)

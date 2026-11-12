@@ -1,6 +1,6 @@
 import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
-import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
+import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
@@ -20,6 +20,9 @@ export type SoloTurn = ChatMessageMetadata & {
   annotations?: ReactAnnotation[]
   /** User turn: contexts explicitly picked with @. */
   references?: MessageReference[]
+  /** Agent turn: what it asked the user through ask_question / ask_form. */
+  questions?: ReactQuestion[]
+  forms?: ReactForm[]
   /** User turn: failed | stopped when its reply did not complete. */
   status?: string
   error?: string
@@ -178,6 +181,8 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
       turn.endedAt = m.createdAt
       turn.createdAt = m.createdAt
       turn.files = m.files
+      if (m.questions?.length) turn.questions = m.questions
+      if (m.forms?.length) turn.forms = m.forms
       turn.execution = m.execution
       turn.usage = m.usage
       turn.usageByModel = m.usageByModel

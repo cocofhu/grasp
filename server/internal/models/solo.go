@@ -193,6 +193,10 @@ type SoloMessage struct {
 	// References are the contexts the user explicitly picked for this turn.
 	// They are the only authority read_reference accepts.
 	References []MessageReference `gorm:"column:message_references;serializer:json" json:"references,omitempty"`
+	// Questions and Forms are what the assistant raised this turn through
+	// ask_question / ask_form; the user answers them with the next message.
+	Questions []ReactQuestion `gorm:"serializer:json" json:"questions,omitempty"`
+	Forms     []ReactForm     `gorm:"serializer:json" json:"forms,omitempty"`
 	// Status: ok | failed | stopped. Empty means ok.
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`

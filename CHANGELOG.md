@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 支持提问和表单：Agent 授予了「提问 ask_question」或「表单收集 ask_form」时，在 Solo 里调用会在这条回复下方显示可点选的卡片，推荐项默认选中；提交后作为下一条消息发出，格式与工作流澄清一致。引导新建的 Solo Agent 默认授予提问、表单、产物预览和应用预览，`AGENTS.md` 改为使用平台的 `ask_question`。已有的 Solo Agent 不会被改写，可在 Agent 的「能力」里勾选这些工具。
+
 - 工作流运行一律使用共享沙箱：同一次运行的节点复用沙箱工作区、已安装依赖和未提交修改。「工作流默认配置」里的「共享沙箱」开关已移除，已有工作流保存的 `defaults.sandbox.mode`（包括 `per_node`）不再生效，升级后新启动的运行和进行中运行的后续节点都使用共享沙箱。共享沙箱被其他会话占用、需要不同镜像或工作目录不兼容时，该节点仍单独使用一个沙箱。
 
 ## 3.3.0 — 2026-11-11

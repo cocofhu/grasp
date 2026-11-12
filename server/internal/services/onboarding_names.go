@@ -91,8 +91,8 @@ type onboardingLocale struct {
 	WorkflowDesc string
 	InputLabel   string
 	OutputLabel  string
-	// SoloAgentsMD is the Solo Agent's AGENTS.md. Solo cannot answer an
-	// interactive AskQuestion call, so questions go in the reply text.
+	// SoloAgentsMD is the Solo Agent's AGENTS.md. The CLI's own AskQuestion
+	// cannot be answered mid-turn; artifact-store ask_question can.
 	SoloAgentsMD string
 }
 
@@ -102,14 +102,14 @@ var (
 		WorkflowDesc: "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在运行时填写。",
 		InputLabel:   "开始",
 		OutputLabel:  "结束",
-		SoloAgentsMD: "# Solo\n\n需要用户做选择或确认时，不要调用 AskQuestion 工具：Solo 无法在回合中途回答它，调用会直接失败。请在回复里用文字列出选项，说明推荐哪个及原因，然后结束本轮，等用户回复。\n",
+		SoloAgentsMD: "# Solo\n\n需要用户做选择或确认时，调用 artifact-store 的 `ask_question` 工具列出选项并标出推荐项，需要用户填写信息时调用 `ask_form`，调用后结束本轮，等用户在界面回答。不要调用编码工具自带的 AskQuestion：Solo 无法在回合中途回答它，调用会直接失败。\n",
 	}
 	onboardingLocaleEN = onboardingLocale{
 		WorkflowName: OnboardingWorkflowNameEN,
 		WorkflowDesc: "Clarify → Implement → Test & review → Submit MR/PR; a failed review goes back to Implement. Pick the repository when you start a run.",
 		InputLabel:   "Start",
 		OutputLabel:  "End",
-		SoloAgentsMD: "# Solo\n\nWhen you need the user to choose or confirm something, do not call the AskQuestion tool: Solo cannot answer it mid-turn, so the call fails. List the options in your reply, say which one you recommend and why, then end the turn and wait for the user's reply.\n",
+		SoloAgentsMD: "# Solo\n\nWhen you need the user to choose or confirm something, call the artifact-store `ask_question` tool with the options and mark the one you recommend; call `ask_form` when you need the user to fill in values. Then end the turn and wait for the user's answer in the UI. Do not call the coding tool's own AskQuestion: Solo cannot answer it mid-turn, so the call fails.\n",
 	}
 	// onboardingLocales lists every language so re-running onboarding in another
 	// language still finds the workflow it published before.
