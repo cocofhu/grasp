@@ -290,12 +290,13 @@ func MergeEnvIntoTemplateVars(base, env map[string]string) map[string]string {
 		if _, exists := out[k]; exists {
 			continue
 		}
-		out[k] = substVars(v, base)
+		out[k] = SubstVars(v, base)
 	}
 	return out
 }
 
-func substVars(s string, vars map[string]string) string {
+// SubstVars replaces every ${name} in s with vars[name].
+func SubstVars(s string, vars map[string]string) string {
 	if s == "" {
 		return s
 	}
@@ -305,24 +306,26 @@ func substVars(s string, vars map[string]string) string {
 	return s
 }
 
-func substMap(m, vars map[string]string) map[string]string {
+// SubstMap applies SubstVars to every value of m; empty m gives nil.
+func SubstMap(m, vars map[string]string) map[string]string {
 	if len(m) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(m))
 	for k, v := range m {
-		out[k] = substVars(v, vars)
+		out[k] = SubstVars(v, vars)
 	}
 	return out
 }
 
-func substSlice(s []string, vars map[string]string) []string {
+// SubstSlice applies SubstVars to every item of s; empty s gives nil.
+func SubstSlice(s []string, vars map[string]string) []string {
 	if len(s) == 0 {
 		return nil
 	}
 	out := make([]string, len(s))
 	for i, v := range s {
-		out[i] = substVars(v, vars)
+		out[i] = SubstVars(v, vars)
 	}
 	return out
 }
@@ -349,18 +352,18 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 		if isWorkflowDroppedPlatformMCP(m.Name, m.URL) {
 			continue
 		}
-		url := config.RewriteMisconfiguredMCPAdvertise(substVars(m.URL, vars))
-		cmd := substVars(m.Command, vars)
+		url := config.RewriteMisconfiguredMCPAdvertise(SubstVars(m.URL, vars))
+		cmd := SubstVars(m.Command, vars)
 		if url == "" && cmd == "" {
 			continue
 		}
 		out = append(out, sandbox.MCPServerSpec{
 			Name:    m.Name,
 			URL:     url,
-			Headers: substMap(m.Headers, vars),
+			Headers: SubstMap(m.Headers, vars),
 			Command: cmd,
-			Args:    substSlice(m.Args, vars),
-			Env:     substMap(m.Env, vars),
+			Args:    SubstSlice(m.Args, vars),
+			Env:     SubstMap(m.Env, vars),
 		})
 	}
 	return out
@@ -402,7 +405,12 @@ func (c *acpProvider) mcpURL(req NodeReq) string {
 // Agent's declared MCP servers (with artifact-store resolved to its run-scoped
 // URL+token). Returns nil when the Agent declares none.
 func (c *acpProvider) mcpServers(req NodeReq) json.RawMessage {
-	specs := c.resolvedMCPSpecs(req)
+	return MCPServersJSON(c.resolvedMCPSpecs(req))
+}
+
+// MCPServersJSON builds the ACP session/new mcpServers array from resolved
+// specs. Returns nil when no spec has a URL or command.
+func MCPServersJSON(specs []sandbox.MCPServerSpec) json.RawMessage {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -410,7 +418,7 @@ func (c *acpProvider) mcpServers(req NodeReq) json.RawMessage {
 	for _, m := range specs {
 		switch {
 		case m.URL != "":
-
+			// type:http required by Claude Code / CodeBuddy; url-only is skipped.
 			entry := map[string]any{"name": m.Name, "type": "http", "url": m.URL}
 			if len(m.Headers) > 0 {
 				hs := make([]map[string]string, 0, len(m.Headers))

@@ -83,6 +83,45 @@ func MustString(v any) string {
 	}
 }
 
+// ServeTools answers one parsed JSON-RPC message for a tools-only MCP server
+// named server. tools is read only for tools/list; call runs one tools/call and
+// its result is wrapped with ToolResult.
+func ServeTools(req RPCRequest, server string, tools func() []map[string]any, call func(name string, args map[string]any) (any, bool)) (int, []byte) {
+	switch req.Method {
+	case "initialize":
+		ver := ProtocolVersion
+		var ip struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(req.Params, &ip) == nil && ip.ProtocolVersion != "" {
+			ver = ip.ProtocolVersion
+		}
+		return Ok(req, map[string]any{
+			"protocolVersion": ver,
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": server, "version": "1.0.0"},
+		})
+	case "notifications/initialized", "notifications/cancelled":
+		return 202, nil
+	case "ping":
+		return Ok(req, map[string]any{})
+	case "tools/list":
+		return Ok(req, map[string]any{"tools": tools()})
+	case "tools/call":
+		var p ToolCallParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return Fail(req, -32602, "invalid tools/call params")
+		}
+		result, isErr := call(p.Name, p.Arguments)
+		return Ok(req, ToolResult(result, isErr))
+	default:
+		if IsNotification(req) {
+			return 202, nil
+		}
+		return Fail(req, -32601, "method not found: "+req.Method)
+	}
+}
+
 // Tool builds one tools/list entry.
 func Tool(name, desc string, props map[string]any) map[string]any {
 	schema := map[string]any{"type": "object", "properties": map[string]any{}}

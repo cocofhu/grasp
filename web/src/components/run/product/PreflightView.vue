@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 
-export type PreflightField = {
+type PreflightField = {
   name?: string
   label?: string
   value?: string
@@ -14,7 +14,7 @@ export type PreflightField = {
   notes?: string
 }
 
-export type PreflightDoc = {
+type PreflightDoc = {
   summary?: string
   confirmed?: boolean
   fields?: PreflightField[]

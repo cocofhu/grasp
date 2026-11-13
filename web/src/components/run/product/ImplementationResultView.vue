@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
 
-export type ImplChangedArea = { title?: string; detail?: string }
-export type ImplementationResultDoc = {
+type ImplChangedArea = { title?: string; detail?: string }
+type ImplementationResultDoc = {
   summary?: string
   change_type?: string
   changed_areas?: ImplChangedArea[]

@@ -90,40 +90,11 @@ func (h *Host) ServeRPC(agentName, token string, body []byte) (int, []byte) {
 		log.Warn().Err(err).Str("agent", agentName).Msg("task-scheduler rpc parse error")
 		return platformmcp.ParseError()
 	}
-	switch req.Method {
-	case "initialize":
-		ver := platformmcp.ProtocolVersion
-		var ip struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		if json.Unmarshal(req.Params, &ip) == nil && ip.ProtocolVersion != "" {
-			ver = ip.ProtocolVersion
-		}
-		return platformmcp.Ok(req, map[string]any{
-			"protocolVersion": ver,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "task-scheduler", "version": "1.0.0"},
-		})
-	case "notifications/initialized", "notifications/cancelled":
-		return 202, nil
-	case "ping":
-		return platformmcp.Ok(req, map[string]any{})
-	case "tools/list":
-		return platformmcp.Ok(req, map[string]any{"tools": toolSchemas()})
-	case "tools/call":
-		var p platformmcp.ToolCallParams
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return platformmcp.Fail(req, -32602, "invalid tools/call params")
-		}
-		result, isErr := h.callTool(sess, p.Name, p.Arguments)
-		h.auditToolCall(sess, p.Name, p.Arguments, result, isErr)
-		return platformmcp.Ok(req, platformmcp.ToolResult(result, isErr))
-	default:
-		if platformmcp.IsNotification(req) {
-			return 202, nil
-		}
-		return platformmcp.Fail(req, -32601, "method not found: "+req.Method)
-	}
+	return platformmcp.ServeTools(req, "task-scheduler", toolSchemas, func(name string, args map[string]any) (any, bool) {
+		result, isErr := h.callTool(sess, name, args)
+		h.auditToolCall(sess, name, args, result, isErr)
+		return result, isErr
+	})
 }
 
 func (h *Host) auditToolCall(sess *Session, tool string, args map[string]any, result any, isErr bool) {

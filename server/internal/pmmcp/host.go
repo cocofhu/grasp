@@ -310,40 +310,11 @@ func (h *Host) ServeRPC(mcpID, token string, body []byte) (status int, resp []by
 		log.Warn().Err(err).Msg("pm mcp rpc parse error")
 		return platformmcp.ParseError()
 	}
-	switch req.Method {
-	case "initialize":
-		ver := platformmcp.ProtocolVersion
-		var ip struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		if json.Unmarshal(req.Params, &ip) == nil && ip.ProtocolVersion != "" {
-			ver = ip.ProtocolVersion
-		}
-		return platformmcp.Ok(req, map[string]any{
-			"protocolVersion": ver,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": mcpID, "version": "1.0.0"},
-		})
-	case "notifications/initialized", "notifications/cancelled":
-		return 202, nil
-	case "ping":
-		return platformmcp.Ok(req, map[string]any{})
-	case "tools/list":
-		return platformmcp.Ok(req, map[string]any{"tools": toolSchemas(mcpID)})
-	case "tools/call":
-		var p platformmcp.ToolCallParams
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return platformmcp.Fail(req, -32602, "invalid tools/call params")
-		}
-		result, isErr := h.callTool(token, mcpID, p.Name, p.Arguments)
-		h.auditToolCall(token, mcpID, p.Name, p.Arguments, result, isErr)
-		return platformmcp.Ok(req, platformmcp.ToolResult(result, isErr))
-	default:
-		if platformmcp.IsNotification(req) {
-			return 202, nil
-		}
-		return platformmcp.Fail(req, -32601, "method not found: "+req.Method)
-	}
+	return platformmcp.ServeTools(req, mcpID, func() []map[string]any { return toolSchemas(mcpID) }, func(name string, args map[string]any) (any, bool) {
+		result, isErr := h.callTool(token, mcpID, name, args)
+		h.auditToolCall(token, mcpID, name, args, result, isErr)
+		return result, isErr
+	})
 }
 
 func (h *Host) callTool(token, mcpID, name string, args map[string]any) (any, bool) {

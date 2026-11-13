@@ -8,7 +8,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 
-export type ThoughtSummaryState = 'generating' | 'done' | 'interrupted' | 'idle'
+type ThoughtSummaryState = 'generating' | 'done' | 'interrupted' | 'idle'
 
 const props = withDefaults(
   defineProps<{

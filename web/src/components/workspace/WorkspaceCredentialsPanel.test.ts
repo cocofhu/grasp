@@ -15,8 +15,6 @@ const mocks = vi.hoisted(() => ({
   put: vi.fn(),
   del: vi.fn(),
   remove: vi.fn(),
-  providers: vi.fn(),
-  models: vi.fn(),
   connections: vi.fn(),
   connectionModels: vi.fn(),
   configurations: vi.fn(),
@@ -35,8 +33,6 @@ vi.mock('@/lib/api/api', () => ({
     putCredential: mocks.put,
     deleteCredential: mocks.del,
     removeCredential: mocks.remove,
-    openCodeProviders: mocks.providers,
-    openCodeModels: mocks.models,
     listModelConnections: mocks.connections,
     listModelConnectionModels: mocks.connectionModels,
     listModelConfigurations: mocks.configurations,
@@ -135,8 +131,6 @@ describe('WorkspaceCredentialsPanel', () => {
     mocks.create.mockImplementation(async ({ value: _value, ...body }: Record<string, unknown>) => ({ id: 'cred-created', type: 'ai', ...body, configured: true, masked: '••••' }))
     mocks.del.mockResolvedValue({ status: 'ok' })
     mocks.remove.mockResolvedValue({ status: 'removed' })
-    mocks.providers.mockResolvedValue({ providers: [{ id: 'openai', name: 'OpenAI' }] })
-    mocks.models.mockResolvedValue({ models: [{ id: 'gpt-4o', name: 'GPT-4o' }] })
     mocks.connections.mockResolvedValue({ items: [] })
     mocks.connectionModels.mockResolvedValue({ models: [] })
     mocks.configurations.mockResolvedValue({ items: [] })

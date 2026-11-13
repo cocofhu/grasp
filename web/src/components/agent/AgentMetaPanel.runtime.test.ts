@@ -15,7 +15,7 @@ const buddy = { id: 'buddy', name: 'Team Buddy', backend: 'codebuddy', state: 'a
 const configuration = { id: 'cfg', name: 'Team Cursor', backend: 'cursor', state: 'active', binding: { kind: 'platform', credentialId: key.id, modelId: 'gpt-5' } }
 function setup(overrides = {}) {
  const draft = reactive(toDraft({ name: 'a', inheritModel: false, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cfg' }, ...overrides }))
- const w = mount(AgentMetaPanel, { props: { draft, agentName: 'a' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { AgentCredentialBindings: true, EnvCredentialHelpModal: true, Teleport: true } } })
+ const w = mount(AgentMetaPanel, { props: { draft, agentName: 'a' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { EnvCredentialHelpModal: true, Teleport: true } } })
  return { w, draft }
 }
 beforeEach(() => {

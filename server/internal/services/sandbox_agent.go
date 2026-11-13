@@ -11,6 +11,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
@@ -288,7 +289,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 			return
 		}
 	}
-	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
+	acp := sb.ACP().WithSession(sb.WorkspaceDir, runtime.MCPServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		sb.Destroy(context.Background())

@@ -42,7 +42,7 @@ import {
   type OnboardingTemplateId,
 } from '@/lib/pm/onboardingWizard'
 
-export type OnboardingCompletedResult = OnboardingBootstrapResult
+type OnboardingCompletedResult = OnboardingBootstrapResult
 
 const props = withDefaults(
   defineProps<{

@@ -7,7 +7,7 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import NodeInspector from '../src/components/canvas/NodeInspector.vue'
 import type { CanvasAgent } from '../src/components/canvas/composables/outlets'
-import { api, type CredentialItem } from '../src/lib/api/api'
+import type { CredentialItem } from '../src/lib/api/api'
 import type { WFNode } from '../src/lib/shared/types'
 
 const caps = { interaction: 'auto', tools: [], reads: [], writes: [] }
@@ -36,29 +36,6 @@ const credentials: CredentialItem[] = [
   model('cred-own', '内网网关', 'custom', 'custom/glm-4-plus'),
   { id: 'cred-gh', type: 'git', provider: 'github', name: 'GitHub', envKey: 'GITHUB_TOKEN', configured: true },
 ]
-
-const catalogs: Record<string, { id: string; name?: string }[]> = {
-  deepseek: [
-    { id: 'deepseek-chat', name: 'DeepSeek V3' },
-    { id: 'deepseek-reasoner', name: 'DeepSeek R1' },
-  ],
-  openai: [
-    { id: 'gpt-4o', name: 'GPT-4o' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o mini' },
-    { id: 'gpt-4.1', name: 'GPT-4.1' },
-    { id: 'o3', name: 'o3' },
-    { id: 'o4-mini', name: 'o4-mini' },
-  ],
-  openrouter: Array.from({ length: 140 }, (_, i) =>
-    i === 0 ? { id: 'qwen/qwen-2.5-coder-32b', name: 'Qwen2.5 Coder 32B' } : { id: `vendor${i % 9}/model-${i}`, name: `Model ${i}` },
-  ),
-}
-Object.assign(api, {
-  openCodeModels: async (id: string) => {
-    await new Promise((r) => setTimeout(r, 250))
-    return { models: catalogs[id] || [] }
-  },
-})
 
 type Scenario = { id: string; label: string; agent: string; model?: string; modelId?: string }
 const scenarios: Scenario[] = [

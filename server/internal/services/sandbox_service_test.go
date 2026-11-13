@@ -1444,22 +1444,6 @@ func TestSandboxOpenCreateFailure(t *testing.T) {
 
 func TestSandboxHelpers(t *testing.T) {
 	vars := map[string]string{"A": "1", "B": "2"}
-	if substTemplate("x-${A}-${B}", vars) != "x-1-2" {
-		t.Fatal("substTemplate")
-	}
-	if m := substTemplateMap(map[string]string{"k": "${A}"}, vars); m["k"] != "1" {
-		t.Fatal("substTemplateMap")
-	}
-	if substTemplateMap(nil, vars) != nil {
-		t.Fatal("substTemplateMap nil")
-	}
-	if sl := substTemplateSlice([]string{"${A}", "z"}, vars); sl[0] != "1" || sl[1] != "z" {
-		t.Fatal("substTemplateSlice")
-	}
-	if substTemplateSlice(nil, vars) != nil {
-		t.Fatal("substTemplateSlice nil")
-	}
-
 	specs := resolveAgentMCP([]MCPServer{
 		{Name: "artifact-store", URL: "${A}"},
 		{Name: "cmd", Command: "run ${B}", Args: []string{"${A}"}, Env: map[string]string{"E": "${B}"}},
@@ -1479,12 +1463,9 @@ func TestSandboxHelpers(t *testing.T) {
 		t.Fatal("hasArtifactStoreSpec nil should be false")
 	}
 
-	js := mcpServersJSON(specs)
+	js := runtime.MCPServersJSON(specs)
 	if len(js) == 0 || !strings.Contains(string(js), "artifact-store") {
-		t.Fatalf("mcpServersJSON: %s", js)
-	}
-	if mcpServersJSON(nil) != nil {
-		t.Fatal("mcpServersJSON nil")
+		t.Fatalf("MCPServersJSON: %s", js)
 	}
 
 	if truncErr(nil) != "" {

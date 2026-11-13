@@ -68,3 +68,9 @@ func TestInspectCancelFilterReenterArmsNewSkip(t *testing.T) {
 		t.Fatal("re-enter must skip the next enable-side cancel")
 	}
 }
+
+func (f *inspectCancelFilter) expireSkipNow() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.skip = false
+}
