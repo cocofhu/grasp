@@ -82,6 +82,15 @@ func TestIngestAndResolve(t *testing.T) {
 	if wire[0].Data != b64 {
 		t.Fatalf("resolve data = %q", wire[0].Data)
 	}
+
+	history := []models.PromptImage{{Ref: "blob:gone", MimeType: "image/png", History: true}, {Ref: out[0].Ref, MimeType: "image/png", History: true}}
+	wire, err = ResolveForWire(ctx, store, history)
+	if err != nil || len(wire) != 1 || wire[0].Data != b64 || !wire[0].History {
+		t.Fatalf("history resolve = %+v %v", wire, err)
+	}
+	if _, err := ResolveForWire(ctx, store, []models.PromptImage{{Ref: "blob:gone", MimeType: "image/png"}}); err == nil {
+		t.Fatal("missing current-turn attachment must fail the turn")
+	}
 }
 
 func TestIngestCompositeInputs(t *testing.T) {

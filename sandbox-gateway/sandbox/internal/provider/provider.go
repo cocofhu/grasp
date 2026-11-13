@@ -47,6 +47,12 @@ type PromptImage struct {
 	Data     string `json:"data"`
 	MimeType string `json:"mimeType"`
 	Name     string `json:"name,omitempty"`
+	// Ref is the platform's blob:{id}; it keys a stable on-disk location so
+	// later turns and a switched model reopen the same path.
+	Ref string `json:"ref,omitempty"`
+	// History marks an attachment from an earlier turn re-sent so it exists
+	// in this sandbox again; it is not part of the current user message.
+	History bool `json:"history,omitempty"`
 }
 
 // AgentInfo is the agent/session metadata surfaced in the connected payload and

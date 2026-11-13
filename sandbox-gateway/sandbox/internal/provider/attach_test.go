@@ -20,160 +20,150 @@ func TestAttachmentFileNameRejectsDotDot(t *testing.T) {
 }
 
 func TestMaterializeAttachmentsRejectsDotDotName(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	png := base64.StdEncoding.EncodeToString([]byte{0x89, 0x50, 0x4e, 0x47})
-	dir, paths, err := MaterializeAttachments([]PromptImage{
+	files, err := MaterializeAttachments([]PromptImage{
 		{Data: png, MimeType: "image/png", Name: ".."},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	if len(paths) != 1 {
-		t.Fatalf("paths=%v", paths)
+	if len(files) != 1 {
+		t.Fatalf("files=%v", files)
 	}
-	rel, err := filepath.Rel(dir, paths[0])
-	if err != nil || strings.HasPrefix(rel, "..") {
-		t.Fatalf("path escaped temp dir: %q (rel=%q err=%v)", paths[0], rel, err)
-	}
+	assertInside(t, attachmentRoot(), files[0].Path)
 }
 
 func TestMaterializeAttachmentsImageAndFile(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	png := base64.StdEncoding.EncodeToString([]byte{0x89, 0x50, 0x4e, 0x47})
 	txt := base64.StdEncoding.EncodeToString([]byte("hello"))
-	dir, paths, err := MaterializeAttachments([]PromptImage{
+	files, err := MaterializeAttachments([]PromptImage{
 		{Data: png, MimeType: "image/png", Name: "a.png"},
 		{Data: txt, MimeType: "text/plain", Name: "b.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	if len(paths) != 2 {
-		t.Fatalf("paths=%v", paths)
+	if len(files) != 2 {
+		t.Fatalf("files=%v", files)
 	}
-	for _, p := range paths {
-		if !filepath.IsAbs(p) {
-			t.Fatalf("want abs path, got %q", p)
+	for _, f := range files {
+		if !filepath.IsAbs(f.Path) {
+			t.Fatalf("want abs path, got %q", f.Path)
 		}
-		if _, err := os.Stat(p); err != nil {
+		if _, err := os.Stat(f.Path); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := AppendAttachmentRefs("看一下", paths)
-	if !strings.Contains(got, "看一下") || !strings.Contains(got, "a.png") || !strings.Contains(got, "b.txt") {
+	got := AppendAttachmentRefs("看一下", files)
+	if !strings.HasPrefix(got, "看一下\n\n<attached_files>\n") || !strings.HasSuffix(got, "</attached_files>\n") {
+		t.Fatalf("refs not fenced from user text: %q", got)
+	}
+	if !strings.Contains(got, files[0].Path+" (image/png)") || !strings.Contains(got, files[1].Path+" (text/plain)") {
 		t.Fatalf("refs=%q", got)
+	}
+	if strings.Contains(got, "此前对话") {
+		t.Fatalf("no history attachments expected: %q", got)
 	}
 }
 
-func TestMaterializeAttachmentsKeepsSingleImageName(t *testing.T) {
+func TestMaterializeAttachmentsStablePathByRef(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d}
-	dir, paths, err := MaterializeAttachments([]PromptImage{
-		{Data: base64.StdEncoding.EncodeToString(raw), MimeType: "image/png", Name: "image.png"},
-	})
+	img := PromptImage{Data: base64.StdEncoding.EncodeToString(raw), MimeType: "image/png", Name: "IMG_6293.png", Ref: "blob:892fe2a4a9814de3952c5d45d8aad778"}
+	first, err := MaterializeAttachments([]PromptImage{img})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	if len(paths) != 1 || filepath.Base(paths[0]) != "image.png" {
-		t.Fatalf("paths=%v", paths)
+	want := filepath.Join(attachmentRoot(), "892fe2a4a9814de3952c5d45d8aad778", "IMG_6293.png")
+	if len(first) != 1 || first[0].Path != want {
+		t.Fatalf("files=%v, want %s", first, want)
 	}
-	got, err := os.ReadFile(paths[0])
+	img.History = true
+	again, err := MaterializeAttachments([]PromptImage{img})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 1 || again[0].Path != want || !again[0].History {
+		t.Fatalf("second turn files=%v", again)
+	}
+	got, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, raw) {
 		t.Fatalf("bytes=%v", got)
 	}
-	assertInside(t, dir, paths[0])
 }
 
-func TestMaterializeAttachmentsDuplicateImagePNG(t *testing.T) {
+func TestMaterializeAttachmentsInvalidRefFallsBackToHash(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	data := base64.StdEncoding.EncodeToString([]byte("x"))
+	files, err := MaterializeAttachments([]PromptImage{{Data: data, MimeType: "image/png", Name: "a.png", Ref: "blob:../../etc"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || !strings.Contains(files[0].Path, string(filepath.Separator)+"sha256-") {
+		t.Fatalf("files=%v", files)
+	}
+	assertInside(t, attachmentRoot(), files[0].Path)
+}
+
+func TestMaterializeAttachmentsDuplicateNamesDoNotCollide(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	first := []byte{0x89, 0x50, 0x4e, 0x47, 0x01}
 	second := []byte{0x89, 0x50, 0x4e, 0x47, 0x02}
-	third := []byte{0x89, 0x50, 0x4e, 0x47, 0x03}
-	dir, paths, err := MaterializeAttachments([]PromptImage{
+	files, err := MaterializeAttachments([]PromptImage{
 		{Data: base64.StdEncoding.EncodeToString(first), MimeType: "image/png", Name: "image.png"},
 		{Data: base64.StdEncoding.EncodeToString(second), MimeType: "image/png", Name: "image.png"},
-		{Data: base64.StdEncoding.EncodeToString(third), MimeType: "image/png", Name: "image.png"},
+		{Data: base64.StdEncoding.EncodeToString(first), MimeType: "image/png", Name: "image.png"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	wantNames := []string{"image.png", "image-2.png", "image-3.png"}
-	wantBytes := [][]byte{first, second, third}
-	if len(paths) != len(wantNames) {
-		t.Fatalf("paths=%v", paths)
+	if len(files) != 2 || files[0].Path == files[1].Path {
+		t.Fatalf("files=%v", files)
 	}
-	for i, p := range paths {
-		if filepath.Base(p) != wantNames[i] {
-			t.Fatalf("path %d = %q, want %s", i, p, wantNames[i])
+	for i, want := range [][]byte{first, second} {
+		if filepath.Base(files[i].Path) != "image.png" {
+			t.Fatalf("path %d = %q", i, files[i].Path)
 		}
-		assertInside(t, dir, p)
-		got, err := os.ReadFile(p)
+		got, err := os.ReadFile(files[i].Path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(got, wantBytes[i]) {
-			t.Fatalf("file %s bytes = %v, want %v", wantNames[i], got, wantBytes[i])
+		if !bytes.Equal(got, want) {
+			t.Fatalf("file %d bytes = %v, want %v", i, got, want)
 		}
 	}
-	if paths[0] == paths[1] || paths[1] == paths[2] {
-		t.Fatalf("paths collided: %v", paths)
-	}
-	refs := AppendAttachmentRefs("图一和图二", paths)
-	if !strings.Contains(refs, "用户上传了以下附件，请直接读取这些本地文件路径：") {
-		t.Fatalf("refs=%q", refs)
-	}
-	prev := -1
-	for _, p := range paths {
-		idx := strings.Index(refs, p)
-		if idx < 0 || idx <= prev {
-			t.Fatalf("path %q missing or out of order in %q", p, refs)
-		}
-		prev = idx
-	}
+	refs := AppendAttachmentRefs("图一和图二", files)
 	if strings.Contains(refs, base64.StdEncoding.EncodeToString(first)) {
 		t.Fatalf("refs inlined image bytes: %q", refs)
 	}
+	if strings.Index(refs, files[0].Path) > strings.Index(refs, files[1].Path) {
+		t.Fatalf("paths out of order in %q", refs)
+	}
 }
 
-func TestMaterializeAttachmentsDuplicateSkipsTakenSuffix(t *testing.T) {
-	taken := []byte("taken")
-	first := []byte("first-image")
-	second := []byte("second-image")
-	dir, paths, err := MaterializeAttachments([]PromptImage{
-		{Data: base64.StdEncoding.EncodeToString(taken), MimeType: "image/png", Name: "image-2.png"},
-		{Data: base64.StdEncoding.EncodeToString(first), MimeType: "image/png", Name: "image.png"},
-		{Data: base64.StdEncoding.EncodeToString(second), MimeType: "image/png", Name: "image.png"},
+func TestAppendAttachmentRefsSeparatesHistory(t *testing.T) {
+	got := AppendAttachmentRefs("你看看图片内容啊", []Attachment{
+		{Path: "/tmp/sbx-attach/old/IMG_6293.png", MimeType: "image/png", History: true},
+		{Path: "/tmp/sbx-attach/new/b.txt", MimeType: "text/plain"},
 	})
-	if err != nil {
-		t.Fatal(err)
+	cur := strings.Index(got, "本轮用户上传的附件：")
+	hist := strings.Index(got, "此前对话中上传的附件：")
+	if cur < 0 || hist < cur {
+		t.Fatalf("groups missing or out of order: %q", got)
 	}
-	defer os.RemoveAll(dir)
-	want := []struct {
-		name string
-		raw  []byte
-	}{
-		{"image-2.png", taken},
-		{"image.png", first},
-		{"image-3.png", second},
+	if p := strings.Index(got, "/tmp/sbx-attach/old/IMG_6293.png"); p < hist {
+		t.Fatalf("history path not under history group: %q", got)
 	}
-	if len(paths) != len(want) {
-		t.Fatalf("paths=%v", paths)
+	if p := strings.Index(got, "/tmp/sbx-attach/new/b.txt"); p < cur || p > hist {
+		t.Fatalf("current path not under current group: %q", got)
 	}
-	for i, p := range paths {
-		if filepath.Base(p) != want[i].name {
-			t.Fatalf("path %d = %q, want %s", i, p, want[i].name)
-		}
-		assertInside(t, dir, p)
-		got, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(got, want[i].raw) {
-			t.Fatalf("file %s bytes = %q, want %q", want[i].name, got, want[i].raw)
-		}
+	if AppendAttachmentRefs("hi", nil) != "hi" {
+		t.Fatal("no attachments should leave text untouched")
 	}
 }
 
@@ -181,6 +171,6 @@ func assertInside(t *testing.T, dir, path string) {
 	t.Helper()
 	rel, err := filepath.Rel(dir, path)
 	if err != nil || !filepath.IsLocal(rel) {
-		t.Fatalf("path escaped temp dir: %q (rel=%q err=%v)", path, rel, err)
+		t.Fatalf("path escaped attachment root: %q (rel=%q err=%v)", path, rel, err)
 	}
 }

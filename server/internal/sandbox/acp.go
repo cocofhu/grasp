@@ -106,14 +106,20 @@ func turnLimitFields(msg map[string]any, ctx context.Context, idle time.Duration
 
 func attachImages(msg map[string]any, images []models.PromptImage) {
 	if len(images) > 0 {
-		imgs := make([]map[string]string, 0, len(images))
+		imgs := make([]map[string]any, 0, len(images))
 		for _, im := range images {
 			if im.Data == "" {
 				continue
 			}
-			entry := map[string]string{"data": im.Data, "mimeType": im.MimeType}
+			entry := map[string]any{"data": im.Data, "mimeType": im.MimeType}
 			if im.Name != "" {
 				entry["name"] = im.Name
+			}
+			if im.Ref != "" {
+				entry["ref"] = im.Ref
+			}
+			if im.History {
+				entry["history"] = true
 			}
 			imgs = append(imgs, entry)
 		}

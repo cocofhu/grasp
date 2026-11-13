@@ -271,8 +271,20 @@ func promptQueueEntryFromQueued(p queuedPrompt) PromptQueueEntry {
 		Content:    p.Text,
 		Text:       p.Text,
 		OpID:       id,
-		ImageCount: len(p.Images),
+		ImageCount: userImageCount(p.Images),
 	}
+}
+
+// userImageCount counts the attachments the user sent with this turn,
+// excluding earlier ones re-sent for the sandbox.
+func userImageCount(images []PromptImage) int {
+	n := 0
+	for _, img := range images {
+		if !img.History {
+			n++
+		}
+	}
+	return n
 }
 
 // runningForClient 当前正在处理的一条；正文由前端截断展示。

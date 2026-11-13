@@ -121,6 +121,43 @@ func TestContextPreambleKeepsEarlyConstraintsAndRecentFullContent(t *testing.T) 
 	}
 }
 
+func TestContextPreambleResendsRecentAttachments(t *testing.T) {
+	_, db, sb := conversationHistoryFixture(t)
+	at := time.Date(2026, 11, 6, 1, 0, 0, 0, time.UTC)
+	rows := []models.SoloMessage{
+		{ID: "old", Role: "user", Content: "组织下语言 给我一段类似这样的", Images: []models.PromptImage{{Ref: "blob:892fe2a4", Name: "IMG_6293.png", MimeType: "image/png", SizeBytes: 10}}},
+		{ID: "big", Role: "user", Content: "大文件", Images: []models.PromptImage{{Ref: "blob:huge", Name: "huge.pdf", MimeType: "application/pdf", SizeBytes: maxHistoryAttachmentBytes}}},
+		{ID: "now", Role: "user", Content: "你看看图片内容啊", Images: []models.PromptImage{{Ref: "blob:current", Name: "now.png", MimeType: "image/png"}}},
+	}
+	for i := range rows {
+		rows[i].SessionID, rows[i].CreatedAt = sb.ThreadID, at.Add(time.Duration(i)*time.Second)
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	solo := &SoloService{db: db}
+	pre, history, err := solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Ref != "blob:huge" || !history[0].History {
+		t.Fatalf("newest first within the byte bound: %+v", history)
+	}
+	if !strings.Contains(pre, "/tmp/sbx-attach/huge/") || strings.Contains(pre, "/tmp/sbx-attach/892fe2a4/") {
+		t.Fatalf("local dir only for re-sent attachments: %s", pre)
+	}
+	if strings.Contains(pre, "blob:current") {
+		t.Fatalf("current turn's attachment leaked into history: %s", pre)
+	}
+	if err := db.Model(&models.SoloMessage{}).Where("id = ?", "big").Update("images", []models.PromptImage{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, history, _ = solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n")
+	if len(history) != 1 || history[0].Ref != "blob:892fe2a4" {
+		t.Fatalf("older attachment should be re-sent once the bound allows: %+v", history)
+	}
+}
+
 func TestConversationHistoryIncludesVisibleToolResults(t *testing.T) {
 	row := models.SoloMessage{Events: []json.RawMessage{
 		json.RawMessage(`not JSON`),
@@ -154,7 +191,7 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 		}
 	}
 	solo := &SoloService{db: db}
-	pre, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff\n")
+	pre, _, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff\n")
 	if err != nil || !strings.Contains(pre, "改用 React，取消支付功能") || !strings.Contains(pre, "较新的更正优先") || !strings.Contains(pre, "较早的 18 条对话正文") {
 		t.Fatalf("middle correction disappeared: %s %v", pre, err)
 	}

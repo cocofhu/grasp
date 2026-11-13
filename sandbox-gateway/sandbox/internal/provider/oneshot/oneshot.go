@@ -337,8 +337,9 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// Unified attachment path: always land image/file bytes under /tmp and pass
 	// absolute paths in the prompt. Agents then Read files like any other path
 	// (works for cursor/gemini/codex and also for codecs that could embed images).
+	// Files outlive the turn so follow-ups and a switched model can reopen them.
 	if len(images) > 0 {
-		dir, paths, merr := provider.MaterializeAttachments(images)
+		files, merr := provider.MaterializeAttachments(images)
 		if merr != nil {
 			merr = e.safeError(merr)
 			log.Printf("oneshot: 附件落盘失败: %v", merr)
@@ -346,9 +347,8 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			e.emitPromptDone("failed", nil)
 			return provider.TurnResult{StopReason: "failed"}, merr
 		}
-		defer func() { _ = os.RemoveAll(dir) }()
-		log.Printf("oneshot: agent %q 已将 %d 个附件落到 %s", e.c.AgentName(), len(paths), dir)
-		text = provider.AppendAttachmentRefs(text, paths)
+		log.Printf("oneshot: agent %q 已将 %d 个附件落盘", e.c.AgentName(), len(files))
+		text = provider.AppendAttachmentRefs(text, files)
 		images = nil
 	}
 

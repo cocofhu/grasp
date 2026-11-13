@@ -101,7 +101,7 @@ func (h *Host) getConversationHistory(runID, token string, args map[string]any) 
 func conversationHistoryTool() map[string]any {
 	return map[string]any{
 		"name":        "get_history",
-		"description": "读取当前 Solo 会话的历史，供模型、模型组或编码工具切换后接续任务。summary 返回覆盖会话的用户要求与更正概览及近期对话；messages 按页返回完整消息正文。每页内按时间正序，next_cursor 继续读取更早记录，history_version 固定本次分页快照。会话由当前授权确定。",
+		"description": "读取当前 Solo 会话的历史，供模型、模型组或编码工具切换后接续任务。summary 返回覆盖会话的用户要求与更正概览及近期对话；messages 按页返回完整消息正文。每页内按时间正序，next_cursor 继续读取更早记录，history_version 固定本次分页快照。会话由当前授权确定。attachments 只含元数据；ref 为 blob:{id} 的附件若已下发到当前沙箱，文件位于 /tmp/sbx-attach/{id}/ 目录。",
 		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
