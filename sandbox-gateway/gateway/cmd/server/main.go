@@ -30,13 +30,19 @@ import (
 func main() {
 	logging.Init("sandbox-gateway")
 
-	configPath := flag.String("config", envOr("SBGW_CONFIG", ""), "path to config YAML")
+	configPath := flag.String("config", envOr("SBGW_CONFIG", defaultConfigPath(imageConfigPath)), "path to config YAML")
 	healthcheck := flag.Bool("healthcheck", false, "check the configured local gateway and exit without initializing its driver")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatal().Err(err).Str("config_path", *configPath).Msg("load config failed")
+	}
+	if *configPath == "" && !*healthcheck {
+		log.Warn().Str("driver", cfg.Driver).Msg("no config file; using built-in backend defaults and SBGW_* environment")
+	}
+	if len(cfg.Auth.APIKeys) == 0 && !*healthcheck {
+		log.Warn().Msg("auth.apiKeys is empty; /api/v1 accepts unauthenticated requests and /api/v2 transport is disabled")
 	}
 	if *healthcheck {
 		if err := checkGatewayHealth(context.Background(), cfg); err != nil {
@@ -204,6 +210,18 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 	default:
 		return nil, fmt.Errorf("unknown driver %q", cfg.Driver)
 	}
+}
+
+// imageConfigPath is where the published image and examples mount the YAML.
+const imageConfigPath = "/etc/sandbox-gateway/config.yaml"
+
+// defaultConfigPath loads the conventional mount without requiring
+// SBGW_CONFIG; env-only deployments without that file keep built-in defaults.
+func defaultConfigPath(path string) string {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
+	}
+	return ""
 }
 
 func envOr(key, def string) string {

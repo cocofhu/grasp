@@ -73,8 +73,26 @@ func TestStrictConfiguration(t *testing.T) {
 			}
 		})
 	}
-	if _, err := loadYAML(t, "server: {finalizeTimeoutSeconds: secret-value}"); err == nil || strings.Contains(err.Error(), "secret-value") {
-		t.Fatal("error leaked input")
+	if _, err := loadYAML(t, "server: {finalizeTimeoutSeconds: secret-value}"); err == nil || strings.Contains(err.Error(), "secret-value") || !strings.Contains(err.Error(), "line 1") {
+		t.Fatalf("error must locate the value without leaking it: %v", err)
+	}
+	if _, err := loadYAML(t, "driver: docker\ndocker:\n  imag: typo-secret"); err == nil || !strings.Contains(err.Error(), "line 3: field imag not found") || strings.Contains(err.Error(), "typo-secret") {
+		t.Fatalf("unknown field must name its line and key: %v", err)
+	}
+	if _, err := loadYAML(t, "driver: docker\n  bad: [secret"); err == nil || !strings.Contains(err.Error(), "line") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("syntax error must keep only its line: %v", err)
+	}
+}
+
+func TestRemovedEnvironmentNamesTheirReplacement(t *testing.T) {
+	t.Setenv("SBGW_IMAGE", "old")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "SBGW_DOCKER_IMAGE") {
+		t.Fatalf("removed SBGW_IMAGE needs a replacement hint: %v", err)
+	}
+	_ = os.Unsetenv("SBGW_IMAGE")
+	t.Setenv("SBGW_E2B_DOMAIN", "e2b.app")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "SBGW_E2B_API_URL") {
+		t.Fatalf("removed SBGW_E2B_DOMAIN needs a replacement hint: %v", err)
 	}
 }
 func TestBackendYAMLAndEnvironment(t *testing.T) {

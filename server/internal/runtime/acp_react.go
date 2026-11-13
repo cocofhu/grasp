@@ -83,7 +83,7 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 			}
 			chatCtx, cancel := c.turnCtx(ctx, req)
 			var primed *sandbox.ChatResult
-			primed, err = c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, seeded, history), req.PromptImages)
+			primed, err = c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, seeded, history, sb), req.PromptImages)
 			cancel()
 			c.carryChatUsage(reactKey(req), primed)
 			if err == nil {
@@ -173,7 +173,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	prompt := human
 	chatImages := images
 	if clarifyInjectOpenPrompt(req, history) {
-		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req)) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
+		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req), sess.sb) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 		chatImages = mergePromptImages(req.PromptImages, images)
 		if force {
 			prompt = c.reactConfirmPrefix(req) + "\n\n" + prompt
@@ -711,16 +711,16 @@ func (c *acpProvider) finishReact(ctx context.Context, req NodeReq, key string, 
 		Result: NodeResult{OutputMd: narration, Outputs: out, Events: events, Git: git, Usage: usage, UsageByModel: usageByModel}}
 }
 
-func (c *acpProvider) buildReactOpenPrompt(req NodeReq, seeded []string) string {
-	return c.buildAgentPrompt(req, seeded) + models.ClarifyOpenSuffix
+func (c *acpProvider) buildReactOpenPrompt(req NodeReq, seeded []string, sb *sandbox.Sandbox) string {
+	return c.buildAgentPrompt(req, seeded, sb) + models.ClarifyOpenSuffix
 }
 
 // buildReactRehydratePrompt re-opens a dialogue after a crash/restart: the base
 // open prompt plus the persisted Q&A transcript as recovery context, instructing
 // the agent to resume without re-asking and to await the next human reply.
-func (c *acpProvider) buildReactRehydratePrompt(req NodeReq, seeded []string, history []models.ReactMessage) string {
+func (c *acpProvider) buildReactRehydratePrompt(req NodeReq, seeded []string, history []models.ReactMessage, sb *sandbox.Sandbox) string {
 	var b strings.Builder
-	b.WriteString(c.buildReactOpenPrompt(req, seeded))
+	b.WriteString(c.buildReactOpenPrompt(req, seeded, sb))
 	b.WriteString("\n\n## 会话恢复(重要)\n之前的澄清对话因故中断,现在在新会话中恢复。以下是此前的完整问答记录,请据此恢复上下文并继续:不要重复已经问过的问题,先不要提出新问题,等待我接下来的回复。\n\n")
 	b.WriteString(renderRecoveryTranscript(history))
 	return b.String()
@@ -751,7 +751,7 @@ func (c *acpProvider) reopenPoisonedReact(ctx context.Context, req NodeReq, sess
 		*sess = next
 		return nil
 	}
-	prime := c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), historyWithoutTrailingHuman(history))
+	prime := c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), historyWithoutTrailingHuman(history), cur.sb)
 	res, perr := c.streamChat(ctx, cur.acp, req, prime, nil)
 	c.carryChatUsage(reactKey(req), res)
 	if perr != nil {

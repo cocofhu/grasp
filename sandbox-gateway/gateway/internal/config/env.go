@@ -91,9 +91,17 @@ func applyEnv(c *Config) error {
 			*destination = parsed
 			continue
 		}
+		if hint, ok := removedEnv[key]; ok {
+			return fmt.Errorf("%s is no longer supported; %s", key, hint)
+		}
 		return fmt.Errorf("%s is not supported by the %s gateway configuration", key, c.Driver)
 	}
 	return nil
+}
+
+var removedEnv = map[string]string{
+	"SBGW_IMAGE":      "use SBGW_DOCKER_IMAGE or SBGW_K8S_IMAGE for the selected backend; E2B uses e2b.templates",
+	"SBGW_E2B_DOMAIN": "set SBGW_E2B_API_URL and, for a private sandbox proxy, SBGW_E2B_SANDBOX_URL",
 }
 
 func splitCSV(value string) []string {

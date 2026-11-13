@@ -193,3 +193,20 @@ func TestHealthcheckMainExitsWithoutConstructingE2BDriver(t *testing.T) {
 		t.Fatalf("healthcheck initialized a driver or failed local readiness: %v; output=%s", err, output)
 	}
 }
+
+func TestDefaultConfigPathUsesMountedFileOnly(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "config.yaml")
+	if got := defaultConfigPath(file); got != "" {
+		t.Fatalf("missing file selected: %q", got)
+	}
+	if got := defaultConfigPath(dir); got != "" {
+		t.Fatalf("directory selected: %q", got)
+	}
+	if err := os.WriteFile(file, []byte("driver: docker\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultConfigPath(file); got != file {
+		t.Fatalf("mounted file ignored: %q", got)
+	}
+}

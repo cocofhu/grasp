@@ -2,9 +2,11 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +73,7 @@ func Load(path string) (*Config, error) {
 	}
 	if len(data) > 0 {
 		if err := yaml.Unmarshal(data, &selector); err != nil {
-			return nil, fmt.Errorf("parse gateway config: invalid YAML")
+			return nil, fmt.Errorf("parse gateway config: invalid YAML%s", yamlDetail(err))
 		}
 	}
 	driver := strings.TrimSpace(selector.Driver)
@@ -92,7 +94,7 @@ func Load(path string) (*Config, error) {
 		decoder := yaml.NewDecoder(bytes.NewReader(data))
 		decoder.KnownFields(true)
 		if err = decoder.Decode(c); err != nil {
-			return nil, fmt.Errorf("parse gateway config: unknown field or invalid value; check the selected backend schema")
+			return nil, fmt.Errorf("parse gateway config: unknown field or invalid value; check the selected backend schema%s", yamlDetail(err))
 		}
 		var trailing any
 		if err = decoder.Decode(&trailing); err != io.EOF {
@@ -117,6 +119,28 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+var (
+	yamlQuotedValue = regexp.MustCompile("`[^`]*`")
+	yamlLine        = regexp.MustCompile(`line \d+`)
+)
+
+// yamlDetail keeps line numbers and field names but never configured values,
+// which may be credentials.
+func yamlDetail(err error) string {
+	var typeErr *yaml.TypeError
+	if errors.As(err, &typeErr) {
+		details := make([]string, 0, len(typeErr.Errors))
+		for _, item := range typeErr.Errors {
+			details = append(details, yamlQuotedValue.ReplaceAllString(item, "<value>"))
+		}
+		return " (" + strings.Join(details, "; ") + ")"
+	}
+	if line := yamlLine.FindString(err.Error()); line != "" {
+		return " (" + line + ")"
+	}
+	return ""
 }
 
 func (c *Config) validateBackend() error {

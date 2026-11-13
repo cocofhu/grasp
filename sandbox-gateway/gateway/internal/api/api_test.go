@@ -526,3 +526,18 @@ func TestPublishPortEndpoint(t *testing.T) {
 		t.Fatalf("missing sandbox want 404 got %d", w.Code)
 	}
 }
+
+func TestE2BTemplateErrorsAreClientFaults(t *testing.T) {
+	policy := config.ResourcePolicy{Templates: map[string]config.E2BTemplateConfig{
+		"standard": {TemplateID: "tpl", CPUCores: 2, MemoryMB: 3072, DiskGi: 20},
+	}}
+	for _, tc := range []struct {
+		image  string
+		memory int64
+	}{{"missing", 0}, {"standard", -1}, {"standard", 8192}} {
+		_, _, _, err := policy.Resolve(tc.image, 0, tc.memory, 0)
+		if err == nil || !isClientResourceError(err) {
+			t.Fatalf("%s/%d must be a client fault: %v", tc.image, tc.memory, err)
+		}
+	}
+}

@@ -110,7 +110,9 @@ Choose exactly one backend file: [Docker](config.docker.example.yaml),
 [Kubernetes](config.kubernetes.example.yaml), or [E2B](../deploy/e2b/gateway.example.yaml).
 Do not combine backend sections. Unknown fields, inactive backend variables,
 and missing explicitly selected files fail startup. Without `-config` /
-`SBGW_CONFIG`, the gateway uses Docker defaults and supported environment variables.
+`SBGW_CONFIG`, the gateway loads `/etc/sandbox-gateway/config.yaml` when that
+file exists; otherwise it uses Docker defaults and supported environment variables
+and logs a warning.
 See the
 [Grasp and sandbox configuration guide](../../CONFIGURATION.md), including paired
 Docker examples and E2B template defaults. Supported `SBGW_*` environment

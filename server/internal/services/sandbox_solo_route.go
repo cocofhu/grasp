@@ -171,7 +171,8 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	if runningImage == "" && previousKnown {
 		runningImage = s.routeImage(previousAgent.AcpBackend)
 	}
-	if !ls.sb.IsLocal() && runningImage != "" && runningImage != s.routeImage(agent.AcpBackend) {
+	// An empty target image follows the gateway default the sandbox already runs.
+	if want := s.routeImage(agent.AcpBackend); !ls.sb.IsLocal() && runningImage != "" && want != "" && runningImage != want {
 		return false, fmt.Errorf("目标编码工具使用不同的沙箱镜像，当前工作区无法原地切换")
 	}
 	if !ls.sb.IsLocal() && agent.Layout.WorkspaceDir != "" && agent.Layout.WorkspaceDir != ls.sb.WorkspaceDir {

@@ -10,7 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
-func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
+func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string, sb *sandbox.Sandbox) string {
 	var b strings.Builder
 	b.WriteString(str2(req.Config["prompt"]))
 	if req.Caps.Clarify() {
@@ -36,7 +36,7 @@ func (c *acpProvider) buildAgentPrompt(req NodeReq, seeded []string) string {
 	if layout := multiRepoLayoutText(req); layout != "" {
 		b.WriteString(layout)
 	}
-	b.WriteString(sandboxResourcesText(sandbox.DefaultMemoryMB()))
+	b.WriteString(sandboxResourcesText(promptMemoryMB(sb)))
 	b.WriteString(timeLimitsText(req, c.agentIdle()))
 	return strings.TrimSpace(b.String())
 }
@@ -81,6 +81,15 @@ func upstreamHandoffText(h *models.UpstreamHandoff) string {
 	b.WriteString(strings.TrimSpace(h.Text))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// promptMemoryMB prefers the limit the gateway resolved for this sandbox, so
+// prompts stay accurate when Grasp sends no memory override.
+func promptMemoryMB(sb *sandbox.Sandbox) int {
+	if sb != nil && sb.MemoryMB > 0 {
+		return int(sb.MemoryMB)
+	}
+	return sandbox.DefaultMemoryMB()
 }
 
 // sandboxResourcesText tells the agent its sandbox memory budget. Exceeding it

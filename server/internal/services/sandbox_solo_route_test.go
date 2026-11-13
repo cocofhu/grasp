@@ -192,6 +192,18 @@ func TestSoloRouteSwitchRejectsBusyGitAndImageChanges(t *testing.T) {
 	}
 }
 
+func TestSoloRouteSwitchFollowsGatewayImageWithoutOverride(t *testing.T) {
+	s, row, _, target, ops := soloRouteFixture(t)
+	previous := config.GetConfig()
+	t.Cleanup(func() { config.StoreConfig(previous) })
+	config.StoreConfig(&config.Config{})
+	s.live[row.ID].sb.Image = "ghcr.io/cocofhu/universal-sandbox:3.3.0"
+	changed, err := s.AlignSoloModelRoute(context.Background(), row.ID, target)
+	if err != nil || !changed || len(ops.specs) != 1 {
+		t.Fatalf("gateway-selected image must allow in-place switch: changed=%v calls=%d err=%v", changed, len(ops.specs), err)
+	}
+}
+
 func TestSoloRouteSwitchKeepsRepoSnapshotAndAppliedModelOnRollback(t *testing.T) {
 	s, row, _, target, ops := soloRouteFixture(t)
 	var session models.SoloSession
