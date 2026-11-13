@@ -53,6 +53,12 @@ const skipDirNames = new Set([
   'vendor',
 ])
 
+// Generated build output (gitignored), skipped by repo-relative path: the
+// source files are scanned under their own allowlisted paths.
+const skipDirPaths = new Set([
+  'docs/public', // docs/scripts/build.mjs copies docs/site here
+])
+
 const skipFileNames = new Set(['CHANGELOG.md'])
 
 const skipExt = new Set([
@@ -115,7 +121,9 @@ function walk(dir, acc) {
     if (ent.isDirectory()) {
       if (skipDirNames.has(ent.name)) continue
       if (ent.name.startsWith('.') && ent.name !== '.github') continue
-      walk(path.join(dir, ent.name), acc)
+      const sub = path.join(dir, ent.name)
+      if (skipDirPaths.has(path.relative(root, sub).split(path.sep).join('/'))) continue
+      walk(sub, acc)
       continue
     }
     if (skipFileNames.has(ent.name)) continue
