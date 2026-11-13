@@ -619,6 +619,12 @@ func TestSessionRemoveReorder(t *testing.T) {
 	if err := s.Reorder([]string{"d", "x"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("reorder unknown=%v", err)
 	}
+	if err := s.Reorder([]string{"b", " b "}); err == nil {
+		t.Fatal("duplicate ids must fail")
+	}
+	if p := s.Snapshot().Items; len(p) != 2 || p[0]["id"] != "b" || p[1]["id"] != "d" {
+		t.Fatalf("failed reorder changed queue: %v", p)
+	}
 	if err := s.Reorder([]string{"d", "b"}); err != nil {
 		t.Fatal(err)
 	}

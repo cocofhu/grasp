@@ -284,6 +284,56 @@ func TestGateFormValidation(t *testing.T) {
 	}
 }
 
+// TestGateRejectsUnknownAction: an action the gate does not offer is rejected
+// without resolving the gate, and a configured action still continues the run.
+func TestGateRejectsUnknownAction(t *testing.T) {
+	g := models.Graph{
+		Nodes: []models.Node{
+			{ID: "input", Type: "input"},
+			{ID: "gate", Type: "human_gate", Config: map[string]any{"title": "评审",
+				"actions": []any{map[string]any{"id": "approve", "label": "批准"}},
+			}},
+			{ID: "after", Type: "output"},
+		},
+		Edges: []models.Edge{
+			{ID: "e1", Source: "input", Target: "gate"},
+			{ID: "e2", Source: "gate", Target: "after", SourceHandle: "approve"},
+		},
+	}
+	eng, db, _ := setupEngineGraphP(t, g)
+	run, _ := eng.StartRun("wf", nil, "test")
+	waitGatePending(t, db, run.ID, "gate")
+
+	for _, action := range []string{"not-a-configured-action", ""} {
+		if err := eng.ResumeGate(run.ID, "gate", action, map[string]any{}); err == nil {
+			t.Fatalf("action %q must be rejected", action)
+		}
+	}
+	var gate models.Gate
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "gate").First(&gate).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gate.Resolved {
+		t.Fatal("rejected action must leave the gate pending")
+	}
+	var r models.Run
+	if err := db.First(&r, "id = ?", run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != "waiting_human" {
+		t.Fatalf("run status=%q, want waiting_human", r.Status)
+	}
+
+	if err := eng.ResumeGate(run.ID, "gate", "approve", nil); err != nil {
+		t.Fatalf("resume with configured action: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "completed")
+	var after models.StateRun
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "after").First(&after).Error; err != nil {
+		t.Fatalf("approve branch skipped: %v", err)
+	}
+}
+
 // TestPlanAndImplementNodes: a plan node enforces the set_plan contract and an
 // implement node exports its working branch to the global `branches` var.
 // Neither node writes a fixed-name markdown companion.
