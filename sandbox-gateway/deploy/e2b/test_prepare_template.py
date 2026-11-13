@@ -61,6 +61,7 @@ class FakeSandbox:
     failure = None
     cleanup_failure = None
     memory_mb = 3072
+    cpu_count = 2
 
     @classmethod
     def create(cls, template, **kwargs):
@@ -78,7 +79,7 @@ class FakeSandbox:
         return SimpleNamespace(exit_code=0, stdout=json.dumps(self.probe))
 
     def get_info(self):
-        return SimpleNamespace(template_id="template-123", cpu_count=2, memory_mb=self.memory_mb)
+        return SimpleNamespace(template_id="template-123", cpu_count=self.cpu_count, memory_mb=self.memory_mb)
 
     def kill(self):
         self.deleted = True
@@ -99,6 +100,7 @@ class PrepareTemplateTest(unittest.TestCase):
     def setUp(self):
         FakeSandbox.failure = FakeSandbox.cleanup_failure = None
         FakeSandbox.memory_mb = 3072
+        FakeSandbox.cpu_count = 2
         FakeSandbox.guest = None
         plan = tool.validate(self.args())
         FakeSandbox.probe = {
@@ -205,6 +207,34 @@ class PrepareTemplateTest(unittest.TestCase):
         FakeSandbox.probe["workspaceAvailableBytes"] = 19 * (1 << 30)
         report = tool.prepare(self.args(), FakeTemplate, FakeSandbox)
         self.assertEqual(report["status"], "failed")
+        self.assertNotIn("gatewayTemplates", report)
+        self.assertEqual(report["probeCleanup"], "deleted")
+
+    def test_explicit_free_disk_target_reaches_provider_and_is_reported(self):
+        FakeSandbox.memory_mb = 8192
+        FakeSandbox.cpu_count = 8
+        for target in (0, 52224):
+            with self.subTest(target=target):
+                args = self.args(cpu_count=8, memory_mb=8192, minimum_workspace_gib=50, min_free_disk_mb=target)
+                FakeSandbox.probe["workspaceAvailableBytes"] = 51 * (1 << 30)
+                report = tool.prepare(args, FakeTemplate, FakeSandbox)
+                self.assertEqual(report["status"], "passed")
+                self.assertEqual(FakeTemplate.build_args[1]["min_free_disk_mb"], target)
+                self.assertEqual(FakeTemplate.build_args[1]["cpu_count"], 8)
+                self.assertEqual(FakeTemplate.build_args[1]["memory_mb"], 8192)
+                self.assertEqual(report["requestedMinFreeDiskMB"], target)
+                self.assertEqual(report["gatewayTemplates"]["standard"]["diskGi"], 50)
+                self.assertTrue(FakeSandbox.guest.deleted)
+        for target in (-1, 2147483648):
+            with self.subTest(target=target), self.assertRaises(tool.PreparationError):
+                tool.validate(self.args(min_free_disk_mb=target))
+
+    def test_requested_disk_growth_does_not_replace_actual_capacity_probe(self):
+        args = self.args(minimum_workspace_gib=50, min_free_disk_mb=52224)
+        FakeSandbox.probe["workspaceAvailableBytes"] = 49 * (1 << 30)
+        report = tool.prepare(args, FakeTemplate, FakeSandbox)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(FakeTemplate.build_args[1]["min_free_disk_mb"], 52224)
         self.assertNotIn("gatewayTemplates", report)
         self.assertEqual(report["probeCleanup"], "deleted")
 

@@ -106,7 +106,7 @@ python3 -m venv /tmp/grasp-e2b-builder
 
 构建完成后，工具用返回的**实际 templateID** 创建一个禁止公网入站、禁止出网、300 秒到期销毁的临时探针 guest，确认 templateID、CPU/RAM、bootstrap 摘要、IMAGE_LEVEL、依赖与实际可用工作区空间，然后删除这个 guest。成功 JSON 包含 `templateID`、`buildID`、测得的 `workspaceAvailableBytes` 和可复制到 gateway YAML 的 `gatewayTemplates`。失败不会输出 provider 原始错误体或凭据；清理失败会保留本次探针的 `probeSandboxID` 并返回失败，须由操作者检查这一个 guest。
 
-`diskGi: 20` 表示创建时 `/root/workspace` 所在文件系统**至少有 20 GiB 可用空间**。它不是 PVC 大小、磁盘配额，也不是每次创建都能调整的资源。CPU、RAM 和磁盘空间均须由预构建模板满足；不匹配的请求会被拒绝。工具不显式设置或依赖 `min_free_disk_mb`，也不据此声称 Embed 已扩容；该 SDK 参数在部分 Embed 部署中受服务端功能开关影响。空间不足时，调整实际 provider/builder 的受支持磁盘配置、重新从固定 OCI 构建，并重跑探针。gateway 每次新建 guest 还会重新检查可用容量。
+`diskGi: 20` 表示创建时 `/root/workspace` 所在文件系统**至少有 20 GiB 可用空间**。它不是 PVC 大小、磁盘配额，也不是每次创建都能调整的资源。CPU、RAM 和磁盘空间均须由预构建模板满足；不匹配的请求会被拒绝。需要在构建时申请空间增长时，可显式传 `--min-free-disk-mb`，工具会原样传给 SDK 的 `min_free_disk_mb`，并在结果中记录 `requestedMinFreeDiskMB`；不传则继续使用 provider 的默认策略，传 `0` 表示不请求增长。该参数要求 provider 支持且满足团队限额，部分 Embed 部署还需要开启相应功能。空间增长是尽力而为，文件系统元数据可能消耗少量空间；可为申请值预留余量，但验收仍以 `--minimum-workspace-gib` 和 guest 实测为准。例如要求 50 GiB 可用空间时，可传 `--minimum-workspace-gib 50 --min-free-disk-mb 52224`（额外申请 1 GiB）。provider 忽略申请或实际空间不足时，探针仍失败、清理临时 guest，不输出可发布模板配置。gateway 每次新建 guest 还会重新检查可用容量。
 
 只校验计划可加 `--dry-run`：它不导入 SDK、不联系 provider、不构建模板、不创建 guest。离线单测也不依赖 SDK：
 
