@@ -214,10 +214,7 @@ func (e *Engine) finish(runID, status string) bool {
 			ab.AbortRun(runID)
 		}
 		execution.End(runID)
-		e.host.UnregisterRun(runID)
-		e.mu.Lock()
-		delete(e.tokens, runID)
-		e.mu.Unlock()
+		e.host.ReleaseRun(runID, "run_"+status)
 
 		action := models.AuditActionRunCompleted
 		switch status {

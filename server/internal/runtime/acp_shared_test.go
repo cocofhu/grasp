@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -61,8 +62,8 @@ func newSharedHarness(t *testing.T, chat func(attempt int) chatFunc) *sharedHarn
 	t.Cleanup(restore)
 	host := mcp.NewHost(newMemStore())
 	runID := "shared-run"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	if chat == nil {
 		chat = func(int) chatFunc { return func(int) turnAction { return turnAction{narration: "ok"} } }
 	}

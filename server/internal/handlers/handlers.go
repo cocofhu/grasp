@@ -97,6 +97,7 @@ type Handlers struct {
 	OpenCodeCatalog    *opencodecatalog.Store
 	doctorMu           sync.Mutex
 	doctorSessions     map[string]doctorArtifactSession
+	doctorScopeOnce    sync.Once
 	previewMainMu      sync.Mutex
 	previewMainStreams map[previewMainStreamKey]*previewMainStream
 }

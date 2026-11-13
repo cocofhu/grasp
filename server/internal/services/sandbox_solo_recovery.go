@@ -81,9 +81,6 @@ func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sa
 	}).Error; err != nil {
 		return err
 	}
-	if s.host != nil && row.RunID != "" {
-		s.host.RestoreRun(row.RunID, row.Token)
-	}
 	s.mu.Lock()
 	fn := s.soloOnRecovered
 	s.mu.Unlock()

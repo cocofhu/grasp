@@ -134,7 +134,7 @@ func TestMCPPageToolRoutesBySessionID(t *testing.T) {
 	seedDirectPreview(t, hn, "run-page-sid", "ap1")
 	hub := pagebridge.NewHub()
 	hn.host.SetPageBridge(&pagebridge.Router{Hub: hub, Turns: sessionTurns{"ps_a": "embed:a", "ps_b": "embed:b"}})
-	tok := hn.host.RegisterRun("run-page-sid")
+	tok := runToken(t, hn, "run-page-sid")
 	hn.host.SetActiveNode("run-page-sid", "ap1", testPreviewCaps)
 	hn.host.SetActiveReview("run-page-sid", true)
 

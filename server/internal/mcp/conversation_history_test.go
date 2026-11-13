@@ -21,7 +21,7 @@ func (f *conversationHistoryFake) ReadConversationHistory(runID string, req Conv
 
 func TestGetHistoryAuthorizesScopeAndValidatesInput(t *testing.T) {
 	h := NewHost(&memStore{})
-	token := h.RegisterRun("current")
+	token := grantScope(h, "current")
 	f := &conversationHistoryFake{}
 	h.SetConversationHistoryProvider(f)
 	for _, tc := range []struct {
@@ -66,7 +66,7 @@ func TestGetHistoryAuthorizesScopeAndValidatesInput(t *testing.T) {
 func TestGetHistoryIsListedOnlyForSoloWithProvider(t *testing.T) {
 	h := NewHost(&memStore{})
 	const runID = "solo-current"
-	h.RegisterRun(runID)
+	grantScope(h, runID)
 	h.SetActiveNode(runID, "solo", nil)
 	listed := func() bool {
 		for _, tool := range h.listedTools(runID) {

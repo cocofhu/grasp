@@ -102,7 +102,7 @@ func TestPreflightToolsDispatch(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	tc := func(id int, name, argsJSON string) string {
 		return `{"jsonrpc":"2.0","id":` + itoa(id) + `,"method":"tools/call","params":{"name":"` + name + `","arguments":` + argsJSON + `}}`
 	}

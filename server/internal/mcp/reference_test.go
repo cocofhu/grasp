@@ -21,7 +21,7 @@ func (f *referenceFake) ReadReference(runID, refID string, req ConversationHisto
 
 func TestReadReferenceAuthorizesAndValidates(t *testing.T) {
 	h := NewHost(&memStore{})
-	token := h.RegisterRun("current")
+	token := grantScope(h, "current")
 	if text, failed := h.runTool("current", token, "read_reference", map[string]any{"ref": "ref-1"}); !failed || !strings.Contains(text, "不可用") {
 		t.Fatalf("missing reader must fail: %s", text)
 	}
@@ -67,7 +67,7 @@ func TestReadReferenceAuthorizesAndValidates(t *testing.T) {
 
 func TestReadReferenceAlwaysListedForSolo(t *testing.T) {
 	h := NewHost(&memStore{})
-	h.RegisterRun("current")
+	grantScope(h, "current")
 	h.SetActiveNode("current", "solo", nil)
 	listed := func() bool {
 		for _, tool := range h.listedTools("current") {
@@ -94,7 +94,7 @@ func TestReadReferenceAlwaysListedForSolo(t *testing.T) {
 			t.Fatal("get_history advertised outside Solo")
 		}
 	}
-	h.RegisterRun("idle")
+	grantScope(h, "idle")
 	for _, tool := range h.listedTools("idle") {
 		if tool["name"] == "read_reference" {
 			t.Fatal("read_reference advertised without an active node")

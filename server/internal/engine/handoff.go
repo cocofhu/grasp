@@ -7,63 +7,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// passThroughNode reports node types that only route or set variables; the
-// handoff passes through them to the next real consumer.
-func passThroughNode(t string) bool { return t == "branch" || t == "set_var" }
-
-// handoffTargets lists the nodes that consume node's handoff: each outgoing
-// edge's target, looking through branch / set_var nodes and past approval
-// gates (which are listed themselves), ignoring the terminal output sink.
-// Outlet is the first hop's handle (or edge kind).
-func handoffTargets(g models.Graph, node *models.Node) []models.HandoffTarget {
-	if node == nil {
-		return nil
-	}
-	var out []models.HandoffTarget
-	seen := map[string]bool{}
-	var walk func(from, outlet string, visited map[string]bool)
-	walk = func(from, outlet string, visited map[string]bool) {
-		for _, ed := range g.OutEdges(from) {
-			o := outlet
-			if o == "" {
-				o = ed.SourceHandle
-				if o == "" {
-					o = string(ed.KindOrDefault())
-				}
-			}
-			tn := g.FindNode(ed.Target)
-			if tn == nil || tn.Type == "output" || visited[tn.ID] {
-				continue
-			}
-			if passThroughNode(tn.Type) {
-				next := map[string]bool{tn.ID: true}
-				for k := range visited {
-					next[k] = true
-				}
-				walk(tn.ID, o, next)
-				continue
-			}
-			key := tn.ID + "|" + o
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, models.HandoffTarget{NodeID: tn.ID, Label: tn.Label, Type: tn.Type, Outlet: o})
-			// An approval gate forwards the result it judged: the nodes it
-			// releases consume the handoff too.
-			if tn.Type == "human_gate" {
-				next := map[string]bool{tn.ID: true}
-				for k := range visited {
-					next[k] = true
-				}
-				walk(tn.ID, o, next)
-			}
-		}
-	}
-	walk(node.ID, "", map[string]bool{node.ID: true})
-	return out
-}
-
 // routedFrom returns the node that most recently transitioned into nodeID,
 // looking back through pass-through nodes. "" when nodeID was entered first.
 func routedFrom(c *execCtx, nodeID string) string {
@@ -81,7 +24,7 @@ func routedFrom(c *execCtx, nodeID string) string {
 			return ""
 		}
 		n := c.graph.FindNode(src)
-		if n == nil || !passThroughNode(n.Type) {
+		if n == nil || !models.PassThroughNode(n.Type) {
 			return src
 		}
 		cur = src
@@ -185,7 +128,7 @@ func ensureHandoff(c *execCtx, node *models.Node, oc *nodeOutcome) {
 	if strings.TrimSpace(str(oc.outputs[models.OutputHandoff])) != "" {
 		return
 	}
-	targets := handoffTargets(c.graph, node)
+	targets := c.graph.HandoffTargets(node)
 	if len(targets) == 0 {
 		return
 	}

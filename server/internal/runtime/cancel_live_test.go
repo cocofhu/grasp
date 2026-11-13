@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 )
 
 // TestCancelAbortsLiveAgent verifies AbortRun tears down an in-flight live
@@ -33,8 +34,8 @@ func TestCancelAbortsLiveAgent(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID := "live-cancel-1"
-	token := host.RegisterRun(runID)
-	defer host.UnregisterRun(runID)
+	token := mcptest.Grant(host, runID)
+	defer mcptest.End(host, runID)
 
 	keyJSON, _ := json.Marshal(apiKey)
 	profiles := writeAgent(t, "backend-dev", `{"acpBackend":"cursor","env":{"GRASP_CURSOR_API_KEY":`+string(keyJSON)+`}}`)
@@ -93,8 +94,8 @@ func TestCancelAbortsLiveAgent(t *testing.T) {
 
 	// Fresh visit must still be able to run (no sticky abort at provider).
 	runID2 := "live-cancel-2"
-	tok2 := host.RegisterRun(runID2)
-	defer host.UnregisterRun(runID2)
+	tok2 := mcptest.Grant(host, runID2)
+	defer mcptest.End(host, runID2)
 	req2 := req
 	req2.RunID = runID2
 	req2.Token = tok2

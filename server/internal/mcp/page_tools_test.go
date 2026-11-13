@@ -26,7 +26,7 @@ func (f *fakePageBridge) Do(_, _, sessionID string, cmd pagebridge.Command) (pag
 func pageHost(t *testing.T, caps *models.AgentCapabilities, direct bool) (*Host, string, *fakePageBridge) {
 	t.Helper()
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "g1", caps)
 	h.SetPreviewSandboxOps(&fakePreviewOps{direct: direct})
 	b := &fakePageBridge{res: pagebridge.Result{OK: true, State: map[string]any{

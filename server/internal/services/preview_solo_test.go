@@ -188,8 +188,9 @@ func TestPreviewServiceSoloSetPreview(t *testing.T) {
 	host := mcp.NewHost(NewArtifactService(db))
 	host.SetPreviewStore(svc)
 	host.SetPreviewSandboxOps(svc)
+	host.AddScopeSource(SandboxScopes(db, agents))
 	const runID = "solo-current-generation"
-	token := host.RegisterRun(runID)
+	token := mcp.NewToken()
 	host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
 	sb := models.Sandbox{Name: "sb-solo", RunID: runID, Token: token, Profile: agent.Name, ThreadID: "session", Purpose: SandboxPurposeSolo, Status: "running"}
 	if err := db.Create(&sb).Error; err != nil {

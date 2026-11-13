@@ -10,7 +10,7 @@ func TestSetPreviewGateAndUpsert(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewBaseURL("http://app.example.com")
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.1:5173"})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "preview1", capsPreview)
 
 	resp := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":5173,"label":"前端"}}}`)
@@ -55,7 +55,7 @@ func TestSetPreviewGateAndUpsert(t *testing.T) {
 func TestSetPreviewAllowedOnClarify(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.1:5006"})
-	tok := h.RegisterRun("r-clarify")
+	tok := grantScope(h, "r-clarify")
 	h.SetActiveNode("r-clarify", "predev", capsClarify)
 
 	resp := callPreviewTool(t, h, "r-clarify", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":5006,"label":"Demo"}}}`)
@@ -70,7 +70,7 @@ func TestSetPreviewAllowedOnClarify(t *testing.T) {
 
 func TestSetPreviewURLGateAndUpsert(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "preview1", capsPreview)
 
 	resp := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"set_preview","arguments":{"url":"https://staging.example.com:8443/app","label":"Staging"}}}`)
@@ -101,7 +101,7 @@ func TestSetPreviewURLGateAndUpsert(t *testing.T) {
 
 func TestSetPreviewMutualExclusive(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "preview1", capsPreview)
 
 	both := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":8080,"url":"https://x.example/"}}}`)
@@ -142,7 +142,7 @@ func TestSetPreviewUnreachableFails(t *testing.T) {
 	fastPreviewProbe(t)
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: false, up: "http://10.0.0.1:9"})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "preview1", capsPreview)
 	resp := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":9}}}`)
 	if !previewResultIsError(resp) {

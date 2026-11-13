@@ -200,6 +200,13 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		opts.MaxSolo = 5
 	}
 	s.maxSolo.Store(int64(opts.MaxSolo))
+	if host != nil {
+		var agents AgentGetter
+		if skills != nil {
+			agents = skills
+		}
+		host.AddScopeSource(SandboxScopes(db, agents))
+	}
 	return s
 }
 

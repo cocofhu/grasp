@@ -124,7 +124,7 @@ func TestWriteArtifactKindValidation(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "kind-run"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	assertErrContains := func(t *testing.T, body, substr string) {
 		t.Helper()
@@ -227,7 +227,7 @@ func TestUploadImageArtifactChannel(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "upload-run"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	// Hidden from agent tool list (g2.2: agents should use artifact-upload CLI).

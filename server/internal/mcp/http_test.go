@@ -13,10 +13,10 @@ import (
 
 func TestToolSessionInvalidationsCoalesceAndCleanUp(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("a")
-	otherToken := h.RegisterRun("b")
-	sid := h.newToolSession("a", token)
-	otherSID := h.newToolSession("b", otherToken)
+	grantScope(h, "a")
+	grantScope(h, "b")
+	sid := h.newToolSession("a")
+	otherSID := h.newToolSession("b")
 	stream := &toolStream{wake: make(chan struct{}, 1), done: make(chan struct{})}
 	other := &toolStream{wake: make(chan struct{}, 1), done: make(chan struct{})}
 	h.toolSessions["a"][sid].stream = stream
@@ -38,45 +38,42 @@ func TestToolSessionInvalidationsCoalesceAndCleanUp(t *testing.T) {
 	if len(other.wake) != 0 {
 		t.Fatal("notification leaked to another run")
 	}
-	h.UnregisterRun("a")
+	endScope(h, "a")
 	select {
 	case <-stream.done:
 	default:
-		t.Fatal("unregister must close the stream")
+		t.Fatal("ending the scope must close the stream")
 	}
 	if h.hasToolSession("a", sid) || h.OutcomeAllowed("a") || h.ToolsListGeneration("a") != 0 {
-		t.Fatal("unregister must clear session and tool-surface state")
+		t.Fatal("ending the scope must clear session and tool-surface state")
 	}
 	if !h.hasToolSession("b", otherSID) {
-		t.Fatal("unregister affected another run")
+		t.Fatal("ending the scope affected another run")
 	}
 	h.deleteToolSession("b", otherSID)
 	h.deleteToolSession("b", otherSID) // idempotent cleanup must not close twice
 	if len(h.toolSessions) != 0 {
 		t.Fatal("empty session maps must be removed")
 	}
-	if h.newToolSession("a", token) != "" {
-		t.Fatal("revoked token must not create an orphan session")
-	}
 }
 
 func TestToolSessionConcurrentChangeAndCleanup(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
+	grantScope(h, "r")
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				sid := h.newToolSession("r", token)
+				sid := h.newToolSession("r")
 				h.SetOutcomeAllowed("r", j%2 == 0)
 				h.deleteToolSession("r", sid)
 			}
 		}()
 	}
 	wg.Wait()
-	h.UnregisterRun("r")
+	endScope(h, "r")
 }
 
 func TestAcceptsEventStream(t *testing.T) {
@@ -102,8 +99,8 @@ func (brokenMCPBody) Close() error             { return nil }
 
 func TestRunHTTPTransportErrorsAndLegacyPOST(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
-	sid := h.newToolSession("r", token)
+	token := grantScope(h, "r")
+	sid := h.newToolSession("r")
 	for _, tc := range []struct {
 		name, method, session, accept, body string
 		status                              int
@@ -166,12 +163,12 @@ func TestRunHTTPTransportErrorsAndLegacyPOST(t *testing.T) {
 	}
 }
 
-// A session ID the server forgot (restart, run re-registration) is re-adopted
-// for a valid token, but never for a revoked or foreign one.
+// A session ID the server forgot (restart, another replica) is re-adopted for
+// a valid token, but never once the scope ended or while another run holds it.
 func TestRunHTTPReadoptsUnknownSessionOnlyForBoundToken(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
-	sid := h.newToolSession("r", token)
+	token := grantScope(h, "r")
+	sid := h.newToolSession("r")
 	h.closeToolSessionsLocked("r")
 	ping := func(tok string) int {
 		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
@@ -186,12 +183,14 @@ func TestRunHTTPReadoptsUnknownSessionOnlyForBoundToken(t *testing.T) {
 	if !h.hasToolSession("r", sid) {
 		t.Fatal("forgotten session must be re-registered")
 	}
-	h.UnregisterRun("r")
-	if got := ping(token); got != http.StatusUnauthorized {
-		t.Fatalf("revoked run must stay closed: %d", got)
+	grantScope(h, "other")
+	foreign := h.newToolSession("other")
+	if h.adoptToolSession("r", foreign) {
+		t.Fatal("a session live under another run must not be adopted")
 	}
-	if h.adoptToolSession("r", token, sid) {
-		t.Fatal("adopt must recheck the token binding")
+	endScope(h, "r")
+	if got := ping(token); got != http.StatusUnauthorized {
+		t.Fatalf("ended scope must stay closed: %d", got)
 	}
 }
 
@@ -204,8 +203,8 @@ func (*unflushableMCPWriter) WriteHeader(int)             {}
 
 func TestToolStreamCannotFlushReleasesSubscription(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
-	sid := h.newToolSession("r", token)
+	grantScope(h, "r")
+	sid := h.newToolSession("r")
 	w := &unflushableMCPWriter{header: make(http.Header)}
 	h.serveToolStream(w, httptest.NewRequest(http.MethodGet, "/mcp", nil), "r", sid)
 	if h.toolSessions["r"][sid].stream != nil {
@@ -216,8 +215,8 @@ func TestToolStreamCannotFlushReleasesSubscription(t *testing.T) {
 
 func TestToolStreamCanceledRequestReleasesSubscription(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
-	sid := h.newToolSession("r", token)
+	grantScope(h, "r")
+	sid := h.newToolSession("r")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
@@ -239,8 +238,8 @@ func TestToolStreamCanceledRequestReleasesSubscription(t *testing.T) {
 
 func TestCloseToolStreamsEndsStreamsKeepsSessions(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	token := h.RegisterRun("r")
-	sid := h.newToolSession("r", token)
+	grantScope(h, "r")
+	sid := h.newToolSession("r")
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

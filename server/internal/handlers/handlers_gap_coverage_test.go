@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/auth"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -137,7 +138,7 @@ func TestUpdateRunPriorityHTTP(t *testing.T) {
 
 func TestMCPRPCNotificationAndReadError(t *testing.T) {
 	h := newHarness(t)
-	tok := h.host.RegisterRun("run-mcp-gap")
+	tok := mcptest.Grant(h.host, "run-mcp-gap")
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp/runs/run-mcp-gap",
 		bytes.NewReader([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)))

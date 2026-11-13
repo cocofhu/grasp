@@ -95,7 +95,7 @@ func (f *failAuditStore) Save(runID, nodeID, name, kind, content string) (string
 
 func TestNodeCompleteMorePaths(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 
 	msg, isErr := h.runTool("r1", "bad-token", "node_complete", map[string]any{"status": "success"})
 	if !isErr || !strings.Contains(msg, "node_complete failed:") {
@@ -123,7 +123,7 @@ func TestNodeCompleteMorePaths(t *testing.T) {
 	}
 
 	h2 := NewHost(&failAuditStore{})
-	tok2 := h2.RegisterRun("r2")
+	tok2 := grantScope(h2, "r2")
 	h2.SetActiveNode("r2", "n2", capsWriting(models.SchemaResearch))
 	msg, isErr = h2.runTool("r2", tok2, "node_complete", map[string]any{"status": "success", "summary": "audit"})
 	if isErr || !strings.Contains(msg, "audit") {
@@ -133,7 +133,7 @@ func TestNodeCompleteMorePaths(t *testing.T) {
 
 func TestNodeCompleteTool(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "n1", capsWriting(models.SchemaResearch))
 
 	msg, isErr := h.runTool("r1", tok, "node_complete", map[string]any{
@@ -166,7 +166,7 @@ func TestNodeCompleteTool(t *testing.T) {
 func TestClearOutcome(t *testing.T) {
 	store := &memOutcomeStore{}
 	h := NewHost(store)
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "n1", capsPlain)
 	if msg, isErr := h.runTool("r1", tok, "node_complete", map[string]any{
 		"status": "success", "summary": "stale",
@@ -192,7 +192,7 @@ func TestClearOutcome(t *testing.T) {
 func TestClassifyAndRestoreOutcomeArtifact(t *testing.T) {
 	store := &memOutcomeStore{}
 	h := NewHost(store)
-	h.RegisterRun("r1")
+	grantScope(h, "r1")
 	h.SetActiveNode("r1", "n1", capsPlain)
 	_, _ = store.Save("r1", "n1", NodeOutcomeArtifactName, "json",
 		OutcomeJSON(NodeOutcome{Status: OutcomeSuccess, Summary: "from art"}))

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/textutil"
@@ -58,8 +59,8 @@ func TestPureHelpers(t *testing.T) {
 func TestArtifactOwnedByNode(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 
 	if artifactOwnedByNode(host, "r", tok, "n", mcp.PlanArtifactName) {
 		t.Fatal("missing artifact must not be owned")
@@ -415,8 +416,8 @@ func TestWorkspaceWorkDirSrc(t *testing.T) {
 func TestUpstreamArtifacts(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	defer host.UnregisterRun("r")
+	tok := mcptest.Grant(host, "r")
+	defer mcptest.End(host, "r")
 	host.WriteArtifact("r", tok, "n", "a.md", "x", "markdown")
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	names := p.upstreamArtifacts(NodeReq{RunID: "r", Token: tok})
@@ -493,8 +494,8 @@ func TestRunAgentImplementNode(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "impl-run", "impl-node"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
 		return func(int) turnAction {
 			return turnAction{narration: "implemented", produces: map[string]string{

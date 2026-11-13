@@ -22,6 +22,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/router"
@@ -56,6 +57,18 @@ type harness struct {
 	auth   *auth.Service
 	cookie string
 	fg     *sandboxtest.FakeGateway
+}
+
+// runToken persists a fresh MCP token on an existing workflow run, the token
+// the engine's run scope authorizes.
+func runToken(t *testing.T, hn *harness, runID string) string {
+	t.Helper()
+	tok := mcp.NewToken()
+	res := hn.db.Model(&models.Run{}).Where("id = ?", runID).UpdateColumn("mcp_token", tok)
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("set run token for %s: %v", runID, res.Error)
+	}
+	return tok
 }
 
 func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
@@ -1179,7 +1192,7 @@ func TestMCPRPCEndpoint(t *testing.T) {
 	if w := h.do("POST", "/mcp/runs/run1", map[string]any{}); w.Code != 401 {
 		t.Fatalf("mcp unauthorized: %d", w.Code)
 	}
-	tok := h.host.RegisterRun("run1")
+	tok := mcptest.Grant(h.host, "run1")
 	// GET requires a session created by initialize.
 	req := httptest.NewRequest("GET", "/mcp/runs/run1", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)

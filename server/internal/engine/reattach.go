@@ -125,7 +125,7 @@ func (e *Engine) reconcileInterrupted() {
 			continue
 		}
 		logDB(e.db.Model(&models.Run{}).Where("id = ?", id).UpdateColumn("status", "failed"), id, "reconcile run")
-		e.host.UnregisterRun(id)
+		e.host.ReleaseRun(id, "startup_reconcile")
 		log.Warn().Str("run_id", id).Msg("reconciled interrupted run on startup -> failed")
 	}
 }

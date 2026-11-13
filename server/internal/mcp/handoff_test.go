@@ -9,9 +9,14 @@ import (
 
 func TestNodeCompleteRequiresHandoffWithDownstream(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-ho")
+	tok := grantScope(h, "r-ho")
 	h.SetActiveNode("r-ho", "impl", capsImplement)
-	h.SetActiveDownstream("r-ho", "impl", []models.HandoffTarget{{NodeID: "test", Label: "测试评审", Outlet: "success"}})
+	h.SetDownstreamSource(func(runID, nodeID string) []models.HandoffTarget {
+		if runID == "r-ho" && nodeID == "impl" {
+			return []models.HandoffTarget{{NodeID: "test", Label: "测试评审", Outlet: "success"}}
+		}
+		return nil
+	})
 
 	for _, status := range []string{"success", "failed"} {
 		msg, isErr := h.runTool("r-ho", tok, "node_complete", map[string]any{"status": status, "summary": "x"})
@@ -39,16 +44,11 @@ func TestNodeCompleteRequiresHandoffWithDownstream(t *testing.T) {
 	if out[models.OutputHandoff] == "" || out[models.OutputHandoffSource] != models.HandoffSourceAgent {
 		t.Fatalf("merged outputs = %+v", out)
 	}
-
-	h.UnregisterRun("r-ho")
-	if h.ActiveDownstream("r-ho", "impl") != nil {
-		t.Fatal("UnregisterRun must drop downstream bookkeeping")
-	}
 }
 
 func TestNodeCompleteWithoutDownstreamNeedsNoHandoff(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-leaf")
+	tok := grantScope(h, "r-leaf")
 	h.SetActiveNode("r-leaf", "last", capsImplement)
 	if msg, isErr := h.runTool("r-leaf", tok, "node_complete", map[string]any{"status": "success"}); isErr {
 		t.Fatalf("leaf node_complete: %s", msg)

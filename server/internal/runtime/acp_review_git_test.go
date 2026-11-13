@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -157,8 +158,8 @@ func TestEnsureHandoffAfterTakenMark(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "handoff-run", "impl"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
 		return func(turn int) turnAction {
 			if turn == 0 {
@@ -284,8 +285,8 @@ func TestRunAgentReviewConfirmGitWrapUp(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "wrap-run", "impl"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	mgr := newFakeManager(t, host, runID, nodeID, tok, func(int) chatFunc {
 		return func(turn int) turnAction {
 			if turn == 0 {

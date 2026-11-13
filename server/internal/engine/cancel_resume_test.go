@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -84,7 +85,7 @@ func TestCancelHealUnblocksZombieExecSlot(t *testing.T) {
 	runID := "run-zombie-exec"
 	db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf", WorkflowName: "z", Status: "cancelled",
-		Graph: slowGraph(), McpToken: eng.host.RegisterRun(runID),
+		Graph: slowGraph(), McpToken: mcp.NewToken(),
 	})
 	db.Create(&models.StateRun{RunID: runID, NodeID: "work", NodeType: "agent", Iteration: 1, Status: "running"})
 
@@ -133,7 +134,7 @@ func TestResumeFromForceClearsZombieSlotWithoutCancelHeal(t *testing.T) {
 	runID := "run-resume-force"
 	db.Create(&models.Run{
 		ID: runID, WorkflowID: "wf", WorkflowName: "z", Status: "cancelled",
-		Graph: slowGraph(), McpToken: eng.host.RegisterRun(runID),
+		Graph: slowGraph(), McpToken: mcp.NewToken(),
 	})
 	db.Create(&models.StateRun{
 		RunID: runID, NodeID: "work", NodeType: "agent", Iteration: 1,

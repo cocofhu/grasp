@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -19,8 +20,8 @@ import (
 func TestRunAgentEventSinkAndRetry(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(attempt int) chatFunc {
 		return func(int) turnAction {
 			if attempt == 0 {
@@ -48,8 +49,8 @@ func TestRunAgentEventSinkAndRetry(t *testing.T) {
 func TestEnsureStructuredReprompt(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(turn int) turnAction {
 			if turn == 0 {
@@ -76,8 +77,8 @@ func TestEnsureStructuredReprompt(t *testing.T) {
 func TestEnsureStructuredIgnoresUpstreamOwner(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	if _, err := host.WriteArtifact("r", tok, "upstream", mcp.ResearchArtifactName,
 		`{"summary":"old","findings":[]}`, "json"); err != nil {
 		t.Fatal(err)
@@ -115,8 +116,8 @@ func TestEnsureStructuredIgnoresUpstreamOwner(t *testing.T) {
 func TestEnsureStructuredRepromptsStaleSameNodeWrite(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	if _, err := host.WriteArtifact("r", tok, "n", mcp.ResearchArtifactName,
 		`{"summary":"old","findings":[]}`, "json"); err != nil {
 		t.Fatal(err)
@@ -152,8 +153,8 @@ func implementProvider(t *testing.T, planJSON string, chat chatFunc) (*acpProvid
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "impl", "n"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	if planJSON != "" {
 		if _, err := host.WriteArtifact(runID, tok, nodeID, mcp.PlanArtifactName, planJSON, "json"); err != nil {
 			t.Fatal(err)
@@ -224,8 +225,8 @@ func TestEnsureStructuredNudgeTimeout(t *testing.T) {
 	turn := 0
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
 			turn++
@@ -258,8 +259,8 @@ func TestEnsureOutcomeNudgeTimeout(t *testing.T) {
 	turn := 0
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
 			turn++
@@ -291,8 +292,8 @@ func TestEnsureStructuredRepromptTransportError(t *testing.T) {
 	turn := 0
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
 			turn++
@@ -322,8 +323,8 @@ func TestEnsureStructuredRepromptTransportError(t *testing.T) {
 func TestRunAgentChatFailureSurfacesError(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
 			return turnAction{sendError: "model refused"}

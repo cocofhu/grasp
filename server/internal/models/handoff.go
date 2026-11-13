@@ -53,3 +53,60 @@ func HandoffTargetsText(targets []HandoffTarget) string {
 	}
 	return strings.Join(parts, "、")
 }
+
+// PassThroughNode reports node types that only route or set variables; the
+// handoff passes through them to the next real consumer.
+func PassThroughNode(t string) bool { return t == "branch" || t == "set_var" }
+
+// HandoffTargets lists the nodes that consume node's handoff: each outgoing
+// edge's target, looking through branch / set_var nodes and past approval
+// gates (which are listed themselves), ignoring the terminal output sink.
+// Outlet is the first hop's handle (or edge kind).
+func (g Graph) HandoffTargets(node *Node) []HandoffTarget {
+	if node == nil {
+		return nil
+	}
+	var out []HandoffTarget
+	seen := map[string]bool{}
+	var walk func(from, outlet string, visited map[string]bool)
+	walk = func(from, outlet string, visited map[string]bool) {
+		for _, ed := range g.OutEdges(from) {
+			o := outlet
+			if o == "" {
+				o = ed.SourceHandle
+				if o == "" {
+					o = string(ed.KindOrDefault())
+				}
+			}
+			tn := g.FindNode(ed.Target)
+			if tn == nil || tn.Type == "output" || visited[tn.ID] {
+				continue
+			}
+			if PassThroughNode(tn.Type) {
+				next := map[string]bool{tn.ID: true}
+				for k := range visited {
+					next[k] = true
+				}
+				walk(tn.ID, o, next)
+				continue
+			}
+			key := tn.ID + "|" + o
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, HandoffTarget{NodeID: tn.ID, Label: tn.Label, Type: tn.Type, Outlet: o})
+			// An approval gate forwards the result it judged: the nodes it
+			// releases consume the handoff too.
+			if tn.Type == "human_gate" {
+				next := map[string]bool{tn.ID: true}
+				for k := range visited {
+					next[k] = true
+				}
+				walk(tn.ID, o, next)
+			}
+		}
+	}
+	walk(node.ID, "", map[string]bool{node.ID: true})
+	return out
+}

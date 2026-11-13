@@ -716,9 +716,8 @@ func (e *Engine) ResumeFrom(runID, nodeID string) error {
 		c.run.FirstMessageDeliveredAt = nil
 	}
 	// Record the manual resume in the trace before handing off to admission.
-	// loadCtx already re-restored the MCP token from the persisted Run.McpToken
-	// (finish() unregistered it on failure), so in-sandbox artifact writes
-	// authorize again once the run is admitted.
+	// The persisted Run.McpToken authorizes again as soon as the run leaves
+	// its terminal status.
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "从失败位置继续"})
 	log.Info().Str("run_id", runID).Str("node_id", nodeID).Str("transition", "resume-from").Msg("run resumed from node")
 

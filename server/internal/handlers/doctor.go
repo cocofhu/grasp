@@ -8,15 +8,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-const doctorSessionTTL = 5 * time.Minute
+const (
+	doctorSessionTTL = 5 * time.Minute
+	doctorRunPrefix  = "doctor-"
+)
 
 type doctorArtifactSession struct {
 	runA         string
+	tokenA       string
 	runB         string
+	tokenB       string
 	cleanupToken string
 	timer        *time.Timer
 }
@@ -50,12 +57,13 @@ func (h *Handlers) DoctorArtifactSession(c *gin.Context) {
 func (h *Handlers) startDoctorArtifactSession(c *gin.Context) {
 	id := uuid.NewString()
 	session := doctorArtifactSession{
-		runA:         "doctor-a-" + uuid.NewString(),
-		runB:         "doctor-b-" + uuid.NewString(),
+		runA:         doctorRunPrefix + "a-" + uuid.NewString(),
+		tokenA:       mcp.NewToken(),
+		runB:         doctorRunPrefix + "b-" + uuid.NewString(),
+		tokenB:       mcp.NewToken(),
 		cleanupToken: uuid.NewString(),
 	}
-	tokenA := h.MCP.RegisterRun(session.runA)
-	tokenB := h.MCP.RegisterRun(session.runB)
+	h.doctorScopeOnce.Do(func() { h.MCP.AddScopeSource(h.doctorScope) })
 
 	h.doctorMu.Lock()
 	if h.doctorSessions == nil {
@@ -77,9 +85,9 @@ func (h *Handlers) startDoctorArtifactSession(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id":            id,
 		"run_a":         session.runA,
-		"token_a":       tokenA,
+		"token_a":       session.tokenA,
 		"run_b":         session.runB,
-		"token_b":       tokenB,
+		"token_b":       session.tokenB,
 		"cleanup_token": session.cleanupToken,
 	})
 }
@@ -97,9 +105,28 @@ func (h *Handlers) cleanupDoctorArtifactSession(id, cleanupToken string) error {
 	if session.timer != nil {
 		session.timer.Stop()
 	}
-	h.MCP.UnregisterRun(session.runA)
-	h.MCP.UnregisterRun(session.runB)
+	h.MCP.ReleaseRun(session.runA, "doctor_cleanup")
+	h.MCP.ReleaseRun(session.runB, "doctor_cleanup")
 	return h.Arts.DeleteForRuns(session.runA, session.runB)
+}
+
+// doctorScope authorizes the diagnostic run namespaces while their session
+// exists; cleanup or the session TTL ends them.
+func (h *Handlers) doctorScope(runID string) (string, bool, bool) {
+	if !strings.HasPrefix(runID, doctorRunPrefix) {
+		return "", false, false
+	}
+	h.doctorMu.Lock()
+	defer h.doctorMu.Unlock()
+	for _, session := range h.doctorSessions {
+		switch runID {
+		case session.runA:
+			return session.tokenA, true, true
+		case session.runB:
+			return session.tokenB, true, true
+		}
+	}
+	return "", false, true
 }
 
 func validDoctorToken(header string) bool {

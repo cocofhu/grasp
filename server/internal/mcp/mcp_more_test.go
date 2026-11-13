@@ -16,7 +16,7 @@ func TestResearchTestImplementTools(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	h.SetActiveNode(runID, "res", capsWriting(models.SchemaResearch))
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_research","arguments":{"summary":"调研","questions":[{"question":"Q1","answer":"A1"}],"findings":[{"title":"F1","detail":"d"}],"recommendation":"用A"}}}`)
@@ -43,7 +43,7 @@ func TestResearchTestImplementTools(t *testing.T) {
 
 	// get_* for a missing artifact returns an error result.
 	h2 := NewHost(&memStore{})
-	t2 := h2.RegisterRun("r2")
+	t2 := grantScope(h2, "r2")
 	if _, isErr := toolText(t, call(t, h2, "r2", t2, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"get_review","arguments":{}}}`)); !isErr {
 		t.Error("get_review on empty store should error")
 	}
@@ -53,7 +53,7 @@ func TestRootCauseTools(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r-rc"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	h.SetActiveNode(runID, "g", capsClarifyRootCause)
 	// Non-bug clarified blocks set_root_cause.
@@ -95,7 +95,7 @@ func TestCallToolErrorBranches(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	assertErr := func(body string) {
 		t.Helper()
@@ -278,7 +278,7 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	// Seed via upload_image_artifact (artifact-upload CLI path); write_artifact
@@ -329,7 +329,7 @@ func TestSetTestResultValidatesScreenshotArtifacts(t *testing.T) {
 
 func TestHostAuthorizeBranches(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r")
+	tok := grantScope(h, "r")
 
 	// Wrong token is rejected everywhere.
 	if _, err := h.WriteArtifact("r", "bad", "n", "f.md", "x", "markdown"); err != ErrUnauthorized {
@@ -361,10 +361,10 @@ func TestHostAuthorizeBranches(t *testing.T) {
 		t.Fatalf("list = %v %v", infos, err)
 	}
 
-	// After UnregisterRun the token no longer authorizes.
-	h.UnregisterRun("r")
+	// Once the scope ends the token no longer authorizes.
+	endScope(h, "r")
 	if _, err := h.ReadArtifact("r", tok, "f.md"); err != ErrUnauthorized {
-		t.Errorf("post-unregister read = %v", err)
+		t.Errorf("read after scope end = %v", err)
 	}
 }
 
@@ -435,41 +435,63 @@ func TestRenderMarkdownAll(t *testing.T) {
 	}
 }
 
-// TestAuthorizeSandboxLifetimeFallback covers the persistence-backed fallback:
-// once the in-memory registration is gone (run finished / server restart), the
-// persisted token still authorizes for as long as the run has a live sandbox,
-// and stops the moment the sandbox is gone.
-func TestAuthorizeSandboxLifetimeFallback(t *testing.T) {
+// TestScopeSourceDecidesAuthorization: authorization is read from the owning
+// ScopeSource on every call, so a token follows its owner's state without
+// anyone registering or revoking it.
+func TestScopeSourceDecidesAuthorization(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("run")
-	// Simulate run finished / restart: in-memory token dropped, no source yet.
-	h.UnregisterRun("run")
-	if h.AuthorizeRun("run", tok) {
-		t.Fatal("without a token source a revoked token must not authorize")
+	if h.AuthorizeRun("run", "tok") {
+		t.Fatal("without a scope source no token may authorize")
 	}
-	// Wire a source reporting the persisted token and whether a sandbox lives.
-	alive := true
-	h.SetRunTokenSource(func(runID string) (string, bool, bool) {
+	live := true
+	h.AddScopeSource(func(runID string) (string, bool, bool) {
 		if runID != "run" {
 			return "", false, false
 		}
-		return tok, alive, true
+		return "tok", live, true
 	})
-	if !h.AuthorizeRun("run", tok) {
-		t.Error("token should authorize while a sandbox is alive")
+	// A later source never overrides the owner that claimed the namespace.
+	h.AddScopeSource(func(string) (string, bool, bool) { return "other", true, true })
+
+	for _, tc := range []struct {
+		runID, token, want string
+	}{
+		{"run", "tok", ""},
+		{"run", "wrong", tokenMismatch},
+		{"run", "", tokenMismatch},
+		{"unowned", "other", ""},
+	} {
+		if got := h.checkScope(tc.runID, tc.token); got != tc.want {
+			t.Errorf("checkScope(%q, %q) = %q, want %q", tc.runID, tc.token, got, tc.want)
+		}
 	}
-	if h.AuthorizeRun("run", "wrong") {
-		t.Error("wrong token must be rejected even with a live sandbox")
+	live = false
+	if got := h.checkScope("run", "tok"); got != scopeEnded {
+		t.Errorf("ended owner: %q, want %q", got, scopeEnded)
 	}
-	// The success above re-cached the token in memory; clear it so the next
-	// check exercises the fallback with the sandbox now gone.
-	h.UnregisterRun("run")
-	alive = false
-	if h.AuthorizeRun("run", tok) {
-		t.Error("token must stop authorizing once the sandbox is gone")
+	live = true
+	if got := NewHost(&memStore{}).checkScope("run", "tok"); got != scopeUnknown {
+		t.Errorf("no owner: %q, want %q", got, scopeUnknown)
 	}
-	if h.AuthorizeRun("other", tok) {
-		t.Error("unknown run must not authorize")
+}
+
+// TestReleaseRunRefusedWhileScopeLive: releasing a namespace whose owner is
+// still live must not drop the executing node's state.
+func TestReleaseRunRefusedWhileScopeLive(t *testing.T) {
+	h := NewHost(&memStore{})
+	live := true
+	h.AddScopeSource(func(runID string) (string, bool, bool) { return "tok", live, runID == "run" })
+	h.SetActiveNode("run", "impl", capsImplement)
+	sid := h.newToolSession("run")
+
+	h.ReleaseRun("run", "test")
+	if h.ActiveNode("run") != "impl" || !h.hasToolSession("run", sid) {
+		t.Fatal("release of a live scope dropped its state")
+	}
+	live = false
+	h.ReleaseRun("run", "test")
+	if h.ActiveNode("run") != "mcp" || h.hasToolSession("run", sid) {
+		t.Fatal("release of an ended scope must drop its state")
 	}
 }
 
@@ -522,7 +544,7 @@ func TestActiveNodeSourceFallback(t *testing.T) {
 func TestHostLifecycleAndAuth(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
-	tok := h.RegisterRun("run")
+	tok := grantScope(h, "run")
 
 	if !h.AuthorizeRun("run", tok) {
 		t.Error("AuthorizeRun should accept the issued token")
@@ -554,18 +576,9 @@ func TestHostLifecycleAndAuth(t *testing.T) {
 		t.Error("PlanIncomplete with bad json should error")
 	}
 
-	// RestoreRun re-binds a token (no-op on empty).
-	h.UnregisterRun("run")
+	endScope(h, "run")
 	if h.AuthorizeRun("run", tok) {
-		t.Error("token should be revoked after UnregisterRun")
-	}
-	h.RestoreRun("run", "")
-	if h.AuthorizeRun("run", "") {
-		t.Error("RestoreRun with empty token must be a no-op")
-	}
-	h.RestoreRun("run", tok)
-	if !h.AuthorizeRun("run", tok) {
-		t.Error("RestoreRun should re-bind the token")
+		t.Error("token must stop authorizing once its scope ends")
 	}
 
 	// Unauthorized host methods.
@@ -579,7 +592,7 @@ func TestHostLifecycleAndAuth(t *testing.T) {
 
 func TestServeRPCEdges(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r")
+	tok := grantScope(h, "r")
 
 	// Parse error -> 400.
 	if status, _ := h.ServeRPC("r", tok, []byte(`{not json`)); status != 400 {

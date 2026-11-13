@@ -19,10 +19,13 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 	hn.host.SetPreviewStore(preview)
 	hn.host.SetSoloArtifactPreviewHook(preview.PinSoloArtifact)
 
+	if err := hn.h.Agents.Save(services.Agent{Name: "agent", AcpBackend: services.AcpBackendCursor}); err != nil {
+		t.Fatal(err)
+	}
 	const runID = "solo-current"
-	token := hn.host.RegisterRun(runID)
+	token := mcp.NewToken()
 	hn.host.SetActiveNode(runID, "solo", &models.AgentCapabilities{Tools: []string{models.ToolSetArtifactPreview}})
-	sb := models.Sandbox{Name: "current-sandbox", RunID: runID, ThreadID: "current", Profile: "agent", Purpose: services.SandboxPurposeSolo, Status: "running"}
+	sb := models.Sandbox{Name: "current-sandbox", RunID: runID, Token: token, ThreadID: "current", Profile: "agent", Purpose: services.SandboxPurposeSolo, Status: "running"}
 	if err := hn.db.Create(&sb).Error; err != nil {
 		t.Fatal(err)
 	}

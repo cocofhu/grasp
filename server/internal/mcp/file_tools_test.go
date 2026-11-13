@@ -42,7 +42,7 @@ func (s *fileMetadataStore) GetRecord(run, name string) (models.Artifact, bool) 
 func TestFileToolsScopeDispatchAndAvailability(t *testing.T) {
 	store := &fileMetadataStore{row: models.Artifact{ID: "file-1", RunID: "solo-files", Name: "report.pdf", Kind: "pdf", Revision: 3}}
 	h := NewHost(store)
-	token := h.RegisterRun("solo-files")
+	token := grantScope(h, "solo-files")
 	h.SetActiveNode("solo-files", "solo", nil)
 	f := &testFileTools{}
 	if _, failed := h.runFileTool("solo-files", "bad", "send_file", nil); !failed {
@@ -75,7 +75,7 @@ func TestFileToolsScopeDispatchAndAvailability(t *testing.T) {
 		t.Fatal("unknown tool accepted")
 	}
 	plain := NewHost(&memStore{})
-	plainToken := plain.RegisterRun("plain")
+	plainToken := grantScope(plain, "plain")
 	plain.SetArtifactFiles(f)
 	if _, failed := plain.runFileTool("plain", plainToken, "send_artifact", nil); !failed {
 		t.Fatal("missing metadata accepted")
@@ -92,7 +92,7 @@ func TestFileToolsScopeDispatchAndAvailability(t *testing.T) {
 
 func TestFileBodiesAreOmittedFromMCPTraceAndAudit(t *testing.T) {
 	h := NewHost(&memStore{})
-	token := h.RegisterRun("r")
+	token := grantScope(h, "r")
 	h.SetActiveNode("r", "writer", nil)
 	call(t, h, "r", token, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_artifact","arguments":{"name":"report.md","content":"PRIVATE-FILE-BODY"}}}`)
 	call(t, h, "r", token, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_artifact","arguments":{"name":"report.md"}}}`)

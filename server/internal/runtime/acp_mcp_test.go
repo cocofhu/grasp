@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 )
 
 // TestCursorLiveMCP verifies the in-container cursor-agent natively connects
@@ -35,8 +36,8 @@ func TestCursorLiveMCP(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID := "mcp-run-1"
-	tok := host.RegisterRun(runID)
-	defer host.UnregisterRun(runID)
+	tok := mcptest.Grant(host, runID)
+	defer mcptest.End(host, runID)
 
 	// Serve the MCP route on all interfaces so the container can reach it via
 	// host.docker.internal:<port>.

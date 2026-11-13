@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 )
 
 func takeoverTestProvider(t *testing.T, chatFor func(int) chatFunc) (*acpProvider, *fakeManager, NodeReq) {
@@ -16,8 +17,8 @@ func takeoverTestProvider(t *testing.T, chatFor func(int) chatFunc) (*acpProvide
 	t.Cleanup(func() { abortTurnWait = prev })
 	host := mcp.NewHost(newMemStore())
 	runID, nodeID := "to-run", "impl"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	mgr := newFakeManager(t, host, runID, nodeID, tok, chatFor)
 	opts := testOpts()
 	opts.ChatIdleTimeout = 10 * time.Second

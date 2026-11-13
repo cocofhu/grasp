@@ -48,9 +48,6 @@ type Engine struct {
 	// (CodeQL #7); only negative inputs are clamped to 0.
 	autoRetryMax atomic.Int64
 
-	mu     sync.Mutex
-	tokens map[string]string // runID -> MCP token (in-memory; same process)
-
 	// resumeMu guards resumeLocks; resumeLocks serializes human-resume
 	// operations (gate resume / react reply) per "runID:nodeID" so a
 	// double-submit (e.g. a page refresh re-enabling the confirm button while
@@ -181,8 +178,8 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		db: db, provider: provider, host: host, store: store,
 		broker: NewBroker(), sem: newSema(maxRuns),
 		wake: make(chan struct{}, 1), stop: make(chan struct{}),
-		tokens: map[string]string{}, resumeLocks: map[string]*sync.Mutex{},
-		execRuns: map[string]bool{}, execGen: map[string]uint64{},
+		resumeLocks: map[string]*sync.Mutex{},
+		execRuns:    map[string]bool{}, execGen: map[string]uint64{},
 		adoptedSandboxes: map[string]bool{},
 		pendingTurns:     chatsession.NewPendingStore(db),
 	}
@@ -193,14 +190,22 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		sink.SetEventSink(e.publishAcp)
 	}
 
-	host.SetAfterWriteArtifact(e.syncAfterPrimaryArtifactWrite)
-	host.SetArtifactPreviewHook(e.setReactPreviewArtifact)
+	e.attachHost()
 	// Reconcile before the dispatcher starts so adopted runs reserve their
 	// slots ahead of the queued backlog.
 	e.reconcileInterrupted()
 
 	go e.dispatch()
 	return e
+}
+
+// attachHost registers the engine as the owner of workflow run namespaces on
+// the artifact MCP host, plus its artifact write hooks.
+func (e *Engine) attachHost() {
+	e.host.AddScopeSource(e.runScope)
+	e.host.SetDownstreamSource(e.runDownstream)
+	e.host.SetAfterWriteArtifact(e.syncAfterPrimaryArtifactWrite)
+	e.host.SetArtifactPreviewHook(e.setReactPreviewArtifact)
 }
 
 // SetMaxConcurrent changes the live cap on simultaneously executing runs and

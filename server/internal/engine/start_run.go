@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
@@ -202,11 +203,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		Trace:      []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
-	tok := e.host.RegisterRun(runID)
-	run.McpToken = tok
-	e.mu.Lock()
-	e.tokens[runID] = tok
-	e.mu.Unlock()
+	run.McpToken = mcp.NewToken()
 
 	now := time.Now()
 	if err := e.db.Transaction(func(tx *gorm.DB) error {
@@ -222,10 +219,6 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		}
 		return tx.Model(&models.WorkflowDef{}).Where("id = ?", def.ID).Update("last_run_at", now).Error
 	}); err != nil {
-		e.host.UnregisterRun(runID)
-		e.mu.Lock()
-		delete(e.tokens, runID)
-		e.mu.Unlock()
 		return nil, err
 	}
 

@@ -190,17 +190,7 @@ func (e *Engine) loadCtx(runID string) (*execCtx, error) {
 		}
 	}
 	e.applyManualVisits(c, states)
-	e.mu.Lock()
-	c.token = e.tokens[runID]
-	e.mu.Unlock()
-
-	if c.token == "" && run.McpToken != "" {
-		c.token = run.McpToken
-		e.mu.Lock()
-		e.tokens[runID] = run.McpToken
-		e.mu.Unlock()
-		e.host.RestoreRun(runID, run.McpToken)
-	}
+	c.token = run.McpToken
 	return c, nil
 }
 
