@@ -249,56 +249,39 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 		return acp, nil
 	}
+	// recoverFrom re-applies the previous tool when a rollback bundle exists, or
+	// invalidates the route when none does, and always releases the target's
+	// host config. Rollback runs detached from the caller's cancellation so an
+	// abandoned request cannot leave the tool half-applied.
+	recoverFrom := func(stage soloRouteStage, cause error) error {
+		if !rollbackAvailable {
+			s.invalidateSoloRoute(id, ls)
+			_ = os.RemoveAll(prepared.spec.ConfigHome)
+			return fmt.Errorf("%s: %w", stage.noRollback, cause)
+		}
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		restored, rollbackErr := apply(rollbackCtx, previous, prepared)
+		cancel()
+		s.mu.Lock()
+		ls.acp = restored
+		s.mu.Unlock()
+		if rollbackErr == nil {
+			rollbackErr = s.rememberSoloEndpoint(id, ls.sb)
+		}
+		_ = os.RemoveAll(prepared.spec.ConfigHome)
+		if rollbackErr != nil {
+			s.invalidateSoloRoute(id, ls)
+			return fmt.Errorf("%s: %w", stage.rollbackFailed, cause)
+		}
+		return fmt.Errorf("%s: %w", stage.restored, cause)
+	}
 	acp, err := apply(ctx, prepared, previous)
 	if err != nil {
-		if !rollbackAvailable {
-			s.invalidateSoloRoute(id, ls)
-			_ = os.RemoveAll(prepared.spec.ConfigHome)
-			return false, fmt.Errorf("切换工具失败，原配置已失效；工作区已保留，请重新选择模型重试: %w", err)
-		}
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
-		restored, rollbackErr := apply(rollbackCtx, previous, prepared)
-		cancel()
-		s.mu.Lock()
-		ls.acp = restored
-		s.mu.Unlock()
-		if rollbackErr == nil {
-			rollbackErr = s.rememberSoloEndpoint(id, ls.sb)
-		}
-		_ = os.RemoveAll(prepared.spec.ConfigHome)
-		if rollbackErr != nil {
-			s.invalidateSoloRoute(id, ls)
-			return false, fmt.Errorf("切换工具失败，恢复原配置也失败: %w", err)
-		}
-		return false, fmt.Errorf("切换工具失败，已恢复原配置: %w", err)
+		return false, recoverFrom(soloRouteSwitchFailed, err)
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"model_binding_fingerprint": modelFingerprint, "host": ls.sb.Host, "acp_port": ls.sb.Port}).Error; err != nil {
-			return err
-		}
-		return tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", row.ThreadID, id).Update("model_context_pending", true).Error
-	}); err != nil {
+	if err := s.saveSoloRoute(id, row.ThreadID, modelFingerprint, ls.sb); err != nil {
 		acp.Close()
-		if !rollbackAvailable {
-			s.invalidateSoloRoute(id, ls)
-			_ = os.RemoveAll(prepared.spec.ConfigHome)
-			return false, fmt.Errorf("保存切换状态失败，原配置已失效；工作区已保留，请重试: %w", err)
-		}
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
-		restored, rollbackErr := apply(rollbackCtx, previous, prepared)
-		cancel()
-		s.mu.Lock()
-		ls.acp = restored
-		s.mu.Unlock()
-		if rollbackErr == nil {
-			rollbackErr = s.rememberSoloEndpoint(id, ls.sb)
-		}
-		_ = os.RemoveAll(prepared.spec.ConfigHome)
-		if rollbackErr != nil {
-			s.invalidateSoloRoute(id, ls)
-			return false, fmt.Errorf("保存切换状态失败，恢复原配置失败: %w", err)
-		}
-		return false, fmt.Errorf("保存切换状态失败，已恢复原配置: %w", err)
+		return false, recoverFrom(soloRouteSaveFailed, err)
 	}
 	oldHome := ls.home
 	s.mu.Lock()
@@ -311,6 +294,31 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		_ = os.RemoveAll(oldHome)
 	}
 	return true, nil
+}
+
+// soloRouteStage keeps each failure stage's own user-facing wording.
+type soloRouteStage struct{ noRollback, rollbackFailed, restored string }
+
+var (
+	soloRouteSwitchFailed = soloRouteStage{
+		noRollback:     "切换工具失败，原配置已失效；工作区已保留，请重新选择模型重试",
+		rollbackFailed: "切换工具失败，恢复原配置也失败",
+		restored:       "切换工具失败，已恢复原配置",
+	}
+	soloRouteSaveFailed = soloRouteStage{
+		noRollback:     "保存切换状态失败，原配置已失效；工作区已保留，请重试",
+		rollbackFailed: "保存切换状态失败，恢复原配置失败",
+		restored:       "保存切换状态失败，已恢复原配置",
+	}
+)
+
+func (s *SandboxService) saveSoloRoute(id uint, threadID, modelFingerprint string, sb *sandbox.Sandbox) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"model_binding_fingerprint": modelFingerprint, "host": sb.Host, "acp_port": sb.Port}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ?", threadID, id).Update("model_context_pending", true).Error
+	})
 }
 
 func (s *SandboxService) rememberSoloEndpoint(id uint, sb *sandbox.Sandbox) error {
