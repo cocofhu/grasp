@@ -589,6 +589,7 @@ export interface AuthMeResponse {
 export interface AuthLoginResponse {
   username: string
   expires_at: string
+  is_admin?: boolean
   redirect?: string
 }
 

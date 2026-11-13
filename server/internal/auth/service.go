@@ -16,7 +16,6 @@ import (
 
 const (
 	CookieName     = "cf_session"
-	CookieMaxAge   = 604800 // 7 days in seconds
 	ErrInvalidCred = "用户名或密码错误"
 )
 

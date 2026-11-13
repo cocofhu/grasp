@@ -36,7 +36,7 @@ async function onSubmit() {
   loading.value = true
   try {
     const res = await authApi.login(username.value.trim(), password.value, redirectTarget.value)
-    setUser({ username: res.username, expiresAt: res.expires_at })
+    setUser({ username: res.username, expiresAt: res.expires_at, isAdmin: !!res.is_admin })
     await router.replace(authRedirectPath(res.redirect || redirectTarget.value))
   } catch {
     error.value = t('pages.login.badCredentials')
