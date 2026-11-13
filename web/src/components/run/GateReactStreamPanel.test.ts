@@ -33,6 +33,25 @@ describe('GateReactStreamPanel', () => {
     w.unmount()
   })
 
+  it('shows a reply already written at mount whole and types out only later output', async () => {
+    vi.stubEnv('VITEST', '')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
+    try {
+      const text = 'x'.repeat(20_000)
+      const w = mountStream({ thinking: true, streamText: text })
+      const shown = () => w.get('[data-testid="gate-react-message"]').text().length
+      expect(shown()).toBe(text.length)
+      await w.setProps({ streamText: text + 'y'.repeat(200) })
+      await vi.advanceTimersByTimeAsync(100)
+      expect(shown()).toBeGreaterThan(text.length)
+      expect(shown()).toBeLessThan(text.length + 200)
+      w.unmount()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('keeps the complete thought, output and tool details through completion', async () => {
     const w = mountStream({ thinking: true })
     expect(w.get('[data-testid="gate-busy-placeholder"]').text()).toBeTruthy()

@@ -210,7 +210,8 @@ watch(
       liveKind = last.kind
     }
     reveal.setTarget(last.text)
-    if (!streaming) {
+    // Text already there at mount (reload / reconnect) shows at once; only later chunks animate.
+    if (!streaming || !prev) {
       reveal.flush()
       preview.flush()
     }

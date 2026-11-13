@@ -86,18 +86,21 @@ watch(
   },
 )
 
+// Text already there at mount (reload / reconnect) shows at once; only later chunks animate.
 watch(
   () => props.streamThought ?? '',
-  (text) => {
+  (text, prev) => {
     thoughtReveal.setTarget(text)
+    if (prev === undefined) thoughtReveal.flush()
   },
   { immediate: true },
 )
 
 watch(
   () => props.streamText ?? '',
-  (text) => {
+  (text, prev) => {
     messageReveal.setTarget(text)
+    if (prev === undefined) messageReveal.flush()
   },
   { immediate: true },
 )

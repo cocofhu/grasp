@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 刷新或重连回到正在输出的对话时，已经生成的回复直接完整显示，只有之后新到的内容逐字出现；此前超长的一轮会从头逐字重放，要等很久且页面卡顿。积压过多（例如切回后台标签页）时也只逐字显示最后一小段。
+
 - Solo 切换模型失败的提示统一措辞：保存切换状态失败且恢复原配置也失败时，提示改为「保存切换状态失败，恢复原配置也失败」；原配置已失效时，两种失败都提示「请重新选择模型重试」（此前保存失败时只说「请重试」）。
 
 - Cursor 模型列表与 Cursor CLI 2026.11.11 对齐：新增 Gemini 4 Carbon、Gemini 4 Hydrogen、Claude Fable 5.2（含 Fast 版）和 DeepSeek V4.1 Flash 1017 各档位；移除 CLI 已下线的 Gemini 3.6 Flash 与 Gemini 3.7 Flash。已选用这些旧模型的 Agent 仍会把原 ID 交给 CLI。

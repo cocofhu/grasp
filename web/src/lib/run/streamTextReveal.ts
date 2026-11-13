@@ -26,7 +26,15 @@ type StreamTextRevealOptions = {
    * production leaves this false for typewriter catch-up.
    */
   sync?: boolean
+  /**
+   * Most characters left to animate. A larger lag (resume snapshot, backlog
+   * after a hidden tab) jumps ahead so only this tail is typed out.
+   */
+  maxLag?: number
 }
+
+/** Default cap on characters still animated behind the target. */
+export const STREAM_REVEAL_MAX_LAG = 500
 
 type StreamTextReveal = {
   /** Absolute authoritative snapshot (ACP resume / chunk). */
@@ -71,6 +79,7 @@ export function createStreamTextReveal(opts: StreamTextRevealOptions = {}): Stre
   const clearDelay = opts.clearDelay ?? ((id) => clearTimeout(id))
   const prefersReducedMotion = opts.prefersReducedMotion ?? defaultPrefersReducedMotion
   const sync = opts.sync === true
+  const maxLag = Math.max(0, opts.maxLag ?? STREAM_REVEAL_MAX_LAG)
 
   let target = ''
   let revealed = ''
@@ -109,9 +118,9 @@ export function createStreamTextReveal(opts: StreamTextRevealOptions = {}): Stre
       return
     }
     const reduce = prefersReducedMotion()
-    const lag = target.length - revealed.length
-    const n = charsPerTickForLag(lag, reduce)
-    revealed = target.slice(0, revealed.length + n)
+    const from = Math.max(revealed.length, target.length - maxLag)
+    const n = charsPerTickForLag(target.length - from, reduce)
+    revealed = target.slice(0, from + n)
     notify()
     if (revealed.length < target.length) {
       const wait = reduce ? 0 : delayMs
