@@ -296,12 +296,19 @@ func (s *Session[T]) Reorder(ids []string) error {
 		byID[s.cfg.View(it).ID] = it
 	}
 	reordered := make([]T, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
-		it, ok := byID[strings.TrimSpace(id)]
+		id = strings.TrimSpace(id)
+		it, ok := byID[id]
 		if !ok {
 			s.mu.Unlock()
 			return ErrNotFound
 		}
+		if _, dup := seen[id]; dup {
+			s.mu.Unlock()
+			return errors.New("duplicate item id")
+		}
+		seen[id] = struct{}{}
 		reordered = append(reordered, it)
 	}
 	s.queue = reordered

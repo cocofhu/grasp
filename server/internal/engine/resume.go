@@ -45,6 +45,22 @@ func validateGateForm(gate models.Gate, action string, form map[string]any) erro
 	return nil
 }
 
+// isConfiguredGateAction reports whether action is one of the gate's buttons.
+// Trimmed like gateshare.IsWhitelistedExternalAction so a share link that
+// passed its whitelist is never consumed and then rejected here.
+func isConfiguredGateAction(gate models.Gate, action string) bool {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return false
+	}
+	for _, a := range gate.Actions {
+		if a.ID == action {
+			return true
+		}
+	}
+	return false
+}
+
 // ResumeGate resolves a paused human_gate and continues the FSM.
 func (e *Engine) ResumeGate(runID, nodeID, action string, form map[string]any) error {
 	return e.ResumeGateAs(runID, nodeID, action, form, "")
@@ -91,6 +107,9 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 	}
 	if gate.Resolved {
 		return errors.New("gate already resolved")
+	}
+	if !isConfiguredGateAction(gate, action) {
+		return fmt.Errorf("invalid gate action %q", action)
 	}
 	// Validate the form before locking the gate as resolved: a field marked
 	// required, or any field when the chosen action requires the form (e.g. a
