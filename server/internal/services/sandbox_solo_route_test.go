@@ -340,6 +340,9 @@ func TestSoloRouteFailureStagesKeepTheirOutcome(t *testing.T) {
 			} else if stored.ModelBindingFingerprint != "" || live.modelBindingFingerprint != "" {
 				t.Fatalf("uncertain route must be invalidated: stored=%q live=%q", stored.ModelBindingFingerprint, live.modelBindingFingerprint)
 			}
+			if tc.calls == 2 && !tc.keepsRoute && live.acp != nil {
+				t.Fatal("failed rollback must not keep a stale ACP client")
+			}
 			if live.switching {
 				t.Fatal("switch lock leaked")
 			}

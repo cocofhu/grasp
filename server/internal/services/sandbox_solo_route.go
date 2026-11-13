@@ -249,8 +249,31 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 		return acp, nil
 	}
+	// recoverFrom re-applies the previous tool when a rollback bundle exists, or
+	// invalidates the route when none does, and always releases the target's
+	// host config. Rollback runs detached from the caller's cancellation so an
+	// abandoned request cannot leave the tool half-applied.
 	recoverFrom := func(stage soloRouteStage, cause error) error {
-		return s.rollbackSoloRoute(ctx, id, ls, apply, prepared, previous, rollbackAvailable, stage, cause)
+		if !rollbackAvailable {
+			s.invalidateSoloRoute(id, ls)
+			_ = os.RemoveAll(prepared.spec.ConfigHome)
+			return fmt.Errorf("%s: %w", stage.noRollback, cause)
+		}
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		restored, rollbackErr := apply(rollbackCtx, previous, prepared)
+		cancel()
+		s.mu.Lock()
+		ls.acp = restored
+		s.mu.Unlock()
+		if rollbackErr == nil {
+			rollbackErr = s.rememberSoloEndpoint(id, ls.sb)
+		}
+		_ = os.RemoveAll(prepared.spec.ConfigHome)
+		if rollbackErr != nil {
+			s.invalidateSoloRoute(id, ls)
+			return fmt.Errorf("%s: %w", stage.rollbackFailed, cause)
+		}
+		return fmt.Errorf("%s: %w", stage.restored, cause)
 	}
 	acp, err := apply(ctx, prepared, previous)
 	if err != nil {
@@ -273,8 +296,6 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 	return true, nil
 }
 
-type soloRouteApply func(ctx context.Context, target, old *preparedAgentContainer) (*sandbox.ACPClient, error)
-
 // soloRouteStage keeps each failure stage's own user-facing wording.
 type soloRouteStage struct{ noRollback, rollbackFailed, restored string }
 
@@ -290,32 +311,6 @@ var (
 		restored:       "保存切换状态失败，已恢复原配置",
 	}
 )
-
-// rollbackSoloRoute re-applies the previous tool after a failed switch and
-// always releases the target's host config. Rollback runs detached from the
-// caller's cancellation so an abandoned request cannot leave the tool half-applied.
-func (s *SandboxService) rollbackSoloRoute(ctx context.Context, id uint, ls *liveSandbox, apply soloRouteApply, target, previous *preparedAgentContainer, rollbackAvailable bool, stage soloRouteStage, cause error) error {
-	if !rollbackAvailable {
-		s.invalidateSoloRoute(id, ls)
-		_ = os.RemoveAll(target.spec.ConfigHome)
-		return fmt.Errorf("%s: %w", stage.noRollback, cause)
-	}
-	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
-	restored, rollbackErr := apply(rollbackCtx, previous, target)
-	cancel()
-	s.mu.Lock()
-	ls.acp = restored
-	s.mu.Unlock()
-	if rollbackErr == nil {
-		rollbackErr = s.rememberSoloEndpoint(id, ls.sb)
-	}
-	_ = os.RemoveAll(target.spec.ConfigHome)
-	if rollbackErr != nil {
-		s.invalidateSoloRoute(id, ls)
-		return fmt.Errorf("%s: %w", stage.rollbackFailed, cause)
-	}
-	return fmt.Errorf("%s: %w", stage.restored, cause)
-}
 
 func (s *SandboxService) saveSoloRoute(id uint, threadID, modelFingerprint string, sb *sandbox.Sandbox) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
