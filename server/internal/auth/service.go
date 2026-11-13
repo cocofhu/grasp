@@ -64,7 +64,8 @@ func (s *Service) createSession(username string) (*models.Session, error) {
 	return sess, nil
 }
 
-// ValidateSession returns the session when the token is valid and not expired.
+// ValidateSession returns the session when the token is valid, not expired,
+// and its user is still a configured account.
 func (s *Service) ValidateSession(token string) (*models.Session, error) {
 	if token == "" {
 		return nil, errors.New("no session")
@@ -76,6 +77,10 @@ func (s *Service) ValidateSession(token string) (*models.Session, error) {
 	if time.Now().After(sess.ExpiresAt) {
 		_ = s.db.Delete(&sess).Error
 		return nil, errors.New("session expired")
+	}
+	if _, ok := s.findUser(sess.Username); !ok {
+		_ = s.db.Delete(&sess).Error
+		return nil, errors.New("session user removed")
 	}
 	return &sess, nil
 }
