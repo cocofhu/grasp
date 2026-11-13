@@ -1,4 +1,4 @@
-# approving 配置示例(对齐 auto-coder 形态)。
+# Grasp 配置示例。完整配置项、默认值与沙箱/gateway 的区别见 ../CONFIGURATION.md。
 #
 # 上线形态:deploy 阶段由 CI 从部署者选择的配置源获取此 YAML，写入 ConfigMap，
 # 以只读卷挂到 CONFIG_PATH;进程读取它。**不要把真实配置提交进 git / 打进镜像**。
@@ -7,10 +7,11 @@
 # 仅用环境变量(env > 文件 > 默认)。这里的优先级适用于平台服务配置。
 #
 # 优先级:显式环境变量 > 本文件(经 ConfigMap 下发)> 代码默认值。
+# 设置页管理的参数另有数据库覆盖：环境变量 > 设置页保存值 > 本文件 > 默认值。
 # 平台服务的高敏密钥生产走 K8s Secret 注入环境变量,不放本文件。
 # ACP / Git 运行时凭据只在工作区凭据 UI 管理，不在本文件配置。
 #
-# 注意:GitLab/代码托管不是平台级配置。仓库地址由工作流全局变量 repo_url 提供,
+# 注意:GitLab/代码托管不是平台级配置。仓库地址来自工作流绑定的仓库,
 # 凭据来自工作区凭据,按 run 注入对应沙箱;平台本身不依赖任何固定的 GitLab 地址或令牌。
 
 server:
@@ -38,14 +39,20 @@ engine:
   profiles_root: "data/profiles"
 
 sandbox:
-  # 推荐设为发布的 universal-sandbox（一张图预装七个 CLI；Codex 可使用平台登录文件或 Responses 模型连接）。
-  # 留空则走 images[backend] / 内置默认 universal-sandbox:local。
+  # 默认跟随网关的镜像或 E2B 模板，无需在 Grasp 重复登记。
+  # 只有需要覆盖时才填：Docker/K8s 填 OCI 镜像；E2B 填 templates 中的名称。
   image: ""
   # 可选：只覆盖某一个 acpBackend 的镜像。
   images: {}
-  # 旧配置默认 direct，保持兼容。gateway 通道要求网关 API key；预览走 Grasp
-  # /preview/... 路径代理，无需独立预览域名。沙箱仍须能访问 mcp_advertise。
+  # 默认控制面地址；直接运行 gateway 默认听 8080，需在两端显式对齐端口。
+  gateway_url: http://127.0.0.1:8899
+  # 通过 GRASP_SANDBOX_GATEWAY_API_KEY 注入与网关 auth.apiKeys 匹配的 key。
+  gateway_api_key: ""
+  # 默认 direct。gateway 通道要求网关 API key；预览走 Grasp /preview/...
+  # 路径代理，无需独立预览域名。沙箱仍须能访问 mcp_advertise。
   gateway_transport: direct
+  # gateway 通道自动启用；同机 E2B direct 部署也应显式启用。
+  private_endpoints: false
   # 命名网关用于新增后端；默认网关只影响新沙箱，已有沙箱保留原绑定。
   # 网关连接/默认值修改后重启 Grasp。完整示例见根目录 GATEWAY.md。
   gateways: []
@@ -75,9 +82,10 @@ sandbox:
   max_test_sandboxes: 5
   # 同时运行的 Solo 会话沙箱数量上限(Solo 沙箱没有空闲回收)。设置页可改。
   max_solo_sandboxes: 5
-  # 每个沙箱的内存上限(MiB),含 dockerd/浏览器/Agent 自身的构建与测试;
-  # 过低会导致整个沙箱被 OOM 杀掉。设置页可改,不得超过网关 maxMemoryMB。
-  sandbox_memory_mb: 8192
+  # 内存覆盖（MiB）：0 跟随网关/所选模板；非零至少 1024。
+  # Docker/K8s 受各自 resources.max 限制，E2B 必须与模板 memoryMB 一致。
+  # 设置页可改；GRASP_SANDBOX_MEMORY_MB 环境变量优先且锁定设置页。
+  sandbox_memory_mb: 0
   # Agent 配置根(config home)在宿主侧的落地基目录,打包后经 gateway
   # config.bundleUrl / SSH 注入沙箱。留空=系统临时目录(本地开发与 K8s 预览均可)。
   work_dir: ""
@@ -92,8 +100,8 @@ sandbox:
 browser:
   # Global LRU cap on concurrent preview tabs (one per viewer session).
   max_tabs: 16
-  # Tabs per Chromium container before spawning another container.
-  max_tabs_per_container: 8
+  # One desktop per sandbox; viewers of the same sandbox share it.
+  max_tabs_per_container: 1
   # Idle tab / empty container reclamation (seconds).
   tab_idle_ttl_seconds: 300
   container_idle_ttl_seconds: 600

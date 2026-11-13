@@ -1,17 +1,29 @@
 ---
 title: 配置
-description: 配置要点摘要；完整说明见源码 CONFIGURATION.md。
+description: Grasp、gateway 与沙箱配置入口、默认值和覆盖顺序。
 ---
 
 Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/config.example.yaml` 与根目录 `.env.example`）。ACP、Git 等运行时凭据只在「设置 → 凭据」 中管理。
 
 ## 完整文档
 
-请以仓库内权威文档为准（避免本站与源码双份漂移）：
+按需要选择配置文档：
 
-- [server/CONFIGURATION.md](https://github.com/cocofhu/approving/blob/main/server/CONFIGURATION.md)
+- [Grasp 与沙箱配置、默认值](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md)：按平台、gateway、E2B 和沙箱内部变量分组，包含每项用途、默认值、Compose 差异、最小接入清单和排错。
+- [Grasp 完整环境变量表](https://github.com/cocofhu/grasp/blob/main/server/CONFIGURATION.md)：环境变量与 YAML 字段的对应关系。
+- [E2B 部署](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)：模板构建、gateway 配置与启动步骤。
 
-该文档由 `go run ./cmd/gen-configdoc` 生成/校验，CI 会 `-check`。
+环境变量表由 `go run ./cmd/gen-configdoc` 生成/校验，CI 会 `-check`。
+
+## 默认值与覆盖顺序
+
+Grasp 读取 `CONFIG_PATH`（默认 `config.yaml`），gateway 通过 `SBGW_CONFIG` 或 `-config` 显式选择文件。一次部署使用两份 YAML：Grasp 平台配置，以及所选后端的 gateway 配置。Docker、Kubernetes、E2B 各有独立示例，不能混合后端段；未知字段或不属于当前后端的环境变量会导致启动失败。
+
+普通配置是环境变量 > YAML > 程序默认值；设置页管理的参数是环境变量 > 设置页保存值 > YAML > 默认值。环境变量锁定相应设置页字段。
+
+Grasp 默认连接 `http://127.0.0.1:8899`，使用 `direct` transport，镜像为空、内存覆盖为 `0`，跟随网关或所选模板。设置页把内存填回 `0` 可清除覆盖，对之后新建的沙箱生效。Docker/Kubernetes 默认资源各自为 `2 CPU / 4096 MiB / 25 GiB`；E2B 没有内置模板和规格，必须填写实际构建结果。
+
+E2B 配置只包含明确的 `apiURL`、可选的 `sandboxURL` 和 `templates`。自建填写自己的 E2B API 与沙箱代理地址，没有隐式云服务地址。`templates.standard` 的 `standard` 是本地模板名，`templateID` 才是构建返回的实际标识；单模板自动选择，多模板指定 `defaultTemplate`，也可以在 Grasp 命名连接里用 `profile` 选择。Grasp 无需重复填写模板名和内存。见 [E2B 构建与两份配置示例](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)。
 
 ## 本地快速路径
 

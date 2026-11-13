@@ -27,7 +27,7 @@ services:
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
       GRASP_PROFILES_ROOT: /app/data/profiles
-      # 沙箱镜像:留空则由网关(SBGW_IMAGE / config.local.yaml)选默认镜像;设了值则
+      # 沙箱镜像:留空则由网关(SBGW_DOCKER_IMAGE / config.local.yaml)选默认镜像;设了值则
       # 作为“每次创建”的镜像覆盖随请求发给网关。团队内网镜像等场景可在 .env 里填。
       GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-}
       GRASP_SANDBOX_WORK_DIR: ${HOST_REPO_DIR}/.devdata/sandbox-home
@@ -82,8 +82,8 @@ services:
       SBGW_DRIVER: docker
       # 监听端口与后端错开;config.local.yaml 默认 :8080,这里用 SBGW_LISTEN 覆盖。
       SBGW_LISTEN: ":${GRASP_GATEWAY_PORT:-8899}"
-      # 留空则用 config.local.yaml 的 image.ref(universal-sandbox:local)。
-      SBGW_IMAGE: ${GRASP_GATEWAY_SANDBOX_IMAGE:-}
+      # 留空则用 config.local.yaml 的 docker.image(universal-sandbox:local)。
+      SBGW_DOCKER_IMAGE: ${GRASP_GATEWAY_SANDBOX_IMAGE:-}
       # Default local-demo Bearer; overrides empty auth.apiKeys in config.local.yaml.
       SBGW_API_KEYS: ${SBGW_API_KEYS:-grasp-local-demo}
     volumes:

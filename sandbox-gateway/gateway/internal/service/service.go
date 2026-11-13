@@ -40,14 +40,14 @@ type lbWaiter interface {
 // Config tunes the service orchestration.
 type Config struct {
 	Image         string
-	Ports         []int // public ports to publish (image config Public())
+	Ports         []int // public ports to publish (gateway ports.Public())
 	InternalPorts []int // cdp/novnc — cluster/container network only
 	SessionPort   int   // port used for the readiness probe (default 8765)
 	WorkspaceDir  string
 	// FinalizeTimeout bounds async readiness (LB IP + session probe).
 	FinalizeTimeout time.Duration
 	// Resources is the default/max policy for per-sandbox CPU/memory/disk.
-	Resources config.ResourceDefaults
+	Resources config.ResourcePolicy
 	// OrphanGCInterval is how often SweepOrphans runs when RunOrphanGC is used.
 	OrphanGCInterval time.Duration
 	// OrphanGCMinAge skips live workloads younger than this during orphan sweeps.
@@ -117,13 +117,16 @@ type CreateRequest struct {
 // readiness finalize run in the background under FinalizeTimeout — same contract
 // as Reinstall. This avoids hanging clients when the apiserver/CSI/storage is slow.
 func (s *SandboxService) Create(_ context.Context, req CreateRequest) (*models.Sandbox, error) {
-	cpu, mem, disk, err := s.cfg.Resources.Resolve(req.CPUCores, req.MemoryMB, req.DiskGi)
+	image := req.Image
+	if image == "" {
+		image = s.cfg.Image
+	}
+	cpu, mem, disk, err := s.cfg.Resources.Resolve(image, req.CPUCores, req.MemoryMB, req.DiskGi)
 	if err != nil {
 		return nil, err
 	}
 
 	id := uuid.NewString()[:12]
-	image := config.ImageConfig{Ref: s.cfg.Image}.Resolve(req.Image, req.Provider)
 	workspace := req.WorkspaceDir
 	if workspace == "" {
 		workspace = s.cfg.WorkspaceDir
@@ -440,7 +443,7 @@ func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData 
 		return err
 	}
 
-	cpu, mem, disk, err := s.cfg.Resources.Resolve(sb.CPUCores, sb.MemoryMB, sb.DiskGi)
+	cpu, mem, disk, err := s.cfg.Resources.Resolve(sb.Image, sb.CPUCores, sb.MemoryMB, sb.DiskGi)
 	if err != nil {
 		return err
 	}

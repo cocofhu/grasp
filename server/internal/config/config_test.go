@@ -321,3 +321,29 @@ func TestCodexLoginConfigFromYAMLEnvAndDefaults(t *testing.T) {
 		t.Fatalf("env %v %v %q", c.CodexRefreshLead(), c.CodexCheckInterval(), c.CodexAuthBaseURL())
 	}
 }
+
+func TestSandboxFollowsGatewayAndExplicitZeroClearsYAML(t *testing.T) {
+	t.Setenv("GRASP_SANDBOX_MEMORY_MB", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("sandbox: {}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := parse(path)
+	if err != nil || c.Sandbox.MemoryMB != 0 || c.ResolveSandboxImage("codex") != "" {
+		t.Fatalf("gateway defaults overridden: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("sandbox: {sandbox_memory_mb: 8192}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRASP_SANDBOX_MEMORY_MB", "0")
+	c, err = parse(path)
+	if err != nil || c.Sandbox.MemoryMB != 0 {
+		t.Fatal("explicit zero did not clear YAML override")
+	}
+	for _, value := range []string{"invalid", "-1", "512"} {
+		t.Setenv("GRASP_SANDBOX_MEMORY_MB", value)
+		if _, err := parse(path); err == nil {
+			t.Fatal("invalid memory accepted")
+		}
+	}
+}

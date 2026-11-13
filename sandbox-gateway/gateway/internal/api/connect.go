@@ -46,8 +46,8 @@ func gatewayInfo(cfg *config.Config) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"version": 2, "driver": cfg.Driver, "transport": tunnelProtocol,
-			"profiles":     cfg.Profiles,
-			"ports":        map[string]int{"session": cfg.Image.Ports.Session, "ide": cfg.Image.Ports.CodeServer, "ssh": cfg.Image.Ports.SSH, "cdp": cfg.Image.Ports.CDP, "novnc": cfg.Image.Ports.NoVNC},
+			"profiles":     cfg.EnvironmentProfiles(),
+			"ports":        map[string]int{"session": cfg.Ports.Session, "ide": cfg.Ports.CodeServer, "ssh": cfg.Ports.SSH, "cdp": cfg.Ports.CDP, "novnc": cfg.Ports.NoVNC},
 			"capabilities": gin.H{"stopMode": stopMode, "diskMode": diskMode},
 		})
 	}

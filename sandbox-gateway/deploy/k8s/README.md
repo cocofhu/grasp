@@ -2,6 +2,8 @@
 
 本目录提供 **Grasp + Kubernetes 驱动 gateway + 独立沙箱命名空间**的新安装示例。单个 gateway 只运行一种驱动。已有 Docker/E2B 部署接入第二个网关时，使用 [GATEWAY.md 的命名连接](../../../GATEWAY.md#gateway-transport-and-multiple-deployments)，不要直接覆盖已有沙箱绑定的网关地址。
 
+本示例使用新的独立后端配置，需配套包含该变更的 Grasp / gateway 镜像；清单中的旧发布 tag 仅作位置示例，部署前必须替换。默认值与字段说明见[配置总览](../../../CONFIGURATION.md)，纯 gateway YAML 见 [Kubernetes 独立示例](../../gateway/config.kubernetes.example.yaml)。
+
 `role-pods-log.yaml` / `rolebinding-pods-log.yaml` 是给已有安装补充读取日志权限的增量补丁，**不是完整部署清单**。新安装使用下列文件，复制到仓库外再按环境修改：
 
 | 文件 | 用途 |
@@ -16,7 +18,7 @@
 
 - 管理机具有相应管理权限的 `kubectl`、Git、OpenSSL；生成账号哈希的机器具备项目所需的 Go。
 - 发布镜像/runtime bundle 使用 Linux amd64。示例为控制面 Pod 指定此架构；gateway 当前创建的沙箱 Pod 不携带 nodeSelector，因此沙箱的可调度节点也须使用匹配架构，混合集群需另行配置调度准入策略。
-- 集群 DNS、CNI 和动态存储可用。两个控制面 PVC 和每个沙箱 PVC 都需要支持 `ReadWriteOnce` 的 StorageClass。将两个 PVC 的 `spec.storageClassName` 及 gateway 的 `kubernetes.storageClass` 占位值替换为集群实际名称。当前 gateway 配置加载器会把空值替换成代码中的预设存储类，**留空不表示使用集群默认类**。
+- 集群 DNS、CNI 和动态存储可用。两个控制面 PVC 和每个沙箱 PVC 都需要支持 `ReadWriteOnce` 的 StorageClass。将两个 PVC 的 `spec.storageClassName` 及 gateway 的 `kubernetes.storageClass` 占位值替换为集群实际名称。若使用集群默认类，删除控制面 PVC 的 `storageClassName` 字段，并将 gateway 的 `kubernetes.storageClass` 留空；PVC 显式写 `storageClassName: ""` 则表示不使用存储类。
 - 沙箱执行 privileged 容器，支持 DinD。`grasp-sandboxes` 必须允许 privileged，节点/准入策略也必须允许；不能用它承诺互不信任租户的强隔离。控制面在另一个 `grasp-system` 命名空间。
 - gateway 使用自己的 ServiceAccount 访问 Kubernetes API。Grasp 和沙箱默认 ServiceAccount 不自动挂载 API token，也不授予管理权限。PSA 与 RBAC 机制见 [Kubernetes 命名空间安全标签](https://kubernetes.io/docs/tasks/configure-pod-container/enforce-standards-namespace-labels/)和 [RBAC 文档](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)。
 
@@ -51,6 +53,8 @@ cp sandbox-gateway/deploy/k8s/*.example.yaml "$grasp_k8s_dir/"
 | gateway `kubernetes.enableLoadBalancer` | `false`，沙箱只需要 ClusterIP；此拓扑不依赖 MetalLB，也不为每个沙箱申请外部 IP |
 
 gateway 配置通过 `SBGW_CONFIG` 加载，Grasp 配置通过 `CONFIG_PATH` 加载，不能交换变量名。公共配置放 ConfigMap；账号哈希、gateway key 和加密密钥只通过 Secret 注入。两端引用同一个 `gateway-api-key`，避免 key 不一致。
+
+镜像只配置在 gateway 的 `kubernetes.image`；资源由 `kubernetes.resources.default/max` 定义，默认 `2 CPU / 4096 MiB / 25 GiB`，上限 `8 CPU / 16384 MiB / 500 GiB`。Grasp 不配置 `image`，内存覆盖 `sandbox_memory_mb: 0`，创建时跟随网关。不要在 Grasp 再复制一份默认镜像或内存，也不要添加 Docker/E2B 后端段。
 
 由集群管理员先创建命名空间和权限：
 

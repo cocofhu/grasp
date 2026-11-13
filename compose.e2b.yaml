@@ -18,7 +18,6 @@ services:
       SBGW_E2B_OWNER_ID: ${E2B_GATEWAY_OWNER_ID:?Set a stable unique E2B_GATEWAY_OWNER_ID}
       SBGW_E2B_API_URL: ${E2B_API_URL:-}
       SBGW_E2B_SANDBOX_URL: ${E2B_SANDBOX_URL:-}
-      SBGW_E2B_DOMAIN: ${E2B_DOMAIN:-e2b.app}
       SBGW_API_KEYS: ${SANDBOX_GATEWAY_API_KEY:?Set SANDBOX_GATEWAY_API_KEY}
     volumes:
       - ${E2B_GATEWAY_CONFIG:?Set E2B_GATEWAY_CONFIG to the prepared profile YAML}:/etc/sandbox-gateway/config.yaml:ro
@@ -36,6 +35,7 @@ services:
       dockerfile: server/Dockerfile
     network_mode: host
     environment:
+      CONFIG_PATH: /etc/grasp/grasp.yaml
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
       GRASP_DEPLOYMENT_MODE: production
@@ -46,13 +46,14 @@ services:
       GRASP_SANDBOX_PRIVATE_ENDPOINTS: "true"
       GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY}
-      # Must match the chosen prepared profile. No implicit OCI conversion.
-      GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-universal-sandbox:e2b}
-      GRASP_SANDBOX_MEMORY_MB: ${GRASP_SANDBOX_MEMORY_MB:-3072}
+      # Optional overrides; empty means use the gateway/template defaults.
+      GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-}
+      GRASP_SANDBOX_MEMORY_MB: ${GRASP_SANDBOX_MEMORY_MB:-}
       GRASP_SANDBOX_RUNTIME_BUNDLE: /app/sandbox-runtime/sandbox-runtime.tgz
       GRASP_SANDBOX_WORK_DIR: /data/sandbox-home
       GRASP_PROFILES_ROOT: /app/data/profiles
     volumes:
+      - ${GRASP_CONFIG:?Set GRASP_CONFIG to your Grasp YAML}:/etc/grasp/grasp.yaml:ro
       - e2b-server-data:/data
       - ${GRASP_DATA_DIR:-./data}:/app/data
     depends_on:

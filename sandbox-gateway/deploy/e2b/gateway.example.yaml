@@ -1,47 +1,42 @@
-# E2B-only gateway config for compose.e2b.yaml. Copy outside the checkout,
-# replace templateID, and set E2B_GATEWAY_CONFIG to the absolute copy path.
-# Secrets/owner/state-directory overrides come from the Compose environment.
+# Self-hosted E2B gateway. Copy outside the checkout; set E2B_GATEWAY_CONFIG.
+# Required provider values below are examples, not built-in defaults.
+driver: e2b
 server:
   listen: "127.0.0.1:8899"
   finalizeTimeoutSeconds: 1200
-driver: e2b
 database:
   driver: sqlite
   path: /data/gateway.db
-image:
-  ref: universal-sandbox:e2b
-  ports:
-    session: 8765
-    codeServer: 8744
-    ssh: 22
-    cdp: 9222
-    novnc: 6080
-    # All E2B endpoints, including these, bind only to host loopback.
-    # set_preview publishes additional registered ports on demand.
-    app: [18080]
+ports:
+  session: 8765
+  codeServer: 8744
+  ssh: 22
+  cdp: 9222
+  novnc: 6080
+  app: [18080] # all E2B endpoints bind only to host loopback
+
 e2b:
-  # Cloud defaults use https://api.e2b.app and provider sandbox domains.
-  # Embed/custom deployments set E2B_API_URL and E2B_SANDBOX_URL in Compose.
-  domain: e2b.app
+  apiURL: https://api.e2b.example.com # your E2B control API; no implicit cloud URL
+  sandboxURL: https://sandbox.e2b.example.com # your private sandbox proxy origin
+  # apiKey: injected using E2B_API_KEY in Compose / SBGW_E2B_API_KEY in the process
   ownerID: replace-with-stable-unique-deployment-id
-  stateDir: /data/e2b
+  stateDir: /data/e2b # persistent; keep with the gateway DB
   bootTimeoutSeconds: 600
   leaseSeconds: 3600
   renewIntervalSeconds: 300
-  # Pause with a memory snapshot instead of kill when a guest reaches its lease
-  # or the provider's maximum sandbox length (SBGW_E2B_AUTO_PAUSE).
   autoPause: true
+  # One template is selected automatically. With several, set defaultTemplate.
+  # defaultTemplate: standard
   templates:
-    - image: universal-sandbox:e2b
-      templateID: replace-with-resolved-template-id
+    standard: # your local template name, from prepare-template.py --name standard
+      templateID: replace-with-resolved-template-id # returned by E2B build
       cpuCores: 2
       memoryMB: 3072
-      # Minimum available workspace at create, NOT PVC size or a disk quota.
-      diskGi: 20
+      diskGi: 20 # minimum available workspace verified by the builder, not a quota
+# Grasp leaves image unset and sandbox_memory_mb at 0 to follow this template.
 auth:
-  # Required SANDBOX_GATEWAY_API_KEY is supplied as SBGW_API_KEYS by Compose.
-  apiKeys: []
+  apiKeys: [] # Compose injects SANDBOX_GATEWAY_API_KEY as SBGW_API_KEYS
 orphanGC:
-  enabled: true
+  enabled: true # deployment choice; program default is false
   intervalSeconds: 300
   minAgeSeconds: 600

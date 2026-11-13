@@ -198,6 +198,10 @@ dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文
 
 ## 环境变量
 
+Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单见
+[Grasp 与沙箱配置](../CONFIGURATION.md)。下面列常用项；完整环境变量矩阵由代码生成，见
+[CONFIGURATION.md](CONFIGURATION.md)。表中默认值指直接启动 Grasp，Compose 可能显式覆盖。
+
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `GRASP_PORT` | `8080` | HTTP 端口 |
@@ -205,11 +209,15 @@ dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文
 | `GRASP_MAX_RUNS` | `5` | 并发 run 上限 |
 | `GRASP_SANDBOX_GATEWAY_URL` | `http://127.0.0.1:8899` | sandbox-gateway 控制面地址(创建/销毁/管理沙箱) |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | — | 网关可选 Bearer 令牌(网关关鉴权时留空) |
-| `GRASP_SANDBOX_IMAGE` | — | 每次创建时的镜像覆盖;留空即用网关默认镜像(universal-sandbox) |
+| `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `direct` | 数据面直连；`gateway` 通过带鉴权的网关通道，预览使用 Grasp 路径代理 |
+| `GRASP_SANDBOX_IMAGE` | 空，跟随网关 | 全局镜像覆盖 > 后端镜像覆盖 > 网关默认；指定命名网关 profile 时由网关解析环境 |
+| `GRASP_SANDBOX_MEMORY_MB` | `0`（跟随网关） | 新沙箱内存覆盖；环境变量 > 设置页保存值 > YAML > 默认。E2B 须匹配模板内存 |
 | `GRASP_SANDBOX_ENV` | — | 通用 `K=V,K2=V2` 环境变量,注入每个沙箱(厂商无关;含密钥键时启动失败) |
-| `GRASP_AGENT_TIMEOUT_SEC` | `600` | 单轮 agent/react 回合硬超时(全局默认);单节点可在其 Agent 卡片填「超时(分钟)」单独放宽 |
-| `GRASP_CHAT_IDLE_SEC` | `720` | 回合内多久无事件即判卡死并中断 |
-| `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<PORT>` | 沙箱内 agent/MCP 客户端回连 run 级 artifact-store MCP 的 base URL。K8s gateway 须改为沙箱可达且挂载 `/mcp` 的实例基址(如 `http://api.example.com`);勿用仅 SPA/无 `/mcp` 路由的入口域名。若误配 `spa.example.com`,加载配置与注入时会改写为 `api.example.com`(见 `RewriteMisconfiguredMCPAdvertise`) |
+| `GRASP_AGENT_TIMEOUT_SEC` | 已废弃并忽略 | 使用画布节点总时限与 Agent 无动作时限 |
+| `GRASP_CHAT_IDLE_SEC` | `1200` 秒 | 无输出且无 CPU/IO 活动的时限，续跑一次仍无活动则中断；设置后设置页只读 |
+| `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `1200` 秒 | 等待沙箱创建就绪的时限，应不小于 gateway finalize 时限 |
+| `GRASP_SANDBOX_RUNTIME_BUNDLE` | `/app/sandbox-runtime/sandbox-runtime.tgz` | 下发给沙箱的运行时包，服务端镜像已内置；直接运行二进制时提供实际构建路径 |
+| `GRASP_MCP_ADVERTISE` | 沙箱模式 `http://host.docker.internal:<PORT>` | 沙箱回连 MCP 和下载运行时/配置包的 API 基址。远程部署需设置沙箱内可达的地址；worktree 模式默认 `http://127.0.0.1:<PORT>` |
 | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent profile 规则根(挂入 `{configRoot}/rules`) |
 
 > **GitLab 不是平台配置**:平台不依赖任何固定的 GitLab 地址或令牌。仓库地址来自工作流
@@ -231,6 +239,8 @@ dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文
   `/etc/config/config.yaml`;主容器读它。配置示例见 `config.example.yaml`。
 - 优先级 **显式环境变量 > 配置文件 > 代码默认值**。文件缺失时以 env/默认值启动,
   零外部依赖(本地开发可不写文件;单测不触网)。
+- 设置页管理的参数另有持久化覆盖：**环境变量 > 设置页保存值 > 配置文件 > 默认值**。
+  环境变量锁定相应控件，设置页不能覆盖环境变量；例如 E2B Compose 注入的内存 `3072`。
 
 配置结构(YAML 键):
 

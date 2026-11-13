@@ -186,7 +186,9 @@ func isClientResourceError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "cpuCores") ||
 		strings.Contains(msg, "memoryMB") ||
-		strings.Contains(msg, "diskGi")
+		strings.Contains(msg, "diskGi") ||
+		strings.Contains(msg, "E2B template") ||
+		strings.Contains(msg, "E2B resources")
 }
 
 // List handles GET /sandboxes.

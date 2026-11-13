@@ -158,7 +158,8 @@ Service configuration precedence: environment variables > mounted config file > 
 ## Docs
 
 - [Concepts](docs/content/en/guide/concepts.md) · [Quick start](docs/content/en/guide/quick-start.md)
-- [Configuration](server/CONFIGURATION.md) · [Server](server/README.md) · [Gateway contract](GATEWAY.md)
+- [Grasp and sandbox configuration / defaults (中文)](CONFIGURATION.md) · [Environment reference](server/CONFIGURATION.md)
+- [Server](server/README.md) · [Gateway contract](GATEWAY.md)
 - [Security](SECURITY.md) · [Support](SUPPORT.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing

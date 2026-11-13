@@ -3,6 +3,8 @@ package runtime
 import (
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 func TestSandboxResourcesText(t *testing.T) {
@@ -20,5 +22,24 @@ func TestSandboxResourcesText(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestPromptMemoryPrefersGatewayResolvedLimit(t *testing.T) {
+	previous := sandbox.DefaultMemoryMB()
+	t.Cleanup(func() { sandbox.SetDefaultMemoryMB(previous) })
+	sandbox.SetDefaultMemoryMB(0)
+	if got := promptMemoryMB(nil); got != 0 {
+		t.Fatalf("no sandbox and no override: got %d", got)
+	}
+	if got := promptMemoryMB(&sandbox.Sandbox{MemoryMB: 3072}); got != 3072 {
+		t.Fatalf("gateway-resolved limit ignored: got %d", got)
+	}
+	sandbox.SetDefaultMemoryMB(8192)
+	if got := promptMemoryMB(&sandbox.Sandbox{}); got != 8192 {
+		t.Fatalf("unreported limit must fall back to the override: got %d", got)
+	}
+	if got := promptMemoryMB(&sandbox.Sandbox{MemoryMB: 4096}); got != 4096 {
+		t.Fatalf("actual sandbox limit must win: got %d", got)
 	}
 }

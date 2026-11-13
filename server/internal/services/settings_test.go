@@ -94,6 +94,14 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if _, err := svc.UpdateWithBrand(map[string]int{KeySandboxMemoryMB: 512}, BrandPatch{}); err == nil {
 		t.Fatal("expected sandbox memory min validation error")
 	}
+	if _, err := svc.UpdateWithBrand(map[string]int{KeySandboxMemoryMB: 0}, BrandPatch{}); err != nil {
+		t.Fatal(err)
+	}
+	svc.ApplyOnBoot()
+	if sandbox.DefaultMemoryMB() != 0 {
+		t.Fatal("saved zero did not clear the memory override on update and restart")
+	}
+
 }
 
 func TestSettingsServiceEnvLocked(t *testing.T) {

@@ -63,15 +63,15 @@ func TestMergeEnv(t *testing.T) {
 	}
 }
 
-func testResources() config.ResourceDefaults {
-	return config.ResourceDefaults{
+func testResources() config.ResourcePolicy {
+	return config.ResourcePolicy{Defaults: config.ResourceDefaults{
 		DefaultCPUCores: 2,
 		DefaultMemoryMB: 4096,
 		DefaultDiskGi:   25,
 		MaxCPUCores:     8,
 		MaxMemoryMB:     16384,
 		MaxDiskGi:       500,
-	}
+	}}
 }
 
 func testDB(t *testing.T) *store.Store {
@@ -1298,5 +1298,45 @@ func TestConcurrentCreateSharesOnePull(t *testing.T) {
 	defer gate.mu.Unlock()
 	if gate.pulls != 1 {
 		t.Fatalf("pulls=%d want 1 for concurrent same image", gate.pulls)
+	}
+}
+
+func TestSelectedE2BTemplateDefaultsPersistThroughCreateAndReinstall(t *testing.T) {
+	svc, drv, _ := testService(t)
+	svc.cfg.Image = "standard"
+	svc.cfg.Resources = config.ResourcePolicy{Templates: map[string]config.E2BTemplateConfig{
+		"standard": {TemplateID: "one", CPUCores: 2, MemoryMB: 3072, DiskGi: 20},
+		"large":    {TemplateID: "two", CPUCores: 8, MemoryMB: 16384, DiskGi: 80},
+	}}
+	for _, requestImage := range []string{"", "large"} {
+		sb, err := svc.Create(t.Context(), CreateRequest{Image: requestImage})
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitSvcRunning(t, svc, sb.ID)
+		expected := svc.cfg.Resources.Templates[sb.Image]
+		spec, ok := drv.SpecOf(sb.ID)
+		if !ok || spec.Resources.CPUCores != expected.CPUCores || spec.Resources.MemoryMB != expected.MemoryMB || spec.Resources.DiskGi != expected.DiskGi {
+			t.Fatal("selected template defaults not provisioned")
+		}
+		if err := svc.Reinstall(t.Context(), sb.ID, false); err != nil {
+			t.Fatal(err)
+		}
+		waitSvcRunning(t, svc, sb.ID)
+		reinstalled, _, called := drv.LastReinstall()
+		if !called || reinstalled.Image != sb.Image || reinstalled.Resources.MemoryMB != expected.MemoryMB {
+			t.Fatal("reinstall lost selected environment")
+		}
+	}
+	before, err := svc.List(ListFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(t.Context(), CreateRequest{Image: "large", MemoryMB: 8192}); err == nil {
+		t.Fatal("mismatched template accepted")
+	}
+	after, err := svc.List(ListFilter{})
+	if err != nil || len(after) != len(before) {
+		t.Fatal("invalid request persisted a sandbox")
 	}
 }

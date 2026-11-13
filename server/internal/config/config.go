@@ -305,10 +305,10 @@ type EngineConfig struct {
 
 type SandboxConfig struct {
 	// Image, when non-empty, is the sandbox image for every acpBackend.
-	// Empty falls through to Images[backend] then DefaultSandboxImage.
+	// Empty falls through to Images[backend] then the gateway default.
 	Image string `yaml:"image"`
 	// Images optionally overrides the image for one acpBackend. Empty entries
-	// fall back to DefaultSandboxImage (universal-sandbox:local).
+	// fall back to the gateway default.
 	Images map[string]string `yaml:"images"`
 	// GatewayURL is the sandbox-gateway control-plane base URL. approving calls
 	// it to create/manage sandboxes instead of driving Docker directly. Empty
@@ -377,7 +377,7 @@ type SandboxConfig struct {
 	MaxSoloSandboxes int `yaml:"max_solo_sandboxes"`
 	// MemoryMB is the memory limit (MiB) requested for every sandbox the
 	// platform creates. It covers dockerd, browsers and the agent's own builds,
-	// so a value too low gets the whole sandbox OOM-killed. 0 = default 8192.
+	// so a value too low gets the whole sandbox OOM-killed. 0 = follow the selected gateway/template.
 	MemoryMB int `yaml:"sandbox_memory_mb"`
 	// WorkDir is the host base directory under which per-sandbox ConfigHome
 	// trees (rules/skills/mcp.json) are staged before gateway bundleUrl / SSH
@@ -493,8 +493,17 @@ func parse(path string) (*Config, error) {
 			return nil, fmt.Errorf("GRASP_SANDBOX_PRIVATE_ENDPOINTS must be a boolean")
 		}
 	}
+	if value := env("GRASP_SANDBOX_MEMORY_MB"); value != "" {
+		if _, err := strconv.Atoi(value); err != nil {
+			return nil, fmt.Errorf("GRASP_SANDBOX_MEMORY_MB must be an integer")
+		}
+	}
+
 	applyEnvOverrides(c)
 	setDefaults(c)
+	if c.Sandbox.MemoryMB < 0 || (c.Sandbox.MemoryMB > 0 && c.Sandbox.MemoryMB < 1024) {
+		return nil, fmt.Errorf("sandbox.sandbox_memory_mb must be 0 (follow gateway) or at least 1024 MiB")
+	}
 	if err := c.Sandbox.ValidateGateways(); err != nil {
 		return nil, err
 	}
@@ -599,8 +608,8 @@ func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_SANDBOX_CREATE_TIMEOUT_SEC"); v != 0 {
 		c.Sandbox.CreateTimeoutSeconds = v
 	}
-	if v := envInt("GRASP_SANDBOX_MEMORY_MB"); v != 0 {
-		c.Sandbox.MemoryMB = v
+	if v := env("GRASP_SANDBOX_MEMORY_MB"); v != "" {
+		c.Sandbox.MemoryMB, _ = strconv.Atoi(v) // validated by parse before applying overrides
 	}
 	if v := env("GRASP_SANDBOX_WORK_DIR"); v != "" {
 		c.Sandbox.WorkDir = v
@@ -699,8 +708,8 @@ func setDefaults(c *Config) {
 		c.Engine.NodeAutoRetryMax = 3
 	}
 	// Image intentionally has no compiled-in default: empty means
-	// Images[backend] / DefaultSandboxImage (universal-sandbox:local).
-	// Release compose sets GRASP_SANDBOX_IMAGE to the published GHCR pin.
+	// Images[backend] / the gateway default.
+	// Release compose configures the image in the Docker gateway.
 	if c.Sandbox.Images == nil {
 		c.Sandbox.Images = map[string]string{}
 	}
@@ -748,9 +757,6 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.MaxSoloSandboxes == 0 {
 		c.Sandbox.MaxSoloSandboxes = 5
-	}
-	if c.Sandbox.MemoryMB == 0 {
-		c.Sandbox.MemoryMB = 8192
 	}
 	if c.Browser.MaxTabs == 0 {
 		c.Browser.MaxTabs = 16

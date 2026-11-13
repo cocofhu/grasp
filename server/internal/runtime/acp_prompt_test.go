@@ -14,7 +14,7 @@ func TestBuildAgentPromptAuto(t *testing.T) {
 		NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "USER_GOAL"},
 		Repos:  []models.SessionRepo{{RepoDirName: "web", RepoURL: "https://h/web.git"}, {RepoDirName: "api", RepoURL: "https://h/api.git"}},
-	}, []string{"plan.json"})
+	}, []string{"plan.json"}, nil)
 	for _, want := range []string{
 		"USER_GOAL",
 		"`plan.json`",
@@ -42,7 +42,7 @@ func TestBuildAgentPromptClarify(t *testing.T) {
 		NodeType: "agent", Caps: testClarifyCaps,
 		Config: map[string]any{"prompt": "CLARIFY_GOAL"},
 		Vars:   map[string]any{"feature": "邮箱验证码登录", "empty": ""},
-	}, nil)
+	}, nil, nil)
 	for _, want := range []string{
 		"CLARIFY_GOAL",
 		"以下是本次运行输入",

@@ -69,16 +69,15 @@ driver: docker
 database:
   driver: sqlite
   path: /tmp/gateway-e2e.db
-image:
-  ref: ${STUB_TAG}
-  ports:
-    session: 8765
-    codeServer: 8744
-    ssh: 0
-    cdp: 0
-    novnc: 0
-    app: []
+ports:
+  session: 8765
+  codeServer: 8744
+  ssh: 0
+  cdp: 0
+  novnc: 0
+  app: []
 docker:
+  image: ${STUB_TAG}
   bindIP: "${BIND_IP}"
   namePrefix: "sbx-"
   shmSize: "64m"
@@ -105,7 +104,7 @@ fi
 # Bake config into the image (DinD cannot bind-mount the job workspace).
 docker run -d --name e2e-gw --network host \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e SBGW_IMAGE="$STUB_TAG" \
+  -e SBGW_DOCKER_IMAGE="$STUB_TAG" \
   "$GW_CFG_TAG" >/dev/null
 
 for i in $(seq 1 40); do

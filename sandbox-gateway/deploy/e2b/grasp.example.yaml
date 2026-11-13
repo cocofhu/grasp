@@ -1,0 +1,21 @@
+# Grasp platform config for compose.e2b.yaml. Copy outside the checkout;
+# set GRASP_CONFIG to its absolute path. Provider settings live in gateway.yaml.
+server:
+  port: 8080
+  deployment_mode: production
+  # Inject browser-facing and sandbox-reachable origins through Compose env.
+database:
+  driver: sqlite
+  path: /data/grasp.db
+sandbox:
+  gateway_url: http://127.0.0.1:8899
+  gateway_transport: direct # Compose shares the Linux host network
+  private_endpoints: true
+  sandbox_memory_mb: 0 # use the selected template's memory
+  # Omit image: use the gateway's default template.
+  runtime_bundle: /app/sandbox-runtime/sandbox-runtime.tgz
+  sandbox_create_timeout_seconds: 1200
+  chat_idle_timeout_seconds: 1200
+  test_sandbox_ttl_minutes: 30
+  run_sandbox_ttl_minutes: 30
+# Auth users, encryption key and gateway key are injected via Compose environment.

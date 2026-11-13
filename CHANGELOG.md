@@ -10,6 +10,8 @@ All notable public-release changes are documented here.
 
 - E2B 沙箱到达最长时长后改为暂停并保留内存快照，不再被直接销毁（网关 `e2b.autoPause`，默认开启）；续期被 E2B 时长上限截断时网关记录警告。Solo 终端和 IDE 打开时会自动恢复已暂停的沙箱，后台会清理已在 E2B 侧消失的沙箱；网关状态探测失败显示为「未知」，不再当作沙箱不存在（#1217）。
 
+- **不兼容变更**：沙箱网关配置按 Docker、Kubernetes、E2B 分离，拒绝混合后端和未知字段；Docker/K8s 的镜像、资源和 profiles 归各自后端，端口使用顶层 `ports`。E2B 使用具名 `templates` 与可选 `defaultTemplate`，显式配置 API 地址，移除 `domain` 和重复 image 映射。Grasp 默认不覆盖镜像，内存 `0` 跟随网关/选中模板；设置页支持清除覆盖。`SBGW_IMAGE` 改为 `SBGW_DOCKER_IMAGE` / `SBGW_K8S_IMAGE`，`SBGW_E2B_DOMAIN` 改为显式 `SBGW_E2B_API_URL`（可选 `SBGW_E2B_SANDBOX_URL`），旧变量即使为空也会使启动失败；`compose.e2b.yaml` 新增必填 `GRASP_CONFIG`（参照 `sandbox-gateway/deploy/e2b/grasp.example.yaml`）。请使用新的独立配置示例并同时更新 Grasp 与 gateway。
+
 - **不兼容变更**：Git 授权改由仓库配置。「设置 → 仓库」里每个仓库可以选择一个访问凭据（GitHub / GitLab Token 或 SSH 密钥，须与仓库地址的协议和主机一致），并填写提交用户名和邮箱；工作流在设置里绑定要克隆的仓库，启动运行时可以取消部分仓库或改分支，所选仓库固定到这次运行。Agent 上的 Git 授权、默认配置里的 Git 授权和「继承 Git」开关已删除，工作流变量的 `repos` 类型和 Agent 环境变量 `GIT_REPOS: ${vars.repos}` 不再生效（Agent 环境变量也不能再设置 `GIT_REPOS`），旧数据不迁移。升级后请：在「设置 → 仓库」登记仓库并选择凭据和提交身份；在每个工作流的设置里绑定仓库；删除输入节点里的 `repos` 变量和 Agent 环境变量里的 `GIT_REPOS`。导入的工作流不带仓库绑定，需要在本工作区重新绑定。平台不再把环境变量里的 `GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY` 等 Git 身份交给沙箱，没有为仓库配置凭据时只能匿名克隆；已有的共享沙箱升级后会重新准备一次。单独运行沙箱镜像时仍可用这些变量。
 
 - Solo 支持提问和表单：Agent 授予了「提问 ask_question」或「表单收集 ask_form」时，在 Solo 里调用会在这条回复下方显示可点选的卡片，推荐项默认选中；提交后作为下一条消息发出，格式与工作流澄清一致。引导新建的 Solo Agent 默认授予提问、表单、产物预览和应用预览，`AGENTS.md` 改为使用平台的 `ask_question`。已有的 Solo Agent 不会被改写，可在 Agent 的「能力」里勾选这些工具。

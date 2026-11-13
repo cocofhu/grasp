@@ -61,7 +61,7 @@ flowchart TB
 ```
 gateway/
 ├── cmd/server/main.go          # config -> DB -> pick driver -> router -> serve + reconcile
-├── config.example.yaml
+├── config.docker.example.yaml
 ├── internal/
 │   ├── config/                 # YAML + SBGW_* overrides
 │   ├── database/               # SQLite (glebarez) + AutoMigrate
@@ -83,8 +83,8 @@ the older `pods/log` files only add permissions to an existing installation.
 The following starts the control plane alone for development:
 
 ```bash
-cp config.example.yaml config.yaml
-# edit config.yaml: set image.ref to your built universal-sandbox image
+cp config.docker.example.yaml config.yaml
+# edit config.yaml: set docker.image to your built universal-sandbox image
 go run ./cmd/server -config config.yaml
 ```
 
@@ -106,11 +106,22 @@ requires a configured API key; the health endpoint does not require one.
 
 ## Configuration
 
-See [`config.example.yaml`](config.example.yaml). Supported `SBGW_*` environment
-overrides win over YAML, e.g. `SBGW_DRIVER`,
-`SBGW_LISTEN`, `SBGW_IMAGE`, `SBGW_API_KEYS`, `SBGW_DOCKER_BIND_IP`,
+Choose exactly one backend file: [Docker](config.docker.example.yaml),
+[Kubernetes](config.kubernetes.example.yaml), or [E2B](../deploy/e2b/gateway.example.yaml).
+Do not combine backend sections. Unknown fields, inactive backend variables,
+and missing explicitly selected files fail startup. Without `-config` /
+`SBGW_CONFIG`, the gateway loads `/etc/sandbox-gateway/config.yaml` when that
+file exists; otherwise it uses Docker defaults and supported environment variables
+and logs a warning.
+See the
+[Grasp and sandbox configuration guide](../../CONFIGURATION.md), including paired
+Docker examples and E2B template defaults. Supported `SBGW_*` environment
+variables override YAML (env wins), e.g. `SBGW_DRIVER`,
+`SBGW_LISTEN`, `SBGW_DOCKER_IMAGE`, `SBGW_API_KEYS`, `SBGW_DOCKER_BIND_IP`,
 `SBGW_K8S_KUBECONFIG`, `SBGW_K8S_NAMESPACE`, `SBGW_K8S_ENABLE_LB`.
-Other settings, such as `kubernetes.imagePullSecret`, are configured in YAML.
+Resource policies and profiles live in the selected Docker/Kubernetes section.
+E2B declares named templates; each name is automatically advertised as a profile.
+Grasp omits image and memory overrides by default, so the gateway supplies them.
 
 ## API
 

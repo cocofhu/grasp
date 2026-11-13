@@ -178,7 +178,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		c.recordChatUsage(req, chatRes, err)
 	}
 	if !reattach || (err == nil && chatRes == nil) {
-		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded), req.PromptImages)
+		chatRes, err = c.streamChat(chatCtx, acp, req, c.buildAgentPrompt(req, seeded, sb), req.PromptImages)
 	}
 	if err != nil {
 		if isRetryableSandboxErr(err) || errors.Is(err, sandbox.ErrAgentStuck) {

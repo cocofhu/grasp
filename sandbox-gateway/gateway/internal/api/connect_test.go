@@ -37,9 +37,17 @@ func (d *transportDriver) Endpoints(ctx context.Context, id string) (map[int]str
 
 func connectFixture(t *testing.T, backend string, targets map[int]string) (*httptest.Server, *service.SandboxService, string) {
 	t.Helper()
-	cfg := config.Default()
-	cfg.Driver, cfg.Auth.APIKeys = backend, []string{"synthetic-transport-key"}
-	cfg.Profiles = map[string]config.ProfileConfig{"universal": {Image: "approved-environment"}}
+	cfg, _ := config.DefaultForDriver(backend)
+	cfg.Auth.APIKeys = []string{"synthetic-transport-key"}
+	profiles := map[string]config.ProfileConfig{"universal": {Image: "approved-environment"}}
+	switch backend {
+	case "docker":
+		cfg.Docker.Profiles = profiles
+	case "kubernetes":
+		cfg.Kubernetes.Profiles = profiles
+	case "e2b":
+		cfg.E2B.Templates = map[string]config.E2BTemplateConfig{"universal": {TemplateID: "prepared-template", CPUCores: 2, MemoryMB: 4096, DiskGi: 25}}
+	}
 	db, err := database.Open(config.DBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "gateway.db")})
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +55,7 @@ func connectFixture(t *testing.T, backend string, targets map[int]string) (*http
 	sqlDB, _ := db.DB()
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	drv := &transportDriver{Driver: fake.New(), targets: targets}
-	svc := service.New(drv, store.New(db), service.Config{Image: "legacy-image", Ports: []int{8765}, SessionPort: 8765, FinalizeTimeout: time.Second, Resources: config.ResourceDefaults{DefaultCPUCores: 2, DefaultMemoryMB: 4096, DefaultDiskGi: 25}})
+	svc := service.New(drv, store.New(db), service.Config{Image: "legacy-image", Ports: []int{8765}, SessionPort: 8765, FinalizeTimeout: time.Second, Resources: config.ResourcePolicy{Defaults: config.ResourceDefaults{DefaultCPUCores: 2, DefaultMemoryMB: 4096, DefaultDiskGi: 25}}})
 	sb, err := svc.Create(context.Background(), service.CreateRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +74,7 @@ func connectFixture(t *testing.T, backend string, targets map[int]string) (*http
 		}
 		time.Sleep(time.Millisecond)
 	}
-	server := httptest.NewServer(NewRouter(NewHandler(svc, cfg.Image.Ports), cfg))
+	server := httptest.NewServer(NewRouter(NewHandler(svc, cfg.Ports), cfg))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { waitSettled(t, svc) })
 	return server, svc, sb.ID
@@ -184,8 +192,7 @@ func TestConnectAuthenticationAndTargetScope(t *testing.T) {
 
 func TestGatewayInfoReportsBackendSemantics(t *testing.T) {
 	for backend, want := range map[string][2]string{"docker": {"cold", "unlimited"}, "kubernetes": {"cold", "pvc"}, "e2b": {"pause", "template-minimum-free"}} {
-		cfg := config.Default()
-		cfg.Driver = backend
+		cfg, _ := config.DefaultForDriver(backend)
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
 		gatewayInfo(cfg)(ctx)

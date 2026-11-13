@@ -1,33 +1,15 @@
-# Local no-auth config for docker-compose (docker driver + SQLite).
-# auth.apiKeys empty = auth disabled (local development only).
-
+# Docker-only local Compose config. Grasp follows its image/resource defaults.
+driver: docker
 server:
   listen: ":8080"
-
-driver: docker
-
 database:
   driver: sqlite
   path: gateway.db
-
-image:
-  # Built from sandbox/Dockerfile in this repo (see sandbox-gateway/README.md).
-  # Override with SBGW_IMAGE / GRASP_GATEWAY_SANDBOX_IMAGE in the root .env.
-  ref: universal-sandbox:local
-  ports:
-    session: 8765
-    codeServer: 8744
-    ssh: 22
-    cdp: 9222
-    novnc: 6080
-    app: [80, 443, 2222, 3000, 3306, 4200, 5000, 5173, 5432, 5500, 6379, 8000, 8080, 8443, 8888, 9090, 9200, 9229]
-
 docker:
-  # network_mode: host — clients and gateway share the host loopback
+  image: universal-sandbox:local # override with SBGW_DOCKER_IMAGE
   bindIP: "127.0.0.1"
-  network: ""
-  namePrefix: "sbx-"
-  shmSize: "1g"
-
+  resources:
+    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
 auth:
-  apiKeys: []
+  apiKeys: [] # local demo only; set SBGW_API_KEYS for gateway transport

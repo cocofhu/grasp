@@ -107,8 +107,12 @@ func TestSandboxFromGWAndCreds(t *testing.T) {
 		Endpoints: map[string]string{"session": "1.2.3.4:9", "ssh": "1.2.3.4:22"},
 	}
 	sb := m.sandboxFromGW(gw, "/custom")
-	if sb == nil || sb.ID != "id1" || sb.WorkspaceDir != "/custom" {
+	if sb == nil || sb.ID != "id1" || sb.WorkspaceDir != "/custom" || sb.MemoryMB != 0 {
 		t.Fatal("sandbox handle mismatch")
+	}
+	gw.Resources = &GWResources{CPUCores: 2, MemoryMB: 3072, DiskGi: 20}
+	if got := m.sandboxFromGW(gw, "").MemoryMB; got != 3072 {
+		t.Fatalf("gateway-resolved memory not recorded: %d", got)
 	}
 	c := m.creds("h", 22)
 	if c.user != "u" || c.password != "" || c.host != "h" || c.port != 22 {

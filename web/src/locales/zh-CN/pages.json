@@ -2013,6 +2013,7 @@
       }
     },
     "settings": {
+      "followGateway": "跟随网关",
       "title": "常规",
       "subtitle": "管理工作区信息、品牌文案、运行并发与沙箱资源。",
       "saved": "已保存",
@@ -2067,7 +2068,7 @@
       },
       "summaries": {
         "run_sandbox_max_retention_hours": "从节点结束起计算的保留总上限；超时后自动回收沙箱。",
-        "sandbox_memory_mb": "每个新建沙箱可用的内存上限，包含浏览器、构建与测试的占用。",
+        "sandbox_memory_mb": "0 表示使用网关或模板的内存；需要统一覆盖时再填写 MiB 数值。",
         "agent_idle_timeout_minutes": "Agent 持续没有输出或 CPU、磁盘活动时，先尝试恢复，再终止本轮。"
       },
       "labels": {
@@ -2077,7 +2078,7 @@
         "test_sandbox_ttl_minutes": "测试沙箱空闲 TTL",
         "max_test_sandboxes": "最大测试沙箱数",
         "max_solo_sandboxes": "最大 Solo 沙箱数",
-        "sandbox_memory_mb": "沙箱内存上限",
+        "sandbox_memory_mb": "沙箱内存覆盖",
         "agent_idle_timeout_minutes": "Agent 无动作时限"
       },
       "settings": {
@@ -2087,7 +2088,7 @@
         "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
         "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
         "max_solo_sandboxes": "同时运行的 Solo 会话沙箱上限。Solo 沙箱没有空闲回收，达到上限后需要先关闭会话才能新建（最小值 ≥ 1）。",
-        "sandbox_memory_mb": "每个沙箱的内存上限，dockerd、浏览器与 Agent 的构建/测试共用；超出时整个沙箱会被 OOM 杀掉。Agent 提示词会告知该上限。对新建沙箱生效（最小 1024，不得超过网关 maxMemoryMB）。由 GRASP_SANDBOX_MEMORY_MB 环境变量锁定时页面只读。",
+        "sandbox_memory_mb": "0 跟随网关默认值或所选 E2B 模板。非零值覆盖新建沙箱的内存，至少 1024 MiB；Docker/K8s 不得超过网关资源上限，E2B 必须与模板规格一致。浏览器、Docker 和构建共用这份内存，超限可能触发 OOM。由 GRASP_SANDBOX_MEMORY_MB 锁定时页面只读。",
         "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。"
       },
       "units": {

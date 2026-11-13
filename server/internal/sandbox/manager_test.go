@@ -375,3 +375,21 @@ func TestCopyTree(t *testing.T) {
 		t.Error("nested b.txt not copied")
 	}
 }
+
+func TestManagerOmitsDefaultImageAndResourcesOnTheWire(t *testing.T) {
+	previous := defaultMemoryMB.Load()
+	t.Cleanup(func() { defaultMemoryMB.Store(previous) })
+	// Clearing an earlier override must affect both the resolver and the HTTP body.
+	SetDefaultMemoryMB(8192)
+	SetDefaultMemoryMB(0)
+	gw, wire := newInlineGW(t)
+	manager := NewManager(gw, ManagerOptions{})
+	if _, err := manager.Create(t.Context(), Spec{Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"image", "resources"} {
+		if _, present := wire.lastCreate[key]; present {
+			t.Fatalf("%s must be omitted so the gateway can choose its defaults", key)
+		}
+	}
+}

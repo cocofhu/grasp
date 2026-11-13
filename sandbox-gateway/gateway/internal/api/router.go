@@ -13,7 +13,7 @@ import (
 // NewRouter keeps the v1 control plane compatible and offers an authenticated,
 // sandbox-scoped TCP transport for clients outside the provider network.
 func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
-	h.profiles = cfg.Profiles
+	h.profiles = cfg.EnvironmentProfiles()
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(requestLogger(), recoverLogger())

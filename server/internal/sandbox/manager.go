@@ -313,6 +313,7 @@ type Sandbox struct {
 	ID             string // gateway sandbox id (authoritative handle)
 	Name           string // == ID (kept for API/DB compatibility)
 	Image          string // gateway-reported image of the existing container
+	MemoryMB       int64  // gateway-resolved memory limit; 0 when not reported
 	Host           string // session endpoint host
 	Port           int    // session endpoint port (ACP bridge, 8765)
 	CodeServerPort int    // published code-server (ide) port (0 if none)
@@ -398,10 +399,14 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 	if workspaceDir == "" {
 		workspaceDir = m.WorkspaceDir
 	}
-	return &Sandbox{
+	out := &Sandbox{
 		ID: sb.ID, Name: sb.ID, Image: sb.Image, Host: sh, Port: sp, CodeServerPort: ide,
 		SSHHost: sshHost, SSHPort: sshPort, WorkspaceDir: workspaceDir, mgr: m, Blobs: m.blobs,
 	}
+	if sb.Resources != nil {
+		out.MemoryMB = sb.Resources.MemoryMB
+	}
+	return out
 }
 
 // Create provisions a sandbox via the gateway, waits until it is running with a

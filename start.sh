@@ -59,11 +59,7 @@ set +a
 
 # One published sandbox image (coding CLIs inside; runtime AGENT_PROVIDER picks).
 : "${SANDBOX_IMAGE:=ghcr.io/cocofhu/universal-sandbox:3.3.0}"
-# Release compose must pin Grasp to GHCR; empty would fall through to
-# universal-sandbox:local inside the container.
-if [[ -z "${GRASP_SANDBOX_IMAGE:-}" ]]; then
-  GRASP_SANDBOX_IMAGE="${SANDBOX_IMAGE}"
-fi
+# Release compose pins the Docker gateway image; Grasp follows that default.
 
 # Demo account (admin / demo1234). Set outside the .env file so `$` in the
 # bcrypt hash is not eaten by shell/compose env parsing.
@@ -135,7 +131,7 @@ print_release_endpoints() {
   echo "—— gateway token  ${SANDBOX_GATEWAY_API_KEY}"
   echo "—— images  ${GRASP_IMAGE}"
   echo "           ${SANDBOX_GATEWAY_IMAGE}"
-  echo "—— sandbox ${GRASP_SANDBOX_IMAGE}"
+  echo "—— sandbox ${GRASP_SANDBOX_IMAGE:-$SANDBOX_IMAGE}"
 }
 
 # Sandbox runtime images are NOT compose services — compose pull never fetches them.

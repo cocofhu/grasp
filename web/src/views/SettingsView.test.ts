@@ -71,7 +71,7 @@ const SETTINGS = {
     { key: 'run_sandbox_ttl_minutes', value: 30, min: 1, source: 'db', locked: false },
     { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'db', locked: false },
     { key: 'max_test_sandboxes', value: 3, min: 1, source: 'db', locked: false },
-    { key: 'sandbox_memory_mb', value: 8192, min: 1024, source: 'config', locked: false },
+    { key: 'sandbox_memory_mb', value: 8192, min: 0, source: 'config', locked: false },
     { key: 'agent_idle_timeout_minutes', value: 20, min: 2, max: 120, source: 'config', locked: false },
   ],
 }
@@ -224,9 +224,9 @@ describe('SettingsView sandbox memory', () => {
     const input = w.find('#setting-sandbox_memory_mb')
     expect(input.exists()).toBe(true)
     expect(input.element).toHaveProperty('value', '8192')
-    expect(input.attributes('min')).toBe('1024')
+    expect(input.attributes('min')).toBe('0')
     expect(input.element.parentElement!.querySelector('.chip')?.textContent).toContain('MiB')
-    expect(w.find('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存上限')
+    expect(w.find('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存覆盖')
 
     await input.setValue('12288')
     const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
@@ -235,6 +235,20 @@ describe('SettingsView sandbox memory', () => {
     expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       sandbox_memory_mb: 12288,
     }))
+    w.unmount()
+  })
+
+  it('clears memory overrides and displays the gateway default', async () => {
+    const following = { ...SETTINGS, items: SETTINGS.items.map((item) => item.key === 'sandbox_memory_mb' ? { ...item, value: 0 } : item) }
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    apiMocks.updateSettings.mockResolvedValue(following)
+    const w = mountSettings()
+    await flushPromises()
+    await w.get('#setting-sandbox_memory_mb').setValue('0')
+    await w.findAll('button').find((button) => button.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ sandbox_memory_mb: 0 }))
+    expect(w.text()).toContain('跟随网关')
     w.unmount()
   })
 
@@ -431,7 +445,7 @@ describe('SettingsView grouped form behavior', () => {
     const w = mountSettings()
     await flushPromises()
     expect(w.findAll('details').length).toBe(3)
-    expect(w.get('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存上限')
+    expect(w.get('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存覆盖')
     expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('保留不跨重启')
     expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('OOM')
     expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('不会被误杀')

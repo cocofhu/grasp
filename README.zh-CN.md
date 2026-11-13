@@ -158,7 +158,8 @@ flowchart LR
 ## 文档
 
 - [核心概念](docs/content/guide/concepts.md) · [快速开始](docs/content/guide/quick-start.md)
-- [完整配置](server/CONFIGURATION.md) · [后端说明](server/README.md) · [Gateway 契约](GATEWAY.md)
+- [Grasp 与沙箱配置、默认值](CONFIGURATION.md) · [完整环境变量表](server/CONFIGURATION.md)
+- [后端说明](server/README.md) · [Gateway 契约](GATEWAY.md)
 - [安全策略](SECURITY.md) · [支持渠道](SUPPORT.md) · [更新日志](CHANGELOG.md)
 
 ## 参与贡献

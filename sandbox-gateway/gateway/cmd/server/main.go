@@ -30,13 +30,19 @@ import (
 func main() {
 	logging.Init("sandbox-gateway")
 
-	configPath := flag.String("config", envOr("SBGW_CONFIG", "config.yaml"), "path to config YAML")
+	configPath := flag.String("config", envOr("SBGW_CONFIG", defaultConfigPath(imageConfigPath)), "path to config YAML")
 	healthcheck := flag.Bool("healthcheck", false, "check the configured local gateway and exit without initializing its driver")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatal().Err(err).Str("config_path", *configPath).Msg("load config failed")
+	}
+	if *configPath == "" && !*healthcheck {
+		log.Warn().Str("driver", cfg.Driver).Msg("no config file; using built-in backend defaults and SBGW_* environment")
+	}
+	if len(cfg.Auth.APIKeys) == 0 && !*healthcheck {
+		log.Warn().Msg("auth.apiKeys is empty; /api/v1 accepts unauthenticated requests and /api/v2 transport is disabled")
 	}
 	if *healthcheck {
 		if err := checkGatewayHealth(context.Background(), cfg); err != nil {
@@ -56,7 +62,7 @@ func main() {
 		Str("db_host", cfg.Database.Host).
 		Str("db_name", cfg.Database.Name).
 		Bool("db_dsn_set", cfg.Database.DSN != "").
-		Str("image", cfg.Image.Ref).
+		Str("image", cfg.DefaultImage()).
 		Str("listen", cfg.Server.Listen).
 		Msg("gateway starting")
 
@@ -67,12 +73,12 @@ func main() {
 	st := store.New(db)
 
 	svc := service.New(drv, st, service.Config{
-		Image:            cfg.Image.Ref,
-		Ports:            cfg.Image.Ports.Public(),
-		InternalPorts:    cfg.Image.Ports.Internal(),
-		SessionPort:      cfg.Image.Ports.Session,
+		Image:            cfg.DefaultImage(),
+		Ports:            cfg.Ports.Public(),
+		InternalPorts:    cfg.Ports.Internal(),
+		SessionPort:      cfg.Ports.Session,
 		FinalizeTimeout:  cfg.FinalizeTimeout(),
-		Resources:        cfg.ResourceDefaults(),
+		Resources:        cfg.ResourcePolicy(),
 		OrphanGCInterval: cfg.OrphanGCInterval(),
 		OrphanGCMinAge:   cfg.OrphanGCMinAge(),
 	})
@@ -88,7 +94,7 @@ func main() {
 		go svc.RunOrphanGC(context.Background())
 	}
 
-	h := api.NewHandler(svc, cfg.Image.Ports)
+	h := api.NewHandler(svc, cfg.Ports)
 	r := api.NewRouter(h, cfg)
 	if err := r.Run(cfg.Server.Listen); err != nil {
 		log.Fatal().Err(err).Str("listen", cfg.Server.Listen).Msg("http server failed")
@@ -158,41 +164,42 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 			Network:       cfg.Docker.Network,
 			NamePrefix:    cfg.Docker.NamePrefix,
 			ShmSize:       cfg.Docker.ShmSize,
-			InternalPorts: cfg.Image.Ports.Internal(),
+			InternalPorts: cfg.Ports.Internal(),
 		}), nil
 	case "kubernetes":
 		return k8sdriver.New(k8sdriver.Options{
-			InCluster:          cfg.K8s.InCluster,
-			Kubeconfig:         cfg.K8s.Kubeconfig,
-			Namespace:          cfg.K8s.Namespace,
-			NamePrefix:         cfg.K8s.NamePrefix,
-			StorageClass:       cfg.K8s.StorageClass,
-			DataDiskGi:         cfg.K8s.DataDiskGi,
-			PVCAnnotations:     cfg.K8s.PVCAnnotations,
-			ImagePullSecret:    cfg.K8s.ImagePullSecret,
-			ImagePullPolicy:    cfg.K8s.ImagePullPolicy,
-			EnableLoadBalancer: cfg.K8s.EnableLoadBalancer,
-			CPUCores:           cfg.K8s.CPUCores,
-			MemoryMB:           cfg.K8s.MemoryMB,
-			CPURequestCores:    cfg.K8s.CPURequestCores,
-			MemoryRequestMB:    cfg.K8s.MemoryRequestMB,
-			CPURequestRatio:    cfg.K8s.CPURequestRatio,
-			MemoryRequestRatio: cfg.K8s.MemoryRequestRatio,
-			PublicPorts:        cfg.Image.Ports.Public(),
-			InternalPorts:      cfg.Image.Ports.Internal(),
+			InCluster:          cfg.Kubernetes.InCluster,
+			Kubeconfig:         cfg.Kubernetes.Kubeconfig,
+			Namespace:          cfg.Kubernetes.Namespace,
+			NamePrefix:         cfg.Kubernetes.NamePrefix,
+			StorageClass:       cfg.Kubernetes.StorageClass,
+			DataDiskGi:         cfg.Kubernetes.Resources.Default.DiskGi,
+			PVCAnnotations:     cfg.Kubernetes.PVCAnnotations,
+			ImagePullSecret:    cfg.Kubernetes.ImagePullSecret,
+			ImagePullPolicy:    cfg.Kubernetes.ImagePullPolicy,
+			EnableLoadBalancer: cfg.Kubernetes.EnableLoadBalancer,
+			CPUCores:           cfg.Kubernetes.Resources.Default.CPUCores,
+			MemoryMB:           cfg.Kubernetes.Resources.Default.MemoryMB,
+			CPURequestCores:    cfg.Kubernetes.CPURequestCores,
+			MemoryRequestMB:    cfg.Kubernetes.MemoryRequestMB,
+			CPURequestRatio:    cfg.Kubernetes.CPURequestRatio,
+			MemoryRequestRatio: cfg.Kubernetes.MemoryRequestRatio,
+			PublicPorts:        cfg.Ports.Public(),
+			InternalPorts:      cfg.Ports.Internal(),
 		})
 	case "e2b":
 		profiles := make([]e2bdriver.TemplateProfile, 0, len(cfg.E2B.Templates))
-		for _, template := range cfg.E2B.Templates {
+		for _, name := range cfg.TemplateNames() {
+			template := cfg.E2B.Templates[name]
 			profiles = append(profiles, e2bdriver.TemplateProfile{
-				Image: template.Image, TemplateID: template.TemplateID,
+				Image: name, TemplateID: template.TemplateID,
 				CPUCores: template.CPUCores, MemoryMB: template.MemoryMB, DiskGi: template.DiskGi,
 			})
 		}
 		return e2bdriver.New(e2bdriver.Options{
 			ClientOptions: e2bdriver.ClientOptions{
 				APIURL: cfg.E2B.APIURL, SandboxURL: cfg.E2B.SandboxURL,
-				Domain: cfg.E2B.Domain, APIKey: cfg.E2B.APIKey,
+				APIKey: cfg.E2B.APIKey,
 			},
 			OwnerID: cfg.E2B.OwnerID, StateDir: cfg.E2B.StateDir, Profiles: profiles,
 			BootTimeout:   time.Duration(cfg.E2B.BootTimeoutSeconds) * time.Second,
@@ -203,6 +210,18 @@ func buildDriver(cfg *config.Config) (driver.Driver, error) {
 	default:
 		return nil, fmt.Errorf("unknown driver %q", cfg.Driver)
 	}
+}
+
+// imageConfigPath is where the published image and examples mount the YAML.
+const imageConfigPath = "/etc/sandbox-gateway/config.yaml"
+
+// defaultConfigPath loads the conventional mount without requiring
+// SBGW_CONFIG; env-only deployments without that file keep built-in defaults.
+func defaultConfigPath(path string) string {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
+	}
+	return ""
 }
 
 func envOr(key, def string) string {

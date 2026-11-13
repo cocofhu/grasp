@@ -105,7 +105,7 @@ func TestBuildAgentPromptPerType(t *testing.T) {
 	p := newACPProvider(host, Options{}).(*acpProvider)
 	for _, nt := range []string{"plan", "implement", "react", "research", "test", "review", "agent"} {
 		req := NodeReq{NodeType: nt, Config: map[string]any{"prompt": "P", "produces": "out.md"}}
-		got := p.buildAgentPrompt(req, []string{"up.md"})
+		got := p.buildAgentPrompt(req, []string{"up.md"}, nil)
 		if !strings.Contains(got, "P") {
 			t.Errorf("%s: prompt body missing", nt)
 		}
@@ -121,7 +121,7 @@ func TestBuildAgentPromptOmitsFeedbackLedger(t *testing.T) {
 	got := p.buildAgentPrompt(NodeReq{
 		RunID: "r1", NodeID: "impl", NodeType: "agent", Caps: testImplementCaps,
 		Config: map[string]any{"prompt": "P"},
-	}, nil)
+	}, nil, nil)
 	if strings.Contains(got, "历史人工反馈") || strings.Contains(got, "feedback_index.json") || strings.Contains(got, "feedback.") {
 		t.Fatalf("startup prompt must not cite the feedback ledger:\n%s", got)
 	}
