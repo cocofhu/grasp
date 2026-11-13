@@ -25,7 +25,7 @@ func (s *NotificationService) List(username string) ([]NotificationItemDTO, erro
 }
 
 func (s *SoloService) contextPreamble(sessionID, exceptMsgID, header string) string {
-	text, _ := s.contextPreambleChecked(sessionID, exceptMsgID, header)
+	text, _, _ := s.contextPreambleChecked(sessionID, exceptMsgID, header)
 	return text
 }
 

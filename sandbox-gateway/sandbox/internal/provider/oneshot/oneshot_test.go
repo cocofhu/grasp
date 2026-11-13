@@ -397,6 +397,7 @@ func (*capturePromptFake) ParseLine(line []byte) ParseResult {
 }
 
 func TestOneShotMaterializesAttachmentsAsPaths(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
 	fc := &capturePromptFake{}
 	sess, err := NewProvider(fc).Open(context.Background(), context.Background(),
 		provider.OpenOptions{Cwd: t.TempDir()}, func(json.RawMessage) {}, nil)
@@ -423,8 +424,8 @@ func TestOneShotMaterializesAttachmentsAsPaths(t *testing.T) {
 	if !strings.Contains(got, "shot.png") || !strings.Contains(got, "notes.txt") {
 		t.Fatalf("prompt missing attachment paths: %q", got)
 	}
-	if !strings.Contains(got, "sbx-attach-") {
-		t.Fatalf("prompt should reference temp attach dir: %q", got)
+	if !strings.Contains(got, "/sbx-attach/") || !strings.Contains(got, "<attached_files>") {
+		t.Fatalf("prompt should reference the attach dir in a tagged block: %q", got)
 	}
 }
 

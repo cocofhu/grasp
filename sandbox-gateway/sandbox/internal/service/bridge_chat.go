@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -90,7 +89,7 @@ func (b *Bridge) pumpPromptQueue() {
 	}
 	turnCtx, cancelCause := context.WithCancelCause(ctx)
 	cancelTurn := func() { cancelCause(context.Canceled) }
-	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: len(item.Images), started: time.Now(), loopC: make(chan struct{}, 1)}
+	th := &promptTurn{cancel: cancelTurn, cancelCause: cancelCause, opID: oid, userText: item.Text, imageCount: userImageCount(item.Images), started: time.Now(), loopC: make(chan struct{}, 1)}
 	th.lastActivity.Store(time.Now().UnixNano())
 	b.activeTurn = th
 	b.turnMu.Unlock()
@@ -112,7 +111,7 @@ func (b *Bridge) pumpPromptQueue() {
 		urls := make([]string, 0, len(item.Images))
 		fileNames := make([]string, 0, len(item.Images))
 		for _, img := range item.Images {
-			if img.Data == "" {
+			if img.Data == "" || img.History {
 				continue
 			}
 			mime := img.MimeType
@@ -204,12 +203,13 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 		b.pumpPromptQueue()
 	}()
 
-	// 统一附件策略：图片/文件一律落盘到 /tmp，prompt 里只引用绝对路径。
+	// 统一附件策略：图片/文件一律落盘到 /tmp/sbx-attach，prompt 里只引用绝对路径。
 	// 这样 cursor / gemini / ACP 等都走同一套「读本地文件」能力，不再依赖各 CLI 的原生 image block。
+	// 附件不随本轮删除：后续追问和切换模型后仍需按同一路径读取。
 	text := item.Text
 	images := item.Images
 	if len(images) > 0 {
-		dir, paths, merr := provider.MaterializeAttachments(images)
+		files, merr := provider.MaterializeAttachments(images)
 		if merr != nil {
 			log.Printf("prompt %s oid=%s: 附件落盘失败: %v", b.AgentLogPrefix(), oid, merr)
 			b.Broadcast(map[string]any{"op": "error", "message": "附件保存失败: " + merr.Error(), "opId": oid})
@@ -221,9 +221,8 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			}, oid))
 			return
 		}
-		defer func() { _ = os.RemoveAll(dir) }()
-		log.Printf("prompt %s oid=%s: 已将 %d 个附件落到 %s", b.AgentLogPrefix(), oid, len(paths), dir)
-		text = provider.AppendAttachmentRefs(text, paths)
+		log.Printf("prompt %s oid=%s: 已将 %d 个附件落盘", b.AgentLogPrefix(), oid, len(files))
+		text = provider.AppendAttachmentRefs(text, files)
 		images = nil
 	}
 

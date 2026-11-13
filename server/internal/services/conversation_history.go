@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -389,21 +390,61 @@ func renderUserInstructions(rows []models.SoloMessage, budget int, via string) s
 	return b.String()
 }
 
-func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, error) {
+// Attachments from recent turns are re-sent with the preamble: a recreated
+// sandbox or a switched coding agent cannot otherwise open them. Bounded so a
+// handoff never carries an unbounded upload.
+const (
+	maxHistoryAttachments     = 8
+	maxHistoryAttachmentBytes = 32 << 20
+	// sandboxAttachmentRoot mirrors where the sandbox bridge materializes
+	// attachments: one directory per blob id.
+	sandboxAttachmentRoot = "/tmp/sbx-attach/"
+)
+
+// selectHistoryAttachments picks the newest attachments of rows (newest
+// first) within the bounds and returns them oldest first.
+func selectHistoryAttachments(rows []models.SoloMessage) []models.PromptImage {
+	var picked []models.PromptImage
+	seen := make(map[string]struct{})
+	var total int64
+	for _, row := range rows {
+		for _, image := range row.Images {
+			ref := strings.TrimSpace(image.Ref)
+			if _, dup := seen[ref]; dup || ref == "" || len(picked) >= maxHistoryAttachments || total+image.SizeBytes > maxHistoryAttachmentBytes {
+				continue
+			}
+			seen[ref] = struct{}{}
+			image.Ref, image.Data, image.History = ref, "", true
+			picked = append(picked, image)
+			total += image.SizeBytes
+		}
+	}
+	slices.Reverse(picked)
+	return picked
+}
+
+// contextPreambleChecked also returns the history attachments to re-send with
+// the turn, oldest first.
+func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, []models.PromptImage, error) {
 	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ? AND id <> ?", sessionID, "system", exceptMsgID)
 	var recent, anchors []models.SoloMessage
 	if err := base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(12).Find(&recent).Error; err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(recent) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	if err := base.Session(&gorm.Session{}).Where("role = ?", "user").Order("created_at asc, id asc").Find(&anchors).Error; err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var total int64
 	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return "", err
+		return "", nil, err
+	}
+	history := selectHistoryAttachments(recent)
+	resend := make(map[string]struct{}, len(history))
+	for _, image := range history {
+		resend[image.Ref] = struct{}{}
 	}
 	var b strings.Builder
 	b.WriteString(header)
@@ -430,6 +471,10 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header stri
 		}
 		fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
 		for _, image := range row.Images {
+			if _, ok := resend[strings.TrimSpace(image.Ref)]; ok {
+				fmt.Fprintf(&part, "附件：%s (%s，引用 %s，沙箱内副本位于 %s%s/ 目录，本轮已重新放回)\n", image.Name, image.MimeType, image.Ref, sandboxAttachmentRoot, strings.TrimPrefix(strings.TrimSpace(image.Ref), "blob:"))
+				continue
+			}
 			fmt.Fprintf(&part, "附件：%s (%s，引用 %s)\n", image.Name, image.MimeType, image.Ref)
 		}
 		if row.Status == "failed" || row.Status == "stopped" {
@@ -446,5 +491,5 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header stri
 	for i := len(parts) - 1; i >= 0; i-- {
 		b.WriteString(parts[i])
 	}
-	return b.String(), nil
+	return b.String(), history, nil
 }

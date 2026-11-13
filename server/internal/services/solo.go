@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1850,6 +1851,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
+	images := q.Images
 	if row.NeedsPreamble || switched || row.ModelContextPending || row.ResumeContextPending {
 		header := soloModelPreambleHeader
 		if row.NeedsPreamble {
@@ -1859,7 +1861,11 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		} else if switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloReasoningPreambleHeader
 		}
-		pre, err = s.contextPreambleChecked(c.id, q.ID, header)
+		var history []models.PromptImage
+		pre, history, err = s.contextPreambleChecked(c.id, q.ID, header)
+		if len(history) > 0 {
+			images = append(slices.Clone(q.Images), history...)
+		}
 		if err != nil {
 			s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).Updates(map[string]any{"status": "failed", "error": truncErr(err)})
 		}
@@ -1874,7 +1880,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	askRunID := s.soloAskRunID(sandboxID)
 	s.takeSoloAsks(askRunID)
 	if err == nil {
-		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, q.Images, 0, c.onAcp)
+		usage, byModel, err = s.chat.ChatWithTimeout(ctx, sandboxID, prompt, images, 0, c.onAcp)
 	}
 	questions, forms := s.takeSoloAsks(askRunID)
 

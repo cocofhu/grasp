@@ -900,6 +900,9 @@ type PromptImage struct {
 	MimeType  string `json:"mimeType"`            // e.g. image/png or application/pdf
 	Name      string `json:"name,omitempty"`      // original filename when known
 	SizeBytes int64  `json:"sizeBytes,omitempty"` // decoded byte length when known
+	// History is wire-only: an earlier turn's attachment re-sent so the
+	// sandbox has it on disk again. Never set on persisted rows.
+	History bool `json:"history,omitempty"`
 }
 
 // Sandbox is a tracked sandbox container. Purposes share this table:

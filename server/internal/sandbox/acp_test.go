@@ -359,24 +359,34 @@ func TestACPCancel(t *testing.T) {
 
 func TestChatMessageWithImages(t *testing.T) {
 	msg := chatMessage("hi", []models.PromptImage{
-		{Data: "abc", MimeType: "image/png", Name: "photo.png"},
+		{Data: "abc", MimeType: "image/png", Name: "photo.png", Ref: "blob:b1"},
 		{Data: ""},
+		{Data: "old", MimeType: "image/png", Ref: "blob:b0", History: true},
 	}, "")
-	imgs, ok := msg["images"].([]map[string]string)
-	if !ok || len(imgs) != 1 || imgs[0]["data"] != "abc" {
+	imgs, ok := msg["images"].([]map[string]any)
+	if !ok || len(imgs) != 2 || imgs[0]["data"] != "abc" {
 		t.Fatalf("images = %v", msg["images"])
 	}
-	if imgs[0]["name"] != "photo.png" {
-		t.Fatalf("name = %q, want photo.png", imgs[0]["name"])
+	if imgs[0]["name"] != "photo.png" || imgs[0]["ref"] != "blob:b1" {
+		t.Fatalf("entry = %v, want name and ref", imgs[0])
+	}
+	if _, has := imgs[0]["history"]; has {
+		t.Error("current-turn attachment must not carry history")
+	}
+	if imgs[1]["history"] != true || imgs[1]["ref"] != "blob:b0" {
+		t.Fatalf("history entry = %v", imgs[1])
 	}
 	if plain := chatMessage("hi", nil, ""); plain["images"] != nil {
 		t.Error("no images key expected for text-only chat")
 	}
 	// Missing name stays compatible with old clients (no name key).
 	anon := chatMessage("hi", []models.PromptImage{{Data: "x", MimeType: "image/png"}}, "")
-	anonImgs := anon["images"].([]map[string]string)
+	anonImgs := anon["images"].([]map[string]any)
 	if _, has := anonImgs[0]["name"]; has {
 		t.Error("empty Name should omit name key")
+	}
+	if _, has := anonImgs[0]["ref"]; has {
+		t.Error("empty Ref should omit ref key")
 	}
 }
 

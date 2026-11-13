@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -9,66 +11,90 @@ import (
 	"strings"
 )
 
-// MaterializeAttachments writes base64 image/file attachments under a unique
-// /tmp directory and returns absolute paths the agent can open with ordinary
-// Read tools. Within one batch the first safe basename is kept; later copies
-// of that name get a numeric suffix before the extension so bytes are not
-// overwritten. Caller must os.RemoveAll(dir) when the turn finishes.
-func MaterializeAttachments(files []PromptImage) (dir string, paths []string, err error) {
-	dir, err = os.MkdirTemp("", "sbx-attach-*")
-	if err != nil {
-		return "", nil, fmt.Errorf("attach: mkdir: %w", err)
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	paths = make([]string, 0, len(files))
-	used := make(map[string]struct{}, len(files))
-	for i, f := range files {
-		raw, derr := DecodeAttachmentData(f.Data)
-		if derr != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("attach: decode #%d: %w", i+1, derr)
-		}
-		name, nerr := uniqueAttachmentName(used, AttachmentFileName(i, f))
-		if nerr != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("attach: name #%d: %w", i+1, nerr)
-		}
-		p, jerr := underRoot(dir, name)
-		if jerr != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("attach: unsafe name %q: %w", name, jerr)
-		}
-		if werr := os.WriteFile(p, raw, 0o600); werr != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("attach: write %s: %w", name, werr)
-		}
-		paths = append(paths, p)
-	}
-	return dir, paths, nil
+// attachmentRoot holds every materialized attachment for the sandbox's
+// lifetime. Paths must stay valid after the turn: follow-up turns and a
+// switched coding agent reopen the same files.
+func attachmentRoot() string { return filepath.Join(os.TempDir(), "sbx-attach") }
+
+// Attachment is one materialized file referenced from the prompt.
+type Attachment struct {
+	Path     string
+	MimeType string
+	History  bool
 }
 
-// uniqueAttachmentName returns name on first use. A later duplicate becomes
-// stem-N.ext (image.png, then image-2.png), skipping any suffix already taken
-// in this batch. The chosen name is recorded in used.
-func uniqueAttachmentName(used map[string]struct{}, name string) (string, error) {
-	if _, ok := used[name]; !ok {
-		used[name] = struct{}{}
-		return name, nil
-	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	// A realistic batch is tiny. The cap only stops a pathological set of
-	// names that already occupy every stem-N.ext we would try.
-	const maxAttachmentNameSuffix = 10000
-	for n := 2; n <= maxAttachmentNameSuffix; n++ {
-		candidate := fmt.Sprintf("%s-%d%s", stem, n, ext)
-		if _, ok := used[candidate]; ok {
+// MaterializeAttachments writes base64 image/file attachments to stable
+// absolute paths the agent can open with ordinary Read tools. Each attachment
+// lives in its own directory keyed by its blob id (or content hash), so the
+// same upload always lands on the same path and names never collide. Files are
+// kept after the turn; an existing file is reused rather than rewritten.
+func MaterializeAttachments(files []PromptImage) ([]Attachment, error) {
+	out := make([]Attachment, 0, len(files))
+	seen := make(map[string]struct{}, len(files))
+	for i, f := range files {
+		raw, err := DecodeAttachmentData(f.Data)
+		if err != nil {
+			return nil, fmt.Errorf("attach: decode #%d: %w", i+1, err)
+		}
+		name := AttachmentFileName(i, f)
+		p, err := underRoot(attachmentRoot(), filepath.Join(attachmentKey(f.Ref, raw), name))
+		if err != nil {
+			return nil, fmt.Errorf("attach: unsafe name %q: %w", name, err)
+		}
+		if _, dup := seen[p]; dup {
 			continue
 		}
-		used[candidate] = struct{}{}
-		return candidate, nil
+		if err := writeAttachment(p, raw); err != nil {
+			return nil, fmt.Errorf("attach: write %s: %w", name, err)
+		}
+		seen[p] = struct{}{}
+		out = append(out, Attachment{Path: p, MimeType: f.MimeType, History: f.History})
 	}
-	return "", fmt.Errorf("duplicate name %q", name)
+	return out, nil
+}
+
+// attachmentKey is the blob id when ref is a well-formed blob:{id}, otherwise
+// a content hash.
+func attachmentKey(ref string, raw []byte) string {
+	if id, ok := strings.CutPrefix(strings.TrimSpace(ref), "blob:"); ok && id != "" && len(id) <= 128 {
+		valid := true
+		for _, r := range id {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return id
+		}
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256-" + hex.EncodeToString(sum[:16])
+}
+
+// writeAttachment publishes raw at p via rename so a concurrent reader never
+// sees a partial file.
+func writeAttachment(p string, raw []byte) error {
+	if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+		return nil
+	}
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
 }
 
 // DecodeAttachmentData decodes standard or raw base64 attachment payloads.
@@ -85,7 +111,7 @@ func DecodeAttachmentData(s string) ([]byte, error) {
 
 // AttachmentFileName picks a safe basename for an attachment.
 // Explicitly rejects ".." (filepath.Base("..") == "..") to prevent escaping the
-// MkdirTemp root (CodeQL #13).
+// attachment root (CodeQL #13).
 func AttachmentFileName(i int, f PromptImage) string {
 	n := filepath.Base(strings.TrimSpace(f.Name))
 	if n != "" && n != "." && n != ".." && n != string(filepath.Separator) && !strings.Contains(n, "..") {
@@ -157,19 +183,45 @@ func ExtForMIME(mime string) string {
 	}
 }
 
-// AppendAttachmentRefs appends absolute paths for the agent to read.
-func AppendAttachmentRefs(text string, paths []string) string {
-	if len(paths) == 0 {
+// AppendAttachmentRefs appends a tagged block listing attachment paths. The
+// tags keep the injected note apart from the user's own words, so a request
+// like "rewrite this" is not applied to the note itself.
+func AppendAttachmentRefs(text string, files []Attachment) string {
+	if len(files) == 0 {
 		return text
+	}
+	var current, history []Attachment
+	for _, f := range files {
+		if f.History {
+			history = append(history, f)
+		} else {
+			current = append(current, f)
+		}
 	}
 	var b strings.Builder
 	if text != "" {
 		b.WriteString(text)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("用户上传了以下附件，请直接读取这些本地文件路径：\n")
-	for _, p := range paths {
-		fmt.Fprintf(&b, "- %s\n", p)
-	}
+	b.WriteString("<attached_files>\n")
+	b.WriteString("（系统附加说明，不属于用户消息正文，不要改写或复述本段。需要了解附件内容时，用读文件工具打开下列本地路径；这些文件在后续对话中仍保留在原路径。）\n")
+	writeAttachmentList(&b, "本轮用户上传的附件：", current)
+	writeAttachmentList(&b, "此前对话中上传的附件：", history)
+	b.WriteString("</attached_files>\n")
 	return b.String()
+}
+
+func writeAttachmentList(b *strings.Builder, title string, files []Attachment) {
+	if len(files) == 0 {
+		return
+	}
+	b.WriteString(title)
+	b.WriteString("\n")
+	for _, f := range files {
+		if mime := strings.TrimSpace(f.MimeType); mime != "" {
+			fmt.Fprintf(b, "- %s (%s)\n", f.Path, mime)
+		} else {
+			fmt.Fprintf(b, "- %s\n", f.Path)
+		}
+	}
 }

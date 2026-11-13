@@ -273,8 +273,10 @@ web/                  # 前端（ESM + 静态资源）
     临时日志文件、注入 argv，进程退出后回收解析（`antigravity`）。
   - `SessionInitializer`：会话句柄需在首轮前显式分配（如会话文件路径）而非从输出中发现时，引擎在
     Open 时分配并作为每轮 resume 指针（`pi` / `openclaw`）。
-  - 附件（图片 / 文件）统一策略：Bridge / oneshot 将 base64 落到 `/tmp/sbx-attach-*`，
-    把绝对路径写入 prompt 文本，由 Agent 用 Read 打开；不再依赖各 CLI 原生 image block。
+  - 附件（图片 / 文件）统一策略：Bridge / oneshot 将 base64 落到 `/tmp/sbx-attach/<blob id>/<文件名>`
+    （无 `ref` 时用内容哈希作目录），把绝对路径写入用户正文后的 `<attached_files>` 块，由 Agent 用 Read 打开；
+    不再依赖各 CLI 原生 image block。附件在沙箱生命周期内保留，后续追问与切换模型可按原路径读取；
+    带 `history: true` 的附件是平台为接续上下文重新下发的历史附件，单独列出，不计入本轮用户附件。
 - **默认 transport 按 CLI 的主用无头契约选择**（在 `internal/agents/registry.go` 单点维护）：
 
   | provider | 默认 transport | 启动 / 续接要点 |

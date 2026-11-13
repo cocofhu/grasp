@@ -107,6 +107,8 @@ func promptImagesToAny(imgs []models.PromptImage) []any {
 }
 
 // ResolveForWire returns copies with Data loaded from store for ACP/LLM transport.
+// History attachments are best-effort: one that can no longer be read is
+// dropped instead of failing the turn.
 func ResolveForWire(ctx context.Context, store Store, images []models.PromptImage) ([]models.PromptImage, error) {
 	if len(images) == 0 {
 		return images, nil
@@ -117,39 +119,51 @@ func ResolveForWire(ctx context.Context, store Store, images []models.PromptImag
 		if ref == "" {
 			continue
 		}
-		if store == nil {
-			return nil, fmt.Errorf("image[%d]: blob store not configured to resolve %s", i, ref)
-		}
-		parsed, err := ParseRef(ref)
+		resolved, err := resolveOne(ctx, store, ref, im)
 		if err != nil {
+			if im.History {
+				continue
+			}
 			return nil, fmt.Errorf("image[%d]: %w", i, err)
 		}
-		rc, meta, err := store.Open(ctx, parsed)
-		if err != nil {
-			return nil, fmt.Errorf("image[%d]: open %s: %w", i, ref, err)
-		}
-		raw, err := io.ReadAll(rc)
-		_ = rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("image[%d]: read %s: %w", i, ref, err)
-		}
-		mime := im.MimeType
-		if mime == "" {
-			mime = meta.MimeType
-		}
-		name := im.Name
-		if name == "" {
-			name = meta.Name
-		}
-		out = append(out, models.PromptImage{
-			Data:      base64.StdEncoding.EncodeToString(raw),
-			MimeType:  mime,
-			Name:      name,
-			Ref:       ref,
-			SizeBytes: int64(len(raw)),
-		})
+		out = append(out, resolved)
 	}
 	return out, nil
+}
+
+func resolveOne(ctx context.Context, store Store, ref string, im models.PromptImage) (models.PromptImage, error) {
+	if store == nil {
+		return models.PromptImage{}, fmt.Errorf("blob store not configured to resolve %s", ref)
+	}
+	parsed, err := ParseRef(ref)
+	if err != nil {
+		return models.PromptImage{}, err
+	}
+	rc, meta, err := store.Open(ctx, parsed)
+	if err != nil {
+		return models.PromptImage{}, fmt.Errorf("open %s: %w", ref, err)
+	}
+	raw, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil {
+		return models.PromptImage{}, fmt.Errorf("read %s: %w", ref, err)
+	}
+	mime := im.MimeType
+	if mime == "" {
+		mime = meta.MimeType
+	}
+	name := im.Name
+	if name == "" {
+		name = meta.Name
+	}
+	return models.PromptImage{
+		Data:      base64.StdEncoding.EncodeToString(raw),
+		MimeType:  mime,
+		Name:      name,
+		Ref:       ref,
+		SizeBytes: int64(len(raw)),
+		History:   im.History,
+	}, nil
 }
 
 // StripData clears inline Data before persist; images are always Ref-backed.
