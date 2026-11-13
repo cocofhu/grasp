@@ -591,3 +591,68 @@ func TestRemovedUserSessionRejected(t *testing.T) {
 		t.Fatalf("kept user session after restart: %v", err)
 	}
 }
+
+func TestPasswordChangeEndsSessions(t *testing.T) {
+	oldHash, _ := bcrypt.GenerateFromPassword([]byte("old"), bcrypt.MinCost)
+	newHash, _ := bcrypt.GenerateFromPassword([]byte("new"), bcrypt.MinCost)
+	otherHash, _ := bcrypt.GenerateFromPassword([]byte("other"), bcrypt.MinCost)
+	db, err := database.OpenSQLiteTest(t.TempDir() + "/password.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Session{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Auth: config.AuthConfig{
+			Users: []config.AuthUser{
+				{Username: "changed", PasswordHash: string(oldHash)},
+				{Username: "other", PasswordHash: string(otherHash)},
+			},
+			SessionTTL: "168h",
+		},
+	}
+	live := func() *config.Config { return cfg }
+	svc := auth.NewService(db, live)
+	oldSess, err := svc.Login("changed", "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSess, err := svc.Login("other", "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ValidateSession(oldSess.ID); err != nil {
+		t.Fatalf("session before password change: %v", err)
+	}
+
+	cfg.Auth.Users[0].PasswordHash = string(newHash)
+	if _, err := svc.ValidateSession(oldSess.ID); err == nil {
+		t.Fatal("session survived password change")
+	}
+	cfg.Auth.Users[0].PasswordHash = string(oldHash)
+	if _, err := svc.ValidateSession(oldSess.ID); err == nil {
+		t.Fatal("rejected session came back after restoring the password")
+	}
+	cfg.Auth.Users[0].PasswordHash = string(newHash)
+
+	newSess, err := svc.Login("changed", "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := auth.NewService(db, live)
+	if _, err := restarted.ValidateSession(newSess.ID); err != nil {
+		t.Fatalf("session with current password: %v", err)
+	}
+	if _, err := restarted.ValidateSession(otherSess.ID); err != nil {
+		t.Fatalf("other user's session: %v", err)
+	}
+	if err := db.Create(&models.Session{
+		ID: "legacy", Username: "other", ExpiresAt: time.Now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.ValidateSession("legacy"); err == nil {
+		t.Fatal("session without a password fingerprint accepted")
+	}
+}

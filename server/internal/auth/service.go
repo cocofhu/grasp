@@ -3,6 +3,8 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"time"
@@ -41,10 +43,10 @@ func (s *Service) Login(username, password string) (*models.Session, error) {
 		return nil, errors.New(ErrInvalidCred)
 	}
 	s.cleanupExpired()
-	return s.createSession(user.Username)
+	return s.createSession(user)
 }
 
-func (s *Service) createSession(username string) (*models.Session, error) {
+func (s *Service) createSession(user config.AuthUser) (*models.Session, error) {
 	token, err := newToken()
 	if err != nil {
 		return nil, err
@@ -52,10 +54,11 @@ func (s *Service) createSession(username string) (*models.Session, error) {
 	ttl := s.cfg().Auth.SessionTTLDuration()
 	now := time.Now()
 	sess := &models.Session{
-		ID:        token,
-		Username:  username,
-		ExpiresAt: now.Add(ttl),
-		CreatedAt: now,
+		ID:                  token,
+		Username:            user.Username,
+		ExpiresAt:           now.Add(ttl),
+		CreatedAt:           now,
+		PasswordFingerprint: passwordFingerprint(user.PasswordHash),
 	}
 	if err := s.db.Create(sess).Error; err != nil {
 		return nil, err
@@ -64,7 +67,8 @@ func (s *Service) createSession(username string) (*models.Session, error) {
 }
 
 // ValidateSession returns the session when the token is valid, not expired,
-// and its user is still a configured account.
+// and its user is still a configured account with the password it logged in
+// with.
 func (s *Service) ValidateSession(token string) (*models.Session, error) {
 	if token == "" {
 		return nil, errors.New("no session")
@@ -77,11 +81,23 @@ func (s *Service) ValidateSession(token string) (*models.Session, error) {
 		_ = s.db.Delete(&sess).Error
 		return nil, errors.New("session expired")
 	}
-	if _, ok := s.findUser(sess.Username); !ok {
+	user, ok := s.findUser(sess.Username)
+	if !ok {
 		_ = s.db.Delete(&sess).Error
 		return nil, errors.New("session user removed")
 	}
+	if subtle.ConstantTimeCompare([]byte(sess.PasswordFingerprint), []byte(passwordFingerprint(user.PasswordHash))) != 1 {
+		_ = s.db.Delete(&sess).Error
+		return nil, errors.New("session password changed")
+	}
 	return &sess, nil
+}
+
+// passwordFingerprint never returns "", so sessions stored without one are
+// rejected.
+func passwordFingerprint(passwordHash string) string {
+	sum := sha256.Sum256([]byte(passwordHash))
+	return hex.EncodeToString(sum[:])
 }
 
 // DeleteSession removes a session by token (logout).

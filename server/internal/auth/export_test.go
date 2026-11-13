@@ -7,5 +7,7 @@ import "github.com/cocofhu/grasp/internal/models"
 
 func (s *Service) CreateSession(username string) (*models.Session, error) {
 	s.cleanupExpired()
-	return s.createSession(username)
+	user, _ := s.findUser(username)
+	user.Username = username
+	return s.createSession(user)
 }
