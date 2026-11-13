@@ -51,6 +51,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--cpu-count", required=True, type=int)
     result.add_argument("--memory-mb", required=True, type=int, help="Prepared guest memory in MiB")
     result.add_argument("--minimum-workspace-gib", type=int, default=20, help="Required initially available workspace bytes / 2**30; not a quota or disk sizing request")
+    result.add_argument("--min-free-disk-mb", type=int, help="Optional provider build free-space target in MiB; still verified by the workspace probe")
     result.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[3])
     result.add_argument("--request-timeout", type=int, default=240, help="SDK request timeout in seconds")
     result.add_argument("--output", type=Path, help="Optional credential-free result JSON, written with mode 0600")
@@ -67,13 +68,15 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         raise PreparationError("--name must be a nonempty gateway template name without whitespace")
     if min(args.cpu_count, args.memory_mb, args.minimum_workspace_gib, args.request_timeout) <= 0:
         raise PreparationError("CPU, memory, minimum workspace and request timeout must be positive integers")
+    if args.min_free_disk_mb is not None and not 0 <= args.min_free_disk_mb <= 2147483647:
+        raise PreparationError("--min-free-disk-mb must fit a nonnegative provider int32 value")
     root = args.repo_root.resolve()
     if not (root / BOOTSTRAP).is_file() or not (root / IMAGE_LEVEL).is_file():
         raise PreparationError("--repo-root must contain Grasp's original bootstrap and IMAGE_LEVEL files")
     level = (root / IMAGE_LEVEL).read_text(encoding="utf-8").strip()
     if not level.isdecimal() or int(level) < 1:
         raise PreparationError("the source IMAGE_LEVEL must be a positive integer")
-    return {
+    plan = {
         "image": args.image,
         "alias": args.alias,
         "name": args.name,
@@ -85,6 +88,9 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         "requiredNativeCLIs": list(NATIVE_CLIS),
         "runtimeBundleBakedIn": False,
     }
+    if args.min_free_disk_mb is not None:
+        plan["requestedMinFreeDiskMB"] = args.min_free_disk_mb
+    return plan
 
 
 def validation_command(plan: dict[str, Any], require_disk: bool) -> str:
@@ -171,8 +177,11 @@ def prepare(args: argparse.Namespace, template_class: Any, sandbox_class: Any) -
     guest = None
     try:
         template = configure_template(template_class, args, plan)
-        built = template_class.build(template, args.alias, cpu_count=args.cpu_count,
-                                     memory_mb=args.memory_mb, request_timeout=args.request_timeout)
+        build_options = {"cpu_count": args.cpu_count, "memory_mb": args.memory_mb,
+                         "request_timeout": args.request_timeout}
+        if args.min_free_disk_mb is not None:
+            build_options["min_free_disk_mb"] = args.min_free_disk_mb
+        built = template_class.build(template, args.alias, **build_options)
         if not ID_PATTERN.fullmatch(str(built.template_id)) or not ID_PATTERN.fullmatch(str(built.build_id)):
             raise PreparationError("the provider returned invalid template/build identifiers")
         report.update(templateID=built.template_id, buildID=built.build_id, stage="probe")

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- E2B 模板构建支持用 `--min-free-disk-mb` 向 provider 申请构建后的可用磁盘空间；仍以临时沙箱实测容量为准，空间不足时不输出可发布模板配置。
+
 - 修改 `auth.users` 中账号的 `password_hash` 后，该账号用旧密码登录的会话随即失效；此前旧会话要到原定到期时间才失效。升级后所有用户需要重新登录一次。
 
 - E2B 沙箱高负载或 IDE 无响应时，打开 Solo 会话不再一直转圈：会话详情的沙箱实时探测最多等 3 秒，超时就先显示已保存的会话和历史，沙箱状态显示为「未知」；网关对已运行的沙箱查询状态时只做一次最长 2 秒的探测，不再等待 SSH、会话服务和 IDE 全部就绪（#1223）。
