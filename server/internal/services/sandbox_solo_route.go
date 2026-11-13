@@ -231,8 +231,14 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		_ = os.RemoveAll(prepared.spec.ConfigHome)
 		return false, fmt.Errorf("保存上下文交接状态失败: %w", err)
 	}
-	if ls.acp != nil {
-		ls.acp.Close()
+	// Detach before closing: every exit below either installs a new client or
+	// leaves none, never the closed one.
+	s.mu.Lock()
+	closing := ls.acp
+	ls.acp = nil
+	s.mu.Unlock()
+	if closing != nil {
+		closing.Close()
 	}
 	apply := func(applyCtx context.Context, target, old *preparedAgentContainer) (*sandbox.ACPClient, error) {
 		keys := append(sandbox.ReprimeEnvKeys(old.spec), runtime.ModelRoutingEnvKeys()...)
