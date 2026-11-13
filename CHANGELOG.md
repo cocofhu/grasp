@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 刷新或重连回到正在输出的对话时，已经生成的回复直接完整显示，只有之后新到的内容逐字出现；此前超长的一轮会从头逐字重放，要等很久且页面卡顿。积压过多（例如切回后台标签页）时也只逐字显示最后一小段。
+
 - Solo 切换模型失败的提示统一措辞：保存切换状态失败且恢复原配置也失败时，提示改为「保存切换状态失败，恢复原配置也失败」；原配置已失效时，两种失败都提示「请重新选择模型重试」（此前保存失败时只说「请重试」）。
 
 - 沙箱里的 `gh auth status` 显示 GitHub 凭据的真实账号，不再一律显示 `grasp-selected`。手动填写 github.com 的 Token 时，服务端会查询一次账号（最多 5 秒，失败照常保存），凭据列表也会显示 `@账号`；已有的手动 Token 需重新填写一次才会记录账号。GitHub Enterprise 等其他主机的 Token 不查询，仍显示 `grasp-selected`，认证不受影响。

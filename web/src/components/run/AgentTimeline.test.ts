@@ -67,14 +67,34 @@ describe('AgentTimeline', () => {
     vi.stubEnv('VITEST', '')
     vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
     try {
-      const text = 'x'.repeat(200)
-      const w = mountTimeline({ streaming: true, parts: [{ kind: 'message', text }] })
+      const w = mountTimeline({ streaming: true, parts: [{ kind: 'message', text: 'x' }] })
       const shown = () => w.find('[data-testid="agent-timeline-message"]').text().length
+      const text = 'x'.repeat(200)
+      await w.setProps({ parts: [{ kind: 'message', text }] })
       await vi.advanceTimersByTimeAsync(100)
-      expect(shown()).toBeGreaterThan(0)
+      expect(shown()).toBeGreaterThan(1)
       expect(shown()).toBeLessThan(text.length)
       await w.setProps({ streaming: false, completed: true })
       expect(shown()).toBe(text.length)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('shows text already written at mount whole and only types out what arrives after', async () => {
+    vi.stubEnv('VITEST', '')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
+    try {
+      const text = 'x'.repeat(20_000)
+      const w = mountTimeline({ streaming: true, parts: [{ kind: 'message', text }] })
+      const shown = () => w.find('[data-testid="agent-timeline-message"]').text().length
+      await vi.advanceTimersByTimeAsync(20)
+      expect(shown()).toBe(text.length)
+      await w.setProps({ parts: [{ kind: 'message', text: text + 'y'.repeat(20_000) }] })
+      await vi.advanceTimersByTimeAsync(100)
+      expect(shown()).toBeGreaterThan(40_000 - 500)
+      expect(shown()).toBeLessThan(40_000)
     } finally {
       vi.useRealTimers()
       vi.unstubAllEnvs()
