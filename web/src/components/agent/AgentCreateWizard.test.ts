@@ -48,8 +48,6 @@ vi.mock('@/lib/api/api', () => ({
       ],
     }),
     getSharedAgentConfig: () => getSharedAgentConfig(),
-    openCodeProviders: async () => ({ providers: [] }),
-    openCodeModels: async () => ({ models: [] }),
     listCredentials: () => listCredentials(),
   },
 }))

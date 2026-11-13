@@ -36,7 +36,7 @@ func (liveSoloRouteOps) Ready(ctx context.Context, sb *sandbox.Sandbox) error {
 }
 
 func (liveSoloRouteOps) Connect(ctx context.Context, sb *sandbox.Sandbox, specs []sandbox.MCPServerSpec) (*sandbox.ACPClient, error) {
-	acp := sb.ACP().WithSession(sb.WorkspaceDir, mcpServersJSON(specs))
+	acp := sb.ACP().WithSession(sb.WorkspaceDir, runtime.MCPServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
 		return nil, err

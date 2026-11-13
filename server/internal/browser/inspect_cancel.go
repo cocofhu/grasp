@@ -50,12 +50,6 @@ func (f *inspectCancelFilter) expireSkip(gen int) {
 	}
 }
 
-func (f *inspectCancelFilter) expireSkipNow() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.skip = false
-}
-
 func (f *inspectCancelFilter) onCanceled() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

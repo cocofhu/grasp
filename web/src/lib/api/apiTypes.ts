@@ -605,23 +605,6 @@ export interface NotificationListItem {
   beforeBaseline: boolean
 }
 
-/** One vendor of the OpenCode model catalog (models.dev). */
-export interface OpenCodeCatalogProvider {
-  id: string
-  name?: string
-  /** Vendor default base URL, when the catalog publishes one. */
-  api?: string
-  /** Environment variable OpenCode reads this vendor's key from. */
-  keyEnv?: string
-  /** How many models the catalog lists for this vendor. */
-  models: number
-}
-
-export interface OpenCodeCatalogModel {
-  id: string
-  name?: string
-}
-
 export type CliModelTag = 'vision' | 'reasoning' | 'fast'
 
 /** One entry of a coding CLI's shipped model shortlist. `id` goes to `--model` verbatim. */
@@ -642,18 +625,6 @@ export interface CliCatalogModel {
 export interface CliModelsResponse {
   models: CliCatalogModel[]
   /** Catalog read failed; an empty list does not confirm saved models are missing. */
-  error?: string
-}
-
-export interface OpenCodeProvidersResponse {
-  providers: OpenCodeCatalogProvider[]
-  fetchedAt?: string
-  /** Set when the catalog could not be refreshed; the picker then falls back. */
-  error?: string
-}
-
-export interface OpenCodeModelsResponse {
-  models: OpenCodeCatalogModel[]
   error?: string
 }
 

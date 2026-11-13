@@ -3,8 +3,6 @@ export {
   actionIcon,
   actionVariant,
   actionVariantClasses,
-  type ActionIconName,
-  type ActionVariant,
 } from './gateApproval/gateApprovalActions'
 </script>
 

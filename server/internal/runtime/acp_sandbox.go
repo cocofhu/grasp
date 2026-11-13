@@ -492,7 +492,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	vars := c.mcpVars(req)
 
 	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
-		env[k] = substVars(v, vars)
+		env[k] = SubstVars(v, vars)
 	}
 	creds := map[string]string{}
 	protectedCredentialKeys := map[string]struct{}{}

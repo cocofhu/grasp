@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 
-export type McpHelpSection = 'run' | 'agent'
+type McpHelpSection = 'run' | 'agent'
 
 const SECTIONS: McpHelpSection[] = ['run', 'agent']
 

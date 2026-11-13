@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import { messagePreviewText } from '@/lib/chat/messagePreview'
 
-export interface ChatMessageRailItem {
+interface ChatMessageRailItem {
   id: string
   title: string
   preview?: string

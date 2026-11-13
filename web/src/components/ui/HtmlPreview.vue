@@ -43,14 +43,14 @@ const emit = defineEmits<{
   (e: 'annotate-close'): void
 }>()
 
-export type HtmlPreviewCommentPinBadge = {
+type HtmlPreviewCommentPinBadge = {
   id: string
   seq: number
   bounds?: { left: number; top: number; width: number; height: number }
   active?: boolean
 }
 
-export type HtmlPreviewAnnotateDraft = {
+type HtmlPreviewAnnotateDraft = {
   selector: string
   imageDataUrl?: string
   screenshotMissing?: boolean

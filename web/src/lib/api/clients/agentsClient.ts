@@ -10,8 +10,6 @@ import type {
   Agent,
   AgentTemplate,
   CliModelsResponse,
-  OpenCodeModelsResponse,
-  OpenCodeProvidersResponse,
   WorkspaceAgentsImportResult,
   TeamBootstrapRequest,
   TeamBootstrapSession,
@@ -204,11 +202,6 @@ export const agentsClient = {
     invalidateModelCatalog()
     return result
   },
-  /** Vendors OpenCode can resolve models for (models.dev, cached server-side). */
-  openCodeProviders: () => req<OpenCodeProvidersResponse>(`/opencode/providers`),
-  /** One vendor's models; empty for a gateway the catalog does not know. */
-  openCodeModels: (provider: string) =>
-    req<OpenCodeModelsResponse>(`/opencode/providers/${encodeURIComponent(provider)}/models`),
   /** Shipped model shortlist for a coding CLI backend; empty for OpenCode and unknown ids. */
   cliModels: (backend: string) =>
     req<CliModelsResponse>(`/acp-backends/${encodeURIComponent(backend)}/models`),

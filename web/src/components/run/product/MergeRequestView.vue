@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
 
-export type MergeRequestItem = {
+type MergeRequestItem = {
   repo?: string
   sourceBranch?: string
   targetBranch?: string
@@ -13,7 +13,7 @@ export type MergeRequestItem = {
   state?: string
   note?: string
 }
-export type MergeRequestDoc = {
+type MergeRequestDoc = {
   summary?: string
   items?: MergeRequestItem[]
 }

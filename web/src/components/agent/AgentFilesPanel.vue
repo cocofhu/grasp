@@ -8,7 +8,6 @@ import MarkdownSplitEditor from '@/components/agent/MarkdownSplitEditor.vue'
 import MarkdownViewToggle from '@/components/agent/MarkdownViewToggle.vue'
 import ExplorerContextMenu, { type CtxTarget } from '@/components/agent/ExplorerContextMenu.vue'
 import AgentWorkspaceHistoryPanel from '@/components/agent/AgentWorkspaceHistoryPanel.vue'
-export type { FilesStep, FilesOpenSnapshot } from '@/lib/agent/useAgentFilesPanel'
 import { useAgentFilesPanel } from '@/lib/agent/useAgentFilesPanel'
 import type { AgentFilesPanelProps, AgentFilesPanelEmit } from '@/lib/agent/useAgentFilesPanel'
 

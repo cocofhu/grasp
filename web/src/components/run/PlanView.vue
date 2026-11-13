@@ -7,9 +7,9 @@ import AnnotateBtn from './product/AnnotateBtn.vue'
 import MermaidDiagram, { type PlanDiagram } from './MermaidDiagram.vue'
 import type { Artifact } from '@/lib/shared/types'
 
-export type PlanSub = { id?: string; title?: string; detail?: string; status?: string }
+type PlanSub = { id?: string; title?: string; detail?: string; status?: string }
 export type PlanGoal = { id?: string; title?: string; detail?: string; status?: string; subgoals?: PlanSub[] }
-export type PlanField = {
+type PlanField = {
   name?: string
   type?: string
   pk?: boolean
@@ -17,7 +17,7 @@ export type PlanField = {
   fk?: string
   description?: string
 }
-export type PlanEntity = {
+type PlanEntity = {
   name?: string
   fields?: PlanField[]
   description?: string

@@ -1,5 +1,5 @@
 <script lang="ts">
-export type LlmTraceTone = 'accent' | 'ok' | 'warn' | 'err' | 'neutral'
+type LlmTraceTone = 'accent' | 'ok' | 'warn' | 'err' | 'neutral'
 
 /** Icon + tone for one LLM process trace. Enter stays off this row. */
 export function llmTraceMark(event: string, edgeKind?: string): { name: string; tone: LlmTraceTone } | null {

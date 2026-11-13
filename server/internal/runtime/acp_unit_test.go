@@ -87,16 +87,16 @@ func TestArtifactOwnedByNode(t *testing.T) {
 
 func TestSubstHelpers(t *testing.T) {
 	vars := map[string]string{"A": "x", "B": "y"}
-	if got := substVars("${A}-${B}", vars); got != "x-y" {
-		t.Errorf("substVars = %q", got)
+	if got := SubstVars("${A}-${B}", vars); got != "x-y" {
+		t.Errorf("SubstVars = %q", got)
 	}
-	if got := substMap(map[string]string{"k": "${A}"}, vars); got["k"] != "x" {
-		t.Errorf("substMap = %v", got)
+	if got := SubstMap(map[string]string{"k": "${A}"}, vars); got["k"] != "x" {
+		t.Errorf("SubstMap = %v", got)
 	}
-	if got := substSlice([]string{"${B}"}, vars); got[0] != "y" {
-		t.Errorf("substSlice = %v", got)
+	if got := SubstSlice([]string{"${B}"}, vars); got[0] != "y" {
+		t.Errorf("SubstSlice = %v", got)
 	}
-	if substMap(nil, vars) != nil || substSlice(nil, vars) != nil {
+	if SubstMap(nil, vars) != nil || SubstSlice(nil, vars) != nil {
 		t.Error("nil inputs should return nil")
 	}
 }

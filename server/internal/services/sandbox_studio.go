@@ -199,7 +199,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		env[k] = v
 	}
 	for k, v := range agentEnv {
-		env[k] = substTemplate(v, vars)
+		env[k] = runtime.SubstVars(v, vars)
 	}
 	// Expose run-scoped coordinates as process env. Do this before auth/model
 	// normalization: vars also contains the Agent's original env for template
@@ -300,7 +300,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		return
 	}
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, mcpServersJSON(specs)).
+		WithSession(sb.WorkspaceDir, runtime.MCPServersJSON(specs)).
 		WithBridgeModel(env["ACP_BRIDGE_MODEL"])
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
@@ -562,7 +562,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		s.mgr.EnsureHelpers(ctx, sb)
 	}
 	acp := sb.ACP().
-		WithSession(sb.WorkspaceDir, mcpServersJSON(specs)).
+		WithSession(sb.WorkspaceDir, runtime.MCPServersJSON(specs)).
 		WithBridgeModel(agent.Env["ACP_BRIDGE_MODEL"])
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
@@ -994,38 +994,6 @@ func (s *SandboxService) buildTestSandboxSpecs(profile, runID, token string, age
 	return specs
 }
 
-// --- helpers shared with the runtime's MCP wiring (kept local to avoid a
-// cross-package dependency) -------------------------------------------------
-
-func substTemplate(s string, vars map[string]string) string {
-	for k, v := range vars {
-		s = strings.ReplaceAll(s, "${"+k+"}", v)
-	}
-	return s
-}
-
-func substTemplateMap(m, vars map[string]string) map[string]string {
-	if len(m) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = substTemplate(v, vars)
-	}
-	return out
-}
-
-func substTemplateSlice(in []string, vars map[string]string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]string, len(in))
-	for i, v := range in {
-		out[i] = substTemplate(v, vars)
-	}
-	return out
-}
-
 // resolveAgentMCP maps an Agent's MCP entries to sandbox specs, substituting
 // run-scoped template vars and dropping entries that resolve to empty.
 func resolveAgentMCP(in []MCPServer, vars map[string]string) []sandbox.MCPServerSpec {
@@ -1037,18 +1005,18 @@ func resolveAgentMCP(in []MCPServer, vars map[string]string) []sandbox.MCPServer
 		if m.Name == "" {
 			continue
 		}
-		url := config.RewriteMisconfiguredMCPAdvertise(substTemplate(m.URL, vars))
-		cmd := substTemplate(m.Command, vars)
+		url := config.RewriteMisconfiguredMCPAdvertise(runtime.SubstVars(m.URL, vars))
+		cmd := runtime.SubstVars(m.Command, vars)
 		if url == "" && cmd == "" {
 			continue
 		}
 		out = append(out, sandbox.MCPServerSpec{
 			Name:    m.Name,
 			URL:     url,
-			Headers: substTemplateMap(m.Headers, vars),
+			Headers: runtime.SubstMap(m.Headers, vars),
 			Command: cmd,
-			Args:    substTemplateSlice(m.Args, vars),
-			Env:     substTemplateMap(m.Env, vars),
+			Args:    runtime.SubstSlice(m.Args, vars),
+			Env:     runtime.SubstMap(m.Env, vars),
 		})
 	}
 	return out
@@ -1061,45 +1029,4 @@ func hasArtifactStoreSpec(specs []sandbox.MCPServerSpec) bool {
 		}
 	}
 	return false
-}
-
-// mcpServersJSON builds the ACP session mcpServers array from resolved specs.
-func mcpServersJSON(specs []sandbox.MCPServerSpec) json.RawMessage {
-	if len(specs) == 0 {
-		return nil
-	}
-	servers := make([]map[string]any, 0, len(specs))
-	for _, m := range specs {
-		switch {
-		case m.URL != "":
-			// type:http required by Claude Code / CodeBuddy; url-only is skipped.
-			entry := map[string]any{"name": m.Name, "type": "http", "url": m.URL}
-			if len(m.Headers) > 0 {
-				hs := make([]map[string]string, 0, len(m.Headers))
-				for k, v := range m.Headers {
-					hs = append(hs, map[string]string{"name": k, "value": v})
-				}
-				entry["headers"] = hs
-			}
-			servers = append(servers, entry)
-		case m.Command != "":
-			entry := map[string]any{"name": m.Name, "command": m.Command}
-			if len(m.Args) > 0 {
-				entry["args"] = m.Args
-			}
-			if len(m.Env) > 0 {
-				es := make([]map[string]string, 0, len(m.Env))
-				for k, v := range m.Env {
-					es = append(es, map[string]string{"name": k, "value": v})
-				}
-				entry["env"] = es
-			}
-			servers = append(servers, entry)
-		}
-	}
-	if len(servers) == 0 {
-		return nil
-	}
-	b, _ := json.Marshal(servers)
-	return b
 }

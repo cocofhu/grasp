@@ -4,9 +4,9 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
 
-export type ResearchQA = { id?: string; question?: string; answer?: string }
-export type ResearchFinding = { id?: string; title?: string; detail?: string }
-export type ResearchDoc = {
+type ResearchQA = { id?: string; question?: string; answer?: string }
+type ResearchFinding = { id?: string; title?: string; detail?: string }
+type ResearchDoc = {
   title?: string
   summary?: string
   questions?: ResearchQA[]
