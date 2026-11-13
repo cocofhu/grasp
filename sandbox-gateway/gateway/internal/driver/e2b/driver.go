@@ -602,6 +602,47 @@ func (d *Driver) publish(ctx context.Context, r *record) error {
 	return nil
 }
 
+// published reports that a running guest already serves every tunnel, so a
+// refresh only has to observe it. Re-running the readiness wait here would
+// hold the entry lock while an overloaded guest's IDE or relay times out,
+// stalling every status read of that sandbox.
+func (d *Driver) published(r *record) bool {
+	if r.Phase != "running" || len(r.Targets) == 0 {
+		return false
+	}
+	live := d.tunnels.List(r.Provider.ID)
+	for port := range r.Targets {
+		if _, ok := live[port]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+var observeTimeout = 2 * time.Second
+
+// observe makes one bounded relay probe. Unlike waitHealthy it neither
+// retries nor requires SSH, the session backend or the IDE to be listening.
+func (d *Driver) observe(ctx context.Context, r *record) error {
+	creds, err := d.credentials(r)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, observeTimeout)
+	defer cancel()
+	var h health
+	if err := d.tunnels.Control(ctx, creds, http.MethodGet, "/_bridge/health", nil, &h); err != nil {
+		return fmt.Errorf("E2B guest relay unreachable: %w", err)
+	}
+	if h.Marker != r.ID {
+		return errors.New("E2B relay identity mismatch")
+	}
+	if h.BootstrapExit != nil && *h.BootstrapExit != 0 {
+		return fmt.Errorf("E2B bootstrap exited with code %d", *h.BootstrapExit)
+	}
+	return nil
+}
+
 func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error) {
 	if r.Phase == "deleting" {
 		return handle(r, nil, driver.StatusNotFound), nil
@@ -629,6 +670,12 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 	}
 	if r.Phase == "creating" {
 		return handle(r, nil, driver.StatusPending), nil
+	}
+	if d.published(r) {
+		if err := d.observe(ctx, r); err != nil {
+			return nil, err
+		}
+		return handle(r, d.tunnels.List(r.Provider.ID), driver.StatusRunning), nil
 	}
 	if err = d.convergeResumed(ctx, r); err != nil {
 		return nil, err

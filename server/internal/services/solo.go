@@ -310,7 +310,18 @@ func (s *SoloService) agentMeta(name string) (backend, model string) {
 	return a.AcpBackend, strings.TrimSpace(a.Env["ACP_BRIDGE_MODEL"])
 }
 
+// soloLiveViewBudget bounds every guest probe behind one session detail read.
+// A busy or unreachable sandbox must not hold the saved session and history
+// hostage: once it is spent the view keeps the persisted values and reports
+// the container status as unknown.
+var soloLiveViewBudget = 3 * time.Second
+
 func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bool) SoloSessionView {
+	if live {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, soloLiveViewBudget)
+		defer cancel()
+	}
 	v := SoloSessionView{SoloSession: *row, ReasoningEfforts: []string{}}
 	if len(v.Repos) == 0 {
 		v.Repos = legacySessionRepos(row)
@@ -390,7 +401,8 @@ func (s *SoloService) List(ctx context.Context, user, status string) ([]SoloSess
 	return out, nil
 }
 
-// Get returns one session with live sandbox state.
+// Get returns one session with live sandbox state, bounded by
+// soloLiveViewBudget.
 func (s *SoloService) Get(ctx context.Context, id, user string) (*SoloSessionView, error) {
 	row, err := s.Require(id, user)
 	if err != nil {

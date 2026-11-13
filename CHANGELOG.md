@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- E2B 沙箱高负载或 IDE 无响应时，打开 Solo 会话不再一直转圈：会话详情的沙箱实时探测最多等 3 秒，超时就先显示已保存的会话和历史，沙箱状态显示为「未知」；网关对已运行的沙箱查询状态时只做一次最长 2 秒的探测，不再等待 SSH、会话服务和 IDE 全部就绪（#1223）。
+
 - 管理员通过登录页登录后，品牌设置、Token 单价等管理员设置立即可编辑，不再需要刷新页面。登录接口的响应新增 `is_admin`，与 `/api/auth/me` 一致（#1137）。
 
 - 登录 Cookie 的有效期改为跟随 `auth.session_ttl`（`GRASP_AUTH_SESSION_TTL`），不再固定 7 天。此前配置超过 7 天时，浏览器会在第 7 天删除 Cookie 而提前登出；配置更短时 Cookie 也会随会话一起到期。已登录的浏览器在下次登录后生效（#1138）。
