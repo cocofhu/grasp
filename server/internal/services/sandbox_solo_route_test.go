@@ -296,9 +296,9 @@ func TestSoloRouteFailureStagesKeepTheirOutcome(t *testing.T) {
 		keepsRoute  bool
 	}{
 		{name: "save restored", saveFails: true, message: "保存切换状态失败，已恢复原配置", calls: 2, keepsRoute: true},
-		{name: "save rollback failed", saveFails: true, failConnect: 2, message: "保存切换状态失败，恢复原配置失败", calls: 2},
+		{name: "save rollback failed", saveFails: true, failConnect: 2, message: "保存切换状态失败，恢复原配置也失败", calls: 2},
 		{name: "switch without rollback", noRollback: true, failReady: 1, message: "切换工具失败，原配置已失效；工作区已保留，请重新选择模型重试", calls: 1},
-		{name: "save without rollback", noRollback: true, saveFails: true, message: "保存切换状态失败，原配置已失效；工作区已保留，请重试", calls: 1},
+		{name: "save without rollback", noRollback: true, saveFails: true, message: "保存切换状态失败，原配置已失效；工作区已保留，请重新选择模型重试", calls: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

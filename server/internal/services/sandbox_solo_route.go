@@ -312,8 +312,8 @@ var (
 		restored:       "切换工具失败，已恢复原配置",
 	}
 	soloRouteSaveFailed = soloRouteStage{
-		noRollback:     "保存切换状态失败，原配置已失效；工作区已保留，请重试",
-		rollbackFailed: "保存切换状态失败，恢复原配置失败",
+		noRollback:     "保存切换状态失败，原配置已失效；工作区已保留，请重新选择模型重试",
+		rollbackFailed: "保存切换状态失败，恢复原配置也失败",
 		restored:       "保存切换状态失败，已恢复原配置",
 	}
 )

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 切换模型失败的提示统一措辞：保存切换状态失败且恢复原配置也失败时，提示改为「保存切换状态失败，恢复原配置也失败」；原配置已失效时，两种失败都提示「请重新选择模型重试」（此前保存失败时只说「请重试」）。
+
 - Cursor 模型列表与 Cursor CLI 2026.11.11 对齐：新增 Gemini 4 Carbon、Gemini 4 Hydrogen、Claude Fable 5.2（含 Fast 版）和 DeepSeek V4.1 Flash 1017 各档位；移除 CLI 已下线的 Gemini 3.6 Flash 与 Gemini 3.7 Flash。已选用这些旧模型的 Agent 仍会把原 ID 交给 CLI。
 
 - Solo 工作区备份改为滚动保留：每个会话保留最近 5 份（`GRASP_SOLO_BACKUP_KEEP`），运行中的会话距上次备份满 6 小时且有新对话时，在回复结束后自动备份（`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`，负数关闭）。「恢复」旁可选择备份版本，选较早的版本会在新沙箱中还原。沙箱意外消失时，有备份的会话变为已停止并可从最新备份恢复，不再只能重新启动。已有的停止备份升级后自动列入。
