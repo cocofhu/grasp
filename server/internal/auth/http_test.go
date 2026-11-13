@@ -89,6 +89,53 @@ func TestLoginHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestLoginHandlerReportsAdminRole(t *testing.T) {
+	for _, admin := range []bool{true, false} {
+		svc, r := setupAuthHTTP(t)
+		cfg := *config.GetConfig()
+		cfg.Auth.Users = []config.AuthUser{{Username: "admin", PasswordHash: cfg.Auth.Users[0].PasswordHash, IsAdmin: admin}}
+		config.StoreConfig(&cfg)
+
+		body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("login: %d %s", w.Code, w.Body.String())
+		}
+		var login map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil {
+			t.Fatal(err)
+		}
+		if login["is_admin"] != admin {
+			t.Fatalf("admin=%v: login is_admin = %v", admin, login["is_admin"])
+		}
+
+		var token string
+		for _, c := range w.Result().Cookies() {
+			if c.Name == auth.CookieName {
+				token = c.Value
+			}
+		}
+		sess, err := svc.ValidateSession(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mw := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(mw)
+		c.Set("auth_session", sess)
+		svc.MeHandler(c)
+		var me auth.MeResponse
+		if err := json.Unmarshal(mw.Body.Bytes(), &me); err != nil {
+			t.Fatal(err)
+		}
+		if me.IsAdmin != admin {
+			t.Fatalf("admin=%v: /me is_admin = %v", admin, me.IsAdmin)
+		}
+	}
+}
+
 func TestLoginCookieFollowsSessionTTL(t *testing.T) {
 	for _, tc := range []struct {
 		ttl    string

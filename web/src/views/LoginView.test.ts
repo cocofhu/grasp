@@ -117,6 +117,27 @@ describe('LoginView copy', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [true, true],
+    [false, false],
+    [undefined, false],
+  ])('sets isAdmin from the login response (is_admin=%s)', async (isAdmin, expected) => {
+    authApiMocks.login.mockResolvedValue({
+      username: 'admin',
+      expires_at: '2099-01-01T00:00:00Z',
+      is_admin: isAdmin,
+      redirect: '/',
+    })
+    const wrapper = await mountLogin('zh-CN')
+    await flushPromises()
+    await wrapper.find('#username').setValue('admin')
+    await wrapper.find('#password').setValue('x')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(useAuth().user.value).toEqual({ username: 'admin', expiresAt: '2099-01-01T00:00:00Z', isAdmin: expected })
+    wrapper.unmount()
+  })
+
   it('sanitizes login response redirect before navigating', async () => {
     authApiMocks.login.mockResolvedValue({
       username: 'admin',
