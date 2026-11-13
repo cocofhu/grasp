@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,11 +17,22 @@ const maxSessionCookies = 8
 // of cf_session must be expired.
 const maxClearedCookieSegments = 8
 
-// SetSessionCookie writes the cf_session HttpOnly cookie.
-func SetSessionCookie(c *gin.Context, token string) {
+// SetSessionCookie writes the cf_session HttpOnly cookie, kept by the browser
+// until the session expires.
+func SetSessionCookie(c *gin.Context, token string, expiresAt time.Time) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	secure := isSecureRequest(c)
-	c.SetCookie(CookieName, token, CookieMaxAge, "/", "", secure, true)
+	c.SetCookie(CookieName, token, cookieMaxAge(expiresAt), "/", "", secure, true)
+}
+
+// cookieMaxAge returns the seconds left until expiresAt, at least 1: a
+// Max-Age of 0 or less would delete the cookie instead of setting it.
+func cookieMaxAge(expiresAt time.Time) int {
+	secs := int(time.Until(expiresAt).Round(time.Second) / time.Second)
+	if secs < 1 {
+		return 1
+	}
+	return secs
 }
 
 // ClearSessionCookie expires the cf_session cookie.

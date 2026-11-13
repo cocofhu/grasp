@@ -89,6 +89,67 @@ func TestLoginHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestLoginCookieFollowsSessionTTL(t *testing.T) {
+	for _, tc := range []struct {
+		ttl    string
+		maxAge int
+	}{
+		{"720h", 30 * 24 * 3600},
+		{"168h", 7 * 24 * 3600},
+		{"2h", 2 * 3600},
+		{"", 7 * 24 * 3600},
+	} {
+		t.Run(tc.ttl, func(t *testing.T) {
+			_, r := setupAuthHTTP(t)
+			cfg := *config.GetConfig()
+			cfg.Auth.SessionTTL = tc.ttl
+			config.StoreConfig(&cfg)
+
+			body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("login: %d %s", w.Code, w.Body.String())
+			}
+			var resp struct {
+				ExpiresAt time.Time `json:"expires_at"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			var cookie *http.Cookie
+			for _, c := range w.Result().Cookies() {
+				if c.Name == auth.CookieName {
+					cookie = c
+				}
+			}
+			if cookie == nil {
+				t.Fatal("expected session cookie")
+			}
+			if d := cookie.MaxAge - tc.maxAge; d < -1 || d > 1 {
+				t.Fatalf("cookie Max-Age = %d, want ~%d", cookie.MaxAge, tc.maxAge)
+			}
+			if d := time.Until(resp.ExpiresAt) - time.Duration(cookie.MaxAge)*time.Second; d < -2*time.Second || d > 2*time.Second {
+				t.Fatalf("cookie Max-Age %d does not match expires_at %s", cookie.MaxAge, resp.ExpiresAt)
+			}
+		})
+	}
+}
+
+func TestSessionCookieMaxAgeNeverDeletes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	auth.SetSessionCookie(c, "late", time.Now().Add(-time.Second))
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Value != "late" || cookies[0].MaxAge != 1 {
+		t.Fatalf("cookies: %+v", cookies)
+	}
+}
+
 func TestSessionBrowserOriginCompatibility(t *testing.T) {
 	svc, r := setupAuthHTTP(t)
 	session, err := svc.Login("admin", "secret")
@@ -342,7 +403,7 @@ func TestSessionCookieSecure(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
-	auth.SetSessionCookie(c, "tok")
+	auth.SetSessionCookie(c, "tok", time.Now().Add(time.Hour))
 	cookies := w.Result().Cookies()
 	if len(cookies) == 0 || !cookies[0].Secure {
 		t.Fatal("expected secure cookie with X-Forwarded-Proto")
@@ -352,7 +413,7 @@ func TestSessionCookieSecure(t *testing.T) {
 	c, _ = gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.Request.TLS = &tls.ConnectionState{}
-	auth.SetSessionCookie(c, "tok2")
+	auth.SetSessionCookie(c, "tok2", time.Now().Add(time.Hour))
 	cookies = w.Result().Cookies()
 	if len(cookies) == 0 || !cookies[0].Secure {
 		t.Fatal("expected secure cookie with TLS")
@@ -362,7 +423,7 @@ func TestSessionCookieSecure(t *testing.T) {
 	c, _ = gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	auth.ClearSessionCookie(c)
-	auth.SetSessionCookie(c, "plain")
+	auth.SetSessionCookie(c, "plain", time.Now().Add(time.Hour))
 	cookies = w.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Fatal("expected cookie")

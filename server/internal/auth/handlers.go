@@ -40,7 +40,7 @@ func (s *Service) LoginHandler(c *gin.Context) {
 		return
 	}
 
-	SetSessionCookie(c, sess.ID)
+	SetSessionCookie(c, sess.ID, sess.ExpiresAt)
 	c.JSON(http.StatusOK, gin.H{
 		"username":   sess.Username,
 		"expires_at": sess.ExpiresAt.UTC().Format(timeRFC3339),
