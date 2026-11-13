@@ -286,3 +286,68 @@ describe('bare URL boundary', () => {
     }
   })
 })
+
+describe('CJK emphasis boundary', () => {
+  const renders = [
+    renderChatMarkdown,
+    renderMarkdown,
+    (src: string) => renderChatMarkdownBlocks(src, new Map()).join(''),
+    (src: string) => renderMarkdownBlocks(src, new Map()).join(''),
+  ]
+
+  it('closes bold that ends in fullwidth punctuation before Chinese text', () => {
+    for (const render of renders) {
+      const html = render('- **复用现有查询：**设备授权流程里本来就有 `fetchUser`')
+      expect(html).toContain('<strong>复用现有查询：</strong>设备授权流程')
+      expect(html).not.toContain('**')
+    }
+  })
+
+  it('opens and closes around CJK punctuation on either side', () => {
+    const cases: Array<[string, string]> = [
+      ['**结论：**可以合并', '<strong>结论：</strong>可以合并'],
+      ['**注意（重要）**这里', '<strong>注意（重要）</strong>这里'],
+      ['这是**“关键”**步骤', '这是<strong>“关键”</strong>步骤'],
+      ['先读**《规范》**再改', '先读<strong>《规范》</strong>再改'],
+      ['这是*「强调」*文字', '这是<em>「强调」</em>文字'],
+      ['**Note：**继续', '<strong>Note：</strong>继续'],
+      ['**读 `x.md`：**然后', '<strong>读 <code>x.md</code>：</strong>然后'],
+      ['\u{20000}**“关键”**步骤', '\u{20000}<strong>“关键”</strong>步骤'],
+      ['**结论：*重要*：**正文', '<strong>结论：<em>重要</em>：</strong>正文'],
+    ]
+    for (const render of renders) {
+      for (const [src, want] of cases) expect(render(src)).toContain(want)
+    }
+  })
+
+  it('pairs each relaxed closer with the nearest opener', () => {
+    for (const render of renders) {
+      expect(render('**结论：**正文**另一个：**后面')).toContain(
+        '<strong>结论：</strong>正文<strong>另一个：</strong>后面',
+      )
+      expect(render('**注意 **结论：**正文')).toContain('**注意 <strong>结论：</strong>正文')
+    }
+  })
+
+  it('leaves CommonMark emphasis and non-emphasis asterisks unchanged', () => {
+    for (const render of renders) {
+      expect(render('**结论**：可以')).toContain('<strong>结论</strong>：可以')
+      expect(render('a **b.**c')).toContain('**b.**c')
+      expect(render('2 * 3 = 6，然后')).not.toMatch(/<em>|<strong>/)
+      expect(render('**未闭合：设备')).toContain('**未闭合：设备')
+      expect(render('`**结论：**正文`')).toContain('<code>**结论：**正文</code>')
+      expect(render('```\n**结论：**正文\n```')).toContain('**结论：**正文')
+      expect(render('**结论：\\**正文')).not.toMatch(/<em>|<strong>/)
+      expect(render('He said **“hi”**there')).toContain('**“hi”**there')
+    }
+  })
+
+  it('keeps marked pairing when an earlier opener is unmatched', () => {
+    for (const render of renders) {
+      expect(render('**未闭合：设备 and later **粗体**')).toContain(
+        '**未闭合：设备 and later <strong>粗体</strong>',
+      )
+      expect(render('注意 **这里 还有 **重点**')).toContain('注意 **这里 还有 <strong>重点</strong>')
+    }
+  })
+})

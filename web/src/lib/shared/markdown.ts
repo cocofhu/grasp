@@ -1,4 +1,5 @@
-import { Marked, Renderer, marked } from 'marked'
+import { Marked, Renderer, Tokenizer, marked } from 'marked'
+import type { Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -49,11 +50,112 @@ function truncateBareUrl(src: string) {
   }
 }
 
+/**
+ * Han, kana, hangul and CJK / fullwidth punctuation. Curly quotes, `…` and `—`
+ * are left out because English uses them too; they still count as punctuation.
+ */
+const CJK_CHAR =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303F\uFF00-\uFFEF]/u
+const PUNCT = /[\p{P}\p{S}]/u
+const SPACE = /\s/u
+const LOW_SURROGATE = /^[\uDC00-\uDFFF]$/
+const ASTERISK_RUN = /\*+/g
+
+function charAfter(s: string, i: number): string {
+  const cp = s.codePointAt(i)
+  return cp === undefined ? '' : String.fromCodePoint(cp)
+}
+
+function charBefore(s: string, i: number): string {
+  return Array.from(s.slice(Math.max(0, i - 2), i)).pop() ?? ''
+}
+
+/** CommonMark left-flanking. */
+function strictOpen(prev: string, next: string): boolean {
+  if (!next || SPACE.test(next)) return false
+  return !PUNCT.test(next) || !prev || SPACE.test(prev) || PUNCT.test(prev)
+}
+
+/** CommonMark right-flanking. */
+function strictClose(prev: string, next: string): boolean {
+  if (!prev || SPACE.test(prev)) return false
+  return !PUNCT.test(prev) || !next || SPACE.test(next) || PUNCT.test(next)
+}
+
+/** Left-flanking, also when the punctuation after the run is CJK or follows CJK text. */
+function canOpen(prev: string, next: string): boolean {
+  return strictOpen(prev, next) || (PUNCT.test(next) && (CJK_CHAR.test(prev) || CJK_CHAR.test(next)))
+}
+
+/** Right-flanking, also when the punctuation before the run is CJK or precedes CJK text. */
+function canClose(prev: string, next: string): boolean {
+  return strictClose(prev, next) || (PUNCT.test(prev) && (CJK_CHAR.test(prev) || CJK_CHAR.test(next)))
+}
+
+/**
+ * CommonMark will not close `**结论：**正文` or open `是**“关键”**步骤`:
+ * a delimiter touching punctuation needs whitespace or punctuation on its
+ * other side, which Chinese text never has. Runs only after marked's own
+ * emStrong fails, and only takes a pair whose opener or closer needs the
+ * relaxed rule; when both are valid CommonMark, marked rejected the pair for
+ * another reason (e.g. an unmatched opener), so its result stands.
+ */
+function cjkEmStrong(
+  this: Tokenizer,
+  src: string,
+  maskedSrc: string,
+  prevChar = '',
+): Tokens.Em | Tokens.Strong | undefined {
+  const native = Tokenizer.prototype.emStrong.call(this, src, maskedSrc, prevChar)
+  if (native) return native
+
+  // marked retries from the second `*` of a failed `**`; that is not a new run.
+  if (prevChar === '*') return
+  const open = /^\*{1,2}(?!\*)/.exec(src)
+  if (!open) return
+  const n = open[0].length
+  const full = maskedSrc ?? src
+  const masked = full.slice(-src.length)
+  // marked passes one UTF-16 unit; recover a supplementary-plane Han character.
+  const prev = LOW_SURROGATE.test(prevChar) ? charBefore(full, full.length - src.length) || prevChar : prevChar
+  const first = charAfter(src, n)
+  if (!canOpen(prev, first)) return
+  const openStrict = strictOpen(prev, first)
+
+  // Same-length runs nest like CommonMark: an inner opener takes the next closer.
+  let depth = 0
+  ASTERISK_RUN.lastIndex = n
+  let run: RegExpExecArray | null
+  while ((run = ASTERISK_RUN.exec(masked)) !== null) {
+    if (run[0].length !== n) continue
+    const at = run.index
+    const before = charBefore(src, at)
+    const after = charAfter(src, at + n)
+    if (!canClose(before, after)) {
+      if (canOpen(before, after)) depth++
+      continue
+    }
+    if (depth > 0) {
+      depth--
+      continue
+    }
+    if (openStrict && strictClose(before, after)) return
+    const text = src.slice(n, at)
+    return {
+      type: n === 2 ? 'strong' : 'em',
+      raw: src.slice(0, at + n),
+      text,
+      tokens: this.lexer.inlineTokens(text),
+    }
+  }
+}
+
 marked.use({
   tokenizer: {
     url(src: string) {
       return truncateBareUrl(src)
     },
+    emStrong: cjkEmStrong,
   },
 })
 
@@ -162,6 +264,7 @@ chatMarked.use({
     url(src: string) {
       return truncateBareUrl(src)
     },
+    emStrong: cjkEmStrong,
   },
   renderer: {
     html({ text }) {
