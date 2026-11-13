@@ -136,6 +136,22 @@ func (s *CredentialService) githubLoginMetadata(envKey, host, token string) map[
 	return nil
 }
 
+// githubLoginOnce remembers the lookup, including a failure, so update
+// conflict retries do not query GitHub again.
+func (s *CredentialService) githubLoginOnce(token string) func(envKey, host string) map[string]any {
+	var (
+		looked   bool
+		key      string
+		metadata map[string]any
+	)
+	return func(envKey, host string) map[string]any {
+		if k := envKey + "\x00" + host; !looked || k != key {
+			looked, key, metadata = true, k, s.githubLoginMetadata(envKey, host, token)
+		}
+		return metadata
+	}
+}
+
 // validCredentialType lists the types stored in Credential. Channel,
 // external MCP and workflow keys are read-only adapter views over their own
 // services and cannot be created here.
@@ -326,8 +342,9 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 func (s *CredentialService) update(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	// A renewal can rotate the secret after this request reads it. Rebuild the
 	// edit from the current row on conflict instead of restoring the old login.
+	githubLogin := s.githubLoginOnce(in.Value)
 	for range 5 {
-		view, err := s.updateOnce(id, in, metadata)
+		view, err := s.updateOnce(id, in, metadata, githubLogin)
 		if !errors.Is(err, errCredentialUpdateConflict) {
 			return view, err
 		}
@@ -337,7 +354,7 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 
 var errCredentialUpdateConflict = errors.New("credential changed during update; please retry")
 
-func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
+func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata map[string]any, githubLogin func(envKey, host string) map[string]any) (CredentialView, error) {
 	var row models.Credential
 	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -455,7 +472,7 @@ func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata m
 		row.Metadata = metadata
 	} else if strings.TrimSpace(in.Value) != "" {
 		if metadata == nil && row.Purpose == "git" {
-			metadata = s.githubLoginMetadata(row.EnvKey, row.Host, in.Value)
+			metadata = githubLogin(row.EnvKey, row.Host)
 		}
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
