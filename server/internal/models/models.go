@@ -999,6 +999,9 @@ type Session struct {
 	Username  string    `gorm:"index" json:"username"`
 	ExpiresAt time.Time `gorm:"index" json:"expiresAt"`
 	CreatedAt time.Time `json:"createdAt"`
+	// PasswordFingerprint is the SHA-256 hex of the account's password hash at
+	// login; a changed password no longer matches and ends the session.
+	PasswordFingerprint string `gorm:"size:64;not null;default:''" json:"-"`
 }
 
 // WorkflowAPIKey is a per-workflow external API credential. Plaintext is shown
