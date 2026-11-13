@@ -286,6 +286,7 @@ func gitCatalogFiles(credentials []GitCredential) ([]gitCatalogFile, error) {
 		Kind      string `json:"kind"`
 		Scope     string `json:"scope"`
 		Preferred bool   `json:"preferred"`
+		Login     string `json:"login,omitempty"`
 	}
 	catalog := make([]catalogEntry, 0, len(credentials))
 	var files []gitCatalogFile
@@ -304,7 +305,7 @@ func gitCatalogFiles(credentials []GitCredential) ([]gitCatalogFile, error) {
 		if strings.TrimSpace(credential.Secret) == "" {
 			return nil, fmt.Errorf("empty git credential at index %d", i)
 		}
-		catalog = append(catalog, catalogEntry{i, credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Preferred})
+		catalog = append(catalog, catalogEntry{i, credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Preferred, credential.Login})
 		secret := credential.Secret
 		if credential.Kind != RepoCredentialSSH {
 			secret = strings.TrimSpace(secret)

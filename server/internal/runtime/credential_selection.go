@@ -18,6 +18,8 @@ type GitCredentialValue struct {
 	Host   string `json:"host,omitempty"`
 	// KnownHosts belongs to the same SSH key row; empty means none configured.
 	KnownHosts string `json:"-"`
+	// Login is the GitHub account recorded at sign-in; empty when unknown.
+	Login string `json:"login,omitempty"`
 }
 
 // GitCredentialFunc returns one selected Git/SSH credential with its metadata.

@@ -10,7 +10,7 @@ import (
 
 func selectedGitCatalog() []GitCredential {
 	return []GitCredential{
-		{ID: "team", Kind: RepoCredentialGitHubHTTPS, Secret: "synthetic-team-token", Preferred: true},
+		{ID: "team", Kind: RepoCredentialGitHubHTTPS, Secret: "synthetic-team-token", Preferred: true, Login: "octocat"},
 		{ID: "project", Kind: RepoCredentialGitHubHTTPS, Scope: "https://github.com/example/project.git", Secret: "synthetic-project-token"},
 		{ID: "gitlab", Kind: RepoCredentialGitLabHTTPS, Scope: "git.example.com", Secret: "synthetic-gitlab-token"},
 		{ID: "ssh", Kind: RepoCredentialSSH, Scope: "ssh.example.com", Secret: "synthetic-private-key\n", KnownHosts: "ssh.example.com ssh-ed25519 SYNTHETIC\n"},
@@ -28,6 +28,7 @@ func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T)
 		ID        string `json:"id"`
 		Scope     string `json:"scope"`
 		Preferred bool   `json:"preferred"`
+		Login     string `json:"login"`
 	}
 	if err := json.Unmarshal([]byte(files["git/manifest.json"]), &manifest); err != nil {
 		t.Fatal(err)
@@ -38,6 +39,9 @@ func TestSelectedGitCatalogStagesEveryAccountWithoutGlobalIdentity(t *testing.T)
 	for i, credential := range credentials {
 		if manifest[i].ID != credential.ID || manifest[i].Scope != credential.Scope || manifest[i].Preferred != credential.Preferred {
 			t.Fatal("catalog lost the selected identity, scope, order or preference")
+		}
+		if manifest[i].Login != credential.Login {
+			t.Fatal("catalog lost the GitHub CLI account label")
 		}
 		if strings.Contains(files["git/manifest.json"], credential.Secret) {
 			t.Fatal("secret was included in the metadata manifest")
@@ -185,6 +189,11 @@ func TestSharedSandboxFingerprintIncludesEveryGitAuthorizationChoice(t *testing.
 				t.Fatal("authorization change must trigger sandbox reinitialization")
 			}
 		})
+	}
+	relabeled := Spec{GitCredentials: append([]GitCredential(nil), base.GitCredentials...)}
+	relabeled.GitCredentials[0].Login = "someone-else"
+	if SpecFingerprint(relabeled) != want {
+		t.Fatal("a GitHub CLI account label alone must not reinitialize the sandbox")
 	}
 	if SpecFingerprint(Spec{}) != SpecFingerprint(Spec{Env: map[string]string{"GITHUB_TOKEN": "ambient", "GIT_SSH_PRIVATE_KEY": "ambient"}}) {
 		t.Fatal("Git identity in env must not affect the sandbox fingerprint")

@@ -580,6 +580,8 @@ func main() {
 	host.SetArtifactFiles(fileDelivery)
 
 	frameAncestors, _ := cfg.Server.FrameAncestorOrigins()
+	githubDevice := services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() })
+	credentialSvc.SetGitHubLoginLookup(githubDevice.LookupLogin)
 	h := &handlers.Handlers{
 		WF:                  wfSvc,
 		Workspace:           workspaceSvc,
@@ -615,7 +617,7 @@ func main() {
 		ExternalMcp:         externalMcpSvc,
 		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
-		GitHubDevice:        services.NewGitHubDeviceFlowService(credentialSvc, func() string { return config.GetConfig().GitHubOAuthClientID() }),
+		GitHubDevice:        githubDevice,
 		CodexDevice:         services.NewCodexDeviceFlowService(credentialSvc, cfg.CodexAuthBaseURL()),
 		OpenCodeCatalog:     openCodeCatalog,
 		ModelConnections:    modelConnectionSvc,

@@ -77,8 +77,11 @@ func resolveRepoCredential(repo RepoCredential, id string, resolve GitCredential
 		}
 	}
 	credential := sandbox.GitCredential{ID: "repo:" + repo.Repo, Kind: kind, Scope: scope, Secret: value.Secret}
-	if kind == sandbox.RepoCredentialSSH {
+	switch kind {
+	case sandbox.RepoCredentialSSH:
 		credential.KnownHosts = value.KnownHosts
+	case sandbox.RepoCredentialGitHubHTTPS:
+		credential.Login = value.Login
 	}
 	return credential, nil
 }

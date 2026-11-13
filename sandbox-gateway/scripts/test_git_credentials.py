@@ -138,6 +138,21 @@ class CredentialsTest(unittest.TestCase):
                                     text=True, capture_output=True, check=True).stdout
             self.assertEqual(output.strip(), "gl-only")
 
+    def test_github_cli_account_uses_recorded_login_or_stable_label(self):
+        for login in ("octo-cat", "null", "123"):
+            with self.subTest(login=login):
+                self.source.mkdir(exist_ok=True)
+                self.install([{"login": login}])
+                self.assertIn(f'user: "{login}"\n', (self.home / ".config/gh/hosts.yml").read_text())
+        for login in (None, "", "bad\nuser: x", "-lead", "a" * 40, 42):
+            with self.subTest(login=login):
+                self.source.mkdir()
+                self.install([{} if login is None else {"login": login}])
+                gh = (self.home / ".config/gh/hosts.yml").read_text()
+                self.assertIn('user: "grasp-selected"\n', gh)
+                self.assertEqual(gh.count("user:"), 1)
+        self.assertIn("password=fake-token-0", self.fill("https://github.com/team/app").stdout)
+
     def test_invalid_selected_record_fails_whole_catalog(self):
         for mutation in ("missing", "symlink", "newline", "duplicate-id", "duplicate-index",
                          "invalid-scope", "preferred-not-bool", "bad-kind", "hosts-symlink"):

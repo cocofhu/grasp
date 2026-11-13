@@ -175,7 +175,7 @@ func TestGitHubDeviceFlowCreatesCredential(t *testing.T) {
 		t.Fatalf("credential=%+v", v)
 	}
 	resolved, ok := creds.ResolveGitValue(v.ID)
-	if !ok || resolved.Secret != "gho_synthetic_token" || resolved.Host != GitHubDeviceHost || resolved.EnvKey != "GITHUB_TOKEN" {
+	if !ok || resolved.Secret != "gho_synthetic_token" || resolved.Host != GitHubDeviceHost || resolved.EnvKey != "GITHUB_TOKEN" || resolved.Login != "octocat" {
 		t.Fatalf("resolved=%+v ok=%v", resolved, ok)
 	}
 	listed, _ := creds.Get(v.ID)

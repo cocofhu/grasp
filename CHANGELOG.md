@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - Solo 切换模型失败的提示统一措辞：保存切换状态失败且恢复原配置也失败时，提示改为「保存切换状态失败，恢复原配置也失败」；原配置已失效时，两种失败都提示「请重新选择模型重试」（此前保存失败时只说「请重试」）。
 
+- 沙箱里的 `gh auth status` 显示 GitHub 凭据的真实账号，不再一律显示 `grasp-selected`。手动填写 github.com 的 Token 时，服务端会查询一次账号（最多 5 秒，失败照常保存），凭据列表也会显示 `@账号`；已有的手动 Token 需重新填写一次才会记录账号。GitHub Enterprise 等其他主机的 Token 不查询，仍显示 `grasp-selected`，认证不受影响。
+
 - Cursor 模型列表与 Cursor CLI 2026.11.11 对齐：新增 Gemini 4 Carbon、Gemini 4 Hydrogen、Claude Fable 5.2（含 Fast 版）和 DeepSeek V4.1 Flash 1017 各档位；移除 CLI 已下线的 Gemini 3.6 Flash 与 Gemini 3.7 Flash。已选用这些旧模型的 Agent 仍会把原 ID 交给 CLI。
 
 - Solo 工作区备份改为滚动保留：每个会话保留最近 5 份（`GRASP_SOLO_BACKUP_KEEP`），运行中的会话距上次备份满 6 小时且有新对话时，在回复结束后自动备份（`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`，负数关闭）。「恢复」旁可选择备份版本，选较早的版本会在新沙箱中还原。沙箱意外消失时，有备份的会话变为已停止并可从最新备份恢复，不再只能重新启动。已有的停止备份升级后自动列入。

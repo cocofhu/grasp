@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 KINDS = {"github_https", "gitlab_https", "ssh"}
 HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z")
 USER = re.compile(r"[A-Za-z0-9_.-]+\Z")
+GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\Z")
 
 
 def valid_host(authority):
@@ -177,8 +178,12 @@ def cli_configs(directory, records, home):
             lines.append(f"{indent}  git_protocol: https")
             if kind == "github_https":
                 # gh migrates legacy hosts without a user by querying /user.
-                # A stable local account label keeps configuration offline.
-                lines.append(f"{indent}  user: grasp-selected")
+                # The server-recorded login, else a stable local label, keeps
+                # configuration offline. A bad login must not break Git auth.
+                login = entry.get("login")
+                if not isinstance(login, str) or not GITHUB_LOGIN.fullmatch(login):
+                    login = "grasp-selected"
+                lines.append(f"{indent}  user: {json.dumps(login)}")
             if kind == "gitlab_https":
                 protocol = "http" if entry["location"][0] == "http" else "https"
                 lines.append(f"{indent}  api_protocol: {protocol}")

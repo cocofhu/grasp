@@ -233,7 +233,7 @@ func TestWorktreeGitSessionsKeepAuthorizationSeparate(t *testing.T) {
 			t.Fatal("repository-scoped token escaped its selected repository")
 		}
 		gh, err := os.ReadFile(filepath.Join(env["GH_CONFIG_DIR"], "hosts.yml"))
-		if err != nil || !strings.Contains(string(gh), want) || !strings.Contains(string(gh), "user: grasp-selected") {
+		if err != nil || !strings.Contains(string(gh), want) || !strings.Contains(string(gh), `user: "grasp-selected"`) {
 			t.Fatal("GitHub CLI configuration did not use the selected account")
 		}
 		gl, err := os.ReadFile(filepath.Join(env["GLAB_CONFIG_DIR"], "config.yml"))
