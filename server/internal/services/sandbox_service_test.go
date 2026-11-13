@@ -464,10 +464,10 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 	}
 }
 
-// Destroying a retired node sandbox (debug TTL sweep) must not revoke the MCP
-// token of a run whose next node is executing in another sandbox; only the last
-// sandbox of a finished run releases it.
-func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
+// Workflow run namespaces belong to the engine: destroying any of the run's
+// sandboxes — mid-run or after it finished — never touches the host's state
+// for that run, so the node executing elsewhere keeps its MCP session.
+func TestDestroyRunSandboxLeavesWorkflowMCPToEngine(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -476,7 +476,7 @@ func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
 	if err := db.Create(&models.Run{ID: "run-live", Status: "running"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	token := s.host.RegisterRun("run-live")
+	s.host.SetActiveNode("run-live", "test", &models.AgentCapabilities{Interaction: models.InteractionAuto})
 	upstream := &models.Sandbox{Name: "grasp-sb-impl", Purpose: "run", Status: "running", RunID: "run-live"}
 	current := &models.Sandbox{Name: "grasp-sb-test", Purpose: "run", Status: "running", RunID: "run-live"}
 	db.Create(upstream)
@@ -485,24 +485,71 @@ func TestDestroyRunSandboxKeepsMCPWhileRunInProgress(t *testing.T) {
 	if err := s.Destroy(ctx, upstream.ID); err != nil {
 		t.Fatalf("destroy upstream: %v", err)
 	}
-	if !s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("token revoked while the run is still in progress")
-	}
-
 	db.Model(&models.Run{}).Where("id = ?", "run-live").Update("status", "completed")
-	other := &models.Sandbox{Name: "grasp-sb-debug", Purpose: "run", Status: "running", RunID: "run-live"}
-	db.Create(other)
 	if err := s.Destroy(ctx, current.ID); err != nil {
 		t.Fatalf("destroy current: %v", err)
 	}
-	if !s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("token revoked while another sandbox of the finished run is alive")
+	if got := s.host.ActiveNode("run-live"); got != "test" {
+		t.Fatalf("sandbox teardown released the workflow run's MCP state: active=%q", got)
 	}
-	if err := s.Destroy(ctx, other.ID); err != nil {
-		t.Fatalf("destroy last: %v", err)
+}
+
+// Test and Solo sandboxes own their namespace: the row's token authorizes
+// while the row is usable, and destroying it ends and releases the scope.
+func TestSandboxScopesFollowSandboxRow(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	ctx := context.Background()
+
+	testRow := &models.Sandbox{Name: "grasp-sb-t", Purpose: "test", Status: "creating", RunID: "test-a", Token: "tok-test"}
+	soloRow := &models.Sandbox{Name: "grasp-sb-s", Purpose: SandboxPurposeSolo, Status: "running", RunID: "solo-a", Token: "tok-solo", Profile: "agentA", ThreadID: "sess"}
+	db.Create(testRow)
+	db.Create(soloRow)
+	session := models.SoloSession{ID: "sess", AgentName: "agentA", SandboxID: soloRow.ID, Status: models.SoloStatusStarting}
+	db.Create(&session)
+
+	if !s.host.AuthorizeRun("test-a", "tok-test") {
+		t.Fatal("creating test sandbox must authorize")
 	}
-	if s.host.AuthorizeRun("run-live", token) {
-		t.Fatal("last sandbox of a finished run must revoke the token")
+	if s.host.AuthorizeRun("test-a", "tok-solo") {
+		t.Fatal("another namespace's token authorized")
+	}
+	for _, status := range []string{models.SoloStatusStarting, models.SoloStatusRunning, models.SoloStatusStopping} {
+		db.Model(&session).Update("status", status)
+		if !s.host.AuthorizeRun("solo-a", "tok-solo") {
+			t.Fatalf("Solo session %s must authorize", status)
+		}
+	}
+	db.Model(&session).Update("status", models.SoloStatusClosed)
+	if s.host.AuthorizeRun("solo-a", "tok-solo") {
+		t.Fatal("closed Solo session still authorized")
+	}
+	db.Model(&session).Updates(map[string]any{"status": models.SoloStatusRunning, "sandbox_id": soloRow.ID + 100})
+	if s.host.AuthorizeRun("solo-a", "tok-solo") {
+		t.Fatal("replaced Solo sandbox still authorized")
+	}
+	db.Model(&session).Update("sandbox_id", soloRow.ID)
+	db.Model(soloRow).Update("profile", "missing-agent")
+	db.Model(&session).Update("agent_name", "missing-agent")
+	if s.host.AuthorizeRun("solo-a", "tok-solo") {
+		t.Fatal("Solo sandbox without its Agent still authorized")
+	}
+
+	db.Model(testRow).Update("status", "error")
+	if s.host.AuthorizeRun("test-a", "tok-test") {
+		t.Fatal("errored test sandbox still authorized")
+	}
+	db.Model(testRow).Update("status", "running")
+	s.host.SetActiveNode("test-a", "agent", nil)
+	if err := s.Destroy(ctx, testRow.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.host.AuthorizeRun("test-a", "tok-test") {
+		t.Fatal("destroyed test sandbox still authorized")
+	}
+	if got := s.host.ActiveNode("test-a"); got != "mcp" {
+		t.Fatalf("destroying a test sandbox must release its MCP state: active=%q", got)
 	}
 }
 

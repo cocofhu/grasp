@@ -22,7 +22,7 @@ func TestSoloToolSurfaceExcludesWorkflowActions(t *testing.T) {
 	}
 
 	const soloRun = "solo-session"
-	token := h.RegisterRun(soloRun)
+	token := grantScope(h, soloRun)
 	h.SetActiveNode(soloRun, "solo", caps)
 	names := list(soloRun)
 	for _, tool := range []string{"node_complete", "list_run_history", "get_history_detail", "page_state", liveUpdateTool} {

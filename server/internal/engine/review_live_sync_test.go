@@ -149,7 +149,7 @@ func TestWriteArtifactSyncsOutputsAndPendingBodyMd(t *testing.T) {
 		UpstreamNodeID: "page", UpstreamIteration: 1, BodyMd: oldHTML,
 		Actions: []models.GateAction{{ID: "approve", Label: "批准"}},
 	})
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, "page", capsPage)
 	eng.host.SetActiveReview(runID, true)
 
@@ -241,7 +241,7 @@ func TestSyncAfterPrimaryArtifactWriteSkipsNonPrimaryAndNonWaiting(t *testing.T)
 		RunID: runID, NodeID: "page", NodeType: "agent", Iteration: 1, Status: "running",
 		Outputs: map[string]any{"page": old},
 	})
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, "page", capsPage)
 
 	// Non-primary name: store updates, outputs untouched.
@@ -296,7 +296,7 @@ func TestSyncAfterPrimaryArtifactWriteStructuredProduct(t *testing.T) {
 		UpstreamNodeID: "research", UpstreamIteration: 1, BodyMd: "old-md",
 		Actions: []models.GateAction{{ID: "approve", Label: "批准"}},
 	})
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveReview(runID, true)
 	eng.host.SetActiveNode(runID, "research", capsResearch)
 

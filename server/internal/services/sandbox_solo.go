@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -128,11 +128,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	}
 
 	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
-	token := uuid.NewString()
-	if s.host != nil {
-		token = s.host.RegisterRun(runID)
-		s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
-	}
+	token := mcp.NewToken()
 	platformSpecs := []sandbox.MCPServerSpec{}
 	if base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/"); base != "" {
 		platformSpecs = append(platformSpecs, sandbox.MCPServerSpec{
@@ -148,10 +144,10 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstRepoURL(snapshots), Repos: snapshots,
 	}
 	if err := s.db.Create(row).Error; err != nil {
-		if s.host != nil {
-			s.host.UnregisterRun(runID)
-		}
 		return nil, err
+	}
+	if s.host != nil {
+		s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
 	}
 	extra := agentContainerExtra{Repos: snapshots, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, Restore: opts.Restore}
 	id := row.ID

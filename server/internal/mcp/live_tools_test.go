@@ -25,7 +25,7 @@ func (f *fakeLiveUpdater) ApplyLiveReport(_, _ string, r LiveReport) (*models.Li
 func liveHost(t *testing.T, caps *models.AgentCapabilities, enabled bool) (*Host, string, *fakeLiveUpdater) {
 	t.Helper()
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "p1", caps)
 	h.SetActiveReview("r1", caps.ReviewEnabled())
 	u := &fakeLiveUpdater{enabled: enabled, sess: &models.LiveSession{ID: "sid001", State: models.LiveStateReady, Variants: []models.LiveVariant{{N: 1}, {N: 2}}}}
@@ -52,7 +52,7 @@ func TestLiveUpdateListedOnlyWhenEnabled(t *testing.T) {
 		t.Fatal("an Agent without set_preview must not list live_update")
 	}
 	h3 := NewHost(&memStore{})
-	tok3 := h3.RegisterRun("r1")
+	tok3 := grantScope(h3, "r1")
 	h3.SetActiveNode("r1", "p1", capsPreview)
 	if listedNames(t, h3, tok3)["live_update"] {
 		t.Fatal("no updater: not listed")

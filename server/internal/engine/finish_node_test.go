@@ -347,25 +347,6 @@ func TestFinishNodeDecidedFailureSkipsWrapUpTurns(t *testing.T) {
 	}
 }
 
-func TestHandoffTargetsPassThroughGate(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "impl", Type: "agent"},
-			{ID: "gate", Type: "human_gate"},
-			{ID: "test", Type: "agent"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "impl", Target: "gate"},
-			{ID: "e2", Source: "gate", SourceHandle: "approve", Target: "test"},
-			{ID: "e3", Source: "gate", SourceHandle: "reject", Target: "impl"},
-		},
-	}
-	got := handoffTargets(g, g.FindNode("impl"))
-	if len(got) != 2 || got[0].NodeID != "gate" || got[1].NodeID != "test" || got[1].Outlet != "success" {
-		t.Fatalf("targets = %+v", got)
-	}
-}
-
 func TestUpstreamHandoffPassesThroughGate(t *testing.T) {
 	eng, _ := setupEngine(t)
 	c := &execCtx{

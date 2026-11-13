@@ -45,10 +45,11 @@ func bareEngine(t *testing.T) (*Engine, *gorm.DB) {
 		db: db, provider: &fakeProvider{host: host}, host: host, store: arts,
 		broker: NewBroker(), sem: newSema(1),
 		wake: make(chan struct{}, 1), stop: make(chan struct{}),
-		tokens: map[string]string{}, resumeLocks: map[string]*sync.Mutex{},
-		execRuns: map[string]bool{}, execGen: map[string]uint64{},
+		resumeLocks: map[string]*sync.Mutex{},
+		execRuns:    map[string]bool{}, execGen: map[string]uint64{},
 		adoptedSandboxes: map[string]bool{},
 	}
+	e.attachHost()
 	return e, db
 }
 

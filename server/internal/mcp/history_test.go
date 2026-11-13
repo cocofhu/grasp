@@ -141,7 +141,7 @@ func TestMcpCallTrace(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-trace"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	h.SetActiveNode(runID, "n1", capsPlain)
 
 	call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_artifact","arguments":{"name":"page.html","content":"<h1>hi</h1>"}}}`)
@@ -180,7 +180,7 @@ func TestPeekMcpCallsAndHostHooks(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-peek"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	h.SetActiveNode(runID, "n1", capsPlain)
 
 	if peek := h.PeekMcpCalls(runID, "n1"); peek != nil {

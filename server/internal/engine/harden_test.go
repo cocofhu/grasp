@@ -42,10 +42,10 @@ func TestDoRollbackPreservesCarriedLastError(t *testing.T) {
 	}
 }
 
-// TestLoadCtxRestoresMcpTokenAfterRestart simulates a server restart: the
-// in-memory token map is empty, but the run persisted its MCP token. loadCtx
-// must re-bind it (engine map + host) so resumed sandbox MCP calls authorize.
-func TestLoadCtxRestoresMcpTokenAfterRestart(t *testing.T) {
+// TestLoadCtxUsesPersistedMcpToken simulates a server restart: nothing about
+// the run is in memory, yet loadCtx hands the persisted token to the sandbox
+// and the host authorizes it from the run row alone.
+func TestLoadCtxUsesPersistedMcpToken(t *testing.T) {
 	eng, db := setupEngine(t)
 
 	const tok = "restored-token-abc"
@@ -57,11 +57,6 @@ func TestLoadCtxRestoresMcpTokenAfterRestart(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 
-	// Before restore: the host must reject the token (nothing registered).
-	if _, err := eng.host.ListArtifacts("tok1", tok); err == nil {
-		t.Fatalf("expected unauthorized before restore")
-	}
-
 	c, err := eng.loadCtx("tok1")
 	if err != nil {
 		t.Fatalf("load ctx: %v", err)
@@ -69,14 +64,7 @@ func TestLoadCtxRestoresMcpTokenAfterRestart(t *testing.T) {
 	if c.token != tok {
 		t.Errorf("ctx token = %q, want %q", c.token, tok)
 	}
-	eng.mu.Lock()
-	inMem := eng.tokens["tok1"]
-	eng.mu.Unlock()
-	if inMem != tok {
-		t.Errorf("engine token map = %q, want %q", inMem, tok)
-	}
-	// After restore: the same token authorizes against the host again.
 	if _, err := eng.host.ListArtifacts("tok1", tok); err != nil {
-		t.Errorf("token should authorize after restore, got %v", err)
+		t.Errorf("persisted token should authorize, got %v", err)
 	}
 }

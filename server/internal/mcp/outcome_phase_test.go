@@ -33,7 +33,7 @@ func hasTool(names []string, want string) bool {
 // omits node_complete and tools/call fails as unknown without teaching.
 func TestGraspPhase1HidesNodeComplete(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-grasp")
+	tok := grantScope(h, "r-grasp")
 	h.SetActiveNode("r-grasp", "predev", capsClarify)
 
 	names := toolNamesFromList(t, h, "r-grasp", tok)
@@ -57,7 +57,7 @@ func TestGraspPhase1HidesNodeComplete(t *testing.T) {
 // tools/list includes the tool, generation bumps, and call succeeds.
 func TestGraspPhase2ExposesNodeComplete(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-grasp2")
+	tok := grantScope(h, "r-grasp2")
 	h.SetActiveNode("r-grasp2", "predev", capsClarify)
 
 	gen0 := h.ToolsListGeneration("r-grasp2")
@@ -85,7 +85,7 @@ func TestGraspPhase2ExposesNodeComplete(t *testing.T) {
 // TestNonGraspAlwaysListsNodeComplete locks g3.3: implement/research keep the tool.
 func TestNonGraspAlwaysListsNodeComplete(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-impl")
+	tok := grantScope(h, "r-impl")
 	h.SetActiveNode("r-impl", "n1", capsImplement)
 
 	names := toolNamesFromList(t, h, "r-impl", tok)
@@ -100,7 +100,7 @@ func TestNonGraspAlwaysListsNodeComplete(t *testing.T) {
 
 func TestListedToolsJSONRoundTrip(t *testing.T) {
 	h := NewHost(&memOutcomeStore{})
-	tok := h.RegisterRun("r-json")
+	tok := grantScope(h, "r-json")
 	h.SetActiveNode("r-json", "n", capsClarify)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
 	st, resp := h.ServeRPC("r-json", tok, body)

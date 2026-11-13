@@ -30,8 +30,7 @@ func TestIdenticalRewriteStillFreshAfterRestart(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	tok := eng.host.RegisterRun(runID)
-	t.Cleanup(func() { eng.host.UnregisterRun(runID) })
+	tok := grantRunScope(t, eng, runID)
 	if _, err := eng.host.WriteArtifact(runID, tok, "n", mcp.ResearchArtifactName, body, "json"); err != nil {
 		t.Fatal(err)
 	}

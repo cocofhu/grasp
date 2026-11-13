@@ -490,29 +490,17 @@ func MergeOutcomeOutputs(dst map[string]any, o NodeOutcome) map[string]any {
 	return dst
 }
 
-// SetActiveDownstream records who consumes the active node's handoff, so
-// node_complete can require one. An empty list clears it (no requirement).
-func (h *Host) SetActiveDownstream(runID, nodeID string, targets []models.HandoffTarget) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.downstream == nil {
-		h.downstream = map[string][]models.HandoffTarget{}
-	}
-	key := runID + "|" + nodeID
-	if len(targets) == 0 {
-		delete(h.downstream, key)
-		return
-	}
-	h.downstream[key] = targets
-}
-
-// ActiveDownstream returns the handoff consumers of (runID, nodeID). Unknown
-// (e.g. after a restart before the engine re-entered the node) returns nil and
-// node_complete does not enforce a handoff.
+// ActiveDownstream returns the handoff consumers of (runID, nodeID), resolved
+// from the run graph on every call so a restart or another replica enforces
+// the same handoff contract. Nil means no handoff is required.
 func (h *Host) ActiveDownstream(runID, nodeID string) []models.HandoffTarget {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.downstream[runID+"|"+nodeID]
+	src := h.downstreamSrc
+	h.mu.RUnlock()
+	if src == nil {
+		return nil
+	}
+	return src(runID, nodeID)
 }
 
 // validateHandoff enforces the handoff contract for a node with downstream.

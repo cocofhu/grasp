@@ -193,7 +193,7 @@ func TestMCPEmbedOrigin(t *testing.T) {
 	seedAppPreviewReview(t, hn, "run-emb-mcp", "ap1")
 	seedDirectPreview(t, hn, "run-emb-mcp", "ap1")
 	ticket := issueSessionTicket(t, hn, "run-emb-mcp", "ap1")
-	tok := hn.host.RegisterRun("run-emb-mcp")
+	tok := runToken(t, hn, "run-emb-mcp")
 
 	path := "/mcp/runs/run-emb-mcp/embed-origin?nodeId=ap1&ticket=" + ticket
 	if w := hn.doEmbed(http.MethodGet, path, nil, nil); w.Code != http.StatusUnauthorized {

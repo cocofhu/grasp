@@ -7,38 +7,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestHandoffTargetsLooksThroughPassThrough(t *testing.T) {
-	g := models.Graph{
-		Nodes: []models.Node{
-			{ID: "impl", Type: "agent", Label: "实现"},
-			{ID: "route", Type: "branch"},
-			{ID: "test", Type: "agent", Label: "测试评审"},
-			{ID: "gate", Type: "human_gate", Label: "人工审批"},
-			{ID: "output", Type: "output"},
-		},
-		Edges: []models.Edge{
-			{ID: "e1", Source: "impl", Target: "route"},
-			{ID: "e2", Source: "route", Target: "test", SourceHandle: "a"},
-			{ID: "e3", Source: "route", Target: "output", SourceHandle: "b"},
-			{ID: "e4", Source: "impl", Target: "gate", Kind: models.EdgeFailure},
-			{ID: "e5", Source: "test", Target: "output"},
-		},
-	}
-	got := handoffTargets(g, g.FindNode("impl"))
-	if len(got) != 2 {
-		t.Fatalf("targets = %+v", got)
-	}
-	if got[0].NodeID != "test" || got[0].Outlet != "success" || got[0].Label != "测试评审" {
-		t.Errorf("through branch = %+v", got[0])
-	}
-	if got[1].NodeID != "gate" || got[1].Outlet != "failure" {
-		t.Errorf("failure edge = %+v", got[1])
-	}
-	if out := handoffTargets(g, g.FindNode("test")); len(out) != 0 {
-		t.Errorf("output sink is not a handoff consumer: %+v", out)
-	}
-}
-
 func handoffGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{

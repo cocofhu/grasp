@@ -5,11 +5,13 @@
 // at run start; sandboxes connect in using an injected mcp.json. Every
 // write/read/list is scoped to that run's namespace and authorized by a
 // token whose binding to run_id is verified, so run A can never see run
-// B's artifacts. The token is revoked when the run ends.
+// B's artifacts. A token is valid exactly while the namespace's owner (the
+// workflow run, Solo session, test sandbox …) is live; see ScopeSource.
 package mcp
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/rs/zerolog/log"
 )
 
 // ErrUnauthorized is returned when a token does not match the run scope.
@@ -81,7 +84,6 @@ type ArtifactDeleter interface {
 // Host manages per-run scoped endpoints and tokens.
 type Host struct {
 	mu         sync.RWMutex
-	tokens     map[string]string                    // runID -> token
 	active     map[string]string                    // runID -> currently-executing nodeID
 	activeCaps map[string]*models.AgentCapabilities // runID -> active node's Agent capabilities
 	// activeReview marks runs whose currently-executing node is in the post-run
@@ -108,19 +110,19 @@ type Host struct {
 	// conversationHistory reads the current Solo conversation from its original
 	// message store. The run token supplies scope; callers never choose a thread.
 	conversationHistory ConversationHistoryProvider
-	// tokenSrc is the persistence-backed fallback for authorize: given a runID
-	// it returns the run's persisted MCP token and whether the run still has a
-	// live sandbox. It lets a token outlive the in-memory registration (run
-	// finished / server restarted) for exactly as long as a sandbox for the run
-	// exists — i.e. token lifetime tracks sandbox lifetime. Nil ⇒ no fallback.
-	tokenSrc RunTokenSource
+	// scopes are consulted in order by authorize; the first that owns a runID
+	// decides. No scope source ⇒ every token is rejected.
+	scopes []ScopeSource
+	// downstreamSrc resolves a node's handoff consumers for node_complete.
+	// Nil ⇒ no handoff requirement.
+	downstreamSrc DownstreamSource
 	// activeSrc is the persistence-backed fallback for ActiveNode/ActiveCaps:
 	// given a runID it resolves the run's current node id + capabilities from
-	// the DB. It mirrors tokenSrc for the capability gate: when the in-memory
-	// SetActiveNode registration is missing — server restarted mid-run, or the
-	// MCP call is served by a replica that never executed the node (e.g. a
-	// review sandbox kept alive during waiting_human) — the gate would
-	// otherwise see no capabilities and wrongly reject set_preview / set_*.
+	// the DB. When the in-memory SetActiveNode registration is missing —
+	// server restarted mid-run, or the MCP call is served by a replica that
+	// never executed the node (e.g. a review sandbox kept alive during
+	// waiting_human) — the gate would otherwise see no capabilities and
+	// wrongly reject set_preview / set_*.
 	// Nil ⇒ no fallback. See ActiveCaps.
 	activeSrc ActiveNodeSource
 	// Preview port registrations (set_preview); keyed runID|nodeID.
@@ -150,15 +152,8 @@ type Host struct {
 	// toolsListGen increments whenever the flag flips; HTTP sessions receive
 	// notifications/tools/list_changed and use the generation to recover on reconnect.
 	outcomeAllowed map[string]bool
-	// downstream lists each active node's handoff consumers (runID|nodeID).
-	downstream   map[string][]models.HandoffTarget
-	toolsListGen map[string]int
-	toolSessions map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
-	// closedSessions are session IDs the client explicitly DELETEd (runID ->
-	// sid -> close order); they stay terminated instead of being re-adopted.
-	// Bounded per run; the oldest is evicted first.
-	closedSessions map[string]map[string]uint64
-	closedSeq      uint64
+	toolsListGen   map[string]int
+	toolSessions   map[string]map[string]*toolSession // runID -> MCP session ID -> subscription
 	// outcomeValidator is DefaultThenRPC (see ChainedOutcomeValidator). Nil
 	// means DefaultOutcomeValidator only.
 	outcomeValidator OutcomeValidator
@@ -199,9 +194,15 @@ type ArtifactPreviewFunc func(runID, nodeID, name string) error
 // intended for redaction by the implementation). nodeID is ActiveNode at call time.
 type AuditHook func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool)
 
-// RunTokenSource resolves a run's persisted MCP token and whether the run still
-// has a live sandbox. ok is false when the run is unknown.
-type RunTokenSource func(runID string) (token string, sandboxAlive bool, ok bool)
+// ScopeSource is one namespace owner's authorization rule. owned reports
+// whether runID belongs to this owner; when it does, token is the bound token
+// and live whether the owner still grants access. Every call reads the
+// owner's current state, so a token ends with its owner without anyone
+// revoking it.
+type ScopeSource func(runID string) (token string, live, owned bool)
+
+// DownstreamSource resolves the handoff consumers of a run's node.
+type DownstreamSource func(runID, nodeID string) []models.HandoffTarget
 
 // ActiveNodeSource resolves a run's current node id and capabilities from
 // persistence. ok is false when the run has no resolvable active node.
@@ -210,7 +211,6 @@ type ActiveNodeSource func(runID string) (nodeID string, caps *models.AgentCapab
 // NewHost builds a host backed by the given store.
 func NewHost(store Store) *Host {
 	return &Host{
-		tokens:         map[string]string{},
 		active:         map[string]string{},
 		activeCaps:     map[string]*models.AgentCapabilities{},
 		activeReview:   map[string]bool{},
@@ -233,9 +233,20 @@ func NewHost(store Store) *Host {
 // list_run_history / get_history_detail tools.
 func (h *Host) SetHistoryProvider(p HistoryProvider) { h.history = p }
 
-// SetRunTokenSource wires the persistence-backed authorize fallback (see
-// RunTokenSource / authorize).
-func (h *Host) SetRunTokenSource(src RunTokenSource) { h.tokenSrc = src }
+// AddScopeSource registers a namespace owner's authorization rule. Call
+// during wiring, before the host serves requests.
+func (h *Host) AddScopeSource(src ScopeSource) {
+	h.mu.Lock()
+	h.scopes = append(h.scopes, src)
+	h.mu.Unlock()
+}
+
+// SetDownstreamSource wires the handoff-consumer lookup used by node_complete.
+func (h *Host) SetDownstreamSource(src DownstreamSource) {
+	h.mu.Lock()
+	h.downstreamSrc = src
+	h.mu.Unlock()
+}
 
 // SetActiveNodeSource wires the persistence-backed ActiveNode/ActiveCaps
 // fallback (see ActiveNodeSource / ActiveCaps).
@@ -457,53 +468,74 @@ func (h *Host) TakePendingForms(runID, nodeID string) []models.ReactForm {
 	return forms
 }
 
-// RegisterRun provisions a scoped endpoint for a run and returns its token.
-// Injected (along with the endpoint URL) into every sandbox of this run.
-func (h *Host) RegisterRun(runID string) string {
-	tok := newToken()
-	h.mu.Lock()
-	h.tokens[runID] = tok
-	h.mu.Unlock()
-	return tok
+// Denial reasons reported by checkScope (also used as log values).
+const (
+	scopeUnknown  = "unknown_scope"
+	scopeEnded    = "scope_ended"
+	tokenMismatch = "token_mismatch"
+)
+
+// checkScope asks the owning ScopeSource whether token may act on runID.
+// It returns "" when authorized, otherwise the denial reason.
+func (h *Host) checkScope(runID, token string) string {
+	h.mu.RLock()
+	scopes := h.scopes
+	h.mu.RUnlock()
+	for _, src := range scopes {
+		want, live, owned := src(runID)
+		if !owned {
+			continue
+		}
+		if !live {
+			return scopeEnded
+		}
+		if want == "" || token == "" || subtle.ConstantTimeCompare([]byte(want), []byte(token)) != 1 {
+			return tokenMismatch
+		}
+		return ""
+	}
+	return scopeUnknown
 }
 
-// RestoreRun re-binds a previously-issued token to a run without minting a new
-// one. Used on resume after a restart (the token was persisted on the Run) so
-// in-sandbox MCP calls for the resumed run authorize again. No-op for an empty
-// token.
-func (h *Host) RestoreRun(runID, token string) {
-	if token == "" {
+// scopeLive reports whether runID's owner still grants access.
+func (h *Host) scopeLive(runID string) bool {
+	h.mu.RLock()
+	scopes := h.scopes
+	h.mu.RUnlock()
+	for _, src := range scopes {
+		if _, live, owned := src(runID); owned {
+			return live
+		}
+	}
+	return false
+}
+
+// authorize verifies token is bound to runID and its owner is still live.
+func (h *Host) authorize(runID, token string) bool {
+	return h.checkScope(runID, token) == ""
+}
+
+// ReleaseRun drops the in-memory state the host keeps for runID: tool
+// sessions, active node, buffered outcomes / calls / questions and change
+// stamps. It does not affect authorization. It is refused while the owner is
+// still live, so a caller with the wrong timing cannot cut off a node that is
+// executing; release only after the owner's ended state is persisted.
+func (h *Host) ReleaseRun(runID, reason string) {
+	if h.scopeLive(runID) {
+		log.Warn().Str("run_id", runID).Str("reason", reason).Msg("mcp release refused: scope still live")
 		return
 	}
 	h.mu.Lock()
-	h.tokens[runID] = token
-	h.mu.Unlock()
-}
-
-// UnregisterRun revokes the run token and closes the endpoint. This is the sole
-// mechanism that expires a token cached by authorize's fallback, so every path
-// that tears down a finished run's last live sandbox MUST call it (see
-// authorize). It must NOT be called while the run is still in progress or
-// another of its sandboxes is alive: it closes every tool session of the run,
-// including the one the currently executing node's agent holds.
-func (h *Host) UnregisterRun(runID string) {
-	h.mu.Lock()
-	delete(h.tokens, runID)
 	delete(h.active, runID)
 	delete(h.activeCaps, runID)
 	delete(h.activeReview, runID)
 	delete(h.pending, runID)
+	delete(h.pendingForms, runID)
 	delete(h.calls, runID)
 	delete(h.outcomes, runID)
 	h.closeToolSessionsLocked(runID)
 	delete(h.outcomeAllowed, runID)
 	delete(h.toolsListGen, runID)
-	delete(h.closedSessions, runID)
-	for key := range h.downstream {
-		if strings.HasPrefix(key, runID+"|") {
-			delete(h.downstream, key)
-		}
-	}
 	for _, m := range []map[string]uint64{h.markSeq, h.changeSeq} {
 		for key := range m {
 			if strings.HasPrefix(key, runID+"|") {
@@ -512,42 +544,7 @@ func (h *Host) UnregisterRun(runID string) {
 		}
 	}
 	h.mu.Unlock()
-}
-
-// authorize verifies the token is the one bound to runID. The fast path is the
-// in-memory registration (run actively executing here). When that misses — the
-// run finished (finish → UnregisterRun) or the server restarted with an empty
-// map — it falls back to the persisted token, honoring it for as long as the
-// run still has a live sandbox. This keeps the token valid for the whole
-// sandbox lifetime (in-turn + post-run debug retention) so a still-alive
-// sandbox agent can keep writing products instead of getting 401.
-//
-// INVARIANT: a successful fallback re-caches the token into h.tokens, after
-// which the fast path serves it WITHOUT re-checking sandboxAlive. Expiry is
-// therefore driven entirely by UnregisterRun: the engine calls it when the run
-// reaches a terminal status, and sandbox teardown calls it once a finished
-// run's last sandbox is gone; otherwise the token would stay valid until
-// restart even after the sandbox is gone.
-func (h *Host) authorize(runID, token string) bool {
-	if token == "" {
-		return false
-	}
-	h.mu.RLock()
-	want, ok := h.tokens[runID]
-	src := h.tokenSrc
-	h.mu.RUnlock()
-	if ok && want == token {
-		return true
-	}
-	if src != nil {
-		if persisted, alive, ok := src(runID); ok && alive && persisted != "" && persisted == token {
-			h.mu.Lock()
-			h.tokens[runID] = persisted
-			h.mu.Unlock()
-			return true
-		}
-	}
-	return false
+	log.Info().Str("run_id", runID).Str("reason", reason).Msg("mcp run released")
 }
 
 // WriteArtifact persists content under the run namespace. nodeID records
@@ -827,11 +824,11 @@ func (h *Host) PlanIncomplete(runID, token string) ([]string, error) {
 	return planIncomplete(doc), nil
 }
 
-// newToken mints a per-run MCP bearer token. crypto/rand failing is
+// NewToken mints a per-run MCP bearer token. crypto/rand failing is
 // catastrophic and must never yield a weak/predictable (all-zero) token that
 // would let any sandbox forge another run's identity — so we panic rather than
 // silently degrade authorization.
-func newToken() string {
+func NewToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic(fmt.Sprintf("mcp: crypto/rand unavailable, cannot mint run token: %v", err))

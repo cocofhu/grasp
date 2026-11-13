@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 )
 
 // memStore is an in-memory mcp.Store for the live test.
@@ -118,8 +119,8 @@ func TestCursorLiveRunAgent(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID := "live-run-1"
-	token := host.RegisterRun(runID)
-	defer host.UnregisterRun(runID)
+	token := mcptest.Grant(host, runID)
+	defer mcptest.End(host, runID)
 
 	image := os.Getenv("GRASP_SANDBOX_IMAGE")
 	gatewayURL := os.Getenv("GRASP_SANDBOX_GATEWAY_URL")

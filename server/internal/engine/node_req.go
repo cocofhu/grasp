@@ -68,9 +68,8 @@ func (e *Engine) nodeReq(c *execCtx, node *models.Node) runtime.NodeReq {
 
 	req.KeepAliveForReview = node.Caps.ReviewEnabled() || e.hasDownstreamReactGate(c, node)
 	if node.Type == "agent" {
-		req.Downstream = handoffTargets(c.graph, node)
+		req.Downstream = c.graph.HandoffTargets(node)
 		req.UpstreamHandoff = e.upstreamHandoff(c, node)
-		e.host.SetActiveDownstream(c.run.ID, node.ID, req.Downstream)
 	}
 	return req
 }

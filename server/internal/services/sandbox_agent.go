@@ -239,16 +239,14 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
 		if !extra.Resident {
 			s.invokeAgentDestroyHook(threadID, sharedToken)
-		} else if s.host != nil && runID != "" {
-			// Solo owns a run-scoped artifact MCP token even though its sandbox
-			// is resident. Revoke it when startup fails so the token cannot
-			// outlive the failed session.
-			s.host.UnregisterRun(runID)
 		}
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
 		})
+		if extra.Resident {
+			s.releaseSandboxScope(SandboxPurposeSolo, runID, "solo_sandbox_failed")
+		}
 		if extra.OnFail != nil {
 			extra.OnFail(err)
 		}
@@ -316,9 +314,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
 		if extra.Resident {
-			if s.host != nil && runID != "" {
-				s.host.UnregisterRun(runID)
-			}
+			s.releaseSandboxScope(SandboxPurposeSolo, runID, "solo_sandbox_removed")
 			if extra.OnFail != nil {
 				extra.OnFail(fmt.Errorf("sandbox record removed during start"))
 			}

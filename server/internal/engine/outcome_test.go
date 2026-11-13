@@ -59,7 +59,7 @@ func TestConsumeNodeOutcomeEmptyMCPSurface(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-empty-mcp"
 	nodeID := "research"
-	eng.host.RegisterRun(runID)
+	grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	c := &execCtx{run: &models.Run{ID: runID}}
@@ -86,7 +86,7 @@ func TestConsumeNodeOutcomeMissingNodeComplete(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-has-mcp"
 	nodeID := "research"
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	st, resp := eng.host.ServeRPC(runID, tok, []byte(
@@ -123,7 +123,7 @@ func TestConsumeNodeOutcomeAdoptsArtifactAfterFlush(t *testing.T) {
 	runID := "r-adopt"
 	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "react_rlze"
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsClarify)
 
 	// Business call then node_complete (writes Host mark + artifact).
@@ -182,7 +182,7 @@ func TestConsumeNodeOutcomeStateRunOnlyNotEmptySurface(t *testing.T) {
 	eng, db := setupEngine(t)
 	runID := "r-state-only"
 	nodeID := "research"
-	eng.host.RegisterRun(runID)
+	grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 
 	now := time.Now()
@@ -212,7 +212,7 @@ func TestConsumeNodeOutcomeCorruptArtifact(t *testing.T) {
 	runID := "r-corrupt"
 	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "test"
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsTest)
 	if _, err := eng.store.Save(runID, nodeID, mcp.NodeOutcomeArtifactName, "json", "{not-json"); err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func TestConsumeNodeOutcomeAdoptsFailedArtifact(t *testing.T) {
 	runID := "r-failed-mark"
 	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "implement"
-	eng.host.RegisterRun(runID)
+	grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsImplement)
 	if _, err := eng.store.Save(runID, nodeID, mcp.NodeOutcomeArtifactName, "json",
 		mcp.OutcomeJSON(mcp.NodeOutcome{Status: mcp.OutcomeFailed, Error: "plan incomplete"})); err != nil {
@@ -264,7 +264,7 @@ func TestNodeReqDoesNotClearOutcome(t *testing.T) {
 	eng, _ := setupEngine(t)
 	runID := "r-keep-mark"
 	nodeID := "work"
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsPlain)
 	st, resp := eng.host.ServeRPC(runID, tok, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success","summary":"ok"}}}`))
@@ -287,7 +287,7 @@ func TestStartNodeRunClearsOutcome(t *testing.T) {
 	runID := "r-clear-visit"
 	seedArtifactOwner(t, eng.db, runID)
 	nodeID := "research"
-	tok := eng.host.RegisterRun(runID)
+	tok := grantRunScope(t, eng, runID)
 	eng.host.SetActiveNode(runID, nodeID, capsResearch)
 	_, _ = eng.host.ServeRPC(runID, tok, []byte(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"node_complete","arguments":{"status":"success"}}}`))

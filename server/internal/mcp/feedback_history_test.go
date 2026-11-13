@@ -75,7 +75,7 @@ func TestListAndReadTreatFeedbackNamesAsAbsent(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "r"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	for _, name := range []string{"research.json", FeedbackIndexArtifactName, "feedback.review.design.i1.json", "plan.json"} {
 		if _, err := store.Save(runID, "design", name, "json", `{"body":"`+name+`"}`); err != nil {
 			t.Fatal(err)

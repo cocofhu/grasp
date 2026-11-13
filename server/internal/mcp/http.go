@@ -33,8 +33,8 @@ type toolStream struct {
 // sessionless POST clients remain supported; initialize assigns a session ID
 // for clients that listen for tools/list_changed notifications.
 func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token string) {
-	if !h.AuthorizeRun(runID, token) {
-		log.Warn().Str("run_id", runID).Str("method", r.Method).Msg("mcp http unauthorized")
+	if reason := h.checkScope(runID, token); reason != "" {
+		log.Warn().Str("run_id", runID).Str("method", r.Method).Str("reason", reason).Msg("mcp http unauthorized")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -53,15 +53,15 @@ func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// Session state is in-memory and lost on restart or run re-registration,
+		// Session state is in-memory and lost on restart or another replica,
 		// while the agent keeps sending its old ID (cursor-agent does not
 		// re-initialize on 404). The ID is not a credential — the bearer token
 		// already authorized this run — so re-adopt it instead of failing.
-		if !h.adoptToolSession(runID, token, sid) {
+		if !h.adoptToolSession(runID, sid) {
 			http.Error(w, "MCP session not found", http.StatusNotFound)
 			return
 		}
-		log.Warn().Str("run_id", runID).Str("method", r.Method).Msg("mcp http re-adopted unknown session")
+		log.Warn().Str("run_id", runID).Str("node_id", h.ActiveNode(runID)).Str("method", r.Method).Msg("mcp http re-adopted unknown session")
 	}
 	switch r.Method {
 	case http.MethodPost:
@@ -73,12 +73,7 @@ func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token
 		status, resp := h.ServeRPC(runID, token, body)
 		var req rpcRequest
 		if json.Unmarshal(body, &req) == nil && req.Method == "initialize" && status == http.StatusOK {
-			id := h.newToolSession(runID, token)
-			if id == "" {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			w.Header().Set(mcpSessionHeader, id)
+			w.Header().Set(mcpSessionHeader, h.newToolSession(runID))
 		}
 		if resp != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -124,14 +119,9 @@ func acceptsEventStream(accept string) bool {
 	return false
 }
 
-func (h *Host) newToolSession(runID, token string) string {
+func (h *Host) newToolSession(runID string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	// Recheck under the lock so UnregisterRun cannot leave an orphan session
-	// after the transport's initial authorization.
-	if token == "" || h.tokens[runID] != token {
-		return ""
-	}
 	id := uuid.NewString()
 	if h.toolSessions[runID] == nil {
 		h.toolSessions[runID] = map[string]*toolSession{}
@@ -140,17 +130,12 @@ func (h *Host) newToolSession(runID, token string) string {
 	return id
 }
 
-const (
-	maxToolSessionIDLen = 128
-	// maxClosedToolSessions bounds the per-run tombstones of DELETEd sessions.
-	maxClosedToolSessions = 256
-)
+const maxToolSessionIDLen = 128
 
-// adoptToolSession registers a client-supplied session ID for runID when the
-// token is still bound to the run. IDs must be short visible ASCII per the
-// Streamable HTTP spec. A session the client terminated (DELETE) or one live
-// under another run is never adopted.
-func (h *Host) adoptToolSession(runID, token, sid string) bool {
+// adoptToolSession registers a client-supplied session ID for an authorized
+// runID. IDs must be short visible ASCII per the Streamable HTTP spec. A
+// session live under another run is never adopted.
+func (h *Host) adoptToolSession(runID, sid string) bool {
 	if len(sid) > maxToolSessionIDLen {
 		return false
 	}
@@ -161,12 +146,6 @@ func (h *Host) adoptToolSession(runID, token, sid string) bool {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if token == "" || h.tokens[runID] != token {
-		return false
-	}
-	if _, closed := h.closedSessions[runID][sid]; closed {
-		return false
-	}
 	for other, sessions := range h.toolSessions {
 		if other != runID && sessions[sid] != nil {
 			return false
@@ -199,28 +178,6 @@ func (h *Host) deleteToolSession(runID, sid string) {
 			delete(h.toolSessions, runID)
 		}
 	}
-	if h.closedSessions == nil {
-		h.closedSessions = map[string]map[string]uint64{}
-	}
-	closed := h.closedSessions[runID]
-	if closed == nil {
-		closed = map[string]uint64{}
-		h.closedSessions[runID] = closed
-	}
-	if _, ok := closed[sid]; !ok && len(closed) >= maxClosedToolSessions {
-		var oldest string
-		var oldestAt uint64
-		for id, at := range closed {
-			if oldest == "" || at < oldestAt {
-				oldest, oldestAt = id, at
-			}
-		}
-		delete(closed, oldest)
-		log.Warn().Str("run_id", runID).Str("evicted_session", oldest).Int("cap", maxClosedToolSessions).
-			Msg("mcp closed-session tombstones full; evicted oldest (it may be re-adopted)")
-	}
-	h.closedSeq++
-	closed[sid] = h.closedSeq
 }
 
 func (h *Host) closeToolSessionsLocked(runID string) {

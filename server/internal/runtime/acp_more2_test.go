@@ -13,6 +13,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/textutil"
@@ -167,8 +168,8 @@ func TestSnapshotEvents(t *testing.T) {
 func TestRunAgentRetiresToStore(t *testing.T) {
 	store := newMemStore()
 	host := mcp.NewHost(store)
-	tok := host.RegisterRun("r")
-	t.Cleanup(func() { host.UnregisterRun("r") })
+	tok := mcptest.Grant(host, "r")
+	t.Cleanup(func() { mcptest.End(host, "r") })
 	mgr := newFakeManager(t, host, "r", "n", tok, func(int) chatFunc {
 		return func(int) turnAction {
 			return turnAction{narration: "ok", produces: map[string]string{"report.md": "x"}}

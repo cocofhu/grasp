@@ -14,6 +14,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -96,7 +97,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 	}
 
 	runID := "test-" + strings.ReplaceAll(filepath.Base(profile), "/", "") + "-" + randID()
-	token := s.host.RegisterRun(runID)
+	token := mcp.NewToken()
 	// Pre-allocate the container name so the "creating" record references the
 	// same container the background launch will create (keeps startup reconcile
 	// consistent even if the process restarts mid-launch).
@@ -108,7 +109,6 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
-		s.host.UnregisterRun(runID)
 		return nil, err
 	}
 	log.Info().Str("name", name).Str("profile", profile).Uint("id", row.ID).Msg("test sandbox creating")
@@ -132,7 +132,7 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	}
 
 	runID := "ptest-" + strings.ReplaceAll(filepath.Base(profile), "/", "") + "-" + randID()
-	token := s.host.RegisterRun(runID)
+	token := mcp.NewToken()
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
@@ -141,7 +141,6 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
-		s.host.UnregisterRun(runID)
 		return nil, err
 	}
 	log.Info().Str("name", name).Str("profile", profile).
@@ -170,11 +169,11 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("test sandbox start failed")
 		s.unregisterTestScheduler(token)
-		s.host.UnregisterRun(runID)
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
 		})
+		s.releaseSandboxScope("test", runID, "test_sandbox_failed")
 	}
 	// This runs detached from the originating request; a panic here would leave
 	// the row stuck in "creating" forever. Recover and route through fail() so
@@ -329,7 +328,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
 		s.unregisterTestScheduler(token)
-		s.host.UnregisterRun(runID)
+		s.releaseSandboxScope("test", runID, "test_sandbox_removed")
 		return
 	}
 	s.mu.Lock()
@@ -640,50 +639,25 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if isAgentSandboxPurpose(row.Purpose) {
 		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
 	} else if row.Purpose == SandboxPurposeSolo {
-		if s.host != nil && row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
 		defer s.invokeSoloDestroyHook(row.ID)
 	} else if row.Purpose == "test" {
 		s.unregisterTestScheduler(row.Token)
-		if row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
-	} else {
-		s.releaseRunMCP(row.RunID, row.ID)
 	}
-	return s.db.Delete(&models.Sandbox{}, id).Error
+	if err := s.db.Delete(&models.Sandbox{}, id).Error; err != nil {
+		return err
+	}
+	s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
+	return nil
 }
 
-// releaseRunMCP revokes a workflow run's MCP token and tool sessions when one
-// of its sandboxes is destroyed, but only once nothing can still use them: the
-// run must be finished (the engine revokes on terminal itself) and no other
-// sandbox row of the run may remain. Destroying a retired upstream node's
-// sandbox must not cut off the node that is executing right now.
-func (s *SandboxService) releaseRunMCP(runID string, exceptID uint) {
-	if strings.TrimSpace(runID) == "" || s.runStillActive(runID) {
+// releaseSandboxScope frees the host's in-memory state for a namespace the
+// sandbox owns (Solo / test) once its row is gone or errored. Workflow run
+// namespaces belong to the engine and are never released here.
+func (s *SandboxService) releaseSandboxScope(purpose, runID, reason string) {
+	if s.host == nil || runID == "" || (purpose != SandboxPurposeSolo && purpose != "test") {
 		return
 	}
-	var others int64
-	s.db.Model(&models.Sandbox{}).Where("run_id = ? AND id <> ?", runID, exceptID).Count(&others)
-	if others > 0 {
-		return
-	}
-	s.host.UnregisterRun(runID)
-}
-
-// runStillActive reports whether runID can still execute nodes (and so still
-// needs its MCP endpoint). A missing run row counts as finished.
-func (s *SandboxService) runStillActive(runID string) bool {
-	var run models.Run
-	if err := s.db.Select("status").Where("id = ?", runID).First(&run).Error; err != nil {
-		return false
-	}
-	switch run.Status {
-	case "queued", "running", "waiting_human":
-		return true
-	}
-	return false
+	s.host.ReleaseRun(runID, reason)
 }
 
 // CleanupIdle destroys every non-busy sandbox; returns (destroyed, skipped).
@@ -730,10 +704,8 @@ func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force boo
 			_ = os.RemoveAll(row.HomeDir)
 		}
 		s.unregisterTestScheduler(row.Token)
-		if row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
 		if err := s.db.Delete(&models.Sandbox{}, row.ID).Error; err == nil {
+			s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
 			destroyed++
 		}
 	}
@@ -919,20 +891,11 @@ func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sa
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}
-	switch row.Purpose {
-	case "test":
-		if row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
-	case SandboxPurposeSolo:
-		if s.host != nil && row.RunID != "" {
-			s.host.UnregisterRun(row.RunID)
-		}
+	if row.Purpose == SandboxPurposeSolo {
 		defer s.invokeSoloDestroyHook(row.ID)
-	default:
-		s.releaseRunMCP(row.RunID, row.ID)
 	}
 	s.db.Delete(&models.Sandbox{}, row.ID)
+	s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
 }
 
 func (s *SandboxService) isBusyRow(row *models.Sandbox) bool {

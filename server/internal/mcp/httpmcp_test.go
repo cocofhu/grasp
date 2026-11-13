@@ -76,7 +76,7 @@ func TestMCPDispatcher(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-x"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	// initialize
 	init := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
@@ -155,7 +155,7 @@ func TestPlanTools(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-plan"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	// set_plan is plan-only: rejected on a non-plan node.
 	h.SetActiveNode(runID, "impl", capsImplement)
@@ -234,7 +234,7 @@ func TestReviewPhaseTools(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-review"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	// A research node finished its automated run and is now in the review phase.
 	h.SetActiveNode(runID, "res", capsReviewWriting(models.SchemaResearch))
@@ -277,7 +277,7 @@ func TestStructuredTools(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-struct"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	// set_clarified_requirement is react-only: rejected on a non-react node.
 	h.SetActiveNode(runID, "n", capsPlain)
@@ -351,7 +351,7 @@ func TestSetArtifactPreview(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "run-preview"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 
 	h.SetActiveNode(runID, "n", capsPlain)
 	if _, isErr := toolText(t, call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_artifact_preview","arguments":{"name":"page.html"}}}`)); !isErr {
@@ -400,7 +400,7 @@ func TestClarifyAgentPreDevTools(t *testing.T) {
 			store := &memStore{}
 			h := NewHost(store)
 			runID := "run-" + nodeType
-			tok := h.RegisterRun(runID)
+			tok := grantScope(h, runID)
 			h.SetActiveNode(runID, "pre", capsClarify)
 
 			aq := call(t, h, runID, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask_question","arguments":{"questions":[{"prompt":"选哪个?","options":[{"label":"A"},{"label":"B"}]}]}}}`)
@@ -446,7 +446,7 @@ func TestUploadImageArtifactSniffsContent(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
 	runID := "sniff-run"
-	tok := h.RegisterRun(runID)
+	tok := grantScope(h, runID)
 	h.SetActiveNode(runID, "tst", capsTestReview)
 
 	ok, err := h.UploadImageArtifact(runID, tok, "tst", "shot.png", pngB64())

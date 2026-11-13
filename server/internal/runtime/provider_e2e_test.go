@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -41,8 +42,8 @@ func setupProviderBackend(t *testing.T, backend AcpBackend, chatFor func(attempt
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "run-1", "node-1"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	profiles := writeAgent(t, "test-agent", `{"acpBackend":"`+string(backend)+`","env":{"GRASP_CURSOR_API_KEY":"fake","GRASP_CLAUDE_API_KEY":"fake","GRASP_CODEBUDDY_API_KEY":"fake","GRASP_TRAE_API_KEY":"fake"}}`)
 	mgr := newFakeManager(t, host, runID, nodeID, tok, chatFor)
 	opts := testOpts()
@@ -174,8 +175,8 @@ func reactSetupBackend(t *testing.T, backend AcpBackend, chatFor func(attempt in
 	store := newMemStore()
 	host := mcp.NewHost(store)
 	runID, nodeID := "run-r", "node-r"
-	tok := host.RegisterRun(runID)
-	t.Cleanup(func() { host.UnregisterRun(runID) })
+	tok := mcptest.Grant(host, runID)
+	t.Cleanup(func() { mcptest.End(host, runID) })
 	profiles := writeAgent(t, "react-agent", `{"acpBackend":"`+string(backend)+`","env":{"GRASP_CURSOR_API_KEY":"fake","GRASP_CLAUDE_API_KEY":"fake","GRASP_CODEBUDDY_API_KEY":"fake","GRASP_TRAE_API_KEY":"fake"}}`)
 	mgr := newFakeManager(t, host, runID, nodeID, tok, chatFor)
 	opts := testOpts()

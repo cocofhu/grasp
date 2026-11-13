@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/filestore"
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -30,7 +31,7 @@ func TestArtifactFileMCPDeliveryAndHTTPRange(t *testing.T) {
 		return services.ArtifactTurn{SessionID: "session-files", TurnID: "user-1", SandboxID: 4}, nil
 	}
 	h.host.SetArtifactFiles(delivery)
-	token := h.host.RegisterRun("solo-files")
+	token := mcptest.Grant(h.host, "solo-files")
 	h.host.SetActiveNode("solo-files", "solo", nil)
 	call := func(tool string, args map[string]any, credential string) (models.ArtifactAttachment, bool, int) {
 		t.Helper()

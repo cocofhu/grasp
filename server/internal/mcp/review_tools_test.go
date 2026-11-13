@@ -22,7 +22,7 @@ var reviewPlanArgs = map[string]any{"goals": []any{map[string]any{"title": "ç»Ÿä
 func TestReviewPhaseKeepsDeclaredToolset(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "impl", capsImplement)
 
 	for _, review := range []bool{false, true} {
@@ -46,7 +46,7 @@ func TestReviewPhaseKeepsDeclaredToolset(t *testing.T) {
 
 func TestReviewPhaseNotForOtherNodeTypes(t *testing.T) {
 	h := NewHost(&memStore{})
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	h.SetActiveNode("r1", "t1", capsTestReview)
 	h.SetActiveReview("r1", true)
 	if txt, isErr := reviewCall(t, h, tok, "set_plan", reviewPlanArgs); !isErr {
@@ -57,7 +57,7 @@ func TestReviewPhaseNotForOtherNodeTypes(t *testing.T) {
 func TestOwnProductWriteStaysOnActiveNode(t *testing.T) {
 	store := &memStore{}
 	h := NewHost(store)
-	tok := h.RegisterRun("r1")
+	tok := grantScope(h, "r1")
 	if _, err := store.Save("r1", "plan_old", PlanArtifactName, "json", `{"goals":[]}`); err != nil {
 		t.Fatal(err)
 	}

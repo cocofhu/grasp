@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -136,7 +137,7 @@ func expectToolsChanged(t *testing.T, scan *bufio.Scanner) {
 
 func TestMCPStreamRefreshesCachedPhase1Tools(t *testing.T) {
 	h := newHarness(t)
-	token := h.host.RegisterRun("run-stream")
+	token := mcptest.Grant(h.host, "run-stream")
 	h.host.SetActiveNode("run-stream", "clarify", &models.AgentCapabilities{Interaction: models.InteractionClarify})
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
@@ -163,15 +164,15 @@ func TestMCPStreamRefreshesCachedPhase1Tools(t *testing.T) {
 	if c.tools()["node_complete"] || c.rpc(call)["isError"] != true {
 		t.Fatal("revoking Phase2 must hide and reject node_complete")
 	}
-	h.host.UnregisterRun("run-stream")
+	mcptest.End(h.host, "run-stream")
 	if scan.Scan() {
-		t.Fatalf("unregister must close stream, got %q", scan.Text())
+		t.Fatalf("ending the scope must close the stream, got %q", scan.Text())
 	}
 }
 
 func TestMCPStreamSessionsReconnectAndDelete(t *testing.T) {
 	h := newHarness(t)
-	token := h.host.RegisterRun("run-stream")
+	token := mcptest.Grant(h.host, "run-stream")
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
 	a := newMCPHTTPClient(t, srv, "run-stream", token)
@@ -194,10 +195,12 @@ func TestMCPStreamSessionsReconnectAndDelete(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || current.Scan() {
 		t.Fatal("DELETE must close only its own session's stream")
 	}
+	// The session ID is not a credential: a client reusing a deleted ID with
+	// a valid token gets a fresh session instead of a dead MCP connection.
 	resp = a.request(http.MethodPost, `{"jsonrpc":"2.0","id":4,"method":"ping"}`, "")
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("deleted session should be 404, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reused session ID should be re-adopted, got %d", resp.StatusCode)
 	}
 	h.host.SetOutcomeAllowed("run-stream", false)
 	expectToolsChanged(t, other)
@@ -208,16 +211,16 @@ func TestMCPStreamSessionsReconnectAndDelete(t *testing.T) {
 	h.host.SetOutcomeAllowed("run-stream", true)
 	_, reconnected := b.listen()
 	expectToolsChanged(t, reconnected)
-	h.host.UnregisterRun("run-stream")
+	mcptest.End(h.host, "run-stream")
 	if reconnected.Scan() {
-		t.Fatal("unregister must close reconnected stream")
+		t.Fatal("ending the scope must close the reconnected stream")
 	}
 }
 
 func TestMCPStreamRunIsolationAndAuthorization(t *testing.T) {
 	h := newHarness(t)
-	tokenA := h.host.RegisterRun("run-a")
-	tokenB := h.host.RegisterRun("run-b")
+	tokenA := mcptest.Grant(h.host, "run-a")
+	tokenB := mcptest.Grant(h.host, "run-b")
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
 	a := newMCPHTTPClient(t, srv, "run-a", tokenA)
@@ -243,8 +246,8 @@ func TestMCPStreamRunIsolationAndAuthorization(t *testing.T) {
 	h.host.SetOutcomeAllowed("run-a", true)
 	_, stream := a.listen()
 	expectToolsChanged(t, stream) // catches a change made before the first GET
-	h.host.UnregisterRun("run-a")
+	mcptest.End(h.host, "run-a")
 	if stream.Scan() {
-		t.Fatal("unregister must close stream")
+		t.Fatal("ending the scope must close the stream")
 	}
 }

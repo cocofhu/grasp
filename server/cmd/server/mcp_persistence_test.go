@@ -63,6 +63,7 @@ func TestSoloHistoryMCPRestoresScopeAndRevokesOldSandbox(t *testing.T) {
 	preview := services.NewPreviewService(db, nil)
 	preview.SetAgents(agents)
 	host := mcp.NewHost(services.NewArtifactService(db))
+	host.AddScopeSource(services.SandboxScopes(db, agents))
 	wireArtifactMCPPersistence(host, db, services.NewRunService(db), preview)
 	host.SetConversationHistoryProvider(services.NewConversationHistoryService(db, func(runID string) (models.Sandbox, bool) { row, _, ok := preview.SoloMCPBinding(runID); return row, ok }))
 	request := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_history","arguments":{"view":"messages"}}}`)
@@ -99,7 +100,7 @@ func TestSoloHistoryMCPRestoresScopeAndRevokesOldSandbox(t *testing.T) {
 }
 
 func TestArtifactMCPPersistenceRestoresSoloAfterRestart(t *testing.T) {
-	for _, scenario := range []string{"running", "wrong token", "closed", "replaced sandbox", "missing agent", "no capabilities", "workflow database error"} {
+	for _, scenario := range []string{"running", "wrong token", "closed", "replaced sandbox", "missing agent", "no capabilities", "database error"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := persistenceDB(t)
 			caps := &models.AgentCapabilities{Interaction: models.InteractionAuto, Tools: []string{models.ToolSetPreview}}
@@ -122,15 +123,16 @@ func TestArtifactMCPPersistenceRestoresSoloAfterRestart(t *testing.T) {
 			if err := db.Create(&session).Error; err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "workflow database error" {
-				if err := db.Migrator().DropTable(&models.Run{}); err != nil {
+			if scenario == "database error" {
+				if err := db.Migrator().DropTable(&models.SoloSession{}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			preview := services.NewPreviewService(db, nil)
 			preview.SetAgents(agents)
-			// A fresh host has neither a registered token nor an active node.
+			// A fresh host has no in-memory state for the namespace.
 			host := mcp.NewHost(services.NewArtifactService(db))
+			host.AddScopeSource(services.SandboxScopes(db, agents))
 			wireArtifactMCPPersistence(host, db, services.NewRunService(db), preview)
 			token := sb.Token
 			if scenario == "wrong token" {
@@ -159,8 +161,9 @@ func TestArtifactMCPPersistenceRestoresSoloAfterRestart(t *testing.T) {
 			if err := db.Model(&session).Update("status", models.SoloStatusClosed).Error; err != nil {
 				t.Fatal(err)
 			}
-			// Sandbox teardown revokes cached registrations through this hook.
-			host.UnregisterRun(sb.RunID)
+			// Closing the session ends the scope; teardown then releases the
+			// host's state for it.
+			host.ReleaseRun(sb.RunID, "test")
 			if _, err := host.WriteArtifact(sb.RunID, token, "solo", "notes.txt", "after close", "text"); !errors.Is(err, mcp.ErrUnauthorized) {
 				t.Fatalf("closed Solo binding remained authorized: %v", err)
 			}
@@ -171,12 +174,15 @@ func TestArtifactMCPPersistenceRestoresSoloAfterRestart(t *testing.T) {
 	}
 }
 
-func TestArtifactMCPPersistenceKeepsWorkflowAndManualVisit(t *testing.T) {
+// Workflow authorization belongs to the engine; the wiring only resolves which
+// node a call belongs to: the active visit, or between visits the node owning
+// the latest sandbox.
+func TestArtifactMCPPersistenceResolvesWorkflowNode(t *testing.T) {
 	for _, manual := range []bool{false, true} {
 		t.Run(map[bool]string{false: "workflow", true: "manual takeover"}[manual], func(t *testing.T) {
 			db := persistenceDB(t)
 			caps := &models.AgentCapabilities{Interaction: models.InteractionAuto}
-			run := models.Run{ID: "workflow-run", Status: "completed", McpToken: "workflow-token", Graph: models.Graph{Nodes: []models.Node{{ID: "node", Type: "agent", Caps: caps}}}}
+			run := models.Run{ID: "workflow-run", Status: "running", McpToken: "workflow-token", Graph: models.Graph{Nodes: []models.Node{{ID: "node", Type: "agent", Caps: caps}}}}
 			if err := db.Create(&run).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -190,9 +196,6 @@ func TestArtifactMCPPersistenceKeepsWorkflowAndManualVisit(t *testing.T) {
 			}
 			host := mcp.NewHost(services.NewArtifactService(db))
 			wireArtifactMCPPersistence(host, db, services.NewRunService(db), services.NewPreviewService(db, nil))
-			if _, err := host.WriteArtifact(run.ID, run.McpToken, "node", "notes.txt", "kept", "text"); err != nil {
-				t.Fatal(err)
-			}
 			if node := host.ActiveNode(run.ID); node != "node" {
 				t.Fatalf("workflow node = %q", node)
 			}
