@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Agent 在 E2B 等远端沙箱中用 `send_file`、`upload_file_artifact` 发送或导入文件时总是失败、提示 `argv[2]: shell argument contains disallowed characters` 的问题。zip 等任意类型的文件现在都能直接发给用户，文件名含中文、空格或括号也可以。导出范围不变，仍只允许工作区和 `/tmp` 内的普通文件。
+
 - 新创建的 Solo Agent 默认可以读取全部产物（`list_artifacts` / `read_artifact`），不用再到能力页手动勾选「全部产物」。已有的 Solo Agent 不变，需要的话请手动勾选。
 
 - Solo 会话的沙箱暂停后直接发消息，服务端会等沙箱里的会话服务真正可用后再发送，不再在端口刚能连通时就开始；唤醒偶尔失败（如恢复较慢导致超时）会自动重试最多 3 次，不再让这条消息直接失败。

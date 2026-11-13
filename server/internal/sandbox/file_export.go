@@ -3,10 +3,14 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/pkg/sftp"
 )
 
 // OpenArtifactFile exports a regular file from this sandbox. Local worktree
@@ -42,38 +46,81 @@ func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadClo
 		}
 		return f, nil
 	}
-	// The source process only opens paths inside the authorized guest, never
-	// paths on the server. Python is already part of the sandbox contract.
-	script := "import os,sys,stat,shutil; w=os.path.realpath(sys.argv[1]); n=sys.argv[2]; p=os.path.realpath(n if os.path.isabs(n) else os.path.join(w,n)); assert any(os.path.commonpath([p,r])==r for r in [w,'/tmp']), 'path outside export roots'; fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW); assert stat.S_ISREG(os.fstat(fd).st_mode), 'not a regular file'; shutil.copyfileobj(os.fdopen(fd,'rb'),sys.stdout.buffer,1048576)"
-	cmd, err := newSafeCmd("python3", "-c", script, workspace, name)
-	if err != nil {
-		return nil, err
-	}
-	command, err := cmd.render()
-	if err != nil {
-		return nil, err
-	}
+	// SFTP opens the path directly, so file names never pass through a remote
+	// shell or the shell argv allowlist.
 	client, err := s.creds().dial(ctx)
 	if err != nil {
 		return nil, err
 	}
-	session, err := client.NewSession()
+	sc, err := sftp.NewClient(client)
 	if err != nil {
 		_ = client.Close()
+		return nil, fmt.Errorf("sandbox sftp: %w", err)
+	}
+	closeAll := func() { _ = sc.Close(); _ = client.Close() }
+	stop := context.AfterFunc(ctx, closeAll)
+	f, err := openSFTPExport(sc, workspace, name)
+	if err != nil {
+		stop()
+		closeAll()
 		return nil, err
 	}
-	reader, writer := io.Pipe()
-	session.Stdout = writer
-	session.Stderr = io.Discard
-	cancel := context.AfterFunc(ctx, func() { _ = session.Close(); _ = client.Close() })
-	go func() {
-		err := session.Run(command)
-		_ = writer.CloseWithError(err)
-		cancel()
-		_ = session.Close()
-		_ = client.Close()
-	}()
-	return &exportReader{PipeReader: reader, closeSource: func() { cancel(); _ = session.Close(); _ = client.Close() }}, nil
+	return &sftpExport{File: f, closeSource: func() { stop(); closeAll() }}, nil
+}
+
+// exportRoots are the guest directories files may be exported from, besides
+// the workspace.
+var exportRoots = []string{"/tmp"}
+
+// openSFTPExport opens name (relative to workspace, or absolute) for reading.
+// It relies on SSH_FXP_REALPATH resolving symlinks, as OpenSSH's sftp-server
+// does, so links cannot point outside the export roots.
+func openSFTPExport(sc *sftp.Client, workspace, name string) (*sftp.File, error) {
+	if !path.IsAbs(name) {
+		name = path.Join(workspace, name)
+	}
+	target, err := sc.RealPath(name)
+	if err != nil {
+		return nil, err
+	}
+	allowed := false
+	for _, root := range append([]string{workspace}, exportRoots...) {
+		real, err := sc.RealPath(root)
+		if err == nil && withinRoot(target, real) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return nil, errors.New("path outside export roots")
+	}
+	f, err := sc.Open(target)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, errors.New("only regular workspace files can be exported")
+	}
+	return f, nil
+}
+
+func withinRoot(p, root string) bool {
+	root = path.Clean(root)
+	p = path.Clean(p)
+	return p == root || strings.HasPrefix(p, strings.TrimSuffix(root, "/")+"/")
+}
+
+type sftpExport struct {
+	*sftp.File
+	closeSource func()
+}
+
+func (r *sftpExport) Close() error {
+	err := r.File.Close()
+	r.closeSource()
+	return err
 }
 
 type exportReader struct {
