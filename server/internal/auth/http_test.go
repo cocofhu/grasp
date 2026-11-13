@@ -410,3 +410,76 @@ func TestValidateSessionExpired(t *testing.T) {
 		t.Fatal("expected expired session error")
 	}
 }
+
+func TestRemovedUserSessionRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
+	db, err := database.OpenSQLiteTest(t.TempDir() + "/removed.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Session{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Auth: config.AuthConfig{
+			Users: []config.AuthUser{
+				{Username: "removed", PasswordHash: string(hash)},
+				{Username: "kept", PasswordHash: string(hash), IsAdmin: true},
+			},
+			SessionTTL: "168h",
+		},
+	}
+	live := func() *config.Config { return cfg }
+	svc := auth.NewService(db, live)
+	removedSess, err := svc.Login("removed", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keptSess, err := svc.Login("kept", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Auth.Users = cfg.Auth.Users[1:]
+
+	r := gin.New()
+	r.GET("/api/protected", svc.APIMiddleware(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	r.GET("/sandbox/*path", svc.SandboxRedirectMiddleware(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"sandbox": true})
+	})
+	r.GET("/ws", func(c *gin.Context) {
+		if _, ok := svc.RequireSession(c); ok {
+			c.JSON(http.StatusOK, gin.H{"ws": true})
+		}
+	})
+	do := func(path, token string) int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if code := do("/api/protected", keptSess.ID); code != http.StatusOK {
+		t.Fatalf("kept user api: %d", code)
+	}
+	if code := do("/api/protected", removedSess.ID); code != http.StatusUnauthorized {
+		t.Fatalf("removed user api: %d", code)
+	}
+	if code := do("/sandbox/x", removedSess.ID); code != http.StatusFound {
+		t.Fatalf("removed user sandbox: %d", code)
+	}
+	if code := do("/ws", removedSess.ID); code != http.StatusUnauthorized {
+		t.Fatalf("removed user ws: %d", code)
+	}
+
+	restarted := auth.NewService(db, live)
+	if _, err := restarted.ValidateSession(removedSess.ID); err == nil {
+		t.Fatal("removed user session valid after restart")
+	}
+	if _, err := restarted.ValidateSession(keptSess.ID); err != nil {
+		t.Fatalf("kept user session after restart: %v", err)
+	}
+}
