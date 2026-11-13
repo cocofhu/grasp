@@ -104,8 +104,8 @@ func TestBackendNameIsNormalized(t *testing.T) {
 func TestCursorCatalogMatchesCLISnapshot(t *testing.T) {
 	list := Models("cursor")
 	want := parseCursorSnapshot(t, cursorModelSnapshot)
-	if len(want) != 264 {
-		t.Fatalf("snapshot must lock 264 ids, got %d", len(want))
+	if len(want) != 279 {
+		t.Fatalf("snapshot must lock 279 ids, got %d", len(want))
 	}
 	if len(list) != len(want) {
 		t.Fatalf("cursor models: got %d, want %d", len(list), len(want))
@@ -294,6 +294,8 @@ func cursorVendor(id string) string {
 		return "muse"
 	case strings.HasPrefix(id, "glm"):
 		return "zhipu"
+	case strings.HasPrefix(id, "deepseek"):
+		return "deepseek"
 	default:
 		return ""
 	}
@@ -329,7 +331,6 @@ claude-fable-5-thinking-high	Claude Fable 5 1M Thinking (NO ZDR)
 claude-fable-5-thinking-xhigh	Claude Fable 5 1M Extra High Thinking (NO ZDR)
 cursor-grok-4.5-high	Grok 4.5
 cursor-grok-4.5-high-fast	Grok 4.5 Fast
-gemini-3.7-flash-high	Gemini 3.7 Flash
 claude-sonnet-5-thinking-high	Claude Sonnet 5 1M Thinking
 claude-sonnet-5-thinking-xhigh	Claude Sonnet 5 1M Extra High Thinking
 gpt-5.6-luna-high	GPT-5.6 Luna 1M High
@@ -394,6 +395,13 @@ claude-opus-4-8-thinking-xhigh	Claude Opus 4.8 1M Extra High Thinking
 claude-opus-4-8-thinking-xhigh-fast	Claude Opus 4.8 1M Extra High Thinking Fast
 claude-opus-4-8-thinking-max	Claude Opus 4.8 1M Max Thinking
 claude-opus-4-8-thinking-max-fast	Claude Opus 4.8 1M Max Thinking Fast
+gemini-4-carbon-low	Gemini 4 Carbon Low
+gemini-4-carbon-medium	Gemini 4 Carbon Medium
+gemini-4-carbon-high	Gemini 4 Carbon High
+gemini-4-hydrogen-low	Gemini 4 Hydrogen Low
+gemini-4-hydrogen-medium	Gemini 4 Hydrogen Medium
+gemini-4-hydrogen-high	Gemini 4 Hydrogen High
+gemini-4-hydrogen-xhigh	Gemini 4 Hydrogen Extra High
 gemini-4-argon-low	Gemini 4 Argon Low
 gemini-4-argon-medium	Gemini 4 Argon Medium
 gemini-4-argon-high	Gemini 4 Argon High
@@ -421,6 +429,16 @@ gpt-5.5-high	GPT-5.5 1M High
 gpt-5.5-high-fast	GPT-5.5 High Fast
 gpt-5.5-extra-high	GPT-5.5 1M Extra High
 gpt-5.5-extra-high-fast	GPT-5.5 Extra High Fast
+claude-fable-5-2-low	Claude Fable 5.2 1M Low (NO ZDR)
+claude-fable-5-2-low-fast	Claude Fable 5.2 1M Low Fast (NO ZDR)
+claude-fable-5-2-medium	Claude Fable 5.2 1M Medium (NO ZDR)
+claude-fable-5-2-medium-fast	Claude Fable 5.2 1M Medium Fast (NO ZDR)
+claude-fable-5-2-high	Claude Fable 5.2 1M (NO ZDR)
+claude-fable-5-2-high-fast	Claude Fable 5.2 1M Fast (NO ZDR)
+claude-fable-5-2-xhigh	Claude Fable 5.2 1M Extra High (NO ZDR)
+claude-fable-5-2-xhigh-fast	Claude Fable 5.2 1M Extra High Fast (NO ZDR)
+claude-fable-5-2-max	Claude Fable 5.2 1M Max (NO ZDR)
+claude-fable-5-2-max-fast	Claude Fable 5.2 1M Max Fast (NO ZDR)
 claude-fable-5-1-low	Claude Fable 5.1 1M Low (NO ZDR)
 claude-fable-5-1-medium	Claude Fable 5.1 1M Medium (NO ZDR)
 claude-fable-5-1-high	Claude Fable 5.1 1M (NO ZDR)
@@ -446,8 +464,6 @@ cursor-grok-4.5-medium-fast	Grok 4.5 Medium Fast
 gemini-3.8-flash-low	Gemini 3.8 Flash Low
 gemini-3.8-flash-medium	Gemini 3.8 Flash Medium
 gemini-3.8-flash-high	Gemini 3.8 Flash High
-gemini-3.7-flash-low	Gemini 3.7 Flash Low
-gemini-3.7-flash-medium	Gemini 3.7 Flash Medium
 muse-spark-1.3-minimal	Muse Spark 1.3 1M Minimal
 muse-spark-1.3-low	Muse Spark 1.3 1M Low
 muse-spark-1.3-medium	Muse Spark 1.3 1M Medium
@@ -532,10 +548,6 @@ gpt-5.6-luna-xhigh	GPT-5.6 Luna 1M Extra High
 gpt-5.6-luna-xhigh-fast	GPT-5.6 Luna 1M Extra High Fast
 gpt-5.6-luna-max	GPT-5.6 Luna 1M Max
 gpt-5.6-luna-max-fast	GPT-5.6 Luna 1M Max Fast
-gemini-3.6-flash-minimal	Gemini 3.6 Flash Minimal
-gemini-3.6-flash-low	Gemini 3.6 Flash Low
-gemini-3.6-flash-medium	Gemini 3.6 Flash Medium
-gemini-3.6-flash-high	Gemini 3.6 Flash
 gemini-3.1-pro	Gemini 3.1 Pro
 gpt-5.4-mini-none	GPT-5.4 Mini None
 gpt-5.4-mini-low	GPT-5.4 Mini Low
@@ -573,4 +585,9 @@ kimi-k3-max	Kimi K3
 kimi-k2.7-code	Kimi K2.7 Code
 glm-5.2-high	GLM 5.2
 glm-5.2-max	GLM 5.2 Max
+deepseek-v41-flash-1017-none	DeepSeek V4.1 Flash 1017 None
+deepseek-v41-flash-1017-low	DeepSeek V4.1 Flash 1017 Low
+deepseek-v41-flash-1017-medium	DeepSeek V4.1 Flash 1017 Medium
+deepseek-v41-flash-1017-high	DeepSeek V4.1 Flash 1017 High
+deepseek-v41-flash-1017-max	DeepSeek V4.1 Flash 1017 Max
 `
