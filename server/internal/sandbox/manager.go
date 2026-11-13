@@ -158,6 +158,8 @@ type GitCredential struct {
 	Secret     string
 	KnownHosts string
 	Preferred  bool
+	// Login only labels the GitHub CLI account; it is not part of SpecFingerprint.
+	Login string
 }
 
 // SSHInjectStagingDir is the in-sandbox destination for the SSH file inject

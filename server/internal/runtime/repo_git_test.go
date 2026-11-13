@@ -13,8 +13,8 @@ import (
 
 func repoGitTestValue(id string) (GitCredentialValue, bool) {
 	values := map[string]GitCredentialValue{
-		"gh":      {EnvKey: envauth.EnvGitHubToken, Secret: "gh-secret", Host: "https://github.com"},
-		"gl":      {EnvKey: envauth.EnvGitLabToken, Secret: "gl-secret", Host: "https://gitlab.com"},
+		"gh":      {EnvKey: envauth.EnvGitHubToken, Secret: "gh-secret", Host: "https://github.com", Login: "octocat"},
+		"gl":      {EnvKey: envauth.EnvGitLabToken, Secret: "gl-secret", Host: "https://gitlab.com", Login: "not-github"},
 		"ssh":     {EnvKey: envauth.EnvGitSSHPrivateKey, Secret: "SSH\nPRIVATE KEY", KnownHosts: "github.com ssh-ed25519 AAAA"},
 		"model":   {EnvKey: envauth.EnvCursorAPIKey, Secret: "model-secret"},
 		"empty":   {EnvKey: envauth.EnvGitHubToken, Secret: " ", Host: "https://github.com"},
@@ -36,6 +36,9 @@ func TestResolveRepoCredentialsScopesEachRepository(t *testing.T) {
 	}
 	if rows[0].ID != "repo:web" || rows[0].Scope != "https://github.com/team/web" || rows[0].Kind != sandbox.RepoCredentialGitHubHTTPS {
 		t.Fatalf("web = %+v", rows[0])
+	}
+	if rows[0].Login != "octocat" || rows[2].Login != "" {
+		t.Fatalf("GitHub account label = %q, ssh = %q", rows[0].Login, rows[2].Login)
 	}
 	if rows[1].ID != "repo:api" || rows[1].Scope != "https://github.com/team/api" || rows[1].Secret != "gh-secret" {
 		t.Fatalf("one credential shared by two repositories = %+v", rows[1])

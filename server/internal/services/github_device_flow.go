@@ -500,6 +500,13 @@ func (s *GitHubDeviceFlowService) fetchUser(ctx context.Context, token string) (
 	return user.Login, scopes
 }
 
+// LookupLogin returns the github.com account a token belongs to, or "" when
+// it cannot be read.
+func (s *GitHubDeviceFlowService) LookupLogin(ctx context.Context, token string) string {
+	login, _ := s.fetchUser(ctx, token)
+	return login
+}
+
 func splitScopes(raw string) []string {
 	out := []string{}
 	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {

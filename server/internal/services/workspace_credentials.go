@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,12 +104,52 @@ func (e *CredentialAliasTakenError) Unwrap() error { return ErrCredentialAliasTa
 // CredentialService persists encrypted workspace credentials and resolves
 // UI values for runtime injection.
 type CredentialService struct {
-	db         *gorm.DB
-	codexHooks CodexLoginHooks
+	db          *gorm.DB
+	codexHooks  CodexLoginHooks
+	githubLogin func(ctx context.Context, token string) string
 }
 
 func NewCredentialService(db *gorm.DB) *CredentialService {
 	return &CredentialService{db: db}
+}
+
+const githubLoginLookupTimeout = 5 * time.Second
+
+// SetGitHubLoginLookup records the account of manually entered github.com
+// tokens. Other hosts are never queried, so a configured host cannot direct a
+// server-side request.
+func (s *CredentialService) SetGitHubLoginLookup(lookup func(ctx context.Context, token string) string) {
+	s.githubLogin = lookup
+}
+
+// githubLoginMetadata is best-effort: a failed lookup still saves the token.
+func (s *CredentialService) githubLoginMetadata(envKey, host, token string) map[string]any {
+	token = strings.TrimSpace(token)
+	if s.githubLogin == nil || envKey != envauth.EnvGitHubToken || host != GitHubDeviceHost || token == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), githubLoginLookupTimeout)
+	defer cancel()
+	if login := strings.TrimSpace(s.githubLogin(ctx, token)); login != "" {
+		return map[string]any{"githubLogin": login}
+	}
+	return nil
+}
+
+// githubLoginOnce remembers the lookup, including a failure, so update
+// conflict retries do not query GitHub again.
+func (s *CredentialService) githubLoginOnce(token string) func(envKey, host string) map[string]any {
+	var (
+		looked   bool
+		key      string
+		metadata map[string]any
+	)
+	return func(envKey, host string) map[string]any {
+		if k := envKey + "\x00" + host; !looked || k != key {
+			looked, key, metadata = true, k, s.githubLoginMetadata(envKey, host, token)
+		}
+		return metadata
+	}
 }
 
 // validCredentialType lists the types stored in Credential. Channel,
@@ -209,7 +250,7 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 
 // Create stores a new encrypted credential. Plaintext is accepted only on
 // write and is never returned by this service. Client metadata is ignored;
-// only server-side sign-in flows record metadata.
+// only server-side sign-in flows and the github.com account lookup record it.
 func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	return s.create(in, nil)
 }
@@ -267,6 +308,9 @@ func (s *CredentialService) create(in CredentialInput, metadata map[string]any) 
 	if err := rejectKimiCodeLoginValue(in.ToolID, in.Provider, in.EnvKey, in.Value); err != nil {
 		return CredentialView{}, err
 	}
+	if metadata == nil && in.Purpose == "git" {
+		metadata = s.githubLoginMetadata(in.EnvKey, in.Host, in.Value)
+	}
 	enc, err := crypto.Encrypt(in.Value)
 	if err != nil {
 		return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
@@ -290,7 +334,7 @@ func (s *CredentialService) create(in CredentialInput, metadata map[string]any) 
 
 // Update edits metadata and optionally rotates/clears the secret. A rotated
 // or cleared secret drops sign-in metadata (e.g. the GitHub account), which
-// described the previous secret.
+// described the previous secret; a rotated github.com token is looked up again.
 func (s *CredentialService) Update(id string, in CredentialInput) (CredentialView, error) {
 	return s.update(id, in, nil)
 }
@@ -298,8 +342,9 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 func (s *CredentialService) update(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
 	// A renewal can rotate the secret after this request reads it. Rebuild the
 	// edit from the current row on conflict instead of restoring the old login.
+	githubLogin := s.githubLoginOnce(in.Value)
 	for range 5 {
-		view, err := s.updateOnce(id, in, metadata)
+		view, err := s.updateOnce(id, in, metadata, githubLogin)
 		if !errors.Is(err, errCredentialUpdateConflict) {
 			return view, err
 		}
@@ -309,7 +354,7 @@ func (s *CredentialService) update(id string, in CredentialInput, metadata map[s
 
 var errCredentialUpdateConflict = errors.New("credential changed during update; please retry")
 
-func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata map[string]any) (CredentialView, error) {
+func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata map[string]any, githubLogin func(envKey, host string) map[string]any) (CredentialView, error) {
 	var row models.Credential
 	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -426,6 +471,9 @@ func (s *CredentialService) updateOnce(id string, in CredentialInput, metadata m
 		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 		row.Metadata = metadata
 	} else if strings.TrimSpace(in.Value) != "" {
+		if metadata == nil && row.Purpose == "git" {
+			metadata = githubLogin(row.EnvKey, row.Host)
+		}
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
 			return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
@@ -667,6 +715,9 @@ func (s *CredentialService) ResolveGitValue(id string) (runtime.GitCredentialVal
 	value.EnvKey, value.Secret = row.EnvKey, secret
 	if row.Purpose == "ssh" {
 		value.KnownHosts = row.KnownHosts
+	}
+	if login, ok := row.Metadata["githubLogin"].(string); ok {
+		value.Login = strings.TrimSpace(login)
 	}
 	return value, true
 }
