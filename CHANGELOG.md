@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 新创建的 Solo Agent 默认可以读取全部产物（`list_artifacts` / `read_artifact`），不用再到能力页手动勾选「全部产物」。已有的 Solo Agent 不变，需要的话请手动勾选。
+
 - Solo 会话的沙箱暂停后直接发消息，服务端会等沙箱里的会话服务真正可用后再发送，不再在端口刚能连通时就开始；唤醒偶尔失败（如恢复较慢导致超时）会自动重试最多 3 次，不再让这条消息直接失败。
 
 - Solo 会话的 E2B 沙箱因长时间空闲自动暂停后，「停止环境」按钮会原位变为「恢复环境」，浏览器/终端/IDE 标签页显示暂停提示和恢复按钮；直接发消息也会自动恢复。新增接口 `POST /api/solo/sessions/:id/wake`，会话详情的 `sandbox.paused` 表示沙箱已暂停。工作流对话在沙箱失联时不再误报模型切换失败、也不回滚所选模型；右侧终端/IDE/浏览器面板在沙箱重建后自动重连。
