@@ -49,6 +49,9 @@ func TestOnboardingCreatesEmptySoloOutsideWorkflow(t *testing.T) {
 			if solo.Capabilities == nil || solo.Capabilities.Interaction != models.InteractionAuto || !reflect.DeepEqual(solo.Capabilities.Tools, wantTools) {
 				t.Fatalf("Solo capabilities = %+v, want tools %v", solo.Capabilities, wantTools)
 			}
+			if !reflect.DeepEqual(solo.Capabilities.Reads, []string{"*"}) {
+				t.Fatalf("Solo reads = %v, want all artifacts", solo.Capabilities.Reads)
+			}
 			if len(solo.MCP) != 0 || len(solo.Env) != 0 || len(solo.CredentialBindings) != 0 {
 				t.Fatalf("Solo must have no skills or workflow settings: %+v", solo)
 			}

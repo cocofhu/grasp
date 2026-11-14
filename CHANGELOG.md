@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 新创建的 Solo Agent 默认可以读取全部产物（`list_artifacts` / `read_artifact`），不用再到能力页手动勾选「全部产物」。已有的 Solo Agent 不变，需要的话请手动勾选。
+
 - E2B 模板构建支持用 `--min-free-disk-mb` 向 provider 申请构建后的可用磁盘空间；仍以临时沙箱实测容量为准，空间不足时不输出可发布模板配置。
 
 - 修改 `auth.users` 中账号的 `password_hash` 后，该账号用旧密码登录的会话随即失效；此前旧会话要到原定到期时间才失效。升级后所有用户需要重新登录一次。
