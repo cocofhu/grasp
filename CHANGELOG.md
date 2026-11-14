@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo / 沙箱对话在输出一部分内容后连接意外断开时，保留已收到的回复并明确标记本轮失败，不再把未完成的回合显示为成功；正常完成后关闭连接和主动取消仍按原有逻辑处理。
+
 - E2B 模板构建支持用 `--min-free-disk-mb` 向 provider 申请构建后的可用磁盘空间；仍以临时沙箱实测容量为准，空间不足时不输出可发布模板配置。
 
 - 修改 `auth.users` 中账号的 `password_hash` 后，该账号用旧密码登录的会话随即失效；此前旧会话要到原定到期时间才失效。升级后所有用户需要重新登录一次。

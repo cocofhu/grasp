@@ -1247,6 +1247,10 @@ func fakeACPServerFrames(t *testing.T, frames ...map[string]any) (*httptest.Serv
 }
 
 func fakeACPServerFramesOnChat(t *testing.T, onChat func([]byte), frames ...map[string]any) (*httptest.Server, int) {
+	return fakeACPServerStream(t, onChat, false, frames...)
+}
+
+func fakeACPServerStream(t *testing.T, onChat func([]byte), closeAfterChat bool, frames ...map[string]any) (*httptest.Server, int) {
 	t.Helper()
 	up := websocket.Upgrader{}
 	mux := http.NewServeMux()
@@ -1284,6 +1288,9 @@ func fakeACPServerFramesOnChat(t *testing.T, onChat func([]byte), frames ...map[
 					if err := c.WriteJSON(map[string]any{"op": "event", "opId": m.OpID, "data": frame}); err != nil {
 						return
 					}
+				}
+				if closeAfterChat {
+					return
 				}
 			}
 		}

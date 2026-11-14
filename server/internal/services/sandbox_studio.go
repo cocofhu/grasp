@@ -438,6 +438,21 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	if result == nil {
 		return nil, nil, err
 	}
+	// A partial reply is not a completed turn. ChatStream preserves it with a
+	// nil error for callers that inspect Interrupted; this usage-only API must
+	// surface an unexpected interruption before discarding that flag. Explicit
+	// cancellation and terminal timeout outcomes retain their existing handling.
+	if err == nil && result.Interrupted && result.StopReason == "" && chatCtx.Err() == nil {
+		failure := strings.TrimSpace(result.ErrorText)
+		if failure == "" {
+			failure = "沙箱回合已中断，本轮未完成"
+		}
+		if !ls.acp.IsConnected() {
+			err = fmt.Errorf("%w: %s", sandbox.ErrConnClosed, failure)
+		} else {
+			err = errors.New(failure)
+		}
+	}
 	// ChatStream keeps provider failures in the result for callers such as
 	// React that render partial output themselves. This API only returns usage,
 	// so preserve the failure before discarding the rest of that result. Keep
