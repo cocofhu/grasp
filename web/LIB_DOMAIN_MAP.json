@@ -254,6 +254,7 @@
       "referenceDisplay.ts",
       "referenceTokens.ts",
       "sessionRepos.ts",
+      "soloBoot.ts",
       "soloEmbedClient.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
@@ -288,7 +289,7 @@
     "pm": 7,
     "run": 75,
     "shared": 39,
-    "solo": 15,
+    "solo": 16,
     "workflow": 3,
     "workspace": 5
   }

@@ -2,8 +2,8 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
-import { fmtDuration } from '@/lib/shared/format'
-import { bootReadySec, bootSteps, getBootRecord } from '@/lib/run/bootRecord'
+import BootChecklist from './BootChecklist.vue'
+import { bootReadySec, bootSteps, fmtBootSec as fmtSec, getBootRecord } from '@/lib/run/bootRecord'
 import { serverNow } from '@/lib/api/httpCore'
 
 // phase:
@@ -80,9 +80,6 @@ watch(isPulling, () => {
 // Inline checklist: driven by the boot record only (no pacing timer).
 const record = computed(() => getBootRecord(props.bootKey))
 const pulling = computed(() => isPulling.value || record.value?.sandboxStatus === 'pulling')
-function fmtSec(sec: number) {
-  return sec < 60 ? `${sec}s` : fmtDuration(sec)
-}
 const checklist = computed(() =>
   bootSteps(record.value).map((s) => ({
     id: s.id,
@@ -119,7 +116,6 @@ onBeforeUnmount(() => {
   stopCycling()
   if (tick) clearInterval(tick)
 })
-const checklistOpen = ref(true)
 
 // Done row (ClarifyChat): folded by default, expands to the three steps.
 const doneOpen = ref(false)
@@ -140,48 +136,17 @@ const doneMeta = computed(() => {
     with spinner, title, elapsed and the step in progress, opened onto a
     three-step list that ticks off as boot advances.
   -->
-  <div
+  <BootChecklist
     v-if="variant === 'inline' && phase === 'starting'"
-    class="agent-tools chat-meta w-full min-w-0"
     data-testid="clarify-boot-loader"
     data-variant="inline"
     :data-sandbox-phase="sandboxPhase || ''"
-  >
-    <!-- Live region for the step in progress; the toggle keeps plain button semantics. -->
-    <span class="sr-only" role="status" aria-live="polite" data-testid="clarify-boot-status">{{ currentTitle }}</span>
-    <button
-      type="button"
-      class="agent-tools-head grasp-status-host"
-      :aria-expanded="checklistOpen"
-      data-testid="clarify-boot-head"
-      @click="checklistOpen = !checklistOpen"
-    >
-      <Icon name="arc-spinner" busy :size="16" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
-      <span class="agent-tools-count" data-testid="clarify-boot-title">{{ t('pages.clarifyBootLoader.checklist.title') }}</span>
-      <span v-if="elapsedLabel" class="tabular-nums text-txt3" data-testid="clarify-boot-elapsed">{{ elapsedLabel }}</span>
-      <span class="agent-tools-context text-txt3" data-testid="clarify-boot-context">{{ currentTitle }}</span>
-      <Icon :interactive="false" name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
-    </button>
-    <ul v-if="checklistOpen" class="agent-tool-list" data-testid="clarify-boot-checklist">
-      <li
-        v-for="c in checklist"
-        :key="c.id"
-        class="agent-tool-row-main"
-        :data-state="c.state"
-        data-testid="clarify-boot-step"
-      >
-        <!-- type=transition: the spinner's infinite spin must not hold the swap to ✓. -->
-        <Transition name="startfade" mode="out-in" type="transition">
-          <Icon v-if="c.state === 'running'" key="r" name="arc-spinner" busy :size="16" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
-          <Icon v-else-if="c.state === 'done'" key="d" name="check-draw" :size="16" class="agent-tool-icon text-ok" aria-hidden="true" />
-          <Icon v-else key="p" name="dot" :size="16" class="agent-tool-icon text-txt3/60" aria-hidden="true" />
-        </Transition>
-        <span class="agent-tool-label" :class="c.state === 'pending' ? 'text-txt3' : ''">{{ c.label }}</span>
-        <span v-if="c.sec" class="tabular-nums text-[11px] text-txt3">{{ c.sec }}</span>
-      </li>
-    </ul>
-    <p v-if="pulling && currentCheck?.id === 'sandbox'" class="chat-meta m-0 pl-[34px] text-txt3">{{ STARTING_STEPS[0].hint }}</p>
-  </div>
+    :title="t('pages.clarifyBootLoader.checklist.title')"
+    :steps="checklist"
+    :context="currentTitle"
+    :elapsed="elapsedLabel"
+    :hint="pulling && currentCheck?.id === 'sandbox' ? STARTING_STEPS[0]!.hint : ''"
+  />
   <!-- Done (inside ClarifyChat): same row, folded, check icon. -->
   <Transition v-else-if="variant === 'inline' && phase === 'done'" name="startfade" appear>
     <div v-if="doneReady" class="clarify-boot-done agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
