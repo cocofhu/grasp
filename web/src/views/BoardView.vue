@@ -305,4 +305,13 @@ onUnmounted(() => {
   .board-metric-value { font-size: 28px; }
   .board-text-link { min-height: 44px; }
 }
+@container board-workbench (max-width: 559px) {
+  .board-metric { flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 10px; }
+  .board-metric-value { min-width: 0; font-size: 24px; line-height: 32px; }
+  .board-metric > .min-w-0 { width: 100%; }
+  .board-metric-label { gap: 6px; font-size: 13px; white-space: nowrap; }
+  .board-metric-label > span:last-child,
+  .board-metric-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-metric-note { margin-top: 2px; }
+}
 </style>
