@@ -331,3 +331,15 @@ describe('reviewSessionState', () => {
     expect(state.acceptServer({ event: 'turn_begin', nodeId: 'chat', sessionGeneration: 1, revision: 1 })).toBe(true)
   })
 })
+
+describe('isVersionedSnapshot', () => {
+  it('detects a versioned snapshot from the run, a session or an earlier frame', () => {
+    const state = createReviewSessionState()
+    expect(state.isVersionedSnapshot(undefined)).toBe(false)
+    expect(state.isVersionedSnapshot({ reactSessions: { chat: { busy: false } as never } })).toBe(false)
+    expect(state.isVersionedSnapshot({ reviewSessionGeneration: 0 })).toBe(true)
+    expect(state.isVersionedSnapshot({ reactSessions: { chat: { sessionGeneration: 2 } as never } })).toBe(true)
+    state.acceptServer({ event: 'turn_begin', nodeId: 'chat', sessionGeneration: 1, revision: 1 })
+    expect(state.isVersionedSnapshot({})).toBe(true)
+  })
+})

@@ -5,7 +5,7 @@ import type { Page, Route } from '@playwright/test'
  * such as /src/lib/api/clients/runsClient.ts that collide with loose
  * Playwright globs matching the substring "/api/runs" inside module URLs.
  */
-export function isBackendApiRequest(url: string): boolean {
+function isBackendApiRequest(url: string): boolean {
   try {
     return new URL(url).pathname.startsWith('/api/')
   } catch {

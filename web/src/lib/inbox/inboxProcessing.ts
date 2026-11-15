@@ -4,7 +4,7 @@ import type { InboxItem } from '@/lib/shared/types'
 
 type Triple = Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>
 
-export type InboxProcessingState = {
+type InboxProcessingState = {
   /** Triples that left pending — never softRefresh/load inbox-context for these. */
   processedTriples: Set<string>
   /** Processed triples observed absent from a subsequent list load (safe to unmark if they reappear). */
@@ -105,7 +105,7 @@ export function createInboxProcessingState(): InboxProcessingState {
   }
 }
 
-export type InboxContextFlight = {
+type InboxContextFlight = {
   /** Per-triple AbortController for in-flight inbox-context fetches. */
   aborts: Map<string, AbortController>
   abort: (triple: string) => void

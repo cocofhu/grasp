@@ -292,6 +292,11 @@ export function createReviewSessionState(options: { recoveryTimeoutMs?: number }
 
   return {
     get hasVersion() { return cursor.hasVersion },
+    /** The first connect snapshot of a versioned session starts a fresh session view. */
+    isVersionedSnapshot(run?: Partial<ReviewSessionRun>) {
+      return cursor.hasVersion || typeof run?.reviewSessionGeneration === 'number' ||
+        Object.values(run?.reactSessions ?? {}).some((snap) => typeof snap?.sessionGeneration === 'number')
+    },
     capture,
     isCurrent,
     isStateCurrent,

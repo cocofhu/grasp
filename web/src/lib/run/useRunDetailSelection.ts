@@ -248,8 +248,6 @@ export function useRunDetailSelection(opts: {
 
   return {
     isMobile,
-    gateActive,
-    clarifyActive,
     selClarify,
     clarifyInputActive,
     clarifySandboxFailed,
@@ -262,7 +260,6 @@ export function useRunDetailSelection(opts: {
     onNodeTabDisabledClick,
     nodeTab,
     outputFocusLock,
-    graphNodesForFocus,
     queryParam,
     mobileMainPanel,
     timelineScrollToken,

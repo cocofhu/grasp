@@ -1118,12 +1118,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return !!v
   }
 
-  async function rename(title: string) {
-    const v = await run(() => api.renameSoloSession(sessionId.value, title))
-    if (v && session.value) session.value = { ...session.value, title: v.title }
-    return !!v
-  }
-
   watch(sessionId, () => void load(), { immediate: true })
   watch([busy, link], scheduleStallCheck)
 
@@ -1166,7 +1160,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     reorderQueued,
     close,
     stop,
-    rename,
     refreshSession,
   }
 }

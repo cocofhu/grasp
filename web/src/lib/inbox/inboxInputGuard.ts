@@ -3,7 +3,7 @@ import { nextTick, ref, type Ref } from 'vue'
 /** Input idle time after which a focused, emptied field stops holding list auto-apply. */
 export const TYPING_IDLE_MS = 2000
 
-export type InboxInputGuard = {
+type InboxInputGuard = {
   /**
    * The focused text field (gate form, clarify composer, filters…) holds a
    * non-empty draft. Counted as editing for list auto-apply so the caret and the

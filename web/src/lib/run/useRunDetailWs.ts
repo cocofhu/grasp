@@ -510,7 +510,7 @@ export function useRunDetailWs(opts: {
           const sessions = m.run.reactSessions ?? {}
           if (!receivedSnapshot) {
             receivedSnapshot = true
-            const versioned = reviewState.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
+            const versioned = reviewState.isVersionedSnapshot(m.run)
             reviewState.reset()
             if (versioned) {
               const nodeId = run.value.gate?.reactUpstreamNodeId
