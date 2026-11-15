@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   closeSoloSession: vi.fn(),
   renameSoloSession: vi.fn(),
   stopSoloSession: vi.fn(),
+  wakeSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
   reorderSoloQueue: vi.fn(),
   setSoloSessionModel: vi.fn(),
@@ -295,6 +296,77 @@ describe('useSoloChat', () => {
     expect(chat.canSend.value).toBe(false)
     expect(await chat.send('x')).toBe(false)
     expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('keeps sending while paused and shows waking until the status frame clears the pause', async () => {
+    const paused = session({ sandbox: { id: 9, name: 'sb', status: 'running', containerStatus: 'exited', connected: false, hasCodeServer: true, paused: true } })
+    mocks.getSoloSession.mockResolvedValue(paused)
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    expect(chat.sandboxPaused.value).toBe(true)
+    expect(chat.canSend.value).toBe(true)
+    expect(chat.sandboxWaking.value).toBe(false)
+    let accept: () => void = () => undefined
+    mocks.sendSoloTurn.mockImplementation(() => new Promise<void>((resolve) => { accept = resolve }))
+    const sent = chat.send('hello')
+    expect(chat.sandboxWaking.value).toBe(true)
+    accept()
+    expect(await sent).toBe(true)
+    expect(mocks.sendSoloTurn).toHaveBeenCalledTimes(1)
+    expect(chat.sandboxWaking.value).toBe(true)
+    mocks.getSoloSession.mockResolvedValue(session({ sandbox: { ...paused.sandbox, containerStatus: 'running', connected: true, paused: false } }))
+    ws.emit({ type: 'session', event: 'status', status: 'running', error: '', sandboxId: 9 })
+    await flushPromises()
+    expect(chat.sandboxPaused.value).toBe(false)
+    expect(chat.sandboxWaking.value).toBe(false)
+    app.unmount()
+  })
+
+  it('clears waking when the waking turn fails', async () => {
+    const paused = session({ sandbox: { id: 9, name: 'sb', status: 'running', connected: false, hasCodeServer: true, paused: true } })
+    mocks.getSoloSession.mockResolvedValue(paused)
+    mocks.sendSoloTurn.mockResolvedValue(undefined)
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    await chat.send('hello')
+    expect(chat.sandboxWaking.value).toBe(true)
+    mocks.getSoloSession.mockClear()
+    ws.emit({ type: 'session', event: 'error', message: '沙箱恢复失败' })
+    await flushPromises()
+    expect(chat.sandboxWaking.value).toBe(false)
+    expect(chat.sandboxPaused.value).toBe(true)
+    expect(mocks.getSoloSession).toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('wakes the paused sandbox once and applies the live session', async () => {
+    const paused = session({ sandbox: { id: 9, name: 'sb', status: 'running', connected: false, hasCodeServer: true, paused: true } })
+    mocks.getSoloSession.mockResolvedValue(paused)
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+    let finish: (row: unknown) => void = () => undefined
+    mocks.wakeSoloSession.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const woke = chat.wake()
+    expect(chat.sandboxWaking.value).toBe(true)
+    expect(await chat.wake()).toBeUndefined()
+    expect(mocks.wakeSoloSession).toHaveBeenCalledTimes(1)
+    finish(session({ sandbox: { ...paused.sandbox, paused: false } }))
+    expect((await woke)?.sandbox?.paused).toBe(false)
+    expect(chat.sandboxPaused.value).toBe(false)
+    expect(chat.sandboxWaking.value).toBe(false)
+
+    mocks.wakeSoloSession.mockRejectedValueOnce(new Error('gateway down'))
+    await expect(chat.wake()).rejects.toThrow('gateway down')
+    expect(chat.sandboxWaking.value).toBe(false)
     app.unmount()
   })
 

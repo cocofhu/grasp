@@ -87,6 +87,9 @@ export const soloClient = {
   /** Without backupId resumes the sandbox, or restores the newest archive if it is gone. */
   resumeSoloSession: (id: string, backupId?: number) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/resume`, backupId ? { method: 'POST', body: JSON.stringify({ backupId }) } : { method: 'POST' }),
+  /** Resumes the same sandbox of a running session after the platform paused it. */
+  wakeSoloSession: (id: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/wake`, { method: 'POST' }),
   /** Workspace archives, newest first. */
   listSoloBackups: (id: string) => req<SoloBackup[]>(`/solo/sessions/${enc(id)}/backups`),
   getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),

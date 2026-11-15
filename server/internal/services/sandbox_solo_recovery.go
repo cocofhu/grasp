@@ -138,6 +138,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 			// Mark before starting: readiness can time out even though the
 			// container later starts successfully. Its next turn still needs
 			// persisted dialogue context in that case.
+			s.invokeSoloPausedHook(id)
 			s.teardownLive(id)
 			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
 			sb, err = s.mgr.Resume(ctx, row.Name)
@@ -208,7 +209,8 @@ func (s *SandboxService) RunSoloRecovery(ctx context.Context) {
 // ReleaseVanishedSoloSandboxes checks residents still recorded as running. A
 // provider can kill an idle guest on expiry without telling Grasp; a confirmed
 // absence is released like any missing resident so the session reports it. A
-// guest the provider paused is left for EnsureSoloRunning on its next use.
+// guest the provider paused is reported to the session and left for
+// EnsureSoloRunning on its next use.
 func (s *SandboxService) ReleaseVanishedSoloSandboxes(ctx context.Context) {
 	var rows []models.Sandbox
 	if err := s.db.Where("purpose = ? AND status = ?", SandboxPurposeSolo, "running").Find(&rows).Error; err != nil {
@@ -241,7 +243,15 @@ func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sand
 	}
 	defer unlock()
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
-	if err != nil || status != "not_found" {
+	if err != nil {
+		return
+	}
+	switch status {
+	case "exited", "stopped":
+		s.invokeSoloPausedHook(row.ID)
+		return
+	case "not_found":
+	default:
 		return
 	}
 	log.Warn().Uint("sandbox", row.ID).Str("name", row.Name).Msg("solo sandbox no longer exists at the provider; releasing it")

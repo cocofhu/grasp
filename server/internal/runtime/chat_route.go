@@ -2,7 +2,11 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -56,24 +60,72 @@ func (c *acpProvider) defaultConfigurationID(req NodeReq) string {
 	return strings.TrimSpace(binding.ConfigurationID)
 }
 
-// AlignChatRoute applies req to the parked visit session. A missing session
-// reports aligned=false so the caller can try again after the sandbox exists.
+// AlignChatRoute applies req to the parked visit session. A missing,
+// disconnected or unreachable session reports aligned=false so the turn
+// rebuilds the sandbox and aligns it there.
 func (c *acpProvider) AlignChatRoute(ctx context.Context, req NodeReq) (string, bool, error) {
+	notice, aligned, _, err := c.alignParkedRoute(ctx, req)
+	return notice, aligned, err
+}
+
+// alignParkedRoute is AlignChatRoute that also reports lost=true when the
+// parked sandbox stopped answering during alignment, so a turn can rebuild it.
+func (c *acpProvider) alignParkedRoute(ctx context.Context, req NodeReq) (notice string, aligned, lost bool, err error) {
 	if !req.ResetToDefaultModel && (req.ChatRoute == nil || !req.ChatRoute.Set) {
-		return "", false, nil
+		return "", false, false, nil
 	}
 	key := reactKey(req)
 	c.mu.Lock()
 	sess := c.sessions[key]
 	c.mu.Unlock()
 	if sess == nil || sess.sb == nil || sess.acp == nil {
-		return "", false, nil
+		return "", false, false, nil
 	}
-	notice, err := c.alignVisitRoute(ctx, req, sess)
+	if !sess.acp.IsConnected() {
+		return "", false, true, nil
+	}
+	notice, err = c.alignVisitRoute(ctx, req, sess)
 	if err != nil {
-		return "", true, err
+		if isSandboxUnreachable(sess, err) {
+			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("visit sandbox unreachable during model alignment")
+			return "", false, true, nil
+		}
+		return "", true, false, err
 	}
-	return notice, true, nil
+	return notice, true, false, nil
+}
+
+// errSandboxUnreachable reports that a route could not be applied because the
+// parked sandbox no longer answers. It is not a model switch failure.
+var errSandboxUnreachable = errors.New("visit sandbox unreachable")
+
+// isSandboxUnreachable tells a lost sandbox apart from a switch the sandbox
+// rejected: a dropped ACP connection, transport errors and proxy 502/503/504.
+func isSandboxUnreachable(sess *reactSession, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errSandboxUnreachable) || errors.Is(err, sandbox.ErrConnClosed) || errors.Is(err, sandbox.ErrGatewayTransport) {
+		return true
+	}
+	if sess != nil && sess.acp != nil && !sess.acp.IsConnected() {
+		return true
+	}
+	var netErr net.Error
+	var urlErr *url.Error
+	if errors.As(err, &netErr) || errors.As(err, &urlErr) {
+		return true
+	}
+	var chatErr *sandbox.ChatHTTPError
+	if errors.As(err, &chatErr) && isGatewayUnavailable(chatErr.StatusCode) {
+		return true
+	}
+	var gwErr *sandbox.GatewayHTTPError
+	return errors.As(err, &gwErr) && isGatewayUnavailable(gwErr.StatusCode)
+}
+
+func isGatewayUnavailable(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
 func (c *acpProvider) alignVisitRoute(ctx context.Context, req NodeReq, sess *reactSession) (string, error) {
@@ -88,6 +140,9 @@ func (c *acpProvider) alignVisitRoute(ctx context.Context, req NodeReq, sess *re
 		return "", nil
 	}
 	if err := c.applyChatRoute(ctx, req, sess, req.ChatRoute); err != nil {
+		if isSandboxUnreachable(sess, err) {
+			return "", fmt.Errorf("%w: %w", errSandboxUnreachable, err)
+		}
 		if rerr := c.rollbackChatRoute(ctx, req, sess); rerr != nil {
 			log.Error().Err(rerr).Str("run", req.RunID).Str("node", req.NodeID).Msg("visit model rollback failed")
 		}

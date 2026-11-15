@@ -55,7 +55,7 @@ const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -385,6 +385,25 @@ async function doStop() {
   if (ok) confirmStop.value = false
 }
 
+async function doWake() {
+  if (sandboxWaking.value) return
+  try {
+    const v = await chat.wake()
+    if (v) store.upsert(v)
+  } catch (e) {
+    if (isSoloLimitError(e)) {
+      limitOpen.value = true
+      void store.refresh()
+    } else actionError.value = soloErrorText(e, t, te, locale.value)
+  }
+}
+function onLimitFreed() {
+  limitOpen.value = false
+  if (stopped.value) void doResume()
+  else if (sandboxPaused.value) void doWake()
+  else void doRestart()
+}
+
 async function doResume() {
   resuming.value = true
   actionError.value = ''
@@ -457,8 +476,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           node-id="solo"
           :sandbox="sandboxResource"
           :sandbox-loading="sandboxResourceLoading"
+          :sandbox-paused="!embedded && sandboxPaused"
+          :sandbox-waking="sandboxWaking"
           :sandbox-log-id="sandboxId"
           class="min-h-0 flex-1"
+          @resume="doWake"
         />
       </template>
 
@@ -666,17 +688,30 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 @update:reasoning-effort="setCurrentReasoningEffort"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
-              <button
-                v-if="!embedded && status === 'running' && !worktreeMode"
-                type="button"
-                class="solo-stop-env"
-                :disabled="busy || queued.length > 0"
-                :title="busy || queued.length ? t('pages.solo.stop.busy') : t('pages.solo.stop.hint')"
-                data-testid="solo-stop-sandbox"
-                @click="confirmStop = true"
-              >
-                <Icon name="stop" :size="12" />{{ t('pages.solo.stop.action') }}
-              </button>
+              <template v-if="!embedded && status === 'running' && !worktreeMode">
+                <button
+                  v-if="sandboxPaused"
+                  type="button"
+                  class="solo-stop-env"
+                  :disabled="sandboxWaking"
+                  :title="t('pages.solo.wake.hint')"
+                  data-testid="solo-wake-sandbox"
+                  @click="doWake"
+                >
+                  <Icon :name="sandboxWaking ? 'spinner' : 'play'" :size="12" />{{ sandboxWaking ? t('pages.solo.wake.waking') : t('pages.solo.wake.action') }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="solo-stop-env"
+                  :disabled="busy || queued.length > 0"
+                  :title="busy || queued.length ? t('pages.solo.stop.busy') : t('pages.solo.stop.hint')"
+                  data-testid="solo-stop-sandbox"
+                  @click="confirmStop = true"
+                >
+                  <Icon name="stop" :size="12" />{{ t('pages.solo.stop.action') }}
+                </button>
+              </template>
             </template>
             <template #actions>
               <ComposerPrimaryAction
@@ -745,7 +780,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </template>
       </AppModal>
 
-      <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; stopped ? doResume() : doRestart()" />
+      <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="onLimitFreed" />
       <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" @close="closeChatImagePreview" />
       </template>
     </ReviewShell>

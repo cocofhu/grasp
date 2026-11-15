@@ -131,26 +131,21 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	c.mu.Unlock()
 
 	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
-		if sess != nil {
-
-			c.mu.Lock()
-			delete(c.sessions, key)
-			c.mu.Unlock()
-			c.discardSandbox(ctx, req, sess.sb, sess.acp, sess.home, nil)
-		}
-
-		prior := history
-		if len(prior) > 0 && prior[len(prior)-1].Role == "human" {
-			prior = prior[:len(prior)-1]
-		}
-		sess = c.rehydrateReact(ctx, req, prior)
+		sess = c.rebuildReactSession(ctx, req, sess, history)
 		if sess == nil {
 
 			return ReactTurn{Msg: "(澄清会话已失效,自动重建沙箱失败,请稍后重试)", Done: false, Err: errors.New("澄清会话重建失败")}
 		}
 	}
 
-	notice, aligned, aerr := c.AlignChatRoute(ctx, req)
+	notice, aligned, lost, aerr := c.alignParkedRoute(ctx, req)
+	if lost {
+		sess = c.rebuildReactSession(ctx, req, sess, history)
+		if sess == nil {
+			return ReactTurn{Msg: "(澄清会话已失效,自动重建沙箱失败,请稍后重试)", Done: false, Err: errors.New("澄清会话重建失败")}
+		}
+		notice, aligned, _, aerr = c.alignParkedRoute(ctx, req)
+	}
 	defer func() {
 		finishChatTurn(&out, sess.acp, started)
 		if notice != "" {
@@ -313,26 +308,27 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	sess := c.sessions[key]
 	c.mu.Unlock()
 	rehydrated := false
+	reviseRebuildFailed := func() ReactTurn {
+		err := errors.New("复审会话已失效,自动重建沙箱失败,请稍后重试")
+		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("review revise rehydrate failed")
+		return ReactTurn{Msg: "(" + err.Error() + ")", Done: false, Err: err}
+	}
 	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
-		if sess != nil {
-			c.mu.Lock()
-			delete(c.sessions, key)
-			c.mu.Unlock()
-			c.discardSandbox(ctx, req, sess.sb, sess.acp, sess.home, nil)
-		}
-		prior := history
-		if len(prior) > 0 && prior[len(prior)-1].Role == "human" {
-			prior = prior[:len(prior)-1]
-		}
-		sess = c.rehydrateReact(ctx, req, prior)
+		sess = c.rebuildReactSession(ctx, req, sess, history)
 		if sess == nil {
-			err := errors.New("复审会话已失效,自动重建沙箱失败,请稍后重试")
-			log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("review revise rehydrate failed")
-			return ReactTurn{Msg: "(" + err.Error() + ")", Done: false, Err: err}
+			return reviseRebuildFailed()
 		}
 		rehydrated = true
 	}
-	notice, aligned, aerr := c.AlignChatRoute(ctx, req)
+	notice, aligned, lost, aerr := c.alignParkedRoute(ctx, req)
+	if lost {
+		sess = c.rebuildReactSession(ctx, req, sess, history)
+		if sess == nil {
+			return reviseRebuildFailed()
+		}
+		rehydrated = true
+		notice, aligned, _, aerr = c.alignParkedRoute(ctx, req)
+	}
 	defer func() {
 		finishChatTurn(&out, sess.acp, started)
 		if notice != "" {
@@ -908,10 +904,36 @@ func recoveryToolLines(m models.ReactMessage) []string {
 
 func reactKey(req NodeReq) string { return req.RunID + "|" + req.NodeID }
 
+// rebuildReactSession discards a lost parked session and rehydrates the
+// dialogue (without its trailing human message) in a fresh sandbox.
+func (c *acpProvider) rebuildReactSession(ctx context.Context, req NodeReq, lost *reactSession, history []models.ReactMessage) *reactSession {
+	if lost != nil {
+		key := reactKey(req)
+		c.mu.Lock()
+		delete(c.sessions, key)
+		c.mu.Unlock()
+		c.discardSandbox(ctx, req, lost.sb, lost.acp, lost.home, nil)
+	}
+	prior := history
+	if len(prior) > 0 && prior[len(prior)-1].Role == "human" {
+		prior = prior[:len(prior)-1]
+	}
+	return c.rehydrateReact(ctx, req, prior)
+}
+
 // parkReactSession stores a live sandbox+ACP session for later ReactReply.
 func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) *reactSession {
 	key := reactKey(req)
 	sess := &reactSession{sb: sb, acp: acp, home: home}
+	// A rebuilt sandbox may already be launched on the chosen group; record
+	// it so the next alignment does not restart the tool for nothing.
+	if acp != nil {
+		if exec := acp.Execution(); exec != nil {
+			if id := strings.TrimSpace(exec.ConfigurationID); id != "" && id != c.defaultConfigurationID(req) {
+				sess.routeConfigurationID = id
+			}
+		}
+	}
 	c.mu.Lock()
 	c.sessions[key] = sess
 	c.live[key] = sb

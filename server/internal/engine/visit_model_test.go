@@ -1,11 +1,40 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
+
+type fixedAligner struct {
+	runtime.ExecProvider
+	notice  string
+	aligned bool
+}
+
+func (a fixedAligner) AlignChatRoute(context.Context, runtime.NodeReq) (string, bool, error) {
+	return a.notice, a.aligned, nil
+}
+
+func TestPrepareVisitModelKeepsChoiceWhenSandboxIsLost(t *testing.T) {
+	e := &Engine{provider: fixedAligner{}}
+	conv := &models.ReactConversation{CurrentModelSet: true, CurrentConfigurationID: "group", CurrentModelID: "aux", CurrentReasoningEffort: "high"}
+	req := runtime.NodeReq{}
+	e.prepareVisitModel(context.Background(), &req, conv, "run", "clarify")
+	if !conv.CurrentModelSet || conv.CurrentConfigurationID != "group" || conv.CurrentModelID != "aux" || conv.CurrentReasoningEffort != "high" || conv.ModelNotice != "" || conv.AppliedModelSet {
+		t.Fatalf("unaligned visit changed the stored choice: %+v", conv)
+	}
+	if req.ChatRoute == nil || req.ChatRoute.ModelID != "aux" || req.ChatRoute.ReasoningEffort != "high" {
+		t.Fatalf("turn lost the chosen route: %+v", req.ChatRoute)
+	}
+	// The rebuilt turn aligns and records the route as applied.
+	e.rememberTurnRoute(conv, &req, runtime.ReactTurn{RouteApplied: true})
+	if !conv.AppliedModelSet || conv.AppliedModelID != "aux" || conv.CurrentModelID != "aux" || conv.ModelNotice != "" {
+		t.Fatalf("rebuilt turn did not record the chosen route: %+v", conv)
+	}
+}
 
 func TestBindChatRouteKeepsVisitsIndependent(t *testing.T) {
 	e := &Engine{}

@@ -54,6 +54,8 @@ type SandboxService struct {
 	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.
 	soloOnDestroy   func(sandboxID uint)
 	soloOnRecovered func(sandboxID uint)
+	// soloOnPaused reports a running resident the provider paused.
+	soloOnPaused func(sandboxID uint)
 	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
 	maxRetention atomic.Int64
 

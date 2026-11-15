@@ -78,6 +78,9 @@ type SoloSandboxInfo struct {
 	ContainerStatus string `json:"containerStatus,omitempty"`
 	Connected       bool   `json:"connected"`
 	HasCodeServer   bool   `json:"hasCodeServer"`
+	// Paused is set on live views of a running session whose provider
+	// sandbox is exited/stopped without a user stop.
+	Paused bool `json:"paused,omitempty"`
 	Error           string `json:"error,omitempty"`
 	CreatedAt       string `json:"createdAt,omitempty"`
 }
@@ -133,6 +136,8 @@ type SoloService struct {
 	mu     sync.Mutex
 	chats  map[string]*soloChat
 	github *githubRefClient
+	// pausedSandboxes dedupes paused status pushes until the resident recovers.
+	pausedSandboxes map[uint]bool
 }
 
 // soloModelAligner applies a model to the sandbox default chat. changed is
@@ -180,7 +185,7 @@ type soloTurn struct {
 // persistence.
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {
 	s := &SoloService{db: db, sbx: sbx, agents: agents, projects: projects, chats: map[string]*soloChat{},
-		pending: chatsession.NewPendingStore(db)}
+		pending: chatsession.NewPendingStore(db), pausedSandboxes: map[uint]bool{}}
 	// Protect saved queues before HTTP accepts messages. They must not be
 	// overwritten by a newly opened in-memory FIFO while residents recover.
 	if _, keys, err := s.pending.Load(soloPendingSurface); err == nil {
@@ -193,6 +198,7 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 		s.chat = sbx
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
 		sbx.SetSoloSandboxRecoveredHook(s.onSandboxRecovered)
+		sbx.SetSoloSandboxPausedHook(s.onSandboxPaused)
 	}
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
@@ -376,6 +382,8 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			info.ContainerStatus = gv.ContainerStatus
 			info.Connected = gv.Connected
 			info.HasCodeServer = gv.HasCodeServer
+			info.Paused = row.Status == models.SoloStatusRunning && !s.sbx.soloSandboxLocal(sb.ID) &&
+				(gv.ContainerStatus == "exited" || gv.ContainerStatus == "stopped")
 		}
 	}
 	v.Sandbox = info
@@ -582,7 +590,44 @@ func (s *SoloService) onSandboxRecovered(sandboxID uint) {
 			s.publishStatus(row.ID)
 		}
 	}
+	if s.setSandboxPaused(sandboxID, false) {
+		s.publishRunningStatus(sandboxID)
+	}
 	s.retryDeferredRestores(sandboxID)
+}
+
+// onSandboxPaused tells open pages once that a running resident was paused by
+// the provider; the next recovery clears the mark and publishes again.
+func (s *SoloService) onSandboxPaused(sandboxID uint) {
+	if s.setSandboxPaused(sandboxID, true) {
+		s.publishRunningStatus(sandboxID)
+	}
+}
+
+// setSandboxPaused records the paused mark and reports whether it changed.
+func (s *SoloService) setSandboxPaused(sandboxID uint, paused bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pausedSandboxes == nil {
+		s.pausedSandboxes = map[uint]bool{}
+	}
+	if s.pausedSandboxes[sandboxID] == paused {
+		return false
+	}
+	if paused {
+		s.pausedSandboxes[sandboxID] = true
+	} else {
+		delete(s.pausedSandboxes, sandboxID)
+	}
+	return true
+}
+
+func (s *SoloService) publishRunningStatus(sandboxID uint) {
+	var rows []models.SoloSession
+	s.db.Where("sandbox_id = ? AND status = ?", sandboxID, models.SoloStatusRunning).Find(&rows)
+	for _, row := range rows {
+		s.publishStatus(row.ID)
+	}
 }
 
 // onSandboxGone marks sessions whose sandbox was destroyed outside Close.

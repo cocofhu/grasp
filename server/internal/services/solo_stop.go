@@ -172,6 +172,26 @@ func (s *SoloService) Resume(ctx context.Context, id, user string, backupID uint
 	return s.Get(ctx, id, user)
 }
 
+// Wake resumes the same resident of a running session after the provider
+// paused it. The recovery lock in EnsureSoloRunning serializes it with a turn
+// that wakes the sandbox on its own.
+func (s *SoloService) Wake(ctx context.Context, id, user string) (*SoloSessionView, error) {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != models.SoloStatusRunning || row.SandboxID == 0 {
+		return nil, soloErr(http.StatusConflict, "session_not_running", "会话未在运行，无法恢复环境")
+	}
+	if s.sbx == nil {
+		return nil, errors.New("solo unavailable")
+	}
+	if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
+		return nil, soloErr(http.StatusBadGateway, "wake_failed", "%s", truncErr(err))
+	}
+	return s.Get(ctx, id, user)
+}
+
 func (s *SoloService) finishResume(row models.SoloSession, backupID uint) {
 	ctx := context.Background()
 	if row.SandboxID != 0 && backupID != 0 {

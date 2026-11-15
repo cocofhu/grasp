@@ -3511,6 +3511,7 @@
       "novncMissing": "当前节点没有可用沙箱，无法打开 noVNC。",
       "ideMissing": "当前节点没有可用沙箱，无法打开 IDE。",
       "terminalMissing": "当前节点没有可用沙箱，无法打开终端。",
+      "terminalReconnecting": "沙箱连接已断开，正在重新连接…",
       "tabBadgeNew": "新",
       "tabBadgeUpdated": "已更新",
       "gridEmpty": "本次运行还没有产物",
@@ -4943,6 +4944,16 @@
         "body": "会先备份工作区，再停止沙箱。停止后不再占用 Solo 配额，对话历史保留，之后可以恢复继续。",
         "excludes": "依赖和缓存目录（node_modules、.venv、__pycache__、.cache、.pnpm-store）不备份；如果恢复到新沙箱，需要重新安装。",
         "confirm": "备份并停止"
+      },
+      "wake": {
+        "action": "恢复环境",
+        "waking": "恢复中…",
+        "hint": "沙箱已被平台暂停，点击或直接发消息即可恢复"
+      },
+      "pausedStage": {
+        "title": "沙箱已暂停",
+        "waking": "正在恢复沙箱…",
+        "hint": "沙箱运行到平台最长时长后被自动暂停，浏览器、终端和 IDE 暂时无法连接。恢复或发送消息后会自动重新连接，文件和进程都还在。"
       },
       "stoppedBar": {
         "text": "环境已停止，工作区已备份。恢复后继续对话。",

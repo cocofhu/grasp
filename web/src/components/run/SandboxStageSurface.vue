@@ -35,8 +35,15 @@ const props = withDefaults(
   },
 )
 
+const emit = defineEmits<{
+  /** The terminal socket dropped or the IDE needed a retry; the host should re-resolve the sandbox. */
+  lost: []
+}>()
+
 const { t } = useI18n()
 const IFRAME_BOOT_STUCK_MS = 60_000
+/** Delays before reopening a dropped terminal socket to the same sandbox. */
+const TERMINAL_RETRY_MS = [5_000, 10_000, 20_000]
 const ideLoaded = ref(false)
 const ideFrameKey = ref(0)
 
@@ -61,7 +68,14 @@ function onIdeLoad() {
 function retryIde() {
   ideLoaded.value = false
   ideFrameKey.value += 1
+  emit('lost')
 }
+watch(
+  () => props.sandbox?.id,
+  (id, prev) => {
+    if (prev && id !== prev) ideLoaded.value = false
+  },
+)
 
 const log = ref<{ content: string; live: boolean; found: boolean; error?: string } | null>(null)
 const logLoading = ref(false)
@@ -108,6 +122,9 @@ let ro: ResizeObserver | null = null
 let lastCols = 0
 let lastRows = 0
 let termSandboxId = 0
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retryCount = 0
+let unmounted = false
 
 function termVisible(): boolean {
   const el = termHost.value
@@ -128,16 +145,77 @@ function sendResize() {
   lastRows = term.rows
   ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
 }
+function clearRetry() {
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = undefined
+}
+function closeSocket() {
+  const sock = ws
+  ws = null
+  sock?.close()
+}
 function disposeTerm() {
+  clearRetry()
+  retryCount = 0
   ro?.disconnect()
   ro = null
-  ws?.close()
-  ws = null
+  closeSocket()
   term?.dispose()
   term = null
   fit = null
   lastCols = 0
   lastRows = 0
+}
+function connectTerminal(id: number) {
+  let sock: WebSocket
+  try {
+    sock = new WebSocket(api.sandboxTerminalWsUrl(id))
+  } catch {
+    return
+  }
+  ws = sock
+  sock.binaryType = 'arraybuffer'
+  sock.onopen = () => {
+    if (ws !== sock) return
+    sendResize()
+  }
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return
+    retryCount = 0
+    if (typeof ev.data === 'string') {
+      try {
+        const m = JSON.parse(ev.data)
+        if (m.type === 'error') term?.write(`\r\n\x1b[31m${m.data}\x1b[0m\r\n`)
+        return
+      } catch {
+        term?.write(ev.data)
+        return
+      }
+    }
+    term?.write(new Uint8Array(ev.data as ArrayBuffer))
+  }
+  sock.onclose = () => {
+    if (ws !== sock || unmounted) return
+    ws = null
+    lastCols = 0
+    lastRows = 0
+    const delay = TERMINAL_RETRY_MS[retryCount]
+    if (delay === undefined) {
+      term?.write(`\r\n\x1b[33m${t('pages.sandboxConsole.disconnected')}\x1b[0m\r\n`)
+      emit('lost')
+      return
+    }
+    retryCount += 1
+    term?.write(`\r\n\x1b[33m${t('pages.reactArtifactStage.terminalReconnecting')}\x1b[0m\r\n`)
+    emit('lost')
+    clearRetry()
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      // A new sandbox id rebuilds the terminal through the watcher instead.
+      if (unmounted || ws || !term || props.sandbox?.id !== id || termSandboxId !== id) return
+      connectTerminal(id)
+    }, delay)
+  }
 }
 function initTerminal() {
   const id = props.sandbox?.id
@@ -159,31 +237,7 @@ function initTerminal() {
   term.loadAddon(fit)
   term.open(termHost.value)
   doFit()
-  try {
-    ws = new WebSocket(api.sandboxTerminalWsUrl(id))
-  } catch {
-    return
-  }
-  ws.binaryType = 'arraybuffer'
-  ws.onopen = () => {
-    sendResize()
-  }
-  ws.onmessage = (ev) => {
-    if (typeof ev.data === 'string') {
-      try {
-        const m = JSON.parse(ev.data)
-        if (m.type === 'error') term?.write(`\r\n\x1b[31m${m.data}\x1b[0m\r\n`)
-        return
-      } catch {
-        term?.write(ev.data)
-        return
-      }
-    }
-    term?.write(new Uint8Array(ev.data as ArrayBuffer))
-  }
-  ws.onclose = () => {
-    term?.write(`\r\n\x1b[33m${t('pages.sandboxConsole.disconnected')}\x1b[0m\r\n`)
-  }
+  connectTerminal(id)
   term.onData((d) => {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: d }))
   })
@@ -204,6 +258,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  unmounted = true
   logAbort?.abort()
   logAbort = null
   logGen++
@@ -221,7 +276,7 @@ onBeforeUnmount(() => {
     >
       <iframe
         v-if="ideReady"
-        :key="ideFrameKey"
+        :key="`${sandbox!.id}:${ideFrameKey}`"
         :src="api.sandboxIdeUrl(sandbox!.id)"
         class="h-full w-full border-0 bg-white"
         title="code-server"

@@ -10,6 +10,7 @@ import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import AppPreviewPanel from '@/components/run/AppPreviewPanel.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
+import SandboxPausedPlaceholder from '@/components/run/SandboxPausedPlaceholder.vue'
 import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.vue'
 import StageWorkflow from '@/components/run/StageWorkflow.vue'
 import { api, type PreviewPort } from '@/lib/api/api'
@@ -95,6 +96,9 @@ const props = withDefaults(
     /** Optional sandbox supplied by a standalone conversation (Solo). */
     sandbox?: { id: number; hasCodeServer?: boolean } | null
     sandboxLoading?: boolean
+    /** Solo: the provider paused the sandbox; sandbox tabs show a resume placeholder. */
+    sandboxPaused?: boolean
+    sandboxWaking?: boolean
     /** Log source for a standalone sandbox without a workflow node. */
     sandboxLogId?: number
     /** Review stage of a non-clarify node: show the app tab once set_preview registers. */
@@ -124,6 +128,8 @@ const props = withDefaults(
     publicMobile: false,
     sandbox: null,
     sandboxLoading: false,
+    sandboxPaused: false,
+    sandboxWaking: false,
     sandboxLogId: 0,
     probeRegisteredPreview: false,
   },
@@ -132,6 +138,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   pick: [payload: AppPreviewPickPayload]
   stagedPick: [payload: AppPreviewPickPayload | null]
+  /** Solo: resume a paused sandbox from the stage placeholder. */
+  resume: []
 }>()
 
 const { t } = useI18n()
@@ -1150,6 +1158,90 @@ watch(
   { immediate: true },
 )
 
+// A workflow node sandbox can be rebuilt without any push to this page. Re-resolve
+// it quietly on chat turns, lost connections and while a sandbox tab has none.
+const SANDBOX_BUSY_REFRESH_MS = 3_000
+const SANDBOX_POLL_MS = 5_000
+const SANDBOX_POLL_LIMIT_MS = 120_000
+const SANDBOX_TABS = new Set(['ide', 'terminal', 'browser', 'log'])
+const nodeSandboxRefreshable = computed(
+  () =>
+    !props.hideAppPreview &&
+    !props.sandbox &&
+    props.registeredPreviews === undefined &&
+    !!String(props.runId || '').trim() &&
+    !!String(props.nodeId || '').trim(),
+)
+let nodeSandboxRefreshing = false
+async function refreshNodeSandbox() {
+  if (!nodeSandboxRefreshable.value || sandboxLoadingState.value || nodeSandboxRefreshing) return
+  const gen = sandboxGen
+  const rid = String(props.runId).trim()
+  const nid = String(props.nodeId).trim()
+  nodeSandboxRefreshing = true
+  try {
+    const sbx = await api.getRunNodeSandbox(rid, nid)
+    if (gen !== sandboxGen) return
+    const cur = sandboxView.value
+    if ((cur?.id || 0) !== (sbx?.id || 0) || !!cur?.hasCodeServer !== !!sbx?.hasCodeServer) sandboxView.value = sbx
+  } catch {
+    // Keep the current sandbox; the next trigger reads again.
+  } finally {
+    nodeSandboxRefreshing = false
+  }
+}
+
+const stageSessionBusy = computed(() => !!(props.sessionBusy ?? artifactEditor.sessionBusy.value))
+let busyRefreshTimer: ReturnType<typeof setTimeout> | undefined
+watch(stageSessionBusy, (busy) => {
+  if (busyRefreshTimer) clearTimeout(busyRefreshTimer)
+  busyRefreshTimer = undefined
+  if (!nodeSandboxRefreshable.value) return
+  if (!busy) {
+    void refreshNodeSandbox()
+    return
+  }
+  busyRefreshTimer = setTimeout(() => {
+    busyRefreshTimer = undefined
+    void refreshNodeSandbox()
+  }, SANDBOX_BUSY_REFRESH_MS)
+})
+
+function onSandboxLost() {
+  void refreshNodeSandbox()
+}
+
+const sandboxPollWanted = computed(
+  () => nodeSandboxRefreshable.value && SANDBOX_TABS.has(activeTab.value) && !sandboxView.value && !sandboxLoadingState.value,
+)
+let sandboxPollTimer: ReturnType<typeof setInterval> | undefined
+function stopSandboxPoll() {
+  if (sandboxPollTimer) clearInterval(sandboxPollTimer)
+  sandboxPollTimer = undefined
+}
+watch(sandboxPollWanted, (wanted) => {
+  stopSandboxPoll()
+  if (!wanted) return
+  const started = Date.now()
+  sandboxPollTimer = setInterval(() => {
+    if (Date.now() - started > SANDBOX_POLL_LIMIT_MS) {
+      stopSandboxPoll()
+      return
+    }
+    if (document.visibilityState !== 'visible') return
+    void refreshNodeSandbox()
+  }, SANDBOX_POLL_MS)
+}, { immediate: true })
+function onStageVisibility() {
+  if (document.visibilityState === 'visible' && sandboxPollWanted.value) void refreshNodeSandbox()
+}
+onMounted(() => document.addEventListener('visibilitychange', onStageVisibility))
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onStageVisibility)
+  stopSandboxPoll()
+  if (busyRefreshTimer) clearTimeout(busyRefreshTimer)
+})
+
 watch(
   () => stageArtifacts.value.map((a) => `${a.id}:${a.revision ?? ''}`).join('|'),
   () => {
@@ -1610,12 +1702,15 @@ onBeforeUnmount(() => {
       class="flex min-h-0 flex-1 flex-col"
       data-testid="react-artifact-preview-ide"
     >
+      <SandboxPausedPlaceholder v-if="sandboxPaused" :waking="sandboxWaking" class="min-h-0 flex-1" @resume="emit('resume')" />
       <SandboxStageSurface
+        v-else
         kind="ide"
         :sandbox="sandboxView"
         :loading="sandboxLoadingState"
         :active="activeTab === 'ide'"
         class="min-h-0 flex-1"
+        @lost="onSandboxLost"
       />
     </div>
     <div
@@ -1624,12 +1719,15 @@ onBeforeUnmount(() => {
       class="flex min-h-0 flex-1 flex-col"
       data-testid="react-artifact-preview-terminal"
     >
+      <SandboxPausedPlaceholder v-if="sandboxPaused" :waking="sandboxWaking" class="min-h-0 flex-1" @resume="emit('resume')" />
       <SandboxStageSurface
+        v-else
         kind="terminal"
         :sandbox="sandboxView"
         :loading="sandboxLoadingState"
         :active="activeTab === 'terminal'"
         class="min-h-0 flex-1"
+        @lost="onSandboxLost"
       />
     </div>
     <div
@@ -1638,8 +1736,10 @@ onBeforeUnmount(() => {
       class="flex min-h-0 flex-1 flex-col"
       data-testid="react-artifact-preview-browser"
     >
+      <SandboxPausedPlaceholder v-if="sandboxPaused" :waking="sandboxWaking" class="min-h-0 flex-1" @resume="emit('resume')" />
       <NovncPreviewPanel
-        v-if="sandboxId"
+        v-else-if="sandboxId"
+        :key="sandboxId"
         :sandbox-id="sandboxId"
         console
         fill
@@ -1694,6 +1794,7 @@ onBeforeUnmount(() => {
     >
       <SandboxStageSurface
         kind="log"
+        :sandbox="sandboxView"
         :sandbox-id="sandboxLogId"
         :run-id="runId"
         :node-id="nodeId"

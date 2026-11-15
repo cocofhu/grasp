@@ -33,6 +33,12 @@ func TestSoloStopAndResumeEndpoints(t *testing.T) {
 	if res := hn.do(http.MethodPost, "/api/solo/sessions/missing/resume", nil); res.Code != http.StatusNotFound {
 		t.Fatalf("resume missing: %d %s", res.Code, res.Body)
 	}
+	if res := hn.do(http.MethodPost, "/api/solo/sessions/stopped/wake", nil); res.Code != http.StatusConflict {
+		t.Fatalf("wake stopped: %d %s", res.Code, res.Body)
+	}
+	if res := hn.do(http.MethodPost, "/api/solo/sessions/missing/wake", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("wake missing: %d %s", res.Code, res.Body)
+	}
 }
 
 func TestSoloBackupEndpoints(t *testing.T) {

@@ -40,6 +40,11 @@ const box = vi.hoisted(() => ({
   resumeSoloSession: vi.fn(),
   listSoloBackups: vi.fn(async (): Promise<unknown[]> => []),
   load: vi.fn(),
+  busy: undefined as undefined | import('vue').Ref<boolean>,
+  queued: undefined as undefined | import('vue').Ref<unknown[]>,
+  sandboxPaused: undefined as undefined | import('vue').Ref<boolean>,
+  sandboxWaking: undefined as undefined | import('vue').Ref<boolean>,
+  wake: vi.fn<() => Promise<unknown>>(async () => undefined),
 }))
 
 vi.mock('vue-router', () => ({
@@ -58,14 +63,17 @@ vi.mock('@/lib/api/api', () => ({
     cliModels: vi.fn(async () => ({ models: [] })),
   },
 }))
-vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn() }) }))
+vi.mock('@/lib/solo/useSoloSessions', () => ({ useSoloSessions: () => ({ upsert: vi.fn(), remove: vi.fn(), refresh: vi.fn(async () => undefined) }) }))
 vi.mock('@/lib/solo/useSoloChat', () => ({
   useSoloChat: () => ({
     session: box.session,
     turns: box.turns,
-    queued: ref([]),
+    queued: box.queued,
     displayQueued: ref([]),
-    busy: ref(false),
+    busy: box.busy,
+    sandboxPaused: box.sandboxPaused,
+    sandboxWaking: box.sandboxWaking,
+    wake: () => box.wake(),
     phase: box.phase,
     link: box.link,
     loading: ref(false),
@@ -111,6 +119,10 @@ const modelChangePending = (box.modelChangePending = ref(false))
 const setCurrentReasoningEffort = (box.setCurrentReasoningEffort = vi.fn(async () => true))
 const actionError = (box.actionError = ref(''))
 const setCurrentModel = (box.setCurrentModel = vi.fn(async () => true))
+const busyState = (box.busy = ref(false))
+const queuedState = (box.queued = ref<unknown[]>([]))
+const sandboxPaused = (box.sandboxPaused = ref(false))
+const sandboxWaking = (box.sandboxWaking = ref(false))
 
 function mountPane(messages: object = {}, stubs: Record<string, unknown> = {}) {
   return mount(SoloSessionPane, {
@@ -472,6 +484,93 @@ describe('SoloSessionPane', () => {
     expect(box.stop).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="solo-stop-modal"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('turns the stop button into resume while the platform paused the sandbox', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    sandboxPaused.value = true
+    busyState.value = true
+    queuedState.value = [{ id: 'q1' }]
+    box.wake.mockReset()
+    let finish: (row: unknown) => void = () => undefined
+    box.wake.mockImplementation(() => {
+      sandboxWaking.value = true
+      return new Promise((resolve) => { finish = resolve }).finally(() => { sandboxWaking.value = false })
+    })
+    const wrapper = mountPane(pages, {
+      AppModal: { props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-stop-sandbox"]').exists()).toBe(false)
+    expect(wrapper.find('.solo-banner').exists()).toBe(false)
+    const wake = wrapper.get('[data-testid="solo-wake-sandbox"]')
+    expect(wake.classes()).toContain('solo-stop-env')
+    expect(wake.text()).toContain(pages.pages.solo.wake.action)
+    expect(wake.attributes('title')).toBe(pages.pages.solo.wake.hint)
+    // Busy turns and queued messages do not block resuming.
+    expect(wake.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('textarea').attributes('disabled')).toBeUndefined()
+    await wake.trigger('click')
+    expect(box.wake).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="solo-stop-modal"]').exists()).toBe(false)
+    const waking = wrapper.get('[data-testid="solo-wake-sandbox"]')
+    expect(waking.text()).toContain(pages.pages.solo.wake.waking)
+    expect(waking.attributes('disabled')).toBeDefined()
+    finish(sessionState.value)
+    sandboxPaused.value = false
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-wake-sandbox"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="solo-stop-sandbox"]').text()).toContain(pages.pages.solo.stop.action)
+    wrapper.unmount()
+    busyState.value = false
+    queuedState.value = []
+  })
+
+  it('shows resume failures in the composer error line and opens the limit modal', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    sandboxPaused.value = true
+    actionError.value = ''
+    box.wake.mockReset()
+    box.wake.mockRejectedValueOnce(Object.assign(new Error('沙箱恢复失败，工作区已保留，请重试：gateway down'), { code: 'wake_failed' }))
+    const wrapper = mountPane(pages, {
+      SoloLimitModal: { props: ['open'], template: '<div v-if="open" data-testid="solo-limit-open" />' },
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="solo-wake-sandbox"]').trigger('click')
+    await flushPromises()
+    expect(actionError.value).toContain('gateway down')
+    expect(wrapper.get('[role="alert"]').text()).toContain('gateway down')
+    expect(wrapper.get('[data-testid="solo-wake-sandbox"]').text()).toContain(pages.pages.solo.wake.action)
+
+    box.wake.mockRejectedValueOnce(Object.assign(new Error('limit'), { code: 'solo_limit' }))
+    await wrapper.get('[data-testid="solo-wake-sandbox"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="solo-limit-open"]').exists()).toBe(true)
+    wrapper.unmount()
+    actionError.value = ''
+    sandboxPaused.value = false
+  })
+
+  it('passes the paused state to the stage and resumes from it', async () => {
+    turns.value = []
+    statusState.value = 'running'
+    sandboxPaused.value = true
+    sandboxWaking.value = true
+    box.wake.mockReset()
+    box.wake.mockResolvedValue(undefined)
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    const stage = wrapper.findComponent(ReactArtifactStage)
+    expect(stage.props('sandboxPaused')).toBe(true)
+    expect(stage.props('sandboxWaking')).toBe(true)
+    sandboxWaking.value = false
+    stage.vm.$emit('resume')
+    await flushPromises()
+    expect(box.wake).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    sandboxPaused.value = false
   })
 
   it('shows the stopped bar with the backup summary and resumes the session', async () => {

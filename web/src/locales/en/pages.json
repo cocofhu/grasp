@@ -3511,6 +3511,7 @@
       "novncMissing": "This node has no sandbox, so noVNC cannot open.",
       "ideMissing": "This node has no sandbox, so the IDE cannot open.",
       "terminalMissing": "This node has no sandbox, so the terminal cannot open.",
+      "terminalReconnecting": "Sandbox connection lost. Reconnecting…",
       "tabBadgeNew": "New",
       "tabBadgeUpdated": "Updated",
       "gridEmpty": "This run has no artifacts yet",
@@ -4943,6 +4944,16 @@
         "body": "The workspace is backed up first, then the sandbox stops. A stopped session no longer uses Solo quota and keeps its history; resume it to continue.",
         "excludes": "Dependency and cache directories (node_modules, .venv, __pycache__, .cache, .pnpm-store) are not backed up; reinstall them if the session resumes in a new sandbox.",
         "confirm": "Back up and stop"
+      },
+      "wake": {
+        "action": "Resume environment",
+        "waking": "Resuming…",
+        "hint": "The platform paused this sandbox. Click, or just send a message, to resume it"
+      },
+      "pausedStage": {
+        "title": "Sandbox paused",
+        "waking": "Resuming the sandbox…",
+        "hint": "The platform paused this sandbox after it reached the maximum run time, so the browser, terminal and IDE cannot connect. They reconnect after you resume or send a message; files and processes are kept."
       },
       "stoppedBar": {
         "text": "Environment stopped and workspace backed up. Resume to continue the conversation.",

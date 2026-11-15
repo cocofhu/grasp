@@ -55,6 +55,7 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	defer srv.Close()
 	host, port := splitRouteHost(t, srv.URL)
 	acp := sandbox.NewACPClient(host, port).WithPassword("secret").WithBridgeModel("primary").WithExecution(&models.ChatExecution{ModelID: "primary", Backend: "cursor"})
+	acp.SeedBridgeForTest(sandbox.BridgeState{}, "", "")
 	p := &acpProvider{sessions: map[string]*reactSession{}, backend: BackendCursor}
 	req := NodeReq{RunID: "run", NodeID: "clarify", ChatRoute: &ChatRoute{ModelID: "new", ReasoningEffort: "high", Set: true}, AppliedRoute: &ChatRoute{ModelID: "old", ReasoningEffort: "low", Set: true}}
 	p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Host: host, Port: port, Password: "secret"}, acp: acp}
@@ -80,6 +81,131 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	}
 	if got := p.sessions[reactKey(req)].acp.Execution(); got == nil || got.ModelID != "aux" {
 		t.Fatalf("stamped execution = %+v", got)
+	}
+}
+
+func TestAlignChatRouteTreatsLostSandboxAsUnaligned(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		refused bool
+		connect bool
+	}{
+		{name: "disconnected acp", status: http.StatusOK, connect: false},
+		{name: "gateway 502", status: http.StatusBadGateway, connect: true},
+		{name: "gateway 503", status: http.StatusServiceUnavailable, connect: true},
+		{name: "gateway 504", status: http.StatusGatewayTimeout, connect: true},
+		{name: "connection refused", refused: true, connect: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var posts int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/login" {
+					http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "cookie", Path: "/"})
+					_, _ = w.Write([]byte(`{"ok":true}`))
+					return
+				}
+				if r.URL.Path == "/api/model" {
+					posts++
+				}
+				if tc.status != http.StatusOK {
+					w.WriteHeader(tc.status)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"selected": "old", "reasoningEffort": "low"})
+			}))
+			host, port := splitRouteHost(t, srv.URL)
+			if tc.refused {
+				srv.Close()
+			} else {
+				defer srv.Close()
+			}
+			acp := sandbox.NewACPClient(host, port).WithPassword("secret").WithBridgeModel("primary").
+				WithExecution(&models.ChatExecution{ModelID: "old", ReasoningEffort: "low", Backend: "cursor"})
+			if tc.connect {
+				acp.SeedBridgeForTest(sandbox.BridgeState{}, "", "")
+			}
+			p := &acpProvider{sessions: map[string]*reactSession{}, backend: BackendCursor}
+			req := NodeReq{RunID: "run", NodeID: "clarify", ChatRoute: &ChatRoute{ModelID: "new", ReasoningEffort: "high", Set: true}, AppliedRoute: &ChatRoute{ModelID: "old", ReasoningEffort: "low", Set: true}}
+			p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Host: host, Port: port, Password: "secret"}, acp: acp}
+
+			notice, aligned, err := p.AlignChatRoute(context.Background(), req)
+			if notice != "" || aligned || err != nil {
+				t.Fatalf("lost sandbox reported notice=%q aligned=%v err=%v", notice, aligned, err)
+			}
+			if posts != 0 {
+				t.Fatalf("lost sandbox was rolled back with %d posts", posts)
+			}
+			if _, _, lost, _ := p.alignParkedRoute(context.Background(), req); !lost {
+				t.Fatal("lost sandbox was not reported for rebuild")
+			}
+		})
+	}
+}
+
+func TestIsSandboxUnreachableKeepsRejectedSwitches(t *testing.T) {
+	connected := sandbox.NewACPClient("127.0.0.1", 1)
+	connected.SeedBridgeForTest(sandbox.BridgeState{}, "", "")
+	sess := &reactSession{acp: connected}
+	for _, err := range []error{
+		&sandbox.ChatHTTPError{StatusCode: http.StatusBadRequest},
+		&sandbox.ChatHTTPError{StatusCode: http.StatusInternalServerError},
+		&sandbox.GatewayHTTPError{StatusCode: http.StatusConflict},
+		io.ErrUnexpectedEOF,
+	} {
+		if isSandboxUnreachable(sess, err) {
+			t.Fatalf("%v treated as unreachable", err)
+		}
+	}
+	for _, err := range []error{
+		sandbox.ErrConnClosed,
+		sandbox.ErrGatewayTransport,
+		&sandbox.GatewayHTTPError{StatusCode: http.StatusBadGateway},
+		&net.OpError{Op: "dial", Err: io.EOF},
+	} {
+		if !isSandboxUnreachable(sess, err) {
+			t.Fatalf("%v not treated as unreachable", err)
+		}
+	}
+}
+
+func TestParkReactSessionRecordsLaunchedModelGroup(t *testing.T) {
+	var posts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/login" {
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "cookie", Path: "/"})
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		if r.URL.Path == "/api/model" {
+			posts++
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"selected": "aux", "reasoningEffort": "high"})
+	}))
+	defer srv.Close()
+	host, port := splitRouteHost(t, srv.URL)
+	p := &acpProvider{sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{}, backend: BackendCursor}
+	req := NodeReq{RunID: "run", NodeID: "clarify", ChatRoute: &ChatRoute{ConfigurationID: "grp-b", ModelID: "aux", ReasoningEffort: "high", Set: true}}
+
+	launched := sandbox.NewACPClient(host, port).WithPassword("secret").WithBridgeModel("aux").
+		WithExecution(&models.ChatExecution{ConfigurationID: "grp-b", ModelID: "aux", Backend: "cursor"})
+	launched.SeedBridgeForTest(sandbox.BridgeState{}, "", "")
+	sess := p.parkReactSession(req, &sandbox.Sandbox{Host: host, Port: port, Password: "secret"}, launched, "")
+	if sess.routeConfigurationID != "grp-b" {
+		t.Fatalf("routeConfigurationID = %q, want grp-b", sess.routeConfigurationID)
+	}
+	// p has no tool switcher: a needless SwitchTool would fail the alignment.
+	notice, aligned, err := p.AlignChatRoute(context.Background(), req)
+	if notice != "" || !aligned || err != nil || posts != 0 {
+		t.Fatalf("rebuilt session switched again: notice=%q aligned=%v err=%v posts=%d", notice, aligned, err, posts)
+	}
+
+	primary := sandbox.NewACPClient(host, port).WithExecution(&models.ChatExecution{Backend: "cursor"})
+	if got := p.parkReactSession(req, &sandbox.Sandbox{Host: host, Port: port}, primary, "").routeConfigurationID; got != "" {
+		t.Fatalf("default launch recorded group %q", got)
 	}
 }
 

@@ -139,6 +139,12 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
   const canSend = computed(() => sessionOpen.value && historyReady.value)
+  // The platform paused a running sandbox. Sending still works: the server
+  // wakes the same sandbox before the turn starts.
+  const sandboxPaused = computed(() => status.value === 'running' && !!session.value?.sandbox?.paused)
+  const sandboxWaking = ref(false)
+  let wakeRequests = 0
+  watch(sandboxPaused, (paused) => { if (!paused) sandboxWaking.value = false })
   // An explicit current model wins, including empty (primary). Old sessions
   // omit the flag and keep the opening model.
   const currentModelId = computed(() => {
@@ -388,6 +394,13 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     } catch {
       /* keep the current transcript */
     }
+  }
+
+  /** A turn that woke the sandbox ended: re-read the live paused flag. */
+  function settleWaking() {
+    if (!sandboxWaking.value || wakeRequests) return
+    sandboxWaking.value = false
+    if (sandboxPaused.value) void refreshSession()
   }
 
   function showModelNotice(code: string, fallback = '') {
@@ -687,6 +700,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         busy.value = queued.value.length > 0
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
+        settleWaking()
         break
       case 'error':
         applyExecution(frame)
@@ -694,6 +708,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         busy.value = queued.value.length > 0
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
+        settleWaking()
         break
       case 'model': {
         // Ordinary acknowledgements can arrive before a newer queued choice.
@@ -814,6 +829,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     persistedHistory = []
     historyReady.value = false
     busy.value = false
+    sandboxWaking.value = false
     phase.value = ''
     activeId.value = ''
     lastSeq = -1
@@ -849,6 +865,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const epoch = chatEpoch
     if (!id || disposed || !canSend.value || (!text.trim() && !images.length && !references.length && !annotations.length)) return false
     actionError.value = ''
+    const wakes = sandboxPaused.value && !sandboxWaking.value
+    if (wakes) sandboxWaking.value = true
     const body = text.trim()
     const refs = references.length ? references : undefined
     const local: SoloQueueItem = { id: newLocalId(), text: body, images, references: refs, annotations, local: true }
@@ -895,7 +913,31 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       forgetSend(send)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
       actionError.value = String(e?.message || e)
+      if (wakes && !wakeRequests) sandboxWaking.value = false
       return false
+    }
+  }
+
+  /**
+   * Wakes the paused sandbox of this running session. Resolves to the live row,
+   * or undefined when the session changed meanwhile; rejects with the API error.
+   */
+  async function wake(): Promise<SoloSession | undefined> {
+    const id = sessionId.value
+    const epoch = chatEpoch
+    if (!id || disposed || wakeRequests) return undefined
+    actionError.value = ''
+    wakeRequests++
+    sandboxWaking.value = true
+    try {
+      const row = await api.wakeSoloSession(id)
+      if (disposed || epoch !== chatEpoch || id !== sessionId.value) return undefined
+      sessionGeneration++
+      setSession(row)
+      return row
+    } finally {
+      wakeRequests--
+      if (!disposed && epoch === chatEpoch) sandboxWaking.value = false
     }
   }
 
@@ -1107,6 +1149,9 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     closed,
     stopped,
     canSend,
+    sandboxPaused,
+    sandboxWaking,
+    wake,
     currentModelId,
     currentConfigurationId,
     currentReasoningEffort,
