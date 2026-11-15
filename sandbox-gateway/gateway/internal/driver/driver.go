@@ -112,8 +112,9 @@ type StopOptions struct {
 	BackupKeep int `json:"backupKeep"`
 }
 
-// CleanupPendingError distinguishes disk GC from a still-allocated workload.
-// WorkloadReleased must be backed by provider process-exit confirmation.
+// CleanupPendingError distinguishes pending owned-resource cleanup from an
+// allocated workload. WorkloadReleased follows the driver's provider contract;
+// it does not claim that a remote host has finished physical disk reclamation.
 type CleanupPendingError struct {
 	WorkloadReleased bool
 }

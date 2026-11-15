@@ -317,16 +317,13 @@ func (c *Client) SetTimeout(ctx context.Context, id string, seconds int) error {
 }
 
 // Pause requests a full memory snapshot and refuses unhealthy-guest snapshots.
-func (c *Client) Pause(ctx context.Context, id string, keep int) error {
-	if keep < 1 {
-		return errors.New("snapshot retention must be positive")
-	}
+func (c *Client) Pause(ctx context.Context, id string) error {
 	path, err := sandboxPath(id)
 	if err != nil {
 		return err
 	}
 	_, err = c.control(ctx, "pause", http.MethodPost, path+"/pause", nil,
-		map[string]any{"memory": true, "requireHealthyGuest": true, "snapshotKeep": keep}, nil, http.StatusNoContent)
+		map[string]bool{"memory": true, "requireHealthyGuest": true}, nil, http.StatusNoContent)
 	return err
 }
 

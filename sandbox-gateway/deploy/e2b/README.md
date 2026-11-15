@@ -207,11 +207,25 @@ docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up
 
 gateway 恢复 guest、连接凭据和本地端口，Grasp 保留原沙箱记录。等待人工的 workflow 可以释放空闲环境，回复时先恢复最新成功状态再继续；不会因为空闲策略改变工作流的 `waiting_human` 状态。内存快照不等于网络连接快照，终端、模型请求和 Agent 控制连接仍需重建，不承诺正在进行的网络请求无缝继续。
 
-Grasp 的空闲回收与手动「停止环境」使用同一条保存流程：E2B 完整快照持久化确认后暂停，不另做文件备份。`sandbox.idle_ttl_minutes`（默认 60）与 `sandbox.max_sandboxes`（默认 15）适用于所有用途/后端，`solo_backup.keep`（默认 1）统一控制恢复点数量。取消运行会删除全部恢复点并持续重试物理回收。详见 [生命周期说明](../../../docs/content/help/sandbox-lifecycle.md)。
+Grasp 的空闲回收与手动「停止环境」使用同一条保存流程，E2B 不另做文件备份。`sandbox.idle_ttl_minutes`（默认 60）、`sandbox.max_sandboxes`（默认 15）和 `solo_backup.keep`（默认 1）继续作用于所有用途/后端，不增加 E2B 专用策略配置。详见 [生命周期说明](../../../docs/content/help/sandbox-lifecycle.md)。
 
-**provider 升级要求**：托管保存需要支持 pause body 的 `snapshotKeep` 和认证的 `GET /sandboxes/{id}/snapshot-status`。该接口必须以对象存储的实际完成状态确认 `ready`，以引用安全回收确认 `deleted`；旧 provider 或缺少节点能力时应在暂停前失败。部署顺序为数据库迁移、支持持久化确认/回收的 orchestrator、API、gateway、Grasp。单节点更新 orchestrator 前安排维护窗口，不能为更新而强行中断正在运行的业务沙箱。验收必须使用独立测试 guest。
+### 标准 E2B 接口
 
-新建 guest 仍默认 `autoPause=true`，provider 租约是 gateway 不可用时的兜底，不是 Grasp 的空闲计时。运行任务期间 gateway 持续续租，自建部署须另行配置足够的最长运行时长或滚动租约策略。provider 自行暂停的历史 guest 不会仅因列表显示 paused 就被当成新保存已验证。恢复保留原有端口，现存 TCP 连接会断开后重建。
+- `keep: 1`：调用官方 `POST /sandboxes/{id}/pause`，请求 `memory: true`、`requireHealthyGuest: true`；恢复调用原 ID 的 `connect`。不创建额外独立快照。
+- `keep > 1`：空闲保存用官方 `POST /sandboxes/{id}/snapshots` 创建具名内存快照，保存成功后删除源 guest 以释放计算资源；这份快照就是本次保存的确切状态，不再紧接着生成另一份暂停快照。保留最近 N 个独立快照，超出部分用 `DELETE /templates/{id}` 删除。磁盘上的实际对象数不等于 N。从独立快照恢复后若切回原生暂停，仍被该 guest 引用的基础模板保留为依赖，取消 guest 后继续清理，不作为可选择的历史恢复点。多份保留会增加保存时间和存储占用；provider 必须支持官方独立快照 API 及相应 envd 版本。
+- 原生暂停恢复使用原 guest；独立快照保存完成后从该确切快照新建 provider guest。原 guest 必须明确不存在，且最新快照可用，才能执行后者；gateway 的业务 ID 保持不变，私密连接凭据和端口转发随新 provider ID 更新。不从更旧的快照或空白模板悄悄恢复。保存成功到恢复之间的外部网络连接仍需重建。
+- 快照名称、不可变模板 ID、创建/恢复/删除意图保存在 gateway 私有 journal。请求超时后先查询并认领结果，不能无条件再创建。无法确认的操作保留重试记录；尤其快照已发送但尚无可查询别名时，取消不会伪报全部清理完成。
+- 取消运行删除所属 guest 和 gateway 创建的独立快照，接口失败继续重试。完成表示标准 API 已接受删除且 guest 查询不存在，**不表示宿主机磁盘立刻腾空**；共享层与物理 GC 由 provider 负责。Grasp 不再要求 `snapshotKeep` 或 `snapshot-status` 私有扩展，也不读取物理回收字节数。
+
+官方暂停的可恢复性和持久化时机由 provider 合同负责；Grasp 不额外承诺对象存储上传或底层进程退出凭证。上传故障、断电保护与物理 GC 应在部署层监控。自建增强版可以在标准接口内部维护这些保障，但不能成为通用客户端的必要条件。
+
+### 存量兼容和部署顺序
+
+已有原生暂停 guest 继续按原 ID 恢复；升级不会批量转换、暂停或删除它们。旧 provider 私有账本中的历史恢复点仍由该部署的回收机制管理，不伪装成 gateway 新建的官方独立快照。私有 journal 读取 v1，后续写入 v2；旧 gateway 不理解 v2，回退需保留全部 journal 并使用支持该版本的程序，不能删除新字段规避校验。
+
+标准 E2B 用户无需私有迁移或定制 Dashboard。自建增强部署应先应用配套 API/migrator，让标准暂停和模板删除进入已有安全 GC，再更新 gateway 和 Grasp；该 API 升级不要求重启已具备存储维护能力的 orchestrator。官方 Dashboard 使用同一官方发布清单中的配套 API/节点版本，不能只升级页面镜像。更换 provider 节点仍须单独安排维护窗口，不得为了更新中断业务沙箱。
+
+新建 guest 仍默认 `autoPause=true`，provider 租约是 gateway 不可用时的兜底，不是 Grasp 的空闲计时。运行任务期间 gateway 持续续租，自建部署须另行配置足够的最长运行时长或滚动租约策略。provider 自行暂停的历史 guest 直接走原生恢复，不重复调用暂停制造新恢复点。恢复保留原有端口，现存 TCP 连接会断开后重建。
 
 pause/resume 仍需在目标 provider 版本上单独验收。gateway 对恢复阶段的 provider 5xx、临时控制面传输失败和 private relay 发布竞态，会在同一个 provider guest 上做有界重试；启动恢复与显式 start 共用这条路径。仍必须在目标部署检查应用、SSH、IDE、CDP 和 Docker，而不能只看 “provider running”。失败应保留安全状态证据并处理本部署拥有的 guest，不自动降级成新建空白 guest。
 
