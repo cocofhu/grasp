@@ -359,7 +359,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)},
 			Capabilities: &models.AgentCapabilities{Interaction: models.InteractionAuto, Tools: []string{
 				models.ToolAskQuestion, models.ToolAskForm, models.ToolSetArtifactPreview, models.ToolSetPreview,
-			}},
+			}, Reads: []string{"*"}},
 			Files: []AgentFile{{Path: "AGENTS.md", Content: loc.SoloAgentsMD}},
 			Env:   map[string]string{},
 			Layout: AgentLayout{
