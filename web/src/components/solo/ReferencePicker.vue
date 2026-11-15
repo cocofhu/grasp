@@ -480,6 +480,11 @@ defineExpose({ move, confirm, cycleTab, setTab })
   flex: 1;
   align-items: center;
   gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ref-picker__tabbar::-webkit-scrollbar {
+  display: none;
 }
 .ref-picker__ink {
   position: absolute;
@@ -502,6 +507,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
   padding: 0 9px;
   color: rgb(var(--c-txt3));
   font-size: 12px;
+  white-space: nowrap;
   transition: color 180ms ease;
 }
 .ref-picker__tab:hover {
@@ -541,6 +547,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
   padding: 0 9px;
   color: rgb(var(--c-txt3));
   font-size: 11px;
+  white-space: nowrap;
 }
 .ref-picker__seg .ref-picker__seg--on {
   background: rgb(var(--c-overlay));
