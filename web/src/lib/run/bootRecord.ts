@@ -16,6 +16,7 @@
  * both ends are server timestamps; otherwise the step shows no time.
  */
 import { reactive } from 'vue'
+import { fmtDuration } from '@/lib/shared/format'
 
 type BootStepId = 'sandbox' | 'workspace' | 'agent'
 type BootStepState = 'done' | 'running' | 'pending'
@@ -123,6 +124,11 @@ export function clearBootRecords(): void {
 
 function readyOf(rec: BootRecord | null): boolean {
   return !!rec && (rec.live || rec.readyAt != null || rec.sandboxStatus === 'running')
+}
+
+/** Boot elapsed / step time label: `42s` under a minute, fmtDuration beyond. */
+export function fmtBootSec(sec: number): string {
+  return sec < 60 ? `${sec}s` : fmtDuration(sec)
 }
 
 /** Seconds from node start to sandbox registered running, both server clock. */
