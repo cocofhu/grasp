@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复空闲沙箱因运行时启动、E2B 转发和预览守护进程而一直无法自动回收的问题；用户同名脚本和后台子进程仍会阻止回收。
+
 - 沙箱回收与容量统一：所有用途及 Docker/Kubernetes/E2B 共用空闲时长（默认 60 分钟）和同时运行上限（默认 15）。空闲后先保存再释放资源，等待人工的工作流可回收并在回复时恢复；运行任务不被空闲策略中断。Docker/K8s 保存工作区并删除容器/PVC，E2B 保存完整快照。备份共用 `solo_backup.keep`（默认 1），只恢复最新成功版本，移除运行中定时备份、版本选择及分类 TTL/上限/手动续期。取消运行清理全部恢复点；清理失败持久重试。自建 E2B 需先升级支持快照持久化确认和引用安全回收的 provider。
 
 - 修复 Agent 在 E2B 等远端沙箱中用 `send_file`、`upload_file_artifact` 发送或导入文件时总是失败、提示 `argv[2]: shell argument contains disallowed characters` 的问题。zip 等任意类型的文件现在都能直接发给用户，文件名含中文、空格或括号也可以。导出范围不变，仍只允许工作区和 `/tmp` 内的普通文件。
