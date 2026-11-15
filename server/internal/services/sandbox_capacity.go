@@ -23,10 +23,15 @@ type SandboxCapacity struct {
 	Limit int `json:"limit"`
 }
 
-// Only confirmed stopped workloads release their slot. In particular an error
-// during cleanup or restore does not prove that the underlying resource is gone.
+// Only provider-confirmed stopped workloads release their slot. Backup deletion
+// can remain pending after compute is released; an observation error proves
+// neither. This counts API-level allocations, not physical host reclamation.
 func occupiedSandboxes(db *gorm.DB) *gorm.DB {
 	return db.Model(&models.Sandbox{}).Where("status <> ?", "stopped")
+}
+
+func workloadReleasedStatus(status string) bool {
+	return status == "stopped" || status == "exited" || status == "not_found"
 }
 
 func (s *SandboxService) Capacity() (SandboxCapacity, error) {

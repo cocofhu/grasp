@@ -17,6 +17,11 @@ import (
 // GET response does not return private traffic credentials. Losing this volume
 // loses the ability to reconnect; the provider lease still bounds guest life.
 type record struct {
+	Restore          *snapshotRestore `json:"restore,omitempty"`
+	RecoveryPoints   []recoveryPoint  `json:"recoveryPoints,omitempty"`
+	CaptureName      string           `json:"captureName,omitempty"`
+	LatestSnapshotID string           `json:"latestSnapshotID,omitempty"`
+	BackupKeep       int              `json:"backupKeep,omitempty"`
 	// Persist discoveries before DELETE: the provider's live list no longer
 	// includes a guest whose asynchronous snapshot cleanup is still pending.
 	CleanupIDs     []string        `json:"cleanupIDs,omitempty"`
@@ -52,7 +57,7 @@ type entry struct {
 func (d *Driver) statePath(id string) string { return filepath.Join(d.opts.StateDir, id+".json") }
 
 func (d *Driver) save(r *record) error {
-	r.Version, r.Owner = 1, d.opts.OwnerID
+	r.Version, r.Owner = 2, d.opts.OwnerID
 	r.EnvdToken, r.TrafficToken = r.Provider.EnvdAccessToken, r.Provider.TrafficAccessToken
 	data, err := json.Marshal(r)
 	if err != nil {
@@ -127,14 +132,17 @@ func (d *Driver) load() error {
 			return errors.New("cannot read E2B recovery record")
 		}
 		var r record
-		if json.Unmarshal(data, &r) != nil || r.Version != 1 || r.Owner != d.opts.OwnerID || !providerIDPattern.MatchString(r.ID) || f.Name() != r.ID+".json" {
+		if json.Unmarshal(data, &r) != nil || (r.Version != 1 && r.Version != 2) || r.Owner != d.opts.OwnerID || !providerIDPattern.MatchString(r.ID) || f.Name() != r.ID+".json" {
 			return errors.New("invalid E2B recovery record or owner mismatch")
 		}
 		if r.Provider.ID != "" && !d.owns(&r.Provider, r.ID) {
 			return errors.New("E2B recovery provider ownership mismatch")
 		}
+		if err := validateRecovery(&r); err != nil {
+			return err
+		}
 		switch r.Phase {
-		case "creating", "running", "paused", "deleting":
+		case "creating", "running", "paused", "releasing", "deleting":
 		default:
 			return errors.New("invalid E2B recovery phase")
 		}
@@ -148,7 +156,7 @@ func (d *Driver) load() error {
 				return errors.New("invalid E2B recovery endpoint")
 			}
 		}
-		if (r.Phase == "running" || r.Phase == "paused") && (r.Provider.ID == "" || r.RelayKey == "" || r.TrafficToken == "" || r.EnvdToken == "") {
+		if (r.Phase == "running" || r.Phase == "paused" || r.Phase == "releasing") && (r.Provider.ID == "" || r.RelayKey == "" || r.TrafficToken == "" || r.EnvdToken == "") {
 			return errors.New("incomplete private E2B recovery credentials")
 		}
 

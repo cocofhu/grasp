@@ -74,7 +74,7 @@ func (s *SoloService) finishStop(row models.SoloSession) {
 	if err := s.sbx.Reclaim(ctx, row.SandboxID); err != nil {
 		status := models.SoloStatusStopping
 		if sb, getErr := s.sbx.Get(row.SandboxID); getErr == nil {
-			if sb.Status == "stopped" {
+			if sb.Status == "stopped" && sb.RecoveryPhase == "" {
 				status = models.SoloStatusStopped
 			}
 			if sb.Status == "running" {

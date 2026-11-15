@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 /** localStorage key read by isOnboardingSuppressed. */
-export const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
+const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
 
 /**
  * Seed dismiss flag before navigation so stubs without the default workflow do

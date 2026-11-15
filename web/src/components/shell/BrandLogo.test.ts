@@ -76,4 +76,27 @@ describe('BrandLogo', () => {
     expect(login).not.toMatch(/show-mark|showMark|brand-logo__mark/)
     expect(boot).not.toMatch(/brand-logo__mark/)
   })
+
+  it('styles the wordmark as solid Fredoka 600 ink without gradient or shimmer', () => {
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const css = readFileSync(join(dir, '../../styles/global.css'), 'utf8')
+    const rule = css.match(/\.brand-logo__name\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(rule).toMatch(/font-family:\s*'Fredoka',\s*ui-rounded/)
+    expect(rule).toMatch(/font-weight:\s*600/)
+    expect(rule).toMatch(/letter-spacing:\s*-0\.01em/)
+    expect(rule).toMatch(/color:\s*rgb\(var\(--c-txt\)\)/)
+    expect(rule).not.toMatch(/background|text-fill-color|animation/)
+    expect(css).toMatch(/\.brand-logo--sm \.brand-logo__name\s*\{\s*font-size:\s*18px/)
+    expect(css).toMatch(/\.brand-logo--md \.brand-logo__name\s*\{\s*font-size:\s*20px/)
+    expect(css).toMatch(/\.brand-logo--lg \.brand-logo__name\s*\{\s*font-size:\s*30px/)
+    expect(css).not.toMatch(/--grad-logo|@keyframes shimmer\b/)
+    // Long custom product names must shrink inside the sidebar lockup and ellipsize.
+    expect(css).toMatch(/\.brand-logo\s*\{[^}]*min-width:\s*0/)
+
+    const boot = readFileSync(join(dir, '../../../index.html'), 'utf8')
+    const bootRule = boot.match(/\.boot-shell \.brand-logo__name\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(bootRule).toMatch(/'Fredoka'/)
+    expect(bootRule).not.toMatch(/gradient|background-clip/)
+    expect(boot).toMatch(/rel="preload"\s+href="\/fonts\/fredoka-latin-600-normal\.woff2"/)
+  })
 })

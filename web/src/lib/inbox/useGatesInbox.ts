@@ -4,7 +4,8 @@ import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
+import { applyRunLiveFrame } from '@/lib/run/runLiveCards'
+import { openRunEventsSocket } from '@/lib/run/runEventsSocket'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { readClarifyStash } from '@/lib/inbox/clarifyDraftStash'
 import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
@@ -70,6 +71,8 @@ import {
   knownInboxProcessingLock,
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { createInboxInputGuard } from '@/lib/inbox/inboxInputGuard'
+import { createInboxContextFlight, createInboxProcessingState } from '@/lib/inbox/inboxProcessing'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
 import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
@@ -99,8 +102,7 @@ import {
   type RunChain,
 } from '@/lib/inbox/runConversationChain'
 
-/** Input idle time after which a focused, emptied field stops holding list auto-apply. */
-export const TYPING_IDLE_MS = 2000
+export { TYPING_IDLE_MS } from '@/lib/inbox/inboxInputGuard'
 
 export function useGatesInbox() {
 
@@ -484,65 +486,48 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
-  followReconnect.markConnecting()
-  let ws: WebSocket
-  try {
-    ws = new WebSocket(api.runEventsWsUrl(runId))
-  } catch {
-    followReconnect.onClose()
-    return
-  }
-  ;(ws as WebSocket & { _runId?: string })._runId = runId
-  followWs = ws
-  followHeartbeat.start()
-  ws.onopen = () => {
-    if (followWs !== ws) return
-    followReconnect.markOpened()
-    followHeartbeat.touch()
-    if (fromReconnect) void refreshRunLive(runId)
-  }
-  ws.onmessage = (ev) => {
-    if (followWs !== ws) return
-    followHeartbeat.touch()
-    let m: {
-      type?: string
-      runId?: string
-      nodeId?: string
-      iteration?: number
-      name?: string
-      kind?: string
-      mode?: string
-      state?: 'stopping' | 'waiting_human'
-      events?: AcpEvent[]
-      busy?: boolean
-      status?: string
-    }
-    try {
-      m = JSON.parse(String(ev.data))
-    } catch {
-      return
-    }
-    if (m.type === 'live') applyRunLiveFrame(m)
-    else if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
-    else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
-    else if (m.type === 'status') {
-      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
-      kickFollow()
-    }
-    else if (m.type === 'acp') onFollowAcp(runId, m)
-  }
-  ws.onclose = () => {
-    if (followWs !== ws) return
-    followHeartbeat.stop()
-    followWs = null
-    const ft = followTail.value
-    const item = followItem
-    // Gap: chain poll updates the status line; node records refill steps.
-    if (ft && item && active.value && itemKey(active.value) === ft.key && ft.kind !== 'ended') {
-      void followStep(item, ft.key)
-    }
-    followReconnect.onClose()
-  }
+  openRunEventsSocket<{
+    type?: string
+    runId?: string
+    nodeId?: string
+    iteration?: number
+    name?: string
+    kind?: string
+    mode?: string
+    state?: 'stopping' | 'waiting_human'
+    events?: AcpEvent[]
+    busy?: boolean
+    status?: string
+  }>({
+    runId,
+    heartbeat: followHeartbeat,
+    reconnect: followReconnect,
+    isCurrent: (ws) => followWs === ws,
+    adopt: (ws) => {
+      ;(ws as WebSocket & { _runId?: string })._runId = runId
+      followWs = ws
+    },
+    catchUp: fromReconnect,
+    onFrame: (m) => {
+      if (m.type === 'live') applyRunLiveFrame(m)
+      else if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
+      else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
+      else if (m.type === 'status') {
+        noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+        kickFollow()
+      }
+      else if (m.type === 'acp') onFollowAcp(runId, m)
+    },
+    onClosed: () => {
+      followWs = null
+      const ft = followTail.value
+      const item = followItem
+      // Gap: chain poll updates the status line; node records refill steps.
+      if (ft && item && active.value && itemKey(active.value) === ft.key && ft.kind !== 'ended') {
+        void followStep(item, ft.key)
+      }
+    },
+  })
 }
 /**
  * WS node_enter {runId,nodeId,iteration,name,kind,mode} (#850): the run
@@ -1113,99 +1098,28 @@ const listPanelBusy = computed(
 const clarifyConfirmError = ref<string | null>(null)
 const clarifyConfirmCanAbort = ref(false)
 
-/** Triples that left pending — never softRefresh/load inbox-context for these. */
-const processedTriples = new Set<string>()
-/** Processed triples observed absent from a subsequent list load (safe to unmark if they reappear). */
-const confirmedAbsentTriples = new Set<string>()
-/** Per-triple AbortController for in-flight inbox-context fetches. */
-const inboxContextAborts = new Map<string, AbortController>()
-/** Single-flight: one softRefresh/loadActiveRun at a time for the selected triple. */
-let inboxContextInFlight: string | null = null
-/** Terminal frames received during that flight retain one coalesced trailing refresh. */
-const inboxContextTrailingRefreshes = new Set<string>()
-/**
- * In-flight confirm intents (triple keys). Non-empty ⇒ list reselection / refresh
- * stay gated (race with lagging list). Force confirm is gated per-item only so a
- * neighbor can confirm while an earlier reactReply/resume is still pending.
- */
-const processingIntentKeys = ref(new Set<string>())
-const processingLock = computed(() => processingIntentKeys.value.size > 0)
+const {
+  confirmedAbsentTriples,
+  processingLock,
+  addProcessingIntent,
+  removeProcessingIntent,
+  isProcessingIntent,
+  isItemCardDisabled,
+  markProcessed,
+  unmarkProcessed,
+  isProcessedTriple,
+  reconcileProcessedWithList,
+} = createInboxProcessingState()
 
-function addProcessingIntent(triple: string) {
-  const next = new Set(processingIntentKeys.value)
-  next.add(triple)
-  processingIntentKeys.value = next
-}
-
-function removeProcessingIntent(triple: string) {
-  if (!processingIntentKeys.value.has(triple)) return
-  const next = new Set(processingIntentKeys.value)
-  next.delete(triple)
-  processingIntentKeys.value = next
-}
-
-function isProcessingIntent(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'> | null | undefined) {
-  if (!it) return false
-  return processingIntentKeys.value.has(inboxTripleKey(it))
-}
-
-/** Per-item card/select gate — not the global processingLock (plan g1.2). */
-function isItemCardDisabled(it: InboxItem) {
-  return isProcessingIntent(it) || isProcessedTriple(it)
-}
-
-function markProcessed(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>) {
-  processedTriples.add(inboxTripleKey(it))
-}
-
-function unmarkProcessed(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>) {
-  const key = inboxTripleKey(it)
-  processedTriples.delete(key)
-  confirmedAbsentTriples.delete(key)
-}
-
-function isProcessedTriple(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'> | null | undefined) {
-  if (!it) return false
-  return processedTriples.has(inboxTripleKey(it))
-}
-
-function abortInboxContext(triple: string) {
-  inboxContextTrailingRefreshes.delete(triple)
-  const ctrl = inboxContextAborts.get(triple)
-  if (!ctrl) return
-  ctrl.abort()
-  inboxContextAborts.delete(triple)
-  if (inboxContextInFlight === triple) inboxContextInFlight = null
-}
-
-function acquireInboxContextSignal(triple: string): AbortSignal | null {
-  // Single-flight: drop duplicate softRefresh/load while one request is in flight.
-  if (inboxContextInFlight === triple) return null
-  // Switching selection: abort the previous triple's in-flight request.
-  if (inboxContextInFlight && inboxContextInFlight !== triple) {
-    abortInboxContext(inboxContextInFlight)
-  }
-  abortInboxContext(triple)
-  const ctrl = new AbortController()
-  inboxContextAborts.set(triple, ctrl)
-  inboxContextInFlight = triple
-  return ctrl.signal
-}
-
-function releaseInboxContextSignal(triple: string, signal: AbortSignal) {
-  const ctrl = inboxContextAborts.get(triple)
-  const ownsFlight = ctrl?.signal === signal && inboxContextInFlight === triple
-  if (ctrl?.signal === signal) inboxContextAborts.delete(triple)
-  if (ownsFlight) inboxContextInFlight = null
-  if (!ownsFlight || signal.aborted || !inboxContextTrailingRefreshes.delete(triple)) return
-  // Run after the owner's finally finishes its loading cleanup. The selected
-  // triple may have moved or been processed while the request was in flight.
-  queueMicrotask(() => {
-    if (!active.value || inboxTripleKey(active.value) !== triple) return
-    if (!shouldFetchActiveInboxContext()) return
-    void softRefreshActiveRun()
-  })
-}
+const inboxContext = createInboxContextFlight((triple) => {
+  if (!active.value || inboxTripleKey(active.value) !== triple) return
+  if (!shouldFetchActiveInboxContext()) return
+  void softRefreshActiveRun()
+})
+const inboxContextAborts = inboxContext.aborts
+const abortInboxContext = inboxContext.abort
+const acquireInboxContextSignal = inboxContext.acquire
+const releaseInboxContextSignal = inboxContext.release
 
 /**
  * User clicked approve / force-finish clarify: short-circuit immediately so the
@@ -1757,24 +1671,6 @@ function ensureValidActive({ keepActive = false }: { keepActive?: boolean } = {}
   active.value = list[0]
 }
 
-/**
- * Allow re-fetch only after a processed triple was confirmed gone, then reappears as pending.
- * Avoids clearing the mark on the immediate lagging loadList that still contains the item.
- */
-function reconcileProcessedWithList(list: InboxItem[]) {
-  const pending = new Set(list.map((it) => inboxTripleKey(it)))
-  for (const key of [...processedTriples]) {
-    if (!pending.has(key)) {
-      confirmedAbsentTriples.add(key)
-      continue
-    }
-    if (confirmedAbsentTriples.has(key)) {
-      processedTriples.delete(key)
-      confirmedAbsentTriples.delete(key)
-    }
-  }
-}
-
 /** After an item leaves the list: neighbor active (or null). Never keep stale active. */
 /**
  * Where the inbox goes after an inline hand-off. Returns false to fall back to
@@ -1954,59 +1850,7 @@ const isClarifyEditing = computed(
 
 const isEditing = computed(() => isGateEditing.value || isClarifyEditing.value)
 
-/**
- * The focused text field (gate form, clarify composer, filters…) holds a
- * non-empty draft. Counted as editing for list auto-apply so the caret and the
- * typed text are never disturbed; an empty focused field (e.g. the composer
- * right after sending) does not freeze the list.
- */
-const focusedFieldHasDraft = ref(false)
-function isTextEntry(el: Element | null): el is HTMLElement {
-  if (!(el instanceof HTMLElement)) return false
-  if (el.isContentEditable) return true
-  if (el instanceof HTMLTextAreaElement) return true
-  if (el instanceof HTMLInputElement) {
-    return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type)
-  }
-  return false
-}
-function fieldHasDraft(el: HTMLElement): boolean {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim().length > 0
-  return (el.textContent || '').trim().length > 0
-}
-/**
- * The user typed into the focused field within the last TYPING_IDLE_MS. Clearing
- * a draft (Ctrl+A, Backspace) and typing on must not count as "done editing":
- * the hold lasts until the field blurs or input has been idle for a while.
- */
-const typingRecently = ref(false)
-let typingIdleTimer: ReturnType<typeof setTimeout> | null = null
-function clearTypingIdle() {
-  if (typingIdleTimer) clearTimeout(typingIdleTimer)
-  typingIdleTimer = null
-  typingRecently.value = false
-}
-function syncFocusedFieldDraft() {
-  const el = typeof document !== 'undefined' ? document.activeElement : null
-  const entry = isTextEntry(el)
-  focusedFieldHasDraft.value = entry && fieldHasDraft(el)
-  if (!entry) clearTypingIdle()
-}
-function onFieldInput(e: Event) {
-  syncFocusedFieldDraft()
-  const el = typeof document !== 'undefined' ? document.activeElement : null
-  if (!isTextEntry(el) || (e.target instanceof Node && !el.contains(e.target))) return
-  typingRecently.value = true
-  if (typingIdleTimer) clearTimeout(typingIdleTimer)
-  typingIdleTimer = setTimeout(() => {
-    typingIdleTimer = null
-    typingRecently.value = false
-  }, TYPING_IDLE_MS)
-}
-function onFocusOut() {
-  // activeElement is still the old field during focusout; read it next tick.
-  void nextTick(syncFocusedFieldDraft)
-}
+const { focusedFieldHasDraft, typingRecently, captureFocus, ...inputGuard } = createInboxInputGuard()
 
 /**
  * List auto-apply waits while the user is working: a non-empty gate form or
@@ -2078,36 +1922,6 @@ watch(autoApplyHeld, (held) => {
 watch(lastAutoAppliedAt, () => {
   void syncListAfterAutoApply()
 })
-
-/**
- * Snapshot the focused text field so a silent list reload can never take the
- * caret away. If the field is still connected nothing happens; if a re-render
- * replaced it, focus moves to its replacement (same data-testid) with the same
- * selection — but only when focus fell to <body>, never away from a field the
- * user moved to themselves.
- */
-function captureFocus(): (() => void) | null {
-  if (typeof document === 'undefined') return null
-  const el = document.activeElement
-  if (!isTextEntry(el)) return null
-  const tid = el.getAttribute('data-testid')
-  const sel =
-    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-      ? { start: el.selectionStart, end: el.selectionEnd }
-      : null
-  return () => {
-    if (el.isConnected || !tid) return
-    const cur = document.activeElement
-    if (cur && cur !== document.body) return
-    const next = document.querySelector(`[data-testid="${CSS.escape(tid)}"]`)
-    if (!(next instanceof HTMLElement) || !isTextEntry(next)) return
-    next.focus({ preventScroll: true })
-    if (sel && (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement)) {
-      const max = next.value.length
-      next.setSelectionRange(Math.min(sel.start ?? max, max), Math.min(sel.end ?? max, max))
-    }
-  }
-}
 
 let autoApplyGen = 0
 async function syncListAfterAutoApply() {
@@ -2552,263 +2366,247 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     closeActiveRunWs()
   }
   activeRunWsRunId = runId
-  activeRunWsReconnect.markConnecting()
-  let socket: WebSocket
   let dialogueRevision = 0
   let receivedSnapshot = false
-  try {
-    socket = new WebSocket(api.runEventsWsUrl(runId))
-    activeRunWs = socket
-  } catch {
-    activeRunWs = undefined
-    activeRunWsRunId = ''
-    activeRunWsReconnect.onClose()
-    return
-  }
-  activeRunHeartbeat.start()
-  socket.onopen = () => {
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.touch()
-    activeRunWsReconnect.markOpened()
-    if (opts?.fromReconnect) void refreshRunLive(runId)
-  }
-  socket.onmessage = (ev) => {
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.touch()
-    let m: ReviewSessionFrame & {
-      type?: string
-      event?: string
-      nodeId?: string
-      events?: any[]
-      busy?: boolean
-      waiting?: number
-      sandboxBusy?: boolean
-      sandboxDesynced?: boolean
-      status?: string
-      iteration?: number
-      entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
-      run?: { id?: string; reviewSessionGeneration?: number; reactSessions?: Run['reactSessions'] }
-      previewArtifact?: string
-      name?: string
-    }
-    try {
-      m = JSON.parse(String(ev.data))
-    } catch {
-      return
-    }
-    if (m.type === 'dialogue') {
-      ingestDialogue(m)
-      return
-    }
-    if (m.type === 'live') {
-      applyRunLiveFrame(m)
-      return
-    }
-    if (m.type === 'heartbeat') {
-      // Transport heartbeats continue even when a review terminal was lost.
-      // Read the actual queue at their existing cadence; local busy cannot
-      // veto the read that would release it. Genuine active turns stay active.
-      if (active.value?.type === 'clarify' && (activeStarting.value || isClarifySoftRefreshBlocked())) {
-        const nodeId = activeDialogueNodeId() || ''
-        const recoverContent = !heartbeatRecoveryCheckpoint || !reviewState.hasAcpProgress(heartbeatRecoveryCheckpoint, nodeId)
-        heartbeatRecoveryCheckpoint = reviewState.capture()
-        void realignClarifyToRefresh(false, recoverContent)
+  openRunEventsSocket<ReviewSessionFrame & {
+    type?: string
+    event?: string
+    nodeId?: string
+    events?: any[]
+    busy?: boolean
+    waiting?: number
+    sandboxBusy?: boolean
+    sandboxDesynced?: boolean
+    status?: string
+    iteration?: number
+    entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
+    run?: { id?: string; reviewSessionGeneration?: number; reactSessions?: Run['reactSessions'] }
+    previewArtifact?: string
+    name?: string
+  }>({
+    runId,
+    heartbeat: activeRunHeartbeat,
+    reconnect: activeRunWsReconnect,
+    // A superseded socket (reconnect race) must not touch the current one.
+    isCurrent: (socket) => activeRunWs === socket,
+    adopt: (socket) => {
+      activeRunWs = socket
+    },
+    catchUp: !!opts?.fromReconnect,
+    onCreateFailed: () => {
+      activeRunWs = undefined
+      activeRunWsRunId = ''
+    },
+    onFrame: (m, socket) => {
+      if (m.type === 'dialogue') {
+        ingestDialogue(m)
+        return
       }
-      return
-    }
-    if (m.type === 'page_control_state') {
-      const st = (m as { state?: unknown }).state
-      if (m.nodeId) {
-        pageControlByNode.value = {
-          ...pageControlByNode.value,
-          [m.nodeId]: st === 'online' || st === 'paused' ? st : 'offline',
+      if (m.type === 'live') {
+        applyRunLiveFrame(m)
+        return
+      }
+      if (m.type === 'heartbeat') {
+        // Transport heartbeats continue even when a review terminal was lost.
+        // Read the actual queue at their existing cadence; local busy cannot
+        // veto the read that would release it. Genuine active turns stay active.
+        if (active.value?.type === 'clarify' && (activeStarting.value || isClarifySoftRefreshBlocked())) {
+          const nodeId = activeDialogueNodeId() || ''
+          const recoverContent = !heartbeatRecoveryCheckpoint || !reviewState.hasAcpProgress(heartbeatRecoveryCheckpoint, nodeId)
+          heartbeatRecoveryCheckpoint = reviewState.capture()
+          void realignClarifyToRefresh(false, recoverContent)
         }
+        return
       }
-      return
-    }
-    // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
-    if (m.type === 'snapshot') {
-      if (!receivedSnapshot) {
-        receivedSnapshot = true
-        const sessions = m.run?.reactSessions ?? {}
-        const versioned = reviewState.hasVersion || typeof m.run?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap?.sessionGeneration === 'number')
-        reviewState.reset()
-        heartbeatRecoveryCheckpoint = null
-        if (versioned) {
-          pendingReviewFrames = []
-          applyOrBufferReviewFrame({ event: 'session_reset', nodeId: activeDialogueNodeId() || '' })
-        }
-      }
-      // The full run DTO omits reactSessions after its last FIFO is removed.
-      // Only a matching full snapshot makes that omission authoritative idle.
-      const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
-      const dialogueActive =
-        active.value &&
-        (active.value.type === 'clarify' || active.value.type === 'gate') &&
-        active.value.runId === runId
-      if (sessions && dialogueActive) {
-        const revision = ++dialogueRevision
-        const activeKey = inboxTripleKey(active.value!)
-        const sameDialogue = () =>
-          activeRunWs === socket &&
-          !!active.value && inboxTripleKey(active.value) === activeKey
-        const isCurrent = () => sameDialogue() && dialogueRevision === revision
-        if (activeRun.value) {
-          activeRun.value = { ...activeRun.value, reactSessions: sessions, reviewSessionGeneration: m.run?.reviewSessionGeneration }
-          // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
-          void reseedAfterWsReconnect(runId, isCurrent).then(() => {
-            // A turn may have finished while disconnected. Reload its saved
-            // questions once the authoritative snapshot has released busy.
-            if (!sameDialogue() || !opts?.fromReconnect) return
-            const nodeId = activeDialogueNodeId()
-            const snap = nodeId ? sessions[nodeId] : undefined
-            if (
-              nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
-              !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
-            ) {
-              void softRefreshActiveRun()
-            }
-          })
-        } else {
-          pendingSnapshotSessions = sessions
-        }
-      }
-      return
-    }
-    if (m.type === 'review') {
-      if (!reviewState.acceptServer(m)) return
-      const currentDialogue = m.nodeId === activeDialogueNodeId()
-      if (currentDialogue) {
-        dialogueRevision++
-      }
-      // Sidebar「最近」has no channel of its own: relay turn boundaries.
-      if (
-        m.event === 'turn_begin' ||
-        m.event === 'turn_done' ||
-        m.event === 'error' ||
-        m.event === 'queue_state'
-      ) notifyRecentActivity()
-      if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
-      if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
-        clarifyLiveBusy.value = !!m.busy
-        if (!m.busy) busySeedRetry.stop()
-      }
-      const cardNodeId = typeof m.nodeId === 'string' ? m.nodeId : ''
-      if (cardNodeId) {
-        if (m.event === 'turn_begin') {
-          patchVisibleCardBusy(runId, cardNodeId, true)
-        } else if (m.event === 'queue_state') {
-          const waiting = typeof m.waiting === 'number' ? m.waiting : 0
-          const sessionBusy = (typeof m.busy === 'boolean' ? m.busy : false) || waiting > 0
-          patchVisibleCardBusy(runId, cardNodeId, sessionBusy)
-        } else if (m.event === 'turn_done' || m.event === 'error') {
-          const waiting = typeof m.waiting === 'number' ? m.waiting : 0
-          patchVisibleCardBusy(runId, cardNodeId, waiting > 0)
-        }
-      }
-      applyOrBufferReviewFrame(m as Record<string, unknown>)
-      if (currentDialogue && activeStarting.value &&
-        (m.event === 'turn_begin' || (m.event === 'queue_state' && m.busy && m.activeItem))) {
-        void realignClarifyToRefresh(false, true)
-      }
-      if (currentDialogue && m.event === 'queue_state') {
-        if (queueStateIsOrphan(m)) {
-          const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
-          if (nid) {
-            orphanLiveNodeId = nid
-            flushPendingAcpFrames()
-            void pullOrphanLive(runId, nid)
+      if (m.type === 'page_control_state') {
+        const st = (m as { state?: unknown }).state
+        if (m.nodeId) {
+          pageControlByNode.value = {
+            ...pageControlByNode.value,
+            [m.nodeId]: st === 'online' || st === 'paused' ? st : 'offline',
           }
-        } else {
-          orphanLiveNodeId = ''
-          stopOrphanLiveSeed()
         }
-      }
-      if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
-        clarifyLiveBusy.value = false
-        busySeedRetry.stop()
-        if (active.value && active.value.runId === runId) void softRefreshActiveRun(true)
-      }
-      // Platform idle while the bridge is still busy: the terminal frame may
-      // never arrive. Re-read the same snapshot a refresh would, without
-      // remounting the composer.
-      if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
-        void realignClarifyToRefresh()
-      }
-      return
-    }
-    if (m.type === 'acp') {
-      reviewState.noteAcp(m.nodeId || '', Array.isArray(m.events) ? m.events as AcpEvent[] : [])
-      // ACP/sandbox busy is observational only — must not overwrite platform
-      // session busy (clarifyLiveBusy) or stop busySeedRetry (g1.2).
-      // Tear-down / stop retry only from review queue_state idle / turn_done / error.
-      applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
-      if (activeStarting.value && m.nodeId === activeDialogueNodeId()) void realignClarifyToRefresh(false, true)
-      return
-    }
-    if (
-      m.type === 'node_enter' &&
-      active.value?.type === 'clarify' &&
-      active.value.runId === runId &&
-      activeRun.value &&
-      m.nodeId
-    ) {
-      patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
-    }
-    if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
-    if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
-      // Ignore events for runs that no longer match the current pending active item.
-      if (!active.value || active.value.runId !== runId) return
-      if (isProcessedTriple(active.value) || !isActiveStillInList()) return
-      if (m.type === 'artifact_edit') notifyRunArtifactEdit()
-      // Starting card: a run transition is exactly the signal we wait for — the
-      // approve node has parked, so the list row loses `state: starting` and the
-      // rebind reloads the context with the real transcript.
-      if (activeStarting.value && (m.type === 'status' || m.type === 'react')) {
-        void loadList()
         return
       }
-      // status/trace are noisy and must not softRefresh. Patch the open
-      // snapshot in place so the workflow list moves without clearing dialogue.
-      if (active.value?.type === 'clarify' && activeRun.value) {
-        if (m.type === 'status' && m.status) {
-          activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
-        } else if (m.type === 'trace' && m.entry?.nodeId) {
-          const st = nodeStatusFromTrace(m.entry)
-          if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+      // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
+      if (m.type === 'snapshot') {
+        if (!receivedSnapshot) {
+          receivedSnapshot = true
+          const versioned = reviewState.isVersionedSnapshot(m.run)
+          reviewState.reset()
+          heartbeatRecoveryCheckpoint = null
+          if (versioned) {
+            pendingReviewFrames = []
+            applyOrBufferReviewFrame({ event: 'session_reset', nodeId: activeDialogueNodeId() || '' })
+          }
         }
-      }
-      // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
-      // while reviewing — peek/list cover "left pending" awareness instead.
-      if (m.type === 'status' || m.type === 'trace') return
-      // Visual gates: only artifact_edit here; review turn_done/error already refresh above.
-      // Ignore react (e.g. turn_begin) — no product change yet.
-      if (active.value.type === 'gate') {
-        if (m.type === 'artifact_edit') void softRefreshActiveRun()
+        // The full run DTO omits reactSessions after its last FIFO is removed.
+        // Only a matching full snapshot makes that omission authoritative idle.
+        const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
+        const dialogueActive =
+          active.value &&
+          (active.value.type === 'clarify' || active.value.type === 'gate') &&
+          active.value.runId === runId
+        if (sessions && dialogueActive) {
+          const revision = ++dialogueRevision
+          const activeKey = inboxTripleKey(active.value!)
+          const sameDialogue = () =>
+            activeRunWs === socket &&
+            !!active.value && inboxTripleKey(active.value) === activeKey
+          const isCurrent = () => sameDialogue() && dialogueRevision === revision
+          if (activeRun.value) {
+            activeRun.value = { ...activeRun.value, reactSessions: sessions, reviewSessionGeneration: m.run?.reviewSessionGeneration }
+            // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
+            void reseedAfterWsReconnect(runId, isCurrent).then(() => {
+              // A turn may have finished while disconnected. Reload its saved
+              // questions once the authoritative snapshot has released busy.
+              if (!sameDialogue() || !opts?.fromReconnect) return
+              const nodeId = activeDialogueNodeId()
+              const snap = nodeId ? sessions[nodeId] : undefined
+              if (
+                nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
+                !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
+              ) {
+                void softRefreshActiveRun()
+              }
+            })
+          } else {
+            pendingSnapshotSessions = sessions
+          }
+        }
         return
       }
-      // Clarify: react/artifact_edit mid-turn projected via review/acp — skip
-      // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
-      // Soft-refresh semantics unchanged (g2.3).
-      if (active.value.type === 'clarify') {
-        if (m.type === 'artifact_edit') {
-          // Cards only. A full context reload would replace the open transcript.
-          void patchActiveRunArtifacts(m)
-        } else if (m.type === 'react') {
-          // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
-          if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
+      if (m.type === 'review') {
+        if (!reviewState.acceptServer(m)) return
+        const currentDialogue = m.nodeId === activeDialogueNodeId()
+        if (currentDialogue) {
+          dialogueRevision++
+        }
+        // Sidebar「最近」has no channel of its own: relay turn boundaries.
+        if (
+          m.event === 'turn_begin' ||
+          m.event === 'turn_done' ||
+          m.event === 'error' ||
+          m.event === 'queue_state'
+        ) notifyRecentActivity()
+        if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
+        if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
+          clarifyLiveBusy.value = !!m.busy
+          if (!m.busy) busySeedRetry.stop()
+        }
+        const cardNodeId = typeof m.nodeId === 'string' ? m.nodeId : ''
+        if (cardNodeId) {
+          if (m.event === 'turn_begin') {
+            patchVisibleCardBusy(runId, cardNodeId, true)
+          } else if (m.event === 'queue_state') {
+            const waiting = typeof m.waiting === 'number' ? m.waiting : 0
+            const sessionBusy = (typeof m.busy === 'boolean' ? m.busy : false) || waiting > 0
+            patchVisibleCardBusy(runId, cardNodeId, sessionBusy)
+          } else if (m.event === 'turn_done' || m.event === 'error') {
+            const waiting = typeof m.waiting === 'number' ? m.waiting : 0
+            patchVisibleCardBusy(runId, cardNodeId, waiting > 0)
+          }
+        }
+        applyOrBufferReviewFrame(m as Record<string, unknown>)
+        if (currentDialogue && activeStarting.value &&
+          (m.event === 'turn_begin' || (m.event === 'queue_state' && m.busy && m.activeItem))) {
+          void realignClarifyToRefresh(false, true)
+        }
+        if (currentDialogue && m.event === 'queue_state') {
+          if (queueStateIsOrphan(m)) {
+            const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
+            if (nid) {
+              orphanLiveNodeId = nid
+              flushPendingAcpFrames()
+              void pullOrphanLive(runId, nid)
+            }
+          } else {
+            orphanLiveNodeId = ''
+            stopOrphanLiveSeed()
+          }
+        }
+        if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
+          clarifyLiveBusy.value = false
+          busySeedRetry.stop()
+          if (active.value && active.value.runId === runId) void softRefreshActiveRun(true)
+        }
+        // Platform idle while the bridge is still busy: the terminal frame may
+        // never arrive. Re-read the same snapshot a refresh would, without
+        // remounting the composer.
+        if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
+          void realignClarifyToRefresh()
+        }
+        return
+      }
+      if (m.type === 'acp') {
+        reviewState.noteAcp(m.nodeId || '', Array.isArray(m.events) ? m.events as AcpEvent[] : [])
+        // ACP/sandbox busy is observational only — must not overwrite platform
+        // session busy (clarifyLiveBusy) or stop busySeedRetry (g1.2).
+        // Tear-down / stop retry only from review queue_state idle / turn_done / error.
+        applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
+        if (activeStarting.value && m.nodeId === activeDialogueNodeId()) void realignClarifyToRefresh(false, true)
+        return
+      }
+      if (
+        m.type === 'node_enter' &&
+        active.value?.type === 'clarify' &&
+        active.value.runId === runId &&
+        activeRun.value &&
+        m.nodeId
+      ) {
+        patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
+      }
+      if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
+      if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
+        // Ignore events for runs that no longer match the current pending active item.
+        if (!active.value || active.value.runId !== runId) return
+        if (isProcessedTriple(active.value) || !isActiveStillInList()) return
+        if (m.type === 'artifact_edit') notifyRunArtifactEdit()
+        // Starting card: a run transition is exactly the signal we wait for — the
+        // approve node has parked, so the list row loses `state: starting` and the
+        // rebind reloads the context with the real transcript.
+        if (activeStarting.value && (m.type === 'status' || m.type === 'react')) {
+          void loadList()
+          return
+        }
+        // status/trace are noisy and must not softRefresh. Patch the open
+        // snapshot in place so the workflow list moves without clearing dialogue.
+        if (active.value?.type === 'clarify' && activeRun.value) {
+          if (m.type === 'status' && m.status) {
+            activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
+          } else if (m.type === 'trace' && m.entry?.nodeId) {
+            const st = nodeStatusFromTrace(m.entry)
+            if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+          }
+        }
+        // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
+        // while reviewing — peek/list cover "left pending" awareness instead.
+        if (m.type === 'status' || m.type === 'trace') return
+        // Visual gates: only artifact_edit here; review turn_done/error already refresh above.
+        // Ignore react (e.g. turn_begin) — no product change yet.
+        if (active.value.type === 'gate') {
+          if (m.type === 'artifact_edit') void softRefreshActiveRun()
+          return
+        }
+        // Clarify: react/artifact_edit mid-turn projected via review/acp — skip
+        // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
+        // Soft-refresh semantics unchanged (g2.3).
+        if (active.value.type === 'clarify') {
+          if (m.type === 'artifact_edit') {
+            // Cards only. A full context reload would replace the open transcript.
+            void patchActiveRunArtifacts(m)
+          } else if (m.type === 'react') {
+            // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
+            if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
+          }
         }
       }
-    }
-  }
-  socket.onclose = () => {
-    // Ignore stale close from a superseded socket (reconnect race).
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.stop()
-    activeRunWs = undefined
-    activeRunWsRunId = ''
-    activeRunWsReconnect.onClose()
-  }
+    },
+    onClosed: () => {
+      activeRunWs = undefined
+      activeRunWsRunId = ''
+    },
+  })
 }
 
 const ORPHAN_REALIGN_MS = 2000
@@ -3041,7 +2839,7 @@ async function refreshActiveContext(
   const socket = activeRunWs
   const signal = acquireInboxContextSignal(triple)
   if (!signal) {
-    if (afterTurnEnd && inboxContextInFlight === triple) inboxContextTrailingRefreshes.add(triple)
+    if (afterTurnEnd) inboxContext.retainTrailingRefresh(triple)
     return
   }
   const abortRecovery = () => {
@@ -3843,10 +3641,7 @@ onMounted(() => {
   })
   peek({ source: 'mount' })
   releaseAutoApplyHold = addAutoApplyHold(() => autoApplyHeld.value)
-  syncFocusedFieldDraft()
-  document.addEventListener('focusin', syncFocusedFieldDraft)
-  document.addEventListener('focusout', onFocusOut)
-  document.addEventListener('input', onFieldInput)
+  inputGuard.attach()
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -3856,10 +3651,7 @@ onUnmounted(() => {
   stopStartingPoll()
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
-  document.removeEventListener('focusin', syncFocusedFieldDraft)
-  document.removeEventListener('focusout', onFocusOut)
-  document.removeEventListener('input', onFieldInput)
-  clearTypingIdle()
+  inputGuard.detach()
   // Leaving the page: this page no longer holds the list, so apply what is pending.
   releaseAutoApplyHold?.()
   releaseAutoApplyHold = null
@@ -3867,7 +3659,7 @@ onUnmounted(() => {
   closeActiveRunWs()
   reviewState.dispose()
   stopFollow()
-  for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
+  inboxContext.abortAll()
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
   clearVisibleMembership()
@@ -3877,8 +3669,6 @@ onUnmounted(() => {
 })
 
   return {
-    addProcessingIntent,
-    removeProcessingIntent,
     isProcessingIntent,
     isItemCardDisabled,
     markProcessed,
@@ -3890,26 +3680,17 @@ onUnmounted(() => {
     beginProcessingIntent,
     rollbackProcessingIntent,
     endProcessingIntent,
-    isActiveStillInList,
     shouldFetchActiveInboxContext,
-    invalidateListLoads,
     removeListItemLocally,
     restoreListItemLocally,
-    incomingTarget,
     mergeIncomingGhost,
     confirmIncomingGhostStillNeeded,
-    seedIncomingIfNeeded,
-    isIncomingContextPending,
-    rebindActiveFromList,
     mergeFailedStarting,
     confirmStartingVanished,
-    detectStartingFailures,
     dismissStartFailure,
     stopStartingPoll,
     startStartingPoll,
     selectFromQuery,
-    applyHomeHandoff,
-    selectFromHandoff,
     waitForQueryItem,
     ensureValidActive,
     reconcileProcessedWithList,
@@ -3925,13 +3706,10 @@ onUnmounted(() => {
     isClarifySoftRefreshBlocked,
     closeActiveRunWs,
     activeDialogueNodeId,
-    applyOrBufferAcpFrame,
     flushPendingAcpFrames,
     seedClarifyAcpFromNodeEventsOnce,
-    startBusySeedRetry,
     restoreReactSessions,
     flushPendingReviewFrames,
-    applyOrBufferReviewFrame,
     projectClarifySessionAfterLoad,
     reseedAfterWsReconnect,
     connectActiveRunWs,
@@ -3955,15 +3733,12 @@ onUnmounted(() => {
     onFocus,
     onVisible,
     router,
-    route,
     toast,
-    PAGE_SIZE,
     listItems,
     listTotal,
     listLoading,
     listLoadError,
     listErrorMessage,
-    listLoadGeneration,
     active,
     homeSeed,
     incomingGhost,
@@ -3986,19 +3761,14 @@ onUnmounted(() => {
     inboxConfirmFlowPhase: inboxConfirmFlow.phase,
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
     inboxConfirmFlowToken: inboxConfirmFlow.playToken,
-    pendingAcpFrames,
     showProcessedBanner,
-    manualRefreshing,
     showListSkeleton,
     showListError,
     showListRefresh,
     listPanelBusy,
     clarifyConfirmError,
     clarifyConfirmCanAbort,
-    processedTriples,
     confirmedAbsentTriples,
-    inboxContextAborts,
-    processingIntentKeys,
     processingLock,
     startFailedActive,
     activeStarting,
@@ -4006,11 +3776,7 @@ onUnmounted(() => {
     startingBootKey,
     incomingGhostConfirmInFlight,
     STARTING_POLL_MS,
-    STARTING_POLL_MAX_TICKS,
-    queryWaitGen,
-    isGateEditing,
     lastStagedAppPreviewPick,
-    isClarifyEditing,
     isEditing,
     focusedFieldHasDraft,
     typingRecently,
@@ -4021,10 +3787,7 @@ onUnmounted(() => {
     activeRunWsRunId,
     clarifyLiveBusy,
     pageControlByNode,
-    dialogueRailsFilled,
-    dialogueLiveIncremental,
     busySeedRetry,
-    activeRunWsReconnect,
     activeClarify,
     inboxAppPreviewActive,
     inboxRemoteKind,
@@ -4036,7 +3799,6 @@ onUnmounted(() => {
     activeNodeTask,
     clarifyComposerDone,
     inboxClarifyStageKind,
-    inboxReviewState,
     reviewActive,
     composerMode,
     activeGate,
@@ -4064,7 +3826,6 @@ onUnmounted(() => {
     clarifyDraft,
     clarifyAttachments,
     clarifyAnnotations,
-    isShareableInboxItem,
     isHumanGateInboxItem,
     inboxShareKind,
   }

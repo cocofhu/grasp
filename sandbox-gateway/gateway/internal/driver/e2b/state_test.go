@@ -68,7 +68,7 @@ func TestStatePrivateAtomicRoundTrip(t *testing.T) {
 }
 
 func TestStateRejectsCorruptForeignAndInsecureRecords(t *testing.T) {
-	for name, change := range map[string]func(*record){"version": func(r *record) { r.Version = 2 }, "owner": func(r *record) { r.Owner = "other" }, "id": func(r *record) { r.ID = "../escape" }, "provider-owner": func(r *record) { r.Provider.Metadata[ownerLabel] = "other" },
+	for name, change := range map[string]func(*record){"version": func(r *record) { r.Version = 3 }, "owner": func(r *record) { r.Owner = "other" }, "id": func(r *record) { r.ID = "../escape" }, "provider-owner": func(r *record) { r.Provider.Metadata[ownerLabel] = "other" },
 		"phase":          func(r *record) { r.Phase = "unknown" },
 		"target":         func(r *record) { r.Targets[22] = 49983 },
 		"local-port":     func(r *record) { r.Ports[22] = 0 },

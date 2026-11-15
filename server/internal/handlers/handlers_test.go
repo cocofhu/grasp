@@ -298,27 +298,6 @@ func (hn *harness) doWithCookie(method, path string, body any, cookie string) *h
 	return w
 }
 
-func TestNodeRegistryEndpoint(t *testing.T) {
-	h := newHarness(t)
-	w := h.do("GET", "/api/node-registry", nil)
-	if w.Code != 200 {
-		t.Fatalf("node-registry: %d", w.Code)
-	}
-	var body struct {
-		OutputKeyToArtifact  map[string]string `json:"outputKeyToArtifact"`
-		ArtifactToOutputJSON map[string]string `json:"artifactToOutputJSON"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if body.OutputKeyToArtifact["research"] != "research.json" {
-		t.Fatalf("research mapping: %v", body.OutputKeyToArtifact)
-	}
-	if body.ArtifactToOutputJSON["test_result.json"] != "test_result_json" {
-		t.Fatalf("test json mapping: %v", body.ArtifactToOutputJSON)
-	}
-}
-
 func TestWorkflowEndpoints(t *testing.T) {
 	h := newHarness(t)
 

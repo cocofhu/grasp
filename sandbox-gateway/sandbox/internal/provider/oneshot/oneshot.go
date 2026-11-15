@@ -5,7 +5,6 @@
 package oneshot
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -432,33 +431,115 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	e.mu.Unlock()
 	defer cancel()
 
-	// LogFile mode: allocate a temp log the CLI writes its side channel to.
+	args, logPath, err := e.turnArgs(text, resumeID)
+	if logPath != "" {
+		defer func() { _ = os.Remove(logPath) }()
+	}
+	if err != nil {
+		return turnOutcome{stopReason: "failed"}, err
+	}
+	// CAPA A6: greppable redacted argv (MCP flags+paths retained; no prompt/Authorization).
+	log.Printf("oneshot: spawn agent=%s argv_redacted=%v", e.c.AgentName(), redactArgv(args))
+	proc, err := e.startTurnProcess(args)
+	if err != nil {
+		return turnOutcome{stopReason: "failed"}, err
+	}
+	pid := proc.cmd.Process.Pid
+	e.agentPID.Store(int64(pid))
+	defer e.agentPID.Store(0)
+	bg := newBackgroundShells(pid, e.bgGrace)
+	e.bg.Store(bg)
+	defer e.bg.Store(nil)
+	disarmKiller := killGroupOnCancel(turnCtx, proc.cmd)
+	defer disarmKiller()
+
+	waitStdin, err := e.feedStdin(proc, text, images)
+	if err != nil {
+		return turnOutcome{stopReason: "failed"}, err
+	}
+
+	acc := newTurnAccumulator(e, bg)
+	tail := newStderrTail(64 * 1024)
+	var streamErr error
+	stdoutPipe := newOutPipe(proc.stdout, outputDrainGrace)
+	stderrPipe := newOutPipe(proc.stderr, outputDrainGrace)
+	stderrPipe.start(func(r io.Reader) { _, _ = io.Copy(tail, r) })
+	stdoutPipe.start(func(r io.Reader) { streamErr = e.consumeStdout(r, acc.apply) })
+
+	waitErr, killedAfterResult := e.waitTurnProcess(proc.cmd, bg, acc.resultSeen)
+	disarmKiller()
+	// resultStop is safe to read here: it was written before resultSeen closed,
+	// which the supervisor observed before setting killedAfterResult.
+	if killedAfterResult && acc.resultStop == "end_turn" {
+		waitErr = nil
+	}
+	// streamErr is safe to read once joinOutputs has waited for the consumer.
+	if e.joinOutputs(stdoutPipe, stderrPipe) && errors.Is(streamErr, os.ErrDeadlineExceeded) {
+		streamErr = nil
+	}
+	if stdinErr := waitStdin(); stdinErr != nil && waitErr == nil {
+		waitErr = fmt.Errorf("oneshot: write stdin: %w; stderr: %s", stdinErr, tail.String())
+	} else if stdinErr != nil {
+		waitErr = fmt.Errorf("oneshot: write stdin: %v; wait: %w; stderr: %s", stdinErr, waitErr, tail.String())
+	}
+	if turnCtx.Err() != nil {
+		// Prefer the caller's cancel over a SIGKILL exit status.
+		waitErr = turnCtx.Err()
+	}
+
+	e.applyLogFile(logPath, acc)
+	acc.settleUsage(resumeID)
+	return acc.outcome(waitErr, streamErr, tail)
+}
+
+// turnArgs builds the turn's argv. LogFile codecs also get a temp log path the
+// CLI writes its side channel to; the caller removes it whenever it is non-empty.
+func (e *engine) turnArgs(text, resumeID string) ([]string, string, error) {
+	var args []string
 	var logPath string
-	logCodec, logMode := e.c.(LogFileCodec)
-	if logMode {
+	if logCodec, ok := e.c.(LogFileCodec); ok {
 		f, ferr := os.CreateTemp("", "agent-log-*.log")
 		if ferr != nil {
-			return turnOutcome{stopReason: "failed"}, fmt.Errorf("oneshot: allocate log file: %w", ferr)
+			return nil, "", fmt.Errorf("oneshot: allocate log file: %w", ferr)
 		}
 		logPath = f.Name()
 		if cerr := f.Close(); cerr != nil {
-			_ = os.Remove(logPath)
-			return turnOutcome{stopReason: "failed"}, fmt.Errorf("oneshot: close log file: %w", cerr)
+			return nil, logPath, fmt.Errorf("oneshot: close log file: %w", cerr)
 		}
-		defer func() { _ = os.Remove(logPath) }()
-	}
-
-	var args []string
-	if logMode {
 		args = logCodec.ArgsWithLog(e.opts, text, resumeID, logPath)
 	} else {
 		args = e.c.Args(e.opts, text, resumeID)
 	}
 	if len(args) == 0 {
-		return turnOutcome{stopReason: "failed"}, errors.New("oneshot: codec produced empty argv")
+		return nil, logPath, errors.New("oneshot: codec produced empty argv")
 	}
-	// CAPA A6: greppable redacted argv (MCP flags+paths retained; no prompt/Authorization).
-	log.Printf("oneshot: spawn agent=%s argv_redacted=%v", e.c.AgentName(), redactArgv(args))
+	return args, logPath, nil
+}
+
+// applyLogFile recovers session id / structured errors a LogFile codec wrote
+// to its side channel. No-op for other codecs.
+func (e *engine) applyLogFile(logPath string, acc *turnAccumulator) {
+	logCodec, ok := e.c.(LogFileCodec)
+	if !ok || logPath == "" {
+		return
+	}
+	data, rerr := os.ReadFile(logPath)
+	if rerr != nil {
+		log.Printf("oneshot: read log file %s: %v", logPath, rerr)
+	} else if len(data) > 0 {
+		acc.apply(logCodec.ParseLogFile(data))
+	}
+}
+
+// turnProcess is a started turn CLI and the parent's ends of its streams.
+type turnProcess struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *os.File
+	stderr *os.File
+}
+
+func (e *engine) startTurnProcess(args []string) (*turnProcess, error) {
 	// Use plain Command (not CommandContext) so we can kill the whole process
 	// group on cancel — many CLIs spawn children that would otherwise orphan.
 	cmd := exec.Command(e.binPath, args[1:]...)
@@ -472,46 +553,44 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	// pipe a leaked descendant still holds can be abandoned (see joinOutputs).
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
-		return turnOutcome{stopReason: "failed"}, err
+		return nil, err
 	}
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdoutR, stdoutW)
-		return turnOutcome{stopReason: "failed"}, err
+		return nil, err
 	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
-	tail := newStderrTail(64 * 1024)
 
 	var stdin io.WriteCloser
 	if e.c.PromptViaStdin() {
 		if stdin, err = cmd.StdinPipe(); err != nil {
 			closeFiles(stdoutR, stdoutW, stderrR, stderrW)
-			return turnOutcome{stopReason: "failed"}, err
+			return nil, err
 		}
 	}
 	if err := cmd.Start(); err != nil {
 		closeFiles(stdoutR, stdoutW, stderrR, stderrW)
-		return turnOutcome{stopReason: "failed"}, err
+		return nil, err
 	}
-	e.agentPID.Store(int64(cmd.Process.Pid))
-	defer e.agentPID.Store(0)
-	bg := newBackgroundShells(cmd.Process.Pid, e.bgGrace)
-	e.bg.Store(bg)
-	defer e.bg.Store(nil)
 	// The child holds its own copies now; drop the parent's write ends or even a
 	// well-behaved CLI's pipes would never reach EOF.
 	closeFiles(stdoutW, stderrW)
-	// Cancel → SIGKILL the process group (negative pgid). Disarmed as soon as the
-	// CLI is known to be gone: signalling the group after that only reaches the
-	// children it left behind, e.g. a service the agent started for a preview.
+	return &turnProcess{cmd: cmd, stdin: stdin, stdout: stdoutR, stderr: stderrR}, nil
+}
+
+// killGroupOnCancel SIGKILLs the process group (negative pgid) when ctx ends.
+// The returned disarm must be called as soon as the CLI is known to be gone:
+// signalling the group after that only reaches the children it left behind,
+// e.g. a service the agent started for a preview.
+func killGroupOnCancel(ctx context.Context, cmd *exec.Cmd) (disarm func()) {
 	killCh := make(chan struct{})
 	var killerOff sync.Once
-	disarmKiller := func() { killerOff.Do(func() { close(killCh) }) }
-	defer disarmKiller()
+	disarm = func() { killerOff.Do(func() { close(killCh) }) }
 	go func() {
 		select {
-		case <-turnCtx.Done():
+		case <-ctx.Done():
 			// Ties go to the disarm side.
 			select {
 			case <-killCh:
@@ -524,227 +603,81 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 		case <-killCh:
 		}
 	}()
+	return disarm
+}
 
-	// Feed stdin in a goroutine so large prompts cannot deadlock against a
-	// child that is simultaneously filling the stdout pipe buffer.
+// feedStdin writes the prompt in a goroutine so large prompts cannot deadlock
+// against a child that is simultaneously filling the stdout pipe buffer. The
+// returned wait blocks until the write finished and reports its error. When the
+// prompt cannot be encoded the process is reaped and its pipes closed.
+func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.PromptImage) (wait func() error, err error) {
+	stdin := proc.stdin
+	if stdin == nil {
+		return func() error { return nil }, nil
+	}
+	if _, ok := e.c.(StdinEncoder); !ok && len(images) > 0 {
+		_ = stdin.Close()
+		_ = proc.cmd.Process.Kill()
+		_ = proc.cmd.Wait()
+		closeFiles(proc.stdout, proc.stderr)
+		return nil, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+	}
 	var stdinErr error
-	var stdinDone chan struct{}
-	if stdin != nil {
-		if _, ok := e.c.(StdinEncoder); !ok && len(images) > 0 {
-			_ = stdin.Close()
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			closeFiles(stdoutR, stderrR)
-			return turnOutcome{stopReason: "failed"}, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var werr error
+		if enc, ok := e.c.(StdinEncoder); ok {
+			_, werr = stdin.Write(enc.StdinBytes(text, images))
+		} else {
+			_, werr = io.WriteString(stdin, text)
 		}
-		stdinDone = make(chan struct{})
-		go func() {
-			defer close(stdinDone)
-			var werr error
-			if enc, ok := e.c.(StdinEncoder); ok {
-				_, werr = stdin.Write(enc.StdinBytes(text, images))
-			} else {
-				_, werr = io.WriteString(stdin, text)
-			}
-			cerr := stdin.Close()
-			if werr != nil {
-				stdinErr = werr
-				return
-			}
-			if cerr != nil {
-				log.Printf("oneshot: close stdin: %v", cerr)
-			}
-		}()
-	}
-
-	turnUsage := map[string]provider.TokenUsage{}
-	var usagePartial bool
-	var usageIsSessionTotal bool
-	var tracksSessionUsage bool
-	var sessionUsage *provider.TokenUsage
-	var newSID, stop string
-	var diagnostics []Msg
-	var hasText bool
-	resultSeen := make(chan struct{})
-	var resultOnce sync.Once
-	var resultStop string
-	apply := func(pr ParseResult) {
-		bg.event()
-		tracksSessionUsage = tracksSessionUsage || pr.TracksSessionUsage
-		if pr.SessionUsage != nil {
-			copy := *pr.SessionUsage
-			sessionUsage = &copy
-		}
-		if pr.SessionID != "" && newSID == "" {
-			newSID = pr.SessionID
-			e.mu.Lock()
-			e.sessionID = pr.SessionID
-			e.mu.Unlock()
-		}
-		if pr.UsageIsTotal && len(pr.Usage) > 0 {
-			if zeroUsage(pr.Usage) && !zeroUsage(turnUsage) {
-				// A terminal zero cannot invalidate already observed nonzero
-				// consumption. Retain it as a provisional measurement.
-				pr.Usage = nil
-				usagePartial = true
-			} else {
-				turnUsage = make(map[string]provider.TokenUsage, len(pr.Usage))
-				usagePartial = pr.UsagePartial
-				usageIsSessionTotal = pr.UsageIsSessionTotal
-			}
-		} else if len(pr.Usage) > 0 {
-			usagePartial = usagePartial || pr.UsagePartial
-		}
-		for model, u := range pr.Usage {
-			turnUsage[model] = addUsage(turnUsage[model], u)
-		}
-		for _, m := range pr.Msgs {
-			switch m.Kind {
-			case KindText:
-				hasText = hasText || strings.TrimSpace(m.Text) != ""
-			case KindError:
-				diagnostics = append(diagnostics, m)
-				continue
-			case KindToolUse:
-				bg.toolStarted(m.ToolCallID)
-			case KindToolResult:
-				bg.toolFinished(m.ToolCallID, m.BackgroundPID)
-			}
-			e.emitUpdate(m)
-		}
-		if pr.StopReason != "" {
-			stop = pr.StopReason
-			resultOnce.Do(func() {
-				resultStop = pr.StopReason
-				close(resultSeen)
-			})
-		}
-	}
-
-	var streamErr error
-	stdoutPipe := newOutPipe(stdoutR, outputDrainGrace)
-	stderrPipe := newOutPipe(stderrR, outputDrainGrace)
-	stderrPipe.start(func(r io.Reader) { _, _ = io.Copy(tail, r) })
-	stdoutPipe.start(func(r io.Reader) {
-		if whole, ok := e.c.(WholeOutputCodec); ok {
-			// Whole-document mode: drain stdout, parse once (pretty-printed JSON).
-			buf, rerr := io.ReadAll(r)
-			if len(buf) > 0 {
-				apply(whole.ParseAll(buf))
-			}
-			if rerr != nil {
-				streamErr = fmt.Errorf("oneshot: read stdout: %w", rerr)
-			}
+		cerr := stdin.Close()
+		if werr != nil {
+			stdinErr = werr
 			return
 		}
-		// Per-turn parser: stateful codecs get a fresh instance each turn.
-		var parser LineParser = e.c
-		if sf, ok := e.c.(StatefulCodec); ok {
-			parser = sf.NewTurnParser(e.opts)
+		if cerr != nil {
+			log.Printf("oneshot: close stdin: %v", cerr)
 		}
-		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
-		for sc.Scan() {
-			line := sc.Bytes()
-			if len(strings.TrimSpace(string(line))) == 0 {
-				continue
-			}
-			apply(parser.ParseLine(line))
-		}
-		if serr := sc.Err(); serr != nil {
-			streamErr = fmt.Errorf("oneshot: scan stdout: %w", serr)
-		}
-	})
+	}()
+	return func() error {
+		<-done
+		return stdinErr
+	}, nil
+}
 
-	// The turn ends when the CLI process exits, never when its pipes reach EOF:
-	// a service the agent started during the turn inherits the write ends, so
-	// EOF can be arbitrarily far away (or never come at all).
+// waitTurnProcess waits for the CLI to exit under superviseTurn. The turn ends
+// when the CLI process exits, never when its pipes reach EOF: a service the
+// agent started during the turn inherits the write ends, so EOF can be
+// arbitrarily far away (or never come at all).
+func (e *engine) waitTurnProcess(cmd *exec.Cmd, bg *backgroundShells, resultSeen <-chan struct{}) (waitErr error, killedAfterResult bool) {
 	exited := make(chan struct{})
-	var killedAfterResult atomic.Bool
+	var killed atomic.Bool
 	supervised := make(chan struct{})
 	go func() {
 		defer close(supervised)
-		e.superviseTurn(cmd.Process.Pid, bg, resultExitGrace, resultSeen, exited, &killedAfterResult)
+		e.superviseTurn(cmd.Process.Pid, bg, resultExitGrace, resultSeen, exited, &killed)
 	}()
-	waitErr := cmd.Wait()
+	waitErr = cmd.Wait()
 	close(exited)
 	<-supervised
-	disarmKiller()
-	// resultStop is safe to read here: it was written before resultSeen closed,
-	// which the supervisor observed before setting killedAfterResult.
-	if killedAfterResult.Load() && resultStop == "end_turn" {
-		waitErr = nil
-	}
-	stdoutPipe.startDraining()
-	stderrPipe.startDraining()
-	leakedOut, leakedErr := stdoutPipe.join(), stderrPipe.join()
-	if leakedOut || leakedErr {
-		log.Printf("oneshot: agent=%s 已退出但输出管道仍被其后代进程持有，单次读取超过 %s 后放弃（本回合可能在前台或未重定向地起了常驻服务，正确写法：setsid nohup cmd </dev/null >log 2>&1 &）",
-			e.c.AgentName(), outputDrainGrace)
-		if errors.Is(streamErr, os.ErrDeadlineExceeded) {
-			streamErr = nil
-		}
-	}
-	if stdinDone != nil {
-		<-stdinDone
-	}
-	if stdinErr != nil && waitErr == nil {
-		waitErr = fmt.Errorf("oneshot: write stdin: %w; stderr: %s", stdinErr, tail.String())
-	} else if stdinErr != nil {
-		waitErr = fmt.Errorf("oneshot: write stdin: %v; wait: %w; stderr: %s", stdinErr, waitErr, tail.String())
-	}
-	if turnCtx.Err() != nil {
-		// Prefer the caller's cancel over a SIGKILL exit status.
-		waitErr = turnCtx.Err()
-	}
+	return waitErr, killed.Load()
+}
 
-	// LogFile post-run: recover session id / structured errors from the log.
-	if logMode {
-		data, rerr := os.ReadFile(logPath)
-		if rerr != nil {
-			log.Printf("oneshot: read log file %s: %v", logPath, rerr)
-		} else if len(data) > 0 {
-			apply(logCodec.ParseLogFile(data))
-		}
+// joinOutputs bounds the remaining reads now that the CLI exited and waits for
+// both consumers. It reports whether either pipe had to be abandoned because a
+// descendant of the CLI still holds its write end.
+func (e *engine) joinOutputs(stdout, stderr *outPipe) bool {
+	stdout.startDraining()
+	stderr.startDraining()
+	leakedOut, leakedErr := stdout.join(), stderr.join()
+	if !leakedOut && !leakedErr {
+		return false
 	}
-
-	if usageIsSessionTotal {
-		sid := newSID
-		if sid == "" {
-			sid = resumeID
-		}
-		var uncertain bool
-		turnUsage, uncertain = e.sessionUsageDelta(sid, turnUsage)
-		usagePartial = usagePartial || uncertain
-	}
-	if tracksSessionUsage {
-		sid := newSID
-		if sid == "" {
-			sid = resumeID
-		}
-		var uncertain bool
-		turnUsage, uncertain = e.reconcileFlatSessionUsage(sid, sessionUsage, turnUsage)
-		usagePartial = usagePartial || uncertain
-	}
-	e.mergeCumulative(turnUsage)
-	if stop == "" {
-		if waitErr != nil || streamErr != nil {
-			stop = "failed"
-		} else {
-			stop = "end_turn"
-		}
-	}
-	out := turnOutcome{stopReason: stop, usage: nonEmptyUsage(turnUsage), usagePartial: usagePartial, newSessionID: newSID, diagnostics: diagnostics, hasText: hasText}
-	if waitErr != nil {
-		if streamErr != nil && !errors.Is(waitErr, context.Canceled) {
-			return out, fmt.Errorf("%v; %w; stderr: %s", streamErr, waitErr, tail.String())
-		}
-		return out, fmt.Errorf("%w; stderr: %s", waitErr, tail.String())
-	}
-	if streamErr != nil {
-		return out, fmt.Errorf("%w; stderr: %s", streamErr, tail.String())
-	}
-	return out, nil
+	log.Printf("oneshot: agent=%s 已退出但输出管道仍被其后代进程持有，单次读取超过 %s 后放弃（本回合可能在前台或未重定向地起了常驻服务，正确写法：setsid nohup cmd </dev/null >log 2>&1 &）",
+		e.c.AgentName(), outputDrainGrace)
+	return true
 }
 
 // superviseTurn runs beside a turn's CLI until it exits. It ends background

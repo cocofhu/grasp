@@ -17,17 +17,6 @@ func (h *Handlers) LiveSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, liveSessionsBody(h, runID, nodeID))
 }
 
-// LiveDiscardAll queues a discard for every open Live session on the node.
-func (h *Handlers) LiveDiscardAll(c *gin.Context) {
-	runID, nodeID := c.Param("id"), c.Param("nodeId")
-	n, err := h.Eng.DiscardAllLiveAs(sessionTurnOwner(c), runID, nodeID)
-	if err != nil {
-		writeReactReplyError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "discarding": n})
-}
-
 func liveSessionsBody(h *Handlers, runID, nodeID string) gin.H {
 	sessions := h.Eng.LiveSessions(runID, nodeID, false)
 	if sessions == nil {

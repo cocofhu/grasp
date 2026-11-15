@@ -39,6 +39,40 @@ func writeControlSandbox(w http.ResponseWriter, status int, id string) {
 	})
 }
 
+func TestCreateSnapshotCloneOmitsAbsentOptionalMaps(t *testing.T) {
+	for _, metadata := range []map[string]string{nil, {ownerLabel: "owner-a", idLabel: "stable-id", restoreLabel: "attempt"}} {
+		t.Run(fmt.Sprintf("metadata=%t", metadata != nil), func(t *testing.T) {
+			client, _ := newControlTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/sandboxes" {
+					t.Error("snapshot clone used the wrong route")
+				}
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if _, present := body["envVars"]; present {
+					t.Error("clone sent an absent environment map; official OpenAPI rejects envVars:null")
+				}
+				value, present := body["metadata"]
+				if metadata == nil {
+					if present {
+						t.Error("absent metadata must be omitted rather than null")
+					}
+				} else {
+					var got map[string]string
+					if !present || json.Unmarshal(value, &got) != nil || !reflect.DeepEqual(got, metadata) {
+						t.Error("restore ownership metadata was lost")
+					}
+				}
+				writeControlSandbox(w, http.StatusCreated, "restored-guest")
+			})
+			if _, err := client.Create(t.Context(), CreateOptions{TemplateID: "checkpoint:default", TimeoutSeconds: 600, Metadata: metadata}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func assertSafeControlError(t *testing.T, err error) {
 	t.Helper()
 	if err == nil {
@@ -158,8 +192,8 @@ func TestGetAndExplicitLifecycleRoutes(t *testing.T) {
 		case "/sandboxes/sandbox-a/pause":
 			var b map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&b)
-			if b["memory"] != true || b["requireHealthyGuest"] != true || b["snapshotKeep"] != float64(5) {
-				t.Error("pause allows losing RAM or snapshotting an unhealthy guest")
+			if !reflect.DeepEqual(b, map[string]any{"memory": true, "requireHealthyGuest": true}) {
+				t.Error("pause did not use the exact official memory/health payload")
 			}
 		case "/sandboxes/sandbox-a/connect":
 			var b map[string]any
@@ -180,7 +214,7 @@ func TestGetAndExplicitLifecycleRoutes(t *testing.T) {
 	if len(operations) != 1 {
 		t.Fatal("Get implicitly resumed a sandbox")
 	}
-	for _, err := range []error{client.SetTimeout(t.Context(), "sandbox-a", 120), client.Pause(t.Context(), "sandbox-a", 5)} {
+	for _, err := range []error{client.SetTimeout(t.Context(), "sandbox-a", 120), client.Pause(t.Context(), "sandbox-a")} {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -350,7 +384,7 @@ func TestInvalidControlInputsMakeNoProviderRequests(t *testing.T) {
 		assertSafeControlError(t, err)
 		assertSafeControlError(t, client.Delete(t.Context(), id))
 		assertSafeControlError(t, client.SetTimeout(t.Context(), id, 10))
-		assertSafeControlError(t, client.Pause(t.Context(), id, 1))
+		assertSafeControlError(t, client.Pause(t.Context(), id))
 		_, err = client.Connect(t.Context(), id, 10)
 		assertSafeControlError(t, err)
 	}

@@ -282,7 +282,6 @@ export function useWorkflowFavorites() {
     listSorted,
     displayItems,
     hydrating,
-    displayError,
     isFavorite,
     toggleFavorite,
     unfavorite,

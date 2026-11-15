@@ -57,10 +57,10 @@ func TestDrainMiddleware(t *testing.T) {
 	}
 }
 
-func TestNewLiveAndNodeRegistry(t *testing.T) {
+func TestNewLive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := New(&handlers.Handlers{})
-	for _, path := range []string{"/api/live", "/api/node-registry"} {
+	for _, path := range []string{"/api/live"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusOK {

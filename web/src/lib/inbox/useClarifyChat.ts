@@ -1,7 +1,6 @@
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { renderMarkdown } from '@/lib/shared/markdown'
 import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
 import {
   dropClarifyOutbox,
@@ -1950,7 +1949,6 @@ onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
     imagePreview,
     openChatImagePreview,
     closeImagePreview,
-    renderMarkdown,
     relTime,
     demoOptionsOf,
     selectedDemoOption,
