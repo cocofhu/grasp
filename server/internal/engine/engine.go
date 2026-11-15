@@ -103,6 +103,10 @@ type Engine struct {
 	// (nil falls back to a short-lived IssueService on e.db).
 	issues IssueResolver
 
+	// failures aggregates run_error.json for a failed run. Optional in tests
+	// (nil falls back to a short-lived RunService on e.db).
+	failures RunFailureAggregator
+
 	// gateAuto is an optional async observer for human_gate
 	// pauses (PM auto-invoke). Engine never blocks on it.
 	gateAuto GateAutoInvoker
@@ -273,6 +277,24 @@ func (e *Engine) issueService() IssueResolver {
 		return e.issues
 	}
 	return services.NewIssueService(e.db)
+}
+
+// RunFailureAggregator is the narrow failure-report port used when a run ends
+// failed. Composition root injects *services.RunService.
+type RunFailureAggregator interface {
+	AggregateRunFailure(runID string, optDegradeNote ...string) services.RunFailureInfo
+}
+
+// SetRunFailureAggregator wires the run_error.json aggregation used on finish.
+func (e *Engine) SetRunFailureAggregator(a RunFailureAggregator) {
+	e.failures = a
+}
+
+func (e *Engine) runFailures() RunFailureAggregator {
+	if e.failures != nil {
+		return e.failures
+	}
+	return services.NewRunService(e.db)
 }
 
 // SetAutoRetryMax changes the live cap on how many times a failed node is

@@ -24,7 +24,8 @@ test.describe('SandboxConsole Tab / noVNC', () => {
 
   test('?tab=acp 进入 ACP bridge', async ({ page }) => {
     await page.goto('/console.html?tab=acp')
-    await expect(page.getByRole('button', { name: /^Agent$/ })).toHaveClass(/bg-accent-dim/)
+    await expect(page.getByRole('button', { name: /^Agent$/ })).toHaveAttribute('data-active', 'true')
+    await expect(page.getByRole('button', { name: '终端' })).toHaveAttribute('data-active', 'false')
     await expect(page.locator('iframe[title="ACP bridge"]')).toBeVisible()
   })
 

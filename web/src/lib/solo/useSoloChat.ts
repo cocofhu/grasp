@@ -18,6 +18,9 @@ const SANDBOX_POLL_MS = 2500
 // Bridge liveness is not forwarded, so a long tool call can be silent: a quiet
 // busy turn only triggers a read, and resubscribes when the server says idle.
 const STALL_CHECK_MS = 30_000
+// The running turn's replay arrives as one burst. When the last frame of the
+// replay cannot be identified by seq, a pause this long ends it.
+const REPLAY_QUIET_MS = 120
 
 function parseFrame(data: unknown): any {
   if (typeof data !== 'string') return null
@@ -86,7 +89,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const actionError = ref('')
 
   let ws: WebSocket | null = null
-  let held: string[] | null = null
+  let held: any[] | null = null
   const activeId = ref('')
   const executions = new Map<string, ChatExecution>()
   let disposed = false
@@ -603,9 +606,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     scheduleStallCheck()
   }
 
-  function onFrame(raw: string, firstFrame = false) {
+  function onFrame(frame: any, firstFrame = false) {
     frameCount++
-    const frame = parseFrame(raw)
     if (!frame || typeof frame !== 'object') return
     // Subscribe 保证首帧是 queue_state 快照；之后的同名帧才是真实流事件。
     const subscriptionSnapshot = firstFrame && frame.type === 'session' && frame.event === 'queue_state'
@@ -756,10 +758,50 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     ws = sock
     held = []
     let firstFrame = true
-    const receive = (raw: string) => {
+    const receive = (frame: any) => {
       const first = firstFrame
       firstFrame = false
-      onFrame(raw, first)
+      onFrame(frame, first)
+    }
+    // A busy subscribe snapshot is followed by the running turn's frames up to
+    // its seq. They apply in batches until the first frame past the replay, so
+    // a long reply neither re-renders per frame nor types itself out again.
+    // A quiet pause shows what has arrived; later replay frames still batch.
+    const after = ackedSeq
+    let replayThrough = -1
+    let replay: any[] | null = null
+    let quietTimer: ReturnType<typeof setTimeout> | undefined
+    const flushReplay = (done: boolean) => {
+      if (quietTimer) clearTimeout(quietTimer)
+      quietTimer = undefined
+      const frames = replay
+      replay = done ? null : []
+      if (ws !== sock || !frames?.length) return
+      for (const frame of frames) receive(frame)
+      const turn = activeTurn.value
+      if (turn) turn.replayBatches = (turn.replayBatches ?? 0) + 1
+    }
+    const deliver = (frame: any) => {
+      const seq = typeof frame?.seq === 'number' ? frame.seq : undefined
+      if (firstFrame) {
+        receive(frame)
+        if (frame?.type === 'session' && frame.event === 'queue_state' && frame.busy && seq !== undefined && seq > after) {
+          replayThrough = seq
+          replay = []
+        }
+        return
+      }
+      if (!replay) {
+        receive(frame)
+        return
+      }
+      replay.push(frame)
+      if (seq === undefined || seq >= replayThrough) {
+        flushReplay(true)
+        return
+      }
+      if (quietTimer) clearTimeout(quietTimer)
+      quietTimer = setTimeout(() => flushReplay(false), REPLAY_QUIET_MS)
     }
     sock.onopen = async () => {
       if (ws !== sock) return
@@ -778,14 +820,16 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       if (ws !== sock) return
       const pending = held ?? []
       held = null
-      for (const raw of pending) receive(raw)
+      for (const frame of pending) deliver(frame)
     }
     sock.onmessage = (ev) => {
       if (ws !== sock) return
-      if (held) held.push(ev.data)
-      else receive(ev.data)
+      const frame = parseFrame(ev.data)
+      if (held) held.push(frame)
+      else deliver(frame)
     }
     sock.onclose = () => {
+      flushReplay(true)
       if (ws !== sock) return
       ws = null
       held = null
@@ -1118,12 +1162,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return !!v
   }
 
-  async function rename(title: string) {
-    const v = await run(() => api.renameSoloSession(sessionId.value, title))
-    if (v && session.value) session.value = { ...session.value, title: v.title }
-    return !!v
-  }
-
   watch(sessionId, () => void load(), { immediate: true })
   watch([busy, link], scheduleStallCheck)
 
@@ -1166,7 +1204,6 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     reorderQueued,
     close,
     stop,
-    rename,
     refreshSession,
   }
 }

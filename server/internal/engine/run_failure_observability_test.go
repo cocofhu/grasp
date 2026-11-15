@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -244,4 +245,46 @@ func TestFailRunEarlyExitPersistsReason(t *testing.T) {
 		t.Fatalf("display=%q", info.DisplayReason())
 	}
 	waitRunErrorArtifact(t, db, stubID)
+}
+
+type recordingFailureAggregator struct {
+	inner RunFailureAggregator
+	mu    sync.Mutex
+	calls []string
+}
+
+func (a *recordingFailureAggregator) AggregateRunFailure(runID string, optDegradeNote ...string) services.RunFailureInfo {
+	a.mu.Lock()
+	a.calls = append(a.calls, runID)
+	a.mu.Unlock()
+	info := a.inner.AggregateRunFailure(runID, optDegradeNote...)
+	info.Reason = "injected: " + info.Reason
+	return info
+}
+
+// TestRunErrorArtifactUsesInjectedAggregator locks that run_error.json comes
+// from the aggregator wired at the composition root, not one the engine builds.
+func TestRunErrorArtifactUsesInjectedAggregator(t *testing.T) {
+	eng, db, fp := setupEngineGraphP(t, researchEarlyFailGraph())
+	agg := &recordingFailureAggregator{inner: services.NewRunService(db)}
+	eng.SetRunFailureAggregator(agg)
+	fp.mu.Lock()
+	fp.failLeft = map[string]int{"research": 1}
+	fp.reason = "sandbox setup failed"
+	fp.mu.Unlock()
+
+	run, err := eng.StartRun("wf", map[string]any{}, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "failed")
+	body := waitRunErrorArtifact(t, db, run.ID)
+	if !strings.Contains(body, "injected: ") {
+		t.Fatalf("run_error.json not from injected aggregator: %s", body)
+	}
+	agg.mu.Lock()
+	defer agg.mu.Unlock()
+	if len(agg.calls) != 1 || agg.calls[0] != run.ID {
+		t.Fatalf("aggregator calls=%v", agg.calls)
+	}
 }

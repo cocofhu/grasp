@@ -634,12 +634,12 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	s.archiveLog(ctx, row.Name)
 	if err := s.mgr.DestroyByName(ctx, row.Name); err != nil {
 		status, probeErr := s.mgr.ProbeStatus(ctx, row.Name)
-		released := probeErr == nil && (status == "stopped" || status == "exited")
+		released := probeErr == nil && workloadReleasedStatus(status)
 		return s.cleanupFailure(id, err, released)
 	}
-	// Storage cleanup may wait for shared snapshot ancestors or an unavailable
-	// archive store. The confirmed absence of a workload frees its compute slot
-	// while the row remains the durable queue for that physical cleanup.
+	// The gateway has completed provider API deletion, not necessarily physical
+	// host garbage collection. Local/archive cleanup may still fail; keep its
+	// retry row without occupying a released compute slot.
 	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("status", "stopped").Error; err != nil {
 		return err
 	}

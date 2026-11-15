@@ -231,8 +231,6 @@ export function useRunBoard(options: UseRunBoardOptions) {
     load,
     abort,
     column,
-    DASHBOARD_COLUMNS,
-    FULL_MAIN_COLUMNS,
   }
 }
 

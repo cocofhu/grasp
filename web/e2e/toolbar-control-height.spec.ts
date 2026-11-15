@@ -27,16 +27,20 @@ async function mockApi(page: Page) {
       return
     }
     const p = new URL(route.request().url()).pathname
-    if (p.includes('/pending-nodes')) {
-      await route.fulfill({ json: { items: [], total: 5 } })
-      return
-    }
     if (p.includes('/workflows')) {
       await route.fulfill({ json: MOCK_WORKFLOWS })
       return
     }
     if (p.includes('/health')) {
       await route.fulfill({ json: { status: 'ok', ready: true } })
+      return
+    }
+    if (p.endsWith('/run-tags')) {
+      await route.fulfill({ json: { tags: [] } })
+      return
+    }
+    if (p.endsWith('/runs')) {
+      await route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 20, hasMore: false } })
       return
     }
     await route.fulfill({ status: 404, json: { error: 'not mocked' } })
@@ -54,13 +58,14 @@ async function controlHeights(page: Page) {
   )
 }
 
+// The gates inbox lost its toolbar in #819; the run list is the list header that still uses these controls.
 for (const theme of ['light', 'dark'] as const) {
-  test(`gates inbox toolbar controls share one desktop height (${theme})`, async ({ page }) => {
+  test(`run list toolbar filters share one desktop height (${theme})`, async ({ page }) => {
     await mockApi(page)
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`/inbox-empty-fill.html?theme=${theme}`)
+    await page.goto(`/run-list-sort.html?theme=${theme}`)
     const controls = await controlHeights(page)
-    expect(controls.length).toBeGreaterThanOrEqual(4)
+    expect(controls.length).toBeGreaterThanOrEqual(2)
     expect(controls.some((c) => c.hasChip)).toBe(true)
     for (const c of controls) {
       expect(Math.abs(c.height - DESKTOP_HEIGHT), `${c.label} height ${c.height}`).toBeLessThanOrEqual(1)
@@ -68,24 +73,13 @@ for (const theme of ['light', 'dark'] as const) {
   })
 }
 
-test('gates inbox toolbar controls keep the 44px mobile touch height', async ({ page }) => {
+test('run list toolbar filters keep the 44px mobile touch height', async ({ page }) => {
   await mockApi(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/inbox-empty-fill.html')
-  const controls = await controlHeights(page)
-  expect(controls.length).toBeGreaterThanOrEqual(4)
-  for (const c of controls) {
-    expect(c.height, `${c.label} height ${c.height}`).toBeGreaterThanOrEqual(MOBILE_HEIGHT)
-  }
-})
-
-test('run list toolbar filters share one desktop height', async ({ page }) => {
-  await mockApi(page)
-  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/run-list-sort.html')
   const controls = await controlHeights(page)
-  expect(controls.length).toBeGreaterThanOrEqual(4)
+  expect(controls.length).toBeGreaterThanOrEqual(3)
   for (const c of controls) {
-    expect(Math.abs(c.height - DESKTOP_HEIGHT), `${c.label} height ${c.height}`).toBeLessThanOrEqual(1)
+    expect(c.height, `${c.label} height ${c.height}`).toBeGreaterThanOrEqual(MOBILE_HEIGHT)
   }
 })

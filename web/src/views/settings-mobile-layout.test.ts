@@ -36,7 +36,7 @@ describe('settings-family narrow-screen stacking (g3)', () => {
   })
 
   it('Notifications controls keep touch height', () => {
-    expect(read('NotificationsView.vue')).toMatch(/min-h-11 border border-line bg-transparent/)
+    expect(read('NotificationsView.vue')).toMatch(/notification-mark-all h-8 max-md:min-h-11/)
     expect(read('NotificationsView.vue')).toMatch(/min-h-11 border-b-2 border-transparent px-4/)
   })
 })

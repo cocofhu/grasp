@@ -134,7 +134,7 @@ test.describe('首页 Chat 启动 Approve 工作流', () => {
     const naturalHeight = await content.evaluate((el) => {
       const top = el.getBoundingClientRect().top
       const rail = el.querySelector('[data-testid="home-workflow-rail-wrap"]')!
-      return Math.ceil(rail.getBoundingClientRect().bottom - top + parseFloat(getComputedStyle(el).paddingBottom))
+      return Math.ceil(rail.getBoundingClientRect().bottom - top + parseFloat(getComputedStyle(el, '::after').height))
     })
     await page.setViewportSize({ width: 1280, height: naturalHeight + 1 })
 

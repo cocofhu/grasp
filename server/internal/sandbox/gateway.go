@@ -235,7 +235,8 @@ func (g *GatewayClient) List(ctx context.Context, labelFilters ...string) ([]GWS
 	return g.listGateways(ctx, path)
 }
 
-// Destroy deletes a sandbox by gateway id.
+// Destroy deletes a sandbox and its owned recovery points by gateway id.
+// Success confirms backend API deletion, not physical host garbage collection.
 func (g *GatewayClient) Destroy(ctx context.Context, id string) error {
 	if err := g.do(ctx, http.MethodDelete, "/api/v1/sandboxes/"+id, nil, nil); err != nil {
 		return err
@@ -246,7 +247,8 @@ func (g *GatewayClient) Destroy(ctx context.Context, id string) error {
 	return nil
 }
 
-// Stop stops (but retains) a sandbox by gateway id.
+// Stop saves and releases a sandbox by gateway id, retaining up to keep restore
+// points. It does not expose or require a provider-private durability receipt.
 func (g *GatewayClient) Stop(ctx context.Context, id string, keep int) error {
 	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/stop", map[string]int{"backupKeep": keep}, nil)
 }

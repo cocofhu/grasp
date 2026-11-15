@@ -123,10 +123,7 @@ export function useImageAttachments(opts?: { maxBytes?: number; maxMiB?: number;
     removeAttachment,
     clearAttachments,
     takeAttachments,
-    validateForSend,
     blockSendIfOversized,
-    clearNotice,
-    setNotice,
     maxBytes,
     maxMiB,
   }

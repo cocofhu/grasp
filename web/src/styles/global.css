@@ -48,8 +48,6 @@
   --c-hue-6: 251 191 36;
   --c-hue-7: 251 146 60;
   --c-hue-8: 244 114 182;
-  --grad-logo: linear-gradient(90deg, #7B61FF 0%, #818CF8 35%, #6366F1 55%, #7B61FF 75%, #A78BFA 100%);
-  --grad-logo-size: 200% 100%;
 
   /* JSON 代码板 — VS Code Dark（g1.1） */
   --json-bg: #1e1e1e;
@@ -96,7 +94,6 @@ html.light {
   --c-hue-6: 180 83 9;
   --c-hue-7: 194 65 12;
   --c-hue-8: 190 24 93;
-  --grad-logo: linear-gradient(90deg, #6D28D9 0%, #7B61FF 30%, #6366F1 55%, #4F46E5 75%, #7B61FF 100%);
 
   /* JSON 代码板 — VS Code Light+（g1.1） */
   --json-bg: #ffffff;
@@ -420,6 +417,7 @@ html.light .app-sidebar-card {
     display: flex;
     flex-direction: column;
     gap: 1px;
+    min-width: 0;
     line-height: 1.2;
   }
   .brand-logo__text {
@@ -436,47 +434,31 @@ html.light .app-sidebar-card {
     white-space: nowrap;
   }
   .brand-logo__name {
+    font-family: 'Fredoka', ui-rounded, system-ui, sans-serif;
     font-weight: 600;
-    letter-spacing: -0.03em;
-    /* Solid fallback color for LCP paint before gradient clip applies */
-    color: rgb(var(--c-accent-2));
-    background: var(--grad-logo);
-    background-size: var(--grad-logo-size);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 3.5s ease-in-out infinite;
+    letter-spacing: -0.01em;
+    color: rgb(var(--c-txt));
   }
   .brand-logo--sm .brand-logo__name {
-    font-size: 16px;
+    font-size: 18px;
   }
   .brand-logo--sm .brand-logo__tagline {
     font-size: 10px;
     color: rgb(var(--c-txt3));
   }
   .brand-logo--md .brand-logo__name {
-    font-size: 18px;
+    font-size: 20px;
   }
   .brand-logo--md .brand-logo__tagline {
     font-size: 11px;
     color: rgb(var(--c-txt3));
   }
   .brand-logo--lg .brand-logo__name {
-    font-size: 28px;
+    font-size: 30px;
   }
   .brand-logo--lg .brand-logo__tagline {
     font-size: 12px;
     color: rgb(var(--c-txt3));
-  }
-}
-
-@keyframes shimmer {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
   }
 }
 
@@ -604,11 +586,6 @@ html.light .app-sidebar-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-logo__name {
-    animation: none;
-    background-position: 0% 50%;
-  }
-
   .app-desktop-sidebar {
     transition: none;
   }

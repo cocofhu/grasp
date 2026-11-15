@@ -225,11 +225,14 @@ test.describe('RunListView sort acceptance', () => {
 
   test('changing sort from page 2 resets to page 1', async ({ page }) => {
     await openRunList(page)
-    await expect(page.getByText(/共 22/)).toBeVisible({ timeout: 10_000 })
-    await page.getByRole('button', { name: '2', exact: true }).click()
-    await expect(page.getByText(/第 2\/2/)).toBeVisible()
+    const pager = page.locator('nav.pagination')
+    await expect(pager).toContainText('1–20 / 22', { timeout: 10_000 })
+    await pager.getByRole('button', { name: '2', exact: true }).click()
+    await expect(pager.getByRole('button', { name: '2', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(pager).toContainText('21–22 / 22')
     await page.locator('th.sortable', { hasText: '开始' }).click()
-    await expect(page.getByText(/第 1\/2/)).toBeVisible()
+    await expect(pager.getByRole('button', { name: '1', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(pager).toContainText('1–20 / 22')
     await expect.poll(() => hashQuery(page).get('sort')).toBe('started_at')
     await page.screenshot({ path: '/tmp/run-list-sort-page-reset.png', fullPage: true })
   })
