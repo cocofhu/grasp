@@ -191,13 +191,6 @@ type previewPortPublisher interface {
 	EnsurePublishedPort(ctx context.Context, sandboxName string, port int) (string, bool)
 }
 
-// previewLeaser is optionally implemented to keep a sandbox serving a
-// registered preview alive until the run ends, so a later review/gate can
-// still open it after the node's debug window.
-type previewLeaser interface {
-	LeasePreviewSandbox(sandboxName string)
-}
-
 // PreviewDesktop optionally puts a registered app port on the sandbox desktop
 // (the VNC screen the Agent's browser also drives) after set_preview.
 type PreviewDesktop interface {
@@ -751,9 +744,6 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
-	}
-	if l, ok := ops.(previewLeaser); ok {
-		l.LeasePreviewSandbox(sandboxName)
 	}
 	h.SignalPreviewReady(runID, nodeID)
 	reg := PreviewRegistration{ProxyURL: proxyURL}

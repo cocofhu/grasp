@@ -947,35 +947,36 @@ type Sandbox struct {
 	// sandboxes only). Retained while the container lives so it can be cleaned
 	// up when the sandbox is finally destroyed.
 	HomeDir string `json:"-"`
+	// RecoveryMCPNames stores role MCP identities, never old URLs or secrets.
+	// nil marks an older row whose retained configuration must be inspected.
+	RecoveryMCPNames []string `gorm:"serializer:json" json:"-"`
 	// Error carries the startup failure reason when Status == "error".
 	Error string `json:"error,omitempty"`
-	// Leases are the reasons a retired run sandbox is still alive. DestroyAt is
-	// derived from them (latest lease, capped by max retention) and cached so
-	// the sweeper query stays a plain index scan. Rows without leases keep the
-	// legacy DestroyAt-only behavior.
-	Leases    []SandboxLease `gorm:"serializer:json" json:"leases,omitempty"`
-	DestroyAt *time.Time     `json:"destroyAt,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	// LastActiveAt advances on real work, not list/health polling. Every sandbox
+	// uses the same idle policy regardless of its purpose or provider.
+	LastActiveAt *time.Time `gorm:"index" json:"lastActiveAt,omitempty"`
+	// RecoveryKind is "files" or "snapshot". RecoveryPoints are committed
+	// archives; pending object deletions remain durable until they succeed.
+	RecoveryKind string `json:"recoveryKind,omitempty"`
+	// RecoveryPhase distinguishes an unfinished archive from a verified save
+	// whose workload release must be retried idempotently after a restart.
+	RecoveryPhase  string                 `json:"-"`
+	RecoveryPoints []SandboxRecoveryPoint `gorm:"serializer:json" json:"-"`
+	CleanupPending bool                   `gorm:"index;not null;default:false" json:"cleanupPending,omitempty"`
+	DestroyAt      *time.Time             `gorm:"-" json:"destroyAt,omitempty"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	UpdatedAt      time.Time              `json:"updatedAt"`
 }
 
-// Sandbox lease kinds. Each kind holds at most one lease per sandbox; a new
-// lease of the same kind replaces the old one when it lasts longer.
-const (
-	LeaseDebug    = "debug"    // node finished: run_sandbox_ttl debugging window
-	LeaseActivity = "activity" // a human used terminal / IDE / chat / preview (sliding)
-	LeasePreview  = "preview"  // set_preview registered an app on this sandbox
-	LeaseManual   = "manual"   // operator extension from the sandbox UI
-)
-
-// SandboxLease keeps a sandbox alive until Until. A nil Until means "until the
-// run ends", after which the run TTL still applies from the run's end.
-type SandboxLease struct {
-	Kind      string     `json:"kind"`
-	Until     *time.Time `json:"until,omitempty"`
-	Reason    string     `json:"reason,omitempty"`
-	By        string     `json:"by,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
+// SandboxRecoveryPoint is a successful workspace save. Deleting entries are
+// never selected for restore; their keys remain until physical cleanup succeeds.
+type SandboxRecoveryPoint struct {
+	Store     string    `json:"store"`
+	Key       string    `json:"key"`
+	SHA256    string    `json:"sha256"`
+	Size      int64     `json:"size"`
+	CreatedAt time.Time `json:"createdAt"`
+	Deleting  bool      `json:"deleting,omitempty"`
 }
 
 // SandboxLog is an archived snapshot of a sandbox container's stdout/stderr

@@ -27,6 +27,9 @@ type preparedAgentContainer struct {
 
 func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedToken, name string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) (*preparedAgentContainer, error) {
 	vars := map[string]string{}
+	if extra.LaunchKind == "test" {
+		vars = s.testMcpVars(runID, sharedToken, profile)
+	}
 	for _, sp := range platformSpecs {
 		switch sp.Name {
 		case MemoryStoreMCP:

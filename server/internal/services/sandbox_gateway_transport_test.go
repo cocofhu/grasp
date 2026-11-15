@@ -35,7 +35,7 @@ func TestGatewayTransportRefreshesPersistedPortsAndNeverFallsBackWhenUnavailable
 	t.Cleanup(func() { _ = g.Close() })
 	s := newSandboxService(t, newTestDB(t), &dockerState{})
 	s.mgr = sandbox.NewManager(g, sandbox.ManagerOptions{})
-	row := models.Sandbox{Name: "retained", Token: "persisted-token", Host: "127.0.0.1", ACPPort: 9, CodeServerPort: 9}
+	row := models.Sandbox{Status: "running", Name: "retained", Token: "persisted-token", Host: "127.0.0.1", ACPPort: 9, CodeServerPort: 9}
 	if err := s.db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -77,11 +77,16 @@ func testResources() config.ResourcePolicy {
 func testDB(t *testing.T) *store.Store {
 	t.Helper()
 	// Unique in-memory DB per test (avoids slow filesystem SQLite in CI/sandbox).
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UnixNano())
 	db, err := database.Open(config.DBConfig{Driver: "sqlite", Path: dsn})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return store.New(db)
 }
 
@@ -149,7 +154,6 @@ func (f *failCreateDriver) Create(ctx context.Context, spec driver.Spec) (*drive
 type failOpsDriver struct {
 	*fake.Driver
 	startErr   error
-	stopErr    error
 	destroyErr error
 	reinstall  error
 	endpoints  error
@@ -163,12 +167,6 @@ func (f *failOpsDriver) Start(ctx context.Context, id string) error {
 		return f.startErr
 	}
 	return f.Driver.Start(ctx, id)
-}
-func (f *failOpsDriver) Stop(ctx context.Context, id string) error {
-	if f.stopErr != nil {
-		return f.stopErr
-	}
-	return f.Driver.Stop(ctx, id)
 }
 func (f *failOpsDriver) Destroy(ctx context.Context, id string) error {
 	if f.destroyErr != nil {
@@ -346,15 +344,15 @@ func TestStopDestroyList(t *testing.T) {
 		t.Fatalf("List miss: %v len=%d", err, len(miss))
 	}
 
-	if err := svc.Stop(context.Background(), sb.ID); err != nil {
+	if err := svc.Stop(context.Background(), sb.ID, 1); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.Get(context.Background(), sb.ID)
-	if got.Status != "stopped" {
-		t.Fatalf("status=%s", got.Status)
+	if got.Status != "stopped" || !got.WorkloadReleased || got.SpecJSON == "" {
+		t.Fatalf("stop lost recreation state: %+v", got)
 	}
 	stLive, err := drv.Status(context.Background(), sb.ID)
-	if err != nil || stLive != driver.StatusStopped {
+	if err != nil || stLive != driver.StatusNotFound {
 		t.Fatalf("driver status=%s err=%v", stLive, err)
 	}
 
@@ -365,8 +363,8 @@ func TestStopDestroyList(t *testing.T) {
 	if err == nil {
 		t.Fatal("record should be gone")
 	}
-	if err := svc.Destroy(context.Background(), "missing"); err == nil {
-		t.Fatal("destroy missing should error")
+	if err := svc.Destroy(context.Background(), "missing"); err != nil {
+		t.Fatalf("destroy missing must be idempotent: %v", err)
 	}
 }
 
@@ -461,7 +459,7 @@ func TestStartNotFound(t *testing.T) {
 	if err := svc.StartPrepared(context.Background(), "nope", driver.StartOptions{}); err == nil {
 		t.Fatal("expected error")
 	}
-	if err := svc.Stop(context.Background(), "nope"); err == nil {
+	if err := svc.Stop(context.Background(), "nope", 1); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -473,7 +471,7 @@ func TestStartResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitSvcRunning(t, svc, sb.ID)
-	if err := svc.Stop(context.Background(), sb.ID); err != nil {
+	if err := svc.Stop(context.Background(), sb.ID, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.StartPrepared(context.Background(), sb.ID, driver.StartOptions{}); err != nil {
@@ -850,20 +848,25 @@ func TestDriverOpErrors(t *testing.T) {
 		t.Fatal("start")
 	}
 	drv.startErr = nil
-	drv.stopErr = errors.New("stop boom")
-	if err := svc.Stop(context.Background(), sb.ID); err == nil {
+	drv.destroyErr = errors.New("release boom")
+	if err := svc.Stop(context.Background(), sb.ID, 1); err == nil {
 		t.Fatal("stop")
 	}
-	drv.stopErr = nil
 	drv.destroyErr = errors.New("destroy boom")
-	// Driver failure must not block deleting the control-plane record.
-	if err := svc.Destroy(context.Background(), sb.ID); err != nil {
-		t.Fatalf("destroy with driver error: %v", err)
+	// Keep cleanup intent and identity until the provider confirms resource release.
+	if err := svc.Destroy(context.Background(), sb.ID); !errors.Is(err, drv.destroyErr) {
+		t.Fatalf("destroy failure was swallowed: %v", err)
 	}
-	if _, err := st.Get(context.Background(), sb.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("record should be gone after destroy driver failure, got %v", err)
+	if got, err := st.Get(context.Background(), sb.ID); err != nil || got.Status != models.StatusDeleting || got.Error == "" {
+		t.Fatalf("lost cleanup intent: %+v %v", got, err)
 	}
 	drv.destroyErr = nil
+	if err := svc.Destroy(context.Background(), sb.ID); err != nil {
+		t.Fatalf("cleanup retry failed: %v", err)
+	}
+	if _, err := st.Get(context.Background(), sb.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("successful retry retained record: %v", err)
+	}
 
 	sb2, err := svc.Create(context.Background(), CreateRequest{})
 	if err != nil {
@@ -1104,6 +1107,17 @@ func TestPublishPortDriverMapsAndPersists(t *testing.T) {
 	}
 	if got.Endpoints()[5173] == "" {
 		t.Fatalf("store missing 5173: %v", got.Endpoints())
+	}
+	if err := svc.Stop(t.Context(), sb.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartPrepared(t.Context(), sb.ID, driver.StartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitSvcRunning(t, svc, sb.ID)
+	got, err = svc.Get(sb.ID)
+	if err != nil || got.Endpoints()[5173] == "" {
+		t.Fatalf("recreation lost dynamically published port: %+v %v", got, err)
 	}
 }
 

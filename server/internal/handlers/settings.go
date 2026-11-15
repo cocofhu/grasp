@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/auth"
@@ -11,11 +13,8 @@ import (
 
 type updateSettingsBody struct {
 	MaxConcurrentRuns *int    `json:"max_concurrent_runs"`
-	RunSandboxTTLMin  *int    `json:"run_sandbox_ttl_minutes"`
-	RunSandboxMaxRetH *int    `json:"run_sandbox_max_retention_hours"`
-	TestSandboxTTLMin *int    `json:"test_sandbox_ttl_minutes"`
-	MaxTestSandboxes  *int    `json:"max_test_sandboxes"`
-	MaxSoloSandboxes  *int    `json:"max_solo_sandboxes"`
+	SandboxIdleTTLMin *int    `json:"sandbox_idle_ttl_minutes"`
+	MaxSandboxes      *int    `json:"max_sandboxes"`
 	NodeAutoRetryMax  *int    `json:"node_auto_retry_max"`
 	SandboxMemoryMB   *int    `json:"sandbox_memory_mb"`
 	AgentIdleMin      *int    `json:"agent_idle_timeout_minutes"`
@@ -33,7 +32,13 @@ func (h *Handlers) GetSettings(c *gin.Context) {
 // them at runtime. Only keys present are changed; env-locked keys are ignored.
 func (h *Handlers) UpdateSettings(c *gin.Context) {
 	var body updateSettingsBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
@@ -43,11 +48,8 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 	patch := map[string]int{}
 	for key, value := range map[string]*int{
 		services.KeyMaxConcurrentRuns: body.MaxConcurrentRuns,
-		services.KeyRunSandboxTTLMin:  body.RunSandboxTTLMin,
-		services.KeyRunSandboxMaxRetH: body.RunSandboxMaxRetH,
-		services.KeyTestSandboxTTLMin: body.TestSandboxTTLMin,
-		services.KeyMaxTestSandboxes:  body.MaxTestSandboxes,
-		services.KeyMaxSoloSandboxes:  body.MaxSoloSandboxes,
+		services.KeySandboxIdleTTLMin: body.SandboxIdleTTLMin,
+		services.KeyMaxSandboxes:      body.MaxSandboxes,
 		services.KeyNodeAutoRetryMax:  body.NodeAutoRetryMax,
 		services.KeySandboxMemoryMB:   body.SandboxMemoryMB,
 		services.KeyAgentIdleMin:      body.AgentIdleMin,

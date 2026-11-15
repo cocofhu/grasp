@@ -65,15 +65,17 @@ func (g *GatewayClient) BaseURL() string { return g.baseURL }
 // Endpoints maps both named keys (session/ide/ssh/cdp/novnc) and raw port
 // numbers ("8765", "3000", …) to a reachable "host:port" address.
 type GWSandbox struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Status    string            `json:"status"`
-	Image     string            `json:"image"`
-	Namespace string            `json:"namespace,omitempty"`
-	Error     string            `json:"error,omitempty"`
-	Endpoints map[string]string `json:"endpoints"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Resources *GWResources      `json:"resources,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Status       string            `json:"status"`
+	Image        string            `json:"image"`
+	Namespace    string            `json:"namespace,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	Endpoints    map[string]string `json:"endpoints"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Resources    *GWResources      `json:"resources,omitempty"`
+	EnvKeys      []string          `json:"envKeys,omitempty"`
+	WorkspaceDir string            `json:"workspaceDir,omitempty"`
 }
 
 // GWResources is the optional per-sandbox resource limit block on create/get.
@@ -245,8 +247,8 @@ func (g *GatewayClient) Destroy(ctx context.Context, id string) error {
 }
 
 // Stop stops (but retains) a sandbox by gateway id.
-func (g *GatewayClient) Stop(ctx context.Context, id string) error {
-	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/stop", nil, nil)
+func (g *GatewayClient) Stop(ctx context.Context, id string, keep int) error {
+	return g.do(ctx, http.MethodPost, "/api/v1/sandboxes/"+id+"/stop", map[string]int{"backupKeep": keep}, nil)
 }
 
 // Start (re)starts a stopped sandbox.
@@ -258,9 +260,11 @@ func (g *GatewayClient) Start(ctx context.Context, id string) error {
 // creating a replacement. BootstrapScript migrates existing Docker containers;
 // RuntimeURL/Headers also let Kubernetes cold starts fetch a fresh bundle.
 type GWStartOptions struct {
-	BootstrapScript string `json:"bootstrapScript"`
-	RuntimeURL      string `json:"runtimeUrl"`
-	RuntimeHeaders  string `json:"runtimeHeaders"`
+	BootstrapScript string            `json:"bootstrapScript"`
+	RuntimeURL      string            `json:"runtimeUrl"`
+	RuntimeHeaders  string            `json:"runtimeHeaders"`
+	RestoreEnv      map[string]string `json:"restoreEnv,omitempty"`
+	ReplaceEnvKeys  []string          `json:"replaceEnvKeys,omitempty"`
 }
 
 func (g *GatewayClient) StartPrepared(ctx context.Context, id string, opts GWStartOptions) error {

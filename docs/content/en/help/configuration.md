@@ -70,16 +70,15 @@ Solo, workflows, Agent tests and PM share the same chat presentation. Hover a me
 
 Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
 
-## Where Solo stop backups go
+## Sandbox reclamation and backup storage
 
-Stopping a Solo environment first archives the workspace, then stops the sandbox. Resuming starts the original sandbox when it still exists (E2B also restores its processes); otherwise a new sandbox is created and the workspace is restored from the backup. Dependency and cache directories (`node_modules`, `.venv`, `__pycache__`, `.cache`, `.pnpm-store`) are not backed up.
+Every sandbox shares one idle timeout and one capacity limit in Settings, defaulting to 60 minutes and 15 sandboxes. Idle environments are saved before releasing resources and resume from their newest successful recovery point. Docker/Kubernetes archive workspace files and remove the container/PVC; E2B uses a complete snapshot without a duplicate file archive. Running environments have no periodic backup schedule.
 
-- By default archives are kept on the server in `data/solo-backups` (under `./.localdata/app-data` in the production stack, backed up with attachments). Change it with `GRASP_SOLO_BACKUP_DIR`.
-- Set `GRASP_SOLO_BACKUP_S3_BUCKET`, `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` and `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` to use S3-compatible storage instead. For MinIO, COS and similar services set `GRASP_SOLO_BACKUP_S3_ENDPOINT`, and `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true` if required. A partial configuration fails startup.
-- One archive is capped at 4 GiB by default (`GRASP_SOLO_BACKUP_MAX_BYTES`); a larger workspace cannot stop and the session keeps running.
-- Each session keeps its 5 newest archives (`GRASP_SOLO_BACKUP_KEEP`); older ones are deleted together with their stored objects. Closing or deleting a session deletes all of them.
-- A running session with new conversation since its last archive is archived again after 6 hours, once the current reply has finished (`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`; negative disables). A paused sandbox is not woken for a backup.
-- When resuming you can pick a backup next to Resume. The newest resumes the original sandbox as usual; an older one creates a new sandbox from that archive and later changes are not kept (newer backups remain). If the sandbox disappears, a session with a backup becomes stopped and Resume restores the newest archive.
+- File archives default to `data/solo-backups`; set `GRASP_SOLO_BACKUP_DIR` to change it. Back up the directory together with the database.
+- Set `GRASP_SOLO_BACKUP_S3_BUCKET`, `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` and `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` for S3. Self-hosted storage can use `GRASP_SOLO_BACKUP_S3_ENDPOINT` and `GRASP_SOLO_BACKUP_S3_PATH_STYLE`. Partial configuration fails startup.
+- A compressed file archive defaults to a 4 GiB limit (`GRASP_SOLO_BACKUP_MAX_BYTES`). Exceeding it or failing verification preserves the original environment.
+- `solo_backup.keep` (`GRASP_SOLO_BACKUP_KEEP`) controls both file and snapshot recovery points, default **1**. Pruning follows a successful new save. Restore always uses the newest successful point. Cancelling a run or closing a session removes all its recovery points, with persistent retries on failure.
+- See [Sandbox lifecycle](sandbox-lifecycle.md) for waiting workflows, manual stop, restoration and failed cleanup.
 
 ## Database and attachment lifecycle
 

@@ -31,8 +31,8 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 	if w := h.do("PUT", "/api/settings", map[string]any{
 		"execution_mode":      "sandbox",
 		"max_concurrent_runs": 4,
-	}); w.Code != 200 || !strings.Contains(w.Body.String(), `"execution_mode":"worktree"`) {
-		t.Fatalf("save changed execution mode: %d %s", w.Code, w.Body)
+	}); w.Code != http.StatusBadRequest {
+		t.Fatalf("read-only/unknown setting accepted: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("PUT", "/api/settings", map[string]any{
 		services.KeyBrandProductName: "Acme",

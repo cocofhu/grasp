@@ -17,6 +17,9 @@ import (
 // GET response does not return private traffic credentials. Losing this volume
 // loses the ability to reconnect; the provider lease still bounds guest life.
 type record struct {
+	// Persist discoveries before DELETE: the provider's live list no longer
+	// includes a guest whose asynchronous snapshot cleanup is still pending.
+	CleanupIDs     []string        `json:"cleanupIDs,omitempty"`
 	UncertainUntil time.Time       `json:"uncertainUntil,omitempty"`
 	Version        int             `json:"version"`
 	Owner          string          `json:"owner"`

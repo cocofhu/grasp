@@ -34,6 +34,12 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		c.String(http.StatusNotFound, "sandbox not found")
 		return
 	}
+	if row.Status != "running" {
+		if _, _, err := h.Sbx.EnsureRunning(c.Request.Context(), id); err != nil {
+			c.String(http.StatusConflict, "sandbox recovery unavailable: %v", err)
+			return
+		}
+	}
 	sandboxIP, code, msg := h.resolveDesktopSandbox(c.Request.Context(), row.Name)
 	if code != 0 {
 		c.String(code, msg)

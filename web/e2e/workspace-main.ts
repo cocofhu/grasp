@@ -14,9 +14,8 @@ const params = new URLSearchParams(window.location.search)
 const view = params.get('view') || '/workflows'
 const assistantMode = params.get('assistant') || 'ready'
 const settingsItems = [
-  ['max_concurrent_runs', 6, 1, 64], ['run_sandbox_ttl_minutes', 30, 0, 1440],
-  ['run_sandbox_max_retention_hours', 24, 1, 168], ['test_sandbox_ttl_minutes', 60, 1, 1440],
-  ['max_test_sandboxes', 4, 1, undefined], ['sandbox_memory_mb', 4096, 512, 65536],
+  ['max_concurrent_runs', 6, 1, 64], ['sandbox_idle_ttl_minutes', 60, 1, undefined],
+  ['max_sandboxes', 15, 1, undefined], ['sandbox_memory_mb', 4096, 512, 65536],
   ['agent_idle_timeout_minutes', 10, 1, 120],
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
@@ -100,7 +99,7 @@ window.fetch = async (input, init) => {
   else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
   else if (path === '/projects') data = []
-  else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 5 }
+  else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 15, usedSandboxes: 0 }
   else if (path === '/workspace/requirement-drafts') {
     if (method === 'POST') {
       data = { id: `new-draft-${requirementDrafts.length + 1}`, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }
@@ -140,6 +139,7 @@ window.fetch = async (input, init) => {
     data = { items: settingsItems, brand }
   }
   else if (path === '/settings/brand') data = brand
+  else if (path === '/sandboxes/capacity') data = { used: 0, limit: settingsItems.find(item => item.key === 'max_sandboxes')?.value || 15 }
   else if (path === '/sandboxes') data = []
   else if (path === '/notifications') data = { items: [], total: 0, unreadCount: 0, page: 1, pageSize: 20 }
   else if (path === '/workspace/channels') data = { items: [], freeAgents: ['manager'], secretsKeyConfigured: true }

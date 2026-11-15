@@ -402,11 +402,8 @@ func main() {
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		MCPEndpoint:          cfg.Server.MCPAdvertise,
 		Env:                  cfg.Sandbox.Env,
-		TTL:                  cfg.TestSandboxTTL(),
-		RunTTL:               cfg.RunSandboxTTL(),
-		MaxRetention:         cfg.RunSandboxMaxRetention(),
-		Max:                  cfg.Sandbox.MaxTestSandboxes,
-		MaxSolo:              cfg.Sandbox.MaxSoloSandboxes,
+		IdleTTL:              cfg.SandboxIdleTTL(),
+		Max:                  cfg.Sandbox.MaxSandboxes,
 		SharedAgent:          sharedAgentSvc,
 		CredentialReferences: credentialSvc.ResolveReferences,
 		ModelBinding:         resolveModelBinding,
@@ -424,14 +421,16 @@ func main() {
 		log.Fatal().Err(err).Msg("solo backup storage")
 	}
 	soloSvc.SetBackupStore(soloBackups)
-	soloSvc.SetBackupPolicy(cfg.SoloBackup.Keep, cfg.SoloBackup.Interval())
-	log.Info().Str("store", soloBackups.Kind()).Int("keep", cfg.SoloBackup.Keep).
-		Dur("interval", cfg.SoloBackup.Interval()).Msg("solo workspace backups")
+	sbxSvc.SetBackupKeep(cfg.SoloBackup.Keep)
+	log.Info().Str("store", soloBackups.Kind()).Int("keep", cfg.SoloBackup.Keep).Msg("sandbox recovery storage")
 	eng.SetReferencePinner(soloSvc)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
 		rr.SetSandboxRegistry(sbxSvc)
+	}
+	if preparer, ok := provider.(runtime.SandboxRecoveryPreparer); ok {
+		sbxSvc.SetRunRecoveryPreparer(preparer)
 	}
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
@@ -457,7 +456,9 @@ func main() {
 	// runtime-tunable scheduling params. ApplyOnBoot re-applies persisted UI
 	// values so they survive restarts.
 	settingsSvc := services.NewSettingsService(db, eng, sbxSvc)
-	settingsSvc.ApplyOnBoot()
+	if err := settingsSvc.ApplyOnBoot(); err != nil {
+		log.Fatal().Err(err).Msg("migrate sandbox policy settings")
+	}
 
 	previewSvc := services.NewPreviewService(db, sbxMgr)
 	previewSvc.SetAgents(agentSvc)
@@ -468,7 +469,6 @@ func main() {
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
-	previewSvc.SetSandboxLeases(sbxSvc)
 	host.SetPreviewStore(previewSvc)
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)
@@ -699,7 +699,6 @@ func main() {
 		}
 		sbxSvc.RunSoloRecovery(sweeperCtx)
 	}()
-	go soloSvc.RunBackupSchedule(sweeperCtx)
 	// Every provider hook is wired now; continue agent nodes whose sandboxes
 	// survived the previous process.
 	eng.ResumeInterrupted()

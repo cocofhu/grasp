@@ -65,8 +65,8 @@ type SessionRepo struct {
 	Branch      string `json:"branch,omitempty"`
 }
 
-// SoloSession is a direct CLI chat with one Agent in a resident sandbox. The
-// sandbox has no idle TTL; it lives until the user closes the session.
+// SoloSession is a direct CLI chat with one Agent. Its sandbox follows the
+// shared idle-recovery policy; saved environments wake before the next turn.
 type SoloSession struct {
 	ID        string `gorm:"primaryKey" json:"id"`
 	UserID    string `gorm:"index" json:"userId"`
@@ -125,8 +125,8 @@ type SoloSession struct {
 	NeedsPreamble bool       `json:"-"`
 	LastActiveAt  *time.Time `json:"lastActiveAt,omitempty"`
 	ClosedAt      *time.Time `json:"closedAt,omitempty"`
-	// Backup* mirror the newest SoloBackup, the default restore point. All
-	// archives are deleted when the session is closed or deleted.
+	// BackupStore/Key/SHA256 are migration inputs from older releases.
+	// BackupSize/At summarize the latest file recovery point for the UI.
 	BackupStore  string     `json:"-"`
 	BackupKey    string     `json:"-"`
 	BackupSHA256 string     `json:"-"`
@@ -136,14 +136,8 @@ type SoloSession struct {
 	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
-// Reasons a Solo workspace archive was taken.
-const (
-	SoloBackupReasonStop      = "stop"
-	SoloBackupReasonScheduled = "scheduled"
-)
-
-// SoloBackup is one workspace archive of a Solo session. A session keeps the
-// newest few; older ones are pruned together with their stored objects.
+// SoloBackup is retained only to migrate archives saved by older releases.
+// New recovery points belong to models.Sandbox, independently of purpose.
 type SoloBackup struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	SessionID string    `gorm:"index" json:"-"`

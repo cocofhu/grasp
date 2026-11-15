@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,7 @@ type record struct {
 	env       map[string]string
 	endpoints map[string]string
 	logs      string // canned PID1 stdout/stderr for GET …/logs
+	workspace string
 }
 
 // FakeGateway is an httptest-backed stand-in for the sandbox-gateway. Zero
@@ -49,12 +51,15 @@ type FakeGateway struct {
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
 	FailStop   bool // POST /sandboxes/:id/stop returns 500
+	FailDelete bool // DELETE /sandboxes/:id returns 500 without removing its status
 	// FailStartTimes makes the next N POST /sandboxes/:id/start calls return 500.
 	FailStartTimes int
 	// Driver is reported by GET /healthz (empty -> "docker").
 	Driver string
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
 	RequirePublishedPort bool
+	OnStart              func(sandbox.GWStartOptions)
+	OnStop               func()
 
 	ListCalls int // number of GET /sandboxes (list) calls served
 }
@@ -208,7 +213,7 @@ func (fg *FakeGateway) handle(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 2 && parts[1] == "status" && r.Method == http.MethodGet:
 		fg.status(w, parts[0])
 	case len(parts) == 2 && (parts[1] == "stop" || parts[1] == "start") && r.Method == http.MethodPost:
-		fg.stopStart(w, parts[0], parts[1])
+		fg.stopStart(w, r, parts[0], parts[1])
 	case len(parts) == 2 && parts[1] == "logs" && r.Method == http.MethodGet:
 		fg.logs(w, parts[0])
 	case len(parts) == 3 && parts[1] == "hosts" && r.Method == http.MethodGet:
@@ -224,9 +229,10 @@ func (fg *FakeGateway) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Image  string            `json:"image"`
-		Labels map[string]string `json:"labels"`
-		Env    map[string]string `json:"env"`
+		Image        string            `json:"image"`
+		Labels       map[string]string `json:"labels"`
+		Env          map[string]string `json:"env"`
+		WorkspaceDir string            `json:"workspaceDir"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	fg.mu.Lock()
@@ -238,7 +244,7 @@ func (fg *FakeGateway) create(w http.ResponseWriter, r *http.Request) {
 	}
 	rec := &record{
 		id: id, status: "running", image: req.Image, labels: labels,
-		env: req.Env, endpoints: fg.endpointsFor(),
+		env: req.Env, endpoints: fg.endpointsFor(), workspace: req.WorkspaceDir,
 	}
 	fg.recs[id] = rec
 	fg.mu.Unlock()
@@ -283,6 +289,10 @@ func (fg *FakeGateway) get(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) delete(w http.ResponseWriter, id string) {
+	if fg.FailDelete {
+		http.Error(w, "snapshot cleanup pending", http.StatusInternalServerError)
+		return
+	}
 	fg.mu.Lock()
 	delete(fg.recs, id)
 	fg.mu.Unlock()
@@ -308,7 +318,10 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 	writeJSON(w, map[string]string{"status": st})
 }
 
-func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
+func (fg *FakeGateway) stopStart(w http.ResponseWriter, r *http.Request, id, action string) {
+	if action == "stop" && fg.OnStop != nil {
+		fg.OnStop()
+	}
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
 		return
@@ -329,11 +342,29 @@ func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
 		http.Error(w, "stop failed", http.StatusInternalServerError)
 		return
 	}
+	var opts sandbox.GWStartOptions
+	if action == "start" && r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&opts)
+		if fg.OnStart != nil {
+			fg.OnStart(opts)
+		}
+	}
 	fg.mu.Lock()
 	if rec := fg.recs[id]; rec != nil {
 		if action == "stop" {
 			rec.status = "stopped"
 		} else {
+			if fg.Driver != "e2b" && opts.RestoreEnv != nil {
+				if rec.env == nil {
+					rec.env = map[string]string{}
+				}
+				for _, key := range opts.ReplaceEnvKeys {
+					delete(rec.env, key)
+				}
+				for key, value := range opts.RestoreEnv {
+					rec.env[key] = value
+				}
+			}
 			rec.status = "running"
 		}
 	}
@@ -376,13 +407,20 @@ func (fg *FakeGateway) logs(w http.ResponseWriter, id string) {
 }
 
 func (fg *FakeGateway) dto(rec *record) map[string]any {
+	keys := make([]string, 0, len(rec.env))
+	for key := range rec.env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 	return map[string]any{
-		"id":        rec.id,
-		"name":      rec.id,
-		"status":    rec.status,
-		"image":     rec.image,
-		"endpoints": rec.endpoints,
-		"labels":    rec.labels,
+		"envKeys":      keys,
+		"workspaceDir": rec.workspace,
+		"id":           rec.id,
+		"name":         rec.id,
+		"status":       rec.status,
+		"image":        rec.image,
+		"endpoints":    rec.endpoints,
+		"labels":       rec.labels,
 	}
 }
 

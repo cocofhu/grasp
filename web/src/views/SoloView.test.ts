@@ -17,7 +17,8 @@ const store = vi.hoisted(() => {
     loaded: ref(true),
     active: ref(sessions.slice(0, 1)),
     sessions: ref(sessions),
-    maxSandboxes: ref(5),
+    maxSandboxes: ref(15),
+    usedSandboxes: ref(4),
     refresh: vi.fn(async () => {}),
   }
 })

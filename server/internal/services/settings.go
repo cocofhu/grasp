@@ -17,11 +17,8 @@ import (
 // Setting keys (the fixed set of UI-editable platform scheduling knobs).
 const (
 	KeyMaxConcurrentRuns = "max_concurrent_runs"
-	KeyRunSandboxTTLMin  = "run_sandbox_ttl_minutes"
-	KeyRunSandboxMaxRetH = "run_sandbox_max_retention_hours"
-	KeyTestSandboxTTLMin = "test_sandbox_ttl_minutes"
-	KeyMaxTestSandboxes  = "max_test_sandboxes"
-	KeyMaxSoloSandboxes  = "max_solo_sandboxes"
+	KeySandboxIdleTTLMin = "sandbox_idle_ttl_minutes"
+	KeyMaxSandboxes      = "max_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
 	KeySandboxMemoryMB   = "sandbox_memory_mb"
 	KeyAgentIdleMin      = "agent_idle_timeout_minutes"
@@ -60,20 +57,8 @@ type AutoRetryController interface {
 
 // SandboxTuner is the slice of the sandbox service the settings layer drives.
 type SandboxTuner interface {
-	SetTTLs(runTTL, testTTL time.Duration)
-	SetMaxTestSandboxes(n int)
-}
-
-// RetentionTuner is the optional slice of the sandbox service that accepts the
-// live lease ceiling; fakes that don't implement it are skipped.
-type RetentionTuner interface {
-	SetMaxRetention(d time.Duration)
-}
-
-// SoloLimitTuner is the optional slice of the sandbox service that accepts the
-// live Solo sandbox cap; fakes that don't implement it are skipped.
-type SoloLimitTuner interface {
-	SetMaxSoloSandboxes(n int)
+	SetIdleTTL(time.Duration)
+	SetMaxSandboxes(int)
 }
 
 // SettingsService is the DB override layer for platform scheduling params. It
@@ -105,16 +90,10 @@ func knobs() []knob {
 	return []knob{
 		{KeyMaxConcurrentRuns, "最大并发运行数", "", 1, 0, "GRASP_MAX_RUNS",
 			func(c *config.Config) int { return c.Engine.MaxConcurrentRuns }},
-		{KeyRunSandboxTTLMin, "运行沙箱保留时长", "分钟", 1, 0, "",
-			func(c *config.Config) int { return c.Sandbox.RunSandboxTTLMinutes }},
-		{KeyRunSandboxMaxRetH, "运行沙箱最长保留", "小时", 1, 168, "",
-			func(c *config.Config) int { return c.Sandbox.RunSandboxMaxRetentionHours }},
-		{KeyTestSandboxTTLMin, "测试沙箱空闲 TTL", "分钟", 1, 0, "",
-			func(c *config.Config) int { return c.Sandbox.TestSandboxTTLMinutes }},
-		{KeyMaxTestSandboxes, "最大测试沙箱数", "", 1, 0, "",
-			func(c *config.Config) int { return c.Sandbox.MaxTestSandboxes }},
-		{KeyMaxSoloSandboxes, "最大 Solo 沙箱数", "", 1, 0, "",
-			func(c *config.Config) int { return c.Sandbox.MaxSoloSandboxes }},
+		{KeySandboxIdleTTLMin, "沙箱空闲回收时间", "分钟", 1, 0, "",
+			func(c *config.Config) int { return c.Sandbox.IdleTTLMinutes }},
+		{KeyMaxSandboxes, "最大同时运行沙箱数", "", 1, 0, "",
+			func(c *config.Config) int { return c.Sandbox.MaxSandboxes }},
 		{KeyNodeAutoRetryMax, "节点自动重试次数", "次", 0, 0, "GRASP_NODE_AUTO_RETRY",
 			func(c *config.Config) int { return c.Engine.NodeAutoRetryMax }},
 		{KeySandboxMemoryMB, "沙箱内存覆盖", "MiB", 0, 0, "GRASP_SANDBOX_MEMORY_MB",
@@ -177,6 +156,15 @@ func (s *SettingsService) resolve(k knob, cfg *config.Config) (value int, source
 // UpdateWithBrand validates the complete patch before writing, then persists
 // scheduling and brand values in one transaction.
 func (s *SettingsService) UpdateWithBrand(patch map[string]int, brand BrandPatch) ([]SettingItem, error) {
+	known := make(map[string]bool)
+	for _, k := range knobs() {
+		known[k.key] = true
+	}
+	for key := range patch {
+		if !known[key] {
+			return nil, fmt.Errorf("unknown setting %q", key)
+		}
+	}
 	for _, k := range knobs() {
 		v, ok := patch[k.key]
 		if !ok {
@@ -235,7 +223,13 @@ func validateBrandPatch(patch BrandPatch) error {
 
 // ApplyOnBoot pushes the persisted (DB) overrides onto the runtime components
 // at startup, so UI-configured values survive a restart.
-func (s *SettingsService) ApplyOnBoot() { s.apply() }
+func (s *SettingsService) ApplyOnBoot() error {
+	if err := s.migrateSandboxSettings(); err != nil {
+		return err
+	}
+	s.apply()
+	return nil
+}
 
 // apply computes the effective values and drives the runtime components.
 func (s *SettingsService) apply() {
@@ -255,17 +249,8 @@ func (s *SettingsService) apply() {
 		}
 	}
 	if s.sbx != nil {
-		s.sbx.SetTTLs(
-			time.Duration(m[KeyRunSandboxTTLMin])*time.Minute,
-			time.Duration(m[KeyTestSandboxTTLMin])*time.Minute,
-		)
-		s.sbx.SetMaxTestSandboxes(m[KeyMaxTestSandboxes])
-		if rt, ok := s.sbx.(RetentionTuner); ok {
-			rt.SetMaxRetention(time.Duration(m[KeyRunSandboxMaxRetH]) * time.Hour)
-		}
-		if st, ok := s.sbx.(SoloLimitTuner); ok {
-			st.SetMaxSoloSandboxes(m[KeyMaxSoloSandboxes])
-		}
+		s.sbx.SetIdleTTL(time.Duration(m[KeySandboxIdleTTLMin]) * time.Minute)
+		s.sbx.SetMaxSandboxes(m[KeyMaxSandboxes])
 	}
 	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])
 	if idleFromCfg {

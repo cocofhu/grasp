@@ -130,6 +130,7 @@ test.describe('CancelRun UI acceptance', () => {
     await expect(page.getByText('取消运行？')).toBeVisible()
     await expect(page.getByText(/停止并变为/)).toBeVisible()
     await expect(page.getByText(/不可恢复为继续执行/)).toBeVisible()
+    await expect(page.getByText(/全部恢复点会被清理，运行历史保留/)).toBeVisible()
     await expect(page.getByText(/永久删除/)).toHaveCount(0)
     await page.screenshot({ path: '/tmp/cancel-run-queued-confirm.png', fullPage: true })
 

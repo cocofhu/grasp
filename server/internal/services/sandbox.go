@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/solobackup"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,15 +20,8 @@ import (
 
 func randID() string { return uuid.NewString()[:8] }
 
-// SandboxService manages long-lived, interactive sandboxes used for Agent
-// chat-testing. Each sandbox is a Docker container bound to one Agent profile
-// (its rules/skills/mcp/env), kept alive across multiple chat turns and
-// reclaimed by an idle TTL sweeper. State is persisted (models.Sandbox) so the
-// pool survives restarts; the live ACP WebSocket connection is re-established
-// lazily on the next chat after a restart.
-//
-// Per-run workflow node sandboxes are NOT managed here — they remain ephemeral
-// inside the runtime provider.
+// SandboxService owns admission, activity, recovery and cleanup for all sandbox purposes.
+// Backend differences are hidden behind the manager; capacity and idle policy are shared.
 type SandboxService struct {
 	db     *gorm.DB
 	mgr    *sandbox.Manager
@@ -44,37 +38,33 @@ type SandboxService struct {
 	selectedCredential   runtime.SelectedCredentialFunc
 	gitCredential        runtime.GitCredentialFunc
 	project              func(id string) (*models.Project, bool)
-	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
-	// held atomically (read from many sites, some already under s.mu) rather
-	// than guarded by s.mu — avoiding any lock-reentrancy at the read points.
-	ttl    atomic.Int64 // idle TTL for interactive test sandboxes (ns)
-	runTTL atomic.Int64 // retention TTL for finished run node sandboxes (ns)
-	max    atomic.Int64 // max concurrently live interactive test sandboxes
-	// maxSolo caps concurrently live resident Solo sandboxes.
-	maxSolo atomic.Int64
+	// Atomic tunables are read from lifecycle and admission paths under different locks.
+	idleTTL    atomic.Int64
+	max        atomic.Int64
+	capacityMu sync.Mutex
+	backups    solobackup.Store
+	backupKeep atomic.Int64
+	soloBusy   func(uint) bool
 	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.
 	soloOnDestroy   func(sandboxID uint)
 	soloOnRecovered func(sandboxID uint)
 	// soloOnPaused reports a running resident the provider paused.
 	soloOnPaused func(sandboxID uint)
-	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
-	maxRetention atomic.Int64
 
 	mu sync.Mutex
 	// Per-resident locks serialize recovery with explicit destruction without
 	// making one unavailable sandbox block every other session.
 	soloRecoveryLocks sync.Map
-	// leaseMu serializes lease read-modify-write so concurrent renewals
-	// (activity, manual, preview, retire) can't drop each other's lease.
-	leaseMu sync.Mutex
-	// lastTouch throttles activity-lease writes per sandbox id.
+	// lastTouch tracks activity concurrent with an idle-reclamation probe.
 	lastTouch map[uint]time.Time
 	live      map[uint]*liveSandbox
 	// runActive marks per-run node sandboxes (by container name) that are
 	// currently executing. These are owned by the runtime provider, not by
 	// this service's ACP pool; the flag protects them from being stopped or
 	// swept while in use.
-	runActive map[string]bool
+	runActive           map[string]bool
+	runTasks            map[string]int
+	runRecoveryPreparer runtime.SandboxRecoveryPreparer
 	// agentOnDestroy revokes thread-bound agent MCP sessions when a
 	// purpose=agent|pm sandbox is torn down (optional; SetAgentSandboxDestroyHook).
 	agentOnDestroy AgentSandboxDestroyHook
@@ -124,16 +114,9 @@ type SandboxOptions struct {
 	MCPEndpoint  string
 	// Env is the vendor-neutral sandbox env (e.g. CURSOR_API_KEY for the
 	// reference image), injected into interactive test sandboxes.
-	Env map[string]string
-	TTL time.Duration
-	// RunTTL is how long a finished run's node sandbox is retained (kept alive)
-	// for debugging before the idle sweeper reclaims it.
-	RunTTL time.Duration
-	// MaxRetention caps lease-extended run sandbox lifetime. 0 = 24h.
-	MaxRetention time.Duration
-	Max          int
-	// MaxSolo caps resident Solo sandboxes. 0 = 5.
-	MaxSolo int
+	Env     map[string]string
+	IdleTTL time.Duration
+	Max     int
 	// SharedAgent optional baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
 	// CredentialReferences resolves ${credential:<id>} values for MCP
@@ -170,14 +153,11 @@ type SandboxView struct {
 
 // NewSandboxService builds the service.
 func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, host *mcp.Host, opts SandboxOptions) *SandboxService {
-	if opts.TTL <= 0 {
-		opts.TTL = 30 * time.Minute
+	if opts.IdleTTL <= 0 {
+		opts.IdleTTL = time.Hour
 	}
 	if opts.Max <= 0 {
-		opts.Max = 5
-	}
-	if opts.RunTTL <= 0 {
-		opts.RunTTL = opts.TTL
+		opts.Max = 15
 	}
 	s := &SandboxService{
 		db: db, mgr: mgr, skills: skills, host: host,
@@ -192,19 +172,12 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		project:              opts.Project,
 		live:                 map[uint]*liveSandbox{},
 		runActive:            map[string]bool{},
+		runTasks:             map[string]int{},
 		lastTouch:            map[uint]time.Time{},
 	}
-	if opts.MaxRetention <= 0 {
-		opts.MaxRetention = 24 * time.Hour
-	}
-	s.ttl.Store(int64(opts.TTL))
-	s.runTTL.Store(int64(opts.RunTTL))
-	s.maxRetention.Store(int64(opts.MaxRetention))
+	s.idleTTL.Store(int64(opts.IdleTTL))
 	s.max.Store(int64(opts.Max))
-	if opts.MaxSolo <= 0 {
-		opts.MaxSolo = 5
-	}
-	s.maxSolo.Store(int64(opts.MaxSolo))
+	s.backupKeep.Store(1)
 	if host != nil {
 		var agents AgentGetter
 		if skills != nil {
@@ -231,27 +204,20 @@ func (s *SandboxService) effectiveAgent(agent Agent) Agent {
 	return ExtendOverlay(s.shared.Get(), agent)
 }
 
-// TTL / RunTTL / MaxTestSandboxes return the live tunable values.
-func (s *SandboxService) TTL() time.Duration    { return time.Duration(s.ttl.Load()) }
-func (s *SandboxService) RunTTL() time.Duration { return time.Duration(s.runTTL.Load()) }
-func (s *SandboxService) MaxTestSandboxes() int { return int(s.max.Load()) }
+// IdleTTL and MaxSandboxes expose the shared live policy.
+func (s *SandboxService) IdleTTL() time.Duration { return time.Duration(s.idleTTL.Load()) }
+func (s *SandboxService) MaxSandboxes() int      { return int(s.max.Load()) }
 
-// Manager exposes the underlying docker manager (for preview proxy / probes).
+// Manager exposes the underlying sandbox manager for probes and data-plane access.
 func (s *SandboxService) Manager() *sandbox.Manager { return s.mgr }
 
-// SetTTLs updates the interactive and run-sandbox TTLs at runtime (settings
-// page). Non-positive values are ignored so a partial update can't zero a TTL.
-func (s *SandboxService) SetTTLs(runTTL, testTTL time.Duration) {
-	if testTTL > 0 {
-		s.ttl.Store(int64(testTTL))
-	}
-	if runTTL > 0 {
-		s.runTTL.Store(int64(runTTL))
+func (s *SandboxService) SetIdleTTL(ttl time.Duration) {
+	if ttl > 0 {
+		s.idleTTL.Store(int64(ttl))
 	}
 }
 
-// SetMaxTestSandboxes updates the interactive sandbox cap at runtime.
-func (s *SandboxService) SetMaxTestSandboxes(n int) {
+func (s *SandboxService) SetMaxSandboxes(n int) {
 	if n > 0 {
 		s.max.Store(int64(n))
 	}

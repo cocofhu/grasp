@@ -3,7 +3,7 @@ import { api } from '@/lib/api/api'
 import type { SoloSession } from '@/lib/api/apiTypes'
 
 const sessions = ref<SoloSession[]>([])
-const maxSandboxes = ref(5)
+const maxSandboxes = ref(15)
 const usedSandboxes = ref(0)
 const loaded = ref(false)
 const loading = ref(false)
@@ -16,8 +16,8 @@ export function isSoloActive(s: Pick<SoloSession, 'status'>): boolean {
 }
 
 /** Sessions holding a sandbox; stopped ones do not count against the quota. */
-export function isSoloComputing(s: Pick<SoloSession, 'status'>): boolean {
-  return s.status === 'starting' || s.status === 'running' || s.status === 'stopping'
+export function isSoloComputing(s: Pick<SoloSession, 'status' | 'sandbox'>): boolean {
+  return !s.sandbox?.paused && (s.status === 'starting' || s.status === 'running' || s.status === 'stopping')
 }
 
 /** Closed (cancelled) or failed sessions; the sidebar lists them under「历史执行」. */

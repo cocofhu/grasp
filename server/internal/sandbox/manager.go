@@ -398,6 +398,9 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 	if sshHost == "" {
 		sshHost = sh
 	}
+	if sb.WorkspaceDir != "" {
+		workspaceDir = sb.WorkspaceDir
+	}
 	if workspaceDir == "" {
 		workspaceDir = m.WorkspaceDir
 	}
@@ -622,18 +625,31 @@ func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
 // runtime bundles under one bearer token. The zero plan means nothing to inject (or no
 // inject store / reachable base URL).
 func (m *Manager) buildMultiInject(configHome, configRoot string, gitCredentials []GitCredential, runtime []byte) injectPlan {
+	plan, err := m.prepareMultiInject(configHome, configRoot, gitCredentials, runtime)
+	if err != nil {
+		log.Warn().Err(err).Msg("prepare sandbox inject failed")
+	}
+	return plan
+}
+
+func (m *Manager) prepareMultiInject(configHome, configRoot string, gitCredentials []GitCredential, runtime []byte) (plan injectPlan, err error) {
 	if m.bundles == nil {
-		return injectPlan{}
+		return plan, fmt.Errorf("sandbox inject store is unavailable")
 	}
 	base := strings.TrimRight(config.ResolveMCPAdvertise(m.injectAdvertiseFallback), "/")
 	if base == "" {
-		return injectPlan{}
+		return plan, fmt.Errorf("sandbox inject server URL is unavailable")
 	}
 	token := randomHex(24)
 	if token == "" {
-		return injectPlan{}
+		return plan, fmt.Errorf("sandbox inject token generation failed")
 	}
-	var plan injectPlan
+	defer func() {
+		if err != nil {
+			m.deleteInjectBundles(plan.ids)
+			plan = injectPlan{}
+		}
+	}()
 	put := func(data []byte) string {
 		id := m.bundles.PutWithToken(data, DefaultInjectBundleTTL, token)
 		if id == "" {
@@ -643,18 +659,18 @@ func (m *Manager) buildMultiInject(configHome, configRoot string, gitCredentials
 		return base + "/sandbox-inject/" + id + ".tgz"
 	}
 	if sshData, err := packGitInjectBundle(gitCredentials); err != nil {
-		log.Warn().Err(err).Msg("pack git inject bundle failed")
+		return plan, fmt.Errorf("pack git inject bundle: %w", err)
 	} else if sshData != nil {
 		u := put(sshData)
 		if u == "" {
-			return injectPlan{}
+			return plan, fmt.Errorf("publish git inject bundle failed")
 		}
 		plan.parts = append(plan.parts, u+"|"+SSHInjectStagingDir)
 	}
 	if strings.TrimSpace(configHome) != "" {
 		data, err := PackConfigHomeTarGz(configHome)
 		if err != nil {
-			log.Warn().Err(err).Str("dir", configHome).Msg("pack config-home inject bundle failed")
+			return plan, fmt.Errorf("pack config-home inject bundle: %w", err)
 		} else if data != nil {
 			dest := configRoot
 			if dest == "" {
@@ -662,21 +678,21 @@ func (m *Manager) buildMultiInject(configHome, configRoot string, gitCredentials
 			}
 			u := put(data)
 			if u == "" {
-				return injectPlan{}
+				return plan, fmt.Errorf("publish config-home inject bundle failed")
 			}
 			plan.parts = append(plan.parts, u+"|"+dest)
 		}
 	}
 	if runtime != nil {
 		if plan.runtimeURL = put(runtime); plan.runtimeURL == "" {
-			return injectPlan{}
+			return plan, fmt.Errorf("publish runtime inject bundle failed")
 		}
 	}
 	if !plan.ok() {
-		return injectPlan{}
+		return plan, fmt.Errorf("sandbox inject bundle is empty")
 	}
 	plan.headers = "Authorization: Bearer " + token
-	return plan
+	return plan, nil
 }
 
 func bundleIDFromURL(u string) string {
@@ -712,6 +728,9 @@ func (m *Manager) AttachNoEnsure(ctx context.Context, id string) (*Sandbox, erro
 }
 
 func (m *Manager) attach(ctx context.Context, id, token string, ensure bool) (*Sandbox, error) {
+	if execution.Worktree() {
+		return nil, fmt.Errorf("local worktree handles belong to their live execution")
+	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -736,6 +755,9 @@ func (m *Manager) attach(ctx context.Context, id, token string, ensure bool) (*S
 
 // DestroyByName removes a sandbox by gateway id (best effort).
 func (m *Manager) DestroyByName(ctx context.Context, id string) error {
+	if execution.Worktree() {
+		return nil
+	}
 	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return nil
 	}
@@ -751,6 +773,9 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 // id is the gateway sandbox id (also stored as Sandbox.Name). Empty content
 // with a nil error means a successful read with no output yet.
 func (m *Manager) Logs(ctx context.Context, id string, tail int) (string, error) {
+	if execution.Worktree() {
+		return "", fmt.Errorf("local worktree logs are owned by its execution")
+	}
 	if m.gw == nil {
 		return "", fmt.Errorf("sandbox manager has no gateway client configured")
 	}
@@ -797,6 +822,9 @@ func (m *Manager) Status(ctx context.Context, id string) string {
 // ProbeStatus preserves observation errors. Lifecycle decisions must use this
 // instead of Status: an unavailable gateway is not proof that data is gone.
 func (m *Manager) ProbeStatus(ctx context.Context, id string) (string, error) {
+	if execution.Worktree() {
+		return "", fmt.Errorf("local worktree status is owned by its execution")
+	}
 	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return "", fmt.Errorf("sandbox gateway or id is missing")
 	}
@@ -832,6 +860,9 @@ func (m *Manager) List(ctx context.Context) ([]string, error) {
 
 // ListManaged returns approving-managed gateway sandboxes (id/status/labels).
 func (m *Manager) ListManaged(ctx context.Context) ([]GWSandbox, error) {
+	if execution.Worktree() {
+		return nil, nil
+	}
 	if m.gw == nil {
 		return nil, nil
 	}

@@ -24,6 +24,24 @@ test('settings keeps the app rail and a centered document without search', async
   await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('清晰的设置布局')
 })
 
+test('one idle timeout and global sandbox limit share saved capacity across polling', async ({ page }) => {
+  await page.goto('/workspace.html?view=/settings')
+  await expect(page.locator('#setting-sandbox_idle_ttl_minutes')).toHaveValue('60')
+  await expect(page.locator('#setting-max_sandboxes')).toHaveValue('15')
+  await expect(page.getByTestId('sandbox-capacity-total')).toHaveText('0 / 15')
+  await expect(page.getByTestId('settings-capacity-usage').getByRole('progressbar')).toHaveCount(1)
+
+  await page.locator('#setting-sandbox_idle_ttl_minutes').fill('90')
+  await page.locator('#setting-max_sandboxes').fill('20')
+  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.calls.filter((call: any) => call.path === '/api/sandboxes/capacity').length), { timeout: 8000 }).toBeGreaterThan(1)
+  await expect(page.locator('#setting-max_sandboxes')).toHaveValue('20')
+  await expect(page.getByTestId('sandbox-capacity-total')).toHaveText('0 / 15')
+  await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
+  const saved = await page.evaluate(() => (window as any).__workspaceFixture.calls.findLast((call: any) => call.path === '/api/settings' && call.method === 'PUT'))
+  expect(saved.body).toEqual({ sandbox_idle_ttl_minutes: 90, max_sandboxes: 20 })
+  await expect(page.getByTestId('sandbox-capacity-total')).toHaveText('0 / 20', { timeout: 7000 })
+})
+
 test('general settings saves editable rows and keeps environment values locked', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
   await expect(page.getByRole('heading', { name: '常规', exact: true })).toBeVisible()

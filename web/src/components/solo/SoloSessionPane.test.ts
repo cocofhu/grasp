@@ -38,7 +38,6 @@ const box = vi.hoisted(() => ({
   stop: vi.fn(async () => true),
   send: vi.fn(async () => true),
   resumeSoloSession: vi.fn(),
-  listSoloBackups: vi.fn(async (): Promise<unknown[]> => []),
   load: vi.fn(),
   busy: undefined as undefined | import('vue').Ref<boolean>,
   queued: undefined as undefined | import('vue').Ref<unknown[]>,
@@ -55,7 +54,6 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     getSoloResources: box.getResources,
     resumeSoloSession: (...args: unknown[]) => box.resumeSoloSession(...args),
-    listSoloBackups: () => box.listSoloBackups(),
     getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
@@ -478,7 +476,7 @@ describe('SoloSessionPane', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="solo-stop-modal"]').exists()).toBe(false)
     await wrapper.get('[data-testid="solo-stop-sandbox"]').trigger('click')
-    expect(wrapper.text()).toContain('node_modules')
+    expect(wrapper.text()).toContain('保存失败会保留原沙箱')
     await wrapper.get('[data-testid="solo-stop-confirm"]').trigger('click')
     await flushPromises()
     expect(box.stop).toHaveBeenCalledTimes(1)
@@ -544,7 +542,7 @@ describe('SoloSessionPane', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('gateway down')
     expect(wrapper.get('[data-testid="solo-wake-sandbox"]').text()).toContain(pages.pages.solo.wake.action)
 
-    box.wake.mockRejectedValueOnce(Object.assign(new Error('limit'), { code: 'solo_limit' }))
+    box.wake.mockRejectedValueOnce(Object.assign(new Error('limit'), { code: 'sandbox_limit' }))
     await wrapper.get('[data-testid="solo-wake-sandbox"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="solo-limit-open"]').exists()).toBe(true)
@@ -611,42 +609,20 @@ describe('SoloSessionPane', () => {
     statusState.value = 'running'
   })
 
-  it('resumes from an older backup only when one is chosen', async () => {
+  it('restores the latest recovery point without asking for a version', async () => {
     turns.value = []
     const initial = sessionState.value
     statusState.value = 'stopped'
     sessionState.value = { ...initial, status: 'stopped' } as typeof initial
-    const now = Date.now()
-    box.listSoloBackups.mockResolvedValue([
-      { id: 9, size: 2048, reason: 'stop', createdAt: new Date(now).toISOString() },
-      { id: 7, size: 1024, reason: 'scheduled', createdAt: new Date(now - 3600_000).toISOString() },
-    ])
     box.resumeSoloSession.mockResolvedValue({ ...initial, status: 'starting' })
     box.resumeSoloSession.mockClear()
-    const wrapper = mountPane(pages, {
-      AppSelect: {
-        props: ['modelValue', 'options'],
-        emits: ['update:modelValue'],
-        template: '<select data-testid="solo-backup-select" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.hint }}</option></select>',
-      },
-    })
+    const wrapper = mountPane(pages)
     await flushPromises()
-    const select = wrapper.get('[data-testid="solo-backup-select"]')
-    expect(select.text()).toContain(pages.pages.solo.stoppedBar.newest)
-    expect(select.text()).toContain(pages.pages.solo.stoppedBar.reason.scheduled)
-    expect(wrapper.find('[data-testid="solo-backup-warning"]').exists()).toBe(false)
-
+    expect(wrapper.find('[data-testid="solo-backup-select"]').exists()).toBe(false)
     await wrapper.get('[data-testid="solo-resume"]').trigger('click')
     await flushPromises()
     expect(box.resumeSoloSession).toHaveBeenLastCalledWith('s1')
-
-    await select.setValue('7')
-    expect(wrapper.find('[data-testid="solo-backup-warning"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="solo-resume"]').trigger('click')
-    await flushPromises()
-    expect(box.resumeSoloSession).toHaveBeenLastCalledWith('s1', 7)
     wrapper.unmount()
-    box.listSoloBackups.mockResolvedValue([])
     sessionState.value = initial
     statusState.value = 'running'
   })

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { api, type BrandSettings, type DashboardStats, type SandboxView, type SettingItem } from '@/lib/api/api'
+import { api, type BrandSettings, type DashboardStats, type SandboxCapacity, type SettingItem } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
@@ -48,14 +48,14 @@ const groups = computed(() => {
       icon: 'refresh',
       title: t('pages.settings.groups.recycle.title'),
       desc: t('pages.settings.groups.recycle.desc'),
-      keys: ['run_sandbox_ttl_minutes', 'run_sandbox_max_retention_hours', 'test_sandbox_ttl_minutes'],
+      keys: ['sandbox_idle_ttl_minutes'],
     },
     {
       id: 'capacity',
       icon: 'layers',
       title: t('pages.settings.groups.capacity.title'),
       desc: t('pages.settings.groups.capacity.desc'),
-      keys: ['max_test_sandboxes', 'max_solo_sandboxes'],
+      keys: ['max_sandboxes'],
     },
     {
       id: 'resources',
@@ -72,9 +72,7 @@ const groups = computed(() => {
 })
 
 const SETTING_UNITS: Record<string, string> = {
-  run_sandbox_ttl_minutes: 'common.minutes',
-  run_sandbox_max_retention_hours: 'pages.settings.units.hours',
-  test_sandbox_ttl_minutes: 'common.minutes',
+  sandbox_idle_ttl_minutes: 'common.minutes',
   sandbox_memory_mb: 'pages.settings.units.mib',
   agent_idle_timeout_minutes: 'common.minutes',
 }
@@ -83,7 +81,7 @@ function settingDescription(key: string): string {
   return t(`pages.settings.settings.${key}`)
 }
 
-const detailedSettings = new Set(['run_sandbox_max_retention_hours', 'sandbox_memory_mb', 'agent_idle_timeout_minutes'])
+const detailedSettings = new Set(['sandbox_memory_mb', 'agent_idle_timeout_minutes'])
 
 function settingSummary(key: string): string {
   return detailedSettings.has(key) ? t(`pages.settings.summaries.${key}`) : settingDescription(key)
@@ -111,7 +109,7 @@ const workspaceSaved = reactive({ name: '', description: '', unknownModelDisplay
 const nameError = ref('')
 const displayNameError = ref('')
 let formEpoch = 0
-const sandboxes = ref<SandboxView[]>([])
+const capacity = ref<SandboxCapacity | null>(null)
 const dashboard = ref<DashboardStats | null>(null)
 const loading = ref(true)
 const hasInitialLoaded = ref(false)
@@ -122,6 +120,7 @@ const error = ref('')
 const usageError = ref('')
 const savedAt = ref(0)
 const settingsSeq = createListRequestSeq()
+const usageSeq = createListRequestSeq()
 const showRefreshProgress = computed(
   () => loading.value && hasInitialLoaded.value && items.value.length > 0,
 )
@@ -178,40 +177,21 @@ function clearWorkspaceDraft() {
   displayNameError.value = ''
 }
 
-function aggregateUsage(list: SandboxView[]) {
-  const active = (s: SandboxView) =>
-    s.status === 'creating' || s.status === 'pulling' || s.status === 'running'
-  let testCount = 0
-  let total = 0
-  for (const s of list) {
-    if (!active(s)) continue
-    total++
-    if (s.purpose === 'test') testCount++
-  }
-  return { testCount, total }
-}
-
-const usage = computed(() => aggregateUsage(sandboxes.value))
 const runCount = computed(() => dashboard.value?.running ?? 0)
-const capacityTotal = computed(() => usage.value.testCount + runCount.value)
+const runLimit = computed(() => Math.max(1, itemOf('max_concurrent_runs')?.value || 1))
+const runRatio = computed(() => runCount.value / runLimit.value)
+const capacityRatio = computed(() => capacity.value ? capacity.value.used / Math.max(1, capacity.value.limit) : 0)
 
-const testLimit = computed(() => Math.max(1, Number(form.max_test_sandboxes) || 1))
-const runLimit = computed(() => Math.max(1, Number(form.max_concurrent_runs) || 1))
-
-const testRatio = computed(() => (testLimit.value > 0 ? usage.value.testCount / testLimit.value : 0))
-const runRatio = computed(() => (runLimit.value > 0 ? runCount.value / runLimit.value : 0))
-
-function usageBarClass(ratio: number, base: 'test' | 'run'): string {
+function usageBarClass(ratio: number): string {
   if (ratio >= 1) return 'bg-err'
   if (ratio >= 0.8) return 'bg-warn'
-  return base === 'test' ? 'bg-info' : 'bg-accent-2'
+  return 'bg-accent-2'
 }
 
 function barWidth(ratio: number): string {
   return `${Math.min(100, ratio * 100)}%`
 }
 
-const usageLoaded = ref(false)
 const overviewStats = computed<SettingsStatItem[]>(() => {
   const stats: SettingsStatItem[] = [
     { key: 'execution-mode', icon: 'terminal', label: t('pages.settingsOverview.stats.executionMode'), value: executionLabel.value, tone: 'accent' },
@@ -219,19 +199,19 @@ const overviewStats = computed<SettingsStatItem[]>(() => {
       key: 'running-runs',
       icon: 'chart',
       label: t('pages.settingsOverview.stats.runningRuns'),
-      value: usageLoaded.value && itemOf('max_concurrent_runs') ? runCount.value : undefined,
+      value: dashboard.value && itemOf('max_concurrent_runs') ? runCount.value : undefined,
       total: runLimit.value,
       tone: runRatio.value >= 1 ? 'warn' : 'neutral',
     },
   ]
   if (worktreeMode.value) return stats
   stats.push({
-    key: 'test-sandboxes',
-    icon: 'flask',
-    label: t('pages.settingsOverview.stats.testSandboxes'),
-    value: usageLoaded.value && itemOf('max_test_sandboxes') ? usage.value.testCount : undefined,
-    total: testLimit.value,
-    tone: testRatio.value >= 1 ? 'warn' : 'neutral',
+    key: 'sandboxes',
+    icon: 'layers',
+    label: t('pages.settingsOverview.stats.sandboxes'),
+    value: capacity.value?.used,
+    total: capacity.value?.limit,
+    tone: capacityRatio.value >= 1 ? 'warn' : 'neutral',
   })
   const memory = itemOf('sandbox_memory_mb')
   stats.push({ key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value === 0 ? t('pages.settings.followGateway') : memory?.value, unit: memory?.value === 0 ? undefined : settingUnit('sandbox_memory_mb') })
@@ -268,16 +248,17 @@ async function loadSettings() {
   }
 }
 
-async function pollSandboxes() {
-  try {
-    const [sb, dash] = await Promise.all([api.listSandboxes(), api.dashboard()])
-    sandboxes.value = sb
-    dashboard.value = dash
-    usageLoaded.value = true
+async function pollUsage() {
+  const seq = usageSeq.beginListRequest()
+  const [sandboxResult, runResult] = await Promise.allSettled([api.sandboxCapacity(), api.dashboard()])
+  if (!usageSeq.isCurrentSeq(seq)) return
+  if (sandboxResult.status === 'fulfilled') {
+    capacity.value = sandboxResult.value
     usageError.value = ''
-  } catch (e: any) {
-    usageError.value = e?.message || t('pages.settings.usageRefreshFailed')
+  } else {
+    usageError.value = failureText(sandboxResult.reason, t('pages.settings.usageRefreshFailed'))
   }
+  if (runResult.status === 'fulfilled') dashboard.value = runResult.value
 }
 
 function failureText(cause: unknown, fallback: string): string {
@@ -319,10 +300,14 @@ function validateBeforeSave(): boolean {
   if (normalizeUnknownModelDisplayNameInput(workspaceForm.unknownModelDisplayName).error) {
     displayNameError.value = t('pages.workspace.unknownModelDisplayNameTooLong')
   }
-  const maxTest = itemOf('max_test_sandboxes')
-  if (maxTest && !maxTest.locked) {
-    const n = Number(form.max_test_sandboxes)
-    if (!Number.isFinite(n) || n < 1) error.value = t('pages.settings.minTestSandboxes')
+  for (const key of ['max_sandboxes', 'sandbox_idle_ttl_minutes']) {
+    const item = itemOf(key)
+    if (!item || item.locked) continue
+    const n = Number(form[key])
+    if (!Number.isInteger(n) || n < 1) {
+      error.value = t('pages.settings.positiveInteger', { setting: settingLabel(key) })
+      break
+    }
   }
   return !nameError.value && !displayNameError.value && !error.value
 }
@@ -426,12 +411,13 @@ watch(workspace, (next, prev) => {
 onMounted(() => {
   void loadSettings()
   void ensureLoaded()
-  void pollSandboxes()
-  poll = window.setInterval(pollSandboxes, 5000)
+  void pollUsage()
+  poll = window.setInterval(pollUsage, 5000)
 })
 
 onBeforeUnmount(() => {
   formEpoch++
+  usageSeq.beginListRequest()
   if (poll) clearInterval(poll)
 })
 </script>
@@ -591,23 +577,17 @@ onBeforeUnmount(() => {
                 <span class="chip border-accent/40 bg-accent-dim px-2.5 py-1 text-accent-2" data-testid="execution-mode-value">{{ executionLabel }}</span>
               </SettingsRow>
               <SettingsRow v-if="group.id === 'capacity'" :label="t('pages.settings.capacity.activeSandboxes')" :description="t('pages.settings.capacity.autoRefresh')" data-testid="settings-capacity-usage">
-                <span class="text-xl font-semibold tabular-nums text-txt">{{ capacityTotal }}<span class="ml-1.5 text-xs font-normal text-txt3">{{ t('common.format.units') }}</span></span>
+                <span class="text-xl font-semibold tabular-nums text-txt" data-testid="sandbox-capacity-total">{{ capacity ? `${capacity.used} / ${capacity.limit}` : '—' }}</span>
                 <template #details>
-                  <div class="space-y-2.5">
-                    <div class="flex items-center gap-3">
-                      <span class="w-12 shrink-0 text-xs text-txt3">{{ t('pages.settings.capacity.test') }}</span>
-                      <div class="h-1 flex-1 overflow-hidden rounded-full bg-elevated">
-                        <div class="h-full rounded-full transition-[width] duration-300 ease-out" :class="usageBarClass(testRatio, 'test')" :style="{ width: barWidth(testRatio) }" />
-                      </div>
-                      <span class="w-16 shrink-0 text-right text-xs tabular-nums text-txt2">{{ usage.testCount }}/{{ testLimit }} <span class="text-txt3">{{ t('pages.settings.capacity.limit') }}</span></span>
-                    </div>
-                    <div class="flex items-center gap-3">
-                      <span class="w-12 shrink-0 text-xs text-txt3">{{ t('pages.settings.capacity.run') }}</span>
-                      <div class="h-1 flex-1 overflow-hidden rounded-full bg-elevated">
-                        <div class="h-full rounded-full transition-[width] duration-300 ease-out" :class="usageBarClass(runRatio, 'run')" :style="{ width: barWidth(runRatio) }" />
-                      </div>
-                      <span class="w-16 shrink-0 text-right text-xs tabular-nums" :class="runRatio >= 1 ? 'text-err' : 'text-txt2'">{{ runCount }}/{{ runLimit }} <span class="text-txt3">{{ t('pages.settings.capacity.concurrency') }}</span></span>
-                    </div>
+                  <div
+                    class="h-1 overflow-hidden rounded-full bg-elevated"
+                    role="progressbar"
+                    :aria-label="t('pages.settings.capacity.activeSandboxes')"
+                    :aria-valuenow="capacity?.used"
+                    :aria-valuemax="capacity?.limit"
+                    :aria-valuemin="0"
+                  >
+                    <div class="h-full rounded-full transition-[width] duration-300 ease-out" :class="usageBarClass(capacityRatio)" :style="{ width: barWidth(capacityRatio) }" />
                   </div>
                   <p class="mb-0 mt-3 text-xs leading-5 text-txt3">{{ t('pages.settings.capacity.note') }}</p>
                   <p v-if="usageError" role="status" class="mb-0 mt-2 text-xs text-err">{{ usageError }}</p>

@@ -782,6 +782,10 @@ func (d *Driver) PublishPort(ctx context.Context, id string, port int) error {
 }
 
 func (d *Driver) Stop(ctx context.Context, id string) error {
+	return d.PauseSnapshot(ctx, id, 1)
+}
+
+func (d *Driver) PauseSnapshot(ctx context.Context, id string, keep int) error {
 	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
@@ -798,13 +802,17 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 		return errors.New("E2B provider ownership mismatch")
 	}
 	if current.State != "paused" && current.State != "stopped" {
-		if err = d.client.Pause(ctx, e.record.Provider.ID); err != nil {
+		if err = d.client.Pause(ctx, e.record.Provider.ID, keep); err != nil {
 			return err
 		}
 	}
 	e.record.Phase = "paused"
 	d.tunnels.Suspend(e.record.Provider.ID)
-	return d.save(&e.record)
+	if err := d.save(&e.record); err != nil {
+		return err
+	}
+	return d.client.WaitSnapshotReady(ctx, e.record.Provider.ID)
+
 }
 func (d *Driver) Start(ctx context.Context, id string) error {
 	e, err := d.lockEntry(id)
@@ -874,12 +882,46 @@ func (d *Driver) cleanup(ctx context.Context, e *entry) error {
 			if !d.owns(&s, r.ID) {
 				continue
 			}
-			if err = d.client.Delete(ctx, s.ID); err != nil {
+			found := false
+			for _, id := range r.CleanupIDs {
+				found = found || id == s.ID
+			}
+			if !found {
+				r.CleanupIDs = append(r.CleanupIDs, s.ID)
+			}
+		}
+		if len(r.CleanupIDs) == 0 && time.Now().Before(r.UncertainUntil) {
+			return errors.New("E2B create response uncertain; awaiting owned-sandbox reconciliation")
+		}
+		if len(r.CleanupIDs) > 0 {
+			// An owned identity resolves the single uncertain create request.
+			r.UncertainUntil = time.Time{}
+			if err := d.save(r); err != nil {
 				return err
 			}
 		}
-		if len(sandboxes) == 0 && time.Now().Before(r.UncertainUntil) {
-			return errors.New("E2B create response uncertain; awaiting owned-sandbox reconciliation")
+		var cleanupErrors []error
+		allReleased := true
+		pendingIDs := make([]string, 0, len(r.CleanupIDs))
+		for _, id := range r.CleanupIDs {
+			if err := d.deleteConfirmed(ctx, id); err != nil {
+				pendingIDs = append(pendingIDs, id)
+				cleanupErrors = append(cleanupErrors, err)
+				var pending *driver.CleanupPendingError
+				allReleased = allReleased && errors.As(err, &pending) && pending.WorkloadReleased
+			}
+		}
+		r.CleanupIDs = pendingIDs
+		if err := d.save(r); err != nil {
+			return err
+		}
+		if len(cleanupErrors) > 0 {
+			if allReleased {
+				return &driver.CleanupPendingError{WorkloadReleased: true}
+			}
+			// Do not return an individual released=true error when another
+			// discovered workload has not confirmed exit.
+			return &driver.CleanupPendingError{}
 		}
 	} else {
 		current, err := d.client.Get(ctx, r.Provider.ID)
@@ -889,10 +931,10 @@ func (d *Driver) cleanup(ctx context.Context, e *entry) error {
 		if err == nil && !d.owns(current, r.ID) {
 			return errors.New("refusing to delete E2B sandbox owned by another gateway")
 		}
-		if err == nil {
-			if err = d.client.Delete(ctx, r.Provider.ID); err != nil {
-				return err
-			}
+		// The guest may already be gone while its snapshots still occupy disk.
+		// Keep the authenticated provider identity until physical GC is proven.
+		if err = d.deleteConfirmed(ctx, r.Provider.ID); err != nil {
+			return err
 		}
 	}
 	// Entry identity and journal retirement are one operation with respect to

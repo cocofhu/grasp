@@ -1732,7 +1732,7 @@
       "prioritySaved": "优先级已更新",
       "prioritySaveFailed": "保存优先级失败",
       "cancelTitle": "取消运行？",
-      "cancelWarning": "取消后该 Run 将停止并变为 cancelled。排队中的任务不会开始执行；进行中的步骤会被中断。此操作不可恢复为继续执行。",
+      "cancelWarning": "取消后该 Run 将停止并变为 cancelled。排队中的任务不会开始执行；进行中的步骤会被中断。此操作不可恢复为继续执行。 所属沙箱及全部恢复点会被清理，运行历史保留。",
       "cancelConfirm": "仅停止这一次 Run；取消成功后将停留在详情页并刷新状态。",
       "cancelSuccess": "已取消运行",
       "cancelErrorNotFound": "运行不存在或已删除",
@@ -2024,7 +2024,6 @@
       "loadFailed": "加载失败",
       "saveFailed": "保存失败",
       "usageRefreshFailed": "用量刷新失败",
-      "minTestSandboxes": "最大测试沙箱数不能小于 1",
       "priorityNote": "优先级：环境变量（锁定）> 页面自定义 > 配置文件 > 默认值。保存后立即生效，无需重启。",
       "brand": {
         "title": "品牌文案",
@@ -2040,15 +2039,15 @@
       "groups": {
         "concurrency": {
           "title": "调度并发",
-          "desc": "控制平台同时运行的 workflow 数量上限，间接约束运行沙箱并发。"
+          "desc": "设置同时执行的工作流数量，达到上限后排队等待。"
         },
         "recycle": {
           "title": "沙箱回收",
-          "desc": "配置运行沙箱与测试沙箱在空闲或回合结束后的保留时长，超时自动销毁释放资源。"
+          "desc": "所有沙箱共用空闲回收时间，保存成功后释放运行资源。"
         },
         "capacity": {
           "title": "沙箱容量",
-          "desc": "查看实时占用，设置测试沙箱的数量上限。"
+          "desc": "查看全部沙箱的实时占用，统一设置数量上限。"
         },
         "resources": {
           "title": "沙箱资源",
@@ -2067,33 +2066,25 @@
         "bannerNoSave": "保存其他常规项不会改变执行模式。"
       },
       "summaries": {
-        "run_sandbox_max_retention_hours": "从节点结束起计算的保留总上限；超时后自动回收沙箱。",
         "sandbox_memory_mb": "0 表示使用网关或模板的内存；需要统一覆盖时再填写 MiB 数值。",
         "agent_idle_timeout_minutes": "Agent 持续没有输出或 CPU、磁盘活动时，先尝试恢复，再终止本轮。"
       },
       "labels": {
         "max_concurrent_runs": "最大并发运行数",
-        "run_sandbox_ttl_minutes": "运行沙箱保留时长",
-        "run_sandbox_max_retention_hours": "运行沙箱最长保留",
-        "test_sandbox_ttl_minutes": "测试沙箱空闲 TTL",
-        "max_test_sandboxes": "最大测试沙箱数",
-        "max_solo_sandboxes": "最大 Solo 沙箱数",
         "sandbox_memory_mb": "沙箱内存覆盖",
-        "agent_idle_timeout_minutes": "Agent 无动作时限"
+        "agent_idle_timeout_minutes": "Agent 无动作时限",
+        "sandbox_idle_ttl_minutes": "沙箱空闲回收时间",
+        "max_sandboxes": "最大同时运行沙箱数"
       },
       "settings": {
         "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
-        "run_sandbox_ttl_minutes": "workflow 回合结束后，运行沙箱继续保活的分钟数，便于 agent 继续写产物。",
-        "run_sandbox_max_retention_hours": "节点结束后的运行沙箱由多种保留原因(调试窗口、使用中、预览、手动延长)共同决定回收时间，此值是从节点结束起算的总上限，超过后无论还有什么原因都会回收。平台重启时所有运行沙箱都会被清理，保留不跨重启。",
-        "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
-        "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
-        "max_solo_sandboxes": "同时运行的 Solo 会话沙箱上限。Solo 沙箱没有空闲回收，达到上限后需要先关闭会话才能新建（最小值 ≥ 1）。",
         "sandbox_memory_mb": "0 跟随网关默认值或所选 E2B 模板。非零值覆盖新建沙箱的内存，至少 1024 MiB；Docker/K8s 不得超过网关资源上限，E2B 必须与模板规格一致。浏览器、Docker 和构建共用这份内存，超限可能触发 OOM。由 GRASP_SANDBOX_MEMORY_MB 锁定时页面只读。",
-        "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。"
+        "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。",
+        "sandbox_idle_ttl_minutes": "无任务、无排队请求且无终端活动持续达到此时长后，保存环境并回收资源。所有沙箱共用，默认 60 分钟；再次使用时自动恢复。",
+        "max_sandboxes": "所有沙箱共用此上限，包含创建中、运行中及尚未释放资源的沙箱。达到上限后暂不能新建或恢复；降低上限不会关闭现有沙箱。"
       },
       "units": {
-        "mib": "MiB",
-        "hours": "小时"
+        "mib": "MiB"
       },
       "sourceLabels": {
         "env": "环境变量",
@@ -2104,14 +2095,11 @@
       "envLockedTitle": "由环境变量锁定，页面只读",
       "sourceTitle": "来源: {source}",
       "capacity": {
-        "activeSandboxes": "容量占用合计",
-        "test": "测试",
-        "run": "运行",
-        "limit": "上限",
-        "concurrency": "并发",
+        "activeSandboxes": "沙箱占用 / 上限",
         "autoRefresh": "每 5 秒自动刷新",
-        "note": "合计 = 测试占用 + running workflow · 不含 TTL 保活沙箱"
-      }
+        "note": "包含所有用途和后端，资源释放完成后才扣减；等待恢复的环境不占用名额。"
+      },
+      "positiveInteger": "{setting}必须为整数，且不能小于 1"
     },
     "sandboxes": {
       "title": "沙箱",
@@ -2123,9 +2111,9 @@
       "destroyTitle": "销毁沙箱",
       "destroyWarning": "此操作不可恢复:将停止并删除该沙箱容器及其内的工作区数据。",
       "destroyConfirm": "确认销毁沙箱 {name} 吗?",
-      "cleanupTitle": "清理空闲沙箱",
-      "cleanupWarning": "将销毁所有空闲的测试沙箱(对话中/运行中的不受影响)。此操作不可恢复。",
-      "cleanupConfirm": "确认清理空闲沙箱吗?",
+      "cleanupTitle": "回收空闲沙箱",
+      "cleanupWarning": "保存空闲沙箱的环境后释放资源，再次使用时自动恢复。正在执行任务或有活动的沙箱会跳过；保存失败时保留环境。",
+      "cleanupConfirm": "确认回收当前空闲的沙箱吗？",
       "meta": {
         "source": "来源",
         "created": "创建"
@@ -2174,7 +2162,7 @@
           "profile": "profile",
           "purpose": "purpose",
           "status": "status",
-          "ttl": "TTL",
+          "ttl": "空闲回收倒计时",
           "source": "来源",
           "repoUrl": "repoUrl",
           "createdAt": "createdAt",
@@ -2185,23 +2173,6 @@
           "ide": "ide",
           "vnc": "VNC WS",
           "openPreview": "打开预览"
-        }
-      },
-      "retention": {
-        "title": "保留",
-        "remaining": "剩余",
-        "until": "{kind} 至 {time}",
-        "untilRunEnd": "{kind} 至运行结束",
-        "by": "操作人 {by}",
-        "extendMinutes": "+{n} 分钟",
-        "extendHours": "+{n} 小时",
-        "extendRunEnd": "保留到运行结束",
-        "extended": "已延长保留",
-        "kinds": {
-          "debug": "调试窗口",
-          "activity": "使用中",
-          "preview": "预览",
-          "manual": "手动延长"
         }
       }
     },
@@ -4685,7 +4656,7 @@
     },
     "solo": {
       "title": "Solo 对话",
-      "capacity": "运行中 {n} / {max} 个沙箱",
+      "capacity": "全部沙箱占用 {n} / {max}",
       "newSession": "新建会话",
       "filterActive": "运行中",
       "filterAll": "全部",
@@ -4696,10 +4667,10 @@
       "noProject": "未绑定仓库",
       "backToList": "返回会话列表",
       "closeSession": "关闭",
-      "limitTitle": "Solo 沙箱已达上限",
-      "limitHint": "最多同时运行 {max} 个 Solo 沙箱。关闭一个不再使用的会话后再试。",
-      "limitUsage": "已用 {used} / {max} 个 Solo 沙箱名额。停止或关闭一个不再使用的会话后再试。",
-      "limitOthers": "另有 {count} 个由其他成员的会话占用。",
+      "limitTitle": "沙箱已达上限",
+      "limitHint": "最多同时运行 {max} 个沙箱。停止一个空闲环境后再试。",
+      "limitUsage": "全部沙箱已用 {used} / {max} 个名额。停止一个空闲环境，或取消不再需要的运行后再试。",
+      "limitOthers": "另有 {count} 个名额由其他沙箱占用或仍在清理中。",
       "limitFreed": "已有空位，可以重新启动了",
       "status": {
         "starting": "启动中",
@@ -4767,7 +4738,7 @@
         "titlePlaceholder": "留空则用第一条消息作为标题",
         "firstMessage": "第一条消息（可选）",
         "firstMessagePlaceholder": "告诉 Agent 先做什么；留空则只启动沙箱",
-        "residentHint": "沙箱会一直运行，直到你手动关闭。首条消息会在沙箱就绪后自动执行。",
+        "idleHint": "沙箱空闲后会自动保存并释放资源，再次使用时恢复。首条消息会在沙箱就绪后自动执行。",
         "submit": "启动"
       },
       "home": {
@@ -4833,12 +4804,12 @@
         "plan": "计划"
       },
       "closedBar": {
-        "text": "会话已关闭，沙箱已释放。重新启动会创建新沙箱并重新克隆仓库，之前的对话会作为上下文发给 Agent。",
+        "text": "会话已关闭，环境不再可恢复。重新启动会创建新环境并克隆仓库，之前的对话会作为上下文发给 Agent。",
         "restart": "重新启动"
       },
       "close": {
         "title": "关闭 Solo 会话",
-        "body": "关闭后沙箱会被销毁，沙箱里未提交或未推送的改动将丢失。",
+        "body": "取消运行会销毁沙箱及全部恢复点，保留会话历史。未提交或未推送到远端的改动将无法恢复。",
         "busy": "Agent 正在执行，关闭会中断当前任务。",
         "pushFirst": "先让 Agent 提交并推送",
         "pushFirstHint": "发一条消息让 Agent 把改动推到远端，完成后再关闭",
@@ -4874,7 +4845,6 @@
         }
       },
       "errors": {
-        "solo_limit": "Solo 沙箱已达上限，请先关闭一个会话",
         "session_closed": "会话已关闭，请先重新启动",
         "session_error": "沙箱不可用，请重新启动会话",
         "content_required": "消息不能为空",
@@ -4895,7 +4865,8 @@
         "commit_name_invalid": "提交用户名不能包含尖括号或换行，且不超过 120 个字符",
         "commit_email_invalid": "提交邮箱格式不正确",
         "credential_invalid": "仓库凭据不可用：请确认凭据未吊销，且与仓库地址的协议和主机一致",
-        "credential_unavailable": "凭据服务不可用，请稍后重试"
+        "credential_unavailable": "凭据服务不可用，请稍后重试",
+        "sandbox_limit": "沙箱已达上限，请先停止一个空闲环境"
       },
       "reference": {
         "pickerLabel": "引用会话或 GitHub Issue/PR",
@@ -4938,12 +4909,11 @@
       },
       "stop": {
         "action": "停止环境",
-        "hint": "备份工作区后停止沙箱，不再占用配额，之后可以恢复",
+        "hint": "保存环境后释放运行资源，可恢复继续使用",
         "busy": "请等待当前回复和排队消息结束后再停止",
         "title": "停止环境",
-        "body": "会先备份工作区，再停止沙箱。停止后不再占用 Solo 配额，对话历史保留，之后可以恢复继续。",
-        "excludes": "依赖和缓存目录（node_modules、.venv、__pycache__、.cache、.pnpm-store）不备份；如果恢复到新沙箱，需要重新安装。",
-        "confirm": "备份并停止"
+        "body": "先保存环境，成功后释放运行资源和名额；保存失败会保留原沙箱。会话历史保留，恢复时自动使用最近一次成功保存的状态。",
+        "confirm": "保存并停止"
       },
       "wake": {
         "action": "恢复环境",
@@ -4953,21 +4923,13 @@
       "pausedStage": {
         "title": "沙箱已暂停",
         "waking": "正在恢复沙箱…",
-        "hint": "沙箱运行到平台最长时长后被自动暂停，浏览器、终端和 IDE 暂时无法连接。恢复或发送消息后会自动重新连接，文件和进程都还在。"
+        "hint": "环境已暂停，浏览器、终端和 IDE 暂时无法连接。恢复或发送消息后会重新连接并继续使用。"
       },
       "stoppedBar": {
-        "text": "环境已停止，工作区已备份。恢复后继续对话。",
-        "stopping": "正在备份工作区并停止沙箱…",
-        "backup": "备份于 {time} · {size}",
-        "resume": "恢复",
-        "chooseBackup": "选择恢复的备份版本",
-        "backupOption": "{time} · {size}",
-        "newest": "最新",
-        "reason": {
-          "stop": "停止时",
-          "scheduled": "定时"
-        },
-        "olderBackup": "将用所选备份在新沙箱中恢复工作区，之后的改动会丢失（较新的备份仍保留）。"
+        "text": "环境已保存并停止，恢复后可继续会话。",
+        "stopping": "正在保存环境并释放运行资源…",
+        "backup": "保存于 {time} · {size}",
+        "resume": "恢复"
       }
     },
     "projects": {
@@ -5046,7 +5008,6 @@
         "toolUnit": "种",
         "executionMode": "执行模式",
         "runningRuns": "运行中 / 并发上限",
-        "testSandboxes": "测试沙箱占用",
         "sandboxMemory": "沙箱内存上限",
         "mcpConnection": "对外连接",
         "mcpEnabled": "已启用",
@@ -5066,7 +5027,8 @@
         "projectsHosts": "代码托管主机",
         "variablesWithDefault": "已设默认值",
         "variablesTypes": "变量类型",
-        "schedulesDeliver": "投递到 Channel"
+        "schedulesDeliver": "投递到 Channel",
+        "sandboxes": "沙箱占用 / 上限"
       },
       "modelStatus": {
         "available": "可用",

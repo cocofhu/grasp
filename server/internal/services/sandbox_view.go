@@ -174,6 +174,9 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 	if err != nil {
 		return "", err
 	}
+	if err := s.resumeForAccess(ctx, row); err != nil {
+		return "", err
+	}
 	if row.CodeServerPort == 0 {
 		return "", fmt.Errorf("no code-server for this sandbox")
 	}
@@ -183,7 +186,7 @@ func (s *SandboxService) IDEUpstream(ctx context.Context, id uint) (string, erro
 			if err == nil {
 				return addr, nil
 			}
-			if rerr := s.resumePausedSolo(ctx, row); rerr != nil {
+			if rerr := s.resumeForAccess(ctx, row); rerr != nil {
 				return "", rerr
 			}
 			return s.mgr.EndpointAddr(ctx, row.Name, "ide")
@@ -267,7 +270,7 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 		}
 		return sandbox.OpenLocalTerminal(dir)
 	}
-	if err := s.resumePausedSolo(ctx, row); err != nil {
+	if err := s.resumeForAccess(ctx, row); err != nil {
 		return nil, err
 	}
 	if status := s.mgr.Status(ctx, row.Name); status != "running" {
@@ -276,17 +279,31 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (sandbox.Ter
 	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, nil)
 }
 
-// resumePausedSolo resumes a Solo sandbox the provider paused on expiry, so
-// opening its terminal or IDE does not have to wait for the next chat turn.
-func (s *SandboxService) resumePausedSolo(ctx context.Context, row *models.Sandbox) error {
-	if row.Purpose != SandboxPurposeSolo || s.mgr == nil || row.Name == "" {
+// resumeForAccess restores every sandbox purpose for an explicit IDE or
+// terminal request. Polling/list endpoints never call it.
+func (s *SandboxService) resumeForAccess(ctx context.Context, row *models.Sandbox) error {
+	if s.mgr == nil || row.Name == "" {
 		return nil
 	}
-	switch s.mgr.Status(ctx, row.Name) {
-	case "exited", "stopped":
-		return s.EnsureSoloRunning(ctx, row.ID)
+	if row.Purpose == SandboxPurposeSolo {
+		var session models.SoloSession
+		if s.db.Where("sandbox_id = ?", row.ID).First(&session).Error == nil &&
+			(session.Status == models.SoloStatusStopped || session.Status == models.SoloStatusStopping) {
+			return errors.New("会话已手动停止，请先恢复")
+		}
 	}
-	return nil
+	_, _, err := s.EnsureRunning(ctx, row.ID)
+	return err
+}
+
+// EnsureRunningByName wakes an explicitly accessed environment, including a
+// workflow sandbox waiting for a human response.
+func (s *SandboxService) EnsureRunningByName(ctx context.Context, name string) error {
+	var row models.Sandbox
+	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
+		return err
+	}
+	return s.resumeForAccess(ctx, &row)
 }
 
 // List returns all interactive sandboxes with live-derived status.
@@ -421,7 +438,7 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 	s.mu.Lock()
 	ls := s.live[row.ID]
 	busy := ls != nil && (ls.busy || ls.switching)
-	if row.Purpose == "run" && s.runActive[row.Name] {
+	if row.Purpose == "run" && (s.runActive[row.Name] || s.runTasks[row.Name] > 0) {
 		busy = true
 	}
 	connected := ls != nil && ls.acp != nil && ls.acp.IsConnected()
@@ -449,6 +466,15 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		HasCodeServer:   row.CodeServerPort > 0,
 		HasACP:          row.ACPPort > 0,
 		Password:        row.Token,
+	}
+	v.DestroyAt = nil
+	if row.Status == "running" && !busy {
+		last := row.CreatedAt
+		if row.LastActiveAt != nil {
+			last = *row.LastActiveAt
+		}
+		deadline := last.Add(s.IdleTTL())
+		v.DestroyAt = &deadline
 	}
 	s.applyGatewayLifecycle(ctx, row, &v)
 	return v

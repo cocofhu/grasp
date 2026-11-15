@@ -428,18 +428,10 @@ export interface TeamBootstrapRequest {
   env?: Record<string, string>
 }
 
-export type SandboxLeaseKind = 'debug' | 'activity' | 'preview' | 'manual'
-
-/** One reason a run sandbox is kept; no `until` = until the run ends (then the run TTL). */
-export interface SandboxLease {
-  kind: SandboxLeaseKind | string
-  until?: string
-  reason?: string
-  by?: string
-  createdAt: string
+export interface SandboxCapacity {
+  used: number
+  limit: number
 }
-
-export type SandboxLeaseExtend = { minutes: number } | { until: 'run_end' }
 
 export interface SandboxView {
   id: number
@@ -453,8 +445,7 @@ export interface SandboxView {
   workflowId?: string
   workflowName?: string
   nodeId?: string
-  /** Why a retired run sandbox is still alive; destroyAt is derived from these. */
-  leases?: SandboxLease[]
+  /** Earliest idle-reclamation deadline; active work postpones it. */
   destroyAt?: string
   createdAt: string
   updatedAt: string
@@ -709,14 +700,6 @@ export interface SessionRepo {
   branch?: string
 }
 
-/** One workspace archive of a Solo session; the newest few are kept. */
-export interface SoloBackup {
-  id: number
-  size: number
-  reason: 'stop' | 'scheduled'
-  createdAt: string
-}
-
 export interface SoloSession {
   id: string
   userId: string
@@ -748,7 +731,7 @@ export interface SoloSession {
   status: SoloStatus
   error?: string
   restarts: number
-  /** Newest workspace archive, the default restore point (bytes, compressed). */
+  /** Newest successful recovery point (archive bytes when available). */
   backupSize?: number
   backupAt?: string
   lastActiveAt?: string
@@ -774,7 +757,7 @@ export interface SoloResources {
 export interface SoloSessionList {
   sessions: SoloSession[]
   maxSandboxes: number
-  /** Workspace-wide Solo quota in use, including other members' sessions. */
+  /** Global sandbox slots in use across all backends and purposes. */
   usedSandboxes?: number
 }
 

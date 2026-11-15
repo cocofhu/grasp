@@ -20,7 +20,9 @@ const (
 	StatusPulling  = "pulling"  // image missing locally; docker pull in progress
 	StatusCreating = "creating" // record persisted, container/pod being provisioned
 	StatusRunning  = "running"  // ready and endpoints backfilled
-	StatusStopped  = "stopped"  // stopped but retained (docker stop / scale 0)
+	StatusStopped  = "stopped"  // recoverable metadata retained; workload released or paused
+	StatusStopping = "stopping" // save accepted; resource release not yet confirmed
+	StatusDeleting = "deleting" // durable intent, retried until driver cleanup succeeds
 	StatusError    = "error"    // provisioning or reconcile failed
 )
 
@@ -44,6 +46,10 @@ type Sandbox struct {
 	EnvJSON       string `gorm:"column:env;type:text" json:"-"`
 	EndpointsJSON string `gorm:"column:endpoints;type:text" json:"-"`
 	LabelsJSON    string `gorm:"column:labels;type:text" json:"-"`
+	// SpecJSON preserves creation inputs other than Env, which stays in its
+	// existing column. Recovery must not depend on changed gateway defaults.
+	SpecJSON         string `gorm:"column:spec;type:text" json:"-"`
+	WorkloadReleased bool   `json:"workloadReleased"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

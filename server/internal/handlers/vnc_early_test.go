@@ -27,7 +27,7 @@ func TestSandboxVNCRecycledAndBadHost(t *testing.T) {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	skills := services.NewAgentService(t.TempDir())
 	hostMCP := mcp.NewHost(services.NewArtifactService(db))
-	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, TTL: time.Minute})
+	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, IdleTTL: time.Minute})
 	bsvc := browser.New(&nopSandboxExec{}, browser.Config{})
 	h := &Handlers{Browser: bsvc, Sbx: sbx}
 	r := gin.New()

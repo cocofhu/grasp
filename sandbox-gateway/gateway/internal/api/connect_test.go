@@ -176,7 +176,7 @@ func TestConnectAuthenticationAndTargetScope(t *testing.T) {
 			t.Errorf("%s: status %d want %d", tc.path, resp.StatusCode, tc.status)
 		}
 	}
-	if err := svc.Stop(context.Background(), id); err != nil {
+	if err := svc.Stop(context.Background(), id, 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.ConnectionTarget(context.Background(), id, 8765); err == nil {

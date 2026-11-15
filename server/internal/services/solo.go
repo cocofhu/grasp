@@ -115,19 +115,13 @@ type SoloEnvEntry struct {
 // SoloService runs Solo sessions: one Agent, an optional project, a resident
 // sandbox and a FIFO of chat turns per session.
 type SoloService struct {
-	blobs   blob.Store
-	backups solobackup.Store
-	// backupKeep and backupInterval come from SetBackupPolicy. backupTried
-	// spaces out scheduled attempts so a failing archive is not retried every tick.
-	backupKeep     int
-	backupInterval time.Duration
-	backupMu       sync.Mutex
-	backupTried    map[string]time.Time
-	db             *gorm.DB
-	sbx            *SandboxService
-	agents         *AgentService
-	projects       *ProjectService
-	chat           pmChatter
+	blobs    blob.Store
+	backups  solobackup.Store
+	db       *gorm.DB
+	sbx      *SandboxService
+	agents   *AgentService
+	projects *ProjectService
+	chat     pmChatter
 	// modelAlign overrides the sandbox when tests need to record or fail a
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
@@ -203,6 +197,22 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
 		sbx.SetSoloSandboxRecoveredHook(s.onSandboxRecovered)
 		sbx.SetSoloSandboxPausedHook(s.onSandboxPaused)
+		sbx.soloBusy = func(id uint) bool {
+			var row models.SoloSession
+			if db.Where("sandbox_id = ?", id).First(&row).Error != nil {
+				return false
+			}
+			if c := s.lookup(row.ID); c != nil {
+				sn := c.sess.Snapshot()
+				if sn.Busy || sn.Waiting > 0 {
+					return true
+				}
+			}
+			s.restoreMu.Lock()
+			pending := s.deferredRestores[row.ID]
+			s.restoreMu.Unlock()
+			return pending
+		}
 	}
 	if err := s.pinLegacyConfigurationIDs(); err != nil {
 		log.Error().Err(err).Msg("pin existing Solo model group selections")
@@ -210,10 +220,8 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 	if err := s.adoptLegacyBackups(); err != nil {
 		log.Error().Err(err).Msg("list existing Solo workspace backups")
 	}
-	// A stop interrupted by the previous process never stopped its sandbox
-	// (or did so last, in which case recovery starts it again).
-	db.Model(&models.SoloSession{}).Where("status = ?", models.SoloStatusStopping).
-		Updates(map[string]any{"status": models.SoloStatusRunning, "error": "停止被服务重启中断，会话保持运行"})
+	// In-flight stops are reconciled by the common recovery worker after the
+	// backup store is wired; never assume that a paused snapshot is durable.
 	return s
 }
 
@@ -460,9 +468,6 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if err != nil {
 		return nil, err
 	}
-	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
-		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
-	}
 	effective := agent
 	if s.sbx != nil {
 		effective = s.sbx.effectiveAgent(agent)
@@ -513,9 +518,9 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	}
 	if err := s.openSandbox(ctx, row); err != nil {
 		s.db.Delete(&models.SoloSession{}, "id = ?", row.ID)
-		var lim ErrSoloSandboxLimit
+		var lim ErrSandboxLimit
 		if errors.As(err, &lim) {
-			return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: err.Error()}
+			return nil, &SoloError{Status: http.StatusConflict, Code: "sandbox_limit", Msg: err.Error()}
 		}
 		return nil, err
 	}
@@ -603,8 +608,13 @@ func (s *SoloService) onSandboxRecovered(sandboxID uint) {
 // onSandboxPaused tells open pages once that a running resident was paused by
 // the provider; the next recovery clears the mark and publishes again.
 func (s *SoloService) onSandboxPaused(sandboxID uint) {
-	if s.setSandboxPaused(sandboxID, true) {
-		s.publishRunningStatus(sandboxID)
+	if !s.setSandboxPaused(sandboxID, true) {
+		return
+	}
+	var rows []models.SoloSession
+	s.db.Where("sandbox_id = ? AND status IN ?", sandboxID, []string{models.SoloStatusRunning, models.SoloStatusStopped}).Find(&rows)
+	for _, row := range rows {
+		s.publishStatus(row.ID)
 	}
 }
 
@@ -642,7 +652,7 @@ func (s *SoloService) onSandboxGone(sandboxID uint) {
 	for _, r := range rows {
 		updates := map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"}
 		if s.backups != nil {
-			if _, err := s.restorePoint(r.ID, 0); err == nil {
+			if _, err := s.legacyRestorePoint(r.ID); err == nil {
 				// Resume restores the newest archive into a new sandbox.
 				updates["status"], updates["error"] = models.SoloStatusStopped, "沙箱已不存在，可从工作区备份恢复"
 			}
@@ -691,25 +701,11 @@ func (s *SoloService) Rename(id, user, title string) (*models.SoloSession, error
 	return row, nil
 }
 
-func (s *SoloService) destroySandbox(ctx context.Context, sandboxID uint) {
+func (s *SoloService) destroySandbox(ctx context.Context, sandboxID uint) error {
 	if sandboxID == 0 || s.sbx == nil {
-		return
+		return nil
 	}
-	if _, err := s.sbx.Get(sandboxID); err != nil {
-		return
-	}
-	s.sbx.Cancel(sandboxID)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		err := s.sbx.Destroy(ctx, sandboxID)
-		if err == nil || time.Now().After(deadline) {
-			if err != nil {
-				log.Warn().Err(err).Uint("sandbox", sandboxID).Msg("solo sandbox destroy failed")
-			}
-			return
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
+	return s.sbx.CancelSandbox(ctx, sandboxID)
 }
 
 // Close stops turns, destroys the sandbox and keeps the history read-only.
@@ -728,9 +724,13 @@ func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionV
 		c.sess.Cancel(true)
 	}
 	s.clearDeferredQueue(id)
-	s.destroySandbox(ctx, row.SandboxID)
-	s.discardBackup(ctx, row)
-	s.appendSystem(id, "会话已关闭，沙箱已释放")
+	cleanupErr := errors.Join(s.destroySandbox(ctx, row.SandboxID), s.discardBackup(ctx, row))
+	if cleanupErr != nil {
+		s.db.Model(&models.SoloSession{}).Where("id = ?", id).Update("error", "会话已取消，资源清理未完成，将自动重试："+truncErr(cleanupErr))
+		s.appendSystem(id, "会话已取消，资源正在清理")
+	} else {
+		s.appendSystem(id, "会话已关闭，沙箱及恢复点已释放")
+	}
 	s.publishStatus(id)
 	return s.Get(ctx, id, user)
 }
@@ -748,10 +748,9 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 	if _, ok := s.agents.Get(row.AgentName); !ok {
 		return nil, soloErr(http.StatusBadRequest, "agent_not_found", "Agent %q 已不存在，无法重新启动", row.AgentName)
 	}
-	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
-		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
+	if err := errors.Join(s.destroySandbox(ctx, row.SandboxID), s.discardBackup(ctx, row)); err != nil {
+		return nil, err
 	}
-	s.destroySandbox(ctx, row.SandboxID)
 	var msgCount int64
 	s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ?", id, "system").Count(&msgCount)
 	now := time.Now()
@@ -764,9 +763,9 @@ func (s *SoloService) Restart(ctx context.Context, id, user string) (*SoloSessio
 		s.db.Model(&models.SoloSession{}).Where("id = ?", id).
 			Updates(map[string]any{"status": models.SoloStatusError, "error": truncErr(err)})
 		s.publishStatus(id)
-		var lim ErrSoloSandboxLimit
+		var lim ErrSandboxLimit
 		if errors.As(err, &lim) {
-			return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: err.Error()}
+			return nil, &SoloError{Status: http.StatusConflict, Code: "sandbox_limit", Msg: err.Error()}
 		}
 		return nil, err
 	}
@@ -784,8 +783,9 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 	if row.Status == models.SoloStatusStarting || row.Status == models.SoloStatusRunning || row.Status == models.SoloStatusStopping {
 		return soloErr(http.StatusConflict, "session_active", "请先关闭会话再删除")
 	}
-	s.destroySandbox(ctx, row.SandboxID)
-	s.discardBackup(ctx, row)
+	if err := errors.Join(s.destroySandbox(ctx, row.SandboxID), s.discardBackup(ctx, row)); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	delete(s.chats, id)
 	s.mu.Unlock()
@@ -1488,6 +1488,16 @@ func (s *SoloService) SendPreview(id, user, text string, images []models.PromptI
 }
 
 func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inputs []ReferenceInput) (int, error) {
+	if s.sbx != nil && row.SandboxID != 0 {
+		unlock, err := s.sbx.lockSoloRecovery(context.Background(), row.SandboxID)
+		if err != nil {
+			return 0, err
+		}
+		defer unlock()
+		if err := s.db.First(row, "id = ?", row.ID).Error; err != nil {
+			return 0, err
+		}
+	}
 	if row.Status == models.SoloStatusClosed {
 		return 0, soloErr(http.StatusConflict, "session_closed", "会话已关闭，请先重新启动")
 	}

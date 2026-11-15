@@ -85,7 +85,7 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	fg := sandboxtest.New(t)
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sbx := services.NewSandboxService(db, mgr, skills, host, services.SandboxOptions{
-		Max: 2, TTL: time.Minute,
+		Max: 2, IdleTTL: time.Minute,
 		ModelBinding: func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
 			if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
 				return modelrouting.Resolved{}, err

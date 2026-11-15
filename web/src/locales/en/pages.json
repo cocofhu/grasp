@@ -1732,7 +1732,7 @@
       "prioritySaved": "Priority updated",
       "prioritySaveFailed": "Failed to save priority",
       "cancelTitle": "Cancel this run?",
-      "cancelWarning": "Cancelling stops the run and sets its status to cancelled. Queued work will not start; in-progress steps are interrupted. This cannot be resumed as a continuing execution.",
+      "cancelWarning": "Cancelling stops the run and sets its status to cancelled. Queued work will not start; in-progress steps are interrupted. This cannot be resumed as a continuing execution. Its sandboxes and all recovery points will be removed; run history is kept.",
       "cancelConfirm": "Only this run is stopped; you will stay on the detail page and see the updated status.",
       "cancelSuccess": "Run cancelled",
       "cancelErrorNotFound": "Run not found or already deleted",
@@ -2024,7 +2024,6 @@
       "loadFailed": "Load failed",
       "saveFailed": "Save failed",
       "usageRefreshFailed": "Usage refresh failed",
-      "minTestSandboxes": "Max test sandboxes must be at least 1",
       "priorityNote": "Priority: env (locked) > UI override > config file > default. Takes effect immediately.",
       "brand": {
         "title": "Brand copy",
@@ -2040,15 +2039,15 @@
       "groups": {
         "concurrency": {
           "title": "Scheduling concurrency",
-          "desc": "Max concurrent running workflows; indirectly caps run sandboxes."
+          "desc": "Set how many workflows can run at once. Additional runs wait in the queue."
         },
         "recycle": {
           "title": "Sandbox recycle",
-          "desc": "TTL after idle or turn end before destroy."
+          "desc": "All sandboxes share one idle timeout. Runtime resources are released after saving succeeds."
         },
         "capacity": {
           "title": "Sandbox capacity",
-          "desc": "View live usage and set the test sandbox limit."
+          "desc": "View total sandbox usage and set one shared limit."
         },
         "resources": {
           "title": "Sandbox resources",
@@ -2067,33 +2066,25 @@
         "bannerNoSave": "Saving other general settings does not change the execution mode."
       },
       "summaries": {
-        "run_sandbox_max_retention_hours": "The total retention limit after a node finishes. Sandboxes are reclaimed when it expires.",
         "sandbox_memory_mb": "0 uses gateway or template memory. Enter MiB only to override it for new sandboxes.",
         "agent_idle_timeout_minutes": "Try recovery, then end the turn when an agent has no output, CPU, or disk activity for this long."
       },
       "labels": {
         "max_concurrent_runs": "Max concurrent runs",
-        "run_sandbox_ttl_minutes": "Run sandbox TTL",
-        "run_sandbox_max_retention_hours": "Run sandbox max retention",
-        "test_sandbox_ttl_minutes": "Test sandbox idle TTL",
-        "max_test_sandboxes": "Max test sandboxes",
-        "max_solo_sandboxes": "Max Solo sandboxes",
         "sandbox_memory_mb": "Sandbox memory override",
-        "agent_idle_timeout_minutes": "Agent no-activity limit"
+        "agent_idle_timeout_minutes": "Agent no-activity limit",
+        "sandbox_idle_ttl_minutes": "Sandbox idle timeout",
+        "max_sandboxes": "Maximum running sandboxes"
       },
       "settings": {
         "max_concurrent_runs": "Max workflows in running state. Read-only when locked by GRASP_MAX_RUNS.",
-        "run_sandbox_ttl_minutes": "Minutes to keep run sandbox alive after a turn for follow-up artifacts.",
-        "run_sandbox_max_retention_hours": "A finished run sandbox is kept while any retention reason (debug window, in use, preview, manual extension) holds; this is the hard ceiling counted from when its node finished. Run sandboxes are always cleaned up when the platform restarts; retention does not survive a restart.",
-        "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
-        "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
-        "max_solo_sandboxes": "How many Solo session sandboxes can run at once. Solo sandboxes are never reclaimed when idle, so close a session to start a new one once this is reached (min 1).",
         "sandbox_memory_mb": "0 follows the gateway defaults or selected E2B template. An override must be at least 1024 MiB, within Docker/K8s resource caps, and exactly match E2B template memory. The browser, Docker and builds share this memory; exceeding it can trigger OOM. Applies to new sandboxes. Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
-        "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC."
+        "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC.",
+        "sandbox_idle_ttl_minutes": "Save and release resources after this long without tasks, queued requests or terminal activity. Applies to every sandbox; defaults to 60 minutes. The environment resumes when needed.",
+        "max_sandboxes": "One limit for all sandboxes, including those starting, running or waiting to release resources. Creation and resume require a free slot. Lowering the limit does not stop existing sandboxes."
       },
       "units": {
-        "mib": "MiB",
-        "hours": "h"
+        "mib": "MiB"
       },
       "sourceLabels": {
         "env": "Environment",
@@ -2104,14 +2095,11 @@
       "envLockedTitle": "Locked by environment variable",
       "sourceTitle": "Source: {source}",
       "capacity": {
-        "activeSandboxes": "Capacity usage total",
-        "test": "Test",
-        "run": "Run",
-        "limit": "limit",
-        "concurrency": "concurrency",
+        "activeSandboxes": "Sandbox usage / limit",
         "autoRefresh": "Auto-refresh every 5s",
-        "note": "total = test + running workflows · excludes TTL keep-alive sandboxes"
-      }
+        "note": "Includes all purposes and backends. Slots are freed only after resources are released; saved environments do not use a slot."
+      },
+      "positiveInteger": "{setting} must be a whole number of at least 1"
     },
     "sandboxes": {
       "title": "Sandboxes",
@@ -2123,9 +2111,9 @@
       "destroyTitle": "Destroy sandbox",
       "destroyWarning": "Cannot be undone: stops and deletes the container and workspace.",
       "destroyConfirm": "Destroy sandbox {name}?",
-      "cleanupTitle": "Clean up idle sandboxes",
-      "cleanupWarning": "Destroys idle test sandboxes (busy/running unaffected). Cannot be undone.",
-      "cleanupConfirm": "Clean up idle sandboxes?",
+      "cleanupTitle": "Release idle sandboxes",
+      "cleanupWarning": "Save idle environments before releasing their resources. They restore when needed. Sandboxes with active work are skipped; a failed save keeps the environment.",
+      "cleanupConfirm": "Release the currently idle sandboxes?",
       "meta": {
         "source": "Source",
         "created": "Created"
@@ -2174,7 +2162,7 @@
           "profile": "profile",
           "purpose": "purpose",
           "status": "status",
-          "ttl": "TTL",
+          "ttl": "Idle timeout remaining",
           "source": "Source",
           "repoUrl": "repoUrl",
           "createdAt": "createdAt",
@@ -2185,23 +2173,6 @@
           "ide": "ide",
           "vnc": "VNC WS",
           "openPreview": "Open preview"
-        }
-      },
-      "retention": {
-        "title": "Retention",
-        "remaining": "Remaining",
-        "until": "{kind} until {time}",
-        "untilRunEnd": "{kind} until run ends",
-        "by": "by {by}",
-        "extendMinutes": "+{n} min",
-        "extendHours": "+{n} h",
-        "extendRunEnd": "Keep until run ends",
-        "extended": "Retention extended",
-        "kinds": {
-          "debug": "Debug window",
-          "activity": "In use",
-          "preview": "Preview",
-          "manual": "Manual"
         }
       }
     },
@@ -4685,7 +4656,7 @@
     },
     "solo": {
       "title": "Solo chats",
-      "capacity": "{n} / {max} sandboxes running",
+      "capacity": "All sandbox usage: {n} / {max}",
       "newSession": "New session",
       "filterActive": "Running",
       "filterAll": "All",
@@ -4696,10 +4667,10 @@
       "noProject": "No repository",
       "backToList": "Back to sessions",
       "closeSession": "Close",
-      "limitTitle": "Solo sandbox limit reached",
-      "limitHint": "Up to {max} Solo sandboxes can run at once. Close a session you no longer need and try again.",
-      "limitUsage": "{used} of {max} Solo sandbox slots are in use. Stop or close a session you no longer need and try again.",
-      "limitOthers": "{count} more are held by other members' sessions.",
+      "limitTitle": "Sandbox limit reached",
+      "limitHint": "Up to {max} sandboxes can run at once. Stop an idle environment and try again.",
+      "limitUsage": "{used} of {max} sandbox slots are in use. Stop an idle environment, or cancel a run you no longer need, then try again.",
+      "limitOthers": "{count} more slots belong to other sandboxes or are still being released.",
       "limitFreed": "A slot is free, you can start again",
       "status": {
         "starting": "Starting",
@@ -4767,7 +4738,7 @@
         "titlePlaceholder": "Defaults to the first message",
         "firstMessage": "First message (optional)",
         "firstMessagePlaceholder": "Tell the Agent what to do first, or leave empty to only start the sandbox",
-        "residentHint": "The sandbox keeps running until you close it. The first message runs once the sandbox is ready.",
+        "idleHint": "Idle sandboxes are saved and released, then restored when needed. The first message runs once the sandbox is ready.",
         "submit": "Start"
       },
       "home": {
@@ -4833,12 +4804,12 @@
         "plan": "Plan"
       },
       "closedBar": {
-        "text": "Session closed and sandbox released. Restarting creates a new sandbox and clones the repository again; earlier messages are sent to the Agent as context.",
+        "text": "The session is closed and its environment can no longer be restored. Restart creates a new environment and clones the repository, with earlier messages supplied as context.",
         "restart": "Restart"
       },
       "close": {
         "title": "Close Solo session",
-        "body": "Closing destroys the sandbox. Uncommitted or unpushed changes in it are lost.",
+        "body": "Cancelling destroys the sandbox and every recovery point while keeping conversation history. Changes not pushed to the remote repository cannot be recovered.",
         "busy": "The Agent is working; closing interrupts the current task.",
         "pushFirst": "Have the Agent commit and push first",
         "pushFirstHint": "Sends a message asking the Agent to push its changes; close afterwards",
@@ -4874,7 +4845,6 @@
         }
       },
       "errors": {
-        "solo_limit": "Solo sandbox limit reached. Close a session first.",
         "session_closed": "The session is closed. Restart it first.",
         "session_error": "The sandbox is unavailable. Restart the session.",
         "content_required": "The message is empty",
@@ -4895,7 +4865,8 @@
         "commit_name_invalid": "The commit name cannot contain angle brackets or line breaks and must be at most 120 characters",
         "commit_email_invalid": "Invalid commit email",
         "credential_invalid": "The repository credential cannot be used: make sure it is not revoked and matches the address's protocol and host",
-        "credential_unavailable": "The credential service is unavailable. Try again later."
+        "credential_unavailable": "The credential service is unavailable. Try again later.",
+        "sandbox_limit": "Sandbox limit reached. Stop an idle environment first."
       },
       "reference": {
         "pickerLabel": "Reference a session or GitHub issue/PR",
@@ -4938,12 +4909,11 @@
       },
       "stop": {
         "action": "Stop environment",
-        "hint": "Back up the workspace and stop the sandbox; it no longer uses quota and can be resumed",
+        "hint": "Save the environment and release runtime resources; resume to continue",
         "busy": "Wait for the current reply and queued messages to finish before stopping",
         "title": "Stop environment",
-        "body": "The workspace is backed up first, then the sandbox stops. A stopped session no longer uses Solo quota and keeps its history; resume it to continue.",
-        "excludes": "Dependency and cache directories (node_modules, .venv, __pycache__, .cache, .pnpm-store) are not backed up; reinstall them if the session resumes in a new sandbox.",
-        "confirm": "Back up and stop"
+        "body": "Save the environment before releasing resources and its slot. If saving fails, the original sandbox is kept. History stays available, and resume uses the latest successful recovery point.",
+        "confirm": "Save and stop"
       },
       "wake": {
         "action": "Resume environment",
@@ -4953,21 +4923,13 @@
       "pausedStage": {
         "title": "Sandbox paused",
         "waking": "Resuming the sandbox…",
-        "hint": "The platform paused this sandbox after it reached the maximum run time, so the browser, terminal and IDE cannot connect. They reconnect after you resume or send a message; files and processes are kept."
+        "hint": "The environment is paused, so the browser, terminal and IDE are temporarily disconnected. Resume or send a message to reconnect and continue."
       },
       "stoppedBar": {
-        "text": "Environment stopped and workspace backed up. Resume to continue the conversation.",
-        "stopping": "Backing up the workspace and stopping the sandbox…",
-        "backup": "Backed up {time} · {size}",
-        "resume": "Resume",
-        "chooseBackup": "Choose the backup to restore",
-        "backupOption": "{time} · {size}",
-        "newest": "Newest",
-        "reason": {
-          "stop": "On stop",
-          "scheduled": "Scheduled"
-        },
-        "olderBackup": "The selected backup is restored into a new sandbox; later changes are lost (newer backups are kept)."
+        "text": "The environment is saved and stopped. Resume to continue.",
+        "stopping": "Saving the environment and releasing runtime resources…",
+        "backup": "Saved {time} · {size}",
+        "resume": "Resume"
       }
     },
     "projects": {
@@ -5046,7 +5008,6 @@
         "toolUnit": "tools",
         "executionMode": "Execution mode",
         "runningRuns": "Running / limit",
-        "testSandboxes": "Test sandboxes",
         "sandboxMemory": "Sandbox memory limit",
         "mcpConnection": "External access",
         "mcpEnabled": "On",
@@ -5066,7 +5027,8 @@
         "projectsHosts": "Repository hosts",
         "variablesWithDefault": "With default",
         "variablesTypes": "Types",
-        "schedulesDeliver": "Deliver to Channel"
+        "schedulesDeliver": "Deliver to Channel",
+        "sandboxes": "Sandboxes / limit"
       },
       "modelStatus": {
         "available": "Available",

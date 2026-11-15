@@ -5,14 +5,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // WorkspaceArchiveExcludes are regenerable dependency and cache directories
-// left out of a stopped Solo workspace archive.
+// left out of a workspace recovery archive.
 var WorkspaceArchiveExcludes = []string{"node_modules", ".venv", "__pycache__", ".cache", ".pnpm-store"}
 
 const workspaceRestoreTimeout = 30 * time.Minute
@@ -23,16 +22,6 @@ func archiveArgs(workspace string) []string {
 		args = append(args, "--exclude="+name)
 	}
 	return append(args, ".")
-}
-
-// archiveExitErr accepts GNU tar's exit 1: a file changed while being read,
-// but the archive is still complete and usable.
-func archiveExitErr(err error) error {
-	var exit *ssh.ExitError
-	if errors.As(err, &exit) && exit.ExitStatus() == 1 {
-		return nil
-	}
-	return err
 }
 
 // ArchiveWorkspace streams the guest workspace as a gzip tar. The reader
@@ -76,7 +65,7 @@ func (s *Sandbox) ArchiveWorkspace(ctx context.Context) (io.ReadCloser, error) {
 	session.Stderr = io.Discard
 	stop := context.AfterFunc(ctx, func() { _ = session.Close(); _ = client.Close() })
 	go func() {
-		err := archiveExitErr(session.Run(command))
+		err := session.Run(command)
 		_ = writer.CloseWithError(c.redactErr(err))
 		stop()
 		_ = session.Close()
@@ -95,12 +84,25 @@ func (s *Sandbox) RestoreWorkspace(ctx context.Context, archive io.Reader) error
 	if strings.TrimSpace(workspace) == "" {
 		return errors.New("sandbox workspace is unavailable")
 	}
+	if !path.IsAbs(workspace) || path.Clean(workspace) == "/" {
+		return errors.New("refusing to replace an unsafe workspace root")
+	}
 	mkdir, err := newSafeCmd("mkdir", "-p", workspace)
 	if err != nil {
 		return err
 	}
 	c := s.creds()
 	if _, err := c.run(ctx, time.Minute, mkdir); err != nil {
+		return err
+	}
+	// A recreated image can clone files that the saved workspace had deleted.
+	// Empty its dedicated workspace first so restoration also preserves those
+	// deletions and a retry cannot retain a partially extracted old archive.
+	clear, err := newSafeCmd("find", workspace, "-xdev", "-mindepth", "1", "-delete")
+	if err != nil {
+		return err
+	}
+	if _, err := c.run(ctx, workspaceRestoreTimeout, clear); err != nil {
 		return err
 	}
 	cmd, err := newSafeCmd("tar", "-C", workspace, "-xzf", "-")

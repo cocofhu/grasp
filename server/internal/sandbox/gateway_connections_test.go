@@ -113,7 +113,7 @@ func TestNamedGatewayBindingSurvivesDefaultSwitchAndRestart(t *testing.T) {
 		if _, err := g2.Get(ctx, id); err != nil {
 			t.Fatal(err)
 		}
-		if err := g2.Stop(ctx, id); err != nil {
+		if err := g2.Stop(ctx, id, 1); err != nil {
 			t.Fatal(err)
 		}
 		if err := g2.StartPrepared(ctx, id, GWStartOptions{RuntimeURL: "http://runtime.test/bundle"}); err != nil {
@@ -168,7 +168,7 @@ func TestGatewayBindingsFailClosed(t *testing.T) {
 		if _, err := g.Get(context.Background(), id); err == nil {
 			t.Fatalf("accepted binding %s", id)
 		}
-		if err := g.Stop(context.Background(), id); err == nil {
+		if err := g.Stop(context.Background(), id, 1); err == nil {
 			t.Fatalf("routed binding %s", id)
 		}
 		if !g.UsesGatewayTransport(id) {

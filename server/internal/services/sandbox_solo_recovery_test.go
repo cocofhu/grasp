@@ -91,8 +91,11 @@ func TestSoloRecoveryRetriesSameSandbox(t *testing.T) {
 	if !ds.fg.Has(row.Name) {
 		t.Fatal("failed resume destroyed container")
 	}
-	if svc.activeSoloSandboxCount() != 1 {
-		t.Fatal("retained recovery failure must still count toward the resident limit")
+	if kept, err := svc.Get(row.ID); err != nil || kept.Status != "stopped" {
+		t.Fatalf("failed start lost the confirmed stopped state: %+v %v", kept, err)
+	}
+	if capacity, err := svc.Capacity(); err != nil || capacity.Used != 0 {
+		t.Fatalf("confirmed stopped recovery occupied active capacity: %+v %v", capacity, err)
 	}
 	ds.fg.FailStart = false
 	svc.RecoverSoloSandboxes(context.Background())
@@ -172,7 +175,7 @@ func TestSoloCorrelatedCreatingSandboxIsProtected(t *testing.T) {
 	}
 }
 
-func TestSoloNeverExpiresFromStaleTTL(t *testing.T) {
+func TestLegacyDestroyDeadlineDoesNotOverrideSharedIdleActivity(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	svc := newSandboxService(t, db, ds)

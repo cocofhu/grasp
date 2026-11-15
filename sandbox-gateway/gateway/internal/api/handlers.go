@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -64,15 +65,17 @@ type configInject struct {
 
 // sandboxDTO is the API representation of a sandbox.
 type sandboxDTO struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Status    string            `json:"status"`
-	Image     string            `json:"image"`
-	Namespace string            `json:"namespace,omitempty"`
-	Error     string            `json:"error,omitempty"`
-	Endpoints map[string]string `json:"endpoints"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Resources *resourceDTO      `json:"resources,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Status       string            `json:"status"`
+	Image        string            `json:"image"`
+	Namespace    string            `json:"namespace,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	Endpoints    map[string]string `json:"endpoints"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Resources    *resourceDTO      `json:"resources,omitempty"`
+	EnvKeys      []string          `json:"envKeys"`
+	WorkspaceDir string            `json:"workspaceDir"`
 }
 
 type resourceDTO struct {
@@ -100,15 +103,21 @@ func (h *Handler) toDTO(sb *models.Sandbox) sandboxDTO {
 		}
 	}
 	dto := sandboxDTO{
-		ID:        sb.ID,
-		Name:      sb.Name,
-		Status:    sb.Status,
-		Image:     sb.Image,
-		Namespace: sb.Namespace,
-		Error:     sb.Error,
-		Endpoints: named,
-		Labels:    sb.Labels(),
+		ID:           sb.ID,
+		Name:         sb.Name,
+		Status:       sb.Status,
+		Image:        sb.Image,
+		Namespace:    sb.Namespace,
+		Error:        sb.Error,
+		Endpoints:    named,
+		Labels:       sb.Labels(),
+		EnvKeys:      make([]string, 0),
+		WorkspaceDir: h.svc.WorkspaceDir(sb),
 	}
+	for key := range sb.Env() {
+		dto.EnvKeys = append(dto.EnvKeys, key)
+	}
+	sort.Strings(dto.EnvKeys)
 	if sb.CPUCores > 0 || sb.MemoryMB > 0 || sb.DiskGi > 0 {
 		dto.Resources = &resourceDTO{
 			CPUCores: sb.CPUCores,
@@ -256,7 +265,15 @@ func (h *Handler) Start(c *gin.Context) {
 
 // Stop handles POST /sandboxes/:id/stop.
 func (h *Handler) Stop(c *gin.Context) {
-	if err := h.svc.Stop(c.Request.Context(), c.Param("id")); err != nil {
+	opts := driver.StopOptions{BackupKeep: 1}
+	if c.Request.ContentLength != 0 {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+		if err := c.ShouldBindJSON(&opts); err != nil || opts.BackupKeep < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid stop options"})
+			return
+		}
+	}
+	if err := h.svc.Stop(c.Request.Context(), c.Param("id"), opts.BackupKeep); err != nil {
 		h.notFoundOr500(c, err)
 		return
 	}

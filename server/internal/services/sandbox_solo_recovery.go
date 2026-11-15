@@ -10,6 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 const soloRecoveryTimeout = 2 * time.Minute
@@ -22,7 +23,6 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 		return
 	}
 	tracked[row.Name], correlated[row.Name] = true, true
-	s.db.Model(row).Update("destroy_at", nil)
 	if s.soloSessionStopped(row) {
 		return // resumed only on request; a missing resource is restored from backup
 	}
@@ -76,7 +76,7 @@ func (s *SandboxService) soloSessionClosed(row *models.Sandbox) bool {
 
 func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sandbox) error {
 	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"status": "running", "error": "", "destroy_at": nil,
+		"status": "running", "error": "",
 		"host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort,
 	}).Error; err != nil {
 		return err
@@ -92,7 +92,11 @@ func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sa
 
 func (s *SandboxService) recordSoloRecoveryFailure(id uint, err error) {
 	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "error", "error": "沙箱恢复暂未完成，工作区已保留，可重试：" + truncErr(err), "destroy_at": nil,
+		// A user-facing error must not erase a durable save/resume intent or
+		// reacquire quota for a workload whose release was already confirmed.
+		"status": gorm.Expr("CASE WHEN status IN ? OR cleanup_pending = ? THEN status ELSE ? END",
+			[]string{"saving", "resuming", "stopped", "deleting"}, true, "error"),
+		"error": "沙箱恢复暂未完成，工作区已保留，可重试：" + truncErr(err),
 	})
 	log.Warn().Err(err).Uint("sandbox", id).Msg("solo recovery deferred; workspace retained")
 }
@@ -128,41 +132,21 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	if local {
 		return nil // worktree processes have no gateway resource to resume
 	}
-	status, err := s.mgr.ProbeStatus(ctx, row.Name)
-	var sb *sandbox.Sandbox
-	booting := false
-	if err == nil {
-		switch status {
-		case "running":
-			sb, err = s.mgr.AttachNoEnsure(ctx, row.Name)
-		case "exited", "stopped":
-			// Mark before starting: readiness can time out even though the
-			// container later starts successfully. Its next turn still needs
-			// persisted dialogue context in that case.
-			s.invokeSoloPausedHook(id)
-			s.teardownLive(id)
-			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
-			sb, err = s.mgr.Resume(ctx, row.Name)
-			booting = true
-		case "pending", "creating", "pulling":
-			sb, err = s.mgr.WaitForRunning(ctx, row.Name)
-			booting = true
-		case "not_found":
-			s.destroyLocalSandbox(ctx, row)
-			return fmt.Errorf("沙箱已不存在，可重新启动会话")
-		default:
-			err = fmt.Errorf("sandbox status=%s", status)
-		}
-	}
-	// A running workload only means its ports accept connections: Docker's
-	// proxy and the E2B relay answer before the bridge inside has started.
-	if err == nil && booting {
-		err = s.waitSoloBridge(ctx, row, sb)
-	}
+	sb, warm, err := s.ensureRunningLocked(ctx, id)
 	if err != nil {
 		s.recordSoloRecoveryFailure(id, err)
-		return fmt.Errorf("沙箱恢复失败，工作区已保留，请重试：%w", err)
+		return fmt.Errorf("沙箱恢复未完成，可重试：%w", err)
 	}
+	if !warm {
+		s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
+	}
+	if err := s.waitSoloBridge(ctx, row, sb); err != nil {
+		// Workspace restoration has already committed. A delayed bridge must
+		// not make the next attempt extract an older archive over this guest.
+		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("error", "会话服务暂未就绪，可重试："+truncErr(err))
+		return fmt.Errorf("沙箱恢复未完成，可重试：%w", err)
+	}
+
 	if s.soloSessionClosed(row) {
 		return fmt.Errorf("Solo 会话已关闭")
 	}
@@ -200,6 +184,14 @@ func (s *SandboxService) RecoverSoloSandboxes(ctx context.Context) {
 	for _, row := range rows {
 		if ctx.Err() != nil {
 			return
+		}
+		if row.CleanupPending || row.Status == "saving" || row.Status == "resuming" {
+			continue
+		}
+		// Successful idle saves stay asleep until explicit access or a durable
+		// queued turn requests work. A background reconciler must not undo TTL.
+		if row.RecoveryKind != "" && (s.soloBusy == nil || !s.soloBusy(row.ID)) {
+			continue
 		}
 		wg.Go(func() { _ = s.EnsureSoloRunning(ctx, row.ID) })
 	}
@@ -265,8 +257,8 @@ func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sand
 	if err != nil {
 		return
 	}
-	defer unlock()
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	unlock()
 	if err != nil {
 		return
 	}
@@ -276,6 +268,10 @@ func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sand
 		return
 	case "not_found":
 	default:
+		return
+	}
+	if row.RecoveryKind != "" || len(row.RecoveryPoints) > 0 {
+		s.recordSoloRecoveryFailure(row.ID, ErrSoloSandboxGone)
 		return
 	}
 	log.Warn().Uint("sandbox", row.ID).Str("name", row.Name).Msg("solo sandbox no longer exists at the provider; releasing it")

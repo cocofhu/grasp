@@ -181,6 +181,18 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 	if err := budgetErr(ctx); err != nil && ctx.Err() != nil {
 		return nil, err
 	}
+	if registry, ok := c.registry.(RunSandboxRecovery); ok {
+		c.mu.Lock()
+		sb := c.live[reactKey(req)]
+		c.mu.Unlock()
+		if sb != nil && !sb.IsLocal() {
+			release, err := registry.AcquireRunSandbox(ctx, sb.Name)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+		}
+	}
 	started := time.Now()
 	c.setInflightPrompt(req, prompt, len(images), started)
 	defer c.clearInflightPrompt(req)

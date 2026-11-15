@@ -115,7 +115,7 @@ function onSaved(p: Project) {
           @keydown.enter.exact.ctrl.prevent="submit"
         />
       </label>
-      <p class="text-[11.5px] leading-relaxed text-txt3">{{ t('pages.solo.create.residentHint') }}</p>
+      <p class="text-[11.5px] leading-relaxed text-txt3">{{ t('pages.solo.create.idleHint') }}</p>
       <p v-if="error" class="text-[12px] text-err" role="alert">{{ error }}</p>
     </form>
     <template #footer>

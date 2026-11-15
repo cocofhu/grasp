@@ -68,7 +68,7 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 	}
 	fg := sandboxtest.New(t)
 	fg.ACPPort = acpPort
-	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
+	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace", InjectStore: sandbox.NewBundleStore(), InjectAdvertise: "http://mcp.local"})
 	root := t.TempDir()
 	skills := NewAgentService(root)
 	if err := skills.Save(Agent{
@@ -79,7 +79,7 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 		t.Fatal(err)
 	}
 	sbx := NewSandboxService(db, mgr, skills, mcp.NewHost(NewArtifactService(db)), SandboxOptions{
-		ProfilesRoot: root, MCPEndpoint: "http://mcp.local", TTL: time.Minute, Max: 2, MaxSolo: maxSolo,
+		ProfilesRoot: root, MCPEndpoint: "http://mcp.local", IdleTTL: time.Minute, Max: maxSolo,
 		ModelBinding: sandboxTestModelResolver,
 		GitCredential: func(id string) (runtime.GitCredentialValue, bool) {
 			if id == "cred-proj" {
@@ -280,7 +280,7 @@ func TestSoloSandboxLimit(t *testing.T) {
 	db.Create(&models.Sandbox{Name: "sb-solo-busy", Purpose: SandboxPurposeSolo, Status: "running"})
 	_, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA"})
 	var se *SoloError
-	if !errors.As(err, &se) || se.Code != "solo_limit" || se.Status != http.StatusConflict {
+	if !errors.As(err, &se) || se.Code != "sandbox_limit" || se.Status != http.StatusConflict {
 		t.Fatalf("want solo_limit, got %v", err)
 	}
 	var n int64

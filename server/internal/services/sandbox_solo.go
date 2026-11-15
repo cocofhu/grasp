@@ -15,16 +15,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// SandboxPurposeSolo marks resident Solo session sandboxes. They have no idle
-// TTL and are only destroyed when the user closes the session.
+// SandboxPurposeSolo records ownership; lifecycle policy is shared by all purposes.
 const SandboxPurposeSolo = "solo"
-
-// ErrSoloSandboxLimit is returned when the resident Solo sandbox cap is reached.
-type ErrSoloSandboxLimit struct{ Max int }
-
-func (e ErrSoloSandboxLimit) Error() string {
-	return fmt.Sprintf("已达到 Solo 沙箱上限(%d),请先关闭不用的 Solo 会话", e.Max)
-}
 
 // SoloSandboxOpts configures OpenSoloSandbox.
 type SoloSandboxOpts struct {
@@ -43,16 +35,6 @@ type SoloSandboxOpts struct {
 	OnFail                 func(sandboxID uint, err error)
 	// Restore replaces the repository clone with a stopped workspace archive.
 	Restore func(ctx context.Context, sb *sandbox.Sandbox) error
-}
-
-// MaxSoloSandboxes returns the resident Solo sandbox cap.
-func (s *SandboxService) MaxSoloSandboxes() int { return int(s.maxSolo.Load()) }
-
-// SetMaxSoloSandboxes updates the Solo cap at runtime (non-positive ignored).
-func (s *SandboxService) SetMaxSoloSandboxes(n int) {
-	if n > 0 {
-		s.maxSolo.Store(int64(n))
-	}
 }
 
 // SetSoloSandboxDestroyHook registers a callback for purpose=solo teardown,
@@ -103,20 +85,6 @@ func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	}
 }
 
-func (s *SandboxService) activeSoloSandboxCount() int {
-	var n int64
-	activeSessions := s.db.Model(&models.SoloSession{}).Select("sandbox_id").Where("status IN ?",
-		[]string{models.SoloStatusStarting, models.SoloStatusRunning})
-	s.db.Model(&models.Sandbox{}).
-		Where("purpose = ? AND (status IN ? OR id IN (?))", SandboxPurposeSolo,
-			[]string{"running", "creating", "pulling"}, activeSessions).
-		Count(&n)
-	return int(n)
-}
-
-// UsedSoloSandboxes returns the workspace-wide quota the next Solo admission sees.
-func (s *SandboxService) UsedSoloSandboxes() int { return s.activeSoloSandboxCount() }
-
 // OpenSoloSandbox creates a resident sandbox for a Solo session. It returns
 // the "creating" row immediately; the container starts in the background and
 // OnReady / OnFail report the outcome.
@@ -148,9 +116,6 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	if err != nil {
 		return nil, err
 	}
-	if maxN := s.MaxSoloSandboxes(); s.activeSoloSandboxCount() >= maxN {
-		return nil, ErrSoloSandboxLimit{Max: maxN}
-	}
 
 	runID := models.SoloArtifactRunPrefix + sanitizeID(sessionID) + "-" + randID()
 	token := mcp.NewToken()
@@ -168,7 +133,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstRepoURL(snapshots), Repos: snapshots,
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	if err := s.createSandboxRow(row); err != nil {
 		return nil, err
 	}
 	if s.host != nil {

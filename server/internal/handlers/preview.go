@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,8 +16,10 @@ import (
 
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // ListNodePreviews returns registered preview ports for a run/node.
@@ -90,8 +93,18 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	if h.Sbx != nil {
 		if mgr := h.Sbx.Manager(); mgr != nil && sandboxName != "" {
 			if mgr.Status(ctx, sandboxName) != "running" {
-				c.String(http.StatusGone, "sandbox recycled")
-				return
+				if err := h.Sbx.EnsureRunningByName(c.Request.Context(), sandboxName); err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrSoloSandboxGone) {
+						c.String(http.StatusGone, "sandbox recycled")
+						return
+					}
+					c.String(http.StatusConflict, "sandbox recovery unavailable: %v", err)
+					return
+				}
+				// Restoration can exceed the short upstream health-probe budget.
+				cancel()
+				ctx, cancel = context.WithTimeout(c.Request.Context(), 5*time.Second)
+				defer cancel()
 			}
 			h.Sbx.TouchActivityByName(sandboxName)
 			fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)

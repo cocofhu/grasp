@@ -69,6 +69,12 @@ func (c *acpProvider) ReactResume(ctx context.Context, req NodeReq, history []mo
 // itself fails, so the caller surfaces a retryable state rather than silently
 // finishing the node with an empty deliverable.
 func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history []models.ReactMessage) *reactSession {
+	if sess, found, err := c.restoreReactEnvironment(ctx, req, history); found {
+		if err != nil {
+			log.Warn().Err(err).Str("run", req.RunID).Msg("workflow environment recovery deferred")
+		}
+		return sess
+	}
 	n := c.sandboxAttempts()
 	seeded := c.upstreamArtifacts(req)
 	for attempt := 1; ; attempt++ {
@@ -129,6 +135,11 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	c.mu.Lock()
 	sess := c.sessions[key]
 	c.mu.Unlock()
+	var recoveryErr error
+	sess, recoveryErr = c.refreshParkedReact(ctx, req, sess, history)
+	if recoveryErr != nil {
+		return ReactTurn{Msg: recoveryErr.Error(), Err: recoveryErr}
+	}
 
 	if sess == nil || sess.acp == nil || !sess.acp.IsConnected() {
 		sess = c.rebuildReactSession(ctx, req, sess, history)
@@ -307,6 +318,11 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	c.mu.Lock()
 	sess := c.sessions[key]
 	c.mu.Unlock()
+	var recoveryErr error
+	sess, recoveryErr = c.refreshParkedReact(ctx, req, sess, history)
+	if recoveryErr != nil {
+		return ReactTurn{Msg: recoveryErr.Error(), Err: recoveryErr}
+	}
 	rehydrated := false
 	reviseRebuildFailed := func() ReactTurn {
 		err := errors.New("复审会话已失效,自动重建沙箱失败,请稍后重试")
@@ -907,6 +923,12 @@ func reactKey(req NodeReq) string { return req.RunID + "|" + req.NodeID }
 // rebuildReactSession discards a lost parked session and rehydrates the
 // dialogue (without its trailing human message) in a fresh sandbox.
 func (c *acpProvider) rebuildReactSession(ctx context.Context, req NodeReq, lost *reactSession, history []models.ReactMessage) *reactSession {
+	if sess, found, err := c.restoreReactEnvironment(ctx, req, historyWithoutTrailingHuman(history)); found {
+		if err != nil {
+			log.Warn().Err(err).Str("run", req.RunID).Msg("workflow environment recovery deferred")
+		}
+		return sess
+	}
 	if lost != nil {
 		key := reactKey(req)
 		c.mu.Lock()
@@ -944,6 +966,9 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 	c.mu.Unlock()
 	if c.timeline != nil && sb != nil {
 		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp, c.emit != nil))
+	}
+	if registry, ok := c.registry.(RunSandboxRecovery); ok && sb != nil {
+		registry.ParkRunSandbox(sb.Name)
 	}
 	return sess
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html"
 	"io"
 	"net"
@@ -16,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -179,57 +177,17 @@ func (h *Handlers) GetSandbox(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	// The console polls this while open (IDE / logs tabs included), so a
-	// watched retained sandbox keeps its activity lease.
-	h.Sbx.TouchActivity(id)
 	c.JSON(http.StatusOK, v)
 }
 
-type extendLeaseBody struct {
-	Minutes int    `json:"minutes"`
-	Until   string `json:"until"` // "run_end" holds it until the run finishes
-}
-
-// maxManualLeaseMinutes bounds one manual extension; max retention still caps
-// the total.
-const maxManualLeaseMinutes = 24 * 60
-
-// ExtendSandboxLease keeps a retained run sandbox alive longer: {minutes:N}
-// from now, or {until:"run_end"}. The run-sandbox max retention still caps it.
-func (h *Handlers) ExtendSandboxLease(c *gin.Context) {
-	id, ok := parseUintParam(c, "id")
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
-		return
-	}
-	var body extendLeaseBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
-		return
-	}
-	untilRunEnd := strings.TrimSpace(body.Until) == "run_end"
-	if !untilRunEnd && (body.Minutes <= 0 || body.Minutes > maxManualLeaseMinutes) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("minutes must be 1-%d, or until=run_end", maxManualLeaseMinutes)})
-		return
-	}
-	by := ""
-	if sess, ok := auth.GetSession(c); ok {
-		by = sess.Username
-	}
-	if _, err := h.Sbx.ExtendLease(id, body.Minutes, untilRunEnd, by); err != nil {
-		if errors.Is(err, services.ErrSandboxNotRetained) {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	v, err := h.Sbx.GetView(c.Request.Context(), id)
+// SandboxCapacity reports the same global admission count used by create and resume.
+func (h *Handlers) SandboxCapacity(c *gin.Context) {
+	capacity, err := h.Sbx.Capacity()
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sandbox capacity unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, v)
+	c.JSON(http.StatusOK, capacity)
 }
 
 // ListSandboxes returns all interactive sandboxes.
@@ -243,7 +201,7 @@ func (h *Handlers) ListSandboxes(c *gin.Context) {
 	c.JSON(http.StatusOK, views)
 }
 
-// StopSandbox stops a sandbox container (keeps the record).
+// StopSandbox saves a recovery point and releases runtime resources.
 func (h *Handlers) StopSandbox(c *gin.Context) {
 	id, ok := parseUintParam(c, "id")
 	if !ok {
@@ -257,7 +215,7 @@ func (h *Handlers) StopSandbox(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "stopped"})
 }
 
-// DestroySandbox removes a sandbox container and its record.
+// DestroySandbox removes runtime resources and all recovery points.
 func (h *Handlers) DestroySandbox(c *gin.Context) {
 	id, ok := parseUintParam(c, "id")
 	if !ok {
@@ -274,7 +232,7 @@ func (h *Handlers) DestroySandbox(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
-// CleanupSandboxes destroys all idle (non-busy) sandboxes.
+// CleanupSandboxes saves and releases idle sandboxes across every purpose.
 func (h *Handlers) CleanupSandboxes(c *gin.Context) {
 	destroyed, skipped := h.Sbx.CleanupIdle(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{"destroyed": destroyed, "skipped": skipped})

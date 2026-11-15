@@ -40,30 +40,19 @@ type Config struct {
 	GitHub   GitHubConfig   `yaml:"github"`
 	// CodexLogin tunes the platform renewal of workspace Codex ChatGPT logins.
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
-	// SoloBackup stores workspace archives of stopped Solo sessions.
+	// SoloBackup stores workspace archives and controls restore-point retention for all sandboxes.
 	SoloBackup SoloBackupConfig `yaml:"solo_backup"`
 }
 
-// SoloBackupConfig selects where a stopped Solo workspace is archived. S3 is
+// SoloBackupConfig selects where a reclaimed sandbox workspace is archived. S3 is
 // used when a bucket is configured; otherwise archives stay under LocalDir.
 type SoloBackupConfig struct {
 	LocalDir string `yaml:"local_dir"`
 	// MaxBytes caps one compressed archive; a larger workspace cannot stop.
 	MaxBytes int64 `yaml:"max_bytes"`
-	// Keep is how many archives each session retains, newest first. 0 = 5.
-	Keep int `yaml:"keep"`
-	// IntervalMinutes archives a running session with new activity once this
-	// long has passed since its last archive. 0 = 360; negative disables.
-	IntervalMinutes int          `yaml:"interval_minutes"`
-	S3              SoloBackupS3 `yaml:"s3"`
-}
-
-// Interval is the scheduled backup period; zero means disabled.
-func (b SoloBackupConfig) Interval() time.Duration {
-	if b.IntervalMinutes < 0 {
-		return 0
-	}
-	return time.Duration(b.IntervalMinutes) * time.Minute
+	// Keep is the number of successful restore points retained per sandbox, for both files and E2B snapshots. 0 = 1.
+	Keep int          `yaml:"keep"`
+	S3   SoloBackupS3 `yaml:"s3"`
 }
 
 // SoloBackupS3 is an S3-compatible bucket (AWS, MinIO, COS, OSS...).
@@ -358,23 +347,12 @@ type SandboxConfig struct {
 	// + boot). Must stay >= the gateway's FinalizeTimeout, else approving gives
 	// up before provisioning finishes. 0 = default 1200 (20 min).
 	CreateTimeoutSeconds int `yaml:"sandbox_create_timeout_seconds"`
-	// TestSandboxTTLMinutes is the idle lifetime of interactive (chat-test)
-	// sandboxes before the sweeper reclaims them. 0 = default 30.
-	TestSandboxTTLMinutes int `yaml:"test_sandbox_ttl_minutes"`
-	// RunSandboxTTLMinutes is how long a per-run workflow node sandbox is kept
-	// alive AFTER its node/run finishes, so it can be inspected (terminal / IDE
-	// / ACP / container logs) for debugging before the sweeper reclaims it.
-	// 0 = default 30. Set to a small value to reclaim sooner on tight hosts.
-	RunSandboxTTLMinutes int `yaml:"run_sandbox_ttl_minutes"`
-	// RunSandboxMaxRetentionHours is the hard ceiling on how long leases
-	// (debug / activity / preview / review / manual extensions) can keep a
-	// retired run sandbox alive, counted from its first lease. 0 = default 24.
-	RunSandboxMaxRetentionHours int `yaml:"run_sandbox_max_retention_hours"`
-	// MaxTestSandboxes caps concurrently live interactive sandboxes. 0 = 5.
-	MaxTestSandboxes int `yaml:"max_test_sandboxes"`
-	// MaxSoloSandboxes caps resident Solo session sandboxes. They have no idle
-	// TTL, so this is the only bound on their count. 0 = 5.
-	MaxSoloSandboxes int `yaml:"max_solo_sandboxes"`
+	// IdleTTLMinutes is the inactivity window before saving and releasing any sandbox.
+	// Running work protects the sandbox. 0 = 60 minutes.
+	IdleTTLMinutes int `yaml:"idle_ttl_minutes"`
+	// MaxSandboxes is the shared admission limit across all sandbox purposes and drivers.
+	// Creating, running and not-yet-reclaimed workloads count. 0 = 15.
+	MaxSandboxes int `yaml:"max_sandboxes"`
 	// MemoryMB is the memory limit (MiB) requested for every sandbox the
 	// platform creates. It covers dockerd, browsers and the agent's own builds,
 	// so a value too low gets the whole sandbox OOM-killed. 0 = follow the selected gateway/template.
@@ -400,20 +378,9 @@ func (c *Config) SandboxRuntimeBundle() string {
 	return DefaultSandboxRuntimeBundle
 }
 
-// TestSandboxTTL returns the interactive sandbox idle lifetime.
-func (c *Config) TestSandboxTTL() time.Duration {
-	return time.Duration(c.Sandbox.TestSandboxTTLMinutes) * time.Minute
-}
-
-// RunSandboxTTL returns how long a finished run's node sandbox is retained for
-// debugging before the sweeper reclaims it.
-func (c *Config) RunSandboxTTL() time.Duration {
-	return time.Duration(c.Sandbox.RunSandboxTTLMinutes) * time.Minute
-}
-
-// RunSandboxMaxRetention caps the total lease-extended lifetime of a run sandbox.
-func (c *Config) RunSandboxMaxRetention() time.Duration {
-	return time.Duration(c.Sandbox.RunSandboxMaxRetentionHours) * time.Hour
+// SandboxIdleTTL returns the shared inactivity window for saving and releasing resources.
+func (c *Config) SandboxIdleTTL() time.Duration {
+	return time.Duration(c.Sandbox.IdleTTLMinutes) * time.Minute
 }
 
 // ChatIdleTimeout returns the per-turn idle (no-activity) window as a duration.
@@ -696,10 +663,7 @@ func setDefaults(c *Config) {
 		c.SoloBackup.MaxBytes = 4 << 30
 	}
 	if c.SoloBackup.Keep <= 0 {
-		c.SoloBackup.Keep = 5
-	}
-	if c.SoloBackup.IntervalMinutes == 0 {
-		c.SoloBackup.IntervalMinutes = 360
+		c.SoloBackup.Keep = 1
 	}
 	if c.Storage.MaxFileBytes <= 0 {
 		c.Storage.MaxFileBytes = 128 << 20
@@ -743,20 +707,11 @@ func setDefaults(c *Config) {
 	if c.Sandbox.CreateTimeoutSeconds == 0 {
 		c.Sandbox.CreateTimeoutSeconds = 1200
 	}
-	if c.Sandbox.TestSandboxTTLMinutes == 0 {
-		c.Sandbox.TestSandboxTTLMinutes = 30
+	if c.Sandbox.IdleTTLMinutes <= 0 {
+		c.Sandbox.IdleTTLMinutes = 60
 	}
-	if c.Sandbox.RunSandboxTTLMinutes == 0 {
-		c.Sandbox.RunSandboxTTLMinutes = 30
-	}
-	if c.Sandbox.RunSandboxMaxRetentionHours == 0 {
-		c.Sandbox.RunSandboxMaxRetentionHours = 24
-	}
-	if c.Sandbox.MaxTestSandboxes == 0 {
-		c.Sandbox.MaxTestSandboxes = 5
-	}
-	if c.Sandbox.MaxSoloSandboxes == 0 {
-		c.Sandbox.MaxSoloSandboxes = 5
+	if c.Sandbox.MaxSandboxes <= 0 {
+		c.Sandbox.MaxSandboxes = 15
 	}
 	if c.Browser.MaxTabs == 0 {
 		c.Browser.MaxTabs = 16
@@ -932,9 +887,6 @@ func applySoloBackupEnv(c *Config) {
 	}
 	if v := env("GRASP_SOLO_BACKUP_KEEP"); v != "" {
 		b.Keep, _ = strconv.Atoi(v)
-	}
-	if v := env("GRASP_SOLO_BACKUP_INTERVAL_MINUTES"); v != "" {
-		b.IntervalMinutes, _ = strconv.Atoi(v)
 	}
 	if v := env("GRASP_SOLO_BACKUP_S3_PATH_STYLE"); v != "" {
 		b.S3.PathStyle, _ = strconv.ParseBool(v)

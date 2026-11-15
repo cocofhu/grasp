@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -32,6 +32,8 @@ func (w *workspaceExec) install(t *testing.T) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		switch {
+		case strings.Contains(command, "'python3' '-'"):
+			return []byte(`{"busy":false}`), nil
 		case strings.Contains(command, "-czf"):
 			w.archives++
 			if !strings.Contains(command, "--exclude=node_modules") {
@@ -145,191 +147,82 @@ func wantSoloCode(t *testing.T, err error, code string) {
 	}
 }
 
-func TestSoloStopBacksUpThenResumesSameSandbox(t *testing.T) {
-	f := newStopFixture(t)
-	running := f.row(t)
-	name := f.sandboxName(t, running.SandboxID)
-	f.db.Create(&models.SoloMessage{ID: "m1", SessionID: f.id, Role: "user", Content: "hi"})
-
-	stopped := f.stop(t)
-	if stopped.BackupKey == "" || stopped.BackupStore != solobackup.KindLocal || stopped.BackupSize != int64(len("workspace-archive-v1")) || stopped.BackupAt == nil || stopped.SandboxID != running.SandboxID {
-		t.Fatalf("backup not recorded: %+v", stopped)
-	}
-	rc, err := f.store.Open(context.Background(), stopped.BackupKey)
+func (f *stopFixture) recovery(t *testing.T) *models.Sandbox {
+	t.Helper()
+	row, err := f.sbx.Get(f.row(t).SandboxID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := io.ReadAll(rc)
-	_ = rc.Close()
-	if string(got) != "workspace-archive-v1" {
-		t.Fatalf("archive content: %q", got)
-	}
-	if st, _ := f.sbx.mgr.ProbeStatus(context.Background(), name); st != "exited" {
-		t.Fatalf("sandbox not stopped: %s", st)
-	}
-	if !f.hasSystem(t, "工作区已备份") {
-		t.Fatal("stop notice missing")
-	}
-	if _, err := f.solo.Send(f.id, "alice", "more", nil); err == nil {
-		t.Fatal("message accepted while stopped")
-	} else {
-		wantSoloCode(t, err, "session_stopped")
-	}
-	if err := f.sbx.EnsureSoloRunning(context.Background(), running.SandboxID); err == nil {
-		t.Fatal("background recovery started a stopped session")
-	}
-	if active, _ := f.solo.List(context.Background(), "alice", "active"); len(active) != 1 {
-		t.Fatalf("stopped session missing from the active list: %d", len(active))
-	}
-	if n := f.sbx.activeSoloSandboxCount(); n != 0 {
-		t.Fatalf("stopped session still counts against the quota: %d", n)
-	}
+	return row
+}
 
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
+func TestSoloStopSavesBeforeReleaseAndRestoresLatest(t *testing.T) {
+	f := newStopFixture(t)
+	f.db.Create(&models.SoloMessage{ID: "m1", SessionID: f.id, Role: "user", Content: "hi"})
+	f.stop(t)
+	first := f.recovery(t)
+	if first.Status != "stopped" || first.RecoveryKind != "files" || len(first.RecoveryPoints) != 1 {
+		t.Fatalf("recovery = %+v", first)
+	}
+	oldKey := first.RecoveryPoints[0].Key
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	resumed := f.waitStatus(t, models.SoloStatusRunning)
-	if resumed.SandboxID != running.SandboxID || !resumed.ResumeContextPending || resumed.NeedsPreamble {
-		t.Fatalf("cold resume should keep the sandbox and restore dialogue: %+v", resumed)
+	f.waitStatus(t, models.SoloStatusRunning)
+	if got := f.exec.restoredArchives(); len(got) != 1 || got[0] != "workspace-archive-v1" {
+		t.Fatalf("restored = %q", got)
 	}
-	if len(f.exec.restoredArchives()) != 0 {
-		t.Fatal("existing sandbox was restored from backup")
+	if !f.row(t).ResumeContextPending {
+		t.Fatal("cold restore must replay conversation context")
 	}
-	waitFor(t, "cold resume notice", func() bool {
-		return f.hasSystem(t, "进程已重新启动")
-	})
-
-	// A second stop adds an archive and keeps the earlier one.
 	f.exec.mu.Lock()
 	f.exec.archive = "workspace-archive-v2"
 	f.exec.mu.Unlock()
-	f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("resume_context_pending", false)
-	again := f.stop(t)
-	if again.BackupKey == stopped.BackupKey {
-		t.Fatal("archive key reused")
+	f.stop(t)
+	latest := f.recovery(t)
+	if len(latest.RecoveryPoints) != 1 || latest.RecoveryPoints[0].Key == oldKey {
+		t.Fatalf("retention = %+v", latest.RecoveryPoints)
 	}
-	if rc, err := f.store.Open(context.Background(), stopped.BackupKey); err != nil {
-		t.Fatalf("previous archive deleted: %v", err)
-	} else {
+	if rc, err := f.store.Open(context.Background(), oldKey); err == nil {
 		_ = rc.Close()
+		t.Fatal("old stored object was not physically deleted")
 	}
-	if list, err := f.solo.ListBackups(f.id, "alice"); err != nil || len(list) != 2 || list[0].ObjectKey != again.BackupKey || list[1].Reason != models.SoloBackupReasonStop {
-		t.Fatalf("backups not listed newest first: %+v %v", list, err)
-	}
-
-	// E2B pauses: the process and its CLI session survive.
-	f.fg.Driver = "e2b"
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
-		t.Fatal(err)
-	}
-	warm := f.waitStatus(t, models.SoloStatusRunning)
-	if warm.ResumeContextPending || warm.NeedsPreamble {
-		t.Fatalf("warm resume should not replay dialogue: %+v", warm)
-	}
-	if !f.hasSystem(t, "进程和工作区保持停止前的状态") {
-		t.Fatal("warm resume notice missing")
-	}
-
 	if _, err := f.solo.Close(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{stopped.BackupKey, again.BackupKey} {
-		if rc, err := f.store.Open(context.Background(), key); err == nil {
-			_ = rc.Close()
-			t.Fatal("close kept an archive")
-		}
+	if _, err := f.sbx.Get(latest.ID); err == nil {
+		t.Fatal("cancel kept sandbox row")
 	}
-	var left int64
-	f.db.Model(&models.SoloBackup{}).Where("session_id = ?", f.id).Count(&left)
-	if left != 0 {
-		t.Fatalf("close kept %d backup records", left)
-	}
-	if closed := f.row(t); closed.BackupKey != "" || closed.BackupAt != nil {
-		t.Fatalf("close kept backup fields: %+v", closed)
+	if rc, err := f.store.Open(context.Background(), latest.RecoveryPoints[0].Key); err == nil {
+		_ = rc.Close()
+		t.Fatal("cancel kept backup object")
 	}
 }
 
-func TestSoloResumeRestoresBackupIntoNewSandbox(t *testing.T) {
+func TestE2BStopUsesSnapshotWithoutFileStorage(t *testing.T) {
 	f := newStopFixture(t)
-	f.db.Create(&models.SoloMessage{ID: "m1", SessionID: f.id, Role: "user", Content: "hi"})
-	stopped := f.stop(t)
-	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
-
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
-		t.Fatal(err)
+	f.fg.Driver = "e2b"
+	f.solo.SetBackupStore(nil)
+	f.stop(t)
+	row := f.recovery(t)
+	if row.RecoveryKind != "snapshot" || len(row.RecoveryPoints) != 0 {
+		t.Fatalf("snapshot recovery = %+v", row)
 	}
-	restored := f.waitStatus(t, models.SoloStatusRunning)
-	if restored.SandboxID == 0 || restored.SandboxID == stopped.SandboxID || !restored.NeedsPreamble || restored.Restarts != 1 {
-		t.Fatalf("restore into a new sandbox: %+v", restored)
-	}
-	if got := f.exec.restoredArchives(); len(got) != 1 || got[0] != "workspace-archive-v1" {
-		t.Fatalf("restored archives: %q", got)
-	}
-	if _, err := f.sbx.Get(stopped.SandboxID); err == nil {
-		t.Fatal("stale sandbox row kept")
-	}
-	if env := f.fg.LastCreateEnv(); env["GIT_REPOS"] != "" && env["GIT_REPOS"] != "[]" {
-		t.Fatalf("restored workspace was cloned again: %q", env["GIT_REPOS"])
-	}
-	if !f.hasSystem(t, "从备份恢复工作区") {
-		t.Fatal("restore notice missing")
-	}
-}
-
-func TestSoloRestoreFailureKeepsBackup(t *testing.T) {
-	f := newStopFixture(t)
-	stopped := f.stop(t)
-	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
-	f.db.Model(&models.SoloBackup{}).Where("object_key = ?", stopped.BackupKey).Update("sha256", strings.Repeat("0", 64))
-
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "restore failure", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusStopped && strings.Contains(row.Error, "checksum")
-	})
-	failed := f.row(t)
-	if failed.SandboxID != 0 || failed.BackupKey != stopped.BackupKey {
-		t.Fatalf("failed restore must keep the archive and unbind: %+v", failed)
-	}
-
-	f.db.Model(&models.SoloBackup{}).Where("object_key = ?", stopped.BackupKey).Update("sha256", stopped.BackupSHA256)
 	f.exec.mu.Lock()
-	f.exec.failUntar = true
+	count := f.exec.archives
 	f.exec.mu.Unlock()
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
+	if count != 0 {
+		t.Fatal("E2B duplicated its snapshot with a file archive")
+	}
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "untar failure", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusStopped && strings.Contains(row.Error, "corrupt archive")
-	})
+	if f.waitStatus(t, models.SoloStatusRunning).ResumeContextPending {
+		t.Fatal("warm restore replayed conversation")
+	}
 }
 
-func TestSoloResumeWithoutBackupOrStore(t *testing.T) {
-	f := newStopFixture(t)
-	stopped := f.stop(t)
-	f.fg.SetStatus(f.sandboxName(t, stopped.SandboxID), "")
-	f.db.Model(&models.SoloBackup{}).Where("session_id = ?", f.id).Update("store", "s3")
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "store mismatch", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusStopped && strings.Contains(row.Error, "s3")
-	})
-	f.db.Where("session_id = ?", f.id).Delete(&models.SoloBackup{})
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "missing backup", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusStopped && strings.Contains(row.Error, "没有可用的工作区备份")
-	})
-}
-
-func TestSoloStopFailuresKeepSandboxRunning(t *testing.T) {
+func TestSoloFailedSaveDoesNotReleaseSandbox(t *testing.T) {
 	f := newStopFixture(t)
 	f.exec.mu.Lock()
 	f.exec.failTar = true
@@ -337,121 +230,116 @@ func TestSoloStopFailuresKeepSandboxRunning(t *testing.T) {
 	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "archive failure", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusRunning && strings.Contains(row.Error, "停止失败")
-	})
-	if row := f.row(t); row.BackupKey != "" {
-		t.Fatalf("failed archive recorded: %+v", row)
+	waitFor(t, "save failure", func() bool { r := f.row(t); return r.Status == models.SoloStatusRunning && r.Error != "" })
+	if row := f.recovery(t); row.Status != "running" || len(row.RecoveryPoints) != 1 || !row.RecoveryPoints[0].Deleting {
+		t.Fatalf("failed save released data: %+v", row)
 	}
-
-	f.exec.mu.Lock()
-	f.exec.failTar = false
-	f.exec.archive = strings.Repeat("x", 2<<20)
-	f.exec.mu.Unlock()
-	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "oversized archive", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusRunning && strings.Contains(row.Error, "超过备份上限")
-	})
-
-	f.exec.mu.Lock()
-	f.exec.archive = "small"
-	f.exec.mu.Unlock()
-	f.fg.FailStop = true
-	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "gateway stop failure", func() bool {
-		row := f.row(t)
-		return row.Status == models.SoloStatusRunning && strings.Contains(row.Error, "停止失败")
-	})
-	if row := f.row(t); row.BackupKey != "" {
-		t.Fatalf("archive of a failed stop recorded: %+v", row)
+	if status, _ := f.sbx.mgr.ProbeStatus(context.Background(), f.recovery(t).Name); status != "running" {
+		t.Fatal("provider stopped after save failure")
 	}
 }
 
-func TestSoloStopResumeGuards(t *testing.T) {
+func TestSoloRestoreCorruptionKeepsRecoveryAndDoesNotStart(t *testing.T) {
 	f := newStopFixture(t)
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err == nil {
-		t.Fatal("resumed a running session")
-	} else {
-		wantSoloCode(t, err, "session_not_stopped")
+	f.stop(t)
+	row := f.recovery(t)
+	row.RecoveryPoints[0].SHA256 = strings.Repeat("0", 64)
+	if err := f.sbx.persistRecoveryPoints(row); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := f.solo.Stop(context.Background(), f.id, "bob"); err == nil {
-		t.Fatal("stopped another user's session")
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+		t.Fatal(err)
 	}
+	waitFor(t, "checksum failure", func() bool {
+		r := f.row(t)
+		return r.Status == models.SoloStatusStopped && strings.Contains(r.Error, "checksum")
+	})
+	if status, _ := f.sbx.mgr.ProbeStatus(context.Background(), row.Name); status != "exited" {
+		t.Fatalf("corrupt archive started a workload: %s", status)
+	}
+	if len(f.recovery(t).RecoveryPoints) != 1 {
+		t.Fatal("failed restore deleted recovery point")
+	}
+}
 
+func TestSoloFailedRestoreRetainsCapacityAndRecovery(t *testing.T) {
+	f := newStopFixture(t)
+	f.stop(t)
+	f.exec.mu.Lock()
+	f.exec.failUntar = true
+	f.exec.mu.Unlock()
+	if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "extract failure", func() bool {
+		r := f.row(t)
+		return r.Status == models.SoloStatusStopped && strings.Contains(r.Error, "corrupt archive")
+	})
+	row := f.recovery(t)
+	if row.Status != "error" || len(row.RecoveryPoints) != 1 {
+		t.Fatalf("partial restore did not remain allocated: %+v", row)
+	}
+	cap, err := f.sbx.Capacity()
+	if err != nil || cap.Used != 1 {
+		t.Fatalf("capacity = %+v %v", cap, err)
+	}
+}
+
+func TestSandboxUnifiedRetentionKeepsSuccessfulPoints(t *testing.T) {
+	f := newStopFixture(t)
+	f.sbx.SetBackupKeep(2)
+	keys := []string{}
+	for i := 0; i < 3; i++ {
+		f.stop(t)
+		keys = append(keys, f.recovery(t).RecoveryPoints[0].Key)
+		if i < 2 {
+			if _, err := f.solo.Resume(context.Background(), f.id, "alice"); err != nil {
+				t.Fatal(err)
+			}
+			f.waitStatus(t, models.SoloStatusRunning)
+		}
+	}
+	row := f.recovery(t)
+	if len(row.RecoveryPoints) != 2 || row.RecoveryPoints[0].Key != keys[2] || row.RecoveryPoints[1].Key != keys[1] {
+		t.Fatalf("retention = %+v", row.RecoveryPoints)
+	}
+	if rc, err := f.store.Open(context.Background(), keys[0]); err == nil {
+		_ = rc.Close()
+		t.Fatal("oldest archive remains")
+	}
+}
+
+func TestSoloManualStopProtectsQueuedTurn(t *testing.T) {
+	f := newStopFixture(t)
 	busy := newRestoreChat(true)
 	f.solo.SetChatterForTest(busy)
 	if _, err := f.solo.Send(f.id, "alice", "work", nil); err != nil {
 		t.Fatal(err)
 	}
 	<-busy.started
+	if _, err := f.solo.Send(f.id, "alice", "next", nil); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err == nil {
-		t.Fatal("stopped during a reply")
+		t.Fatal("active work was stopped")
 	} else {
 		wantSoloCode(t, err, "session_busy")
 	}
 	close(busy.release)
-	waitFor(t, "idle", func() bool { return !f.solo.lookup(f.id).sess.Snapshot().Busy })
-
-	store := f.solo.backups
-	f.solo.SetBackupStore(nil)
-	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err == nil {
-		t.Fatal("stopped without backup storage")
-	} else {
-		wantSoloCode(t, err, "backup_unavailable")
-	}
-	f.solo.SetBackupStore(store)
-
-	f.stop(t)
-	if v, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil || v.Status != models.SoloStatusStopped {
-		t.Fatalf("repeated stop: %+v %v", v, err)
-	}
-	if err := f.solo.Delete(context.Background(), f.id, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err == nil {
-		t.Fatal("stopped a deleted session")
-	}
 }
 
-func TestSoloStopRejectsClosedSessionAndQuota(t *testing.T) {
-	f := newStopFixture(t)
-	f.stop(t)
-	f.sbx.SetMaxSoloSandboxes(1)
-	other := models.Sandbox{Name: "busy", Purpose: SandboxPurposeSolo, Status: "running", ThreadID: "other"}
-	f.db.Create(&other)
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); err == nil {
-		t.Fatal("resume ignored the Solo quota")
-	} else {
-		wantSoloCode(t, err, "solo_limit")
-	}
-	f.db.Delete(&other)
-	if _, err := f.solo.Close(context.Background(), f.id, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err == nil {
-		t.Fatal("stopped a closed session")
-	} else {
-		wantSoloCode(t, err, "session_not_running")
-	}
-	var se *SoloError
-	if _, err := f.solo.Resume(context.Background(), f.id, "alice", 0); !errors.As(err, &se) || se.Status != http.StatusConflict {
-		t.Fatalf("resume closed: %v", err)
-	}
-}
-
-func TestSoloInterruptedStopReturnsToRunning(t *testing.T) {
-	db := newTestDB(t)
-	db.Create(&models.SoloSession{ID: "s", UserID: "alice", Status: models.SoloStatusStopping})
-	NewSoloService(db, nil, nil, nil)
-	var row models.SoloSession
-	db.First(&row, "id = ?", "s")
-	if row.Status != models.SoloStatusRunning || row.Error == "" {
-		t.Fatalf("interrupted stop: %+v", row)
+func TestUnifiedIdleReclaimCoversEveryPurpose(t *testing.T) {
+	for _, purpose := range []string{"test", "solo", "run"} {
+		t.Run(purpose, func(t *testing.T) {
+			f := newStopFixture(t)
+			row := f.recovery(t)
+			old := time.Now().Add(-2 * time.Hour)
+			f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"purpose": purpose, "last_active_at": old})
+			f.sbx.SetIdleTTL(time.Hour)
+			f.sbx.sweepOnce(context.Background())
+			if got, _ := f.sbx.Get(row.ID); got.Status != "stopped" || len(got.RecoveryPoints) != 1 {
+				t.Fatalf("idle %s not saved: %+v", purpose, got)
+			}
+		})
 	}
 }

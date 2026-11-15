@@ -31,10 +31,11 @@ var (
 // ProviderRegistry routes agent/react execution to the ExecProvider matching
 // each agent_profile's acpBackend field.
 type ProviderRegistry struct {
-	providers    map[AcpBackend]ExecProvider
-	profilesRoot string
-	sharedAgent  func() SharedAgentView
-	emit         func(runID, nodeID string, events []models.AcpEvent, busy bool)
+	providers       map[AcpBackend]ExecProvider
+	profilesRoot    string
+	sharedAgent     func() SharedAgentView
+	emit            func(runID, nodeID string, events []models.AcpEvent, busy bool)
+	sandboxRegistry SandboxRegistry
 }
 
 // NewProviderRegistry builds one provider per product backend and wires a shared event sink.
@@ -380,6 +381,7 @@ func (r *ProviderRegistry) SetEventSink(fn func(runID, nodeID string, events []m
 }
 
 func (r *ProviderRegistry) SetSandboxRegistry(reg SandboxRegistry) {
+	r.sandboxRegistry = reg
 	for _, p := range r.providers {
 		if sr, ok := p.(SandboxRegistrar); ok {
 			sr.SetSandboxRegistry(reg)
@@ -396,4 +398,23 @@ func (r *ProviderRegistry) ArchiveRunSandboxLogs(ctx context.Context, runID stri
 		}
 	}
 	return 0, "执行后端未暴露沙箱日志归档"
+}
+
+// CancelRunResources forwards deletion intent to each backend registry. Calls
+// are idempotent because multiple coding tools can share one physical sandbox.
+func (r *ProviderRegistry) CancelRunResources(ctx context.Context, runID string) error {
+	if cleanup, ok := r.sandboxRegistry.(interface {
+		CancelRunSandboxes(context.Context, string) error
+	}); ok {
+		return cleanup.CancelRunSandboxes(ctx, runID)
+	}
+	var failures []error
+	for _, p := range r.providers {
+		if cleanup, ok := p.(RunResourceCanceller); ok {
+			if err := cleanup.CancelRunResources(ctx, runID); err != nil {
+				failures = append(failures, err)
+			}
+		}
+	}
+	return errors.Join(failures...)
 }
