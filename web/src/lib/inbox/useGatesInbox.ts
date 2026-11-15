@@ -4,7 +4,8 @@ import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
+import { applyRunLiveFrame } from '@/lib/run/runLiveCards'
+import { openRunEventsSocket } from '@/lib/run/runEventsSocket'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { readClarifyStash } from '@/lib/inbox/clarifyDraftStash'
 import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
@@ -484,65 +485,48 @@ function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
-  followReconnect.markConnecting()
-  let ws: WebSocket
-  try {
-    ws = new WebSocket(api.runEventsWsUrl(runId))
-  } catch {
-    followReconnect.onClose()
-    return
-  }
-  ;(ws as WebSocket & { _runId?: string })._runId = runId
-  followWs = ws
-  followHeartbeat.start()
-  ws.onopen = () => {
-    if (followWs !== ws) return
-    followReconnect.markOpened()
-    followHeartbeat.touch()
-    if (fromReconnect) void refreshRunLive(runId)
-  }
-  ws.onmessage = (ev) => {
-    if (followWs !== ws) return
-    followHeartbeat.touch()
-    let m: {
-      type?: string
-      runId?: string
-      nodeId?: string
-      iteration?: number
-      name?: string
-      kind?: string
-      mode?: string
-      state?: 'stopping' | 'waiting_human'
-      events?: AcpEvent[]
-      busy?: boolean
-      status?: string
-    }
-    try {
-      m = JSON.parse(String(ev.data))
-    } catch {
-      return
-    }
-    if (m.type === 'live') applyRunLiveFrame(m)
-    else if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
-    else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
-    else if (m.type === 'status') {
-      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
-      kickFollow()
-    }
-    else if (m.type === 'acp') onFollowAcp(runId, m)
-  }
-  ws.onclose = () => {
-    if (followWs !== ws) return
-    followHeartbeat.stop()
-    followWs = null
-    const ft = followTail.value
-    const item = followItem
-    // Gap: chain poll updates the status line; node records refill steps.
-    if (ft && item && active.value && itemKey(active.value) === ft.key && ft.kind !== 'ended') {
-      void followStep(item, ft.key)
-    }
-    followReconnect.onClose()
-  }
+  openRunEventsSocket<{
+    type?: string
+    runId?: string
+    nodeId?: string
+    iteration?: number
+    name?: string
+    kind?: string
+    mode?: string
+    state?: 'stopping' | 'waiting_human'
+    events?: AcpEvent[]
+    busy?: boolean
+    status?: string
+  }>({
+    runId,
+    heartbeat: followHeartbeat,
+    reconnect: followReconnect,
+    isCurrent: (ws) => followWs === ws,
+    adopt: (ws) => {
+      ;(ws as WebSocket & { _runId?: string })._runId = runId
+      followWs = ws
+    },
+    catchUp: fromReconnect,
+    onFrame: (m) => {
+      if (m.type === 'live') applyRunLiveFrame(m)
+      else if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
+      else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
+      else if (m.type === 'status') {
+        noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+        kickFollow()
+      }
+      else if (m.type === 'acp') onFollowAcp(runId, m)
+    },
+    onClosed: () => {
+      followWs = null
+      const ft = followTail.value
+      const item = followItem
+      // Gap: chain poll updates the status line; node records refill steps.
+      if (ft && item && active.value && itemKey(active.value) === ft.key && ft.kind !== 'ended') {
+        void followStep(item, ft.key)
+      }
+    },
+  })
 }
 /**
  * WS node_enter {runId,nodeId,iteration,name,kind,mode} (#850): the run
@@ -2552,263 +2536,248 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     closeActiveRunWs()
   }
   activeRunWsRunId = runId
-  activeRunWsReconnect.markConnecting()
-  let socket: WebSocket
   let dialogueRevision = 0
   let receivedSnapshot = false
-  try {
-    socket = new WebSocket(api.runEventsWsUrl(runId))
-    activeRunWs = socket
-  } catch {
-    activeRunWs = undefined
-    activeRunWsRunId = ''
-    activeRunWsReconnect.onClose()
-    return
-  }
-  activeRunHeartbeat.start()
-  socket.onopen = () => {
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.touch()
-    activeRunWsReconnect.markOpened()
-    if (opts?.fromReconnect) void refreshRunLive(runId)
-  }
-  socket.onmessage = (ev) => {
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.touch()
-    let m: ReviewSessionFrame & {
-      type?: string
-      event?: string
-      nodeId?: string
-      events?: any[]
-      busy?: boolean
-      waiting?: number
-      sandboxBusy?: boolean
-      sandboxDesynced?: boolean
-      status?: string
-      iteration?: number
-      entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
-      run?: { id?: string; reviewSessionGeneration?: number; reactSessions?: Run['reactSessions'] }
-      previewArtifact?: string
-      name?: string
-    }
-    try {
-      m = JSON.parse(String(ev.data))
-    } catch {
-      return
-    }
-    if (m.type === 'dialogue') {
-      ingestDialogue(m)
-      return
-    }
-    if (m.type === 'live') {
-      applyRunLiveFrame(m)
-      return
-    }
-    if (m.type === 'heartbeat') {
-      // Transport heartbeats continue even when a review terminal was lost.
-      // Read the actual queue at their existing cadence; local busy cannot
-      // veto the read that would release it. Genuine active turns stay active.
-      if (active.value?.type === 'clarify' && (activeStarting.value || isClarifySoftRefreshBlocked())) {
-        const nodeId = activeDialogueNodeId() || ''
-        const recoverContent = !heartbeatRecoveryCheckpoint || !reviewState.hasAcpProgress(heartbeatRecoveryCheckpoint, nodeId)
-        heartbeatRecoveryCheckpoint = reviewState.capture()
-        void realignClarifyToRefresh(false, recoverContent)
+  openRunEventsSocket<ReviewSessionFrame & {
+    type?: string
+    event?: string
+    nodeId?: string
+    events?: any[]
+    busy?: boolean
+    waiting?: number
+    sandboxBusy?: boolean
+    sandboxDesynced?: boolean
+    status?: string
+    iteration?: number
+    entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
+    run?: { id?: string; reviewSessionGeneration?: number; reactSessions?: Run['reactSessions'] }
+    previewArtifact?: string
+    name?: string
+  }>({
+    runId,
+    heartbeat: activeRunHeartbeat,
+    reconnect: activeRunWsReconnect,
+    // A superseded socket (reconnect race) must not touch the current one.
+    isCurrent: (socket) => activeRunWs === socket,
+    adopt: (socket) => {
+      activeRunWs = socket
+    },
+    catchUp: !!opts?.fromReconnect,
+    onCreateFailed: () => {
+      activeRunWs = undefined
+      activeRunWsRunId = ''
+    },
+    onFrame: (m, socket) => {
+      if (m.type === 'dialogue') {
+        ingestDialogue(m)
+        return
       }
-      return
-    }
-    if (m.type === 'page_control_state') {
-      const st = (m as { state?: unknown }).state
-      if (m.nodeId) {
-        pageControlByNode.value = {
-          ...pageControlByNode.value,
-          [m.nodeId]: st === 'online' || st === 'paused' ? st : 'offline',
+      if (m.type === 'live') {
+        applyRunLiveFrame(m)
+        return
+      }
+      if (m.type === 'heartbeat') {
+        // Transport heartbeats continue even when a review terminal was lost.
+        // Read the actual queue at their existing cadence; local busy cannot
+        // veto the read that would release it. Genuine active turns stay active.
+        if (active.value?.type === 'clarify' && (activeStarting.value || isClarifySoftRefreshBlocked())) {
+          const nodeId = activeDialogueNodeId() || ''
+          const recoverContent = !heartbeatRecoveryCheckpoint || !reviewState.hasAcpProgress(heartbeatRecoveryCheckpoint, nodeId)
+          heartbeatRecoveryCheckpoint = reviewState.capture()
+          void realignClarifyToRefresh(false, recoverContent)
         }
+        return
       }
-      return
-    }
-    // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
-    if (m.type === 'snapshot') {
-      if (!receivedSnapshot) {
-        receivedSnapshot = true
-        const sessions = m.run?.reactSessions ?? {}
-        const versioned = reviewState.hasVersion || typeof m.run?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap?.sessionGeneration === 'number')
-        reviewState.reset()
-        heartbeatRecoveryCheckpoint = null
-        if (versioned) {
-          pendingReviewFrames = []
-          applyOrBufferReviewFrame({ event: 'session_reset', nodeId: activeDialogueNodeId() || '' })
-        }
-      }
-      // The full run DTO omits reactSessions after its last FIFO is removed.
-      // Only a matching full snapshot makes that omission authoritative idle.
-      const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
-      const dialogueActive =
-        active.value &&
-        (active.value.type === 'clarify' || active.value.type === 'gate') &&
-        active.value.runId === runId
-      if (sessions && dialogueActive) {
-        const revision = ++dialogueRevision
-        const activeKey = inboxTripleKey(active.value!)
-        const sameDialogue = () =>
-          activeRunWs === socket &&
-          !!active.value && inboxTripleKey(active.value) === activeKey
-        const isCurrent = () => sameDialogue() && dialogueRevision === revision
-        if (activeRun.value) {
-          activeRun.value = { ...activeRun.value, reactSessions: sessions, reviewSessionGeneration: m.run?.reviewSessionGeneration }
-          // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
-          void reseedAfterWsReconnect(runId, isCurrent).then(() => {
-            // A turn may have finished while disconnected. Reload its saved
-            // questions once the authoritative snapshot has released busy.
-            if (!sameDialogue() || !opts?.fromReconnect) return
-            const nodeId = activeDialogueNodeId()
-            const snap = nodeId ? sessions[nodeId] : undefined
-            if (
-              nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
-              !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
-            ) {
-              void softRefreshActiveRun()
-            }
-          })
-        } else {
-          pendingSnapshotSessions = sessions
-        }
-      }
-      return
-    }
-    if (m.type === 'review') {
-      if (!reviewState.acceptServer(m)) return
-      const currentDialogue = m.nodeId === activeDialogueNodeId()
-      if (currentDialogue) {
-        dialogueRevision++
-      }
-      // Sidebar「最近」has no channel of its own: relay turn boundaries.
-      if (
-        m.event === 'turn_begin' ||
-        m.event === 'turn_done' ||
-        m.event === 'error' ||
-        m.event === 'queue_state'
-      ) notifyRecentActivity()
-      if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
-      if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
-        clarifyLiveBusy.value = !!m.busy
-        if (!m.busy) busySeedRetry.stop()
-      }
-      const cardNodeId = typeof m.nodeId === 'string' ? m.nodeId : ''
-      if (cardNodeId) {
-        if (m.event === 'turn_begin') {
-          patchVisibleCardBusy(runId, cardNodeId, true)
-        } else if (m.event === 'queue_state') {
-          const waiting = typeof m.waiting === 'number' ? m.waiting : 0
-          const sessionBusy = (typeof m.busy === 'boolean' ? m.busy : false) || waiting > 0
-          patchVisibleCardBusy(runId, cardNodeId, sessionBusy)
-        } else if (m.event === 'turn_done' || m.event === 'error') {
-          const waiting = typeof m.waiting === 'number' ? m.waiting : 0
-          patchVisibleCardBusy(runId, cardNodeId, waiting > 0)
-        }
-      }
-      applyOrBufferReviewFrame(m as Record<string, unknown>)
-      if (currentDialogue && activeStarting.value &&
-        (m.event === 'turn_begin' || (m.event === 'queue_state' && m.busy && m.activeItem))) {
-        void realignClarifyToRefresh(false, true)
-      }
-      if (currentDialogue && m.event === 'queue_state') {
-        if (queueStateIsOrphan(m)) {
-          const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
-          if (nid) {
-            orphanLiveNodeId = nid
-            flushPendingAcpFrames()
-            void pullOrphanLive(runId, nid)
+      if (m.type === 'page_control_state') {
+        const st = (m as { state?: unknown }).state
+        if (m.nodeId) {
+          pageControlByNode.value = {
+            ...pageControlByNode.value,
+            [m.nodeId]: st === 'online' || st === 'paused' ? st : 'offline',
           }
-        } else {
-          orphanLiveNodeId = ''
-          stopOrphanLiveSeed()
         }
-      }
-      if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
-        clarifyLiveBusy.value = false
-        busySeedRetry.stop()
-        if (active.value && active.value.runId === runId) void softRefreshActiveRun(true)
-      }
-      // Platform idle while the bridge is still busy: the terminal frame may
-      // never arrive. Re-read the same snapshot a refresh would, without
-      // remounting the composer.
-      if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
-        void realignClarifyToRefresh()
-      }
-      return
-    }
-    if (m.type === 'acp') {
-      reviewState.noteAcp(m.nodeId || '', Array.isArray(m.events) ? m.events as AcpEvent[] : [])
-      // ACP/sandbox busy is observational only — must not overwrite platform
-      // session busy (clarifyLiveBusy) or stop busySeedRetry (g1.2).
-      // Tear-down / stop retry only from review queue_state idle / turn_done / error.
-      applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
-      if (activeStarting.value && m.nodeId === activeDialogueNodeId()) void realignClarifyToRefresh(false, true)
-      return
-    }
-    if (
-      m.type === 'node_enter' &&
-      active.value?.type === 'clarify' &&
-      active.value.runId === runId &&
-      activeRun.value &&
-      m.nodeId
-    ) {
-      patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
-    }
-    if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
-    if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
-      // Ignore events for runs that no longer match the current pending active item.
-      if (!active.value || active.value.runId !== runId) return
-      if (isProcessedTriple(active.value) || !isActiveStillInList()) return
-      if (m.type === 'artifact_edit') notifyRunArtifactEdit()
-      // Starting card: a run transition is exactly the signal we wait for — the
-      // approve node has parked, so the list row loses `state: starting` and the
-      // rebind reloads the context with the real transcript.
-      if (activeStarting.value && (m.type === 'status' || m.type === 'react')) {
-        void loadList()
         return
       }
-      // status/trace are noisy and must not softRefresh. Patch the open
-      // snapshot in place so the workflow list moves without clearing dialogue.
-      if (active.value?.type === 'clarify' && activeRun.value) {
-        if (m.type === 'status' && m.status) {
-          activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
-        } else if (m.type === 'trace' && m.entry?.nodeId) {
-          const st = nodeStatusFromTrace(m.entry)
-          if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+      // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
+      if (m.type === 'snapshot') {
+        if (!receivedSnapshot) {
+          receivedSnapshot = true
+          const sessions = m.run?.reactSessions ?? {}
+          const versioned = reviewState.hasVersion || typeof m.run?.reviewSessionGeneration === 'number' || Object.values(sessions).some(snap => typeof snap?.sessionGeneration === 'number')
+          reviewState.reset()
+          heartbeatRecoveryCheckpoint = null
+          if (versioned) {
+            pendingReviewFrames = []
+            applyOrBufferReviewFrame({ event: 'session_reset', nodeId: activeDialogueNodeId() || '' })
+          }
         }
-      }
-      // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
-      // while reviewing — peek/list cover "left pending" awareness instead.
-      if (m.type === 'status' || m.type === 'trace') return
-      // Visual gates: only artifact_edit here; review turn_done/error already refresh above.
-      // Ignore react (e.g. turn_begin) — no product change yet.
-      if (active.value.type === 'gate') {
-        if (m.type === 'artifact_edit') void softRefreshActiveRun()
+        // The full run DTO omits reactSessions after its last FIFO is removed.
+        // Only a matching full snapshot makes that omission authoritative idle.
+        const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
+        const dialogueActive =
+          active.value &&
+          (active.value.type === 'clarify' || active.value.type === 'gate') &&
+          active.value.runId === runId
+        if (sessions && dialogueActive) {
+          const revision = ++dialogueRevision
+          const activeKey = inboxTripleKey(active.value!)
+          const sameDialogue = () =>
+            activeRunWs === socket &&
+            !!active.value && inboxTripleKey(active.value) === activeKey
+          const isCurrent = () => sameDialogue() && dialogueRevision === revision
+          if (activeRun.value) {
+            activeRun.value = { ...activeRun.value, reactSessions: sessions, reviewSessionGeneration: m.run?.reviewSessionGeneration }
+            // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
+            void reseedAfterWsReconnect(runId, isCurrent).then(() => {
+              // A turn may have finished while disconnected. Reload its saved
+              // questions once the authoritative snapshot has released busy.
+              if (!sameDialogue() || !opts?.fromReconnect) return
+              const nodeId = activeDialogueNodeId()
+              const snap = nodeId ? sessions[nodeId] : undefined
+              if (
+                nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
+                !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
+              ) {
+                void softRefreshActiveRun()
+              }
+            })
+          } else {
+            pendingSnapshotSessions = sessions
+          }
+        }
         return
       }
-      // Clarify: react/artifact_edit mid-turn projected via review/acp — skip
-      // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
-      // Soft-refresh semantics unchanged (g2.3).
-      if (active.value.type === 'clarify') {
-        if (m.type === 'artifact_edit') {
-          // Cards only. A full context reload would replace the open transcript.
-          void patchActiveRunArtifacts(m)
-        } else if (m.type === 'react') {
-          // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
-          if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
+      if (m.type === 'review') {
+        if (!reviewState.acceptServer(m)) return
+        const currentDialogue = m.nodeId === activeDialogueNodeId()
+        if (currentDialogue) {
+          dialogueRevision++
+        }
+        // Sidebar「最近」has no channel of its own: relay turn boundaries.
+        if (
+          m.event === 'turn_begin' ||
+          m.event === 'turn_done' ||
+          m.event === 'error' ||
+          m.event === 'queue_state'
+        ) notifyRecentActivity()
+        if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
+        if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
+          clarifyLiveBusy.value = !!m.busy
+          if (!m.busy) busySeedRetry.stop()
+        }
+        const cardNodeId = typeof m.nodeId === 'string' ? m.nodeId : ''
+        if (cardNodeId) {
+          if (m.event === 'turn_begin') {
+            patchVisibleCardBusy(runId, cardNodeId, true)
+          } else if (m.event === 'queue_state') {
+            const waiting = typeof m.waiting === 'number' ? m.waiting : 0
+            const sessionBusy = (typeof m.busy === 'boolean' ? m.busy : false) || waiting > 0
+            patchVisibleCardBusy(runId, cardNodeId, sessionBusy)
+          } else if (m.event === 'turn_done' || m.event === 'error') {
+            const waiting = typeof m.waiting === 'number' ? m.waiting : 0
+            patchVisibleCardBusy(runId, cardNodeId, waiting > 0)
+          }
+        }
+        applyOrBufferReviewFrame(m as Record<string, unknown>)
+        if (currentDialogue && activeStarting.value &&
+          (m.event === 'turn_begin' || (m.event === 'queue_state' && m.busy && m.activeItem))) {
+          void realignClarifyToRefresh(false, true)
+        }
+        if (currentDialogue && m.event === 'queue_state') {
+          if (queueStateIsOrphan(m)) {
+            const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
+            if (nid) {
+              orphanLiveNodeId = nid
+              flushPendingAcpFrames()
+              void pullOrphanLive(runId, nid)
+            }
+          } else {
+            orphanLiveNodeId = ''
+            stopOrphanLiveSeed()
+          }
+        }
+        if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
+          clarifyLiveBusy.value = false
+          busySeedRetry.stop()
+          if (active.value && active.value.runId === runId) void softRefreshActiveRun(true)
+        }
+        // Platform idle while the bridge is still busy: the terminal frame may
+        // never arrive. Re-read the same snapshot a refresh would, without
+        // remounting the composer.
+        if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
+          void realignClarifyToRefresh()
+        }
+        return
+      }
+      if (m.type === 'acp') {
+        reviewState.noteAcp(m.nodeId || '', Array.isArray(m.events) ? m.events as AcpEvent[] : [])
+        // ACP/sandbox busy is observational only — must not overwrite platform
+        // session busy (clarifyLiveBusy) or stop busySeedRetry (g1.2).
+        // Tear-down / stop retry only from review queue_state idle / turn_done / error.
+        applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
+        if (activeStarting.value && m.nodeId === activeDialogueNodeId()) void realignClarifyToRefresh(false, true)
+        return
+      }
+      if (
+        m.type === 'node_enter' &&
+        active.value?.type === 'clarify' &&
+        active.value.runId === runId &&
+        activeRun.value &&
+        m.nodeId
+      ) {
+        patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
+      }
+      if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
+      if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
+        // Ignore events for runs that no longer match the current pending active item.
+        if (!active.value || active.value.runId !== runId) return
+        if (isProcessedTriple(active.value) || !isActiveStillInList()) return
+        if (m.type === 'artifact_edit') notifyRunArtifactEdit()
+        // Starting card: a run transition is exactly the signal we wait for — the
+        // approve node has parked, so the list row loses `state: starting` and the
+        // rebind reloads the context with the real transcript.
+        if (activeStarting.value && (m.type === 'status' || m.type === 'react')) {
+          void loadList()
+          return
+        }
+        // status/trace are noisy and must not softRefresh. Patch the open
+        // snapshot in place so the workflow list moves without clearing dialogue.
+        if (active.value?.type === 'clarify' && activeRun.value) {
+          if (m.type === 'status' && m.status) {
+            activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
+          } else if (m.type === 'trace' && m.entry?.nodeId) {
+            const st = nodeStatusFromTrace(m.entry)
+            if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+          }
+        }
+        // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
+        // while reviewing — peek/list cover "left pending" awareness instead.
+        if (m.type === 'status' || m.type === 'trace') return
+        // Visual gates: only artifact_edit here; review turn_done/error already refresh above.
+        // Ignore react (e.g. turn_begin) — no product change yet.
+        if (active.value.type === 'gate') {
+          if (m.type === 'artifact_edit') void softRefreshActiveRun()
+          return
+        }
+        // Clarify: react/artifact_edit mid-turn projected via review/acp — skip
+        // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
+        // Soft-refresh semantics unchanged (g2.3).
+        if (active.value.type === 'clarify') {
+          if (m.type === 'artifact_edit') {
+            // Cards only. A full context reload would replace the open transcript.
+            void patchActiveRunArtifacts(m)
+          } else if (m.type === 'react') {
+            // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
+            if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
+          }
         }
       }
-    }
-  }
-  socket.onclose = () => {
-    // Ignore stale close from a superseded socket (reconnect race).
-    if (activeRunWs !== socket) return
-    activeRunHeartbeat.stop()
-    activeRunWs = undefined
-    activeRunWsRunId = ''
-    activeRunWsReconnect.onClose()
-  }
+    },
+    onClosed: () => {
+      activeRunWs = undefined
+      activeRunWsRunId = ''
+    },
+  })
 }
 
 const ORPHAN_REALIGN_MS = 2000
