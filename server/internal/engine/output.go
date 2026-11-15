@@ -279,7 +279,5 @@ func (e *Engine) execOutput(c *execCtx, node *models.Node) nodeOutcome {
 		"outputCards": cards,
 		"results":     templates,
 	}
-	// Optional leftover → requirement draft (fail-open). Independent of card sources.
-	e.maybeWriteLeftoverDraft(c, node, outputs)
 	return nodeOutcome{status: "completed", outputMd: outputCompleteMd, outputs: outputs}
 }

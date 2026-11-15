@@ -20,7 +20,7 @@ type EnvEntry struct {
 	Secret bool   `json:"secret,omitempty"`
 }
 
-// WorkspaceVariable is a workspace-level workflow variable definition (vars.* namespace).
+// WorkspaceVariable is a workflow default variable definition (vars.* namespace).
 // Shape aligns with Variable, plus an optional Secret flag for read masking.
 type WorkspaceVariable struct {
 	Name     string `json:"name"`
@@ -61,21 +61,19 @@ type Credential struct {
 	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
-// Workspace is a workspace that owns workflows and holds workflow variable
-// defaults. Credential is the workspace secret store; shared Agent
+// Workspace is a workspace that owns workflows. Credential is the workspace secret store; shared Agent
 // env holds non-secret sandbox env. Run.SandboxEnv is the per-run snapshot for
 // non-credential variables.
 type Workspace struct {
-	ID          string              `gorm:"primaryKey" json:"-"`
-	Name        string              `gorm:"size:191" json:"name"`
-	Description string              `json:"description"`
-	Variables   []WorkspaceVariable `gorm:"serializer:json" json:"variables"`
+	ID          string `gorm:"primaryKey" json:"-"`
+	Name        string `gorm:"size:191" json:"name"`
+	Description string `json:"description"`
 	// PmLeaderEnabled toggles the workspace-level PM Leader consult entry.
 	PmLeaderEnabled bool `json:"pmLeaderEnabled"`
 	// PmLeaderAgent is the bound Agent config name (agent_profile). Empty when
 	// unbound. Enabling requires a non-empty, existing agent name.
 	PmLeaderAgent string `json:"pmLeaderAgent,omitempty"`
-	// PmEnabledMcps lists enabled PM-only MCP ids (pm-progress, pm-workflow-read, pm-workflow-write, pm-agent-fs, pm-prd-manager).
+	// PmEnabledMcps lists enabled PM-only MCP ids (pm-progress, pm-workflow-read, pm-workflow-write, pm-agent-fs).
 	// nil/omitted → defaults; explicit empty slice → none.
 	// nil/unset means both enabled by default; explicit empty disables all.
 	PmEnabledMcps []string `gorm:"serializer:json" json:"pmEnabledMcps,omitempty"`
@@ -101,8 +99,7 @@ type Workspace struct {
 // WorkflowDef is the editable workflow head. Graph/Name/Description always
 // equal the WorkflowVersion row numbered Version (the latest save).
 type WorkflowDefaults struct {
-	InheritWorkspace bool                `json:"inheritWorkspace"`
-	Variables        []WorkspaceVariable `json:"variables"`
+	Variables []WorkspaceVariable `json:"variables"`
 	// Repos are the repositories bound to the workflow, in clone order. A run
 	// takes all of them unless the launcher picks a subset.
 	Repos        []RepoChoice            `json:"repos,omitempty"`
@@ -1096,7 +1093,6 @@ func AllModels() []any {
 		&GateSharePreviewTicket{},
 		&EmbedTicket{},
 		&EmbedSession{},
-		&RequirementDraft{},
 		&NotificationRead{},
 		&NotificationBaseline{},
 		&ExternalMcpSettings{},

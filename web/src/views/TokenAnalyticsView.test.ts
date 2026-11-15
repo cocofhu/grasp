@@ -57,6 +57,7 @@ function pagesText(path: string): string {
   return path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], (pages as unknown as { pages: { tokenAnalytics: unknown } }).pages.tokenAnalytics) as string
 }
 const zh = (pages as unknown as { pages: { tokenAnalytics: Record<string, string> } }).pages.tokenAnalytics
+const zhBoardPm = (pages as unknown as { pages: { board: { tokenStats: { pm: string } } } }).pages.board.tokenStats.pm
 
 async function openFilterPopover(wrapper: ReturnType<typeof mount>) {
   if (!wrapper.find('[data-testid="token-analytics-filter-pop"]').exists()) {
@@ -1045,7 +1046,7 @@ describe('TokenAnalyticsView', () => {
       const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
       await flushPromises()
       expect(wrapper.get('[data-testid="token-analytics-controls"]').text()).not.toContain('来源：')
-      expect(wrapper.get('[data-testid="token-analytics-source-pm"]').text()).toBe(zh.sourcePm)
+      expect(wrapper.get('[data-testid="token-analytics-source-pm"]').text()).toBe(zhBoardPm)
       vi.mocked(api.getGlobalTokenStats).mockClear()
       await wrapper.get('[data-testid="token-analytics-source-workflow"]').trigger('click')
       await flushPromises()
@@ -1091,7 +1092,7 @@ describe('TokenAnalyticsView', () => {
       expect(rows[0]!.text()).toContain('60.0%')
       expect(rows[1]!.text()).toContain('—')
       // PM bucket is labelled with the source name
-      expect(rows[2]!.text()).toContain(zh.sourcePm)
+      expect(rows[2]!.text()).toContain(zhBoardPm)
       wrapper.unmount()
     })
 

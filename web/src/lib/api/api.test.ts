@@ -275,7 +275,6 @@ describe('api req helpers', () => {
     await expect(api.artifactVersions('art')).resolves.toMatchObject([{ revision: 1 }])
     await expect(api.artifactVersionContent('art', 1)).resolves.toMatchObject({ content: 'old' })
     expect(api.artifactDownloadUrl('art')).toContain('/api/artifacts/art/download')
-    expect(api.packRunArtifactsUrl('run-1')).toContain('/api/runs/run-1/artifacts/pack')
     await expect(api.deleteArtifact('art')).resolves.toBeUndefined()
 
     await expect(api.nodeEvents('r1', 'n1')).resolves.toEqual({ events: [], live: false })

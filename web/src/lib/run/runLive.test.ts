@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
-import { decideLive, runningAutoNode, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost } from './runLive'
+import { decideLive, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost } from './runLive'
 
 const cur = (id: string, kind: RunCurrentNode['kind'], state: RunCurrentNode['state'], iteration = 1): RunCurrentNode =>
   ({ id, name: id, iteration, kind, mode: kind === 'agent' ? 'auto' : 'manual', state })
@@ -37,16 +37,8 @@ describe('decideLive (server currentNode)', () => {
     expect(decideLive(run('waiting_human'), '')).toEqual({ kind: 'wait', nodeId: '', label: '' })
     expect(decideLive(run('queued'), '')).toEqual({ kind: 'detail' })
   })
-  it('runningAutoNode is only an auto agent that is running', () => {
-    expect(runningAutoNode(run('running', cur('impl', 'agent', 'running')))?.id).toBe('impl')
-    expect(runningAutoNode(run('running', cur('impl', 'takeover', 'stopping')))).toBeNull()
-    expect(runningAutoNode(run('waiting_human', cur('gate', 'gate', 'waiting_human')))).toBeNull()
-    expect(runningAutoNode(run('running'))).toBeNull()
-  })
   it('waits on the conversation for an automatic successor that has not started', () => {
     const entering = cur('impl', 'agent', 'entering')
-    expect(runningAutoNode(run('waiting_human', entering))).toBeNull()
-    expect(runningAutoNode(run('running', entering))).toBeNull()
     expect(decideLive(run('waiting_human', entering), 'clarify')).toEqual({ kind: 'wait', nodeId: 'impl', label: 'impl' })
     expect(decideLive(run('running', entering), 'impl')).toEqual({ kind: 'wait', nodeId: 'impl', label: 'impl' })
     expect(decideLive(run('completed', entering), 'impl')).toEqual({ kind: 'detail' })

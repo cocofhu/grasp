@@ -13,7 +13,7 @@ func TestPurgeAgentEverywhere(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewWorkspaceService(db)
-	if _, err := ps.CreateFixture("Purge", "", nil); err != nil {
+	if _, err := ps.CreateFixture("Purge", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-x"}); err != nil {
@@ -101,7 +101,7 @@ func TestUpdateMemoryForAgentScoped(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("MemScope", "", nil)
+	_, err := ps.CreateFixture("MemScope", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRenameAgentScopedData(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("RenameHome", "", nil)
+	_, err := ps.CreateFixture("RenameHome", "")
 	if err != nil {
 		t.Fatal(err)
 	}

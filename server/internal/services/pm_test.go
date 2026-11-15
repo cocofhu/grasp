@@ -35,7 +35,7 @@ func TestPmBindingEnableRequiresAgent(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	_, err := NewWorkspaceService(db).CreateFixture("P1", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("P1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 	pm := NewPmService(db, nil)
 	pm.SetBlobStore(blob.NewMemory())
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("MemProj", "", nil)
+	_, err := ps.CreateFixture("MemProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestPmRequireEnabled(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("EnProj", "", nil)
+	_, err := ps.CreateFixture("EnProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestPmMessageFailureAndRecentFilter(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("FailProj", "", nil)
+	_, err := ps.CreateFixture("FailProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestPmDraftCheckpoint(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("DraftProj", "", nil)
+	_, err := ps.CreateFixture("DraftProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestPmMemoryAgentIsolation(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("IsoMem", "", nil)
+	_, err := ps.CreateFixture("IsoMem", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,11 +317,11 @@ func TestPmMemoryAgentIsolation(t *testing.T) {
 }
 
 func TestNormalizePmEnabledMcps(t *testing.T) {
-	if got := EffectivePmEnabledMcps(nil); len(got) != 5 {
+	if got := EffectivePmEnabledMcps(nil); len(got) != 4 {
 		t.Fatalf("nil default=%v", got)
 	}
 	got := FilterPmEnabledMcps([]string{"pm-workflow-read", "memory-store", "pm-workflow-read", "pm-progress", "pm-agent-fs", "pm-prd-manager"})
-	if len(got) != 4 || got[0] != "pm-workflow-read" || got[1] != "pm-progress" || got[2] != "pm-agent-fs" || got[3] != "pm-prd-manager" {
+	if len(got) != 3 || got[0] != "pm-workflow-read" || got[1] != "pm-progress" || got[2] != "pm-agent-fs" {
 		t.Fatalf("filtered=%v", got)
 	}
 	got = EffectivePmEnabledMcps([]string{"memory-store", "task-scheduler"})
@@ -338,7 +338,7 @@ func TestUpdateBindingEmptyEnabledMcpsPersists(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("EmptyMcps", "", nil)
+	_, err := ps.CreateFixture("EmptyMcps", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("SearchMem", "", nil)
+	_, err := ps.CreateFixture("SearchMem", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("ChProj", "", nil)
+	_, err := ps.CreateFixture("ChProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}

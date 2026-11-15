@@ -9,7 +9,7 @@ import (
 func TestFilterAgentPlatformMCPAndDedupe(t *testing.T) {
 	filtered := filterAgentPlatformMCP([]sandbox.MCPServerSpec{
 		{Name: MemoryStoreMCP, URL: "http://mem"},
-		{Name: PmPrdManagerMCP, URL: "http://prd"},
+		{Name: PmAgentFSMCP, URL: "http://fs"},
 		{Name: "custom", URL: "http://x"},
 	})
 	if len(filtered) != 1 || filtered[0].Name != "custom" {

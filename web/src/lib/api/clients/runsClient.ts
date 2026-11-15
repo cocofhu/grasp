@@ -208,8 +208,6 @@ export const runsClient = {
       `/runs/${runId}/nodes/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
-  getGateShareLink: (runId: string, nodeId: string) =>
-    req<GateShareInboxStatus>(`/runs/${runId}/nodes/${nodeId}/share-link`),
   regenGateShareLink: (runId: string, nodeId: string) =>
     req<ShareLinkResult>(
       `/runs/${runId}/nodes/${nodeId}/share-link/regen`,
@@ -222,8 +220,6 @@ export const runsClient = {
       `/runs/${runId}/nodes/${nodeId}/share-link`,
       { method: 'POST', body: JSON.stringify({ ttlTier, permissionPreset }) },
     ),
-  getReviewShareLink: (runId: string, nodeId: string) =>
-    req<GateShareInboxStatus>(`/runs/${runId}/nodes/${nodeId}/share-link`),
   regenReviewShareLink: (runId: string, nodeId: string) =>
     req<ShareLinkResult>(
       `/runs/${runId}/nodes/${nodeId}/share-link/regen`,

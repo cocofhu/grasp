@@ -25,7 +25,6 @@ const PM_MCP_OPTIONS = [
   { id: 'pm-workflow-read', labelKey: 'pages.workspace.pm.mcpWorkflowRead' },
   { id: 'pm-workflow-write', labelKey: 'pages.workspace.pm.mcpWorkflowWrite' },
   { id: 'pm-agent-fs', labelKey: 'pages.workspace.pm.mcpAgentFs' },
-  { id: 'pm-prd-manager', labelKey: 'pages.workspace.pm.mcpPrdManager' },
 ] as const
 
 type Tab = 'list' | 'edit' | 'notify'
@@ -62,7 +61,6 @@ const chEnabledMcps = ref<string[]>([
   'pm-workflow-read',
   'pm-workflow-write',
   'pm-agent-fs',
-  'pm-prd-manager',
 ])
 const chIsPrimary = ref(false)
 
@@ -209,7 +207,6 @@ function resetForm() {
     'pm-workflow-read',
     'pm-workflow-write',
     'pm-agent-fs',
-    'pm-prd-manager',
   ]
   chIsPrimary.value = false
   clearRecentTargetsCache()
@@ -238,7 +235,7 @@ function applyForm(ch: ChannelConfig) {
   chCronDeliverTarget.value = ch.cronDeliverTarget || ''
   chEnabledMcps.value = Array.isArray(ch.enabledMcps)
     ? [...ch.enabledMcps]
-    : ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager']
+    : ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs']
   chIsPrimary.value = !!ch.isPrimary
   clearRecentTargetsCache()
   if (chCronDeliver.value) void ensureRecentTargets()

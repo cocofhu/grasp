@@ -58,7 +58,7 @@ func TestSaveAcceptsLegacySandboxModeDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := s.Get(wf.ID)
-	if !ok || got.Defaults == nil || !got.Defaults.InheritWorkspace {
+	if !ok || got.Defaults == nil {
 		t.Fatalf("defaults = %+v", got.Defaults)
 	}
 }

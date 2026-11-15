@@ -48,7 +48,6 @@ import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
-import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { SoloSession } from '@/lib/api/apiTypes'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
@@ -77,7 +76,6 @@ const {
 const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
-const { isMobile } = useBreakpoint()
 const soloStore = useSoloSessions()
 const runningCollapsed = computed(() => isSectionCollapsed('running'))
 const autoCollapsed = computed(() => isSectionCollapsed('auto'))

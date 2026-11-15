@@ -82,10 +82,6 @@ function lookupProviderEfforts(models: Record<string, string[]>, modelId: string
   return []
 }
 
-export function tokenHubVariants(modelId: string): string[] {
-  return lookupProviderEfforts(providerEntry('tokenhub')?.models || {}, modelId)
-}
-
 export function effortChoices(backend: string, kind: string, providerId: string | undefined, baseUrl: string | undefined, modelId: string): string[] {
   if (backend !== 'opencode' || !modelId.trim()) return []
   if (kind === 'platform') return platformVariants(modelId)

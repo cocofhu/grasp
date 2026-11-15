@@ -70,33 +70,6 @@ export function createTimeoutController(timeoutMs: number, parent?: AbortSignal)
   }
 }
 
-export function terminalFromCatch(err: unknown, timedOut: boolean): LoadingTerminalState {
-  if (timedOut || isTimeoutError(err)) return 'error'
-  if (isAbortError(err)) return 'cancelled'
-  return 'error'
-}
-
-type GenerationGate = {
-  next: () => number
-  isCurrent: (mine: number) => boolean
-  readonly current: number
-}
-
-export function createGenerationGate(): GenerationGate {
-  let gen = 0
-  return {
-    next() {
-      return ++gen
-    },
-    isCurrent(mine: number) {
-      return mine === gen
-    },
-    get current() {
-      return gen
-    },
-  }
-}
-
 export async function runWithTimeout<T>(
   fn: (signal: AbortSignal) => Promise<T>,
   opts?: {

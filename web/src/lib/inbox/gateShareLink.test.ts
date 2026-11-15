@@ -8,7 +8,6 @@ import {
   publicGateContentKey,
   publicGateImageUrl,
   mapPublicGateImages,
-  shareStatusLabel,
   canCreateGateShare,
   isGateShareActive,
   rememberShareUrl,
@@ -74,9 +73,6 @@ describe('gateShareLink helpers', () => {
     expect(formatRemainingSec(90, t)).toBe('1m')
     expect(formatRemainingSec(3700, t)).toBe('1h')
     expect(formatRemainingSec(2 * 86400, t)).toBe('2d')
-    expect(shareStatusLabel({ state: 'none' }, t)).toBe('none')
-    expect(shareStatusLabel({ state: 'active', remainingSec: 3600 }, t)).toBe('active 1h')
-    expect(shareStatusLabel({ state: 'used' }, t)).toBe('used')
   })
 
   it('blocks recreate after used; allows after revoke/expired', () => {

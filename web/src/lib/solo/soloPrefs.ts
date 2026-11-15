@@ -85,11 +85,3 @@ export function repoShort(url: string): string {
   const body = scp ? `${scp[1]}/${scp[2]}` : s.replace(/^[a-z+]+:\/\//i, '').replace(/^[^@/]+@/, '')
   return body.replace(/\.git$/i, '').replace(/\/+$/, '')
 }
-
-/** Expected repo host family, used to warn on URL / access-mode mismatch. */
-export function repoProtocol(url: string): 'https' | 'ssh' | '' {
-  const s = String(url || '').trim()
-  if (/^https?:\/\//i.test(s)) return 'https'
-  if (/^ssh:\/\//i.test(s) || /^[\w.-]+@[^:]+:/.test(s)) return 'ssh'
-  return ''
-}

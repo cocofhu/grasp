@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { api, type CredentialItem, type ModelConnection, type ModelConnectionBody, type ModelProtocol } from '@/lib/api/api'
+import { api, type CredentialItem, type ModelConnectionBody, type ModelProtocol } from '@/lib/api/api'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { useToast } from '@/lib/composables/useToast'
 import AppButton from '@/components/ui/AppButton.vue'

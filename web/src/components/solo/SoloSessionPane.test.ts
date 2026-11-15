@@ -54,7 +54,6 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     getSoloResources: box.getResources,
     resumeSoloSession: (...args: unknown[]) => box.resumeSoloSession(...args),
-    getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
     listModelConnections: vi.fn(async () => ({ items: [] })),

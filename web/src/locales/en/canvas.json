@@ -11,16 +11,10 @@
       "insertNode": "Insert a node on this connection",
       "deleteEdge": "Delete connection",
       "editCondition": "Edit connection condition",
-      "closeInspector": "Close inspector",
-      "togglePalette": "Expand or collapse the node panel",
       "palette": "Node panel",
       "inspector": "Node inspector"
     },
     "outlet": {
-      "pass": "Pass",
-      "fail": "Fail",
-      "else": "Else",
-      "caseN": "Case {n}",
       "stale": "{handle} (stale)"
     },
     "caps": {
@@ -168,7 +162,6 @@
     "issues": {
       "count": "{n} issues",
       "none": "No issues",
-      "next": "Jump to the next issue",
       "missingInput": "Missing input node",
       "missingOutput": "Missing output node",
       "tooManyInputs": "Only one input node is allowed",
@@ -192,7 +185,6 @@
         "timeout": "Node time limit",
         "nudge": "Reminder turns",
         "capabilities": "Capabilities",
-        "basics": "Basics",
         "settings": "Settings",
         "outputs": "Outputs",
         "model": "Model"
@@ -227,41 +219,13 @@
         "note": "Each action is an outlet; connect it to the next step"
       },
       "model": {
-        "needAgent": "Pick an Agent first, then choose the model for this node.",
-        "follow": "Follow the Agent",
-        "followCurrent": "Now: {name} · {model}",
-        "followEmpty": "The Agent has no model key yet; the run will fail",
-        "nodeChip": "This node",
-        "agentDefault": "Agent default",
-        "workspaceKeys": "Workspace model keys",
-        "empty": "No model keys in this workspace yet",
-        "manage": "Add or manage in the credential center",
-        "staleTitle": "The selected model key is gone",
-        "staleBody": "It was deleted or cleared. Pick another one",
-        "ownAuthTitle": "{backend} uses its own model sign-in",
-        "ownAuthBody": "Node models apply to OpenCode Agents only. This coding assistant chooses its own model.",
-        "ignored": "The model picked earlier has no effect",
-        "clear": "Clear",
-        "hint": "Applies to this node only. No credential means the Agent's; no model means the credential's default.",
-        "credential": "Credential",
-        "modelLabel": "Model",
-        "credentialLine": "{vendor} · default {model}",
-        "needCredential": "Pick a usable credential first",
-        "useDefault": "Credential's default model",
-        "useTyped": "Use custom ID \"{id}\"",
-        "unlisted": "Not in the vendor catalog. Double-check it",
-        "searchPlaceholder": "Search models or type an ID",
-        "typePlaceholder": "Type a model ID",
-        "catalogTitle": "{vendor} models",
-        "noCatalog": "This vendor has no model catalog. Type the model ID directly.",
-        "moreHidden": "{n} more. Keep typing to narrow down"
+        "needAgent": "Pick an Agent first, then choose the model for this node."
       }
     },
     "topbar": {
       "workspace": "Workspace",
       "rename": "Click to rename",
       "saveError": "Save failed: {error}",
-      "issuesNone": "No issues",
       "run": "Run",
       "publish": "Publish",
       "more": "More",
@@ -270,9 +234,7 @@
         "export": "Export",
         "duplicate": "Duplicate workflow",
         "delete": "Delete workflow",
-        "details": "Details",
-        "favorite": "Favorite",
-        "unfavorite": "Unfavorite"
+        "details": "Details"
       },
       "tabs": {
         "canvas": "Canvas",
@@ -362,7 +324,6 @@
     "handoff": {
       "chip": "Handoff",
       "title": "Handoff notes",
-      "platformTitle": "Platform handoff (upstream left none)",
       "platformNote": "Written by the platform · upstream left no handoff",
       "fromNode": "From the \"{source}\" node",
       "fromNodeVisit": "From the \"{source}\" node · viewing visit {n}",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { effortChoices, officialModelFamily, openCodeModelID, openCodeVariantCatalog, platformVariants, tokenHubVariants } from './fixedEffort'
+import { effortChoices, officialModelFamily, openCodeModelID, openCodeVariantCatalog, platformVariants } from './fixedEffort'
 
 describe('OpenCode variant catalog', () => {
   it('covers every official model and only the variants OpenCode resolves', () => {
@@ -29,11 +29,6 @@ describe('OpenCode variant catalog', () => {
     expect(officialModelFamily('opencode/kimi-k3')).toBe('opencode')
     expect(officialModelFamily('opencode-go/')).toBe('')
     expect(officialModelFamily('opencode-go/a/b')).toBe('')
-    expect(tokenHubVariants('deepseek-v4-flash')).toEqual(['low', 'high', 'max'])
-    expect(tokenHubVariants('deepseek-v4-pro')).toEqual(['low', 'high', 'max'])
-    expect(tokenHubVariants('DeepSeek-V4.1-Flash-1017')).toEqual(['low', 'high', 'max'])
-    expect(tokenHubVariants('deepseek/deepseek-flash')).toEqual(['low', 'high', 'max'])
-    expect(tokenHubVariants('kimi-k3.1-pro')).toEqual(['low', 'high', 'max'])
     expect(effortChoices('opencode', 'connection', 'tokenhub', 'https://tokenhub.tencentmaas.com/v1', 'kimi-k3.1-pro')).toEqual(['low', 'high', 'max'])
     expect(effortChoices('opencode', 'connection', 'hunyuan', '', 'kimi-k2.8-preview')).toEqual(['low', 'high', 'max'])
     expect(effortChoices('opencode', 'platform', undefined, undefined, 'opencode/deepseek-v4-pro')).toEqual(['high', 'max'])

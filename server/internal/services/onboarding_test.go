@@ -80,14 +80,14 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	if !wf.ShowOnHome {
 		t.Fatal("default workflow should be visible on Home")
 	}
-	assertInheritsWorkspace(t, wf)
+	assertHasDefaults(t, wf)
 	assertDefaultWorkflowGraph(t, wf.Graph)
 }
 
-func assertInheritsWorkspace(t *testing.T, wf models.WorkflowDef) {
+func assertHasDefaults(t *testing.T, wf models.WorkflowDef) {
 	t.Helper()
-	if wf.Defaults == nil || !wf.Defaults.InheritWorkspace {
-		t.Fatalf("defaults = %+v, want inheritWorkspace", wf.Defaults)
+	if wf.Defaults == nil {
+		t.Fatal("defaults missing")
 	}
 }
 
@@ -129,7 +129,7 @@ func TestOnboardingBootstrapKeepsExistingWorkflowDefaults(t *testing.T) {
 				}
 				return
 			}
-			if wf.Defaults == nil || wf.Defaults.InheritWorkspace || len(wf.Defaults.Variables) != 1 || wf.Defaults.Variables[0].Name != "REGION" {
+			if wf.Defaults == nil || len(wf.Defaults.Variables) != 1 || wf.Defaults.Variables[0].Name != "REGION" {
 				t.Fatalf("defaults = %+v, want existing defaults kept", wf.Defaults)
 			}
 		})
@@ -545,8 +545,8 @@ func TestCreateFromBaselineDefaultsShowOnHome(t *testing.T) {
 	if stored.Status() != "published" || !stored.ShowOnHome {
 		t.Fatalf("persisted status=%s showOnHome=%v (plan g1.1)", stored.Status(), stored.ShowOnHome)
 	}
-	assertInheritsWorkspace(t, wf)
-	assertInheritsWorkspace(t, stored)
+	assertHasDefaults(t, wf)
+	assertHasDefaults(t, stored)
 
 	if _, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
 		Name:  "首页可见工作流",

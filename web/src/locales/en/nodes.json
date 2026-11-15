@@ -5,13 +5,6 @@
       "agent": "Agent",
       "collaboration": "Collaboration"
     },
-    "palette": {
-      "control": "Control",
-      "agent": "Agent",
-      "collaboration": "Collaboration",
-      "searchPlaceholder": "Search nodes",
-      "footerHint": "Drag nodes onto the canvas to compose your workflow. Repository (GitLab/generic git) is optional for artifact-only flows."
-    },
     "input": {
       "label": "Input",
       "desc": "Workflow entry: define and validate inputs",
@@ -33,10 +26,6 @@
         "results": {
           "label": "Final result sources",
           "help": "Select upstream products as output card sources; drag to reorder. Each source can only be added once."
-        },
-        "auto_leftover_draft": {
-          "label": "Auto-write leftover requirement draft",
-          "help": "When on, if this run still has leftovers (test defects, failed cases, review findings/action items, or open clarify questions), create one self-contained requirement draft in the workspace with the requirement spec and full leftover text; it remains usable after the original workflow is deleted. Off by default."
         }
       },
       "outputs": {

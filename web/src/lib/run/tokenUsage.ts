@@ -295,15 +295,3 @@ export function mergeTokenUsageByModel(
   }
   return out
 }
-
-/** Sum totalTokens where present; all-null → null (never coerce unreported to 0). */
-export function sumTotalTokens(...values: Array<number | null | undefined>): number | null {
-  let sum = 0
-  let hasAny = false
-  for (const v of values) {
-    if (v == null) continue
-    hasAny = true
-    sum += v
-  }
-  return hasAny ? sum : null
-}

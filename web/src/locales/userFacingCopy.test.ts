@@ -62,8 +62,6 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.agentChatTester.missingCreateTest')).toMatch(/Chat test/i)
     expect(zh.global.t('pages.sandboxes.empty')).toContain('Agent Studio「对话测试」')
     expect(en.global.t('pages.sandboxes.empty')).toMatch(/Agent Studio → Chat test/i)
-    expect(zh.global.t('common.empty.noSandboxes')).toContain('Agent Studio「对话测试」')
-    expect(en.global.t('common.empty.noSandboxes')).toMatch(/Agent Studio → Chat test/i)
     expect(zh.global.t('pages.workspace.sharedAgent.extendHint')).toContain('Agent Studio「对话测试」')
     expect(zh.global.t('pages.workspace.sharedAgent.extendHint')).not.toContain('仅在此入口')
     expect(en.global.t('pages.workspace.sharedAgent.extendHint')).toMatch(/Agent Studio Chat test/i)
@@ -99,7 +97,6 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.runList.title')).toBe('运行记录')
     expect(en.global.t('pages.runList.title')).toBe('Run history')
     expect(zh.global.t('pages.runList.subtitle')).toBe('按工作流与状态筛选')
-    expect(zh.global.t('common.table.title')).toBe('标题')
     expect(zhRoute.route.runs).toBe('运行记录')
     expect(enRoute.route.runs).toBe('Run history')
   })
@@ -108,21 +105,16 @@ describe('user-facing copy remediation keys', () => {
     expect(zhNav.nav.dashboard).toBe('新需求')
     expect(zhRoute.route.dashboard).toBe('新需求')
     expect(zhNav.nav.dashboard).toBe(zhRoute.route.dashboard)
-    expect(zhNav.nav.gates).toBe('对话')
     expect(zhRoute.route.gates).toBe('对话')
-    expect(zh.global.t('pages.gatesInbox.title')).toBe('对话')
     expect(enNav.nav.dashboard).toBe('New request')
     expect(enRoute.route.dashboard).toBe('New request')
     expect(enNav.nav.dashboard).toBe(enRoute.route.dashboard)
-    expect(enNav.nav.gates).toBe('Conversation')
     expect(enRoute.route.gates).toBe('Conversation')
-    expect(en.global.t('pages.gatesInbox.title')).toBe('Conversation')
   })
 
   it('uses 智能体 for zh-CN agent nav/route/page title and points empty copy at the switcher', () => {
     expect(zhNav.nav.agents).toBe('智能体')
     expect(zhRoute.route.agents).toBe('智能体')
-    expect(zh.global.t('pages.agentStudio.title')).toBe('智能体')
     expect(zh.global.t('pages.agentStudio.tree.title')).toBe('智能体')
     expect(zh.global.t('pages.agentStudio.switcher.choose')).toBe('选择智能体')
     expect(enNav.nav.agents).toBe('Agent studio')
@@ -131,18 +123,10 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.agentStudio.tree.noSelection')).toBe('No agent selected.')
     expect(zh.global.t('pages.agentStudio.tree.noSelection')).not.toContain('Agent 管理')
     expect(en.global.t('pages.agentStudio.tree.noSelection')).not.toMatch(/agent management/i)
-    expect(zh.global.t('pages.agentStudio.tree.metaRenameHint')).not.toContain('Agent 管理')
-    expect(en.global.t('pages.agentStudio.tree.metaRenameHint')).not.toMatch(/agent management/i)
     expect(zh.global.t('pages.agentStudio.tree.contextRename')).toBe('重命名')
     expect(zh.global.t('pages.agentStudio.tree.contextDelete')).toBe('删除')
     expect(en.global.t('pages.agentStudio.tree.contextRename')).toBe('Rename')
     expect(en.global.t('pages.agentStudio.tree.contextDelete')).toBe('Delete')
-  })
-
-  it('human gate canvas subtitle avoids unconditional ReAct promise', () => {
-    expect(zh.global.t('pages.workflowEditor.canvas.humanGateSubtitle')).toBe('人工审批')
-    expect(zh.global.t('pages.workflowEditor.canvas.appPreviewSubtitle')).toContain('等待人工确认')
-    expect(zh.global.t('pages.workflowEditor.canvas.humanGateSubtitle')).not.toMatch(/ReAct/)
   })
 
   it('inbox first-load hint is distinct from empty and run-loading copy', () => {
@@ -195,32 +179,22 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.publicGate.badgeClarify')).toBe('待澄清')
     expect(en.global.t('pages.publicGate.badgeClarify')).toBe('Pending clarification')
     expect(zh.global.t('pages.publicGate.kindHintClarify')).toBe('外部澄清')
-    expect(zh.global.t('pages.publicGate.confirmHint')).toContain('不触发 Agent')
-    expect(zh.global.t('pages.publicGate.confirmHintClarify')).not.toContain('不触发 Agent')
     expect(zh.global.t('pages.gatesInbox.share.errors.notReviewSession')).toContain('待澄清')
-    expect(zh.global.t('pages.publicGate.heading')).toBe('审批工作台')
-    expect(en.global.t('pages.publicGate.heading')).toBe('Approval workbench')
     expect(zh.global.t('pages.publicGate.visualProduct')).toBe('视觉网页产物')
-    expect(zh.global.t('pages.publicGate.approve')).toBe('确认并流转')
-    expect(en.global.t('pages.publicGate.approve')).toMatch(/Confirm and advance/i)
     expect(zh.global.t('pages.publicGate.reject')).toBe('驳回')
     expect(en.global.t('pages.publicGate.reject')).toBe('Reject')
     expect(zh.global.t('pages.publicGate.doneApproved')).toBe('已确认')
     expect(zhRoute.route.publicGateApproval).toBe('外部一次决策')
     expect(enRoute.route.publicGateApproval).toBe('One-time external decision')
-    expect(zh.global.t('pages.publicGate.confirm')).toBe('确认并流转')
-    expect(en.global.t('pages.publicGate.confirm')).toMatch(/Confirm and advance/i)
     expect(zh.global.t('pages.publicGate.doneConfirmed')).toBe('已确认')
     expect(en.global.t('pages.publicGate.doneConfirmed')).toBe('Confirmed')
     expect(zh.global.t('pages.gatesInbox.share.errors.reviewBusy')).toContain('复审进行中')
     expect(zh.global.t('pages.publicGate.busy')).toContain('复审进行中')
     expect(zh.global.t('pages.publicGate.sandboxBusy')).toContain('沙箱')
-    expect(zh.global.t('pages.publicGate.abortAndConfirm')).toBe('中止当前回合并确认')
     expect(zh.global.t('pages.clarify.sandboxBusy')).toContain('沙箱')
     expect(zh.global.t('pages.clarify.abortAndConfirm')).toBe('中止当前回合并确认')
     expect(zh.global.t('pages.clarify.sandboxOrphanCancel')).toContain('中止')
     expect(zh.global.t('pages.publicGate.validationFailed')).toContain('产物校验')
-    expect(zh.global.t('pages.publicGate.confirming')).toBe('正在确认…')
     expect(zh.global.t('pages.publicGate.securityCheckFailed')).toBe('安全校验未通过，请再试一次「确认并流转」')
     expect(zh.global.t('pages.publicGate.linkInvalid')).toBe('链接失效，请重新打开复审链接')
     expect(zh.global.t('pages.publicGate.networkFault')).toBe('网络故障，请检查网络后重试')
@@ -228,20 +202,6 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.publicGate.submitting')).toBe('提交中…')
     expect(zh.global.t('pages.workspace.audit.callerExternal')).toBe('外部')
     expect(en.global.t('pages.workspace.audit.callerExternal')).toBe('External')
-  })
-
-  it('integrations subtitle is the live mcp key without env/template pile-up', () => {
-    const sub = zh.global.t('mcp.integrations.subtitle')
-    expect(sub).toContain('MCP')
-    expect(sub).not.toMatch(/GITLAB_/)
-    expect(sub).not.toMatch(/\$\{vars/)
-    expect(sub).not.toMatch(/作用域注入/)
-  })
-
-  it('token empty-state drops Usage/分桶/bridge/回填 jargon', () => {
-    expect(zh.global.t('pages.board.tokenStats.emptyTrendHint')).not.toMatch(/Usage|分桶|bridge|回填/)
-    expect(zh.global.t('pages.board.tokenStats.emptyRankHint')).not.toMatch(/Usage|分桶|bridge|回填/)
-    expect(zh.global.t('pages.board.tokenStats.filledTag')).not.toMatch(/回填/)
   })
 
   it('unknown model display name settings copy avoids 分桶 jargon', () => {
@@ -260,34 +220,6 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.tokenByModel.unknownBadge')).toBe('未知')
   })
 
-  it('model rank card copy has no unknown≠other hint (g1.3)', () => {
-    expect(zh.global.te('pages.board.tokenStats.modelRankHint')).toBe(false)
-    expect(en.global.te('pages.board.tokenStats.modelRankHint')).toBe(false)
-
-    const zhRank = [
-      zh.global.t('pages.board.tokenStats.modelRankTitle'),
-      zh.global.t('pages.board.tokenStats.modelRankSub'),
-      zh.global.t('pages.board.tokenStats.modelOther'),
-      zh.global.t('pages.board.tokenStats.emptyModelRankHint'),
-    ].join('\n')
-    const enRank = [
-      en.global.t('pages.board.tokenStats.modelRankTitle'),
-      en.global.t('pages.board.tokenStats.modelRankSub'),
-      en.global.t('pages.board.tokenStats.modelOther'),
-      en.global.t('pages.board.tokenStats.emptyModelRankHint'),
-    ].join('\n')
-
-    expect(zhRank).toContain('模型消耗排行')
-    expect(zhRank).toContain('Top10 · 其余 → other')
-    expect(zhRank).toContain('other（其余模型）')
-    expect(zhRank).not.toMatch(/未知\s*[≠不等].*other|与 other 不同|不是 other/)
-    expect(enRank).toContain('Model usage ranking')
-    expect(enRank).toContain('Top10 · rest → other')
-    expect(enRank).toContain('other (remaining models)')
-    expect(enRank).not.toMatch(/Unknown is not the same as other/i)
-    expect(enRank).not.toMatch(/Unknown.*≠.*other/i)
-  })
-
   it('user-facing product naming uses 工作区助手 / Workspace assistant consistently', () => {
     const zhKeys = [
       'common.runTrigger.pmMcp',
@@ -299,7 +231,6 @@ describe('user-facing copy remediation keys', () => {
       'mcp.pmWorkflowRead.desc',
       'mcp.pmWorkflowWrite.desc',
       'mcp.pmAgentFs.desc',
-      'mcp.pmPrdManager.desc',
     ] as const
     for (const key of zhKeys) {
       const text = zh.global.t(key)
@@ -318,7 +249,6 @@ describe('user-facing copy remediation keys', () => {
       'mcp.pmWorkflowRead.desc',
       'mcp.pmWorkflowWrite.desc',
       'mcp.pmAgentFs.desc',
-      'mcp.pmPrdManager.desc',
     ] as const
     for (const key of enKeys) {
       const text = en.global.t(key)
@@ -354,14 +284,12 @@ describe('user-facing copy remediation keys', () => {
       expect(en.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
     }
 
-    for (const key of ['pmProgress', 'pmWorkflowRead', 'pmWorkflowWrite', 'pmAgentFs', 'pmPrdManager']) {
+    for (const key of ['pmProgress', 'pmWorkflowRead', 'pmWorkflowWrite', 'pmAgentFs']) {
       expect(zh.global.t(`mcp.${key}.convention`)).toContain('设置 → 助手设置')
       expect(en.global.t(`mcp.${key}.convention`)).toContain('Settings → Assistant settings')
     }
 
     // MCP server ids stay as protocol names
-    expect(zh.global.t('mcp.pmProgress.name')).toBe('pm-progress')
-    expect(en.global.t('mcp.pmProgress.name')).toBe('pm-progress')
   })
 
   it('zh-CN bundle says 工作流, never the retired pipeline wording', () => {

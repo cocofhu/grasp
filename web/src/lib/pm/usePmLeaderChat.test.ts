@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   createPmThread: vi.fn(),
   deletePmThread: vi.fn(),
   listPmMessages: vi.fn(),
-  patchPmMessage: vi.fn(),
   pmThreadChatWsUrl: vi.fn(() => 'ws://example.test/pm'),
 }))
 
@@ -25,7 +24,6 @@ vi.mock('@/lib/api/api', async () => {
       createPmThread: mocks.createPmThread,
       deletePmThread: mocks.deletePmThread,
       listPmMessages: mocks.listPmMessages,
-      patchPmMessage: mocks.patchPmMessage,
       pmThreadChatWsUrl: mocks.pmThreadChatWsUrl,
     },
   }

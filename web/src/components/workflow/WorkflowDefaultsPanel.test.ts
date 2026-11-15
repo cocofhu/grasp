@@ -36,7 +36,7 @@ describe('Workflow defaults', () => {
       { id: 'p1', name: 'web', repoUrl: 'https://github.com/org/web.git', defaultBranch: 'main' },
       { id: 'p2', name: 'api', repoUrl: 'https://github.com/org/api.git' },
     ])
-    const { workflow, wrapper } = setup({ inheritWorkspace: true })
+    const { workflow, wrapper } = setup({})
     await flushPromises()
     const section = wrapper.get('[data-testid="workflow-repos-settings"]')
     await section.get('[data-testid="repo-choice-toggle-p2"]').trigger('click')
@@ -51,7 +51,7 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('keeps a binding to a deleted repository visible so it can be removed', async () => {
-    const { workflow, wrapper } = setup({ inheritWorkspace: true, repos: [{ projectId: 'gone' }] })
+    const { workflow, wrapper } = setup({ repos: [{ projectId: 'gone' }] })
     await flushPromises()
     expect(wrapper.get('[data-testid="repo-choice-gone"]').text()).toContain(common.common.repoChoices.deleted)
     await wrapper.get('[data-testid="repo-choice-toggle-gone"]').trigger('click')
@@ -59,7 +59,7 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('preserves independent variables and explicit disabled policies on ordinary edits', async () => {
-    const original = { inheritWorkspace: false, variables: [{ name: 'LOCAL', type: 'string', value: 'before' }], notifyPolicy: { enabled: false, channelIds: ['unavailable-channel'], defaultEvents: ['failed'] }, gateAuto: { enabled: false, agentName: 'original', variable: 'gate', prompt: 'prompt', enabledMcps: ['pm-progress'] } }
+    const original = { variables: [{ name: 'LOCAL', type: 'string', value: 'before' }], notifyPolicy: { enabled: false, channelIds: ['unavailable-channel'], defaultEvents: ['failed'] }, gateAuto: { enabled: false, agentName: 'original', variable: 'gate', prompt: 'prompt', enabledMcps: ['pm-progress'] } }
     const { workflow, wrapper } = setup(original)
     await flushPromises()
     await wrapper.findAll('input').find((input) => input.attributes('aria-label') === pages.pages.workspaceDefaults.defaultValue)!.setValue('after')
@@ -69,8 +69,6 @@ describe('Workflow defaults', () => {
   it('creates ordinary overrides and restores policy inheritance by removing their fields', async () => {
     const { workflow, wrapper } = setup()
     await flushPromises()
-    await wrapper.get('[role="switch"][aria-label="继承工作区共享变量"]').trigger('click')
-    expect(workflow.defaults).toEqual({ inheritWorkspace: false, variables: [] })
     const notify = wrapper.get('[role="switch"][aria-label="单独设置运行通知"]')
     await notify.trigger('click')
     expect(workflow.defaults!.notifyPolicy).toMatchObject({ enabled: true })
@@ -84,7 +82,7 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('does not submit a secret mask as a renamed variable or as a plaintext value', async () => {
-    const { workflow, wrapper } = setup({ inheritWorkspace: true, variables: [{ name: 'TOKEN', type: 'string', value: '****', secret: true, ask: true, required: true, editable: true }] })
+    const { workflow, wrapper } = setup({ variables: [{ name: 'TOKEN', type: 'string', value: '****', secret: true, ask: true, required: true, editable: true }] })
     await flushPromises()
     const variableSection = wrapper.get('[data-testid="workflow-variables-settings"]')
     await variableSection.get(`input[aria-label="${pages.pages.workspaceDefaults.variableName}"]`).setValue('RENAMED_TOKEN')
@@ -100,7 +98,7 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('stores valid scalar values when the user changes the variable type', async () => {
-    const { workflow, wrapper } = setup({ inheritWorkspace: false, variables: [{ name: 'COUNT', type: 'string', value: '12', desc: 'Keep description', ask: true }] })
+    const { workflow, wrapper } = setup({ variables: [{ name: 'COUNT', type: 'string', value: '12', desc: 'Keep description', ask: true }] })
     await flushPromises()
     await chooseType(wrapper, 'number')
     expect(workflow.defaults!.variables[0]).toEqual({ name: 'COUNT', type: 'number', value: 12, desc: 'Keep description', ask: true })
@@ -116,16 +114,15 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('lets a migrated workflow with a null variable list add its first override', async () => {
-    const { workflow, wrapper } = setup({ inheritWorkspace: false, variables: null } as unknown as Workflow['defaults'])
+    const { workflow, wrapper } = setup({ variables: null } as unknown as Workflow['defaults'])
     await flushPromises()
     await wrapper.get(`[aria-label="${pages.pages.workspaceDefaults.addVariable}"]`).trigger('click')
-    expect(workflow.defaults).toEqual({ inheritWorkspace: false, variables: [{ name: '', type: 'string', value: '' }] })
+    expect(workflow.defaults).toEqual({ variables: [{ name: '', type: 'string', value: '' }] })
     expect(wrapper.get(`input[aria-label="${pages.pages.workspaceDefaults.variableName}"]`).exists()).toBe(true)
     wrapper.unmount()
   })
   it('shows effective notification and MCP defaults without writing them until the user changes them', async () => {
     const original = {
-      inheritWorkspace: true,
       variables: [],
       notifyPolicy: { enabled: null, defaultEvents: null, channelIds: [] },
       gateAuto: { enabled: false, agentName: 'saved-agent', variable: '', prompt: '', enabledMcps: null },
@@ -137,19 +134,18 @@ describe('Workflow defaults', () => {
     const failed = notify.findAll('[aria-pressed]').find((button) => button.text() === '运行失败')!
     expect(failed.attributes('aria-pressed')).toBe('true')
     const gate = wrapper.get('[data-testid="workflow-gate-settings"]')
-    expect(gate.findAll('[aria-pressed="true"]')).toHaveLength(5)
+    expect(gate.findAll('[aria-pressed="true"]')).toHaveLength(4)
     expect(workflow.defaults).toEqual(original)
     await failed.trigger('click')
     expect(workflow.defaults!.notifyPolicy!.defaultEvents).toEqual(['waiting_human'])
     await gate.findAll('[aria-pressed]').find((button) => button.text() === 'pm-progress')!.trigger('click')
-    expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager'])
+    expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs'])
     await wrapper.get('[role="switch"][aria-label="发送运行通知"]').trigger('click')
     expect(workflow.defaults!.notifyPolicy!.enabled).toBe(false)
     wrapper.unmount()
   })
   it('preserves explicit disabled settings and unknown selections while editing known options', async () => {
     const { workflow, wrapper } = setup({
-      inheritWorkspace: true,
       variables: [],
       notifyPolicy: { enabled: false, defaultEvents: ['other-event'], channelIds: ['unavailable-channel'] },
       gateAuto: { enabled: false, agentName: 'unavailable-agent', variable: '', prompt: '', enabledMcps: ['other-pack'] },
@@ -178,8 +174,6 @@ describe('Workflow defaults', () => {
   it('toggles each settings row once and keeps notification and approval sections mounted', async () => {
     const { workflow, wrapper } = setup()
     await flushPromises()
-    await wrapper.get('[data-testid="workflow-inherit-row"]').get('span').trigger('click')
-    expect(workflow.defaults?.inheritWorkspace).toBe(false)
     const notify = wrapper.get('[data-testid="workflow-notify-expansion"]')
     const gate = wrapper.get('[data-testid="workflow-gate-expansion"]')
     expect(notify.attributes('hidden')).toBeUndefined()
@@ -208,7 +202,7 @@ describe('Workflow defaults', () => {
   })
 
   it('inserts a variable row, then removes it only after the row collapses', async () => {
-    const { workflow, wrapper } = setup({ inheritWorkspace: false, variables: [] })
+    const { workflow, wrapper } = setup({ variables: [] })
     await flushPromises()
     const motion = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/icon-motion.css'), 'utf8')
     expect(motion).toMatch(/@keyframes iconMotion_plus_m20_39998[\s\S]*?scale\(1\.26\)/)

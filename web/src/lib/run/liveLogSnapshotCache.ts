@@ -54,12 +54,6 @@ export function putLiveLogMcpCalls(runId: string, nodeId: string, mcpCalls: McpC
   })
 }
 
-/** True when the snapshot has displayable timeline content. */
-export function snapshotHasContent(snap: LiveLogNodeSnapshot | undefined): boolean {
-  if (!snap) return false
-  return !!(snap.eventPage?.events.length || snap.mcpCalls?.length)
-}
-
 /** List all cached node snapshots for a run (for restore after hard remount). */
 export function listLiveLogSnapshotsForRun(
   runId: string,

@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   createPmThread: vi.fn(),
   deletePmThread: vi.fn(),
   listPmMessages: vi.fn(),
-  patchPmMessage: vi.fn(),
   startPmTurn: vi.fn(),
   cancelPmTurn: vi.fn(),
   pmThreadChatWsUrl: vi.fn(() => 'ws://example.test/pm'),
@@ -35,7 +34,6 @@ vi.mock('@/lib/api/api', async () => {
       createPmThread: mocks.createPmThread,
       deletePmThread: mocks.deletePmThread,
       listPmMessages: mocks.listPmMessages,
-      patchPmMessage: mocks.patchPmMessage,
       startPmTurn: mocks.startPmTurn,
       cancelPmTurn: mocks.cancelPmTurn,
       pmThreadChatWsUrl: mocks.pmThreadChatWsUrl,
@@ -162,7 +160,6 @@ describe('usePmLeaderChat actions', () => {
       waiting: 1,
     }))
     mocks.cancelPmTurn.mockResolvedValue({ ok: true })
-    mocks.patchPmMessage.mockImplementation(async (_t, id, patch) => message(id, 'user', patch))
   })
 
   afterEach(() => {
@@ -685,7 +682,6 @@ describe('usePmLeaderChat actions', () => {
     expect(chat.messages.value[0]?.status).toBe('failed')
     expect(chat.messages.value[0]?.failKind).toBe('unknown')
     expect(mocks.toastError).toHaveBeenCalledWith('acp closed')
-    expect(mocks.patchPmMessage).not.toHaveBeenCalled()
     app.unmount()
   })
 

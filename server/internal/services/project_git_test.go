@@ -76,7 +76,7 @@ func TestProjectDeleteUnbindsWorkflows(t *testing.T) {
 	wf := models.WorkflowDef{ID: "wf-repos", Name: "repos", Graph: models.Graph{
 		Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 		Edges: []models.Edge{{ID: "e", Source: "in", Target: "out"}},
-	}, Defaults: &models.WorkflowDefaults{InheritWorkspace: true, Repos: []models.RepoChoice{{ProjectID: web.ID, Branch: "main"}, {ProjectID: api.ID}}}}
+	}, Defaults: &models.WorkflowDefaults{Repos: []models.RepoChoice{{ProjectID: web.ID, Branch: "main"}, {ProjectID: api.ID}}}}
 	if err := workflows.Save(&wf); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestProjectDeleteUnbindsWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := workflows.Get(wf.ID)
-	if got.Defaults == nil || !got.Defaults.InheritWorkspace || len(got.Defaults.Repos) != 1 || got.Defaults.Repos[0].ProjectID != api.ID {
+	if got.Defaults == nil || len(got.Defaults.Repos) != 1 || got.Defaults.Repos[0].ProjectID != api.ID {
 		t.Fatalf("defaults after delete = %+v", got.Defaults)
 	}
 	if _, err := projects.Get(web.ID); projectErrCode(err) != "project_not_found" {

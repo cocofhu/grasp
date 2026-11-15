@@ -139,11 +139,9 @@ describe('runsClient request coverage', () => {
       method: 'POST',
       body: JSON.stringify({ ttlTier: '8h', permissionPreset: 'react_only' }),
     }))
-    await runsClient.getGateShareLink('r', 'n')
     await runsClient.regenGateShareLink('r', 'n')
     await runsClient.revokeGateShareLink('r', 'n')
     await runsClient.createReviewShareLink('r', 'n')
-    await runsClient.getReviewShareLink('r', 'n')
     await runsClient.regenReviewShareLink('r', 'n')
     await runsClient.revokeReviewShareLink('r', 'n')
     await runsClient.listGatePrimaryArtifacts('r', 'n')

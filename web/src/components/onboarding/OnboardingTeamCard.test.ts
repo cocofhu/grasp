@@ -54,7 +54,6 @@ describe('OnboardingTeamCard', () => {
     expect(zh.text()).toContain('模型组')
     expect(zh.get('[data-test="app-select-trigger"]').attributes('aria-label')).toBe('模型组')
     expect(i18n.global.t('pages.onboarding.team.meta')).toContain('指定模型组')
-    expect(i18n.global.t('pages.onboarding.team.modelPlaceholder')).toBe('留空沿用工作区默认')
     expect(i18n.global.t('pages.onboarding.solo.description')).toBe(
       '默认创建一个空白 Solo Agent，使用上面选择的模型与 Git 配置，供 Solo 对话使用。',
     )

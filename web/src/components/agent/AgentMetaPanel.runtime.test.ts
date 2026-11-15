@@ -82,7 +82,6 @@ describe('Agent saved configuration editing', () => {
   expect(w.findAll('a')).toHaveLength(0)
   expect(w.find('agent-credential-bindings-stub').exists()).toBe(false)
   expect(w.find('[data-testid="agent-credential-bindings"]').exists()).toBe(false)
-  expect(w.text()).not.toContain(pages.pages.agentStudio.meta.capabilitiesNote)
   expect(fromDraft(draft)).toMatchObject({ inheritModel: false, modelBinding: { kind: 'configuration', configurationId: 'cfg' } })
   expect(fromDraft(draft)).not.toHaveProperty('gitBindings'); w.unmount()
  })

@@ -20,7 +20,6 @@ const apiMocks = vi.hoisted(() => ({
   cancelPmTurn: vi.fn(),
   sandboxChatWsUrl: vi.fn(() => 'ws://test/sandbox/1'),
   pmThreadChatWsUrl: vi.fn(() => 'ws://test/pm/thr-new/chat'),
-  patchPmMessage: vi.fn(),
   deletePmThread: vi.fn(),
   artifactContent: vi.fn(),
   artifactVersions: vi.fn(),
@@ -40,7 +39,6 @@ vi.mock('@/lib/api/api', async () => {
       cancelPmTurn: apiMocks.cancelPmTurn,
       sandboxChatWsUrl: apiMocks.sandboxChatWsUrl,
       pmThreadChatWsUrl: apiMocks.pmThreadChatWsUrl,
-      patchPmMessage: apiMocks.patchPmMessage,
       deletePmThread: apiMocks.deletePmThread,
       artifactContent: apiMocks.artifactContent,
       artifactVersions: apiMocks.artifactVersions,
@@ -238,7 +236,6 @@ describe('PmLeaderChat ACP + hydrate', () => {
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'unknown' })
   })
 
   afterEach(() => {
@@ -287,7 +284,6 @@ describe('PmLeaderChat ACP + hydrate', () => {
     expect(wrapper.text()).toContain('空回复')
     expect(wrapper.text()).toContain('本轮未产出有效回复')
     expect(wrapper.text()).toContain('重试')
-    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -334,7 +330,6 @@ describe('PmLeaderChat ACP + hydrate', () => {
 
     expect(wrapper.text()).toContain('空回复')
     expect(wrapper.text()).toContain('重试')
-    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
     expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalledWith('thr-1')
     wrapper.unmount()
   })
@@ -358,7 +353,6 @@ describe('PmLeaderChat ACP + hydrate', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('partial…')
-    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
     expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
@@ -411,7 +405,6 @@ describe('PmLeaderChat ACP + hydrate', () => {
     socket.onclose?.()
     await flushPromises()
 
-    expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('连接中断')
     expect(wrapper.text()).toContain('写到一半')
     expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(true)
@@ -522,7 +515,6 @@ describe('PmLeaderChat loading states S1–S5', () => {
     localStorage.clear()
     // @ts-expect-error test stub
     globalThis.WebSocket = MockWebSocket
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'connection' })
   })
 
   afterEach(() => {
@@ -689,7 +681,6 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
-    apiMocks.patchPmMessage.mockResolvedValue({ id: 'u1', status: 'failed', failKind: 'unknown' })
   })
 
   afterEach(() => {

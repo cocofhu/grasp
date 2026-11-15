@@ -6,7 +6,6 @@ import type {
   ReferenceInput,
   ReferenceSearchResult,
   SoloCreateBody,
-  SoloEnvEntry,
   SoloMessage,
   SoloResources,
   SoloSession,
@@ -89,7 +88,6 @@ export const soloClient = {
   /** Resumes the same sandbox of a running session after the platform paused it. */
   wakeSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/wake`, { method: 'POST' }),
-  getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
   /** Home workflow composer: the workflow's default repos and first clarify Agent. */
   searchWorkflowReferences: <T>(workflowId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
     req<ReferenceSearchResult<T>>(`/workflows/${enc(workflowId)}/references/search?${referenceQuery(params)}`, { signal }),

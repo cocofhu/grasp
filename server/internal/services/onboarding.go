@@ -637,7 +637,7 @@ func withBoundRepos(defaults *models.WorkflowDefaults, repos []models.RepoChoice
 	if len(repos) == 0 {
 		return defaults
 	}
-	out := models.WorkflowDefaults{InheritWorkspace: true}
+	out := models.WorkflowDefaults{}
 	if defaults != nil {
 		out = *defaults
 	}

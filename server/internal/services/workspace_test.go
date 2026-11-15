@@ -25,34 +25,6 @@ func TestWorkspaceMissingRowReportsError(t *testing.T) {
 	}
 }
 
-func TestWorkflowDefaultsKeepSecretMetadataAndGraphIndependentInheritance(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "defaults.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace := NewWorkspaceService(db)
-	vars := []models.WorkspaceVariable{{Name: "global", Type: "string", Value: "global"}, {Name: "token", Type: "string", Value: "workspace-token", Secret: true}}
-	if _, err = workspace.Update(nil, nil, &vars, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	wf := models.WorkflowDef{ID: "defaults", Name: "Defaults", Defaults: &models.WorkflowDefaults{InheritWorkspace: true, Variables: []models.WorkspaceVariable{{Name: "token", Type: "string", Value: "workflow-token", Secret: true}}}}
-	if err = db.Create(&wf).Error; err != nil {
-		t.Fatal(err)
-	}
-	effective := workspace.VariablesForWorkflow(wf.ID)
-	if len(effective) != 2 || effective[1].Value != "workflow-token" || !effective[1].Secret {
-		t.Fatalf("effective = %+v", effective)
-	}
-	wf.Defaults.InheritWorkspace = false
-	if err = db.Save(&wf).Error; err != nil {
-		t.Fatal(err)
-	}
-	effective = workspace.VariablesForWorkflow(wf.ID)
-	if len(effective) != 1 || effective[0].Name != "token" {
-		t.Fatalf("inheritance disabled = %+v", effective)
-	}
-}
-
 func TestWorkflowCatalogNeverLoadsGraphOrDefaults(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "catalog.db"))
 	if err != nil {

@@ -1,9 +1,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  NODE_DEFS as RAW_NODE_DEFS,
-  PALETTE_GROUPS as RAW_PALETTE_GROUPS,
-} from '@/data/nodeRegistry'
+import { NODE_DEFS as RAW_NODE_DEFS } from '@/data/nodeRegistry'
 import type { NodeType, NodeTypeDef } from '@/lib/shared/types'
 
 function safeT(t: (key: string) => string, key: string | undefined): string | undefined {
@@ -56,18 +53,4 @@ export function useNodeDefs() {
   })
 
   return { NODE_DEFS }
-}
-
-export function usePaletteGroups() {
-  const { t, locale } = useI18n()
-
-  const PALETTE_GROUPS = computed(() => {
-    void locale.value
-    return RAW_PALETTE_GROUPS.map((g) => ({
-      ...g,
-      title: t(g.title),
-    }))
-  })
-
-  return { PALETTE_GROUPS }
 }

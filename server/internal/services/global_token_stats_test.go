@@ -53,7 +53,7 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	_, err = s.CreateFixture("GlobalStats", "", nil)
+	_, err = s.CreateFixture("GlobalStats", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +112,11 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	_, err = s.CreateFixture("Grasp", "", nil)
+	_, err = s.CreateFixture("Grasp", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
 	must(&models.WorkflowDef{ID: "wf-rb", Name: "main", Version: 1})
@@ -189,11 +189,11 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	_, err = s.CreateFixture("Grasp", "", nil)
+	_, err = s.CreateFixture("Grasp", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
 	must(&models.WorkflowDef{ID: "wf-rbf", Name: "main", Version: 1})
@@ -271,7 +271,7 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC) // 20:00 Shanghai
-	_, err = s.CreateFixture("G24h", "", nil)
+	_, err = s.CreateFixture("G24h", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestGlobalTokenStats24hEmptyWindow(t *testing.T) {
 	}
 	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
-	if _, err := s.CreateFixture("EmptyG24h", "", nil); err != nil {
+	if _, err := s.CreateFixture("EmptyG24h", ""); err != nil {
 		t.Fatal(err)
 	}
 	syncTokenLedger(t, db)

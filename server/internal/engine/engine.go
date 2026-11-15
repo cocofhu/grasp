@@ -90,10 +90,10 @@ type Engine struct {
 	pendingReattach  []reattachInfo
 	adoptedSandboxes map[string]bool
 
-	// workspaceVarsLookup, when set, returns workspace-level workflow variables
-	// for a workflow so StartRun can seed them into vars.* before Graph.Variables
-	// and launch inputs overlay. Optional (nil = no workspace seed).
-	workspaceVarsLookup func(workflowID string) []models.WorkspaceVariable
+	// defaultVarsLookup, when set, returns a workflow's default variables so
+	// StartRun can seed them into vars.* before Graph.Variables and launch
+	// inputs overlay. Optional (nil = no default seed).
+	defaultVarsLookup func(workflowID string) []models.WorkspaceVariable
 
 	// auditRecorder, when set, receives lifecycle events
 	// (run terminal states, gate decisions). Fail-open is the recorder's job.
@@ -233,10 +233,10 @@ func (e *Engine) SetAgents(skills SkillLookup) { e.skills = skills }
 // MaxConcurrent returns the current concurrency cap.
 func (e *Engine) MaxConcurrent() int { return e.sem.Limit() }
 
-// SetWorkspaceVarsLookup wires the lookup used by StartRun to seed workspace-level
-// workflow variables into the run's vars.* namespace.
-func (e *Engine) SetWorkspaceVarsLookup(fn func(workflowID string) []models.WorkspaceVariable) {
-	e.workspaceVarsLookup = fn
+// SetDefaultVarsLookup wires the lookup used by StartRun to seed a workflow's
+// default variables into the run's vars.* namespace.
+func (e *Engine) SetDefaultVarsLookup(fn func(workflowID string) []models.WorkspaceVariable) {
+	e.defaultVarsLookup = fn
 }
 
 // ShareLinkRevoker invalidates unused temporary approval links.

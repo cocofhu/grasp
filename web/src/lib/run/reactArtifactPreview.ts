@@ -46,10 +46,6 @@ export function canAnnotateStageArtifact(
 
 const HISTORICAL_PAGE_ID = /^historical-page:([^:]+):(\d+)$/
 
-export function historicalStageArtifactId(nodeId: string, iteration: number): string {
-  return `historical-page:${nodeId}:${iteration}`
-}
-
 export function parseHistoricalStageArtifact(
   artifact: Partial<Pick<Artifact, 'id'>> | null | undefined,
 ): { nodeId: string; iteration: number } | null {
@@ -246,26 +242,6 @@ export function closeStagePreviewTab(openNames: string[], name: string): string[
   return openNames.filter((n) => n !== name)
 }
 
-/** After closing a tab, stay on the current one, else neighbor, else noVNC / workflow grid. */
-export function nextTabAfterClose(
-  openNames: string[],
-  closed: string,
-  currentTab: string,
-  novncOpen = false,
-): string {
-  const remaining = closeStagePreviewTab(openNames, closed)
-  const currentName = previewTabName(currentTab)
-  if (currentName !== closed) {
-    return currentTab
-  }
-  if (!remaining.length) {
-    return novncOpen ? REACT_STAGE_TAB_NOVNC : REACT_STAGE_TAB_GRID
-  }
-  const i = openNames.indexOf(closed)
-  const pick = remaining[Math.min(Math.max(i, 0), remaining.length - 1)] ?? remaining[remaining.length - 1]
-  return previewTabId(pick)
-}
-
 const KIND_I18N: Record<string, string> = {
   html: 'pages.reactArtifactStage.kindHtml',
   json: 'pages.reactArtifactStage.kindJson',
@@ -374,10 +350,6 @@ export function clarifyStageRemoteKind(hasRegisteredPreview: boolean): ReactStag
   return hasRegisteredPreview ? 'app' : 'off'
 }
 
-export function isClarifyGraphNode(run: Run | null | undefined, nodeId: string | null | undefined): boolean {
-  return isClarifyNode(findGraphNode(run?.nodes, nodeId))
-}
-
 export function inboxStageRemoteKind(opts: {
   appPreview: boolean
   run?: Run | null
@@ -393,25 +365,6 @@ export function inboxStageRemoteKind(opts: {
     return isPreviewNode(n) ? clarifyStageRemoteKind(!!opts.hasRegisteredPreview) : 'sandbox'
   }
   return 'off'
-}
-
-/** Copy artifacts + previewArtifact without replacing chat turns / sessions. */
-export function applyPreviewArtifactFromRun(current: Run, incoming: Run): Run {
-  const next: Run = { ...current, artifacts: incoming.artifacts ?? current.artifacts }
-  if (incoming.clarify) {
-    next.clarify = current.clarify
-      ? { ...current.clarify, previewArtifact: incoming.clarify.previewArtifact }
-      : incoming.clarify
-  }
-  if (incoming.clarifyByNode) {
-    const byNode = { ...(current.clarifyByNode || {}) }
-    for (const [id, conv] of Object.entries(incoming.clarifyByNode)) {
-      const cur = byNode[id]
-      byNode[id] = cur ? { ...cur, previewArtifact: conv.previewArtifact } : conv
-    }
-    next.clarifyByNode = byNode
-  }
-  return next
 }
 
 export function applyPreviewArtifactName(current: Run, nodeId: string, name: string): Run {

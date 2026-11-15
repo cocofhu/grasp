@@ -115,14 +115,10 @@ describe('NodeInspector · control and collaboration fields', () => {
     expect(hint.map((o) => o.text())).toEqual([t('pages.workflowEditor.inspector.connectUpstreamForBody')])
   })
 
-  it('renders the output sources editor and switch fields for output', async () => {
-    const target = node('output', { results: [] })
-    const w = mountInspector(target)
+  it('renders only the output sources editor for output', () => {
+    const w = mountInspector(node('output', { results: [] }))
     expect(w.find('[data-testid="output-sources"]').exists()).toBe(true)
-    const sw = w.find('[data-testid="node-switch-auto_leftover_draft"]')
-    expect(sw.exists()).toBe(true)
-    await sw.trigger('click')
-    expect(target.config.auto_leftover_draft).toBe(true)
+    expect(w.find('[data-testid^="node-switch-"]').exists()).toBe(false)
   })
 
   it('offers human gate outputs as goal variables to agents', async () => {

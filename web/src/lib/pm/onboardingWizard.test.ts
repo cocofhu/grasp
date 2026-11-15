@@ -16,20 +16,16 @@ import {
   freshOnboardingDraft,
   freshOnboardingTeam,
   gitConfigured,
-  hasDefaultWorkflow,
   isOnboardingSuppressed,
   isProtectedOnboardingAgentName,
-  isRequiredTemplate,
   missingOnboardingNames,
   needsOnboarding,
   onboardingAgentsReady,
-  setTeamMemberEnabled,
   teamNameIssues,
   teamValid,
   gitIdentityConfigured,
   repoConfigured,
   repoNameFromUrl,
-  sanitizeOnboardingPrefix,
   shouldAutoOpenOnboarding,
 } from './onboardingWizard'
 import { i18n } from '@/lib/shared/i18n'
@@ -148,7 +144,6 @@ describe('onboardingWizard', () => {
     expect(d.team.map((m) => m.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
     d.team[1]!.modelConfigurationId = 'model-review'
     d.team[1]!.name = '编码'
-    setTeamMemberEnabled(d.team, 'test_review', false)
     expect(assembleBootstrapBody(d).agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
       { templateId: 'implement', name: '实现', modelConfigurationId: 'model-review' },
@@ -159,11 +154,7 @@ describe('onboardingWizard', () => {
 
   it('keeps every template required and resets names to the canonical defaults', () => {
     const team = freshOnboardingTeam()
-    setTeamMemberEnabled(team, 'test_review', false)
-    setTeamMemberEnabled(team, 'deliver', false)
     expect(team.every((m) => m.enabled)).toBe(true)
-    expect(isRequiredTemplate('test_review')).toBe(true)
-    expect(isRequiredTemplate('deliver')).toBe(true)
     expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
 
     applyDefaultTeamNames(team, ['需求澄清', '实现', '测试评审', '交付'])
@@ -203,7 +194,6 @@ describe('onboardingWizard', () => {
   it('previews the default workflow with every role and the fail loop', () => {
     const team = freshOnboardingTeam()
     applyDefaultTeamNames(team, [...ONBOARDING_AGENT_NAMES])
-    setTeamMemberEnabled(team, 'test_review', false)
     const full = buildOnboardingWorkflowPreview(team)
     expect(full.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'test_review', 'deliver', 'output'])
     expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('实现')
@@ -254,10 +244,8 @@ describe('onboardingWizard', () => {
 
   it('derives role names independently of the workspace name', () => {
     expect(ONBOARDING_AGENT_NAMES).toEqual(['需求澄清', '实现', '测试评审', '交付'])
-    expect(sanitizeOnboardingPrefix('支付中台')).toBe('支付中台')
     expect(deriveOnboardingAgentNames()).toEqual([...ONBOARDING_AGENT_NAMES])
     expect(deriveOnboardingAgentNames('zh-CN')).toEqual([...ONBOARDING_AGENT_NAMES])
-    expect(Array.from(sanitizeOnboardingPrefix('长'.repeat(80))).length).toBe(54)
   })
 
   it('localizes default role names and keeps every one a valid Agent name', () => {
@@ -294,9 +282,6 @@ describe('onboardingWizard', () => {
   })
 
   it('an English first install also counts as finished', () => {
-    expect(hasDefaultWorkflow([{ name: ' Default Workflow ' }])).toBe(true)
-    expect(hasDefaultWorkflow([{ name: '默认工作流' }])).toBe(true)
-    expect(hasDefaultWorkflow([{ name: '我的流程' }])).toBe(false)
     expect(shouldAutoOpenOnboarding([{ name: 'Default Workflow' }], [])).toBe(false)
   })
 

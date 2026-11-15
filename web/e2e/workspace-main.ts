@@ -20,7 +20,7 @@ const settingsItems = [
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
 const names = ['产品研发', '代码审查', '自动化回归', '需求澄清', '数据分析', '发布检查', '文档维护', '安全扫描', '问题排查', 'API 集成', '体验优化', '周报汇总']
-const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', variables: [{ name: 'ENVIRONMENT', type: 'select', value: 'staging', options: 'staging,production', desc: '默认部署环境', secret: false, ask: false, required: false, editable: true }], unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager', notifyPolicy: { enabled: false, defaultEvents: ['waiting_human', 'failed'], channelIds: [] } }
+const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager', notifyPolicy: { enabled: false, defaultEvents: ['waiting_human', 'failed'], channelIds: [] } }
 const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, notifyPolicy: { mode: 'inherit', events: [] }, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
 for (const workflow of workflows) workflow.publishedSnapshot = { version: workflow.publishedVersion, name: workflow.name, description: workflow.description, nodes: workflow.nodes, edges: workflow.edges }
 const titles = ['优化工作流审批交互', '修复回归测试中的不稳定用例', '补充 API 接口说明', '检查发布前配置', '整理产品需求与验收条件', '更新周报与执行记录']
@@ -50,19 +50,13 @@ function artifactContent(file: any) {
   return '# 发布说明\n\n本次更新优化了工作流审批和文件浏览体验。\n\n## 已完成\n\n- 简化审批入口，明确待处理事项\n- 统一文件目录与内容预览\n- 保留可追溯的版本与执行记录\n\n## 验证结果\n\n关键路径回归通过，发布配置已检查。\n\n| 检查项 | 结果 |\n| --- | --- |\n| 工作流执行 | 通过 |\n| 审批交互 | 通过 |\n| 文件导出 | 通过 |\n'
 }
 let artifactTreeAttempts = 0
-const requirementDrafts: any[] = params.get('drafts') === 'filled' ? [
-  { id: 'launch', title: '支付体验改进', bodyMarkdown: '# 目标\n\n减少支付流程中的阻塞。', status: 'open', kind: 'requirement', startAt: '2026-10-15', dueAt: '2026-10-28', progress: 45, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'release', title: '十月版本交付', bodyMarkdown: '# 验收目标\n\n完成支付体验改进，确保回归通过。', status: 'open', kind: 'milestone', startAt: '', dueAt: '2026-10-30', progress: 0, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'payment', title: '优化支付失败重试体验', bodyMarkdown: '# 支付失败重试\n\n保留订单状态，并为用户提供明确的重试入口。\n\n## 验收条件\n\n- 支付失败时说明原因\n- 重试后恢复订单流程', status: 'open', kind: 'requirement', startAt: '2026-10-18', dueAt: '2026-10-25', progress: 45, parentId: 'launch', createdAt: '2026-10-14T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'docs', title: '补充集成说明与示例', bodyMarkdown: '# 集成文档\n\n整理配置示例与常见问题。', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: '2026-10-16T09:00:00Z', updatedAt: '2026-10-19T09:00:00Z' },
-] : []
 const calls: { path: string; method: string; body?: any }[] = []
 const pmThreads: any[] = ['history', 'active-history', 'orphan', 'unavailable-thread', 'conversation'].includes(assistantMode) ? [{ id: 'past-conversation', title: '本周研发进展', agentAvailable: assistantMode !== 'unavailable-thread' }] : []
 const conversationMessages = Array.from({ length: 16 }, (_, index) => [
   { id: `question-${index}`, role: 'user', content: `第 ${index + 1} 轮：${['本周的研发进展如何？', '当前有哪些需要优先处理的问题？', '请整理发布检查结果。', '接下来如何安排验证？'][index % 4]}`, status: 'ok', createdAt: '2026-10-20T09:00:00Z' },
   { id: `answer-${index}`, role: 'assistant', content: `## 第 ${index + 1} 轮进展\n\n本周已完成 API 文档与发布配置检查。工作流审批与产物浏览的关键流程已经通过验证。\n\n代码审查正在等待确认，建议优先处理回归测试中的不稳定用例。\n\n- 研发：完成核心交付\n- 测试：继续补充边界场景\n- 发布：确认负责人和上线时间`, status: 'ok', createdAt: '2026-10-20T09:01:00Z', citations: index === 15 ? [{ type: 'artifact', targetId: 'release-notes.md', summarySnippet: '发布说明' }, { type: 'artifact', targetId: 'art-b1b2c3d4', summarySnippet: '评审结论' }, { type: 'artifact', targetId: 'page.html', summarySnippet: '页面预览' }] : [] },
 ]).flat()
-;(window as any).__workspaceFixture = { workspace, workflows, calls, settingsItems, brand, requirementDrafts, artifactFiles }
+;(window as any).__workspaceFixture = { workspace, workflows, calls, settingsItems, brand, artifactFiles }
 const fetchActual = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.origin)
@@ -100,22 +94,6 @@ window.fetch = async (input, init) => {
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
   else if (path === '/projects') data = []
   else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 15, usedSandboxes: 0 }
-  else if (path === '/workspace/requirement-drafts') {
-    if (method === 'POST') {
-      data = { id: `new-draft-${requirementDrafts.length + 1}`, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }
-      requirementDrafts.unshift(data)
-    } else {
-      const status = url.searchParams.get('status') || 'all'
-      const query = (url.searchParams.get('q') || '').toLocaleLowerCase()
-      data = { items: requirementDrafts.filter(draft => (status === 'all' || draft.status === status) && draft.title.toLocaleLowerCase().includes(query)) }
-    }
-  }
-  else if (path.startsWith('/workspace/requirement-drafts/')) {
-    const id = path.split('/')[3]
-    data = requirementDrafts.find(draft => draft.id === id)
-    if (method === 'DELETE') requirementDrafts.splice(requirementDrafts.indexOf(data), 1)
-    else if (method !== 'GET') Object.assign(data, body)
-  }
   else if (path === '/workspace/pm-leader') data = { enabled: !['disabled', 'history'].includes(assistantMode), agentAvailable: !['disabled', 'unavailable', 'orphan'].includes(assistantMode), agentConfigRef: 'manager', enabledMcps: [] }
   else if (path === '/workspace/pm/threads') {
     if (method === 'POST') { data = { id: 'new-conversation', title: '新会话', agentAvailable: true }; pmThreads.unshift(data) }

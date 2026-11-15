@@ -716,7 +716,6 @@ describe('AppSidebarNav', () => {
     ))
     expect(settingsTos).toEqual([
       '/board',
-      '/requirements',
       '/workflows',
       '/assistant',
       '/artifacts',
@@ -727,7 +726,6 @@ describe('AppSidebarNav', () => {
       '/sandboxes',
       '/settings/projects',
       '/settings/credentials',
-      '/settings/variables',
       '/settings/assistant',
       '/settings/notification-policy',
       '/settings/external-mcp',

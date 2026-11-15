@@ -381,7 +381,7 @@ func initTeamModel(t *testing.T, team *TeamService, db *gorm.DB) {
 }
 func TestTeamRequiresSavedModel(t *testing.T) {
 	db := newTestDB(t)
-	if _, err := NewWorkspaceService(db).CreateFixture("Team", "", nil); err != nil {
+	if _, err := NewWorkspaceService(db).CreateFixture("Team", ""); err != nil {
 		t.Fatal(err)
 	}
 	agents := NewAgentService(t.TempDir())

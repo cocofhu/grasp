@@ -121,7 +121,6 @@ func workspaceDTO(p models.Workspace, workflowCount int64, tokens services.Works
 	policy := services.NormalizeWorkspaceNotifyPolicy(p.NotifyPolicy)
 	return gin.H{
 		"name": p.Name, "description": p.Description,
-		"variables":               services.MaskedWorkspaceVars(p.Variables),
 		"workflowCount":           workflowCount,
 		"totalTokens":             tokens.Total,
 		"workflowTokens":          tokens.Workflow,

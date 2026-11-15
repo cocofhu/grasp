@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
@@ -11,7 +11,6 @@ import BoardView from '@/views/BoardView.vue'
 import PmLeaderChat from '@/components/pm/PmLeaderChat.vue'
 import PmSettingsPanel from '@/components/pm/PmSettingsPanel.vue'
 import PmCronJobsPanel from '@/components/pm/PmCronJobsPanel.vue'
-import RequirementDraftsPanel from '@/components/workspace/RequirementDraftsPanel.vue'
 import WorkspaceNotifyPanel from '@/components/workspace/WorkspaceNotifyPanel.vue'
 import WorkspaceExternalMcpPanel from '@/components/workspace/WorkspaceExternalMcpPanel.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
@@ -36,7 +35,6 @@ const settingsHeader = computed(() => SETTINGS_HEADERS[tool.value])
 const binding = ref<PmLeaderBinding | null>(null)
 const bindingLoading = ref(false)
 const bindingError = ref('')
-const drafts = ref<{ isDirty: boolean; requestLeave: () => Promise<boolean> } | null>(null)
 let bindingGeneration = 0
 async function loadBinding() {
   if (tool.value !== 'assistant') return
@@ -55,7 +53,6 @@ watch(tool, () => {
   binding.value = null
   void loadBinding()
 }, { immediate: true })
-onBeforeRouteLeave(() => drafts.value?.isDirty ? drafts.value.requestLeave() : true)
 </script>
 
 <template>
@@ -65,7 +62,6 @@ onBeforeRouteLeave(() => drafts.value?.isDirty ? drafts.value.requestLeave() : t
     </template>
     <div v-if="workspace" :key="tool" class="flex min-w-0 flex-col" :class="documentTool ? 'gap-6' : ['min-h-0 flex-1', { 'scroll-area overflow-y-auto': tool === 'schedules' }]" :data-testid="`workspace-tool-${tool}`">
       <BoardView v-if="tool === 'board'" embedded class="min-h-0 flex-1" />
-      <RequirementDraftsPanel v-else-if="tool === 'requirements'" ref="drafts" />
       <template v-else-if="tool === 'assistant'">
         <p v-if="bindingLoading" role="status" class="p-6 text-sm text-txt3">{{ t('nav.workspaceLoading') }}</p>
         <div v-else-if="bindingError" class="flex flex-col items-start gap-3 p-6" role="alert"><p>{{ bindingError }}</p><AppButton @click="loadBinding">{{ t('nav.workspaceRetry') }}</AppButton></div>

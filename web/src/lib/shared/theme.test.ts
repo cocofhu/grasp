@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  applyPublicLightChrome,
   reapplyThemeChrome,
   renderedTheme,
   setTheme,
@@ -29,21 +28,6 @@ describe('theme', () => {
     expect(document.documentElement.classList.contains('light')).toBe(false)
   })
 
-  it('applyPublicLightChrome forces html.light without persisting theme', () => {
-    setTheme('dark')
-    applyPublicLightChrome()
-    expect(document.documentElement.classList.contains('light')).toBe(true)
-    expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(renderedTheme.value).toBe('light')
-    expect(theme.value).toBe('dark')
-    expect(localStorage.getItem('grasp-theme')).toBe('dark')
-
-    reapplyThemeChrome()
-    expect(document.documentElement.classList.contains('light')).toBe(false)
-    expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(renderedTheme.value).toBe('dark')
-    expect(localStorage.getItem('grasp-theme')).toBe('dark')
-  })
 })
 
 describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
@@ -253,8 +237,6 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     setThemeOverride(null)
     expect(renderedTheme.value).toBe('light')
     expect(document.documentElement.classList.contains('light')).toBe(true)
-
-    applyPublicLightChrome()
     expect(start).not.toHaveBeenCalled()
     expect(document.documentElement.classList.contains('theme-vt-capture')).toBe(false)
     expect(document.documentElement.classList.contains('theme-color-motion')).toBe(false)

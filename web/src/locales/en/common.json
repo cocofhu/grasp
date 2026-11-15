@@ -47,7 +47,6 @@
       "selectedCount": "{n} selected"
     },
     "pagination": {
-      "summary": "{total} items · page {page}/{pages}",
       "rangeSummary": "{from}–{to} / {total}",
       "emptySummary": "0 items",
       "perPage": "Per page",
@@ -73,7 +72,6 @@
       "confirmDestroy": "Destroy",
       "confirmCleanup": "Clean up",
       "save": "Save",
-      "saveDraft": "Save draft",
       "saveRunDraft": "Save run draft",
       "reset": "Reset",
       "refresh": "Refresh",
@@ -87,15 +85,10 @@
       "delete": "Delete",
       "details": "Details",
       "close": "Close",
-      "viewAll": "View all →",
       "viewRun": "View run",
       "stayOnPage": "Stay on this page",
       "startRun": "Start run",
-      "openRunDetail": "Open run detail →",
-      "back": "Back",
-      "backToList": "Back to list",
       "newWorkflow": "New workflow",
-      "create": "Create",
       "newAgent": "New agent",
       "cleanupIdle": "Clean up idle",
       "console": "Console",
@@ -123,15 +116,8 @@
       "destroying": "Destroying…",
       "cleaning": "Cleaning…"
     },
-    "theme": {
-      "switchToLight": "Switch to light mode",
-      "switchToDark": "Switch to dark mode"
-    },
     "search": {
-      "placeholder": "Search workflows, runs…",
       "workflowPlaceholder": "Search workflows…",
-      "agentPlaceholder": "Search Agents…",
-      "nodePlaceholder": "Search nodes",
       "optionPlaceholder": "Search…",
       "useTypedValue": "Use \"{value}\"",
       "loadingOptions": "Loading options…"
@@ -139,7 +125,6 @@
     "shutdown": {
       "shuttingDown": "Shutting down",
       "graceRemaining": "grace remaining {time}",
-      "instanceDraining": "Instance is gracefully shutting down",
       "notAcceptingRequests": "Service is shutting down; not accepting new requests",
       "mutationsBlocked": "Service is shutting down; this action is unavailable",
       "offlineTitle": "Service offline",
@@ -148,29 +133,19 @@
     },
     "table": {
       "run": "Run",
-      "title": "Title",
       "workflow": "Workflow",
       "trigger": "Trigger",
       "start": "Started",
       "startTime": "Start time",
       "duration": "Duration",
-      "progress": "Progress",
       "status": "Status",
-      "priority": "Priority",
-      "name": "Name",
-      "version": "Version",
-      "repo": "Repository",
-      "lastRun": "Last run",
       "actions": "Actions",
       "sandbox": "Sandbox",
       "agent": "Agent",
       "purpose": "Purpose",
       "source": "Source",
       "recycleCountdown": "Recycle in",
-      "createdAt": "Created",
-      "artifact": "Artifact",
-      "node": "Node",
-      "created": "Created"
+      "createdAt": "Created"
     },
     "asyncState": {
       "loadFailedTitle": "Failed to load",
@@ -184,11 +159,7 @@
       "noMatchingRuns": "No matching runs",
       "noMatchingWorkflows": "No matching workflows",
       "noMatchingAgents": "No matching Agents",
-      "noArtifacts": "No artifacts",
-      "selectWorkflowGroup": "Select a workflow group on the left",
       "noMatchingOptions": "No matching options",
-      "noSandboxes": "No sandboxes yet. Node sandboxes are created when workflows run, or start a test sandbox under Agent Studio → Chat test.",
-      "noAgents": "No agents yet. Click New agent, or the backend seeds a default on first start.",
       "noPendingGates": "Nothing pending",
       "noPendingGatesForWorkflow": "No pending items for this workflow",
       "noPendingGatesDesc": "Items appear here when a workflow reaches a human gate or clarify node",
@@ -200,39 +171,19 @@
       "draftSaved": "Draft saved",
       "draftTooLarge": "Draft too large; reduce text or images",
       "draftSaveFailed": "Failed to save draft",
-      "saved": "Saved",
-      "noChanges": "No changes",
       "copyNameFailed": "Could not fetch suggested name; try again",
-      "copiedRedirecting": "Copied as \"{name}\"; opening editor…",
       "copied": "Copied as \"{name}\"",
       "pathCopied": "Path copied: {path}",
       "copyPathFailed": "Copy failed",
-      "copiedShort": "Copied",
       "copyFailed": "Copy failed",
       "importedFiles": "Imported {count} file(s) into {dir}",
       "favoriteAdded": "Favorited \"{name}\"",
       "favoriteRemoved": "Removed \"{name}\" from favorites",
-      "favoriteFull": "Limit of {max} reached — unfavorite another one first",
-      "favoriteLaunchFailed": "Could not launch this workflow; try again"
+      "favoriteFull": "Limit of {max} reached — unfavorite another one first"
     },
-    "action": "Action",
     "optional": "Optional",
     "required": "Required",
     "minutes": "min",
-    "switchOn": "On",
-    "switchOff": "Off",
-    "structuredExits": {
-      "testPass": "Pass",
-      "testFail": "Fail",
-      "reviewPass": "Pass",
-      "reviewFail": "Reject"
-    },
-    "edgeLabels": {
-      "approve": "Approve",
-      "pass": "Pass",
-      "revise": "Revise",
-      "limit": "Limit"
-    },
     "gateBodyLabels": {
       "plan": "Plan",
       "clarifiedRequirement": "Clarified requirement",
@@ -309,24 +260,9 @@
       "imageCountFull": "{n} image(s)",
       "imageCountChip": "{n} img",
       "imageCountBadge": "{n} images",
-      "needsRepo": "Required",
-      "noRepo": "Not required",
-      "queued": "queued",
-      "noRepoFlow": "No repo (artifact-only flow)",
       "pinnedVersionTitle": "Workflow version pinned for this run",
-      "minutes": "min",
       "lines": "{n} lines",
-      "chars": "{n} chars",
-      "groups": "{n} groups",
-      "units": ""
-    },
-    "repo": {
-      "needs": "Required",
-      "notNeeded": "Not required"
-    },
-    "saved": {
-      "saved": "Saved",
-      "unsaved": "Unsaved changes"
+      "chars": "{n} chars"
     },
     "htmlPreview": {
       "title": "Web preview",
@@ -335,7 +271,6 @@
       "mobileWidth": "Mobile · 390px wide",
       "adaptiveWidth": "Adaptive width",
       "enlargeTitle": "Open enlarged preview",
-      "window": "Window",
       "mobilePreview": "Mobile preview"
     },
     "paragraphInput": {

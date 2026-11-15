@@ -294,7 +294,6 @@ func ensureWorkspace(db *gorm.DB) error {
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Workspace{
 		ID:           models.WorkspaceID,
 		Name:         models.DefaultWorkspaceName,
-		Variables:    []models.WorkspaceVariable{},
 		NotifyPolicy: models.DefaultWorkspaceNotifyPolicy(),
 		CreatedAt:    now,
 		UpdatedAt:    now,

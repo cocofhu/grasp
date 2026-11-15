@@ -52,50 +52,6 @@ export type EmbedSession = {
 
 type RedeemResponse = Omit<EmbedSession, 'kind'> & { kind?: string; runId?: string; nodeId?: string; error?: string }
 
-/** Drawer page path; the ticket rides in the fragment so it never reaches a server log. */
-export function embedChatPath(runId: string, nodeId: string): string {
-  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/chat`
-}
-
-/** Artifact modal page path; reuses the same drawer session as chat. */
-export function embedArtifactsPath(runId: string, nodeId: string): string {
-  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/artifacts`
-}
-
-/** Picture frame inside the page-level image window. The address arrives later, same-origin, not in this URL. */
-export function embedImagePath(runId: string, nodeId: string): string {
-  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/image`
-}
-
-/** Demo frame inside the page-level enlarge window. The HTML arrives later, same-origin, not in this URL. */
-export function embedDemoPath(runId: string, nodeId: string): string {
-  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/demo`
-}
-
-type EmbedImageAction = 'open' | 'close'
-
-/** Host-bound image-window request. Drops any picture address that may have been attached. */
-export function parseEmbedImageMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
-  return parseEmbedShellMessage(data, EMBED_IMAGE_MESSAGE)
-}
-
-/** Host-bound demo-window request. Drops any HTML that may have been attached. */
-export function parseEmbedDemoMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
-  return parseEmbedShellMessage(data, EMBED_DEMO_MESSAGE)
-}
-
-function parseEmbedShellMessage(
-  data: unknown,
-  type: typeof EMBED_IMAGE_MESSAGE | typeof EMBED_DEMO_MESSAGE,
-): { action: EmbedImageAction; label: string } | null {
-  if (!data || typeof data !== 'object') return null
-  const m = data as { type?: unknown; action?: unknown; label?: unknown }
-  if (m.type !== type) return null
-  if (m.action !== 'open' && m.action !== 'close') return null
-  const label = typeof m.label === 'string' ? m.label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180) : ''
-  return { action: m.action, label }
-}
-
 /**
  * Host the reviewer's browser can open. Docker publishes the preview on every
  * interface when bindIP is loopback, but the stored direct URL still says

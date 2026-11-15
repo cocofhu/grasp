@@ -78,14 +78,6 @@ function isEmpty(s: ClarifyDraftStash): boolean {
   return !s.text.trim() && s.images.length === 0 && s.annotations.length === 0
 }
 
-/**
- * Keep ref-only (already uploaded) images; keep inline ones while they fit
- * the budget. Text and annotations are always kept.
- */
-export function budgetImages(images: ClarifyImage[], budget = INLINE_IMAGE_BUDGET): ClarifyImage[] {
-  return budgetImagesCounted(images, budget).kept
-}
-
 /** budgetImages plus how many inline images did not fit. */
 function budgetImagesCounted(
   images: ClarifyImage[],
@@ -553,19 +545,6 @@ export function dropClarifyOutbox(runId: string, nodeId: string, id: string | un
   const box = readOutbox(runId, nodeId)
   if (!(id in box)) return
   delete box[id]
-  writeOutbox(runId, nodeId, box)
-}
-
-/** A turn for this text was answered: drop the oldest matching outbox entry. */
-export function ackClarifyOutboxText(runId: string, nodeId: string, text: string): void {
-  if (!runId || !nodeId) return
-  const box = readOutbox(runId, nodeId)
-  const t = text.trim()
-  const hit = Object.keys(box)
-    .filter((id) => box[id].text.trim() === t)
-    .sort((a, b) => box[a].at - box[b].at)[0]
-  if (!hit) return
-  delete box[hit]
   writeOutbox(runId, nodeId, box)
 }
 

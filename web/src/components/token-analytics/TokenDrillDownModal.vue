@@ -19,7 +19,6 @@ import {
   fmtCost,
   fmtHitRatePct,
   isDrillable,
-  paletteColor,
   toCsv,
   type DrillTarget,
   type TokenStatsFilters,
@@ -74,7 +73,6 @@ let eventsGen = 0
 
 const filters = computed(() => applyDrill(props.base, stack.value))
 const current = computed(() => stack.value[stack.value.length - 1] ?? null)
-const currency = computed(() => stats.value?.currency)
 
 function mergeStep(path: DrillTarget[], step: DrillTarget): DrillTarget[] {
   // Same dimension twice replaces the earlier step instead of stacking contradictory filters.

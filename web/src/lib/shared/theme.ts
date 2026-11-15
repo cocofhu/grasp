@@ -268,15 +268,6 @@ export function toggleTheme() {
 }
 
 /**
- * Public external page: force light chrome (html.light + color-scheme).
- * Does not call setTheme or write grasp-theme, so internal users'
- * persisted theme is not polluted.
- */
-export function applyPublicLightChrome(): void {
-  paintChrome('light')
-}
-
-/**
  * Embedded pages follow the host page's theme. The override wins over the
  * persisted theme without writing grasp-theme; null goes back to it.
  */

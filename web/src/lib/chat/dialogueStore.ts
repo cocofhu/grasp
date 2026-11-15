@@ -3,7 +3,7 @@
  * WebSocket `type:"dialogue"` frames and REST snapshots both go through
  * ingest; a tail that does not fit triggers one coalesced REST refetch.
  */
-import { computed, shallowReactive, type ComputedRef } from 'vue'
+import { shallowReactive } from 'vue'
 import { runsClient } from '../api/clients/runsClient'
 import {
   addOptimistic as addTo,
@@ -101,11 +101,6 @@ export function rejectOptimisticSend(key: string, clientMessageId: string) {
 
 export function dialogueView(key: string): DialogueView {
   return render(states.get(key) ?? null, optimistic.get(key) ?? [])
-}
-
-/** Reactive view of one node dialogue. */
-export function useDialogue(key: () => string): ComputedRef<DialogueView> {
-  return computed(() => dialogueView(key()))
 }
 
 /** Override the REST source: per key (share page), or the default for all keys. */

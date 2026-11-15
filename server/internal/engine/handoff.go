@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -151,4 +152,18 @@ func platformHandoff(oc *nodeOutcome) string {
 		return truncateRunes("上游节点未留下交接说明。完成摘要:"+sum, models.HandoffMaxRunes)
 	}
 	return "上游节点已完成,但未留下交接说明。"
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return string(r[:max-1]) + "…"
 }

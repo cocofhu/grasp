@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { SoloMessage } from '@/lib/api/apiTypes'
 import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages } from './acpTurn'
 import { draftFromProject, draftProblems, emptyDraft, inputFromDraft, isRepoUrl, repoNameFromUrl } from './projectForm'
-import { repoProtocol, repoShort } from './soloPrefs'
+import { repoShort } from './soloPrefs'
 import { soloErrorText } from './soloErrors'
-import { branchOfRepo, repoTriggerLabel, sessionRepoLabel, sessionRepos, soloCreateChoices } from './sessionRepos'
+import { repoTriggerLabel, sessionRepoLabel, sessionRepos, soloCreateChoices } from './sessionRepos'
 
 const label = () => ''
 const chunk = (kind: string, text: string) => ({ op: 'event', data: { type: 'session_update', update: { sessionUpdate: kind, content: { type: 'text', text } } } })
@@ -119,7 +119,6 @@ describe('session repos', () => {
     })
     expect(repos).toHaveLength(1)
     expect(repos[0]).toMatchObject({ name: 'app', branch: 'release', repoDirName: 'app' })
-    expect(branchOfRepo({ branch: '' }, '远端默认分支')).toBe('远端默认分支')
   })
 
   it('sends branch overrides only when they are non-empty', () => {
@@ -160,8 +159,6 @@ describe('projectForm', () => {
     expect(repoNameFromUrl('git@github.com:acme/my-repo.git')).toBe('my-repo')
     expect(repoShort('git@github.com:acme/app.git')).toBe('github.com/acme/app')
     expect(repoShort('https://user@gitlab.com/g/p.git')).toBe('gitlab.com/g/p')
-    expect(repoProtocol('git@x:y')).toBe('ssh')
-    expect(repoProtocol('https://x/y')).toBe('https')
   })
 
   it('round-trips clone fields and drops retired runtime keys', () => {

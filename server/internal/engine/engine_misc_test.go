@@ -236,7 +236,7 @@ func (liveEventProvider) LiveNodeEventsPage(ctx context.Context, runID, nodeID, 
 
 func TestLiveNodeEventsPageAndWorkspaceVarsLookup(t *testing.T) {
 	eng, _, p := setupEngineGraphP(t, reactOnlyGraph())
-	eng.SetWorkspaceVarsLookup(func(workflowID string) []models.WorkspaceVariable {
+	eng.SetDefaultVarsLookup(func(workflowID string) []models.WorkspaceVariable {
 		return []models.WorkspaceVariable{{Name: "seed", Value: "v"}}
 	})
 	eng.provider = liveEventProvider{p}

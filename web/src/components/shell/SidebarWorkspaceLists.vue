@@ -73,7 +73,6 @@ async function loadRuns() {
     if (runsRequest === controller) runsFailed.value = true
   } finally { if (runsRequest === controller) runsRequest = null }
 }
-const endedBadly = (run: Run) => run.status === 'failed' || run.status === 'cancelled'
 /** Write only real changes, and never while the user is on the list. */
 function applyRuns(next: Run[]) {
   if (recentHold.isHeld()) { heldRuns = next; return }

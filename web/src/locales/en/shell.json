@@ -2,11 +2,7 @@
   "shell": {
     "appName": "Grasp",
     "tagline": "Dev workflow orchestration",
-    "userRole": "Administrator",
     "logout": "Log out",
-    "searchPlaceholder": "Search workflows, runs…",
-    "docs": "Docs",
-    "docsTitle": "Open product docs (new tab)",
     "langSelect": "Language / 语言",
     "theme": {
       "toLight": "Switch to light",
@@ -23,8 +19,7 @@
       "showNav": "Show navigation",
       "navHidden": "Navigation hidden",
       "navShown": "Navigation shown",
-      "backToList": "Back to list",
-      "floatingBall": "Expand sidebar"
+      "backToList": "Back to list"
     },
     "runNotifications": {
       "title": "Notifications",
@@ -40,8 +35,6 @@
       "clickForDetail": "Click to view details",
       "neutralTitle": "{name} · {status}",
       "outputTitle": "Run outputs",
-      "noArtifacts": "This run has no outputs",
-      "noArtifactsHint": "Open the run detail to inspect execution",
       "markAsRead": "Mark as read",
       "noFinalResults": "No final results to preview",
       "noFinalResultsHint": "The output node has no final-result sources configured, or no result cards were produced.",
@@ -52,10 +45,7 @@
       "focusOutputType": "type: output",
       "focusOutputSource": "Final result sources → cards",
       "focusOutputAligned": "Aligned with run detail",
-      "done": "Done",
-      "previewLabel": "Preview",
-      "loadingOutputs": "Loading outputs…",
-      "listAria": "Artifacts from this run"
+      "loadingOutputs": "Loading outputs…"
     },
     "statusMetrics": {
       "accountingIncomplete": "Some usage is incomplete, pending or from unverified historical records. Values show recorded usage.",
@@ -64,7 +54,6 @@
       "today": "Today's tokens",
       "running": "Running",
       "queued": "Queued",
-      "compactAria": "Platform status summary, open statistics",
       "cardTokenTitle": "Token",
       "cardRunTitle": "Runs",
       "openStats": "Open statistics",

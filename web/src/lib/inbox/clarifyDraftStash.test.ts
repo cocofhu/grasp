@@ -4,8 +4,6 @@ import { getAuthState } from '@/lib/composables/useAuth'
 import {
   INLINE_IMAGE_BUDGET,
   STASH_TTL_MS,
-  ackClarifyOutboxText,
-  budgetImages,
   insertRescued,
   resetClarifyTabForTest,
   clearClarifyStash,
@@ -25,7 +23,6 @@ function countKeys(st: Storage, prefix: string): number {
   for (let i = 0; i < st.length; i++) if (st.key(i)?.startsWith(prefix)) n++
   return n
 }
-
 
 beforeEach(() => resetClarifyTabForTest({ checked: true }))
 
@@ -111,7 +108,6 @@ describe('clarifyDraftStash', () => {
     const big = { data: 'x'.repeat(INLINE_IMAGE_BUDGET - 10), mimeType: 'image/png', name: 'big' }
     const second = { data: 'y'.repeat(100), mimeType: 'image/png', name: 'second' }
     const ref = { ref: 'blob:1', mimeType: 'image/png', name: 'ref' }
-    expect(budgetImages([big, second, ref]).map((i) => i.name)).toEqual(['big', 'ref'])
     stashClarifyDraft('r', 'n', { text: 't', images: [big, second, ref], annotations: [] })
     expect(readClarifyStash('r', 'n')!.images.map((i) => i.name)).toMatchObject(['big', 'ref'])
   })
@@ -135,7 +131,7 @@ describe('clarifyDraftStash', () => {
     expect(takeClarifyOutbox('r', 'n', undefined)).toBeNull()
     expect(takeClarifyOutbox('r', 'n', a)).toMatchObject({ text: '一', images: [], annotations: [] })
     expect(takeClarifyOutbox('r', 'n', a)).toBeNull()
-    ackClarifyOutboxText('r', 'n', '二')
+    expect(takeClarifyOutbox('r', 'n', b)).toMatchObject({ text: '二' })
     expect(takeClarifyOutbox('r', 'n', b)).toBeNull()
     putClarifyOutbox('r', 'n', a, { text: '三', images: [], annotations: [] })
     dropClarifyOutbox('r', 'n', a)

@@ -9,7 +9,6 @@ import {
   normalizeUnknownModelDisplayNameInput,
   summarizeMultiRunUsage,
   summarizeTimelineUsage,
-  sumTotalTokens,
   TOKEN_USAGE_UNKNOWN_MODEL,
   TOKEN_USAGE_UNKNOWN_MODEL_DISPLAY,
   tokenUsageTotal,
@@ -128,8 +127,6 @@ describe('tokenUsage', () => {
         cacheWriteTokens: 0,
       }),
     ).toBe(0)
-    expect(sumTotalTokens(null, 10, null, 5)).toBe(15)
-    expect(sumTotalTokens(null, undefined)).toBeNull()
   })
 
   it('summarizes multi-run: ignores runs without usage for Σ/avg denom', () => {

@@ -192,7 +192,7 @@ func TestReview850SecretWorkspaceVarInTask(t *testing.T) {
 	g := takeoverPlainGraph(capsPlain)
 	g.Nodes[1].Config = map[string]any{"agent_profile": "dev", "prompt": "deploy with {{vars.tok}}"}
 	env := setupTakeoverEngine(t, g)
-	env.eng.SetWorkspaceVarsLookup(func(string) []models.WorkspaceVariable {
+	env.eng.SetDefaultVarsLookup(func(string) []models.WorkspaceVariable {
 		return []models.WorkspaceVariable{{Name: "tok", Type: "string", Value: "s3cr3t-value", Secret: true}}
 	})
 	run, err := env.eng.StartRun("wf", nil, "test")

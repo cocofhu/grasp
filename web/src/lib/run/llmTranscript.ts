@@ -9,7 +9,6 @@ import type {
   TokenUsage,
 } from '@/lib/shared/types'
 import type { LlmInflightPrompt, LlmTranscriptExecution, LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import { tokenUsageTotal } from '@/lib/run/tokenUsage'
 
 /** Where a Q came from: the node's first instruction, a human reply, or a platform follow-up. */
 type LlmPromptSource = 'instruction' | 'human' | 'followup'
@@ -403,24 +402,4 @@ export function buildLlmTranscript(input: BuildLlmTranscriptInput): LlmTranscrip
 
   sortable.sort((a, b) => a.t - b.t || tieRank(a.item) - tieRank(b.item) || a.seq - b.seq)
   return sortable.map((s) => s.item)
-}
-
-interface LlmTranscriptSummary {
-  turns: number
-  nodes: number
-  totalTokens: number | null
-}
-
-export function summarizeLlmTranscript(items: LlmTranscriptItem[]): LlmTranscriptSummary {
-  let turns = 0
-  let nodes = 0
-  let total: number | null = null
-  for (const it of items) {
-    if (it.type === 'turn' && it.turn.prompt) turns++
-    if (it.type === 'node') {
-      nodes++
-      if (it.usage) total = (total ?? 0) + tokenUsageTotal(it.usage)
-    }
-  }
-  return { turns, nodes, totalTokens: total }
 }

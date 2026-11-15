@@ -15,7 +15,6 @@ import (
 type workspaceUpdateBody struct {
 	Name                    *string                       `json:"name"`
 	Description             *string                       `json:"description"`
-	Variables               *[]models.WorkspaceVariable   `json:"variables"`
 	NotifyPolicy            *models.WorkspaceNotifyPolicy `json:"notifyPolicy"`
 	UnknownModelDisplayName *string                       `json:"unknownModelDisplayName"`
 }
@@ -51,7 +50,7 @@ func (h *Handlers) UpdateWorkspace(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := h.Workspace.Update(b.Name, b.Description, b.Variables, b.NotifyPolicy, b.UnknownModelDisplayName)
+	p, err := h.Workspace.Update(b.Name, b.Description, b.NotifyPolicy, b.UnknownModelDisplayName)
 	if err != nil {
 		writeWorkspaceErr(c, err)
 		return
@@ -63,9 +62,6 @@ func (h *Handlers) UpdateWorkspace(c *gin.Context) {
 	if b.Description != nil {
 		changed = append(changed, "description")
 	}
-	if b.Variables != nil {
-		changed = append(changed, "variables")
-	}
 	if b.NotifyPolicy != nil {
 		changed = append(changed, "notifyPolicy")
 	}
@@ -73,9 +69,6 @@ func (h *Handlers) UpdateWorkspace(c *gin.Context) {
 		changed = append(changed, "unknownModelDisplayName")
 	}
 	payload := map[string]any{"changed": changed, "name": p.Name}
-	if b.Variables != nil {
-		payload["variables"] = services.MaskWorkspaceVarsForAudit(p.Variables)
-	}
 	h.recordAudit(services.AuditRecord{
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkspaceConfig,

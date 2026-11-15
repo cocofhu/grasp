@@ -630,20 +630,6 @@ export interface NotificationListResponse {
   readCount?: number
 }
 
-/** Lightweight metadata for the workspace workflow directory. Load graph details when opening or running. */
-export interface WorkflowCatalogItem {
-  id: string
-  name: string
-  description: string
-  status: 'draft' | 'published'
-  version: number
-  publishedVersion?: number
-  updatedAt: string
-  lastRunAt?: string
-  showOnHome?: boolean
-  needsRepo?: boolean
-}
-
 /** A registered Git repository with its own access credential and commit author. */
 export interface Project {
   id: string
@@ -859,11 +845,4 @@ export interface SoloMessage {
   durationMs?: number
   execution?: ChatExecution
   createdAt: string
-}
-
-export type SoloEnvSource = 'platform' | 'agent' | 'project' | 'credential' | 'system'
-
-export interface SoloEnvEntry {
-  key: string
-  source: SoloEnvSource
 }

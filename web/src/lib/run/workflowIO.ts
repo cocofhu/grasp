@@ -15,11 +15,6 @@ export function getAgentProfile(config?: Record<string, unknown> | null): string
   return typeof cfg[AGENT_PROFILE_KEY] === 'string' ? String(cfg[AGENT_PROFILE_KEY]).trim() : ''
 }
 
-/** Write agent_profile. */
-export function setAgentProfile(config: Record<string, unknown>, name: string): void {
-  config[AGENT_PROFILE_KEY] = String(name || '').trim()
-}
-
 interface ExportEnvelope {
   schemaVersion: number
   exportedAt: string

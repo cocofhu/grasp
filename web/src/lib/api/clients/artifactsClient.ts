@@ -83,8 +83,6 @@ export const artifactsClient = {
     ),
   artifactDownloadUrl: (id: string, revision?: number) => `${origin()}/api/artifacts/${encodeURIComponent(id)}/download${revision ? `?revision=${revision}` : ''}`,
   artifactRawUrl: (id: string, revision?: number) => `${origin()}/api/artifacts/${encodeURIComponent(id)}/raw${revision ? `?revision=${revision}` : ''}`,
-  /** Session pack download for one Run's artifacts (platform Artifacts page). */
-  packRunArtifactsUrl: (runId: string) => `${origin()}/api/runs/${encodeURIComponent(runId)}/artifacts/pack`,
   packRunArtifacts: async (runId: string): Promise<{ blob: Blob; filename: string }> => {
     const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/artifacts/pack`, {
       credentials: 'include',

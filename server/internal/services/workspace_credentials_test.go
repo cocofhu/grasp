@@ -28,7 +28,7 @@ func setCredentialKey(t *testing.T) {
 func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Credential workspace", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Credential workspace", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 func TestWorkspaceCredentialEmptyStoreDoesNotCreateSlots(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Empty slots", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Empty slots", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWorkspaceCredentialEmptyStoreDoesNotCreateSlots(t *testing.T) {
 func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Reserved keys", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Reserved keys", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 func TestWorkspaceCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Empty slots", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Empty slots", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestWorkspaceCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 func TestCodexLoginFileCredentialMaskRejectAndSave(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Codex login", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Codex login", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestCodexLoginFileCredentialMaskRejectAndSave(t *testing.T) {
 func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("Alias workspace", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("Alias workspace", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestCredentialAliasLookupFailureIsNotAvailable(t *testing.T) {
 
 func TestWorkspaceCredentialRequiresMasterKey(t *testing.T) {
 	db := newTestDB(t)
-	_, err := NewWorkspaceService(db).CreateFixture("No key", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("No key", "")
 	if err != nil {
 		t.Fatal(err)
 	}

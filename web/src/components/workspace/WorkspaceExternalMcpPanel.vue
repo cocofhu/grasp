@@ -21,14 +21,7 @@ const PM_MCP_OPTIONS = [
   { id: 'pm-workflow-read', labelKey: 'pages.workspace.pm.mcpWorkflowRead' },
   { id: 'pm-workflow-write', labelKey: 'pages.workspace.pm.mcpWorkflowWrite' },
   { id: 'pm-agent-fs', labelKey: 'pages.workspace.pm.mcpAgentFs' },
-  { id: 'pm-prd-manager', labelKey: 'pages.workspace.pm.mcpPrdManager' },
 ] as const
-
-interface ExternalMcpSettings {
-  enabled: boolean
-  enabledPacks: string[]
-  mcpBaseUrl: string
-}
 
 interface McpKeyItem {
   id: string

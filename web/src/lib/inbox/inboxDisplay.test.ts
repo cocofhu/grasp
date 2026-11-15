@@ -2,13 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   applyInboxReplyingState,
   currentInboxStateEpoch,
-  inboxBadgeLabelKey,
-  inboxBadgeTone,
   inboxRunLabel,
-  inboxSecondaryLine,
   conversationToolbarRunName,
   sidebarRunTitle,
-  isInboxProgressItem,
   isReplyingInboxItem,
   isStartingInboxItem,
   mergeInboxReplyingFromRemote,
@@ -103,59 +99,6 @@ describe('inboxRunLabel', () => {
   })
 })
 
-describe('inboxSecondaryLine', () => {
-  it('joins workflow name with run label', () => {
-    expect(
-      inboxSecondaryLine({ workflowName: 'github-feature', runId: 'run-1', runTitle: '标题' }),
-    ).toBe('github-feature · 标题')
-    expect(inboxSecondaryLine({ workflowName: 'wf', runId: 'run-zz' })).toBe('wf · Run #zz')
-  })
-})
-
-describe('inboxBadgeLabelKey', () => {
-  it('maps gate to gateType', () => {
-    expect(inboxBadgeLabelKey({ type: 'gate' })).toBe('pages.gatesInbox.gateType')
-  })
-
-  it('maps clarify kind to clarifyType', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'clarify' })).toBe('pages.gatesInbox.clarifyType')
-  })
-
-  it('maps review kind to reviewType', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review' })).toBe('pages.gatesInbox.reviewType')
-  })
-
-  it('falls back to clarifyType when kind omitted', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify' })).toBe('pages.gatesInbox.clarifyType')
-  })
-
-  it('maps a booting sandbox to startingType regardless of kind', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'clarify', state: 'starting' })).toBe(
-      'pages.gatesInbox.startingType',
-    )
-  })
-
-  it('maps parked sessionBusy to replyingType (plan g1.2 / g2.2)', () => {
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'clarify', state: 'replying' })).toBe(
-      'pages.gatesInbox.replyingType',
-    )
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review', state: 'replying' })).toBe(
-      'pages.gatesInbox.replyingType',
-    )
-  })
-
-  it('keeps starting above replying above type badges', () => {
-    expect(
-      inboxBadgeLabelKey({ type: 'clarify', kind: 'review', state: 'starting' }),
-    ).toBe('pages.gatesInbox.startingType')
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review', state: 'replying' })).toBe(
-      'pages.gatesInbox.replyingType',
-    )
-    expect(inboxBadgeLabelKey({ type: 'clarify', kind: 'review' })).toBe('pages.gatesInbox.reviewType')
-    expect(inboxBadgeLabelKey({ type: 'gate', state: 'replying' })).toBe('pages.gatesInbox.gateType')
-  })
-})
-
 describe('isStartingInboxItem', () => {
   it('is true only for clarify items whose sandbox is still booting', () => {
     expect(isStartingInboxItem({ type: 'clarify', state: 'starting' })).toBe(true)
@@ -165,15 +108,12 @@ describe('isStartingInboxItem', () => {
   })
 })
 
-describe('isReplyingInboxItem / isInboxProgressItem', () => {
+describe('isReplyingInboxItem', () => {
   it('is true for parked clarify state=replying and never for gates or starting', () => {
     expect(isReplyingInboxItem({ type: 'clarify', state: 'replying' })).toBe(true)
     expect(isReplyingInboxItem({ type: 'clarify', state: 'starting' })).toBe(false)
     expect(isReplyingInboxItem({ type: 'clarify' })).toBe(false)
     expect(isReplyingInboxItem({ type: 'gate', state: 'replying' })).toBe(false)
-    expect(isInboxProgressItem({ type: 'clarify', state: 'replying' })).toBe(true)
-    expect(isInboxProgressItem({ type: 'clarify', state: 'starting' })).toBe(true)
-    expect(isInboxProgressItem({ type: 'clarify' })).toBe(false)
   })
 })
 
@@ -234,15 +174,5 @@ describe('applyInboxReplyingState / mergeInboxReplyingFromRemote', () => {
     )
     expect(fresh[0].state).toBe('replying')
     resetInboxStatePatches()
-  })
-})
-
-describe('inboxBadgeTone', () => {
-  it('splits gate / review / clarify for Demo badge colors', () => {
-    expect(inboxBadgeTone({ type: 'gate' })).toBe('gate')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'review' })).toBe('review')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify' })).toBe('clarify')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'replying' })).toBe('replying')
-    expect(inboxBadgeTone({ type: 'clarify', kind: 'clarify', state: 'starting' })).toBe('clarify')
   })
 })

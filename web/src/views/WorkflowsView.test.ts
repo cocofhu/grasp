@@ -136,7 +136,7 @@ describe('workspace workflow management', () => {
     wrapper.unmount()
   })
   it('labels inherited notifications by their source when a workflow carries its own defaults', async () => {
-    const migrated = { ...head, id: 'wf-migrated', name: 'Migrated', defaults: { inheritWorkspace: false, variables: [], notifyPolicy: { enabled: true, channelIds: ['chn-b'] } } }
+    const migrated = { ...head, id: 'wf-migrated', name: 'Migrated', defaults: { variables: [], notifyPolicy: { enabled: true, channelIds: ['chn-b'] } } }
     mocks.listWorkflows.mockResolvedValueOnce([head, migrated])
     const { wrapper } = await setup()
     const triggers = wrapper.findAll('[data-testid="wf-notify-mode"] [data-test="app-select-trigger"]')

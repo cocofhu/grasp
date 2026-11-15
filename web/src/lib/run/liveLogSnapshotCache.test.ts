@@ -7,7 +7,6 @@ import {
   listLiveLogSnapshotsForRun,
   putLiveLogEventPage,
   putLiveLogMcpCalls,
-  snapshotHasContent,
 } from './liveLogSnapshotCache'
 import type { MergedAcpEvent } from './mergeAcpEvents'
 
@@ -28,7 +27,6 @@ describe('liveLogSnapshotCache', () => {
       live: true,
     })
     const snap = getLiveLogSnapshot('run-a', 'node-1')
-    expect(snapshotHasContent(snap)).toBe(true)
     expect(snap?.eventPage?.events[0].title).toBe('hello')
     expect(snap?.eventPage?.hasMore).toBe(true)
 
@@ -56,7 +54,6 @@ describe('liveLogSnapshotCache', () => {
 
     const listed = listLiveLogSnapshotsForRun('run-a')
     expect(listed.map((x) => x.nodeId).sort()).toEqual(['node-1', 'node-2'])
-    expect(snapshotHasContent(getLiveLogSnapshot('run-a', 'node-1'))).toBe(true)
   })
 
   it('clearLiveLogSnapshotsExceptRun drops other runs only', () => {

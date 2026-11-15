@@ -43,7 +43,7 @@ func (s *ExternalMcpService) Get() (ExternalMcpSettingsView, error) {
 	if err != nil {
 		return ExternalMcpSettingsView{}, err
 	}
-	packs := row.EnabledPacks
+	packs := FilterPmEnabledMcps(row.EnabledPacks)
 	if packs == nil {
 		packs = []string{}
 	}
@@ -91,10 +91,10 @@ func (s *ExternalMcpService) EnabledPacks() []string {
 	if err := s.db.Select("enabled_packs").First(&row, "id = ?", models.WorkspaceID).Error; err != nil {
 		return []string{}
 	}
-	if row.EnabledPacks == nil {
-		return []string{}
+	if packs := FilterPmEnabledMcps(row.EnabledPacks); packs != nil {
+		return packs
 	}
-	return append([]string{}, row.EnabledPacks...)
+	return []string{}
 }
 
 func (s *ExternalMcpService) baseURL() string {

@@ -3,13 +3,11 @@ import {
   isBareExtractSnippet,
   isClearlyInvalidRunRouteId,
   isValidPmCitationShape,
-  isValidRunIdShape,
   shortRunId,
 } from './pmCitationShape'
 
 describe('pmCitationShape', () => {
   it('accepts legal run/workflow/artifact/gate/plan shapes', () => {
-    expect(isValidRunIdShape('run-a1b2c3d4')).toBe(true)
     expect(isValidPmCitationShape('run', 'run-a1b2c3d4')).toBe(true)
     expect(isValidPmCitationShape('workflow', 'wf-deadbeef')).toBe(true)
     expect(isValidPmCitationShape('artifact', 'art-11223344')).toBe(true)

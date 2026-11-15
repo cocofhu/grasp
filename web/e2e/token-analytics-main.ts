@@ -185,7 +185,7 @@ window.fetch = async (input: RequestInfo | URL) => {
   if (url.includes('/workflows')) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
-  if (new URL(url, location.origin).pathname === '/api/workspace') return new Response(JSON.stringify({ name: '工作区', variables: [] }), { headers: { 'Content-Type': 'application/json' } })
+  if (new URL(url, location.origin).pathname === '/api/workspace') return new Response(JSON.stringify({ name: '工作区' }), { headers: { 'Content-Type': 'application/json' } })
   return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 

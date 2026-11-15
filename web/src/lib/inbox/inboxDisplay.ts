@@ -43,21 +43,6 @@ export function inboxRunLabel(it: Pick<InboxItem, 'runId' | 'runTitle'>): string
   return `Run #${it.runId.replace(/^run-/, '')}`
 }
 
-export function inboxSecondaryLine(it: Pick<InboxItem, 'workflowName' | 'runId' | 'runTitle'>): string {
-  return `${it.workflowName} · ${inboxRunLabel(it)}`
-}
-
-/** i18n key for the list badge: gate / clarify / review / starting / replying. */
-type InboxBadgeLabelKey =
-  | 'pages.gatesInbox.gateType'
-  | 'pages.gatesInbox.clarifyType'
-  | 'pages.gatesInbox.reviewType'
-  | 'pages.gatesInbox.startingType'
-  | 'pages.gatesInbox.replyingType'
-
-/** Visual tone for icon/badge chips (Demo: warn / review-green / clarify-cyan / amber). */
-type InboxBadgeTone = 'gate' | 'review' | 'clarify' | 'replying'
-
 type InboxStateItem = Pick<InboxItem, 'type'> & { kind?: string; state?: string }
 
 /** True while the item's sandbox is still booting (no transcript, no reply yet). */
@@ -72,35 +57,6 @@ export function isReplyingInboxItem(
   it: InboxStateItem | null | undefined,
 ): boolean {
   return !!it && it.type === 'clarify' && it.state === 'replying' && !isStartingInboxItem(it)
-}
-
-/** Spinner/in-progress icon: starting or replying. */
-export function isInboxProgressItem(
-  it: InboxStateItem | null | undefined,
-): boolean {
-  return isStartingInboxItem(it) || isReplyingInboxItem(it)
-}
-
-/**
- * List badge copy key by inbox semantics.
- * Priority: starting > replying > type (gate / review / clarify).
- */
-export function inboxBadgeLabelKey(
-  it: InboxStateItem,
-): InboxBadgeLabelKey {
-  if (isStartingInboxItem(it)) return 'pages.gatesInbox.startingType'
-  if (isReplyingInboxItem(it)) return 'pages.gatesInbox.replyingType'
-  if (it.type === 'gate') return 'pages.gatesInbox.gateType'
-  if (it.kind === 'review') return 'pages.gatesInbox.reviewType'
-  return 'pages.gatesInbox.clarifyType'
-}
-
-/** Badge/icon color tone; replying uses amber so it is distinct from static type chips. */
-export function inboxBadgeTone(it: InboxStateItem): InboxBadgeTone {
-  if (isReplyingInboxItem(it)) return 'replying'
-  if (it.type === 'gate') return 'gate'
-  if (it.kind === 'review') return 'review'
-  return 'clarify'
 }
 
 /**

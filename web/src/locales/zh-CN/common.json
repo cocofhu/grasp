@@ -47,7 +47,6 @@
       "selectedCount": "已选 {n} 项"
     },
     "pagination": {
-      "summary": "共 {total} 条 · 第 {page}/{pages} 页",
       "rangeSummary": "{from}–{to} / {total}",
       "emptySummary": "共 0",
       "perPage": "每页",
@@ -73,7 +72,6 @@
       "confirmDestroy": "确认销毁",
       "confirmCleanup": "确认清理",
       "save": "保存",
-      "saveDraft": "保存草稿",
       "saveRunDraft": "保存运行草稿",
       "reset": "重置",
       "refresh": "刷新",
@@ -87,15 +85,10 @@
       "delete": "删除",
       "details": "详情",
       "close": "关闭",
-      "viewAll": "查看全部 →",
       "viewRun": "查看运行",
       "stayOnPage": "留在当前页",
       "startRun": "开始运行",
-      "openRunDetail": "打开运行详情 →",
-      "back": "返回",
-      "backToList": "返回列表",
       "newWorkflow": "新建工作流",
-      "create": "创建",
       "newAgent": "新建 Agent",
       "cleanupIdle": "清理空闲",
       "console": "控制台",
@@ -123,15 +116,8 @@
       "destroying": "销毁中…",
       "cleaning": "清理中…"
     },
-    "theme": {
-      "switchToLight": "切换到浅色",
-      "switchToDark": "切换到深色"
-    },
     "search": {
-      "placeholder": "搜索工作流、运行…",
       "workflowPlaceholder": "搜索工作流…",
-      "agentPlaceholder": "搜索 Agent…",
-      "nodePlaceholder": "搜索节点",
       "optionPlaceholder": "搜索…",
       "useTypedValue": "使用「{value}」",
       "loadingOptions": "正在加载选项…"
@@ -139,7 +125,6 @@
     "shutdown": {
       "shuttingDown": "正在关闭",
       "graceRemaining": "grace 剩余 {time}",
-      "instanceDraining": "实例正在优雅关闭",
       "notAcceptingRequests": "服务正在关闭，不接受新请求",
       "mutationsBlocked": "服务正在关闭，暂不可执行此操作",
       "offlineTitle": "服务已离线",
@@ -148,29 +133,19 @@
     },
     "table": {
       "run": "运行",
-      "title": "标题",
       "workflow": "工作流",
       "trigger": "触发",
       "start": "开始",
       "startTime": "开始时间",
       "duration": "耗时",
-      "progress": "进度",
       "status": "状态",
-      "priority": "优先级",
-      "name": "名称",
-      "version": "版本",
-      "repo": "仓库",
-      "lastRun": "最近运行",
       "actions": "操作",
       "sandbox": "沙箱",
       "agent": "Agent",
       "purpose": "用途",
       "source": "来源",
       "recycleCountdown": "回收倒计时",
-      "createdAt": "创建时间",
-      "artifact": "产物",
-      "node": "节点",
-      "created": "创建时间"
+      "createdAt": "创建时间"
     },
     "asyncState": {
       "loadFailedTitle": "加载失败",
@@ -184,11 +159,7 @@
       "noMatchingRuns": "无匹配运行记录",
       "noMatchingWorkflows": "无匹配工作流",
       "noMatchingAgents": "无匹配 Agent",
-      "noArtifacts": "暂无产物",
-      "selectWorkflowGroup": "请在左侧选择工作流分组",
       "noMatchingOptions": "无匹配项",
-      "noSandboxes": "暂无沙箱。运行工作流时会按需创建节点沙箱，或前往 Agent Studio「对话测试」启动测试沙箱。",
-      "noAgents": "暂无 Agent。点击右上角\"新建 Agent\"创建,或后端首启会落盘默认 Agent。",
       "noPendingGates": "没有待审批项",
       "noPendingGatesForWorkflow": "该工作流没有待审批项",
       "noPendingGatesDesc": "当工作流到达人工门禁或需求澄清节点时会出现在这里",
@@ -200,39 +171,19 @@
       "draftSaved": "草稿已保存",
       "draftTooLarge": "草稿过大，请减少图片或文字",
       "draftSaveFailed": "草稿保存失败",
-      "saved": "已保存",
-      "noChanges": "无变更",
       "copyNameFailed": "无法获取建议名称，请稍后重试",
-      "copiedRedirecting": "已复制为「{name}」，正在跳转编辑页…",
       "copied": "已复制为「{name}」",
       "pathCopied": "已复制路径：{path}",
       "copyPathFailed": "复制失败",
-      "copiedShort": "已复制",
       "copyFailed": "复制失败",
       "importedFiles": "已从文件夹导入 {count} 个文件到 {dir}",
       "favoriteAdded": "已收藏「{name}」",
       "favoriteRemoved": "已取消收藏「{name}」",
-      "favoriteFull": "已达 {max} 条上限，请先取消其它收藏",
-      "favoriteLaunchFailed": "无法启动该工作流，请稍后重试"
+      "favoriteFull": "已达 {max} 条上限，请先取消其它收藏"
     },
-    "action": "动作",
     "optional": "可选",
     "required": "必填",
     "minutes": "分钟",
-    "switchOn": "已开启",
-    "switchOff": "已关闭",
-    "structuredExits": {
-      "testPass": "通过",
-      "testFail": "失败",
-      "reviewPass": "通过",
-      "reviewFail": "退回"
-    },
-    "edgeLabels": {
-      "approve": "批准",
-      "pass": "通过",
-      "revise": "退回",
-      "limit": "超限"
-    },
     "gateBodyLabels": {
       "plan": "计划",
       "clarifiedRequirement": "需求澄清",
@@ -309,24 +260,9 @@
       "imageCountFull": "{n}张图",
       "imageCountChip": "{n}图",
       "imageCountBadge": "{n} 张图",
-      "needsRepo": "需要",
-      "noRepo": "无需",
-      "queued": "入队",
-      "noRepoFlow": "无仓库(产物流)",
       "pinnedVersionTitle": "本次运行固化执行的工作流版本",
-      "minutes": "分钟",
       "lines": "{n} 行",
-      "chars": "{n} 字符",
-      "groups": "{n} 组",
-      "units": "个"
-    },
-    "repo": {
-      "needs": "需要",
-      "notNeeded": "无需"
-    },
-    "saved": {
-      "saved": "已保存",
-      "unsaved": "未保存的更改"
+      "chars": "{n} 字符"
     },
     "htmlPreview": {
       "title": "网页预览",
@@ -335,7 +271,6 @@
       "mobileWidth": "移动端 · 宽 390",
       "adaptiveWidth": "自适应宽度",
       "enlargeTitle": "窗口放大查看",
-      "window": "窗口",
       "mobilePreview": "移动端预览"
     },
     "paragraphInput": {
