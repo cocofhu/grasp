@@ -179,6 +179,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/solo/sessions/:id/restart", h.RestartSoloSession)
 		api.POST("/solo/sessions/:id/stop", h.StopSoloSession)
 		api.POST("/solo/sessions/:id/resume", h.ResumeSoloSession)
+		api.POST("/solo/sessions/:id/wake", h.WakeSoloSession)
 		api.GET("/solo/sessions/:id/backups", h.ListSoloBackups)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/resources", h.GetSoloResources)

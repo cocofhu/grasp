@@ -34,6 +34,15 @@ type ChatModelSettings struct {
 	ReasoningEfforts []string          `json:"reasoningEfforts"`
 }
 
+// ChatHTTPError is a non-OK status from the bridge or the proxy in front of
+// it. A paused or vanished guest typically surfaces as 502/503/504.
+type ChatHTTPError struct {
+	StatusCode int
+	op         string
+}
+
+func (e *ChatHTTPError) Error() string { return fmt.Sprintf("%s: status %d", e.op, e.StatusCode) }
+
 func chatQuery(chat string) string {
 	chat = strings.TrimSpace(chat)
 	if chat == "" {
@@ -54,7 +63,7 @@ func GetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 	}
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ChatModelSettings{}, fmt.Errorf("get chat settings: status %d", resp.StatusCode)
+		return ChatModelSettings{}, &ChatHTTPError{StatusCode: resp.StatusCode, op: "get chat settings"}
 	}
 	var settings ChatModelSettings
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&settings); err != nil {
@@ -147,8 +156,8 @@ func setChatSettings(ctx context.Context, host string, port int, password, path 
 		Error string `json:"error"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&info)
-	if strings.TrimSpace(info.Error) == "" {
-		return fmt.Errorf("set chat model: status %d", resp.StatusCode)
+	if strings.TrimSpace(info.Error) == "" || resp.StatusCode >= http.StatusBadGateway {
+		return &ChatHTTPError{StatusCode: resp.StatusCode, op: "set chat model"}
 	}
 	return fmt.Errorf("set chat model: %s", strings.TrimSpace(info.Error))
 }

@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 会话的 E2B 沙箱因长时间空闲自动暂停后，「停止环境」按钮会原位变为「恢复环境」，浏览器/终端/IDE 标签页显示暂停提示和恢复按钮；直接发消息也会自动恢复。新增接口 `POST /api/solo/sessions/:id/wake`，会话详情的 `sandbox.paused` 表示沙箱已暂停。工作流对话在沙箱失联时不再误报模型切换失败、也不回滚所选模型；右侧终端/IDE/浏览器面板在沙箱重建后自动重连。
+
 - Solo / 沙箱对话在输出一部分内容后连接意外断开时，保留已收到的回复并明确标记本轮失败，不再把未完成的回合显示为成功；正常完成后关闭连接和主动取消仍按原有逻辑处理。
 
 - E2B 模板构建支持用 `--min-free-disk-mb` 向 provider 申请构建后的可用磁盘空间；仍以临时沙箱实测容量为准，空间不足时不输出可发布模板配置。

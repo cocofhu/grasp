@@ -357,7 +357,7 @@ func bridgeLogin(ctx context.Context, host string, port int, password string) (s
 	}
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("acp login: status %d", resp.StatusCode)
+		return "", &ChatHTTPError{StatusCode: resp.StatusCode, op: "acp login"}
 	}
 	for _, ck := range resp.Cookies() {
 		if ck.Name == acpSessionCookieName && ck.Value != "" {

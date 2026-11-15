@@ -305,6 +305,20 @@ func (h *Handlers) StopSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, v)
 }
 
+// WakeSoloSession handles POST /api/solo/sessions/:id/wake.
+func (h *Handlers) WakeSoloSession(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	v, err := h.Solo.Wake(c.Request.Context(), c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 // ResumeSoloSession handles POST /api/solo/sessions/:id/resume.
 func (h *Handlers) ResumeSoloSession(c *gin.Context) {
 	user, ok := h.soloReady(c)
