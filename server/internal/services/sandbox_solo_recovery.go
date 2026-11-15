@@ -130,6 +130,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	}
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	var sb *sandbox.Sandbox
+	booting := false
 	if err == nil {
 		switch status {
 		case "running":
@@ -142,14 +143,21 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 			s.teardownLive(id)
 			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("resume_context_pending", true)
 			sb, err = s.mgr.Resume(ctx, row.Name)
+			booting = true
 		case "pending", "creating", "pulling":
 			sb, err = s.mgr.WaitForRunning(ctx, row.Name)
+			booting = true
 		case "not_found":
 			s.destroyLocalSandbox(ctx, row)
 			return fmt.Errorf("沙箱已不存在，可重新启动会话")
 		default:
 			err = fmt.Errorf("sandbox status=%s", status)
 		}
+	}
+	// A running workload only means its ports accept connections: Docker's
+	// proxy and the E2B relay answer before the bridge inside has started.
+	if err == nil && booting {
+		err = s.waitSoloBridge(ctx, row, sb)
 	}
 	if err != nil {
 		s.recordSoloRecoveryFailure(id, err)
@@ -159,6 +167,22 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 		return fmt.Errorf("Solo 会话已关闭")
 	}
 	return s.recordSoloRecovered(row, sb)
+}
+
+func (s *SandboxService) waitSoloBridge(ctx context.Context, row *models.Sandbox, sb *sandbox.Sandbox) error {
+	if sb == nil || sb.IsLocal() {
+		return nil
+	}
+	if sb.Password == "" {
+		sb.Password = row.Token
+	}
+	if s.soloBridgeReady != nil {
+		return s.soloBridgeReady(ctx, sb)
+	}
+	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, soloRecoveryTimeout); err != nil {
+		return fmt.Errorf("沙箱已启动但会话服务尚未就绪: %w", err)
+	}
+	return nil
 }
 
 // RecoverSoloSandboxes retries residents whose recovery was deferred. Active

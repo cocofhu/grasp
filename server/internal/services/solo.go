@@ -29,11 +29,15 @@ import (
 const (
 	// soloPrepareTimeout bounds waiting for a cold sandbox (image pull + clone).
 	soloPrepareTimeout = 20 * time.Minute
+	soloWakeAttempts   = 3
 	soloQueueCapacity  = 16
 	soloStreamBuffer   = 4096
 	// soloMaxEvents caps persisted ACP frames per assistant message.
 	soloMaxEvents = 6000
 )
+
+// soloWakeRetryDelay separates wake attempts of one turn; tests shrink it.
+var soloWakeRetryDelay = 3 * time.Second
 
 // Solo stream events beyond the chatsession control frames.
 const (
@@ -1780,9 +1784,11 @@ func (c *soloChat) onAcp(raw json.RawMessage) {
 	c.stream.Acp(raw)
 }
 
-// waitSandbox blocks until the session's sandbox is running.
+// waitSandbox blocks until the session's sandbox is running. A failed wake is
+// retried: the provider may finish resuming after the gateway call timed out.
 func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, error) {
 	s := c.svc
+	wakeFailures := 0
 	for {
 		row, err := s.load(c.id)
 		if err != nil {
@@ -1802,7 +1808,17 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 		if row.SandboxID != 0 {
 			if row.Status == models.SoloStatusRunning && s.modelAlign == nil {
 				if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
-					return 0, nil, err
+					wakeFailures++
+					if wakeFailures >= soloWakeAttempts || ctx.Err() != nil {
+						return 0, nil, err
+					}
+					log.Warn().Err(err).Str("session", c.id).Int("attempt", wakeFailures).Msg("solo sandbox wake failed; retrying")
+					select {
+					case <-ctx.Done():
+						return 0, nil, err
+					case <-time.After(soloWakeRetryDelay):
+					}
+					continue
 				}
 			}
 			if err := s.sbx.WaitReady(ctx, row.SandboxID, nil); err != nil {

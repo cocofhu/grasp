@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,6 +87,8 @@ type SandboxService struct {
 	// soloRouteRuntime defaults to the real manager and ACP bridge. Tests can
 	// supply the same operations without requiring Docker or SSH.
 	soloRouteRuntime soloRouteOps
+	// soloBridgeReady defaults to sandbox.WaitForACPReady; tests replace it.
+	soloBridgeReady func(context.Context, *sandbox.Sandbox) error
 }
 
 // TestSchedulerHooks wires purpose=test scheduler session lifecycle.
