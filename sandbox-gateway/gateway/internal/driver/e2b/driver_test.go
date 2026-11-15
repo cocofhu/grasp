@@ -48,13 +48,20 @@ type lifecycleProvider struct {
 	logs                                                                                                                        string
 	beforeRequest                                                                                                               func(*http.Request)
 	// maxEndAt caps renewals like E2B's per-team maximum sandbox length.
-	maxEndAt  time.Time
-	autoPause bool
+	maxEndAt               time.Time
+	autoPause              bool
+	snapshotKeep           int
+	snapshotReplies        []SnapshotStatus
+	snapshotRequests       int
+	snapshotHTTPStatus     int
+	deletedSnapshots       map[string]bool
+	deleteCleanupPending   int
+	deleteWorkloadReleased bool
 }
 
 func newLifecycleProvider(t *testing.T) *lifecycleProvider {
 	t.Helper()
-	f := &lifecycleProvider{sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, relayKeys: map[string]string{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
+	f := &lifecycleProvider{deleteWorkloadReleased: true, deletedSnapshots: map[string]bool{}, sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, relayKeys: map[string]string{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
@@ -107,6 +114,16 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/sandboxes/") {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/sandboxes/"), "/")
 		s := f.sandboxes[parts[0]]
+		if len(parts) == 2 && parts[1] == "snapshot-status" && f.deletedSnapshots[parts[0]] {
+			f.snapshotRequests++
+			_ = json.NewEncoder(w).Encode(SnapshotStatus{State: "deleted", PendingCleanup: f.deleteCleanupPending, WorkloadReleased: f.deleteWorkloadReleased})
+			return
+		}
+		if s == nil && len(parts) == 1 && r.Method == http.MethodDelete {
+			f.deletedSnapshots[parts[0]] = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if s == nil {
 			w.WriteHeader(404)
 			return
@@ -131,6 +148,7 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(f.deleteStatus)
 					return
 				}
+				f.deletedSnapshots[s.ID] = true
 				delete(f.sandboxes, s.ID)
 				f.deleted++
 				w.WriteHeader(204)
@@ -140,7 +158,29 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch parts[1] {
+		case "snapshot-status":
+			f.snapshotRequests++
+			if f.snapshotHTTPStatus != 0 {
+				w.WriteHeader(f.snapshotHTTPStatus)
+				return
+			}
+			status := SnapshotStatus{State: "ready", BuildID: "snapshot-" + s.ID, Keep: f.snapshotKeep, WorkloadReleased: true}
+			if len(f.snapshotReplies) > 0 {
+				status = f.snapshotReplies[0]
+				if len(f.snapshotReplies) > 1 {
+					f.snapshotReplies = f.snapshotReplies[1:]
+				}
+			}
+			_ = json.NewEncoder(w).Encode(status)
 		case "pause":
+			var body struct {
+				SnapshotKeep int `json:"snapshotKeep"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			f.snapshotKeep = body.SnapshotKeep
 			if f.pauseStatus != 0 {
 				w.WriteHeader(f.pauseStatus)
 				return

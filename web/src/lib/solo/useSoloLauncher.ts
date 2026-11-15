@@ -9,7 +9,7 @@ import { boundModelChoices } from './configuredModels'
 import { parseModelRoute, boundConfigurationIds, effectiveModelAgent } from '@/lib/agent/modelBindings'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 import { soloPrefs } from './soloPrefs'
-import { isSoloLimitError, soloErrorText } from './soloErrors'
+import { isSandboxLimitError, soloErrorText } from './soloErrors'
 import { soloCreateChoices } from './sessionRepos'
 import { useSoloSessions } from './useSoloSessions'
 import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/pm/onboardingWizard'
@@ -202,7 +202,7 @@ export function useSoloLauncher() {
       void router.push(`/solo/${s.id}`)
       return s
     } catch (e) {
-      if (isSoloLimitError(e)) {
+      if (isSandboxLimitError(e)) {
         limitOpen.value = true
         void store.refresh()
       } else {

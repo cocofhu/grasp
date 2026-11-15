@@ -23,6 +23,7 @@ const holders = computed(() => [
   ...store.ended.value.filter((s) => s.status === 'error' && !!s.sandboxId),
 ])
 const others = computed(() => Math.max(0, store.usedSandboxes.value - holders.value.length))
+const slotAvailable = computed(() => store.loaded.value && !store.error.value && store.usedSandboxes.value < store.maxSandboxes.value)
 
 /** Stopping frees the quota once the backup finishes; the session stays resumable. */
 async function stopOne(id: string) {
@@ -42,7 +43,8 @@ async function closeOne(id: string) {
   error.value = ''
   try {
     store.upsert(await api.closeSoloSession(id))
-    emit('freed')
+    await store.refresh()
+    if (slotAvailable.value) emit('freed')
   } catch (e) {
     error.value = soloErrorText(e, t, te, locale.value)
   } finally {
@@ -56,7 +58,7 @@ async function closeOne(id: string) {
     <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-limit-modal">
       <p v-if="store.usedSandboxes.value > 0">{{ t('pages.solo.limitUsage', { used: store.usedSandboxes.value, max: store.maxSandboxes.value }) }}</p>
       <p v-else>{{ t('pages.solo.limitHint', { max: store.maxSandboxes.value }) }}</p>
-      <ul v-if="holders.length || !others" class="divide-y divide-line/70 rounded-lg border border-line">
+      <ul v-if="holders.length || slotAvailable" class="divide-y divide-line/70 rounded-lg border border-line">
         <li v-for="s in holders" :key="s.id" class="flex items-center gap-3 px-3 py-2.5">
           <SoloStatusDot :status="s.status" :busy="s.busy" />
           <div class="min-w-0 flex-1">
@@ -77,7 +79,7 @@ async function closeOne(id: string) {
             {{ t('pages.solo.closeSession') }}
           </AppButton>
         </li>
-        <li v-if="!holders.length && !others" class="px-3 py-4 text-center text-txt3">
+        <li v-if="!holders.length && slotAvailable" class="px-3 py-4 text-center text-txt3">
           <Icon name="check" :size="14" class="mr-1 inline text-ok" />{{ t('pages.solo.limitFreed') }}
         </li>
       </ul>
@@ -85,6 +87,7 @@ async function closeOne(id: string) {
       <p v-if="error" class="text-[12px] text-err">{{ error }}</p>
     </div>
     <template #footer>
+      <AppButton v-if="slotAvailable" variant="primary" data-testid="sandbox-limit-retry" @click="emit('freed')">{{ t('common.buttons.retry') }}</AppButton>
       <AppButton variant="ghost" @click="emit('close')">{{ t('common.buttons.close') }}</AppButton>
     </template>
   </AppModal>

@@ -70,16 +70,15 @@ Solo、工作流、Agent 测试和 PM 使用同一套聊天展示。悬停消息
 
 这些信息属于该条回复的执行快照，后续切换模型不会改写旧回复。历史消息没有记录的字段显示为未提供，不使用当前选择推测；尚未完成的回复只显示已收到的信息。
 
-## Solo 停止环境的备份位置
+## 沙箱回收与备份位置
 
-Solo 会话「停止环境」时会先把工作区打包备份，再停止沙箱；恢复时原沙箱还在就直接启动（E2B 连进程一起恢复），原沙箱已不存在则新建沙箱并从备份还原。依赖与缓存目录（`node_modules`、`.venv`、`__pycache__`、`.cache`、`.pnpm-store`）不备份。
+所有沙箱使用设置页同一空闲时长和容量上限，默认分别为 60 分钟、15 个。空闲时先保存环境再回收资源，使用时恢复最新成功版本。Docker/K8s 保存工作区归档并删除容器/PVC；E2B 使用完整快照，不重复文件备份。运行中的任务不做周期备份。
 
-- 默认存放在服务端本地目录 `data/solo-backups`（正式栈位于 `./.localdata/app-data`，与附件一起备份），可用 `GRASP_SOLO_BACKUP_DIR` 修改。
-- 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID`、`GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 后改存 S3 兼容存储；MinIO、COS 等用 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 指定地址，必要时设 `GRASP_SOLO_BACKUP_S3_PATH_STYLE=true`。只填一部分会启动失败。
-- 单个备份默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`），超过时停止失败、会话继续运行。
-- 每个会话滚动保留最近 5 份备份（`GRASP_SOLO_BACKUP_KEEP`），更早的连同存储对象一起删除；关闭或删除会话时删除全部备份。
-- 运行中的会话距上次备份满 6 小时且期间有过对话时，会在当前回复结束后自动备份一次（`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`，设为负数关闭）。已暂停的沙箱不会为备份而唤醒。
-- 恢复时可在「恢复」旁选择备份版本。选最新一份时照常恢复原沙箱；选更早的版本会新建沙箱并还原该版本，之后的改动不保留（较新的备份仍在）。沙箱意外消失时，有备份的会话会变为已停止，点「恢复」即可从最新备份还原。
+- 文件备份默认位于 `data/solo-backups`，可用 `GRASP_SOLO_BACKUP_DIR` 修改；正式栈需与数据库一起备份。
+- 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` 和 `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 使用 S3。自托管存储可配置 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 和 `GRASP_SOLO_BACKUP_S3_PATH_STYLE`；不完整配置会拒绝启动。
+- 单个文件归档默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`）；超限或校验失败时保留原环境。
+- `solo_backup.keep`（`GRASP_SOLO_BACKUP_KEEP`）统一控制文件和快照的恢复点数量，默认 **1**。新保存成功后才淘汰旧版本，恢复总用最新成功版本。取消运行/关闭会话删除其全部恢复点，失败会重试。
+- [沙箱生命周期](sandbox-lifecycle.md) 说明等待人工、手动停止、恢复和清理失败的行为。
 
 ## 数据库与附件同生命周期
 

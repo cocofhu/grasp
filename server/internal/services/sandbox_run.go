@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/textutil"
 
 	"github.com/rs/zerolog/log"
@@ -26,45 +28,27 @@ var ErrSandboxAbsent = errors.New("not found")
 // gateway id and flips it to "running", or UnregisterRunSandbox removes it on
 // failure. Implements runtime.RunSandboxBeginner. Keyed by run+node so a retry
 // replaces the previous placeholder row.
-func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
+func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) error {
 	if info.Name == "" {
-		return
+		return nil
 	}
-	fields := map[string]any{
-		"name":          info.Name,
-		"profile":       info.Profile,
-		"purpose":       "run",
-		"status":        "creating",
-		"repo_url":      info.RepoURL,
-		"run_id":        info.RunID,
-		"workflow_id":   info.WorkflowID,
-		"workflow_name": info.WorkflowName,
-		"node_id":       info.NodeID,
-		"home_dir":      info.HomeDir,
-		"error":         "",
-		"destroy_at":    nil,
-		"updated_at":    time.Now(),
-	}
-	if info.Token != "" {
-		fields["token"] = info.Token
-	}
-	if info.Shared {
-		fields["shared"] = true
-	}
-	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
-		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
-		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
+	now := time.Now()
+	row := &models.Sandbox{Name: info.Name, Profile: info.Profile, Purpose: "run", Status: "creating",
+		RepoURL: info.RepoURL, RunID: info.RunID, WorkflowID: info.WorkflowID, WorkflowName: info.WorkflowName,
+		NodeID: info.NodeID, HomeDir: info.HomeDir, Token: info.Token, Shared: info.Shared, LastActiveAt: &now}
+	if err := s.createSandboxRow(row); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
+	return nil
 }
 
 // RegisterRunSandbox records a per-run workflow node sandbox so it appears in
 // the sandbox list while the node runs. Implements runtime.SandboxRegistry.
-// The row carries no DestroyAt (its lifecycle is owned by the runtime
-// provider, not the idle-TTL sweeper) and is marked active so it cannot be
-// stopped/destroyed from the UI mid-run. When a "creating" placeholder row was
+// The row is marked active so it cannot be reclaimed during execution.
+// Waiting or finished nodes use the same idle policy as every other purpose. When a "creating" placeholder row was
 // pre-registered (BeginRunSandbox), it is adopted in place: the gateway-assigned
 // id replaces the placeholder name and the status flips to "running".
 func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
@@ -86,8 +70,8 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"node_id":          info.NodeID,
 		"home_dir":         info.HomeDir,
 		"error":            "",
-		"destroy_at":       nil,
 		"updated_at":       time.Now(),
+		"last_active_at":   time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -143,15 +127,7 @@ func (s *SandboxService) markVisitSandboxReady(runID, nodeID string, at time.Tim
 	}
 }
 
-// RetireRunSandbox keeps a finished run's node sandbox alive for a debug TTL
-// instead of destroying it immediately: it clears the busy/active flag and sets
-// an idle deadline so the sweeper reclaims it later, while it remains browsable
-// (terminal / IDE / ACP / container logs) in the sandbox UI. Implements
-// runtime.RunSandboxRetirer.
-//
-// Always best-effort archives container logs before idle retention so a later
-// CAPA / AggregateRunFailure path still has sandbox_logs even when the engine
-// mis-fires after retire (eliminates noSandboxLog:true with no explanation).
+// RetireRunSandbox marks task completion and starts the shared idle interval.
 func (s *SandboxService) RetireRunSandbox(name string) {
 	if name == "" {
 		return
@@ -160,36 +136,93 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
-	s.leaseMu.Lock()
-	defer s.leaseMu.Unlock()
+	s.TouchActivityByName(name)
+}
+
+// ParkRunSandbox releases execution ownership while waiting for human input.
+// The workflow and its latest recovery point remain persisted indefinitely.
+func (s *SandboxService) ParkRunSandbox(name string) {
+	s.mu.Lock()
+	delete(s.runActive, name)
+	s.mu.Unlock()
+	s.TouchActivityByName(name)
+}
+
+// AcquireRunSandbox serializes new work with idle save/resume. Reference
+// counts protect a shared sandbox when another node is still executing.
+func (s *SandboxService) AcquireRunSandbox(ctx context.Context, name string) (func(), error) {
 	var row models.Sandbox
 	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
-		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
-		return
+		return nil, err
 	}
-	// A fresh retirement starts a fresh retention window: timed leases from an
-	// earlier retirement of a reused sandbox are dropped; until-run-end leases
-	// (preview) registered while the node ran are kept.
-	kept := row.Leases[:0:0]
-	for _, l := range row.Leases {
-		if l.Until == nil {
-			kept = append(kept, l)
+	unlock, err := s.lockSoloRecovery(ctx, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if _, _, err := s.ensureRunningLocked(ctx, row.ID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.runTasks[name]++
+	delete(s.runActive, name)
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.runTasks[name]--
+			if s.runTasks[name] <= 0 {
+				delete(s.runTasks, name)
+			}
+			s.mu.Unlock()
+			s.TouchActivity(row.ID)
+		})
+	}, nil
+}
+
+// ResumeRunSandbox returns the retained environment before a workflow reply.
+// found=false means no recovery environment exists; transient errors never
+// authorize destroying a saved environment and silently creating a new one.
+func (s *SandboxService) ResumeRunSandbox(ctx context.Context, runID, nodeID string) (*sandbox.Sandbox, bool, bool, error) {
+	row, err := runNodeSandboxRow(s.db, runID, nodeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, false, nil
+	}
+	if err != nil {
+		return nil, true, false, err
+	}
+	sb, warm, err := s.EnsureRunning(ctx, row.ID)
+	return sb, true, warm, err
+}
+
+func (s *SandboxService) CancelRunSandboxes(ctx context.Context, runID string) error {
+	var rows []models.Sandbox
+	if err := s.db.WithContext(ctx).Where("run_id = ?", runID).Find(&rows).Error; err != nil {
+		return err
+	}
+	// One durable write protects the entire run before slow provider cleanup.
+	// The FSM can finish promptly even when every VM's storage is unavailable.
+	if err := s.db.WithContext(ctx).Model(&models.Sandbox{}).Where("run_id = ?", runID).Update("cleanup_pending", true).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		s.mu.Lock()
+		delete(s.runActive, row.Name)
+		s.mu.Unlock()
+		s.Cancel(row.ID)
+	}
+	go func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		for _, row := range rows {
+			if cleanupCtx.Err() != nil {
+				return
+			}
+			_ = s.Destroy(cleanupCtx, row.ID)
 		}
-	}
-	row.Leases = kept
-	now := time.Now()
-	until := now.Add(s.RunTTL())
-	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).
-		Updates(map[string]any{"status": "running", "updated_at": now}).Error; err != nil {
-		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
-		return
-	}
-	if err := s.applyLease(&row, models.SandboxLease{Kind: models.LeaseDebug, Until: &until, Reason: "node finished", CreatedAt: now}); err != nil {
-		log.Warn().Err(err).Str("name", name).Msg("retire run sandbox failed")
-		return
-	}
-	log.Info().Str("name", name).Dur("ttl", s.RunTTL()).Int("leases", len(row.Leases)).
-		Msg("run sandbox retired for debugging (leased)")
+	}()
+	return nil
 }
 
 // ArchiveRunSandboxLogs best-effort archives live logs for every per-run node
@@ -233,7 +266,8 @@ func (s *SandboxService) hasArchivedLog(name string) bool {
 }
 
 // UnregisterRunSandbox clears a per-run node sandbox record once the runtime
-// provider tears down its container. Implements runtime.SandboxRegistry.
+// provider tears down its container. Cleanup intent and archive keys remain
+// durable until physical deletion succeeds. Implements runtime.SandboxRegistry.
 func (s *SandboxService) UnregisterRunSandbox(name string) {
 	if name == "" {
 		return
@@ -245,8 +279,12 @@ func (s *SandboxService) UnregisterRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
-	if err := s.db.Where("name = ?", name).Delete(&models.Sandbox{}).Error; err != nil {
-		log.Warn().Err(err).Str("name", name).Msg("unregister run sandbox failed")
+	var row models.Sandbox
+	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
+		return
+	}
+	if err := s.CancelSandbox(context.Background(), row.ID); err != nil {
+		log.Warn().Err(err).Str("name", name).Msg("run cleanup retained for retry")
 	}
 }
 

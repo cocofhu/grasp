@@ -33,8 +33,8 @@ import (
 func (s *SandboxService) findReusable(ctx context.Context, profile string) *models.Sandbox {
 	var rows []models.Sandbox
 	if err := s.db.
-		Where("purpose = ? AND profile = ? AND repo_url = ? AND status IN ?",
-			"test", profile, "", []string{"running", "creating", "pulling"}).
+		Where("purpose = ? AND profile = ? AND repo_url = ? AND cleanup_pending = ? AND status IN ?",
+			"test", profile, "", false, []string{"running", "creating", "pulling", "stopped", "saving", "resuming", "error"}).
 		Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil
 	}
@@ -45,6 +45,9 @@ func (s *SandboxService) findReusable(ctx context.Context, profile string) *mode
 		}
 	}
 	for i := range rows {
+		if rows[i].RecoveryKind != "" {
+			return &rows[i]
+		}
 		if rows[i].Status == "creating" || rows[i].Status == "pulling" {
 			return &rows[i]
 		}
@@ -82,18 +85,19 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 			s.mu.Lock()
 			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, row, s.live[row.ID])
 			s.mu.Unlock()
-			if bindingErr != nil {
+			if bindingErr != nil && !(row.RecoveryKind == "files" && row.Status == "stopped") {
 				return nil, bindingErr
 			}
-			at := time.Now().Add(s.TTL())
-			s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
-			row.DestroyAt = &at
+			if row.Status != "creating" && row.Status != "pulling" {
+				if _, _, err := s.EnsureRunning(ctx, row.ID); err != nil {
+					return nil, err
+				}
+				return s.Get(row.ID)
+			}
+			s.TouchActivity(row.ID)
 			log.Info().Str("name", row.Name).Str("profile", profile).Uint("id", row.ID).Msg("reusing existing test sandbox")
 			return row, nil
 		}
-	}
-	if maxN := s.MaxTestSandboxes(); s.activeCount() >= maxN {
-		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
 
 	runID := "test-" + strings.ReplaceAll(filepath.Base(profile), "/", "") + "-" + randID()
@@ -108,7 +112,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	if err := s.createSandboxRow(row); err != nil {
 		return nil, err
 	}
 	log.Info().Str("name", name).Str("profile", profile).Uint("id", row.ID).Msg("test sandbox creating")
@@ -127,9 +131,6 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	if err != nil {
 		return nil, err
 	}
-	if maxN := s.MaxTestSandboxes(); s.activeCount() >= maxN {
-		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
-	}
 
 	runID := "ptest-" + strings.ReplaceAll(filepath.Base(profile), "/", "") + "-" + randID()
 	token := mcp.NewToken()
@@ -140,7 +141,7 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	if err := s.createSandboxRow(row); err != nil {
 		return nil, err
 	}
 	log.Info().Str("name", name).Str("profile", profile).
@@ -158,8 +159,8 @@ func firstRepoURL(repos []models.SessionRepo) string {
 
 // startContainer performs the slow part of Open in the background: build the
 // cursor home, launch the container, wait for ACP, connect, then flip the DB
-// record to running. Any failure flips it to "error" (with a short TTL so the
-// idle sweeper reclaims the dead row). Runs on a detached context since the
+// record to running. A failure leaves a durable cleanup intent for the retry
+// worker. Runs on a detached context since the
 // originating HTTP request has already returned.
 func (s *SandboxService) startContainer(id uint, name, profile, runID, token string, snapshots []models.SessionRepo, agent Agent, sharedWorkDir string) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
@@ -169,9 +170,8 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("test sandbox start failed")
 		s.unregisterTestScheduler(token)
-		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
+			"status": "error", "error": truncErr(err), "cleanup_pending": true, "updated_at": time.Now(),
 		})
 		s.releaseSandboxScope("test", runID, "test_sandbox_failed")
 	}
@@ -310,7 +310,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		return
 	}
 
-	destroyAt := time.Now().Add(s.TTL())
 	// The gateway assigns the authoritative sandbox id; adopt it as the row's
 	// Name (the pre-allocated placeholder was only a correlation label) so all
 	// later control-plane calls (Status/Attach/Destroy) address the real id.
@@ -318,8 +317,8 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		"model_binding_fingerprint": modelFingerprint,
 		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
-		"code_server_port": sb.CodeServerPort, "error": "",
-		"destroy_at": &destroyAt, "updated_at": time.Now(),
+		"code_server_port": sb.CodeServerPort, "error": "", "home_dir": home,
+		"last_active_at": time.Now(), "updated_at": time.Now(),
 	})
 	// Row gone (user destroyed it mid-launch) or update failed: tear everything
 	// down instead of leaking an orphan container.
@@ -381,30 +380,34 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 // prompt_done (nil = not reported), including failed turns. Provider failures
 // are errors even when their transport completed with prompt_done.
 func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	unlock, err := s.lockSoloRecovery(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, _, err := s.ensureRunningLocked(ctx, id); err != nil {
+		unlock()
+		return nil, nil, err
+	}
 	ls, row, err := s.ensureConnected(ctx, id)
 	if err != nil {
+		unlock()
 		return nil, nil, err
 	}
 	s.mu.Lock()
 	if ls.busy || ls.switching {
 		s.mu.Unlock()
+		unlock()
 		return nil, nil, fmt.Errorf("sandbox busy")
 	}
 	ls.busy = true
 	s.mu.Unlock()
+	unlock()
 	// Suspend TTL while the turn runs.
-	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("destroy_at", nil)
-	resident := row.Purpose == SandboxPurposeSolo
 	defer func() {
 		s.mu.Lock()
 		ls.busy = false
 		s.mu.Unlock()
-		if resident {
-			s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("updated_at", time.Now())
-			return
-		}
-		at := time.Now().Add(s.TTL())
-		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
+		s.TouchActivity(id)
 	}()
 
 	chatCtx, cancel := context.WithCancel(ctx)
@@ -527,11 +530,8 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	// Attach rebuilds the handle from the gateway record, which carries no env;
 	// restore the acp-bridge secret so ACP() can log in before dialing /ws.
 	sb.Password = row.Token
-	// Attach can't recover the per-Agent workspace dir; restore it from the
-	// Agent's layout so the reconnected session matches the original.
-	if agent.Layout.WorkspaceDir != "" {
-		sb.WorkspaceDir = agent.Layout.WorkspaceDir
-	}
+	// The gateway retains the original workspace even if the Agent's current
+	// default layout changed while it was asleep.
 	if agent.Layout.ConfigRoot != "" {
 		sb.ConfigRoot = agent.Layout.ConfigRoot
 	}
@@ -607,49 +607,49 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	return ls, &row, nil
 }
 
-// Stop removes the container but keeps the DB record (status=stopped).
+// Stop uses the same save-before-release transition as automatic idle recovery.
 func (s *SandboxService) Stop(ctx context.Context, id uint) error {
-	row, err := s.Get(id)
-	if err != nil {
-		return err
-	}
-	if row.Purpose == SandboxPurposeSolo {
-		return fmt.Errorf("Solo 沙箱请通过关闭会话释放")
-	}
-	if s.isBusyRow(row) {
-		return fmt.Errorf("sandbox 正在执行任务,无法停止")
-	}
-	s.teardownLive(id)
-	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
-	return s.db.Model(&models.Sandbox{}).Where("id = ?", id).
-		Updates(map[string]any{"status": "stopped", "destroy_at": nil, "updated_at": time.Now()}).Error
+	return s.Reclaim(ctx, id)
 }
 
-// Destroy removes the container and deletes the DB record.
+// Destroy removes the workload and every recovery point. Failed cleanup keeps
+// a durable row so the sweeper can retry instead of silently leaking storage.
 func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
-	row, err := s.Get(id)
+	unlock, err := s.lockSoloRecovery(ctx, id)
 	if err != nil {
 		return err
 	}
-	if row.Purpose == SandboxPurposeSolo {
-		unlock, lockErr := s.lockSoloRecovery(ctx, id)
-		if lockErr != nil {
-			return lockErr
-		}
-		defer unlock()
-		if row, err = s.Get(id); err != nil {
-			return err
-		}
+	defer unlock()
+	row, err := s.Get(id)
+	if err != nil {
+		return err
 	}
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
+	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"cleanup_pending": true, "status": "deleting"}).Error; err != nil {
+		return err
+	}
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
+	if err := s.mgr.DestroyByName(ctx, row.Name); err != nil {
+		status, probeErr := s.mgr.ProbeStatus(ctx, row.Name)
+		released := probeErr == nil && (status == "stopped" || status == "exited")
+		return s.cleanupFailure(id, err, released)
+	}
+	// Storage cleanup may wait for shared snapshot ancestors or an unavailable
+	// archive store. The confirmed absence of a workload frees its compute slot
+	// while the row remains the durable queue for that physical cleanup.
+	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("status", "stopped").Error; err != nil {
+		return err
+	}
+	if err := s.pruneRecoveryPoints(ctx, row, 0); err != nil {
+		return s.cleanupFailure(id, err, true)
+	}
 	if row.HomeDir != "" {
-		_ = os.RemoveAll(row.HomeDir)
+		if err := os.RemoveAll(row.HomeDir); err != nil {
+			return s.cleanupFailure(id, err, true)
+		}
 	}
 	if isAgentSandboxPurpose(row.Purpose) {
 		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
@@ -661,8 +661,17 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if err := s.db.Delete(&models.Sandbox{}, id).Error; err != nil {
 		return err
 	}
+	s.forgetTouch(id)
 	s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
 	return nil
+}
+
+func (s *SandboxService) cleanupFailure(id uint, err error, workloadReleased bool) error {
+	updates := map[string]any{"error": "资源清理未完成，将自动重试：" + truncErr(err)}
+	if workloadReleased {
+		updates["status"] = "stopped"
+	}
+	return errors.Join(err, s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(updates).Error)
 }
 
 // releaseSandboxScope frees the host's in-memory state for a namespace the
@@ -675,62 +684,23 @@ func (s *SandboxService) releaseSandboxScope(purpose, runID, reason string) {
 	s.host.ReleaseRun(runID, reason)
 }
 
-// CleanupIdle destroys every non-busy sandbox; returns (destroyed, skipped).
+// CleanupIdle saves and releases all currently idle environments.
 func (s *SandboxService) CleanupIdle(ctx context.Context) (destroyed, skipped int) {
 	var rows []models.Sandbox
-	if err := s.db.Find(&rows).Error; err != nil {
+	if s.db.Where("status = ?", "running").Find(&rows).Error != nil {
 		return 0, 0
 	}
-	for i := range rows {
-		if s.isBusyRow(&rows[i]) || rows[i].Purpose == SandboxPurposeSolo {
+	for _, row := range rows {
+		if err := s.Reclaim(ctx, row.ID); err != nil {
 			skipped++
-			continue
-		}
-		if err := s.Destroy(ctx, rows[i].ID); err == nil {
-			destroyed++
 		} else {
-			skipped++
+			destroyed++
 		}
 	}
 	return destroyed, skipped
 }
 
-// ShutdownAllTestSandboxes tears down every interactive test sandbox. When
-// force is true, busy sandboxes are cancelled and destroyed immediately.
-func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force bool) int {
-	var rows []models.Sandbox
-	if err := s.db.Where("purpose = ?", "test").Find(&rows).Error; err != nil {
-		log.Error().Err(err).Msg("shutdown test sandboxes: query failed")
-		return 0
-	}
-	destroyed := 0
-	for i := range rows {
-		row := &rows[i]
-		if !force && s.isBusyRow(row) {
-			continue
-		}
-		if force {
-			s.Cancel(row.ID)
-		}
-		s.teardownLive(row.ID)
-		s.archiveLog(ctx, row.Name)
-		_ = s.mgr.DestroyByName(ctx, row.Name)
-		if row.HomeDir != "" {
-			_ = os.RemoveAll(row.HomeDir)
-		}
-		s.unregisterTestScheduler(row.Token)
-		if err := s.db.Delete(&models.Sandbox{}, row.ID).Error; err == nil {
-			s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
-			destroyed++
-		}
-	}
-	if destroyed > 0 {
-		log.Info().Int("count", destroyed).Msg("interactive sandbox destroyed")
-	}
-	return destroyed
-}
-
-// RunSweeper periodically destroys idle sandboxes past their TTL deadline.
+// RunSweeper saves idle environments and retries authorized cleanup.
 func (s *SandboxService) RunSweeper(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -745,32 +715,29 @@ func (s *SandboxService) RunSweeper(ctx context.Context) {
 }
 
 func (s *SandboxService) sweepOnce(ctx context.Context) {
+	s.RetryRecoveryCleanup(ctx)
 	var rows []models.Sandbox
-	if err := s.db.Where("destroy_at IS NOT NULL AND destroy_at <= ?", time.Now()).Find(&rows).Error; err != nil {
-		return
+	if s.db.Where("status = ? AND cleanup_pending = ?", "running", false).Find(&rows).Error == nil {
+		s.sweepRows(ctx, rows)
 	}
-	s.sweepRows(ctx, rows)
 }
 
-// sweepRows destroys the due rows found by sweepOnce. Run sandboxes are
-// re-checked against their current leases first; rows is only a snapshot.
 func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
-	now := time.Now()
-	for i := range rows {
-		if rows[i].Purpose == SandboxPurposeSolo {
-			// Residents never expire, including legacy rows with a stale TTL.
+	for _, row := range rows {
+		if ctx.Err() != nil {
+			return
+		}
+		if s.isBusyRow(&row) || !s.idleDue(&row, time.Now()) {
 			continue
 		}
-		if s.isBusyRow(&rows[i]) {
-			continue
+		unlock, err := s.lockSoloRecovery(ctx, row.ID)
+		if err != nil {
+			return
 		}
-		if rows[i].Purpose == "run" && !s.claimExpired(rows[i].ID, now) {
-			continue
-		}
-		if err := s.Destroy(ctx, rows[i].ID); err == nil {
-			s.forgetTouch(rows[i].ID)
-			log.Info().Str("name", rows[i].Name).Str("purpose", rows[i].Purpose).
-				Int("leases", len(rows[i].Leases)).Msg("sandbox swept (lease expired)")
+		err = s.reclaimLocked(ctx, row.ID, true)
+		unlock()
+		if err != nil {
+			log.Debug().Err(err).Str("name", row.Name).Msg("idle save deferred")
 		}
 	}
 }
@@ -803,6 +770,10 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
+		if row.CleanupPending || row.RecoveryKind != "" || len(row.RecoveryPoints) > 0 || row.Status == "stopped" || row.Status == "saving" || row.Status == "resuming" {
+			tracked[row.Name] = true
+			continue
+		}
 		if row.Purpose == "run" {
 			s.reconcileRunSandbox(ctx, row, adopted[row.Name], tracked)
 			continue
@@ -833,10 +804,6 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			tracked[row.Name] = true
 			if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
 				upd := map[string]any{"status": "running", "host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort}
-				if row.DestroyAt == nil && row.Purpose != SandboxPurposeSolo {
-					at := time.Now().Add(s.TTL())
-					upd["destroy_at"] = &at
-				}
 				s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(upd)
 			}
 		default:
@@ -865,9 +832,8 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 }
 
 // reconcileRunSandbox keeps a live per-run node sandbox across a restart. An
-// adopted one is marked in use for the reattaching driver; any other keeps its
-// persisted leases (debug window, preview) or is retired like a finished node.
-// Missing or stopped containers are dropped.
+// adopted one is marked in use for the reattaching driver; other live rows
+// start the shared idle interval. Missing rows remain available for diagnosis.
 func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if sandbox.GatewayRecordMissing(err) {
@@ -879,7 +845,7 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 		return
 	}
 	if status != "running" {
-		s.destroyLocalSandbox(ctx, row)
+		tracked[row.Name] = true
 		return
 	}
 	tracked[row.Name] = true
@@ -887,30 +853,17 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 		s.mu.Lock()
 		s.runActive[row.Name] = true
 		s.mu.Unlock()
-		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", nil)
 		return
 	}
-	if row.DestroyAt == nil {
-		s.RetireRunSandbox(row.Name)
-	}
+	s.RetireRunSandbox(row.Name)
 }
 
 // destroyLocalSandbox tears down the gateway instance (by Name and by
 // grasp.name correlation) then deletes the local list row.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
-	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
-	// Placeholder Name cannot address the real gateway id; also destroy by
-	// correlation label so leaked control-plane rows are not left behind.
-	s.mgr.DestroyByCorrelationName(ctx, row.Name)
-	if row.HomeDir != "" {
-		_ = os.RemoveAll(row.HomeDir)
+	if err := s.CancelSandbox(ctx, row.ID); err != nil {
+		log.Warn().Err(err).Str("name", row.Name).Msg("sandbox cleanup retained for retry")
 	}
-	if row.Purpose == SandboxPurposeSolo {
-		defer s.invokeSoloDestroyHook(row.ID)
-	}
-	s.db.Delete(&models.Sandbox{}, row.ID)
-	s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
 }
 
 func (s *SandboxService) isBusyRow(row *models.Sandbox) bool {
@@ -919,7 +872,7 @@ func (s *SandboxService) isBusyRow(row *models.Sandbox) bool {
 	if ls := s.live[row.ID]; ls != nil && (ls.busy || ls.switching) {
 		return true
 	}
-	return row.Purpose == "run" && s.runActive[row.Name]
+	return row.Purpose == "run" && (s.runActive[row.Name] || s.runTasks[row.Name] > 0)
 }
 
 func (s *SandboxService) teardownLive(id uint) {
@@ -935,18 +888,7 @@ func (s *SandboxService) teardownLive(id uint) {
 		if ls.sb != nil && ls.sb.IsLocal() {
 			ls.sb.Destroy(context.Background())
 		}
-		if ls.home != "" {
-			_ = os.RemoveAll(ls.home)
-		}
 	}
-}
-
-func (s *SandboxService) activeCount() int {
-	var n int64
-	s.db.Model(&models.Sandbox{}).
-		Where("status IN ? AND purpose = ?", []string{"running", "creating"}, "test").
-		Count(&n)
-	return int(n)
 }
 
 // truncErr renders an error to a bounded string for persistence/display.

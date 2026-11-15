@@ -18,6 +18,6 @@ export function soloErrorText(e: unknown, t: Translate, te: (key: string) => boo
   return String(err?.message || e || '')
 }
 
-export function isSoloLimitError(e: unknown): boolean {
-  return (e as { code?: string } | null)?.code === 'solo_limit'
+export function isSandboxLimitError(e: unknown): boolean {
+  return (e as { code?: string } | null)?.code === 'sandbox_limit'
 }

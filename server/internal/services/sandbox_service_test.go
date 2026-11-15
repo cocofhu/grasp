@@ -20,6 +20,7 @@ import (
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/sandbox/sandboxtest"
+	"github.com/cocofhu/grasp/internal/solobackup"
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
@@ -67,13 +68,22 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 	s := NewSandboxService(db, mgr, skills, host, SandboxOptions{
 		ProfilesRoot: skillsRoot,
 		MCPEndpoint:  "http://mcp.local",
-		TTL:          time.Minute,
-		RunTTL:       time.Minute,
+		IdleTTL:      time.Minute,
 		Max:          2,
 		ModelBinding: sandboxTestModelResolver,
 	})
 	s.soloBridgeReady = bridgeAlwaysReady
 	return s
+}
+
+func installRecoveryStorage(t *testing.T, s *SandboxService) {
+	t.Helper()
+	store, err := solobackup.NewLocal(t.TempDir(), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetBackupStore(store)
+	(&workspaceExec{archive: "archive"}).install(t)
 }
 
 // bridgeAlwaysReady stands in for a resumed guest whose bridge already serves.
@@ -122,7 +132,7 @@ func TestSandboxServiceDefaults(t *testing.T) {
 	host := mcp.NewHost(NewArtifactService(db))
 	// Zero options -> defaults filled in.
 	s := NewSandboxService(db, mgr, skills, host, SandboxOptions{})
-	if s.TTL() <= 0 || s.MaxTestSandboxes() <= 0 || s.RunTTL() <= 0 {
+	if s.IdleTTL() <= 0 || s.MaxSandboxes() <= 0 {
 		t.Fatalf("defaults not applied: %+v", s)
 	}
 }
@@ -161,8 +171,8 @@ func TestRunSandboxLifecycle(t *testing.T) {
 	// Retire clears active flag and sets a destroy deadline.
 	s.RetireRunSandbox(name)
 	db.Where("name = ?", name).First(&row)
-	if row.DestroyAt == nil {
-		t.Fatal("retire should set destroy_at")
+	if row.LastActiveAt == nil || s.view(ctx, &row).DestroyAt == nil {
+		t.Fatal("retire should start the common idle deadline")
 	}
 	if s.isBusyRow(&row) {
 		t.Fatal("retired sandbox no longer active")
@@ -432,6 +442,7 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
+	installRecoveryStorage(t, s)
 	ctx := context.Background()
 
 	r1 := &models.Sandbox{Name: "grasp-sb-a", Purpose: "test", Status: "running"}
@@ -463,6 +474,7 @@ func TestSandboxStopDestroyCleanup(t *testing.T) {
 
 	// CleanupIdle destroys remaining non-busy sandboxes.
 	db.Create(&models.Sandbox{Name: "grasp-sb-c", Purpose: "test", Status: "running"})
+	ds.setStatus("grasp-sb-c", "running")
 	destroyed, _ := s.CleanupIdle(ctx)
 	if destroyed < 1 {
 		t.Fatalf("cleanup destroyed=%d", destroyed)
@@ -580,16 +592,23 @@ func TestSandboxSweeper(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
+	installRecoveryStorage(t, s)
 	ctx := context.Background()
 
 	past := time.Now().Add(-time.Hour)
-	db.Create(&models.Sandbox{Name: "grasp-sb-old", Purpose: "test", Status: "running", DestroyAt: &past})
+	db.Create(&models.Sandbox{Name: "grasp-sb-old", Purpose: "test", Status: "running", LastActiveAt: &past})
+	ds.setStatus("grasp-sb-old", "running")
 	db.Create(&models.Sandbox{Name: "grasp-sb-keep", Purpose: "test", Status: "running"})
 	s.sweepOnce(ctx)
 	var n int64
 	db.Model(&models.Sandbox{}).Count(&n)
-	if n != 1 {
-		t.Fatalf("sweeper left %d rows, want 1", n)
+	if n != 2 {
+		t.Fatalf("sweeper removed durable recovery row: %d", n)
+	}
+	var saved models.Sandbox
+	db.Where("name = ?", "grasp-sb-old").First(&saved)
+	if saved.Status != "stopped" || len(saved.RecoveryPoints) != 1 {
+		t.Fatalf("saved row=%+v", saved)
 	}
 
 	// RunSweeper respects context cancellation.
@@ -627,13 +646,13 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 		t.Fatal("live row should survive")
 	}
 	var runLive, adopted models.Sandbox
-	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.DestroyAt == nil {
+	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.LastActiveAt == nil {
 		t.Fatalf("live run row should be kept and retired: err=%v destroyAt=%v", err, runLive.DestroyAt)
 	}
 	if err := db.Where("name = ?", "grasp-sb-run-adopted").First(&adopted).Error; err != nil || adopted.DestroyAt != nil {
 		t.Fatalf("adopted run row should be kept without deadline: err=%v destroyAt=%v", err, adopted.DestroyAt)
 	}
-	if !s.inUse("grasp-sb-run-adopted") {
+	if !s.isBusyRow(&adopted) {
 		t.Fatal("adopted run sandbox should be marked in use")
 	}
 	if !ds.fg.Has("grasp-sb-run-live") || !ds.fg.Has("grasp-sb-run-adopted") {
@@ -642,8 +661,8 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 	if live.ACPPort == 0 {
 		t.Fatal("live row should get refreshed port")
 	}
-	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-		t.Fatal("run row should be gone")
+	if err := db.Where("name = ?", "grasp-sb-run").First(&models.Sandbox{}).Error; err != nil {
+		t.Fatal("unconfirmed missing run row should retain its binding")
 	}
 	if err := db.Where("name = ?", "grasp-sb-dead").First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
 		t.Fatal("dead row should be gone")
@@ -664,7 +683,7 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 // local row whose Name is the gateway id must Destroy the gateway instance
 // before the list row is deleted, and must not leave the id in tracked so the
 // orphan pass cannot skip it.
-func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
+func TestSandboxReconcileRetainsStoppedRecoveryAndRemovesFailedCreates(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -680,7 +699,10 @@ func TestSandboxReconcileDestroysNonRunningGateway(t *testing.T) {
 
 	s.ReconcileOnStartup(ctx, nil)
 
-	for _, name := range []string{"gw-error", "gw-stopped", "gw-pm-dead"} {
+	if err := db.Where("name = ?", "gw-stopped").First(&models.Sandbox{}).Error; err != nil || !ds.fg.Has("gw-stopped") {
+		t.Fatal("stopped recovery point was deleted on restart")
+	}
+	for _, name := range []string{"gw-error", "gw-pm-dead"} {
 		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
 			t.Fatalf("%s local row should be gone", name)
 		}
@@ -1116,12 +1138,14 @@ func TestSandboxCleanupAndSweepBusySkip(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
+	installRecoveryStorage(t, s)
 	ctx := context.Background()
 
 	// A busy run sandbox is skipped by CleanupIdle; an idle test row is destroyed.
 	busyName := "grasp-sb-busy2"
 	s.RegisterRunSandbox(runtimeInfo(busyName)) // marks runActive (busy)
 	db.Create(&models.Sandbox{Name: "grasp-sb-idle", Purpose: "test", Status: "running"})
+	ds.setStatus("grasp-sb-idle", "running")
 	destroyed, skipped := s.CleanupIdle(ctx)
 	if destroyed < 1 || skipped < 1 {
 		t.Fatalf("cleanup destroyed=%d skipped=%d (want >=1 each)", destroyed, skipped)
@@ -1129,7 +1153,7 @@ func TestSandboxCleanupAndSweepBusySkip(t *testing.T) {
 
 	// sweepOnce skips a busy row even past its TTL deadline.
 	past := time.Now().Add(-time.Hour)
-	db.Model(&models.Sandbox{}).Where("name = ?", busyName).Update("destroy_at", &past)
+	db.Model(&models.Sandbox{}).Where("name = ?", busyName).Update("last_active_at", &past)
 	s.sweepOnce(ctx)
 	var stillThere int64
 	db.Model(&models.Sandbox{}).Where("name = ?", busyName).Count(&stillThere)
@@ -1521,20 +1545,16 @@ func TestResolveAgentMCPSubstitutesMergedEnv(t *testing.T) {
 	}
 }
 
-func TestSandboxServiceSettersAndShutdownAll(t *testing.T) {
+func TestSandboxServiceSetters(t *testing.T) {
 	db := newTestDB(t)
 	svc := newSandboxService(t, db, &dockerState{})
-	svc.SetTTLs(2*time.Minute, 3*time.Minute)
-	if svc.RunTTL() != 2*time.Minute || svc.TTL() != 3*time.Minute {
-		t.Fatalf("ttls: run=%v test=%v", svc.RunTTL(), svc.TTL())
+	svc.SetIdleTTL(3 * time.Minute)
+	if svc.IdleTTL() != 3*time.Minute {
+		t.Fatalf("ttl: %v", svc.IdleTTL())
 	}
-	svc.SetMaxTestSandboxes(5)
-	if svc.MaxTestSandboxes() != 5 {
-		t.Fatalf("max: %d", svc.MaxTestSandboxes())
-	}
-	db.Create(&models.Sandbox{Name: "grasp-sb-shutdown", Purpose: "test", Status: "stopped"})
-	if n := svc.ShutdownAllTestSandboxes(context.Background(), true); n != 1 {
-		t.Fatalf("shutdown: %d", n)
+	svc.SetMaxSandboxes(5)
+	if svc.MaxSandboxes() != 5 {
+		t.Fatalf("max: %d", svc.MaxSandboxes())
 	}
 }
 

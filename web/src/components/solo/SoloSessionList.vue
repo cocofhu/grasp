@@ -7,7 +7,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import SoloStatusDot from './SoloStatusDot.vue'
 import { relTime } from '@/lib/shared/format'
 import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
-import { isSoloActive, isSoloComputing, useSoloSessions } from '@/lib/solo/useSoloSessions'
+import { isSoloActive, useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { SoloSession } from '@/lib/api/apiTypes'
 
 defineProps<{ embedded?: boolean }>()
@@ -17,7 +17,6 @@ const store = useSoloSessions()
 
 const filter = ref<'active' | 'all'>('active')
 const activeCount = computed(() => store.active.value.length)
-const computeCount = computed(() => store.active.value.filter(isSoloComputing).length)
 const listed = computed(() => {
   const all = store.sessions.value
   const rows = filter.value === 'active' ? all.filter(isSoloActive) : all
@@ -43,7 +42,7 @@ function repoMeta(session: SoloSession) {
     <header v-if="!embedded" class="solo-list__head">
       <div class="min-w-0 flex-1">
         <h1 class="text-[15px] font-semibold text-txt">{{ t('pages.solo.title') }}</h1>
-        <p class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.capacity', { n: computeCount, max: store.maxSandboxes.value }) }}</p>
+        <p class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.capacity', { n: store.usedSandboxes.value, max: store.maxSandboxes.value }) }}</p>
       </div>
       <AppButton size="sm" variant="primary" icon="plus" data-testid="solo-new" @click="emit('create')">{{ t('pages.solo.newSession') }}</AppButton>
     </header>
@@ -63,7 +62,7 @@ function repoMeta(session: SoloSession) {
         {{ f === 'active' ? t('pages.solo.filterActive') : t('pages.solo.filterAll') }}
         <span class="solo-list__tab-count">{{ f === 'active' ? activeCount : store.sessions.value.length }}</span>
       </button>
-      <span v-if="embedded" class="ml-auto self-center truncate text-[11.5px] text-txt3">{{ t('pages.solo.capacity', { n: computeCount, max: store.maxSandboxes.value }) }}</span>
+      <span v-if="embedded" class="ml-auto self-center truncate text-[11.5px] text-txt3">{{ t('pages.solo.capacity', { n: store.usedSandboxes.value, max: store.maxSandboxes.value }) }}</span>
     </div>
 
     <div v-if="!store.loaded.value" class="py-8 text-center text-txt3"><Icon name="spinner" :size="15" class="inline animate-spin" /></div>

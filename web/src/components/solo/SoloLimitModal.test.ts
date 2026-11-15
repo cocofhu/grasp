@@ -37,6 +37,9 @@ describe('SoloLimitModal', () => {
     const store = useSoloSessions()
     store.sessions.value = []
     store.usedSandboxes.value = 0
+    store.maxSandboxes.value = 15
+    store.loaded.value = true
+    store.error.value = ''
   })
 
   it('counts stopped sessions as open but not as holding a sandbox', () => {
@@ -63,6 +66,28 @@ describe('SoloLimitModal', () => {
     expect(api.stopSoloSession).toHaveBeenCalledWith('a')
     expect(store.computing.value.find((s) => s.id === 'a')?.status).toBe('stopping')
     expect(wrapper.find('[data-testid="solo-limit-stop-a"]').exists()).toBe(false)
+  })
+
+  it('does not retry until cancellation has actually released a global slot', async () => {
+    const store = useSoloSessions()
+    store.upsert(row('mine', 'running'))
+    store.usedSandboxes.value = 15
+    api.closeSoloSession.mockResolvedValueOnce(row('mine', 'closed'))
+    api.listSoloSessions.mockResolvedValueOnce({ sessions: [row('mine', 'closed')], maxSandboxes: 15, usedSandboxes: 15 })
+    const wrapper = mountModal()
+    await wrapper.findAll('button').find(button => button.text() === pages.pages.solo.closeSession)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('freed')).toBeUndefined()
+    expect(wrapper.find('[data-testid="sandbox-limit-retry"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('15 / 15')
+    expect(wrapper.get('[data-testid="solo-limit-others"]').text()).toContain('清理中')
+
+    api.listSoloSessions.mockResolvedValueOnce({ sessions: [row('mine', 'closed')], maxSandboxes: 15, usedSandboxes: 14 })
+    await store.refresh()
+    await flushPromises()
+    await wrapper.get('[data-testid="sandbox-limit-retry"]').trigger('click')
+    expect(wrapper.emitted('freed')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it('shows a stop failure', async () => {

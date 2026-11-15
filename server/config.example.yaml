@@ -72,16 +72,11 @@ sandbox:
   chat_idle_timeout_seconds: 1200
   # 未配置节点总时限的 Agent 节点的兜底上限(小时)。
   agent_node_hard_cap_hours: 24
-  # 工作流节点沙箱在回合结束后再保活多少分钟(供终端/IDE/日志事后调试),之后
-  # 被清扫回收。注:回合执行期间沙箱不受此限;MCP token 的有效期跟随沙箱生命
-  # 周期(沙箱在即有效,无需单独配置 token 时长)。
-  run_sandbox_ttl_minutes: 30
-  # Agent 对话测试沙箱:空闲多少分钟后被清扫回收(对话中暂停回收)。
-  test_sandbox_ttl_minutes: 30
-  # 同时存活的交互式(对话测试)沙箱数量上限。
-  max_test_sandboxes: 5
-  # 同时运行的 Solo 会话沙箱数量上限(Solo 沙箱没有空闲回收)。设置页可改。
-  max_solo_sandboxes: 5
+  # 所有用途/后端共用：无运行任务、排队请求和终端工作达到此时长，保存后释放资源。
+  # 等待人工不占运行资源；再次使用时恢复最新成功备份。设置页可修改。
+  idle_ttl_minutes: 60
+  # 全局沙箱数量上限，创建和恢复使用同一配额；降低不会终止已有沙箱。
+  max_sandboxes: 15
   # 内存覆盖（MiB）：0 跟随网关/所选模板；非零至少 1024。
   # Docker/K8s 受各自 resources.max 限制，E2B 必须与模板 memoryMB 一致。
   # 设置页可改；GRASP_SANDBOX_MEMORY_MB 环境变量优先且锁定设置页。
@@ -141,3 +136,7 @@ codex_login:
   refresh_lead: 96h
   check_interval: 10m
   auth_base_url: https://auth.openai.com
+
+# 文件备份与 E2B 快照共用保留数量；仅保存/停止时产生，始终恢复最新成功版本。
+solo_backup:
+  keep: 1

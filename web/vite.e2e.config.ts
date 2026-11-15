@@ -173,6 +173,11 @@ export default defineConfig({
             }
             return
           }
+          if (req.url === '/api/sandboxes/capacity' && req.method === 'GET') {
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ used: 1, limit: 15 }))
+            return
+          }
           if (req.url?.startsWith('/api/sandboxes') && req.method === 'GET') {
             res.setHeader('Content-Type', 'application/json')
             // List path intentionally omits endpoints (no gateway Get per row).

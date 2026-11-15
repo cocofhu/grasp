@@ -33,7 +33,7 @@ func TestLookupPreviewAndResolveDesktop(t *testing.T) {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	skills := services.NewAgentService(t.TempDir())
 	hostMCP := mcp.NewHost(services.NewArtifactService(db))
-	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, TTL: time.Minute})
+	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, IdleTTL: time.Minute})
 	preview := services.NewPreviewService(db, mgr)
 	hostMCP.SetPreviewStore(preview)
 
@@ -75,7 +75,7 @@ func TestSandboxVNCDisabledPaths(t *testing.T) {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	skills := services.NewAgentService(t.TempDir())
 	hostMCP := mcp.NewHost(services.NewArtifactService(db))
-	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, TTL: time.Minute})
+	sbx := services.NewSandboxService(db, mgr, skills, hostMCP, services.SandboxOptions{Max: 2, IdleTTL: time.Minute})
 
 	h := &Handlers{Sbx: sbx} // Browser nil
 	r := gin.New()

@@ -145,7 +145,12 @@ func (h *Handlers) ListSoloSessions(c *gin.Context) {
 		writeSoloErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sessions": rows, "maxSandboxes": h.Sbx.MaxSoloSandboxes(), "usedSandboxes": h.Sbx.UsedSoloSandboxes()})
+	capacity, err := h.Sbx.Capacity()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sandbox capacity unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": rows, "maxSandboxes": capacity.Limit, "usedSandboxes": capacity.Used})
 }
 
 // CreateSoloSession handles POST /api/solo/sessions.
@@ -321,37 +326,29 @@ func (h *Handlers) WakeSoloSession(c *gin.Context) {
 
 // ResumeSoloSession handles POST /api/solo/sessions/:id/resume.
 func (h *Handlers) ResumeSoloSession(c *gin.Context) {
+	if c.Request.Body != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1024))
+		decoder.DisallowUnknownFields()
+		err := decoder.Decode(&struct{}{})
+		if err != nil && err != io.EOF {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "resume always uses the latest successful backup; no options accepted"})
+			return
+		}
+		if err == nil && decoder.Decode(new(any)) != io.EOF {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+			return
+		}
+	}
 	user, ok := h.soloReady(c)
 	if !ok {
 		return
 	}
-	var body struct {
-		BackupID uint `json:"backupId"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-	v, err := h.Solo.Resume(c.Request.Context(), c.Param("id"), user, body.BackupID)
+	v, err := h.Solo.Resume(c.Request.Context(), c.Param("id"), user)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, v)
-}
-
-// ListSoloBackups handles GET /api/solo/sessions/:id/backups.
-func (h *Handlers) ListSoloBackups(c *gin.Context) {
-	user, ok := h.soloReady(c)
-	if !ok {
-		return
-	}
-	rows, err := h.Solo.ListBackups(c.Param("id"), user)
-	if err != nil {
-		writeSoloErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, rows)
 }
 
 // RestartSoloSession handles POST /api/solo/sessions/:id/restart.

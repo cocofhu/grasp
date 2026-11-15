@@ -69,8 +69,12 @@ type SandboxService struct {
 
 	// imagePullMu + imagePullWait dedupe concurrent pulls of the same image
 	// so multiple Creates share one docker pull (plan g2.2 / f9).
-	imagePullMu   sync.Mutex
-	imagePullWait map[string]*imagePullFlight
+	imagePullMu    sync.Mutex
+	imagePullWait  map[string]*imagePullFlight
+	lifecycleLocks sync.Map
+	// Process-local attempts distinguish an active async handoff from a
+	// creating record left behind by an earlier crashed gateway process.
+	provisioning sync.Map
 }
 
 type imagePullFlight struct {
@@ -129,6 +133,9 @@ func (s *SandboxService) Create(_ context.Context, req CreateRequest) (*models.S
 	id := uuid.NewString()[:12]
 	workspace := req.WorkspaceDir
 	if workspace == "" {
+		workspace = req.Env["WORKSPACE_DIR"]
+	}
+	if workspace == "" {
 		workspace = s.cfg.WorkspaceDir
 	}
 	ports := subtractPorts(mergePorts(s.cfg.Ports, req.Ports), s.cfg.InternalPorts)
@@ -156,35 +163,37 @@ func (s *SandboxService) Create(_ context.Context, req CreateRequest) (*models.S
 	}
 	sb.SetEnv(env)
 	sb.SetLabels(req.Labels)
+	spec := driver.Spec{
+		ID: id, Image: image, Env: env, Ports: ports, InternalPorts: s.cfg.InternalPorts,
+		WorkspaceDir: workspace, Mounts: req.Mounts, Config: req.Config, Labels: req.Labels,
+		Resources: driver.Resources{CPUCores: cpu, MemoryMB: mem, DiskGi: disk},
+	}
+	if err := saveSpec(sb, spec); err != nil {
+		return nil, err
+	}
 	persistCtx, persistCancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer persistCancel()
 	log.Info().Str("sandbox_id", id).Msg("persist creating record")
+	attempt := s.beginProvisioning(id)
 	if err := s.store.Create(persistCtx, sb); err != nil {
+		s.finishProvisioning(id, attempt)
 		log.Error().Err(err).Str("sandbox_id", id).Msg("persist creating record failed")
 		return nil, fmt.Errorf("persist creating record: %w", err)
 	}
 	log.Info().Str("sandbox_id", id).Msg("persist creating record ok")
 
-	spec := driver.Spec{
-		ID:            id,
-		Image:         image,
-		Env:           env,
-		Ports:         ports,
-		InternalPorts: s.cfg.InternalPorts,
-		WorkspaceDir:  workspace,
-		Mounts:        req.Mounts,
-		Config:        req.Config,
-		Labels:        req.Labels,
-		Resources: driver.Resources{
-			CPUCores: cpu,
-			MemoryMB: mem,
-			DiskGi:   disk,
-		},
-	}
-
 	// Detach from the request context so ingress/client cancel cannot leave a
 	// half-applied Deployment/PVC without a matching store error flip.
 	go func() {
+		unlock := s.lockLifecycle(id)
+		defer unlock()
+		defer s.finishProvisioning(id, attempt)
+		if !s.ownsProvisioning(id, attempt) {
+			return
+		}
+		if current, err := s.store.Get(context.Background(), id); err != nil || current.Status != models.StatusCreating {
+			return
+		}
 		bg, cancel := context.WithTimeout(context.Background(), s.cfg.FinalizeTimeout)
 		defer cancel()
 		log.Info().
@@ -358,70 +367,6 @@ func (s *SandboxService) List(filter ListFilter) ([]models.Sandbox, error) {
 	return s.store.List(context.Background(), filter)
 }
 
-// StartPrepared refreshes the expired first-boot inputs before a cold resume.
-func (s *SandboxService) StartPrepared(ctx context.Context, id string, opts driver.StartOptions) error {
-	sb, err := s.store.Get(context.Background(), id)
-	if err != nil {
-		return err
-	}
-	if opts.RuntimeURL != "" || opts.BootstrapScript != "" {
-		if sb.Env()["GRASP_RUNTIME_URL"] == "" {
-			return fmt.Errorf("sandbox does not use the runtime bootstrap")
-		}
-		if p, ok := s.drv.(driver.StartPreparer); ok {
-			if err := p.PrepareStart(ctx, id, opts); err != nil {
-				return err
-			}
-			env := sb.Env()
-			env["GRASP_RUNTIME_URL"], env["SANDBOX_INJECT_HEADERS"], env["SANDBOX_INJECT"] = opts.RuntimeURL, opts.RuntimeHeaders, ""
-			sb.SetEnv(env)
-			if err := s.store.Save(context.Background(), sb); err != nil {
-				return err
-			}
-		}
-	}
-	if err := s.drv.Start(ctx, id); err != nil {
-		return err
-	}
-	sb.Status = models.StatusCreating
-	s.persist(sb, "persist start status")
-	go s.finalize(id)
-	return nil
-}
-
-// Stop stops a sandbox but retains it.
-func (s *SandboxService) Stop(ctx context.Context, id string) error {
-	sb, err := s.store.Get(context.Background(), id)
-	if err != nil {
-		return err
-	}
-	if err := s.drv.Stop(ctx, id); err != nil {
-		return err
-	}
-	sb.Status = models.StatusStopped
-	s.persist(sb, "persist stop status")
-	return nil
-}
-
-// Destroy removes a sandbox and its record.
-//
-// Driver teardown is best-effort: a missing/failing workload must not block
-// deleting the control-plane row (otherwise DELETE leaves stuck DB records when
-// docker rm fails, the request context is canceled, or k8s cleanup errors).
-// idOrName may be the sandbox id or the driver-native name (e.g. sbx-<id>).
-func (s *SandboxService) Destroy(_ context.Context, idOrName string) error {
-	sb, err := s.lookup(context.Background(), idOrName)
-	if err != nil {
-		return err
-	}
-	bg, cancel := context.WithTimeout(context.Background(), destroyDriverTimeout)
-	defer cancel()
-	if err := s.drv.Destroy(bg, sb.ID); err != nil {
-		log.Warn().Err(err).Str("sandbox_id", sb.ID).Msg("destroy: driver cleanup failed; removing record anyway")
-	}
-	return s.store.Delete(context.Background(), sb.ID)
-}
-
 // lookup resolves a sandbox by id, then by driver-native name.
 func (s *SandboxService) lookup(ctx context.Context, idOrName string) (*models.Sandbox, error) {
 	sb, err := s.store.Get(ctx, idOrName)
@@ -438,55 +383,53 @@ func (s *SandboxService) lookup(ctx context.Context, idOrName string) (*models.S
 // (kubernetes) / anonymous volumes (docker); workspace wipe deletes them.
 // Host-mounted shared config (ConfigInject.HostPath / .cursor) is never removed.
 func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData bool) error {
-	sb, err := s.store.Get(context.Background(), id)
+	unlock := s.lockLifecycle(id)
+	defer unlock()
+	sb, err := s.store.Get(ctx, id)
 	if err != nil {
 		return err
 	}
-
+	if sb.Status == models.StatusDeleting || sb.Status == models.StatusStopping || sb.WorkloadReleased {
+		return fmt.Errorf("restore the sandbox before reinstalling")
+	}
+	if _, active := s.provisioning.Load(id); active {
+		return fmt.Errorf("sandbox provisioning is in progress")
+	}
+	spec, err := s.restoreSpec(ctx, sb)
+	if err != nil {
+		return err
+	}
 	cpu, mem, disk, err := s.cfg.Resources.Resolve(sb.Image, sb.CPUCores, sb.MemoryMB, sb.DiskGi)
 	if err != nil {
 		return err
 	}
-
-	ports := s.cfg.Ports
-	for p := range sb.Endpoints() {
-		ports = mergePorts(ports, []int{p})
+	spec.Resources = driver.Resources{CPUCores: cpu, MemoryMB: mem, DiskGi: disk}
+	for port := range sb.Endpoints() {
+		spec.Ports = mergePorts(spec.Ports, []int{port})
 	}
-	ports = subtractPorts(ports, s.cfg.InternalPorts)
-
-	env := sb.Env()
-	workspace := s.cfg.WorkspaceDir
-	if v := env["WORKSPACE_DIR"]; v != "" {
-		workspace = v
+	spec.Ports = subtractPorts(spec.Ports, spec.InternalPorts)
+	if err := saveSpec(sb, spec); err != nil {
+		return err
 	}
-
-	spec := driver.Spec{
-		ID:            id,
-		Image:         sb.Image,
-		Env:           env,
-		Ports:         ports,
-		InternalPorts: s.cfg.InternalPorts,
-		WorkspaceDir:  workspace,
-		Labels:        sb.Labels(),
-		Resources: driver.Resources{
-			CPUCores: cpu,
-			MemoryMB: mem,
-			DiskGi:   disk,
-		},
+	sb.Status, sb.Error = models.StatusCreating, ""
+	attempt := s.beginProvisioning(id)
+	if err := s.store.Save(ctx, sb); err != nil {
+		s.finishProvisioning(id, attempt)
+		return err
 	}
-
-	sb.Status = models.StatusCreating
-	sb.Error = ""
-	s.persist(sb, "persist reinstall status")
-
-	// Reinstall deletes then recreates the workload, which can take far longer
-	// than an HTTP request/ingress timeout. Running it under the request context
-	// would cancel a half-done delete (leaving the sandbox stuck in error with no
-	// deployment), so we detach to a background context and probe readiness
-	// asynchronously — same contract as Create (returns 202, poll GET /:id).
 	go func() {
+		unlock := s.lockLifecycle(id)
+		defer unlock()
+		defer s.finishProvisioning(id, attempt)
+		if !s.ownsProvisioning(id, attempt) {
+			return
+		}
 		bg, cancel := context.WithTimeout(context.Background(), s.cfg.FinalizeTimeout)
 		defer cancel()
+		current, err := s.store.Get(bg, id)
+		if err != nil || current.Status != models.StatusCreating {
+			return
+		}
 		if err := s.ensureImageBeforeCreate(bg, id, spec.Image); err != nil {
 			s.fail(id, fmt.Sprintf("pull image: %v", err))
 			return
@@ -505,6 +448,15 @@ func (s *SandboxService) Status(ctx context.Context, id string) (driver.Status, 
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
 		return "", err
+	}
+	if sb.Status == models.StatusDeleting && sb.WorkloadReleased {
+		return driver.StatusStopped, nil
+	}
+	if sb.Status == models.StatusStopping || sb.Status == models.StatusDeleting {
+		return driver.StatusPending, nil
+	}
+	if sb.WorkloadReleased && sb.Status == models.StatusStopped {
+		return driver.StatusStopped, nil
 	}
 	st, err := s.drv.Status(ctx, id)
 	if err != nil {
@@ -603,6 +555,15 @@ type portPublisher interface {
 // PublishPort ensures port is on the sandbox publish surface and returns its address.
 // Docker cannot add -p after create; missing ports stay ErrEndpointNotFound.
 func (s *SandboxService) PublishPort(ctx context.Context, id string, port int) (string, error) {
+	unlock := s.lockLifecycle(id)
+	defer unlock()
+	sb, err := s.store.Get(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if sb.Status == models.StatusDeleting || sb.Status == models.StatusStopping || sb.WorkloadReleased {
+		return "", fmt.Errorf("sandbox is unavailable")
+	}
 	if addr, err := s.Host(ctx, id, port); err == nil && strings.TrimSpace(addr) != "" {
 		return addr, nil
 	}
@@ -621,7 +582,7 @@ func (s *SandboxService) PublishPort(ctx context.Context, id string, port int) (
 	if addr == "" {
 		return "", fmt.Errorf("%w %d", ErrEndpointNotFound, port)
 	}
-	sb, err := s.store.Get(context.Background(), id)
+	sb, err = s.store.Get(context.Background(), id)
 	if err == nil {
 		merged := sb.Endpoints()
 		if merged == nil {
@@ -631,7 +592,19 @@ func (s *SandboxService) PublishPort(ctx context.Context, id string, port int) (
 			merged[p] = a
 		}
 		sb.SetEndpoints(merged)
-		s.persist(sb, "persist published port endpoints")
+		if sb.SpecJSON != "" {
+			spec, specErr := s.restoreSpec(ctx, sb)
+			if specErr != nil {
+				return "", specErr
+			}
+			spec.Ports = mergePorts(spec.Ports, []int{port})
+			if err := saveSpec(sb, spec); err != nil {
+				return "", err
+			}
+		}
+		if err := s.store.Save(ctx, sb); err != nil {
+			return "", err
+		}
 	}
 	return addr, nil
 }
@@ -708,6 +681,7 @@ func (s *SandboxService) RunOrphanGC(ctx context.Context) {
 		Msg("orphan gc started")
 
 	run := func() {
+		s.retryDeletes(ctx)
 		c, cancel := context.WithTimeout(ctx, destroyDriverTimeout+30*time.Second)
 		defer cancel()
 		n, err := s.SweepOrphans(c)
@@ -759,40 +733,74 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 		log.Error().Err(err).Msg("reconcile: list records failed")
 		return
 	}
-	for i := range records {
-		sb := &records[i]
-		st, err := s.drv.Status(ctx, sb.ID)
-		if err != nil {
-			log.Warn().Err(err).Str("sandbox_id", sb.ID).Msg("reconcile: driver status failed")
+	for _, row := range records {
+		if row.Status == models.StatusDeleting {
+			if err := s.Destroy(ctx, row.ID); err != nil {
+				log.Warn().Err(err).Str("sandbox_id", row.ID).Msg("retry sandbox cleanup")
+			}
 			continue
 		}
-		switch st {
-		case driver.StatusNotFound:
-			if sb.Status != models.StatusError {
-				sb.Status = models.StatusError
-				sb.Error = "resource not found on reconcile"
-				s.persist(sb, "reconcile: persist not-found status")
-			}
-		case driver.StatusRunning:
-			s.convergePublishSurface(ctx, sb.ID)
-			eps, epErr := s.drv.Endpoints(ctx, sb.ID)
-			if epErr != nil {
-				logging.WarnErr(epErr, "reconcile: endpoints failed", map[string]any{"sandbox_id": sb.ID})
-			} else if len(eps) > 0 {
-				sb.SetEndpoints(eps)
-			}
-			sb.Status = models.StatusRunning
-			s.persist(sb, "reconcile: persist running status")
-		case driver.StatusStopped:
-			// Scale=0 keeps Services; still drop 9222/6080 from inventory LBs.
-			s.convergePublishSurface(ctx, sb.ID)
-			sb.Status = models.StatusStopped
-			s.persist(sb, "reconcile: persist stopped status")
-		case driver.StatusPending:
-			s.convergePublishSurface(ctx, sb.ID)
-		}
+		s.reconcileOne(ctx, row.ID)
 	}
 	log.Info().Int("count", len(records)).Msg("reconcile complete")
+}
+
+func (s *SandboxService) reconcileOne(ctx context.Context, id string) {
+	// A slow provision already owns reconciliation for this process. Do not
+	// make startup recovery wait behind its readiness/network operations.
+	if _, active := s.provisioning.Load(id); active {
+		return
+	}
+	unlock := s.lockLifecycle(id)
+	defer unlock()
+	if _, active := s.provisioning.Load(id); active {
+		return
+	}
+	sb, err := s.store.Get(ctx, id)
+	if err != nil {
+		return
+	}
+	// Only the lifecycle operation itself can confirm save/delete completion.
+	if sb.Status == models.StatusDeleting || sb.Status == models.StatusStopping {
+		return
+	}
+	if sb.WorkloadReleased {
+		if sb.Status == models.StatusCreating || sb.Status == models.StatusPulling {
+			sb.Status, sb.Error = models.StatusError, "cold restore interrupted by gateway restart"
+			s.persist(sb, "reconcile: persist interrupted restore")
+		}
+		return
+	}
+	st, err := s.drv.Status(ctx, sb.ID)
+	if err != nil {
+		log.Warn().Err(err).Str("sandbox_id", sb.ID).Msg("reconcile: driver status failed")
+		return
+	}
+	switch st {
+	case driver.StatusNotFound:
+		if sb.Status != models.StatusError {
+			sb.Status = models.StatusError
+			sb.Error = "resource not found on reconcile"
+			s.persist(sb, "reconcile: persist not-found status")
+		}
+	case driver.StatusRunning:
+		s.convergePublishSurface(ctx, sb.ID)
+		eps, epErr := s.drv.Endpoints(ctx, sb.ID)
+		if epErr != nil {
+			logging.WarnErr(epErr, "reconcile: endpoints failed", map[string]any{"sandbox_id": sb.ID})
+		} else if len(eps) > 0 {
+			sb.SetEndpoints(eps)
+		}
+		sb.Status = models.StatusRunning
+		s.persist(sb, "reconcile: persist running status")
+	case driver.StatusStopped:
+		// Scale=0 keeps Services; still drop 9222/6080 from inventory LBs.
+		s.convergePublishSurface(ctx, sb.ID)
+		sb.Status = models.StatusStopped
+		s.persist(sb, "reconcile: persist stopped status")
+	case driver.StatusPending:
+		s.convergePublishSurface(ctx, sb.ID)
+	}
 }
 
 // configInjectEnv translates a URL config bundle into the SANDBOX_INJECT env

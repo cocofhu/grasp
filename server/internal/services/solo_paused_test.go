@@ -200,11 +200,10 @@ func TestSoloWakeWaitsForBridge(t *testing.T) {
 			t.Fatal("failed wake destroyed the sandbox")
 		}
 	})
-	t.Run("an already running resident is not probed", func(t *testing.T) {
+	t.Run("an already running resident verifies its bridge", func(t *testing.T) {
 		f := newPausedFixture(t, models.SoloStatusRunning)
 		f.ds.setStatus(f.row.Name, "running")
 		f.svc.soloBridgeReady = func(context.Context, *sandbox.Sandbox) error {
-			t.Error("running resident was probed")
 			return nil
 		}
 		if err := f.svc.EnsureSoloRunning(context.Background(), f.row.ID); err != nil {

@@ -1,15 +1,17 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func TestWorkspaceArchiveCommands(t *testing.T) {
@@ -40,7 +42,7 @@ func TestWorkspaceArchiveCommands(t *testing.T) {
 	if err := sb.RestoreWorkspace(context.Background(), strings.NewReader("archive")); err != nil {
 		t.Fatal(err)
 	}
-	if len(commands) != 3 || restored != "archive" {
+	if len(commands) != 4 || restored != "archive" {
 		t.Fatalf("commands %q restored %q", commands, restored)
 	}
 	archive := commands[0]
@@ -49,8 +51,47 @@ func TestWorkspaceArchiveCommands(t *testing.T) {
 			t.Fatalf("archive command %q lacks %q", archive, want)
 		}
 	}
-	if !strings.Contains(commands[1], "mkdir") || !strings.Contains(commands[2], "-xzf") {
+	if !strings.Contains(commands[1], "mkdir") || !strings.Contains(commands[2], "-delete") || !strings.Contains(commands[3], "-xzf") {
 		t.Fatalf("restore commands: %q", commands[1:])
+	}
+}
+
+func TestWorkspaceRestorePreservesDeletionsAndHiddenFiles(t *testing.T) {
+	root := t.TempDir()
+	source, target := filepath.Join(root, "source"), filepath.Join(root, "target")
+	for _, dir := range []string{source, target} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(source, ".saved"), []byte("uncommitted work"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "deleted-in-snapshot"), []byte("fresh clone"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(SetExecHook(func(ctx context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "bash", "-c", command)
+		cmd.Stdin = stdin
+		return cmd.CombinedOutput()
+	}))
+	archive, err := (&Sandbox{WorkspaceDir: source}).ArchiveWorkspace(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(archive)
+	_ = archive.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Sandbox{WorkspaceDir: target}).RestoreWorkspace(context.Background(), bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(target, ".saved")); err != nil || string(data) != "uncommitted work" {
+		t.Fatalf("saved hidden file = %q %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "deleted-in-snapshot")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("restore resurrected deleted file: %v", err)
 	}
 }
 
@@ -106,19 +147,6 @@ func TestWorkspaceArchiveFailures(t *testing.T) {
 	}
 }
 
-func TestArchiveExitErr(t *testing.T) {
-	if archiveExitErr(nil) != nil {
-		t.Fatal("nil")
-	}
-	plain := errors.New("x")
-	if archiveExitErr(plain) != plain {
-		t.Fatal("plain error changed")
-	}
-	if archiveExitErr(&ssh.ExitError{Waitmsg: ssh.Waitmsg{}}) == nil {
-		t.Fatal("exit 0 ExitError accepted")
-	}
-}
-
 func TestGatewayDriverAndStop(t *testing.T) {
 	var stopped string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,21 +162,21 @@ func TestGatewayDriverAndStop(t *testing.T) {
 	}))
 	defer srv.Close()
 	m := NewManager(NewGatewayClient(srv.URL, ""), ManagerOptions{})
-	if !m.KeepsProcessesOnStop(context.Background(), "sb-1") {
+	if kind, err := m.RecoveryKind(context.Background(), "sb-1"); err != nil || kind != "snapshot" {
 		t.Fatal("e2b driver not detected")
 	}
-	if err := m.Stop(context.Background(), "sb-1"); err != nil || stopped != "/api/v1/sandboxes/sb-1/stop" {
+	if err := m.Stop(context.Background(), "sb-1", 1); err != nil || stopped != "/api/v1/sandboxes/sb-1/stop" {
 		t.Fatalf("stop: %v %q", err, stopped)
 	}
 	if _, err := m.gw.Driver(context.Background(), "gw1_missing_c2I"); err == nil {
 		t.Fatal("unknown gateway binding resolved")
 	}
 	none := &Manager{}
-	if none.KeepsProcessesOnStop(context.Background(), "x") || none.Stop(context.Background(), "x") == nil {
+	if _, err := none.RecoveryKind(context.Background(), "x"); err == nil || none.Stop(context.Background(), "x", 1) == nil {
 		t.Fatal("manager without gateway")
 	}
 	srv.Close()
-	if m.KeepsProcessesOnStop(context.Background(), "sb-1") {
+	if _, err := m.RecoveryKind(context.Background(), "sb-1"); err == nil {
 		t.Fatal("unreachable gateway reported e2b")
 	}
 }

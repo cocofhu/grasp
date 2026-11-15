@@ -156,9 +156,9 @@ func TestGetAndExplicitLifecycleRoutes(t *testing.T) {
 				t.Error("wrong timeout")
 			}
 		case "/sandboxes/sandbox-a/pause":
-			var b map[string]bool
+			var b map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&b)
-			if !b["memory"] || !b["requireHealthyGuest"] {
+			if b["memory"] != true || b["requireHealthyGuest"] != true || b["snapshotKeep"] != float64(5) {
 				t.Error("pause allows losing RAM or snapshotting an unhealthy guest")
 			}
 		case "/sandboxes/sandbox-a/connect":
@@ -180,7 +180,7 @@ func TestGetAndExplicitLifecycleRoutes(t *testing.T) {
 	if len(operations) != 1 {
 		t.Fatal("Get implicitly resumed a sandbox")
 	}
-	for _, err := range []error{client.SetTimeout(t.Context(), "sandbox-a", 120), client.Pause(t.Context(), "sandbox-a")} {
+	for _, err := range []error{client.SetTimeout(t.Context(), "sandbox-a", 120), client.Pause(t.Context(), "sandbox-a", 5)} {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -350,7 +350,7 @@ func TestInvalidControlInputsMakeNoProviderRequests(t *testing.T) {
 		assertSafeControlError(t, err)
 		assertSafeControlError(t, client.Delete(t.Context(), id))
 		assertSafeControlError(t, client.SetTimeout(t.Context(), id, 10))
-		assertSafeControlError(t, client.Pause(t.Context(), id))
+		assertSafeControlError(t, client.Pause(t.Context(), id, 1))
 		_, err = client.Connect(t.Context(), id, 10)
 		assertSafeControlError(t, err)
 	}

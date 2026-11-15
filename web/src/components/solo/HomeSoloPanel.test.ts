@@ -14,7 +14,7 @@ const store = vi.hoisted(() => {
     { id: 's-run', title: '进行中的会话', agentName: 'dev', status: 'stopped', busy: false, waiting: 0, createdAt: now, lastActiveAt: now },
     { id: 's-end', title: '已结束的会话', agentName: 'dev', status: 'closed', busy: false, waiting: 0, createdAt: now, lastActiveAt: now },
   ]
-  return { loaded: ref(true), active: ref(sessions.slice(0, 1)), sessions: ref(sessions), maxSandboxes: ref(5) }
+  return { loaded: ref(true), active: ref(sessions.slice(0, 1)), sessions: ref(sessions), maxSandboxes: ref(15), usedSandboxes: ref(4) }
 })
 
 vi.mock('@/lib/solo/useSoloSessions', async () => {
@@ -45,6 +45,7 @@ describe('HomeSoloPanel', () => {
   it('opens all sessions in a dialog on the home page and closes it when a session is picked', async () => {
     const { router, wrapper } = await mountPanel()
     expect(document.querySelector('[data-testid="solo-list"]')).toBeNull()
+    expect(wrapper.get('.home-solo__count').text()).toBe('全部沙箱占用 4 / 15')
 
     await wrapper.find('[data-testid="home-solo-view-all"]').trigger('click')
     await flushPromises()

@@ -88,18 +88,46 @@ type ExitReporter interface {
 	LastExit(ctx context.Context, id string) (*ExitInfo, error)
 }
 
-// StartOptions repairs bootstrap inputs before restarting an existing sandbox.
-// No workspace or container is replaced by this operation.
+// StartOptions refreshes bootstrap inputs when restarting a retained workload
+// or recreating a released one. Its saved workspace layout is unchanged.
 type StartOptions struct {
 	BootstrapScript string `json:"bootstrapScript"`
 	RuntimeURL      string `json:"runtimeUrl"`
 	RuntimeHeaders  string `json:"runtimeHeaders"`
+	// Cold recreation refreshes credentials/configuration from the control
+	// plane without changing the saved workload's resources or mount layout.
+	RestoreEnv     map[string]string `json:"restoreEnv,omitempty"`
+	ReplaceEnvKeys []string          `json:"replaceEnvKeys,omitempty"`
 }
 
 // StartPreparer is implemented by cold-boot drivers. Snapshot-resume drivers
 // keep their running environment and do not need bootstrap repair.
 type StartPreparer interface {
 	PrepareStart(context.Context, string, StartOptions) error
+}
+
+// StopOptions carries the caller's shared restore-point policy. It is not a
+// gateway setting: Grasp supplies the same keep count used for file archives.
+type StopOptions struct {
+	BackupKeep int `json:"backupKeep"`
+}
+
+// CleanupPendingError distinguishes disk GC from a still-allocated workload.
+// WorkloadReleased must be backed by provider process-exit confirmation.
+type CleanupPendingError struct {
+	WorkloadReleased bool
+}
+
+func (e *CleanupPendingError) Error() string { return "sandbox cleanup is still pending" }
+
+type SnapshotPauser interface {
+	PauseSnapshot(context.Context, string, int) error
+}
+
+// SpecReader adopts an existing workload before its first destructive stop.
+// A failed read must leave the resource intact.
+type SpecReader interface {
+	CaptureSpec(context.Context, Spec) (Spec, error)
 }
 
 // Driver provisions and exposes sandboxes. It is intentionally thin: lifecycle

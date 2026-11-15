@@ -228,15 +228,15 @@ func (c *acpProvider) ArchiveRunSandboxLogs(ctx context.Context, runID string) (
 // the (slow) gateway provisioning, so it shows up in the sandbox list / node
 // live log as "starting" instead of a 404. No-op when the registry is absent or
 // does not implement RunSandboxBeginner (e.g. test fakes).
-func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) {
+func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) error {
 	if c.registry == nil || name == "" {
-		return
+		return nil
 	}
 	b, ok := c.registry.(RunSandboxBeginner)
 	if !ok {
-		return
+		return nil
 	}
-	b.BeginRunSandbox(RunSandboxInfo{
+	return b.BeginRunSandbox(RunSandboxInfo{
 		Name:         name,
 		Profile:      models.AgentProfile(req.Config),
 		RunID:        req.RunID,
@@ -359,7 +359,11 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 
 	placeholder := sandbox.NewContainerName()
 	spec.Name = placeholder
-	c.beginRunSandbox(req, placeholder, home)
+	if err := c.beginRunSandbox(req, placeholder, home); err != nil {
+		c.unregisterCodexLogin(req)
+		removeHome(home)
+		return nil, nil, "", spec, fmt.Errorf("%w: sandbox capacity: %v", errSandboxSetup, err)
+	}
 	sb, err := c.mgr.Create(ctx, spec)
 	if err != nil {
 		c.unregisterCodexLogin(req)

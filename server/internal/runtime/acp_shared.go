@@ -66,6 +66,7 @@ type sandboxReprimer interface {
 // errSharedIncompatible: the node cannot run in the shared sandbox as it is
 // (another workspace dir); it uses a sandbox of its own.
 var errSharedIncompatible = errors.New("node incompatible with shared sandbox")
+var errSharedRecoveryPending = errors.New("shared sandbox recovery is pending")
 
 // sharedReadyWait bounds the liveness probe of a shared sandbox before reuse;
 // reprimeReadyWait the wait for the backend after a re-prime. Vars for tests.
@@ -212,7 +213,7 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *s
 				Msg("node needs another workspace dir; node uses its own sandbox")
 			return nil, nil, "", false, nil
 		}
-		if errors.Is(err, errSandboxConfig) {
+		if errors.Is(err, errSandboxConfig) || errors.Is(err, errSharedRecoveryPending) {
 			return nil, nil, "", true, err
 		}
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
@@ -238,8 +239,22 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *s
 // connects a fresh agent session for it.
 func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *sharedRunSandbox) (*sandbox.Sandbox, *sandbox.ACPClient, error) {
 	sb := ss.sb
+	setupError := errSandboxSetup
+	if registry, ok := c.registry.(RunSandboxRecovery); ok {
+		restored, found, _, restoreErr := registry.ResumeRunSandbox(ctx, req.RunID, req.NodeID)
+		if restoreErr != nil {
+			return nil, nil, fmt.Errorf("%w: %v", errSharedRecoveryPending, restoreErr)
+		}
+		if found {
+			setupError = errSharedRecoveryPending
+			restored.Password = sb.Password
+			restored.ConfigRoot, restored.WorkspaceDir = sb.ConfigRoot, sb.WorkspaceDir
+			sb = restored
+			c.shared.update(ss, func(s *sharedRunSandbox) { s.sb = restored })
+		}
+	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, sharedReadyWait); err != nil {
-		return nil, nil, fmt.Errorf("%w: shared sandbox not ready: %v", errSandboxSetup, err)
+		return nil, nil, fmt.Errorf("%w: shared sandbox not ready: %v", setupError, err)
 	}
 	spec, err := c.spec(req)
 	if err != nil {
@@ -258,15 +273,15 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 		rp, ok := c.mgr.(sandboxReprimer)
 		if !ok {
 			c.unregisterCodexLogin(req)
-			return nil, nil, fmt.Errorf("%w: sandbox manager cannot re-prime", errSandboxSetup)
+			return nil, nil, fmt.Errorf("%w: sandbox manager cannot re-prime", setupError)
 		}
 		if err := rp.Reprime(ctx, sb, spec, ss.envKeys); err != nil {
 			c.unregisterCodexLogin(req)
-			return nil, nil, fmt.Errorf("%w: %v", errSandboxSetup, err)
+			return nil, nil, fmt.Errorf("%w: %v", setupError, err)
 		}
 		if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, reprimeReadyWait); err != nil {
 			c.unregisterCodexLogin(req)
-			return nil, nil, fmt.Errorf("%w: acp not ready after re-prime: %v", errSandboxSetup, err)
+			return nil, nil, fmt.Errorf("%w: acp not ready after re-prime: %v", setupError, err)
 		}
 		c.shared.update(ss, func(s *sharedRunSandbox) {
 			s.fingerprint, s.envKeys = fp, sandbox.ReprimeEnvKeys(spec)
@@ -281,7 +296,7 @@ func (c *acpProvider) reuseSharedSandbox(ctx context.Context, req NodeReq, ss *s
 	if err := acp.Connect(ctx); err != nil {
 		c.unregisterCodexLogin(req)
 		acp.Close()
-		return nil, nil, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
+		return nil, nil, fmt.Errorf("%w: acp connect: %v", setupError, err)
 	}
 	c.shared.update(ss, func(s *sharedRunSandbox) { s.owner = reactKey(req) })
 	c.registerSharedRunSandbox(req, sb, ss.home)
@@ -328,6 +343,9 @@ func (c *acpProvider) releaseSharedSandbox(sb *sandbox.Sandbox, acp *sandbox.ACP
 	}
 	if acp != nil {
 		acp.Close()
+	}
+	if registry, ok := c.registry.(RunSandboxRecovery); ok {
+		registry.ParkRunSandbox(sb.Name)
 	}
 	return true
 }

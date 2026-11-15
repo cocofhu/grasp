@@ -57,8 +57,7 @@ Example discovery response:
 
 `stopMode` is `cold` for Docker/Kubernetes and `pause` for E2B. `diskMode` is
 `unlimited` for Docker (no gateway-enforced quota), `pvc` for Kubernetes and
-`template-minimum-free` for E2B. These describe provider operations, not a
-change to Grasp's existing Stop/retention UI behavior.
+`template-minimum-free` for E2B. Grasp saves file archives before cold release; E2B pause uses the provider's durable snapshot contract.
 
 ```
 GET /api/v2/sandboxes/{nativeSandboxID}/connect/{guestPort}
@@ -184,6 +183,8 @@ Response body (initial `status` is usually `creating`):
   "name": "sbx-a1b2c3d4e5f6",
   "status": "creating",
   "image": "universal-sandbox:local",
+  "workspaceDir": "/root/workspace",
+  "envKeys": ["ACP_BRIDGE_PASSWORD", "AGENT_PROVIDER", "GIT_REPOS", "ROOT_PASSWORD", "SANDBOX_INJECT", "SANDBOX_INJECT_HEADERS"],
   "resources": {"cpuCores": 2, "memoryMB": 4096, "diskGi": 160},
   "endpoints": {}
 }
@@ -220,6 +221,8 @@ GET /api/v1/sandboxes/:id
   "name": "sbx-a1b2c3d4e5f6",
   "status": "running",
   "image": "universal-sandbox:local",
+  "workspaceDir": "/root/workspace",
+  "envKeys": ["ACP_BRIDGE_PASSWORD", "AGENT_PROVIDER", "GIT_REPOS", "ROOT_PASSWORD", "SANDBOX_INJECT", "SANDBOX_INJECT_HEADERS"],
   "resources": {"cpuCores": 2, "memoryMB": 4096, "diskGi": 160},
   "endpoints": {
     "session": "10.0.0.21:8765",
@@ -241,15 +244,56 @@ for in-cluster Grasp only — not user-facing, not an external LB IP.
 
 Grasp's user `GetView` whitelist returns only `session`/`ide`/`ssh`.
 
+Create, Get and List return the same recovery metadata. `workspaceDir` is the
+original saved workload path, falling back to `WORKSPACE_DIR` and then the
+gateway default for older records. Changes to current defaults do not move a
+saved workspace. `envKeys` contains sorted environment variable names only;
+values, including credentials and injection grants, are never returned.
+
 ## Lifecycle
 
 ```
-POST   /api/v1/sandboxes/:id/start      # docker start / k8s scale=1
-POST   /api/v1/sandboxes/:id/stop       # docker stop  / k8s scale=0 (retained)
+POST   /api/v1/sandboxes/:id/start      # recreate saved workload / resume E2B
+POST   /api/v1/sandboxes/:id/stop       # release Docker/K8s resources / durable E2B snapshot
 POST   /api/v1/sandboxes/:id/reinstall  # rebuild Pod; optional PVC wipe
 DELETE /api/v1/sandboxes/:id            # remove sandbox + record
 GET    /api/v1/sandboxes/:id/status     # {"status":"running|stopped|not_found|..."}
 ```
+
+### Start with current configuration
+
+Start accepts an optional JSON body, limited to 256 KiB:
+
+```json
+{
+  "runtimeUrl": "https://grasp.example/runtime/bundle.tgz",
+  "runtimeHeaders": "Authorization: Bearer <fresh-grant>",
+  "replaceEnvKeys": ["OLD_TOOL_TOKEN", "AGENT_PROVIDER", "SANDBOX_INJECT", "SANDBOX_INJECT_HEADERS"],
+  "restoreEnv": {
+    "AGENT_PROVIDER": "codex",
+    "SANDBOX_INJECT": "https://grasp.example/config/fresh.tgz|/root/.codex",
+    "SANDBOX_INJECT_HEADERS": "Authorization: Bearer <fresh-grant>"
+  }
+}
+```
+
+For a released Docker/Kubernetes workload, the gateway removes `replaceEnvKeys`
+from its saved environment and overlays `restoreEnv`. This refreshes config,
+git, MCP, runtime and tool inputs from the control plane, including removal of
+custom variables deleted since the previous run. The caller uses `envKeys` to
+identify obsolete keys while retaining the existing SSH grant and workspace
+path. `restoreEnv.WORKSPACE_DIR`, if supplied, must match the saved path.
+
+The environment update and accepted creation intent are saved together before
+the new workload starts. The original image, resources, ports, mounts and host
+config bindings remain unchanged. Old URL-based `config` injection is cleared
+when fresh inputs are supplied so expired grants cannot overwrite the new
+injection. `restoreEnv` overrides the runtime URL/header fallback. E2B snapshot
+resume and other retained workloads ignore this cold recreation patch.
+
+The response is `200 {"status":"starting"}`. Poll the sandbox until `running`
+or `error`; for cold recreation, Grasp must restore the saved files before
+admitting user work. An empty body reuses the saved inputs.
 
 ### Reinstall
 
@@ -283,7 +327,9 @@ GET /api/v1/sandboxes/:id/hosts/:port  ->  {"port":8744,"address":"10.0.0.21:874
 |------------|------------------------------------------------------------|
 | `creating` | record persisted, resource provisioning / not yet ready    |
 | `running`  | ready; `endpoints` populated                               |
-| `stopped`  | stopped but retained (restartable via `start`)             |
+| `stopped`  | recoverable metadata retained; workload released or paused |
+| `stopping` | save/release accepted; completion still unconfirmed         |
+| `deleting` | deletion pending; durable cleanup intent retained           |
 | `error`    | provisioning or reconcile failed (see `error` field)       |
 
 ## Container logs (read-only)
@@ -356,3 +402,31 @@ cannot tell).
 - No previous-container / multi-container log fan-out (single `sandbox` container).
 - code-flow's former `/api/changes` is gone from the image; compute "changes"
   by running `git` over a direct SSH/exec connection.
+
+### Saved environment lifecycle
+
+`POST /sandboxes/:id/stop` accepts `{"backupKeep": 1}` (positive integer,
+empty body defaults to 1). Grasp supplies `solo_backup.keep`. Before calling
+Stop on Docker or Kubernetes, the client must commit and verify its workspace
+archive: Stop deletes the container or Deployment/Pods/PVC and exclusive
+services/secrets. The gateway retains the sandbox record and original creation
+specification; Start recreates the workload under the same gateway ID. Returned
+ports may change. The client restores its archive before admitting user work.
+Docker host bind mounts are not removed. Kubernetes PV physical reclamation
+continues to follow the storage class / CSI policy.
+
+E2B Stop sends `snapshotKeep` to the self-hosted provider and waits for
+`GET /sandboxes/{providerID}/snapshot-status` to report `state=ready`, a nonempty
+`buildID`, `workloadReleased=true`, and no `lastError`. The snapshot must be
+durable and the provider process must have exited before capacity is released.
+A paused VM alone is insufficient. This extension requires the provider's
+retention migration and matching API/orchestrator; unsupported providers fail
+closed. `stopping` remains pending across gateway restarts until Stop is retried
+and durability is confirmed. A failed save never authorizes pruning the previous
+successful point.
+
+DELETE records a persistent `deleting` intent. Driver errors keep the record
+for retries; E2B completes only after the provider confirms physical cleanup
+(`state=deleted`, `pendingCleanup=0`, `workloadReleased=true`). Shared snapshot ancestors and live
+readers remain protected. Cleanup can therefore remain pending after the VM is
+gone. The provider's safety grace period is not a second backup-retention knob.

@@ -213,6 +213,15 @@ func (e *Engine) finish(runID, status string) bool {
 		if ab, ok := e.provider.(runtime.RunAborter); ok {
 			ab.AbortRun(runID)
 		}
+		if status == "cancelled" {
+			if cleanup, ok := e.provider.(runtime.RunResourceCanceller); ok {
+				cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := cleanup.CancelRunResources(cleanupCtx, runID); err != nil {
+					log.Warn().Err(err).Str("run", runID).Msg("cancelled run resource cleanup pending retry")
+				}
+				cancelCleanup()
+			}
+		}
 		execution.End(runID)
 		e.host.ReleaseRun(runID, "run_"+status)
 

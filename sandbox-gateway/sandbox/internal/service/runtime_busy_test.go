@@ -50,3 +50,29 @@ func TestRuntimeBusy(t *testing.T) {
 		t.Fatal("idle again should not be busy")
 	}
 }
+
+func TestRuntimeActivityIgnoresObserversButProtectsWork(t *testing.T) {
+	m := NewChatManager()
+	b := m.Default()
+	b.mu.Lock()
+	b.clients[&websocket.Conn{}] = &wsClient{}
+	b.mu.Unlock()
+	if busy, reason := m.RuntimeActivity(); busy {
+		t.Fatalf("idle observer prevented suspension: %s", reason)
+	}
+	b.queueMu.Lock()
+	b.promptQueue = append(b.promptQueue, queuedPrompt{})
+	b.queueMu.Unlock()
+	if busy, _ := m.RuntimeActivity(); !busy {
+		t.Fatal("queued work was idle")
+	}
+	b.queueMu.Lock()
+	b.promptQueue = nil
+	b.queueMu.Unlock()
+	b.turnMu.Lock()
+	b.activeTurn = &promptTurn{}
+	b.turnMu.Unlock()
+	if busy, _ := m.RuntimeActivity(); !busy {
+		t.Fatal("active turn was idle")
+	}
+}

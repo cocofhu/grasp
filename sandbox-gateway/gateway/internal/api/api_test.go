@@ -406,7 +406,6 @@ func TestLifecycleNotFound(t *testing.T) {
 	}{
 		{http.MethodPost, "/api/v1/sandboxes/nope/start"},
 		{http.MethodPost, "/api/v1/sandboxes/nope/stop"},
-		{http.MethodDelete, "/api/v1/sandboxes/nope"},
 		{http.MethodGet, "/api/v1/sandboxes/nope/status"},
 		{http.MethodGet, "/api/v1/sandboxes/nope/logs"},
 		{http.MethodGet, "/api/v1/sandboxes/nope/exit"},
@@ -416,6 +415,15 @@ func TestLifecycleNotFound(t *testing.T) {
 		if w.Code != 404 {
 			t.Fatalf("%s %s want 404 got %d %s", tc.method, tc.path, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestDeleteMissingSandboxIsIdempotent(t *testing.T) {
+	r, _, _ := testRouter(t, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/v1/sandboxes/nope", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete missing: %d %s", w.Code, w.Body.String())
 	}
 }
 

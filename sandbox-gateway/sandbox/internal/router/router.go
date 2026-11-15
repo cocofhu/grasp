@@ -42,6 +42,7 @@ func New(deps *Dependencies) *gin.Engine {
 
 	// Registered before the password guard: loopback-only, see handler.RuntimeBusy.
 	r.GET("/api/runtime/busy", handler.RuntimeBusy(deps.Chats))
+	r.GET("/api/runtime/activity", handler.RuntimeActivity(deps.Chats))
 
 	if deps.Auth != nil && deps.Auth.Enabled() {
 		r.Use(deps.Auth.Middleware())

@@ -139,6 +139,37 @@ func (m *ChatManager) List() []ChatInfo {
 // RuntimeBusy 报告是否不宜重启 backend：任一会话有进行中的回合、排队消息或已连接的
 // WebSocket 客户端（重启会断开平台或浏览器的连接）。
 func (m *ChatManager) RuntimeBusy() (busy bool, reason string) {
+	return m.runtimeBusy(true)
+}
+
+// RuntimeActivity ignores idle WebSocket subscribers. Only executing turns or
+// queued prompts prevent recoverable idle suspension.
+func (m *ChatManager) RuntimeActivity() (busy bool, reason string) {
+	return m.runtimeBusy(false)
+}
+
+// ResidentAgentPIDs identifies idle agent transport processes. Their presence
+// alone is not work; child commands remain visible to the process probe.
+func (m *ChatManager) ResidentAgentPIDs() []int {
+	m.mu.Lock()
+	list := make([]*Bridge, 0, len(m.order))
+	for _, id := range m.order {
+		list = append(list, m.chats[id])
+	}
+	m.mu.Unlock()
+	var pids []int
+	for _, b := range list {
+		b.mu.Lock()
+		sess := b.sess
+		b.mu.Unlock()
+		if source, ok := sess.(interface{ ResidentAgentPIDs() []int }); ok {
+			pids = append(pids, source.ResidentAgentPIDs()...)
+		}
+	}
+	return pids
+}
+
+func (m *ChatManager) runtimeBusy(includeClients bool) (busy bool, reason string) {
 	m.mu.Lock()
 	list := make([]*Bridge, 0, len(m.order))
 	for _, id := range m.order {
@@ -158,7 +189,7 @@ func (m *ChatManager) RuntimeBusy() (busy bool, reason string) {
 		b.mu.Lock()
 		clients := len(b.clients)
 		b.mu.Unlock()
-		if clients > 0 {
+		if includeClients && clients > 0 {
 			return true, "clients:" + b.id
 		}
 	}

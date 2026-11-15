@@ -96,8 +96,8 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 
 	if opts.Reuse {
 		var existing models.Sandbox
-		if err := s.db.Where("purpose = ? AND thread_id = ? AND status IN ?",
-			SandboxPurposeAgent, threadID, []string{"running", "creating", "pulling"}).
+		if err := s.db.Where("purpose = ? AND thread_id = ? AND cleanup_pending = ? AND status IN ?",
+			SandboxPurposeAgent, threadID, false, []string{"running", "creating", "pulling", "stopped", "saving", "resuming", "error"}).
 			Order("created_at desc").First(&existing).Error; err == nil {
 			if existing.Profile != profile {
 				return nil, false, fmt.Errorf("此会话的沙箱属于其他 Agent，请重新打开沙箱")
@@ -105,26 +105,18 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 			s.mu.Lock()
 			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, &existing, s.live[existing.ID])
 			s.mu.Unlock()
-			if bindingErr != nil {
+			if bindingErr != nil && !(existing.RecoveryKind == "files" && existing.Status == "stopped") {
 				return nil, false, bindingErr
-			}
-			if existing.Status == "running" && s.mgr.Status(ctx, existing.Name) == "running" {
-				at := time.Now().Add(s.TTL())
-				s.db.Model(&models.Sandbox{}).Where("id = ?", existing.ID).
-					Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
-				existing.DestroyAt = &at
-				log.Info().Str("name", existing.Name).Str("thread", threadID).
-					Uint("id", existing.ID).Msg("reusing agent sandbox for thread")
-				return &existing, true, nil
 			}
 			if existing.Status == "creating" || existing.Status == "pulling" {
 				return &existing, true, nil
 			}
+			if _, _, err := s.EnsureRunning(ctx, existing.ID); err != nil {
+				return nil, false, err
+			}
+			row, err := s.Get(existing.ID)
+			return row, true, err
 		}
-	}
-
-	if maxN := s.MaxTestSandboxes(); s.activeAgentSandboxCount()+s.activeCount() >= maxN {
-		return nil, false, fmt.Errorf("已达到沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
 
 	prefix := strings.TrimSpace(opts.RunIDPrefix)
@@ -145,7 +137,11 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 		Name: name, Profile: profile, Purpose: SandboxPurposeAgent, Status: "creating",
 		RunID: runID, Token: opts.SharedToken, ThreadID: threadID,
 	}
-	if err := s.db.Create(row).Error; err != nil {
+	row.RecoveryMCPNames = make([]string, 0, len(opts.PlatformSpecs))
+	for _, spec := range opts.PlatformSpecs {
+		row.RecoveryMCPNames = append(row.RecoveryMCPNames, spec.Name)
+	}
+	if err := s.createSandboxRow(row); err != nil {
 		return nil, false, err
 	}
 	s.mu.Lock()
@@ -161,7 +157,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 // The zero value keeps the PM / cron behavior.
 type agentContainerExtra struct {
 	Repos []models.SessionRepo
-	// Resident leaves destroy_at NULL so the sweeper never reclaims the sandbox.
+	// Resident selects Solo ownership callbacks; its idle policy is shared.
 	Resident bool
 	// LaunchKind is solo, test, or assistant. Empty means assistant.
 	LaunchKind string
@@ -241,9 +237,8 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		if !extra.Resident {
 			s.invokeAgentDestroyHook(threadID, sharedToken)
 		}
-		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
+			"status": "error", "error": truncErr(err), "cleanup_pending": true, "updated_at": time.Now(),
 		})
 		if extra.Resident {
 			s.releaseSandboxScope(SandboxPurposeSolo, runID, "solo_sandbox_failed")
@@ -298,17 +293,13 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 
-	var destroyAt *time.Time
-	if !extra.Resident {
-		at := time.Now().Add(s.TTL())
-		destroyAt = &at
-	}
+	activeAt := time.Now()
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 		"model_binding_fingerprint": modelFingerprint,
 		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
-		"code_server_port": sb.CodeServerPort, "error": "",
-		"destroy_at": destroyAt, "updated_at": time.Now(),
+		"code_server_port": sb.CodeServerPort, "error": "", "home_dir": home,
+		"last_active_at": activeAt, "updated_at": activeAt,
 	})
 	if res.Error != nil || res.RowsAffected == 0 {
 		acp.Close()
@@ -338,15 +329,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	if extra.OnReady != nil {
 		extra.OnReady()
 	}
-}
-
-func (s *SandboxService) activeAgentSandboxCount() int {
-	var n int64
-	s.db.Model(&models.Sandbox{}).
-		Where("status IN ? AND purpose = ?",
-			[]string{"running", "creating", "pulling"}, SandboxPurposeAgent).
-		Count(&n)
-	return int(n)
 }
 
 func isAgentSandboxPurpose(p string) bool {

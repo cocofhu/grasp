@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 沙箱回收与容量统一：所有用途及 Docker/Kubernetes/E2B 共用空闲时长（默认 60 分钟）和同时运行上限（默认 15）。空闲后先保存再释放资源，等待人工的工作流可回收并在回复时恢复；运行任务不被空闲策略中断。Docker/K8s 保存工作区并删除容器/PVC，E2B 保存完整快照。备份共用 `solo_backup.keep`（默认 1），只恢复最新成功版本，移除运行中定时备份、版本选择及分类 TTL/上限/手动续期。取消运行清理全部恢复点；清理失败持久重试。自建 E2B 需先升级支持快照持久化确认和引用安全回收的 provider。
+
 - 修复 Agent 在 E2B 等远端沙箱中用 `send_file`、`upload_file_artifact` 发送或导入文件时总是失败、提示 `argv[2]: shell argument contains disallowed characters` 的问题。zip 等任意类型的文件现在都能直接发给用户，文件名含中文、空格或括号也可以。导出范围不变，仍只允许工作区和 `/tmp` 内的普通文件。
 
 - 新创建的 Solo Agent 默认可以读取全部产物（`list_artifacts` / `read_artifact`），不用再到能力页手动勾选「全部产物」。已有的 Solo Agent 不变，需要的话请手动勾选。
@@ -40,7 +42,6 @@ All notable public-release changes are documented here.
 
 - Cursor 模型列表与 Cursor CLI 2026.11.11 对齐：新增 Gemini 4 Carbon、Gemini 4 Hydrogen、Claude Fable 5.2（含 Fast 版）和 DeepSeek V4.1 Flash 1017 各档位；移除 CLI 已下线的 Gemini 3.6 Flash 与 Gemini 3.7 Flash。已选用这些旧模型的 Agent 仍会把原 ID 交给 CLI。
 
-- Solo 工作区备份改为滚动保留：每个会话保留最近 5 份（`GRASP_SOLO_BACKUP_KEEP`），运行中的会话距上次备份满 6 小时且有新对话时，在回复结束后自动备份（`GRASP_SOLO_BACKUP_INTERVAL_MINUTES`，负数关闭）。「恢复」旁可选择备份版本，选较早的版本会在新沙箱中还原。沙箱意外消失时，有备份的会话变为已停止并可从最新备份恢复，不再只能重新启动。已有的停止备份升级后自动列入。
 
 - E2B 沙箱到达最长时长后改为暂停并保留内存快照，不再被直接销毁（网关 `e2b.autoPause`，默认开启）；续期被 E2B 时长上限截断时网关记录警告。Solo 终端和 IDE 打开时会自动恢复已暂停的沙箱，后台会清理已在 E2B 侧消失的沙箱；网关状态探测失败显示为「未知」，不再当作沙箱不存在（#1217）。
 

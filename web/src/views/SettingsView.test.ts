@@ -17,7 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
   updateWorkspace: vi.fn(),
-  listSandboxes: vi.fn(),
+  sandboxCapacity: vi.fn(),
   dashboard: vi.fn(),
 }))
 
@@ -43,7 +43,7 @@ vi.mock('@/lib/api/api', async () => {
       getSettings: apiMocks.getSettings,
       updateSettings: apiMocks.updateSettings,
       updateWorkspace: apiMocks.updateWorkspace,
-      listSandboxes: apiMocks.listSandboxes,
+      sandboxCapacity: apiMocks.sandboxCapacity,
       dashboard: apiMocks.dashboard,
     },
   }
@@ -68,9 +68,8 @@ const SETTINGS = {
   brand: { product_name: 'Acme Flow', home_subtitle: 'Clarify together' },
   items: [
     { key: 'max_concurrent_runs', value: 4, min: 1, source: 'db', locked: false },
-    { key: 'run_sandbox_ttl_minutes', value: 30, min: 1, source: 'db', locked: false },
-    { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'db', locked: false },
-    { key: 'max_test_sandboxes', value: 3, min: 1, source: 'db', locked: false },
+    { key: 'sandbox_idle_ttl_minutes', value: 60, min: 1, source: 'db', locked: false },
+    { key: 'max_sandboxes', value: 3, min: 1, source: 'db', locked: false },
     { key: 'sandbox_memory_mb', value: 8192, min: 0, source: 'config', locked: false },
     { key: 'agent_idle_timeout_minutes', value: 20, min: 2, max: 120, source: 'config', locked: false },
   ],
@@ -105,6 +104,7 @@ function mountSettings(locale: 'zh-CN' | 'en' = 'zh-CN') {
 }
 
 beforeEach(() => {
+  apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
   authMocks.isAdmin = true
   workspaceState.workspace.value = { id: 'ws-1', name: 'Studio', description: 'Our studio', unknownModelDisplayName: '' }
   workspaceState.loading.value = false
@@ -128,7 +128,7 @@ describe('SettingsView loading source lock', () => {
 describe('SettingsView brand copy', () => {
   it('hydrates and saves both brand fields with scheduling values', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
     apiMocks.updateSettings.mockResolvedValue({
       ...SETTINGS,
@@ -164,7 +164,7 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
     expect(src).not.toMatch(/<span v-else class="w-9"\s*\/>/)
     // g1.2 — TTL unit via .chip + common.minutes (NodeInspector-aligned)
     expect(src).toMatch(/class="chip">\{\{\s*settingUnit\(key\)\s*\}\}<\/span>/)
-    expect(src).toMatch(/run_sandbox_ttl_minutes: 'common\.minutes'/)
+    expect(src).toMatch(/sandbox_idle_ttl_minutes: 'common\.minutes'/)
     expect(src).not.toMatch(/common\.format\.minutes/)
     // g1.3 / f7 — width + right align preserved
     expect(src).toMatch(/settings-number-input w-\[88px\] text-right/)
@@ -180,12 +180,12 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
 
   it('mounted: unit rows show chip 分钟; no-unit rows have only input on the right', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
     const w = mountSettings()
     await flushPromises()
 
-    const runTtl = w.find('#setting-run_sandbox_ttl_minutes')
+    const runTtl = w.find('#setting-sandbox_idle_ttl_minutes')
     expect(runTtl.exists()).toBe(true)
     expect(runTtl.classes()).toContain('settings-number-input')
     const runCtrl = runTtl.element.parentElement!
@@ -210,7 +210,7 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
 describe('SettingsView sandbox memory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
@@ -278,7 +278,7 @@ describe('SettingsView sandbox memory', () => {
 describe('SettingsView first skeleton vs reset keep form', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
@@ -318,7 +318,7 @@ describe('SettingsView first skeleton vs reset keep form', () => {
 describe('SettingsView general page has no entry cards (plan g2.1 / f1 / f2)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
@@ -398,7 +398,7 @@ describe('SettingsView grouped form behavior', () => {
     vi.clearAllMocks()
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
@@ -437,35 +437,33 @@ describe('SettingsView grouped form behavior', () => {
     w.unmount()
   })
 
-  it('keeps all detailed resource and retention rules available', async () => {
-    apiMocks.getSettings.mockResolvedValue({
-      ...SETTINGS,
-      items: [...SETTINGS.items, { key: 'run_sandbox_max_retention_hours', value: 12, min: 1, source: 'config', locked: false }],
-    })
+  it('offers one idle timeout and one capacity limit for every sandbox', async () => {
     const w = mountSettings()
     await flushPromises()
-    expect(w.findAll('details').length).toBe(3)
+    expect(w.findAll('details')).toHaveLength(2)
     expect(w.get('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存覆盖')
-    expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('保留不跨重启')
+    expect(w.get('label[for="setting-sandbox_idle_ttl_minutes"]').text()).toBe('沙箱空闲回收时间')
+    expect(w.get('#setting-sandbox_idle_ttl_minutes').element).toHaveProperty('value', '60')
+    expect(w.get('label[for="setting-max_sandboxes"]').text()).toBe('最大同时运行沙箱数')
     expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('OOM')
     expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('不会被误杀')
     w.unmount()
   })
 
-  it('rejects an invalid test sandbox limit and keeps the edit after a save failure', async () => {
+  it('rejects an invalid sandbox limit and keeps the edit after a save failure', async () => {
     const w = mountSettings()
     await flushPromises()
-    await w.get('#setting-max_test_sandboxes').setValue(0)
+    await w.get('#setting-max_sandboxes').setValue(0)
     const save = w.findAll('button').find((button) => button.text() === '保存')!
     await save.trigger('click')
     expect(apiMocks.updateSettings).not.toHaveBeenCalled()
     expect(w.get('[role="alert"]').text()).toContain('不能小于 1')
-    await w.get('#setting-max_test_sandboxes').setValue(6)
+    await w.get('#setting-max_sandboxes').setValue(6)
     apiMocks.updateSettings.mockRejectedValueOnce(new Error('Save unavailable'))
     await save.trigger('click')
     await flushPromises()
     expect(w.get('[role="alert"]').text()).toContain('Save unavailable')
-    expect(w.get('#setting-max_test_sandboxes').element).toHaveProperty('value', '6')
+    expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '6')
     w.unmount()
   })
 
@@ -485,25 +483,31 @@ describe('SettingsView grouped form behavior', () => {
     vi.useFakeTimers()
     const w = mountSettings()
     try {
-      apiMocks.listSandboxes.mockResolvedValue([{ id: 'test-1', purpose: 'test', status: 'running' }, { id: 'ttl-1', purpose: 'run', status: 'running' }])
+      apiMocks.sandboxCapacity.mockResolvedValue({ used: 5, limit: 3 })
       apiMocks.dashboard.mockResolvedValue({ running: 4 })
       await flushPromises()
       await vi.advanceTimersByTimeAsync(5000)
       await flushPromises()
       const usage = w.get('[data-testid="settings-capacity-usage"]')
-      expect(usage.text()).toContain('5个')
-      expect(usage.text()).toContain('1/3')
-      expect(usage.text()).toContain('4/4')
+      expect(usage.text()).toContain('5 / 3')
+      expect(usage.findAll('[role="progressbar"]')).toHaveLength(1)
+      expect(usage.text()).not.toContain('4/4')
       expect(usage.find('.bg-err').exists()).toBe(true)
-      apiMocks.listSandboxes.mockRejectedValueOnce(new Error('Usage unavailable'))
+      await w.get('#setting-max_sandboxes').setValue(12)
+      apiMocks.sandboxCapacity.mockResolvedValueOnce({ used: 2, limit: 3 })
+      await vi.advanceTimersByTimeAsync(5000)
+      await flushPromises()
+      expect(usage.text()).toContain('2 / 3')
+      expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '12')
+      apiMocks.sandboxCapacity.mockRejectedValueOnce(new Error('Usage unavailable'))
       await vi.advanceTimersByTimeAsync(5000)
       await flushPromises()
       expect(usage.text()).toContain('Usage unavailable')
-      expect(usage.text()).toContain('5个')
+      expect(usage.text()).toContain('2 / 3')
       w.unmount()
-      const callCount = apiMocks.listSandboxes.mock.calls.length
+      const callCount = apiMocks.sandboxCapacity.mock.calls.length
       await vi.advanceTimersByTimeAsync(10000)
-      expect(apiMocks.listSandboxes.mock.calls.length).toBe(callCount)
+      expect(apiMocks.sandboxCapacity.mock.calls.length).toBe(callCount)
     } finally {
       w.unmount()
       vi.useRealTimers()
@@ -520,7 +524,7 @@ describe('SettingsView workspace information on the general page', () => {
     vi.clearAllMocks()
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
     apiMocks.updateWorkspace.mockImplementation(async (patch: Record<string, unknown>) => ({ ...workspaceState.workspace.value, ...patch }))
   })
@@ -587,7 +591,7 @@ describe('SettingsView workspace information on the general page', () => {
     w.unmount()
   })
 
-  it('blocks both requests when the name, display name, or test sandbox limit is invalid', async () => {
+  it('blocks both requests when the name, display name, or sandbox limit is invalid', async () => {
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('   ')
@@ -605,7 +609,7 @@ describe('SettingsView workspace information on the general page', () => {
     expect(w.get('[data-testid="workspace-meta-unknown-display-error"]').text()).toContain('64')
 
     await w.get('[data-testid="workspace-meta-unknown-display"]').setValue('gpt-5')
-    await w.get('#setting-max_test_sandboxes').setValue('0')
+    await w.get('#setting-max_sandboxes').setValue('0')
     await saveButton(w).trigger('click')
     expect(apiMocks.updateWorkspace).not.toHaveBeenCalled()
     expect(apiMocks.updateSettings).not.toHaveBeenCalled()
@@ -744,7 +748,7 @@ describe('SettingsView workspace information on the general page', () => {
 describe('SettingsView execution mode', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
     apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
@@ -770,8 +774,8 @@ describe('SettingsView execution mode', () => {
     expect(w.get('[data-testid="execution-mode"]').text()).toContain('没有另一层容器边界')
     expect(w.get('[data-testid="execution-mode"]').text()).toContain('来自当前镜像')
     expect(w.find('#setting-sandbox_memory_mb').exists()).toBe(false)
-    expect(w.find('#setting-run_sandbox_ttl_minutes').exists()).toBe(false)
-    expect(w.find('#setting-max_test_sandboxes').exists()).toBe(false)
+    expect(w.find('#setting-sandbox_idle_ttl_minutes').exists()).toBe(false)
+    expect(w.find('#setting-max_sandboxes').exists()).toBe(false)
     expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有 dockerd、sshd 和 code-server')
     expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有模式开关')
     expect(w.find('[data-testid="execution-mode"] input, [data-testid="execution-mode"] [role="switch"]').exists()).toBe(false)
@@ -804,7 +808,7 @@ describe('SettingsView overview stats', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
-    apiMocks.listSandboxes.mockResolvedValue([{ id: 'test-1', purpose: 'test', status: 'running' }])
+    apiMocks.sandboxCapacity.mockResolvedValue({ used: 5, limit: 15 })
     apiMocks.dashboard.mockResolvedValue({ running: 2 })
   })
 
@@ -817,7 +821,7 @@ describe('SettingsView overview stats', () => {
     expect(value('execution-mode')).toBe(pages.pages.settings.execution.sandbox)
     expect(value('running-runs')).toBe('2')
     expect(strip.get('[data-testid="settings-stat-running-runs"]').text()).toContain('/ 4')
-    expect(value('test-sandboxes')).toBe('1')
+    expect(value('sandboxes')).toBe('5')
     expect(value('sandbox-memory')).toBe('8192')
     expect(strip.get('[data-testid="settings-stat-sandbox-memory"]').text()).toContain('MiB')
     expect(w.get('[data-testid="settings-page-header"] h1').text()).toBe(pages.pages.settings.title)
@@ -830,7 +834,7 @@ describe('SettingsView overview stats', () => {
     await flushPromises()
     const strip = w.get('[data-testid="settings-overview-stats"]')
     expect(strip.get('[data-testid="settings-stat-execution-mode"]').text()).toContain(pages.pages.settings.execution.worktree)
-    expect(strip.find('[data-testid="settings-stat-test-sandboxes"]').exists()).toBe(false)
+    expect(strip.find('[data-testid="settings-stat-sandboxes"]').exists()).toBe(false)
     expect(strip.find('[data-testid="settings-stat-sandbox-memory"]').exists()).toBe(false)
     w.unmount()
   })

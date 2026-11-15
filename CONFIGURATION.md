@@ -94,8 +94,9 @@ docker:
 | `storage.driver` | `GRASP_STORAGE_DRIVER` | `local` | 附件存储类型 |
 | `storage.blobs_root` | `GRASP_BLOBS_ROOT` | `data/blobs` | 附件文件目录，与数据库一起备份 |
 | `storage.max_file_bytes` | `GRASP_MAX_FILE_BYTES` | `134217728`（128 MiB） | 单个文件导入上限 |
-| `solo_backup.local_dir` | `GRASP_SOLO_BACKUP_DIR` | `data/solo-backups` | Solo 工作区备份目录；S3 配置见完整环境变量表 |
+| `solo_backup.local_dir` | `GRASP_SOLO_BACKUP_DIR` | `data/solo-backups` | 沙箱工作区备份目录；S3 配置见完整环境变量表 |
 | `solo_backup.max_bytes` | `GRASP_SOLO_BACKUP_MAX_BYTES` | `4294967296`（4 GiB） | 单个压缩备份上限 |
+| `solo_backup.keep` | `GRASP_SOLO_BACKUP_KEEP` | `1` | 每个沙箱保留的成功恢复点，文件备份和 E2B 快照共用；取消运行删除全部 |
 
 `GRASP_PUBLIC_ADVERTISE` 与 `GRASP_MCP_ADVERTISE` 可以不同：前者给浏览器使用，后者给沙箱使用。选择 gateway transport 不会替代沙箱到 Grasp 的 MCP / 运行时下载回连路径。
 
@@ -137,11 +138,8 @@ docker:
 | `sandbox.sandbox_memory_mb` | `GRASP_SANDBOX_MEMORY_MB` | `0` | 跟随网关/模板；非零覆盖至少 `1024 MiB`，环境变量会锁定设置页 |
 | `engine.max_concurrent_runs` | `GRASP_MAX_RUNS` | `5` | 最大并发运行数；设置页可改 |
 | `engine.node_auto_retry_max` | `GRASP_NODE_AUTO_RETRY` | `3` | 节点自动重试次数；设置页可改 |
-| `sandbox.max_test_sandboxes` | — | `5` | 测试沙箱数量上限；设置页可改 |
-| `sandbox.max_solo_sandboxes` | — | `5` | Solo 沙箱数量上限；设置页可改 |
-| `sandbox.test_sandbox_ttl_minutes` | — | `30 分钟` | 测试沙箱空闲保留时长；设置页可改 |
-| `sandbox.run_sandbox_ttl_minutes` | — | `30 分钟` | 工作流节点结束后沙箱保留时长；设置页可改 |
-| `sandbox.run_sandbox_max_retention_hours` | — | `24 小时` | 工作流沙箱延长保留的硬上限；设置页可改，范围 `1–168` |
+| `sandbox.max_sandboxes` | — | `15` | 所有用途和后端共用的同时运行上限；创建和恢复都计入，设置页可改 |
+| `sandbox.idle_ttl_minutes` | — | `60 分钟` | 无任务、排队请求和终端工作时，保存后释放运行资源；设置页可改 |
 | `sandbox.chat_idle_timeout_seconds` | `GRASP_CHAT_IDLE_SEC` | `1200 秒` | Agent 无输出且无 CPU/IO 活动的时限；设置页以分钟显示，默认 `20 分钟` |
 | `sandbox.agent_node_hard_cap_hours` | `GRASP_AGENT_NODE_HARD_CAP_HOURS` | `24 小时` | 画布未设节点总时限时的兜底上限 |
 | `sandbox.sandbox_create_timeout_seconds` | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `1200 秒` | Grasp 等待沙箱创建就绪的时限，应不小于 gateway 的 finalize 时限 |
@@ -150,6 +148,10 @@ docker:
 | `sandbox.agent_chat_timeout_seconds` | `GRASP_AGENT_TIMEOUT_SEC` | 已废弃并忽略 | 不再控制单轮总时长；使用节点总时限和 Agent 无动作时限 |
 
 Grasp 默认不覆盖 CPU、内存或磁盘。设置页将内存填回 `0` 会清除覆盖，后续创建跟随网关；已存在的沙箱不会调整规格。E2B 的非零内存必须等于选中模板的规格，Docker/K8s 则受各自的 `resources.max` 限制。
+
+空闲时长和容量在设置页统一配置，不再按测试、Solo 或 workflow 区分。已有数据库分类容量取较大值迁移一次，已配置的新值优先；旧的分类超时、硬保留上限和手动续期入口移除。工作流并发数仍控制任务调度，与实际沙箱数量独立。迁移不会主动中断当前工作；后台探测失败时保留资源。
+
+Docker/K8s 保存并校验工作区归档后删除运行资源（K8s 包括 PVC），E2B 等完整快照持久化后暂停，不重复打包文件。`solo_backup.keep` 默认 1；运行中无周期备份，恢复始终使用最新成功版本。完整失败、恢复和取消语义见 [沙箱生命周期](docs/content/help/sandbox-lifecycle.md)。
 
 ### 浏览器与其他平台选项
 
@@ -163,7 +165,7 @@ Grasp 默认不覆盖 CPU、内存或磁盘。设置页将内存填回 `0` 会�
 | `browser.container_idle_ttl_seconds` | `600 秒` | 没有 tab 时清理缓存的 CDP 连接，不销毁沙箱 |
 | `browser.desktop_idle_ttl_seconds` | `0` | 没人观看时释放预览页面的时限；平台打开的页面关闭，Agent 自己的页面只断开连接；`0` 表示随沙箱保留 |
 
-GitHub 设备码登录（`github.oauth_client_id`，默认空）、Codex 登录续期（`codex_login`）和 Solo S3 备份（`solo_backup.s3`）的字段与默认值见 [完整环境变量表](server/CONFIGURATION.md)。OpenCode 模型目录由 `sandbox.opencode_catalog_url` / `GRASP_OPENCODE_CATALOG_URL` 指定，未配置时使用 `https://models.dev/api.json`。
+GitHub 设备码登录（`github.oauth_client_id`，默认空）、Codex 登录续期（`codex_login`）和沙箱 S3 备份（`solo_backup.s3`）的字段与默认值见 [完整环境变量表](server/CONFIGURATION.md)。OpenCode 模型目录由 `sandbox.opencode_catalog_url` / `GRASP_OPENCODE_CATALOG_URL` 指定，未配置时使用 `https://models.dev/api.json`。
 
 ## Gateway 公共配置
 

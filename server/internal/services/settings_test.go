@@ -21,18 +21,12 @@ func (f *fakeConc) MaxConcurrent() int     { return f.max }
 func (f *fakeConc) SetAutoRetryMax(n int)  { f.ar = n }
 
 type fakeSbxTuner struct {
-	runTTL  time.Duration
-	testTTL time.Duration
-	maxTest int
-	maxSolo int
+	idleTTL time.Duration
+	max     int
 }
 
-func (f *fakeSbxTuner) SetTTLs(run, test time.Duration) {
-	f.runTTL = run
-	f.testTTL = test
-}
-func (f *fakeSbxTuner) SetMaxTestSandboxes(n int) { f.maxTest = n }
-func (f *fakeSbxTuner) SetMaxSoloSandboxes(n int) { f.maxSolo = n }
+func (f *fakeSbxTuner) SetIdleTTL(ttl time.Duration) { f.idleTTL = ttl }
+func (f *fakeSbxTuner) SetMaxSandboxes(n int)        { f.max = n }
 
 func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	db, err := database.OpenSQLite(":memory:")
@@ -41,7 +35,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	cfg := &config.Config{
 		Engine:  config.EngineConfig{MaxConcurrentRuns: 5, NodeAutoRetryMax: 2},
-		Sandbox: config.SandboxConfig{RunSandboxTTLMinutes: 30, TestSandboxTTLMinutes: 10, MaxTestSandboxes: 2, MaxSoloSandboxes: 5, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
+		Sandbox: config.SandboxConfig{IdleTTLMinutes: 60, MaxSandboxes: 15, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
 	}
 	config.StoreConfig(cfg)
 	conc := &fakeConc{}
@@ -49,15 +43,13 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 9 {
+	if len(items) != 6 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.UpdateWithBrand(map[string]int{
 		KeyMaxConcurrentRuns: 7,
-		KeyRunSandboxTTLMin:  45,
-		KeyTestSandboxTTLMin: 15,
-		KeyMaxTestSandboxes:  4,
-		KeyMaxSoloSandboxes:  8,
+		KeySandboxIdleTTLMin: 45,
+		KeyMaxSandboxes:      8,
 		KeyNodeAutoRetryMax:  3,
 		KeySandboxMemoryMB:   12288,
 		KeyAgentIdleMin:      30,
@@ -66,10 +58,10 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 9 {
+	if len(updated) != 6 {
 		t.Fatalf("updated: %d", len(updated))
 	}
-	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 || sbx.maxSolo != 8 {
+	if conc.max != 7 || conc.ar != 3 || sbx.max != 8 || sbx.idleTTL != 45*time.Minute {
 		t.Fatalf("apply: conc=%+v sbx=%+v", conc, sbx)
 	}
 	if got := sandbox.DefaultMemoryMB(); got != 12288 {
@@ -78,7 +70,9 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if got := sandbox.AgentIdleTimeout(); got != 30*time.Minute {
 		t.Fatalf("agent idle: got %s, want 30m", got)
 	}
-	svc.ApplyOnBoot()
+	if err := svc.ApplyOnBoot(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.UpdateWithBrand(map[string]int{KeyAgentIdleMin: 121}, BrandPatch{}); err == nil || !strings.Contains(err.Error(), "不能大于 120") {
 		t.Fatalf("expected agent idle max validation error, got %v", err)
 	}
@@ -88,8 +82,8 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxConcurrentRuns: 0}, BrandPatch{}); err == nil {
 		t.Fatal("expected min validation error")
 	}
-	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxSoloSandboxes: 0}, BrandPatch{}); err == nil {
-		t.Fatal("expected solo sandbox min validation error")
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxSandboxes: 0}, BrandPatch{}); err == nil {
+		t.Fatal("expected sandbox min validation error")
 	}
 	if _, err := svc.UpdateWithBrand(map[string]int{KeySandboxMemoryMB: 512}, BrandPatch{}); err == nil {
 		t.Fatal("expected sandbox memory min validation error")
@@ -97,7 +91,9 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if _, err := svc.UpdateWithBrand(map[string]int{KeySandboxMemoryMB: 0}, BrandPatch{}); err != nil {
 		t.Fatal(err)
 	}
-	svc.ApplyOnBoot()
+	if err := svc.ApplyOnBoot(); err != nil {
+		t.Fatal(err)
+	}
 	if sandbox.DefaultMemoryMB() != 0 {
 		t.Fatal("saved zero did not clear the memory override on update and restart")
 	}
@@ -148,7 +144,9 @@ func TestSettingsServiceAgentIdleFromConfigKeepsSeconds(t *testing.T) {
 			t.Fatalf("idle item: %+v", it)
 		}
 	}
-	svc.ApplyOnBoot()
+	if err := svc.ApplyOnBoot(); err != nil {
+		t.Fatal(err)
+	}
 	if got := sandbox.AgentIdleTimeout(); got != 90*time.Second {
 		t.Fatalf("agent idle: got %s, want 90s", got)
 	}

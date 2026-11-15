@@ -206,7 +206,7 @@ func TestGatewayClientCRUD(t *testing.T) {
 		t.Fatalf("LiveStatus = %q err=%v", st, err)
 	}
 
-	if err := cli.Stop(ctx, sb.ID); err != nil {
+	if err := cli.Stop(ctx, sb.ID, 1); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	st, _ = cli.LiveStatus(ctx, sb.ID)

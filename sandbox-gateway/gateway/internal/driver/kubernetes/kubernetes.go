@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"sandbox-gateway/internal/driver"
-	"sandbox-gateway/internal/logging"
 
 	"github.com/rs/zerolog/log"
 	appsv1 "k8s.io/api/apps/v1"
@@ -665,20 +664,6 @@ func (d *Driver) scale(ctx context.Context, id string, replicas int32) error {
 	dep.Spec.Replicas = &replicas
 	_, err = d.cs.AppsV1().Deployments(d.opts.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
 	return err
-}
-
-func (d *Driver) Destroy(ctx context.Context, id string) error {
-	ns := d.opts.Namespace
-	name := d.resourceName(id)
-	fg := metav1.DeletePropagationForeground
-	delOpts := metav1.DeleteOptions{PropagationPolicy: &fg}
-	// Best effort: NotFound is ignored; other errors are recorded.
-	logging.WarnErr(ignoreNotFound(d.cs.AppsV1().Deployments(ns).Delete(ctx, name, delOpts)), "k8s destroy deployment", map[string]any{"sandbox_id": id, "name": name})
-	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().Services(ns).Delete(ctx, name, delOpts)), "k8s destroy service", map[string]any{"sandbox_id": id, "name": name})
-	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().Services(ns).Delete(ctx, d.lbName(id), delOpts)), "k8s destroy lb service", map[string]any{"sandbox_id": id, "name": d.lbName(id)})
-	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().Secrets(ns).Delete(ctx, d.secretName(id), delOpts)), "k8s destroy secret", map[string]any{"sandbox_id": id, "name": d.secretName(id)})
-	logging.WarnErr(ignoreNotFound(d.cs.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, d.pvcName(id), delOpts)), "k8s destroy pvc", map[string]any{"sandbox_id": id, "name": d.pvcName(id)})
-	return nil
 }
 
 // Reinstall rebuilds the Deployment (and optionally the data PVC), keeping

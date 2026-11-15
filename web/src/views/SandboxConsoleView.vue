@@ -7,7 +7,6 @@ import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
-import SandboxRetention from '@/components/sandbox/SandboxRetention.vue'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -405,7 +404,6 @@ onBeforeUnmount(() => {
         ><Icon :name="item.i" :size="13" />{{ item.l }}</button>
       </SlidingTabs>
 
-      <SandboxRetention v-if="sandbox" :sandbox="sandbox" compact class="ml-4" @updated="sandbox = $event" />
 
       <span
         v-if="tab === 'terminal'"

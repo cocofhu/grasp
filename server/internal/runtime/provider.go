@@ -434,6 +434,11 @@ type RunSandboxInfo struct {
 	Shared bool
 }
 
+// RunResourceCanceller removes saved environments only on explicit cancellation.
+type RunResourceCanceller interface {
+	CancelRunResources(context.Context, string) error
+}
+
 // SandboxRegistry records and clears live per-run node sandboxes. It is
 // implemented by the platform SandboxService so per-run (ephemeral) node
 // sandboxes appear in the same sandbox list as interactive test sandboxes.
@@ -451,7 +456,7 @@ type SandboxRegistry interface {
 // UnregisterRunSandbox. When the registry does not implement this (e.g. test
 // fakes), run sandboxes only appear once running.
 type RunSandboxBeginner interface {
-	BeginRunSandbox(info RunSandboxInfo)
+	BeginRunSandbox(info RunSandboxInfo) error
 }
 
 // RunSandboxRetirer is an optional registry capability: instead of destroying a
@@ -461,6 +466,14 @@ type RunSandboxBeginner interface {
 // for it and falls back to UnregisterRunSandbox + immediate destroy when absent.
 type RunSandboxRetirer interface {
 	RetireRunSandbox(name string)
+}
+
+// RunSandboxRecovery keeps idle save/restore independent of workflow state.
+// A found environment is never discarded just because reconnect is delayed.
+type RunSandboxRecovery interface {
+	ResumeRunSandbox(context.Context, string, string) (*sandbox.Sandbox, bool, bool, error)
+	AcquireRunSandbox(context.Context, string) (func(), error)
+	ParkRunSandbox(string)
 }
 
 // RunSandboxLogArchiver is an optional capability (SandboxService / provider
