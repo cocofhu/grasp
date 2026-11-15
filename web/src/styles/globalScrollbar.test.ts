@@ -46,6 +46,14 @@ describe('global.css dark theme scrollbar (g2)', () => {
     expect(block?.[0]).not.toMatch(/\.settings-main-scroll/)
   })
 
+  it('pins the settings content wrapper to initial scrollbar values so inner scrollers keep the 4px bar', () => {
+    const block = globalCss.match(/@supports selector\(::-webkit-scrollbar\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/)
+    const rule = block?.[0].match(/\.settings-shell-content\s*\{([^}]*)\}/)
+    expect(rule?.[1]).toMatch(/scrollbar-width:\s*initial/)
+    expect(rule?.[1]).toMatch(/scrollbar-color:\s*initial/)
+    expect(block?.[0]).not.toMatch(/thin/)
+  })
+
   it('hides WebKit scrollbar arrow buttons and keeps the thin 4px bar', () => {
     expect(globalCss).toMatch(/::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/)
     expect(globalCss).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*4px/)
