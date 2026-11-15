@@ -32,6 +32,8 @@ func grantRunScope(t *testing.T, eng *Engine, runID string) string {
 // revoke call is involved, so a restart or another replica sees the same.
 func TestRunScopeFollowsRunStatus(t *testing.T) {
 	eng, db := setupEngine(t)
+	// The dispatcher would claim the queued, graphless run and fail it.
+	eng.Halt()
 	const tok = "persisted-token"
 	if err := db.Create(&models.Run{ID: "scoped", WorkflowID: "w", WorkflowName: "w", Status: "queued", McpToken: tok}).Error; err != nil {
 		t.Fatal(err)
