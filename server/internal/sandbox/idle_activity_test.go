@@ -44,11 +44,29 @@ func TestIdleActivityUsesStdinAndFailsClosed(t *testing.T) {
 
 func TestIdleActivityProcessProbeProtectsBackgroundWork(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		processes map[string][]any
-		busy      bool
+		name        string
+		processes   map[string][]any
+		runtimeRoot string
+		busy        bool
 	}{
 		{name: "idle infrastructure", processes: map[string][]any{"1": {0, "init", "/"}, "10": {1, "/usr/bin/node|/usr/lib/code-server/out/node/entry.js", "/workspace"}, "11": {10, "bash", "/workspace"}, "20": {1, "agent-cli|acp", "/workspace"}}},
+		{name: "idle runtime startup supervisor", processes: map[string][]any{"10": {1, "/bin/bash|/opt/grasp-runtime/current/scripts/startup.sh", "/workspace"}, "11": {10, "/usr/bin/node|/usr/lib/code-server/out/node/entry.js", "/workspace"}}},
+		{name: "custom runtime startup supervisor", runtimeRoot: "/custom/runtime", processes: map[string][]any{"10": {1, "/bin/bash|/custom/runtime/current/scripts/startup.sh", "/workspace"}}},
+		{name: "idle E2B supervisors and preview poll", processes: map[string][]any{"10": {1, "bash", "/"}, "11": {10, "python3|/run/grasp-e2b/relay.py|/run/grasp-e2b", "/"}, "12": {10, "bash|/run/grasp-e2b/bootstrap.sh", "/"}, "13": {1, "bash|/usr/local/bin/preview-inject.sh", "/workspace"}, "14": {13, "sleep|5", "/"}}},
+		{name: "installed preview binary", processes: map[string][]any{"10": {1, "/usr/local/bin/preview-inject|--listen|19999", "/workspace"}}},
+		{name: "user preview script remains work", processes: map[string][]any{"10": {1, "bash|/workspace/preview-inject.sh", "/workspace"}}, busy: true},
+		{name: "user services script remains work", processes: map[string][]any{"10": {1, "bash|/workspace/services.sh", "/workspace"}}, busy: true},
+		{name: "user bootstrap-like script remains work", processes: map[string][]any{"10": {1, "bash|/workspace/grasp-bootstrap.sh", "/workspace"}}, busy: true},
+		{name: "command mentioning preview remains work", processes: map[string][]any{"10": {1, "python3|/workspace/build.py|--label|preview-inject", "/workspace"}}, busy: true},
+		{name: "preview long sleep remains work", processes: map[string][]any{"10": {1, "bash|/usr/local/bin/preview-inject.sh", "/workspace"}, "11": {10, "sleep|3600", "/"}}, busy: true},
+		{name: "user relay remains work", processes: map[string][]any{"10": {1, "python3|/workspace/relay.py", "/workspace"}}, busy: true},
+		{name: "user bootstrap remains work", processes: map[string][]any{"10": {1, "bash|/workspace/bootstrap.sh", "/workspace"}}, busy: true},
+		{name: "user sleep remains work", processes: map[string][]any{"10": {1, "bash", "/tmp"}, "11": {10, "sleep|5", "/tmp"}}, busy: true},
+		{name: "preview non-poll child remains work", processes: map[string][]any{"10": {1, "bash|/usr/local/bin/preview-inject.sh", "/workspace"}, "11": {10, "make", "/tmp"}}, busy: true},
+		{name: "user startup script remains work", processes: map[string][]any{"10": {1, "/bin/bash|/workspace/startup.sh", "/workspace"}}, busy: true},
+		{name: "user runtime-like path remains work", processes: map[string][]any{"10": {1, "/bin/bash|/workspace/opt/grasp-runtime/current/scripts/startup.sh", "/workspace"}}, busy: true},
+		{name: "trusted startup child remains work", processes: map[string][]any{"10": {1, "/bin/bash|/opt/grasp-runtime/current/scripts/startup.sh", "/workspace"}, "11": {10, "make", "/tmp"}}, busy: true},
+		{name: "shell mentioning runtime startup remains work", processes: map[string][]any{"10": {1, "/bin/bash|-c|/opt/grasp-runtime/current/scripts/startup.sh", "/workspace"}}, busy: true},
 		{name: "detached build", processes: map[string][]any{"22": {1, "python3|build.py", "/workspace/repo"}}, busy: true},
 		{name: "terminal command", processes: map[string][]any{"11": {1, "bash", "/tmp"}, "22": {11, "make", "/tmp"}}, busy: true},
 		{name: "ACP terminal remains work", processes: map[string][]any{"22": {1, "node|long-task.js", "/workspace"}}, busy: true},
@@ -56,10 +74,12 @@ func TestIdleActivityProcessProbeProtectsBackgroundWork(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			payload, _ := json.Marshal(tc.processes)
 			quoted, _ := json.Marshal(string(payload))
+			runtimeRoot, _ := json.Marshal(tc.runtimeRoot)
 			// Execute the actual probe with deterministic /proc and runtime
 			// endpoints, including NUL-delimited Linux command lines.
 			setup := `import io,json,os,pathlib,sys,urllib.request
 fixtureProcs=json.loads(` + string(quoted) + `)
+os.environ['GRASP_RUNTIME_ROOT']=` + string(runtimeRoot) + `
 class ProcPath:
  def __init__(self,p): self.p=str(p)
  @property
