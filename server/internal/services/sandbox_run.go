@@ -267,7 +267,8 @@ func (s *SandboxService) hasArchivedLog(name string) bool {
 
 // UnregisterRunSandbox clears a per-run node sandbox record once the runtime
 // provider tears down its container. Cleanup intent and archive keys remain
-// durable until physical deletion succeeds. Implements runtime.SandboxRegistry.
+// durable until provider API and archive deletions succeed. Host garbage
+// collection belongs to the provider. Implements runtime.SandboxRegistry.
 func (s *SandboxService) UnregisterRunSandbox(name string) {
 	if name == "" {
 		return

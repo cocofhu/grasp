@@ -7,10 +7,10 @@ Workflow concurrency remains a separate task scheduling limit.
 | Behavior | Docker | Kubernetes | E2B |
 | --- | --- | --- | --- |
 | Idle | No executing task, queued request or terminal/background work | Same | Same |
-| Idle timeout or Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Verify a durable memory/disk snapshot, then report paused; no duplicate file archive |
+| Idle timeout or Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Native pause, or independent checkpoint then release for multiple points; no file archive |
 | Next use | Recreate, restore the newest successful archive, reconnect | Same | Restore the newest successful snapshot and reconnect |
 | Periodic running backup | None | None | None |
-| Cancel run or close session | Delete its environment and every recovery point | Same | Delete its guest and recovery points; reclaim unreferenced disk layers |
+| Cancel run or close session | Delete its environment and every recovery point | Same | Delete its guest and recovery points; provider reclaims physical storage |
 
 File archives cover the workspace, excluding regenerable `node_modules`,
 `.venv`, `__pycache__`, `.cache` and `.pnpm-store` directories. Docker/Kubernetes
@@ -40,11 +40,19 @@ successful new save. Restore always selects the newest successful point, with
 no version picker or silent fallback from a corrupt archive. Existing archives
 are migrated with their object references preserved.
 
-Archive or verification failure preserves the original workload. An E2B pause
-response alone does not establish successful persistence. Failed uploads retain
-the previous durable point and, with the supporting provider, pin the local
-pending snapshot. This cannot guarantee unsaved data against guest failure,
-host power loss or storage corruption.
+E2B uses native pause/connect with `keep: 1`. Larger counts use official named
+snapshot APIs, release the source guest after committing the exact checkpoint,
+and prune older independent checkpoints after the new save succeeds.
+Restore prefers the original paused guest. Only confirmed absence allows a new
+provider guest from the checkpoint committed by the latest save; the gateway ID
+stays stable. Multiple points cost additional storage and save time, without
+introducing periodic backups while running.
+
+Archive or verification failure preserves the original workload. E2B follows
+the provider's official pause/snapshot recovery contract; failed saves do not
+prune prior points. Grasp requires no private upload or process-exit receipt.
+Provider storage monitoring and GC remain deployment responsibilities, and
+unsaved state is not guaranteed against host power loss or storage corruption.
 
 Failed deletion keeps persistent retry intent. Shared snapshot ancestors,
 templates and live readers protect referenced layers, so `keep: 1` does not mean
@@ -54,8 +62,10 @@ running slot, while disk cleanup remains tracked.
 Upgrade migrates saved per-purpose capacities once using the larger value;
 an explicit new limit wins. Old purpose-specific timeouts, maximum retention,
 manual leases, periodic backup intervals and version-selection APIs are removed.
-Lowering capacity does not evict existing work. Self-hosted E2B requires its
-retention schema migration and matching orchestrator/API before gateway and
-Grasp. Missing capabilities fail closed. Update a single provider node only in
+Lowering capacity does not evict existing work. Standard E2B requires no private
+extension or custom Dashboard. Counts above one require the official independent
+snapshot API and fail explicitly when unavailable. Existing enhanced self-hosted
+deployments must update their storage-tracking API and migration before the
+gateway switches to standard calls. Update a single provider node only in
 a maintenance window without active business work, and validate with isolated
 test sandboxes.

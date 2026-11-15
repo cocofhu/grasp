@@ -97,29 +97,29 @@ func TestIdleSavedSoloDoesNotWakeInBackground(t *testing.T) {
 	}
 }
 
-func TestPausedVMDoesNotProveSnapshotDurability(t *testing.T) {
+func TestPausedVMReleasesCapacityWithoutCompletingRecoveryIntent(t *testing.T) {
 	f := newStopFixture(t)
 	row := f.recovery(t)
 	f.fg.Driver = "e2b"
 	f.fg.SetStatus(row.Name, "stopped")
 	f.fg.FailStop = true
 	if err := f.sbx.Reclaim(context.Background(), row.ID); err == nil {
-		t.Fatal("failed snapshot upload reported success")
+		t.Fatal("incomplete snapshot operation reported success")
 	}
-	if row := f.recovery(t); row.Status != "saving" {
-		t.Fatalf("unverified save state=%s", row.Status)
+	if row := f.recovery(t); row.Status != "stopped" || row.RecoveryPhase != "releasing" || row.Error == "" {
+		t.Fatalf("incomplete recovery intent lost: status=%s phase=%s error=%q", row.Status, row.RecoveryPhase, row.Error)
 	}
 	capacity, _ := f.sbx.Capacity()
-	if capacity.Used != 1 {
-		t.Fatal("unverified save freed capacity")
+	if capacity.Used != 0 {
+		t.Fatal("provider-confirmed paused workload occupied compute capacity")
 	}
 	if _, _, err := f.sbx.EnsureRunning(context.Background(), row.ID); err == nil {
-		t.Fatal("wake bypassed snapshot durability verification")
+		t.Fatal("wake bypassed the incomplete recovery operation")
 	}
 	f.fg.FailStop = false
 	f.sbx.RetryRecoveryCleanup(context.Background())
-	if row := f.recovery(t); row.Status != "stopped" {
-		t.Fatalf("durable retry state=%s", row.Status)
+	if row := f.recovery(t); row.Status != "stopped" || row.RecoveryPhase != "" || row.Error != "" {
+		t.Fatalf("retry did not finish recovery: status=%s phase=%s error=%q", row.Status, row.RecoveryPhase, row.Error)
 	}
 }
 
@@ -177,24 +177,33 @@ func TestCancelledWorkflowCleanupResumesAfterRestart(t *testing.T) {
 	})
 }
 
-func TestCancellationReleasesCapacityOnlyAfterWorkloadExitProof(t *testing.T) {
-	for _, stopped := range []bool{false, true} {
-		t.Run(map[bool]string{false: "still-running", true: "released"}[stopped], func(t *testing.T) {
+func TestCancellationSeparatesProviderComputeStatusFromBackupCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name, status string
+		probeFailure bool
+		released     bool
+	}{
+		{name: "running", status: "running"},
+		{name: "paused", status: "stopped", released: true},
+		{name: "absent", status: "not_found", released: true},
+		{name: "unavailable", status: "not_found", probeFailure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			f := newStopFixture(t)
 			row := f.recovery(t)
+			f.fg.Driver = "e2b"
 			f.fg.FailDelete = true
-			if stopped {
-				f.fg.SetStatus(row.Name, "stopped")
-			}
+			f.fg.SetStatus(row.Name, tc.status)
+			f.fg.FailStatus = tc.probeFailure
 			if err := f.sbx.CancelSandbox(context.Background(), row.ID); err == nil {
 				t.Fatal("pending snapshot cleanup reported success")
 			}
 			pending := f.recovery(t)
-			if !pending.CleanupPending || (pending.Status == "stopped") != stopped {
+			if !pending.CleanupPending || (pending.Status == "stopped") != tc.released {
 				t.Fatalf("unproven deletion status=%s pending=%v", pending.Status, pending.CleanupPending)
 			}
 			wantUsed := 1
-			if stopped {
+			if tc.released {
 				wantUsed = 0
 			}
 			if capacity, err := f.sbx.Capacity(); err != nil || capacity.Used != wantUsed {
@@ -203,10 +212,10 @@ func TestCancellationReleasesCapacityOnlyAfterWorkloadExitProof(t *testing.T) {
 			if _, _, err := f.sbx.EnsureRunning(context.Background(), row.ID); err == nil {
 				t.Fatal("cancelled sandbox could be resumed")
 			}
-			f.fg.FailDelete = false
+			f.fg.FailDelete, f.fg.FailStatus = false, false
 			f.sbx.RetryRecoveryCleanup(context.Background())
 			if _, err := f.sbx.Get(row.ID); err == nil {
-				t.Fatal("physical cleanup retry kept deletion intent")
+				t.Fatal("successful API cleanup retry kept deletion intent")
 			}
 		})
 	}

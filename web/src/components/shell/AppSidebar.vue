@@ -214,15 +214,6 @@ async function onHideNav() {
   background: rgb(var(--c-txt) / .04);
   color: rgb(var(--c-txt2));
 }
-.app-sidebar-brand-row :deep(.brand-logo__name) {
-  background: none;
-  -webkit-text-fill-color: currentColor;
-  color: rgb(var(--c-txt));
-  animation: none;
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -.02em;
-}
 .sidebar-footer {
   padding: 10px 12px 12px;
   gap: 4px;

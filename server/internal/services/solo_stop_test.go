@@ -108,35 +108,12 @@ func (f *stopFixture) waitStatus(t *testing.T, status string) models.SoloSession
 	return f.row(t)
 }
 
-func (f *stopFixture) sandboxName(t *testing.T, id uint) string {
-	t.Helper()
-	sb, err := f.sbx.Get(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sb.Name
-}
-
 func (f *stopFixture) stop(t *testing.T) models.SoloSession {
 	t.Helper()
 	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
 	return f.waitStatus(t, models.SoloStatusStopped)
-}
-
-func (f *stopFixture) hasSystem(t *testing.T, text string) bool {
-	t.Helper()
-	msgs, err := f.solo.Messages(f.id, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range msgs {
-		if m.Role == "system" && strings.Contains(m.Content, text) {
-			return true
-		}
-	}
-	return false
 }
 
 func wantSoloCode(t *testing.T, err error, code string) {

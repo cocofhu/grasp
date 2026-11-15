@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/engine"
-	"github.com/cocofhu/grasp/internal/nodereg"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/version"
 	"github.com/gin-gonic/gin"
@@ -84,12 +83,6 @@ func (h *Handlers) Health(c *gin.Context) {
 // Live is the liveness probe: always 200 while the process is up.
 func (h *Handlers) Live(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "alive"})
-}
-
-// NodeRegistry returns the structured-product contract manifest (single source
-// of truth for backend + frontend artifact mappings).
-func (h *Handlers) NodeRegistry(c *gin.Context) {
-	c.JSON(http.StatusOK, nodereg.BuildManifest())
 }
 
 // DashboardStats returns summary counters.

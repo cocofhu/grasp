@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,20 +49,38 @@ type lifecycleProvider struct {
 	logs                                                                                                                        string
 	beforeRequest                                                                                                               func(*http.Request)
 	// maxEndAt caps renewals like E2B's per-team maximum sandbox length.
-	maxEndAt               time.Time
-	autoPause              bool
-	snapshotKeep           int
-	snapshotReplies        []SnapshotStatus
-	snapshotRequests       int
-	snapshotHTTPStatus     int
-	deletedSnapshots       map[string]bool
-	deleteCleanupPending   int
-	deleteWorkloadReleased bool
+	maxEndAt                                                                    time.Time
+	autoPause                                                                   bool
+	snapshots                                                                   map[string]*lifecycleSnapshot
+	snapshotAliases                                                             map[string]string
+	deletedSnapshots                                                            map[string]bool
+	snapshotCreateRequests                                                      int
+	snapshotCreated, snapshotListed, snapshotDeleted, aliasRequests             int
+	snapshotCreateStatus, snapshotListStatus, snapshotDeleteStatus, aliasStatus int
+	snapshotCreateAmbiguous                                                     bool
+	snapshotPending                                                             bool
+	snapshotRawIDs                                                              bool
+}
+
+type lifecycleSnapshot struct {
+	ID, SourceID, Name string
+	Ready              bool
+	Sandbox            sandboxWire
+	RelayKey           string
+}
+
+func (f *lifecycleProvider) snapshotResponse(point *lifecycleSnapshot) snapshotWire {
+	name := "team/" + point.Name + ":default"
+	id := name
+	if f.snapshotRawIDs {
+		id = point.ID + ":default"
+	}
+	return snapshotWire{ID: id, Names: []string{name}}
 }
 
 func newLifecycleProvider(t *testing.T) *lifecycleProvider {
 	t.Helper()
-	f := &lifecycleProvider{deleteWorkloadReleased: true, deletedSnapshots: map[string]bool{}, sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, relayKeys: map[string]string{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
+	f := &lifecycleProvider{snapshots: map[string]*lifecycleSnapshot{}, snapshotAliases: map[string]string{}, deletedSnapshots: map[string]bool{}, sandboxes: map[string]*sandboxWire{}, files: map[string][]byte{}, relayKeys: map[string]string{}, ready: true, capacity: 32 << 30, healthSeen: make(chan struct{}, 1)}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
@@ -85,10 +104,23 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(400)
 			return
 		}
+		templateID := strings.TrimSuffix(request.TemplateID, ":default")
+		if strings.HasPrefix(templateID, "snapshot-") && f.snapshots[templateID] == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if f.createStatus >= 400 && f.createStatus < 500 {
+			w.WriteHeader(f.createStatus)
+			return
+		}
 		f.created++
 		f.autoPause = request.AutoPause
 		id := fmt.Sprintf("guest-%d", f.created)
 		s := &sandboxWire{ID: id, TemplateID: request.TemplateID, EnvdVersion: "0.4.6", EnvdAccessToken: "envd-secret", TrafficAccessToken: "traffic-secret", Metadata: request.Metadata, CPUCount: 2, MemoryMB: 3072, State: "running", StartedAt: time.Now().UTC()}
+		if point := f.snapshots[templateID]; point != nil {
+			s.CPUCount, s.MemoryMB = point.Sandbox.CPUCount, point.Sandbox.MemoryMB
+			f.relayKeys[id] = point.RelayKey
+		}
 		f.sandboxes[id] = s
 		f.env = request.EnvVars
 		if f.createStatus != 0 {
@@ -111,16 +143,91 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(all)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/templates/aliases/") && r.Method == http.MethodGet {
+		f.aliasRequests++
+		if f.aliasStatus != 0 {
+			w.WriteHeader(f.aliasStatus)
+			return
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/templates/aliases/"), ":default")
+		id := f.snapshotAliases[name]
+		if id == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"templateID": id})
+		return
+	}
+	if r.URL.Path == "/snapshots" && r.Method == http.MethodGet {
+		f.snapshotListed++
+		if f.snapshotListStatus != 0 {
+			w.WriteHeader(f.snapshotListStatus)
+			return
+		}
+		query := r.URL.Query()
+		if query.Get("limit") != "100" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		all := make([]snapshotWire, 0)
+		for _, point := range f.snapshots {
+			if !point.Ready || query.Get("sandboxID") != "" && query.Get("sandboxID") != point.SourceID {
+				continue
+			}
+			name := strings.TrimSuffix(query.Get("name"), ":default")
+			if name != "" && name != point.ID && name != point.Name && name != "team/"+point.Name {
+				continue
+			}
+			all = append(all, f.snapshotResponse(point))
+		}
+		sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+		_ = json.NewEncoder(w).Encode(all)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/templates/") && r.Method == http.MethodDelete {
+		if f.snapshotDeleteStatus != 0 {
+			w.WriteHeader(f.snapshotDeleteStatus)
+			return
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/templates/")
+		point := f.snapshots[id]
+		if point == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		for _, sandbox := range f.sandboxes {
+			if strings.TrimSuffix(sandbox.TemplateID, ":default") == id {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+		}
+		delete(f.snapshots, id)
+		if f.snapshotAliases[point.Name] == id {
+			delete(f.snapshotAliases, point.Name)
+		}
+		if f.snapshotAliases["team/"+point.Name] == id {
+			delete(f.snapshotAliases, "team/"+point.Name)
+		}
+		f.deletedSnapshots[id] = true
+		f.snapshotDeleted++
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/sandboxes/") {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/sandboxes/"), "/")
 		s := f.sandboxes[parts[0]]
-		if len(parts) == 2 && parts[1] == "snapshot-status" && f.deletedSnapshots[parts[0]] {
-			f.snapshotRequests++
-			_ = json.NewEncoder(w).Encode(SnapshotStatus{State: "deleted", PendingCleanup: f.deleteCleanupPending, WorkloadReleased: f.deleteWorkloadReleased})
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			f.getRequests++
+			if f.getStatus != 0 {
+				w.WriteHeader(f.getStatus)
+				return
+			}
+		}
+		if len(parts) == 1 && r.Method == http.MethodDelete && f.deleteStatus != 0 {
+			w.WriteHeader(f.deleteStatus)
 			return
 		}
 		if s == nil && len(parts) == 1 && r.Method == http.MethodDelete {
-			f.deletedSnapshots[parts[0]] = true
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -131,11 +238,6 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		if len(parts) == 1 {
 			switch r.Method {
 			case http.MethodGet:
-				f.getRequests++
-				if f.getStatus != 0 {
-					w.WriteHeader(f.getStatus)
-					return
-				}
 				response := *s
 				response.EnvdAccessToken = ""
 				response.TrafficAccessToken = ""
@@ -144,11 +246,6 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			case http.MethodDelete:
-				if f.deleteStatus != 0 {
-					w.WriteHeader(f.deleteStatus)
-					return
-				}
-				f.deletedSnapshots[s.ID] = true
 				delete(f.sandboxes, s.ID)
 				f.deleted++
 				w.WriteHeader(204)
@@ -158,29 +255,42 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch parts[1] {
-		case "snapshot-status":
-			f.snapshotRequests++
-			if f.snapshotHTTPStatus != 0 {
-				w.WriteHeader(f.snapshotHTTPStatus)
-				return
-			}
-			status := SnapshotStatus{State: "ready", BuildID: "snapshot-" + s.ID, Keep: f.snapshotKeep, WorkloadReleased: true}
-			if len(f.snapshotReplies) > 0 {
-				status = f.snapshotReplies[0]
-				if len(f.snapshotReplies) > 1 {
-					f.snapshotReplies = f.snapshotReplies[1:]
-				}
-			}
-			_ = json.NewEncoder(w).Encode(status)
-		case "pause":
-			var body struct {
-				SnapshotKeep int `json:"snapshotKeep"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		case "snapshots":
+			f.snapshotCreateRequests++
+			var body map[string]any
+			if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 2 || body["memory"] != true {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			f.snapshotKeep = body.SnapshotKeep
+			name, ok := body["name"].(string)
+			if !ok || !providerIDPattern.MatchString(name) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if f.snapshotCreateStatus != 0 && !f.snapshotCreateAmbiguous {
+				w.WriteHeader(f.snapshotCreateStatus)
+				return
+			}
+			f.snapshotCreated++
+			id := f.snapshotAliases[name]
+			if id == "" {
+				id = fmt.Sprintf("snapshot-%d", f.snapshotCreated)
+			}
+			point := &lifecycleSnapshot{ID: id, SourceID: s.ID, Name: name, Ready: !f.snapshotPending, Sandbox: *s, RelayKey: f.relayKeys[s.ID]}
+			f.snapshots[id] = point
+			f.snapshotAliases[name], f.snapshotAliases["team/"+name] = id, id
+			if f.snapshotCreateStatus != 0 {
+				w.WriteHeader(f.snapshotCreateStatus)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(f.snapshotResponse(point))
+		case "pause":
+			var body map[string]any
+			if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&body) != nil || !reflect.DeepEqual(body, map[string]any{"memory": true, "requireHealthyGuest": true}) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			if f.pauseStatus != 0 {
 				w.WriteHeader(f.pauseStatus)
 				return
@@ -600,8 +710,11 @@ func TestDriverCancelCreateAndCleanupRetry(t *testing.T) {
 	if _, err := os.Stat(d.statePath("retry")); err != nil {
 		t.Fatal("failed delete lost recovery record")
 	}
-	if status, err := d.Status(t.Context(), "retry"); err != nil || status != driver.StatusNotFound {
-		t.Fatal("deleting guest remained publicly running")
+	if status, err := d.Status(t.Context(), "retry"); err != nil || status != driver.StatusRunning {
+		t.Fatal("failed deletion hid the still allocated provider workload")
+	}
+	if endpoints, err := d.Endpoints(t.Context(), "retry"); err != nil || len(endpoints) != 0 {
+		t.Fatal("deleting guest exposed endpoints while cleanup was pending")
 	}
 	if err := d.Stop(t.Context(), "retry"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("deleting guest accepted pause")

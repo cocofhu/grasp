@@ -578,8 +578,6 @@ export function useRunTerminalNotifications() {
     error,
     loading,
     pageLoading,
-    pageNumber,
-    pageFilter,
     lastRefreshSource,
     lastPeekAt,
     markRead,

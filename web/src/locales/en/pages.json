@@ -3822,12 +3822,8 @@
         "reconnecting": "Connection lost, reconnecting…"
       },
       "startup": {
-        "title": "Preparing the sandbox",
-        "pulling": "Pulling image",
-        "creating": "Creating container",
-        "clone": "Cloning {repo}",
-        "agent": "Starting {agent}",
-        "hint": "The first image pull can take a few minutes. You can send a message now; it runs once the sandbox is ready."
+        "hint": "You can send a message now; it runs once the sandbox is ready.",
+        "hintPulling": "The first image pull can take a few minutes. You can send a message now; it runs once the sandbox is ready."
       },
       "errorCard": {
         "title": "Sandbox unavailable",

@@ -57,7 +57,7 @@ Example discovery response:
 
 `stopMode` is `cold` for Docker/Kubernetes and `pause` for E2B. `diskMode` is
 `unlimited` for Docker (no gateway-enforced quota), `pvc` for Kubernetes and
-`template-minimum-free` for E2B. Grasp saves file archives before cold release; E2B pause uses the provider's durable snapshot contract.
+`template-minimum-free` for E2B. Grasp saves file archives before cold release; E2B pause uses the standard provider memory-snapshot contract.
 
 ```
 GET /api/v2/sandboxes/{nativeSandboxID}/connect/{guestPort}
@@ -254,7 +254,7 @@ values, including credentials and injection grants, are never returned.
 
 ```
 POST   /api/v1/sandboxes/:id/start      # recreate saved workload / resume E2B
-POST   /api/v1/sandboxes/:id/stop       # release Docker/K8s resources / durable E2B snapshot
+POST   /api/v1/sandboxes/:id/stop       # release Docker/K8s resources / E2B memory snapshot
 POST   /api/v1/sandboxes/:id/reinstall  # rebuild Pod; optional PVC wipe
 DELETE /api/v1/sandboxes/:id            # remove sandbox + record
 GET    /api/v1/sandboxes/:id/status     # {"status":"running|stopped|not_found|..."}
@@ -415,18 +415,29 @@ ports may change. The client restores its archive before admitting user work.
 Docker host bind mounts are not removed. Kubernetes PV physical reclamation
 continues to follow the storage class / CSI policy.
 
-E2B Stop sends `snapshotKeep` to the self-hosted provider and waits for
-`GET /sandboxes/{providerID}/snapshot-status` to report `state=ready`, a nonempty
-`buildID`, `workloadReleased=true`, and no `lastError`. The snapshot must be
-durable and the provider process must have exited before capacity is released.
-A paused VM alone is insufficient. This extension requires the provider's
-retention migration and matching API/orchestrator; unsupported providers fail
-closed. `stopping` remains pending across gateway restarts until Stop is retried
-and durability is confirmed. A failed save never authorizes pruning the previous
-successful point.
+E2B Stop uses official APIs. With `backupKeep: 1`, it sends
+`{"memory": true, "requireHealthyGuest": true}` to `/sandboxes/{providerID}/pause`
+and resumes the same provider ID through `connect`. Larger counts create a
+named memory snapshot through `/sandboxes/{providerID}/snapshots`, persist that
+exact recovery point, then delete the source guest to release compute. There is
+no second native pause with a later state. The newest N independent snapshots
+are retained and older ones are deleted through `/templates/{immutableID}`.
+A retired checkpoint still used as a native-paused clone's base remains a
+structural dependency with a deletion tombstone. It does not block wake;
+cancellation removes the guest first and retries deletion of that base.
 
-DELETE records a persistent `deleting` intent. Driver errors keep the record
-for retries; E2B completes only after the provider confirms physical cleanup
-(`state=deleted`, `pendingCleanup=0`, `workloadReleased=true`). Shared snapshot ancestors and live
-readers remain protected. Cleanup can therefore remain pending after the VM is
-gone. The provider's safety grace period is not a second backup-retention knob.
+Start prefers the original paused guest. Only a confirmed 404 permits recovery
+from the independent checkpoint committed by the latest save; it does not select
+an older checkpoint or an empty template. A replacement provider ID receives
+fresh traffic/envd credentials while retaining the gateway ID and local port
+bindings. Capture names, immutable IDs and pending operations survive gateway
+restarts. Ambiguous creates are reconciled before any retry; unresolved outcomes
+remain visible as pending work.
+
+DELETE retains a persistent `deleting` intent until the standard guest deletion
+and all gateway-owned snapshot deletions succeed. Provider lookup failures do
+not establish absence. Compute quota can be released after confirmed pause or
+absence while snapshot cleanup remains pending. These are API-level resource
+observations, not physical process-exit or disk-GC receipts. Shared layers and
+storage reclamation are provider responsibilities. Neither `snapshotKeep` nor
+`snapshot-status` extensions are required.
