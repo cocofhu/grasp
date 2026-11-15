@@ -77,6 +77,114 @@ func TestSnapshotRestoreLatestKeepsBusinessIdentityAndEndpoints(t *testing.T) {
 	}
 }
 
+func TestSnapshotStartReconcilesLostSourceDeleteAfterRestart(t *testing.T) {
+	f := newLifecycleProvider(t)
+	opts := lifecycleOptions(t, f)
+	d := openLifecycleDriver(t, opts)
+	h, err := d.Create(t.Context(), lifecycleSpec("start-after-release"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.beforeRequest = func(r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/sandboxes/"+h.Name {
+			delete(f.sandboxes, h.Name)
+			f.deleted++
+			f.deleteStatus = http.StatusInternalServerError
+			f.beforeRequest = nil
+		}
+	}
+	f.mu.Unlock()
+	if err := d.PauseSnapshot(t.Context(), h.ID, 3); err == nil {
+		t.Fatal("fixture did not lose the accepted source deletion response")
+	}
+	saved := recoveryRecord(t, d, h.ID)
+	if saved.Phase != "releasing" || saved.LatestSnapshotID == "" || saved.BackupKeep != 3 {
+		t.Fatal("lost deletion response discarded the committed checkpoint or retention policy")
+	}
+	if status, err := d.Status(t.Context(), h.ID); err != nil || status != driver.StatusStopped {
+		t.Fatalf("confirmed source absence was not observable: %s %v", status, err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d = openLifecycleDriver(t, opts)
+	f.mu.Lock()
+	f.deleteStatus = 0
+	f.mu.Unlock()
+	if err := d.Start(t.Context(), h.ID); err != nil {
+		t.Fatalf("direct Start could not finish the persisted release intent: %v", err)
+	}
+	restored, err := d.Get(t.Context(), h.ID)
+	if err != nil || restored.ID != h.ID || restored.Name == h.Name || restored.Status != driver.StatusRunning || !reflect.DeepEqual(restored.Endpoints, h.Endpoints) {
+		t.Fatalf("release reconciliation lost the stable sandbox identity/endpoints: %v %v", restored, err)
+	}
+	finished := recoveryRecord(t, d, h.ID)
+	if finished.Phase != "running" || finished.Restore != nil || finished.BackupKeep != 3 || len(finished.RecoveryPoints) != 1 || finished.RecoveryPoints[0].ID != saved.LatestSnapshotID {
+		t.Fatal("direct Start replaced the saved checkpoint or retention policy")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.created != 2 || f.deleted != 1 || f.snapshotCreateRequests != 1 || f.paused != 0 {
+		t.Fatal("release recovery recreated a checkpoint or duplicated provider workloads")
+	}
+}
+
+func TestSnapshotStartPreservesUncertainReleaseOnProviderErrors(t *testing.T) {
+	for _, failure := range []string{"get-401", "get-500", "delete-500", "ownership"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newLifecycleProvider(t)
+			opts := lifecycleOptions(t, f)
+			d := openLifecycleDriver(t, opts)
+			h, err := d.Create(t.Context(), lifecycleSpec("start-release-error"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.mu.Lock()
+			f.deleteStatus = http.StatusInternalServerError
+			f.mu.Unlock()
+			if err := d.PauseSnapshot(t.Context(), h.ID, 3); err == nil {
+				t.Fatal("source release failure was hidden")
+			}
+			saved := recoveryRecord(t, d, h.ID)
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
+			d = openLifecycleDriver(t, opts)
+			f.mu.Lock()
+			f.deleteStatus = 0
+			switch failure {
+			case "get-401":
+				f.getStatus = http.StatusUnauthorized
+			case "get-500":
+				f.getStatus = http.StatusInternalServerError
+			case "delete-500":
+				f.deleteStatus = http.StatusInternalServerError
+			case "ownership":
+				f.sandboxes[h.Name].Metadata[ownerLabel] = "other-owner"
+			}
+			f.mu.Unlock()
+			if err := d.Start(t.Context(), h.ID); err == nil {
+				t.Fatal("Start ignored provider failure or foreign source ownership")
+			}
+			after := recoveryRecord(t, d, h.ID)
+			if after.Phase != "releasing" || after.Restore != nil || after.BackupKeep != 3 || after.LatestSnapshotID != saved.LatestSnapshotID {
+				t.Fatal("failed Start erased the release intent or began an unsafe restore")
+			}
+			f.mu.Lock()
+			if f.created != 1 || f.deleted != 0 || f.snapshotCreateRequests != 1 || f.sandboxes[h.Name] == nil {
+				t.Error("Start created a clone or deleted an unverified source")
+			}
+			f.getStatus, f.deleteStatus = 0, 0
+			f.sandboxes[h.Name].Metadata[ownerLabel] = opts.OwnerID
+			f.mu.Unlock()
+			if err := d.Start(t.Context(), h.ID); err != nil {
+				t.Fatalf("Start could not retry once source release was safe: %v", err)
+			}
+		})
+	}
+}
+
 func TestSnapshotRestoreDoesNotTreatProviderErrorsAsNativeLoss(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {

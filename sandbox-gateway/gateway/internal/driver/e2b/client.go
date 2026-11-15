@@ -181,8 +181,8 @@ func (c *Client) Create(ctx context.Context, opts CreateOptions) (*Sandbox, erro
 		AutoResume          map[string]bool   `json:"autoResume"`
 		AllowInternetAccess bool              `json:"allow_internet_access"`
 		Network             map[string]bool   `json:"network"`
-		EnvVars             map[string]string `json:"envVars"`
-		Metadata            map[string]string `json:"metadata"`
+		EnvVars             map[string]string `json:"envVars,omitempty"`
+		Metadata            map[string]string `json:"metadata,omitempty"`
 	}{opts.TemplateID, opts.TimeoutSeconds, true, opts.AutoPause, map[string]bool{"enabled": false},
 		true, map[string]bool{"allowPublicTraffic": false}, opts.EnvVars, opts.Metadata}
 	var wire sandboxWire

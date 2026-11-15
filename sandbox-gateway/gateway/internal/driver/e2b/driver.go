@@ -874,6 +874,9 @@ func (d *Driver) PauseSnapshot(ctx context.Context, id string, keep int) error {
 }
 
 func (d *Driver) finishSnapshotRelease(ctx context.Context, r *record, keep int) error {
+	if keep < 1 {
+		return errors.New("snapshot retention must be positive")
+	}
 	if latestRecoveryPoint(r) == nil {
 		return errors.New("E2B committed snapshot is missing; refusing release")
 	}
@@ -901,6 +904,14 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 		return err
 	}
 	defer e.mu.Unlock()
+	if e.record.Phase == "releasing" {
+		// A source DELETE may have succeeded before its response or the phase
+		// commit reached us. Finish that durable intent before restoring the
+		// checkpoint; never create a second guest while release is uncertain.
+		if err := d.finishSnapshotRelease(ctx, &e.record, e.record.BackupKeep); err != nil {
+			return err
+		}
+	}
 	if e.record.Restore != nil && e.record.Phase != "deleting" {
 		return d.restoreLatest(ctx, &e.record)
 	}
