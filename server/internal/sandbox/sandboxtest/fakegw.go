@@ -49,6 +49,8 @@ type FakeGateway struct {
 	FailStatus bool // GET /sandboxes/:id/status returns 503
 	FailStart  bool // POST /sandboxes/:id/start returns 500
 	FailStop   bool // POST /sandboxes/:id/stop returns 500
+	// FailStartTimes makes the next N POST /sandboxes/:id/start calls return 500.
+	FailStartTimes int
 	// Driver is reported by GET /healthz (empty -> "docker").
 	Driver string
 	// RequirePublishedPort makes host resolution return 404 for unmapped ports.
@@ -310,6 +312,18 @@ func (fg *FakeGateway) stopStart(w http.ResponseWriter, id, action string) {
 	if action == "start" && fg.FailStart {
 		http.Error(w, "resume failed", http.StatusInternalServerError)
 		return
+	}
+	if action == "start" {
+		fg.mu.Lock()
+		fail := fg.FailStartTimes > 0
+		if fail {
+			fg.FailStartTimes--
+		}
+		fg.mu.Unlock()
+		if fail {
+			http.Error(w, "resume failed", http.StatusInternalServerError)
+			return
+		}
 	}
 	if action == "stop" && fg.FailStop {
 		http.Error(w, "stop failed", http.StatusInternalServerError)

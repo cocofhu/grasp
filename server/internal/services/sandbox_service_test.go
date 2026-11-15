@@ -64,7 +64,7 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 		t.Fatal(err)
 	}
 	host := mcp.NewHost(NewArtifactService(db))
-	return NewSandboxService(db, mgr, skills, host, SandboxOptions{
+	s := NewSandboxService(db, mgr, skills, host, SandboxOptions{
 		ProfilesRoot: skillsRoot,
 		MCPEndpoint:  "http://mcp.local",
 		TTL:          time.Minute,
@@ -72,7 +72,12 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 		Max:          2,
 		ModelBinding: sandboxTestModelResolver,
 	})
+	s.soloBridgeReady = bridgeAlwaysReady
+	return s
 }
+
+// bridgeAlwaysReady stands in for a resumed guest whose bridge already serves.
+func bridgeAlwaysReady(context.Context, *sandbox.Sandbox) error { return nil }
 
 func sandboxTestModelBinding() *modelrouting.Binding {
 	return &modelrouting.Binding{Kind: "configuration", ConfigurationID: "sandbox-fixture"}

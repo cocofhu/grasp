@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 type pausedFixture struct {
@@ -129,6 +131,86 @@ func TestSoloUndetectedPauseStillPublishesOnWake(t *testing.T) {
 	if n := statusFrames(viewer); n != 2 {
 		t.Fatalf("wake published %d status frames, want paused then recovered", n)
 	}
+}
+
+func TestSoloTurnRetriesFailedWake(t *testing.T) {
+	prev := soloWakeRetryDelay
+	soloWakeRetryDelay = time.Millisecond
+	t.Cleanup(func() { soloWakeRetryDelay = prev })
+
+	t.Run("a transient wake failure does not fail the turn", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, "stopped")
+		f.ds.fg.FailStartTimes = 1
+		id, _, err := f.solo.acquire("session").waitSandbox(context.Background())
+		if err != nil {
+			t.Fatalf("first message failed on a transient wake error: %v", err)
+		}
+		if id != f.row.ID {
+			t.Fatalf("sandbox = %d, want %d", id, f.row.ID)
+		}
+		if st := f.svc.mgr.Status(context.Background(), f.row.Name); st != "running" {
+			t.Fatalf("sandbox not resumed: %s", st)
+		}
+	})
+	t.Run("a persistent wake failure still fails the turn", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, "stopped")
+		f.ds.fg.FailStart = true
+		if _, _, err := f.solo.acquire("session").waitSandbox(context.Background()); err == nil {
+			t.Fatal("turn waited forever on a sandbox that cannot resume")
+		}
+		if !f.ds.fg.Has(f.row.Name) {
+			t.Fatal("failed wake destroyed the sandbox")
+		}
+	})
+}
+
+func TestSoloWakeWaitsForBridge(t *testing.T) {
+	t.Run("a resumed resident waits for its bridge", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, "stopped")
+		probed := false
+		f.svc.soloBridgeReady = func(ctx context.Context, sb *sandbox.Sandbox) error {
+			if sb.Password != f.row.Token {
+				t.Errorf("bridge probe password = %q, want the sandbox token", sb.Password)
+			}
+			probed = true
+			return nil
+		}
+		if err := f.svc.EnsureSoloRunning(context.Background(), f.row.ID); err != nil {
+			t.Fatal(err)
+		}
+		if !probed {
+			t.Fatal("wake did not wait for the bridge")
+		}
+		row, _ := f.svc.Get(f.row.ID)
+		if row.Status != "running" {
+			t.Fatalf("status after ready bridge = %q", row.Status)
+		}
+	})
+	t.Run("a bridge that never serves fails the wake", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, "stopped")
+		f.svc.soloBridgeReady = func(context.Context, *sandbox.Sandbox) error { return errors.New("ACP not ready") }
+		if err := f.svc.EnsureSoloRunning(context.Background(), f.row.ID); err == nil {
+			t.Fatal("wake reported success before the bridge served")
+		}
+		if !f.ds.fg.Has(f.row.Name) {
+			t.Fatal("failed wake destroyed the sandbox")
+		}
+	})
+	t.Run("an already running resident is not probed", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, "running")
+		f.svc.soloBridgeReady = func(context.Context, *sandbox.Sandbox) error {
+			t.Error("running resident was probed")
+			return nil
+		}
+		if err := f.svc.EnsureSoloRunning(context.Background(), f.row.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestSoloWake(t *testing.T) {

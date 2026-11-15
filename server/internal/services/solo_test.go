@@ -88,6 +88,7 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 			return runtime.GitCredentialValue{}, false
 		},
 	})
+	sbx.soloBridgeReady = bridgeAlwaysReady
 	return NewSoloService(db, sbx, skills, NewProjectService(db)), sbx, fg, db
 }
 
