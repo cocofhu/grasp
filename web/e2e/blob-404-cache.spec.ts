@@ -123,9 +123,6 @@ test.describe('blob 404 negative cache (orphan /api/blobs)', () => {
 
     restored.add(ORPHAN_A)
     await page.getByTestId('chat-thumb-a-retry').click()
-    await expect
-      .poll(() => blobGets.filter((x) => x === ORPHAN_A).length, { timeout: 5_000 })
-      .toBe(aBefore + 2)
     await expect(page.getByTestId('chat-thumb-a')).toContainText('点击放大', { timeout: 5_000 })
     await expect
       .poll(async () => page.getByTestId('panel-vars').getByTestId('composite-image-ok').count(), {
@@ -133,6 +130,15 @@ test.describe('blob 404 negative cache (orphan /api/blobs)', () => {
       })
       .toBe(1)
     await expect(page.getByTestId('panel-out').getByTestId('composite-image-ok')).toHaveCount(1)
+    // The retry GET carries ?_r=, so the strips may share one more GET of the plain URL.
+    const afterRestore = blobGets.filter((x) => x === ORPHAN_A).length
+    expect(afterRestore).toBeGreaterThanOrEqual(aBefore + 2)
+    expect(afterRestore).toBeLessThanOrEqual(aBefore + 3)
+    for (let i = 0; i < 3; i++) {
+      await page.getByTestId('btn-poll').click()
+      await page.waitForTimeout(80)
+    }
+    expect(blobGets.filter((x) => x === ORPHAN_A).length).toBe(afterRestore)
 
     await page.screenshot({
       path: path.join(shotDir, '05-retry-success-synced.png'),

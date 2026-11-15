@@ -109,24 +109,25 @@ test.describe('hover-ink scroll-shift fix', () => {
     })
 
     // Primary destinations now live in the outer rail; inner Home keeps hover ink.
-    const runsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '运行', exact: true })
-    const runsBox = await runsLink.boundingBox()
-    expect(runsBox).toBeTruthy()
-    await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
-    await expect(page.getByTestId('page-runs')).toBeVisible({ timeout: PAGE_READY_MS })
+    const boardLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '看板', exact: true })
+    const boardBox = await boardLink.boundingBox()
+    expect(boardBox).toBeTruthy()
+    await page.mouse.click(boardBox!.x + 2, boardBox!.y + boardBox!.height / 2)
+    await expect(page.getByTestId('page-board')).toBeVisible({ timeout: PAGE_READY_MS })
     await page.waitForTimeout(100)
     // Leave the item so ink retracts; sticky shift must not remain.
-    await page.mouse.move(runsBox!.x + runsBox!.width + 40, runsBox!.y + runsBox!.height / 2)
+    // Move into the main pane; just right of the rail is the inner nav, where 看板 lines up with Home.
+    await page.mouse.move(900, boardBox!.y + boardBox!.height / 2)
     await page.waitForTimeout(400)
 
-    const afterRunsLeave = await measure()
-    expect(afterRunsLeave).not.toBeNull()
-    const homeRow = afterRunsLeave!.find((x) => !x.active)
+    const afterBoardLeave = await measure()
+    expect(afterBoardLeave).not.toBeNull()
+    const homeRow = afterBoardLeave!.find((x) => !x.active)
     expect(homeRow).toBeTruthy()
     expect(Math.abs(homeRow!.iconLeft - active!.iconLeft)).toBeLessThanOrEqual(1)
     expect(homeRow!.scrollLeft).toBe(0)
     expect(homeRow!.inkD === '' || homeRow!.inkD === '0px').toBe(true)
-    await expect(runsLink).toHaveAttribute('aria-current', 'page')
+    await expect(boardLink).toHaveAttribute('aria-current', 'page')
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-after-runs-leave.png'),

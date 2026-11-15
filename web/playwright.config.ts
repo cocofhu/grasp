@@ -7,6 +7,9 @@ if (!Number.isInteger(e2ePort) || e2ePort < 1 || e2ePort > 65535) {
 
 const baseURL = `http://127.0.0.1:${e2ePort}`
 
+// Without a UTF-8 locale Chromium reports non-ASCII download names (e.g. 语音.wav) as "download".
+const browserEnv = process.env.LANG || process.env.LC_ALL ? undefined : { ...process.env, LANG: 'C.UTF-8' }
+
 const MOBILE_CRITICAL_TESTS = /(?:mobile-browser-contract|gate-mobile-fill|run-detail-mobile|run-detail-mobile-panel|agent-studio-mobile-data|board-workspace|workspace-(?:credentials|shared-env|external-mcp|audit)|desktop-sidebar-hide|shell-loading|artifacts-page-version)\.spec\.ts/
 
 export default defineConfig({
@@ -24,6 +27,7 @@ export default defineConfig({
     headless: true,
     locale: 'zh-CN',
     trace: 'retain-on-failure',
+    ...(browserEnv ? { launchOptions: { env: browserEnv } } : {}),
   },
   // Keep the existing desktop suite on its current browser while running the
   // mobile contract against both Chromium and WebKit. The mobile project is

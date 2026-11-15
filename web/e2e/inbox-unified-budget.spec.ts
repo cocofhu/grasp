@@ -31,7 +31,14 @@ async function mockApi(page: Page) {
       })
       return
     }
-    if (url.pathname.includes('/primary-artifacts') || url.pathname.includes('/gate/')) {
+    // The server list is the only source of gate products since #747 dropped the offline fallback.
+    if (url.pathname.endsWith('/primary-artifacts')) {
+      await route.fulfill({
+        json: { items: [{ name: 'page.html', kind: 'html', readonly: false, nodeId: 'visual', outputKey: 'page' }] },
+      })
+      return
+    }
+    if (url.pathname.includes('/gate/')) {
       await route.fulfill({ status: 400, json: { error: 'offline' } })
       return
     }
@@ -95,6 +102,14 @@ async function metrics(page: Page) {
   })
 }
 
+/** The gate preview lives in the conversation's artifact panel, closed until the user opens it. */
+async function openStage(page: Page) {
+  const toggle = page.getByTestId('conversation-panel-toggle')
+  await expect(toggle).toBeVisible({ timeout: 15_000 })
+  await toggle.click()
+  await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
+}
+
 /** Detail panel fills the main area. The 320px task column is gone. */
 function expectDesktopPanel(m: Awaited<ReturnType<typeof metrics>>) {
   expect(m.hasTaskCol).toBe(false)
@@ -112,6 +127,7 @@ test.describe('Inbox unified preview budget layout', () => {
   }, testInfo) => {
     await mockApi(page)
     await page.goto('/inbox-unified-budget.html?theme=light')
+    await openStage(page)
     await expect(page.getByTestId('content-fit-budget')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('upstream-context')).toBeVisible()
 
@@ -144,6 +160,7 @@ test.describe('Inbox unified preview budget layout', () => {
   test('short HTML: blank stays in preview shell; no void under upstream', async ({ page }) => {
     await mockApi(page)
     await page.goto('/inbox-unified-budget.html?theme=light&short=1')
+    await openStage(page)
     await expect(page.getByTestId('content-fit-budget')).toBeVisible({ timeout: 15_000 })
     const m = await metrics(page)
     await page.screenshot({
@@ -160,6 +177,7 @@ test.describe('Inbox unified preview budget layout', () => {
   test('expand upstream: still no outer void; budget fills stage', async ({ page }) => {
     await mockApi(page)
     await page.goto('/inbox-unified-budget.html?theme=light')
+    await openStage(page)
     await expect(page.getByTestId('upstream-context-toggle')).toBeVisible({ timeout: 15_000 })
     await page.getByTestId('upstream-context-toggle').click()
     await expect(page.getByTestId('upstream-context-body')).toBeVisible()
@@ -181,6 +199,7 @@ test.describe('Inbox unified preview budget layout', () => {
   }) => {
     await mockApi(page)
     await page.goto('/inbox-unified-budget.html?theme=light&noUpstream=1')
+    await openStage(page)
     await expect(page.getByTestId('content-fit-budget')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('upstream-context')).toHaveCount(0)
     const m = await metrics(page)

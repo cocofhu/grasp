@@ -175,14 +175,18 @@ describe('DashboardView home chat layout', () => {
   })
 
   // fill LOCKED — top-down shell (justify-start); desktop inset basis is 120px
-  // and shrinks (floor 48px) before the column scrolls. Mobile basis is 4.25rem.
-  // Mobile floor is 36px so a float-high plus jump-high ear stays in the column.
-  it('uses a shrinkable 120px desktop top inset and keeps moderate mobile padding', () => {
+  // and shrinks (floor 48px) before the column scrolls; the 40px bottom inset
+  // shrinks to 0 too, so one image-chip row with its details still fits.
+  // Mobile basis is 4.25rem. Mobile floor is 36px so a float-high plus
+  // jump-high ear stays in the column.
+  it('uses shrinkable desktop top and bottom insets and keeps moderate mobile padding', () => {
     expect(src).toMatch(/home-shell__content[^"]*justify-start/)
     expect(src).toMatch(/home-shell__content[^"]*overflow-x-hidden/)
     expect(src).toMatch(/\.home-shell__content::before\s*\{[^}]*flex:\s*0 1 120px/)
     expect(src).toMatch(/\.home-shell__content::before\s*\{[^}]*min-height:\s*48px/)
-    expect(src).toMatch(/\.home-shell__content\s*\{[^}]*padding-bottom:\s*40px/)
+    expect(src).toMatch(/\.home-shell__content::after\s*\{[^}]*flex:\s*0 1 40px[^}]*min-height:\s*0/)
+    expect(src).not.toMatch(/\.home-shell__content\s*\{[^}]*padding-bottom/)
+    expect(src).toMatch(/@media \(max-width: 520px\)[\s\S]*\.home-shell__content::after\s*\{[^}]*flex-basis:\s*2\.5rem/)
     expect(src).not.toMatch(/\.home-shell__content\s*\{[^}]*padding-top:\s*120px/)
     expect(src).not.toMatch(/padding-top:\s*72px/)
     expect(src).not.toMatch(/padding-top:\s*40px/)

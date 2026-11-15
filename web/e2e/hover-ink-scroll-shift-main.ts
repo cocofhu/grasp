@@ -28,6 +28,7 @@ async function bootstrap() {
       { path: '/dashboard', component: stub('page-dashboard', '开始页') },
       { path: '/runs/:runId/nodes/:nodeId', component: stub('page-gates', '待办页') },
       { path: '/runs', component: stub('page-runs', '运行页') },
+      { path: '/board', component: stub('page-board', '看板页') },
       { path: '/settings', component: stub('page-settings', '设置页') },
       { path: '/notifications', component: stub('page-notifications', '通知页') },
     ],

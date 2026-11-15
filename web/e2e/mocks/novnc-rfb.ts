@@ -17,19 +17,23 @@ export default class MockRFB {
 
   private listeners = new Map<string, Set<Listener>>()
   private flipTimer: ReturnType<typeof setInterval> | null = null
+  private disconnected = false
 
-  constructor(_host: HTMLElement, _ws: WebSocket) {
+  constructor(_host: HTMLElement, ws: WebSocket) {
     const delayMs = Number(new URLSearchParams(window.location.search).get('connectDelay') || 0)
     const onConnect = () => {
+      if (this.disconnected) return
       this.emit('connect')
       // Simulate ~12 FPS framebuffer updates for e2e FPS assertions.
       this.flipTimer = setInterval(() => this._display.flip(), 1000 / 12)
     }
-    if (delayMs > 0) {
-      setTimeout(onConnect, delayMs)
-    } else {
-      queueMicrotask(onConnect)
+    // Real noVNC only reports connect after the RFB handshake, so never before the socket is open.
+    const afterOpen = () => {
+      if (delayMs > 0) setTimeout(onConnect, delayMs)
+      else queueMicrotask(onConnect)
     }
+    if (ws.readyState === WebSocket.OPEN) afterOpen()
+    else ws.onopen = afterOpen
   }
 
   addEventListener(type: string, fn: Listener) {
@@ -42,6 +46,7 @@ export default class MockRFB {
   }
 
   disconnect() {
+    this.disconnected = true
     if (this.flipTimer) {
       clearInterval(this.flipTimer)
       this.flipTimer = null
