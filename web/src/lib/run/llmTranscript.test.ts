@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
-import { buildLlmTranscript, carryInflight, splitTurns, summarizeLlmTranscript } from './llmTranscript'
+import { buildLlmTranscript, carryInflight, splitTurns } from './llmTranscript'
 
 const nodeInfo = (id: string) => ({ label: `L-${id}`, type: 'agent' })
 
@@ -158,7 +158,6 @@ describe('buildLlmTranscript', () => {
     expect(transition).toMatchObject({ toLabel: 'L-gate' })
     const node = items[0]
     expect(node).toMatchObject({ type: 'node', label: 'L-clarify', models: ['claude-x'], turnCount: 2 })
-    expect(summarizeLlmTranscript(items)).toEqual({ turns: 2, nodes: 2, totalTokens: 12 })
   })
 
   it('appends a live turn from inflight prompt and WS events for the running execution', () => {

@@ -11,16 +11,10 @@
       "insertNode": "在这条连线中间插入节点",
       "deleteEdge": "删除连线",
       "editCondition": "编辑连线条件",
-      "closeInspector": "关闭检查器",
-      "togglePalette": "展开或收起节点面板",
       "palette": "节点面板",
       "inspector": "节点检查器"
     },
     "outlet": {
-      "pass": "通过",
-      "fail": "不通过",
-      "else": "否则",
-      "caseN": "分支 {n}",
       "stale": "{handle}(已失效)"
     },
     "caps": {
@@ -168,7 +162,6 @@
     "issues": {
       "count": "{n} 个问题",
       "none": "没有问题",
-      "next": "跳到下一个问题",
       "missingInput": "缺少输入节点",
       "missingOutput": "缺少输出节点",
       "tooManyInputs": "输入节点只能有一个",
@@ -192,7 +185,6 @@
         "timeout": "节点总时限",
         "nudge": "催写次数",
         "capabilities": "能力",
-        "basics": "基本信息",
         "settings": "配置",
         "outputs": "输出",
         "model": "模型"
@@ -227,41 +219,13 @@
         "note": "每个动作是一个出口,把它连到下一步"
       },
       "model": {
-        "needAgent": "先选择 Agent，再决定这个节点用哪个模型。",
-        "follow": "跟随 Agent",
-        "followCurrent": "当前：{name} · {model}",
-        "followEmpty": "Agent 还没选模型 Key，运行会失败",
-        "nodeChip": "本节点",
-        "agentDefault": "Agent 默认",
-        "workspaceKeys": "工作区模型 Key",
-        "empty": "工作区里还没有模型 Key",
-        "manage": "在安全凭据中心新增或管理",
-        "staleTitle": "所选模型 Key 已失效",
-        "staleBody": "它已被删除或清除，请重新选择",
-        "ownAuthTitle": "{backend} 使用自带的模型授权",
-        "ownAuthBody": "节点模型只对 OpenCode Agent 生效，这个 Agent 的模型由编码助手自己决定。",
-        "ignored": "之前选的模型不会生效",
-        "clear": "清除",
-        "hint": "只影响本节点。凭据未选时用 Agent 的；模型未选时用凭据的默认模型。",
-        "credential": "凭据",
-        "modelLabel": "模型",
-        "credentialLine": "{vendor} · 默认 {model}",
-        "needCredential": "先选一个可用的凭据",
-        "useDefault": "用凭据默认模型",
-        "useTyped": "使用自定义 ID「{id}」",
-        "unlisted": "厂商目录里没有这个模型，请确认能用",
-        "searchPlaceholder": "搜索模型，或直接输入 ID",
-        "typePlaceholder": "输入模型 ID",
-        "catalogTitle": "{vendor} 模型目录",
-        "noCatalog": "这个厂商没有模型目录，直接输入模型 ID 即可。",
-        "moreHidden": "还有 {n} 个，继续输入以筛选"
+        "needAgent": "先选择 Agent，再决定这个节点用哪个模型。"
       }
     },
     "topbar": {
       "workspace": "工作区",
       "rename": "点击重命名",
       "saveError": "保存失败：{error}",
-      "issuesNone": "没有问题",
       "run": "运行",
       "publish": "发布",
       "more": "更多",
@@ -270,9 +234,7 @@
         "export": "导出",
         "duplicate": "复制工作流",
         "delete": "删除工作流",
-        "details": "详情",
-        "favorite": "收藏",
-        "unfavorite": "取消收藏"
+        "details": "详情"
       },
       "tabs": {
         "canvas": "编排",
@@ -362,7 +324,6 @@
     "handoff": {
       "chip": "交接",
       "title": "交接说明",
-      "platformTitle": "平台交接(上游未能自行交接)",
       "platformNote": "平台代写 · 上游未提供交接",
       "fromNode": "来自「{source}」节点",
       "fromNodeVisit": "来自「{source}」节点 · 正在看第 {n} 次",

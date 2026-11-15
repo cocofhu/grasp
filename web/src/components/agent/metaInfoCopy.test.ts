@@ -33,7 +33,6 @@ describe('model and shared settings copy', () => {
   expect(meta.find('[data-testid="meta-workspace-dir"]').exists()).toBe(false)
   expect(meta.find('router-link-stub[to="/settings/credentials"]').exists()).toBe(false)
   expect(meta.find('[data-testid="agent-credential-bindings"]').exists()).toBe(false)
-  expect(meta.text()).not.toContain((locale === 'en' ? enPages : zhPages).pages.agentStudio.meta.capabilitiesNote)
   expect(meta.find('[data-testid="model-binding-inherit"]').exists()).toBe(false)
   expect(meta.find('[data-testid="model-binding-advanced"]').exists()).toBe(false)
   expect(meta.find('[data-testid="derived-paths-table"]').exists()).toBe(false); meta.unmount()

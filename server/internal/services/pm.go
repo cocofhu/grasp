@@ -96,7 +96,7 @@ type PmLeaderBinding struct {
 	AgentAvailable bool   `json:"agentAvailable"`
 	AgentError     string `json:"agentError,omitempty"`
 	// EnabledMcps lists PM-only MCP ids (pm-progress, pm-workflow-read,
-	// pm-workflow-write, pm-agent-fs, pm-prd-manager). nil/omitted on disk means defaults; explicit empty means none.
+	// pm-workflow-write, pm-agent-fs). nil/omitted on disk means defaults; explicit empty means none.
 	EnabledMcps []string `json:"enabledMcps"`
 	// GateAutoVar is the run variable name that enables auto-invoking PM on
 	// gate pauses when present and truthy. Empty = capability off.
@@ -109,13 +109,13 @@ type PmLeaderBinding struct {
 }
 
 // DefaultPmEnabledMcps is the default PM-only MCP set.
-var DefaultPmEnabledMcps = []string{"pm-progress", "pm-workflow-read", "pm-workflow-write", "pm-agent-fs", "pm-prd-manager"}
+var DefaultPmEnabledMcps = []string{"pm-progress", "pm-workflow-read", "pm-workflow-write", "pm-agent-fs"}
 
 // FilterPmEnabledMcps returns validated unique PM MCP ids (may be empty).
 func FilterPmEnabledMcps(in []string) []string {
 	allowed := map[string]bool{
 		"pm-progress": true, "pm-workflow-read": true, "pm-workflow-write": true,
-		"pm-agent-fs": true, "pm-prd-manager": true,
+		"pm-agent-fs": true,
 	}
 	var out []string
 	seen := map[string]bool{}

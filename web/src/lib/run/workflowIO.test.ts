@@ -5,7 +5,6 @@ import {
   collectAgentProfiles,
   agentProfileIssues,
   getAgentProfile,
-  setAgentProfile,
 } from './workflowIO'
 import type { WFNode } from '../shared/types'
 
@@ -39,7 +38,6 @@ describe('buildEnvelope', () => {
   })
   it('preserves independent runtime defaults while excluding plaintext and masked secret values', () => {
     const defaults = {
-      inheritWorkspace: false,
       variables: [
         { name: 'secret', type: 'string', secret: true, value: 'private-token', required: true },
         { name: 'masked', type: 'string', secret: true, value: '****' },
@@ -59,14 +57,14 @@ describe('buildEnvelope', () => {
     expect(serialized).not.toContain('private-token')
     expect(serialized).not.toContain('private-input')
     expect(serialized).not.toContain('****')
-    env.defaults!.gateAuto!.enabledMcps.push('pm-prd-manager')
+    env.defaults!.gateAuto!.enabledMcps.push('pm-agent-fs')
     expect(defaults.gateAuto.enabledMcps).toEqual(['pm-progress'])
     expect(defaults.variables[0].value).toBe('private-token')
   })
   it('drops workspace-specific repository bindings from the export', () => {
-    const defaults = { inheritWorkspace: true, repos: [{ projectId: 'p1', branch: 'main' }] }
+    const defaults = { repos: [{ projectId: 'p1', branch: 'main' }] }
     const env = buildEnvelope({ name: 'Portable', description: '', needsRepo: false, defaults }, { nodes: [], edges: [] })
-    expect(env.defaults).toMatchObject({ inheritWorkspace: true })
+    expect(env.defaults).toMatchObject({})
     expect(env.defaults).not.toHaveProperty('repos')
     expect(defaults.repos).toHaveLength(1)
   })
@@ -110,10 +108,7 @@ describe('agent profile helpers', () => {
     )).toEqual([])
   })
 
-  it('setAgentProfile writes agent_profile', () => {
-    const cfg: Record<string, unknown> = {}
-    setAgentProfile(cfg, 'New')
-    expect(cfg.agent_profile).toBe('New')
-    expect(getAgentProfile(cfg)).toBe('New')
+  it('getAgentProfile reads agent_profile', () => {
+    expect(getAgentProfile({ agent_profile: 'New' })).toBe('New')
   })
 })

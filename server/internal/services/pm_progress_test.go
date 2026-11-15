@@ -13,7 +13,7 @@ func setupPmProgressFixtures(t *testing.T) (*PmProgress, *gorm.DB, string, strin
 	t.Helper()
 	db := setupPmDB(t)
 	ps := NewWorkspaceService(db)
-	p, err := ps.CreateFixture("ProgProj", "", nil)
+	p, err := ps.CreateFixture("ProgProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}

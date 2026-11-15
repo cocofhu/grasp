@@ -179,7 +179,7 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/workspace"]')).toHaveCount(0)
   await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
@@ -210,7 +210,7 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
 
 test('settings tool links keep the settings directory until explicitly leaving it', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant']) {
+  for (const path of ['/board', '/workflows', '/assistant']) {
     const settings = page.getByTestId('nav-settings-chrome')
     await settings.locator(`a[href="${path}"]`).click()
     await expect(settings).toBeVisible()
@@ -343,44 +343,6 @@ test('an empty workflow directory offers creation without a table shell', async 
   await expect(page.getByTestId('workflows-desktop-table')).toHaveCount(0)
   await expect(page.getByTestId('workflows-empty').getByRole('button', { name: '新建工作流', exact: true })).toBeVisible()
 })
-
-test('requirements start from an empty state and preserve the first draft', async ({ page }) => {
-  await page.goto('/workspace.html?view=/requirements')
-  await expect(page.getByTestId('requirement-drafts-empty')).toBeVisible()
-  await expect(page.getByTestId('requirement-drafts-gantt')).toHaveCount(0)
-  await expect(page.getByTestId('requirement-drafts-inspector')).toHaveCount(0)
-  await page.getByTestId('requirement-drafts-empty-new').click()
-  await page.getByTestId('requirement-drafts-new-confirm').click()
-  await page.getByTestId('requirement-drafts-view-edit').click()
-  await page.getByTestId('requirement-drafts-title').fill('新的产品想法')
-  await page.getByTestId('requirement-drafts-body').fill('先完成一条可验证的需求。')
-  await page.getByTestId('requirement-drafts-save').click()
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.requirementDrafts[0].title)).toBe('新的产品想法')
-})
-
-test('requirement planning opens its inspector on demand and saves content', async ({ page }) => {
-  await page.goto('/workspace.html?view=/requirements&drafts=filled')
-  await expect(page.getByTestId('requirement-drafts-inspector')).toHaveCount(0)
-  await page.locator('.rd-gantt-row').filter({ hasText: '优化支付失败重试体验' }).click()
-  await expect(page.getByTestId('requirement-drafts-inspector')).toBeVisible()
-  await page.getByTestId('requirement-drafts-inspector-progress').fill('75')
-  await page.getByTestId('requirement-drafts-inspector-progress').press('Tab')
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.requirementDrafts.find((draft: any) => draft.id === 'payment').progress)).toBe(75)
-  await page.getByTestId('requirement-drafts-inspector-close').click()
-  await expect(page.getByTestId('requirement-drafts-inspector')).toHaveCount(0)
-  await page.getByTestId('requirement-drafts-view-edit').click()
-  await page.getByTestId('requirement-drafts-item-payment').click()
-  await page.getByTestId('requirement-drafts-body').fill('# 重试体验\n\n明确提示失败原因。')
-  await page.getByTestId('requirement-drafts-save').click()
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.requirementDrafts.find((draft: any) => draft.id === 'payment').bodyMarkdown)).toContain('明确提示失败原因')
-  for (const width of [1024, 768, 390]) {
-    await page.setViewportSize({ width, height: 844 })
-    expect(await page.getByTestId('requirement-drafts-title').evaluate(el => el.clientWidth)).toBeGreaterThanOrEqual(240)
-    expect(await page.getByTestId('requirement-drafts-schedule-start').evaluate(el => el.clientWidth)).toBeGreaterThanOrEqual(120)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-  }
-})
-
 
 test('mobile historical chat leaves attachment controls clear of floating navigation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })

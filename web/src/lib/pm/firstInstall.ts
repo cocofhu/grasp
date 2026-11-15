@@ -20,21 +20,12 @@ export const onboardingMode = ref<OnboardingMode>('firstInstall')
  */
 export const firstInstallCompletedAt = ref(0)
 
-export function openFirstInstall(): void {
-  onboardingMode.value = 'firstInstall'
-  onboardingOpen.value = true
-}
-
 export function openRetryOnboarding(): void {
   onboardingMode.value = 'retry'
   onboardingOpen.value = true
 }
 
 export function closeFirstInstall(): void {
-  onboardingOpen.value = false
-}
-
-export function closeOnboarding(): void {
   onboardingOpen.value = false
 }
 

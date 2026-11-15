@@ -19,7 +19,6 @@ vi.mock('vue-router', () => ({
 vi.mock('@/lib/api/api', () => ({
   api: {
     runArtifacts: vi.fn(async () => []),
-    getSoloEnv: vi.fn(async () => []),
     listAgents: vi.fn(async () => []),
     listModelConfigurations: vi.fn(async () => ({ items: [] })),
     listModelConnections: vi.fn(async () => ({ items: [] })),

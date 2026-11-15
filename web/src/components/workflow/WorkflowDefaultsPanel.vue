@@ -17,7 +17,7 @@ const projects = ref<Project[]>([])
 const projectsLoading = ref(true)
 const error = ref('')
 const events = ['waiting_human', 'failed', 'completed']
-const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager']
+const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs']
 const defaults = computed(() => props.workflow.defaults)
 const selectedEvents = computed(() => defaults.value?.notifyPolicy?.defaultEvents ?? ['waiting_human', 'failed'])
 const selectedMcps = computed(() => defaults.value?.gateAuto?.enabledMcps ?? packs)
@@ -32,12 +32,11 @@ function toggleSelection(values: string[] | undefined, value: string): string[] 
   return values?.includes(value) ? values.filter((item) => item !== value) : [...(values || []), value]
 }
 function ensureDefaults(): WorkflowDefaults {
-  const config = props.workflow.defaults ||= { inheritWorkspace: true, variables: [] }
-  // Go serializes an empty inherited variable slice as null on migrated data.
+  const config = props.workflow.defaults ||= { variables: [] }
+  // Go serializes an empty variable slice as null on migrated data.
   config.variables ||= []
   return config
 }
-function setInheritance(value: boolean) { ensureDefaults().inheritWorkspace = value }
 function setRepos(value: RepoChoice[]) {
   const config = ensureDefaults()
   if (value.length) config.repos = value
@@ -49,10 +48,6 @@ function prefersReducedMotion() {
 function isSwitchEvent(event: MouseEvent) {
   const target = event.target
   return target instanceof Element && !!target.closest('[role="switch"]')
-}
-function toggleInherit(event: MouseEvent) {
-  if (isSwitchEvent(event)) return
-  setInheritance(defaults.value?.inheritWorkspace === false)
 }
 function toggleNotify(event: MouseEvent) {
   if (isSwitchEvent(event)) return
@@ -225,10 +220,6 @@ onBeforeUnmount(() => {
         <AppButton variant="ghost" size="sm" :aria-label="t('pages.workspaceDefaults.addVariable')" :title="t('pages.workspaceDefaults.addVariable')" @click="addVariable">
           <Icon name="plus" :size="16" :motion-key="plusMotion" />
         </AppButton>
-      </div>
-      <div class="defaults-row defaults-toggle border-t border-line px-4 py-3" data-testid="workflow-inherit-row" @click="toggleInherit">
-        <span>{{ t('pages.workspaceDefaults.inheritVariables') }}</span>
-        <AppSwitch :model-value="defaults?.inheritWorkspace !== false" :aria-label="t('pages.workspaceDefaults.inheritVariables')" @update:model-value="setInheritance" />
       </div>
       <div
         v-for="variable in defaults?.variables || []"

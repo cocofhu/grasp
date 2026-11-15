@@ -5,13 +5,6 @@
       "agent": "Agent",
       "collaboration": "协作"
     },
-    "palette": {
-      "control": "控制",
-      "agent": "Agent",
-      "collaboration": "协作",
-      "searchPlaceholder": "搜索节点",
-      "footerHint": "拖拽节点到画布即可编排。仓库(GitLab/通用 git)为可选,纯产物流无需仓库。"
-    },
     "input": {
       "label": "输入",
       "desc": "工作流起点,定义并校验输入",
@@ -33,10 +26,6 @@
         "results": {
           "label": "最终结果来源",
           "help": "勾选上游产物作为输出卡片来源，拖拽已选项调整展示顺序。同一来源不可重复添加。"
-        },
-        "auto_leftover_draft": {
-          "label": "自动写入遗留需求草稿",
-          "help": "打开后，若本次 Run 仍有遗留（测试缺陷、失败用例、评审意见/待办或未决澄清问题），将在工作区「需求草稿」中自动创建 1 条自包含需求文档，内含本次需求规格与遗留全文；原工作流删除后仍可当作后续需求执行。默认关闭。"
         }
       },
       "outputs": {

@@ -55,7 +55,7 @@ func TestWorkflowDefaultsSecretFlagCannotRevealStoredValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	variable := map[string]any{"name": "TOKEN", "type": "string", "secret": false, "value": "****"}
-	body := map[string]any{"name": wf.Name, "defaults": map[string]any{"inheritWorkspace": false, "variables": []any{variable}}}
+	body := map[string]any{"name": wf.Name, "defaults": map[string]any{"variables": []any{variable}}}
 	path := "/api/workflows/" + wf.ID
 	response := h.do("PUT", path, body)
 	if response.Code != 400 || strings.Contains(response.Body.String(), "private-original-token") {

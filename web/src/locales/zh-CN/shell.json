@@ -2,11 +2,7 @@
   "shell": {
     "appName": "Grasp",
     "tagline": "开发工作流编排",
-    "userRole": "管理员",
     "logout": "登出",
-    "searchPlaceholder": "搜索工作流、运行…",
-    "docs": "文档",
-    "docsTitle": "打开产品文档（新标签页）",
     "langSelect": "Language / 语言",
     "theme": {
       "toLight": "切换到浅色",
@@ -23,8 +19,7 @@
       "showNav": "打开导航",
       "navHidden": "导航已隐藏",
       "navShown": "导航已展开",
-      "backToList": "返回列表",
-      "floatingBall": "展开侧栏"
+      "backToList": "返回列表"
     },
     "runNotifications": {
       "title": "通知",
@@ -40,8 +35,6 @@
       "clickForDetail": "点击查看详情",
       "neutralTitle": "{name} · {status}",
       "outputTitle": "运行产出",
-      "noArtifacts": "本次运行暂无产出",
-      "noArtifactsHint": "可打开 Run 详情查看执行过程",
       "markAsRead": "标记已读",
       "noFinalResults": "暂无最终结果可预览",
       "noFinalResultsHint": "输出节点未配置「最终结果来源」，或本次未产出结果卡。",
@@ -52,10 +45,7 @@
       "focusOutputType": "type: output",
       "focusOutputSource": "最终结果来源 → 结果卡",
       "focusOutputAligned": "与 Run 详情一致",
-      "done": "完成",
-      "previewLabel": "预览",
-      "loadingOutputs": "正在加载产出…",
-      "listAria": "本次运行产物列表"
+      "loadingOutputs": "正在加载产出…"
     },
     "statusMetrics": {
       "accountingIncomplete": "部分回合的用量缺失、尚未同步或来自未核验的历史记录，当前仅显示已记录的 Token。",
@@ -64,7 +54,6 @@
       "today": "今日 Token",
       "running": "执行中",
       "queued": "排队",
-      "compactAria": "平台状态摘要，进入统计",
       "cardTokenTitle": "Token",
       "cardRunTitle": "运行",
       "openStats": "进入统计",

@@ -5,14 +5,14 @@ import { shellNavPaths } from './shellNavPaths'
 describe('workspace settings navigation', () => {
   it('keeps every workspace capability reachable in three clear groups', () => {
     const paths = settingsNavItems.map((item) => item.to)
-    expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/requirements', '/assistant', '/settings/notification-policy', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings']))
+    expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/assistant', '/settings/notification-policy', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/agents', '/settings/credentials', '/settings/audit', '/settings']))
     expect(settingsNavItems.map((item) => item.labelKey)).not.toContain('nav.workspaceInfo')
     expect(settingsNavItems.filter((item) => item.groupKey).map((item) => item.groupKey)).toEqual(['nav.groupWorkspaceTools', 'nav.groupExecution', 'nav.groupPlatform'])
     expect(new Set(paths.filter((path) => path !== '/settings')).size).toBe(paths.filter((path) => path !== '/settings').length)
     expect(paths).not.toContain('/stats')
     expect(settingsNavItems.map((item) => (item.query?.integrations ? `${item.to}?integrations=1` : item.to))).toEqual([
       '/board',
-      '/requirements',
+     
       '/workflows',
       '/assistant',
       '/artifacts',
@@ -23,7 +23,7 @@ describe('workspace settings navigation', () => {
       '/sandboxes',
       '/settings/projects',
       '/settings/credentials',
-      '/settings/variables',
+     
       '/settings/assistant',
       '/settings/notification-policy',
       '/settings/external-mcp',
@@ -35,7 +35,7 @@ describe('workspace settings navigation', () => {
     expect(settingsNavItems.find((item) => item.to === '/sandboxes')?.groupKey).toBeUndefined()
   })
   it('keeps operational tools and full pages in workspace chrome', () => {
-    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/workflows', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)
+    for (const path of ['/dashboard', '/board', '/assistant', '/workflows', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)
     for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
     expect(isSettingsChrome('/sandboxes/1/console', true)).toBe(false)
   })

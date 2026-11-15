@@ -50,7 +50,6 @@ type Handlers struct {
 	SchedulerMCP        *schedulermcp.Host
 	Preview             *services.PreviewService
 	Issues              *services.IssueService
-	RequirementDrafts   *services.RequirementDraftService
 	Notifications       *services.NotificationService
 	Settings            *services.SettingsService
 	Shutdown            *shutdown.Coordinator

@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
     signedInWorkspace,
     workspace: ref<typeof signedInWorkspace | null>(signedInWorkspace),
     entries: ref<{ workflowId: string; favoritedAt: number }[]>([]),
-    listWorkflowCatalog: vi.fn(),
+   
     listRuns: vi.fn(),
     getWorkflow: vi.fn(),
     openLaunch: vi.fn(),
@@ -62,7 +62,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.workspace.value = mocks.signedInWorkspace
   mocks.entries.value = []
-  mocks.listWorkflowCatalog.mockResolvedValue([])
   mocks.listRuns.mockResolvedValue({ items: [recentRun], total: 1 })
   mocks.openLaunch.mockResolvedValue(undefined)
 })
@@ -93,7 +92,6 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(wrapper.find('[data-icon="chat"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 20, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
-    expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.getWorkflow).not.toHaveBeenCalled()
     expect(mocks.openLaunch).not.toHaveBeenCalled()
     expect(mocks.toggleFavorite).not.toHaveBeenCalled()
@@ -129,7 +127,6 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(wrapper.get('[data-testid="sidebar-recent"]').text()).toContain('还没有执行完的工作流')
     expect(wrapper.find('[data-testid="sidebar-recent-run"]').exists()).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -145,7 +142,6 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(wrapper.get('[data-testid="sidebar-recent-run"]').text()).toBe('最近一次运行')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expectNoWorkflowDirectory(wrapper)
-    expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.listRuns).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
@@ -162,7 +158,6 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(signal.aborted).toBe(true)
     expectNoWorkflowDirectory(wrapper)
     expect(wrapper.findAll('[data-testid="sidebar-recent-run"]')).toHaveLength(0)
-    expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

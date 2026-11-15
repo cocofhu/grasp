@@ -8,7 +8,7 @@ import nav from '@/locales/zh-CN/nav.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspace: ref<any>({ name: 'Studio' }), getPmLeader: vi.fn(), reload: vi.fn(), requestLeave: vi.fn(), dirty: ref(false) }
+  return { workspace: ref<any>({ name: 'Studio' }), getPmLeader: vi.fn(), reload: vi.fn() }
 })
 vi.mock('@/lib/api/api', () => ({ api: { getPmLeader: mocks.getPmLeader } }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, reload: mocks.reload }) }))
@@ -21,21 +21,20 @@ const panel = (name: string) => defineComponent({ name, props: ['workspace', 'bi
   ])
 } })
 async function setup(path: string) {
-  const specs = [['/board', 'board'], ['/requirements', 'requirements'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/notification-policy', 'notificationPolicy'], ['/settings/schedules', 'schedules'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp']] as const
+  const specs = [['/board', 'board'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/notification-policy', 'notificationPolicy'], ['/settings/schedules', 'schedules'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp']] as const
   const router = createRouter({ history: createMemoryHistory(), routes: specs.map(([route, tool]) => ({ path: route, component: WorkspaceToolView, meta: { workspaceTool: tool, workspaceTitle: `nav.${tool}` } })) })
   await router.push(path)
-  const drafts = defineComponent({ setup(_props, { expose }) { expose({ get isDirty() { return mocks.dirty.value }, requestLeave: mocks.requestLeave }); return () => h('div', { 'data-panel': 'drafts' }) } })
-  const stubs: Record<string, any> = { WorkspacePage: { template: '<section class="h-full min-h-0 flex flex-col"><slot name="actions"/><slot/></section>' }, RequirementDraftsPanel: drafts }
+  const stubs: Record<string, any> = { WorkspacePage: { template: '<section class="h-full min-h-0 flex flex-col"><slot name="actions"/><slot/></section>' } }
   for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'PmCronJobsPanel', 'WorkspaceNotifyPanel', 'WorkspaceExternalMcpPanel', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': nav } })
   const wrapper = mount({ render: () => h(RouterView) }, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs } })
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.dirty.value = false; mocks.workspace.value = { name: 'Studio' }; mocks.getPmLeader.mockResolvedValue({ enabled: true, agentConfigRef: 'manager' }); mocks.requestLeave.mockResolvedValue(false) })
+beforeEach(() => { vi.clearAllMocks(); mocks.workspace.value = { name: 'Studio' }; mocks.getPmLeader.mockResolvedValue({ enabled: true, agentConfigRef: 'manager' }) })
 describe('every workspace tool page', () => {
   it.each([
-    ['/board', 'BoardView', 'workspace'], ['/requirements', 'drafts', 'workspace'], ['/assistant', 'PmLeaderChat', 'workspace'],
+    ['/board', 'BoardView', 'workspace'], ['/assistant', 'PmLeaderChat', 'workspace'],
     ['/settings/assistant', 'PmSettingsPanel', 'settings'], ['/settings/schedules', 'PmCronJobsPanel', 'workspace'],
     ['/settings/notification-policy', 'WorkspaceNotifyPanel', 'settings'], ['/settings/external-mcp', 'WorkspaceExternalMcpPanel', 'settings'],
     ['/settings/credentials', 'WorkspaceCredentialsPanel', 'workspace'],
@@ -104,17 +103,6 @@ describe('independent workspace tools', () => {
     const { wrapper } = await setup(path)
     expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace-name')).toBeUndefined()
     expect(wrapper.get('[data-testid^="workspace-tool-"]').classes()).toEqual(expect.arrayContaining(['min-h-0', 'flex-1']))
-    wrapper.unmount()
-  })
-  it('blocks leaving an unsaved requirement draft and permits an explicit confirmed leave', async () => {
-    const { wrapper, router } = await setup('/requirements')
-    mocks.dirty.value = true
-    await router.push('/board')
-    expect(mocks.requestLeave).toHaveBeenCalledTimes(1)
-    expect(router.currentRoute.value.path).toBe('/requirements')
-    mocks.requestLeave.mockResolvedValueOnce(true)
-    await router.push('/board')
-    expect(router.currentRoute.value.path).toBe('/board')
     wrapper.unmount()
   })
   it('keeps PM conversation and its configuration reachable as separate pages', async () => {

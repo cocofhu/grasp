@@ -50,10 +50,6 @@ export function isKnownLoaded(blobId: string): boolean {
   return !!blobId && knownLoaded.has(blobId)
 }
 
-export function hasAutoAttempted(blobId: string): boolean {
-  return !!blobId && autoDone.has(blobId)
-}
-
 /** Mark id as known-missing after a failed auto/manual image GET. */
 export function markMissing(blobId: string): void {
   if (!blobId) return

@@ -196,7 +196,7 @@ describe('usePmChannelMulti CRUD', () => {
     expect(panel.chSandbox.value).toBe(true)
     expect(panel.chMarkdown.value).toBe(false)
     expect(panel.chIntents.value).toBe('4096')
-    expect(panel.chEnabledMcps.value).toHaveLength(5)
+    expect(panel.chEnabledMcps.value).toHaveLength(4)
 
     panel.openEdit(primary({ type: 'wecom', config: {}, enabledMcps: undefined, cronDeliver: false }))
     expect(panel.chType.value).toBe('wecom')
@@ -332,11 +332,11 @@ describe('usePmChannelMulti CRUD', () => {
 
     // The MCP toggle keeps the canonical option order.
     panel.chEnabledMcps.value = []
-    panel.toggleChMcp('pm-prd-manager')
+    panel.toggleChMcp('pm-agent-fs')
     panel.toggleChMcp('pm-progress')
-    expect(panel.chEnabledMcps.value).toEqual(['pm-progress', 'pm-prd-manager'])
+    expect(panel.chEnabledMcps.value).toEqual(['pm-progress', 'pm-agent-fs'])
     panel.toggleChMcp('pm-progress')
-    expect(panel.chEnabledMcps.value).toEqual(['pm-prd-manager'])
+    expect(panel.chEnabledMcps.value).toEqual(['pm-agent-fs'])
 
     app.unmount()
   })

@@ -38,10 +38,6 @@ const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
   deliver: 'Deliver',
 }
 
-/** Longest role suffix in any locale (TestReview). */
-const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
-const MAX_AGENT_NAME_RUNES = 64
-
 /** Canonical Chinese Agent names (the server's template labels). */
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
 
@@ -116,18 +112,6 @@ export function freshOnboardingTeam(): OnboardingTeamMember[] {
     nameEdited: false,
     modelConfigurationId: '',
   }))
-}
-
-export function isRequiredTemplate(id: OnboardingTemplateId): boolean {
-  return ONBOARDING_REQUIRED_TEMPLATE_IDS.includes(id)
-}
-
-/** Every onboarding role stays selected. The enabled flag cannot turn one off. */
-export function setTeamMemberEnabled(team: OnboardingTeamMember[], id: OnboardingTemplateId, enabled: boolean): void {
-  void enabled
-  const m = team.find((x) => x.templateId === id)
-  if (!m) return
-  m.enabled = true
 }
 
 /** Names always follow the canonical defaults for the current language. */
@@ -274,32 +258,9 @@ export function suppressOnboarding(): void {
   }
 }
 
-/** Wash a display name into a valid Agent-name prefix (mirrors server SanitizeOnboardingPrefix). */
-export function sanitizeOnboardingPrefix(name: string): string {
-  const raw = normalizeAgentName(name)
-  if (!raw) return ''
-  let out = ''
-  for (const ch of raw) {
-    if (/\s/u.test(ch)) continue
-    if (/[./\\]/u.test(ch)) continue
-    if (/[－＿．／＼、，。！？：；（）【】]/u.test(ch)) continue
-    if (/^[\p{L}\p{N}_-]$/u.test(ch)) out += ch
-  }
-  const maxPrefix = MAX_AGENT_NAME_RUNES - LONGEST_ONBOARDING_ROLE_SUFFIX
-  if (Array.from(out).length > maxPrefix) {
-    out = Array.from(out).slice(0, maxPrefix).join('')
-  }
-  return validateAgentName(out) === '' ? out : ''
-}
-
 /** Agent role names used when bootstrapping an empty workspace. */
 export function deriveOnboardingAgentNames(lang: AppLocale = 'zh-CN'): string[] {
   return onboardingRoleNames(lang)
-}
-
-/** The default workflow is the completion marker for first install. */
-export function hasDefaultWorkflow(workflows: { name?: string }[]): boolean {
-  return workflows.some((w) => ONBOARDING_WORKFLOW_NAMES.includes((w.name || '').trim()))
 }
 
 /**

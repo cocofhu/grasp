@@ -71,18 +71,7 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       name: 'demo',
       value: 'rotated',
     })
-    await workspaceClient.deleteCredential('cred-1')
     await workspaceClient.removeCredential('cred-1')
-    await workspaceClient.listRequirementDrafts({ status: 'open', q: 'x' })
-    await workspaceClient.getRequirementDraft('d1')
-    await workspaceClient.createRequirementDraft({ title: 't' })
-    await workspaceClient.updateRequirementDraft('d1', { title: 't' })
-    await workspaceClient.patchRequirementDraftStatus('d1', 'done')
-    await workspaceClient.patchRequirementDraftSchedule('d1', {
-      parentId: null,
-      progress: 1,
-    })
-    await workspaceClient.deleteRequirementDraft('d1')
     await workspaceClient.getExternalMcp()
     await workspaceClient.updateExternalMcp({ enabled: true, enabledPacks: [] })
     await workspaceClient.listMcpKeys()
@@ -125,12 +114,8 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     await pmClient.deleteCronJob('j1')
     await pmClient.listPmThreads()
     await pmClient.createPmThread({ title: 't' })
-    await pmClient.getPmThread('t1')
     await pmClient.deletePmThread('t1')
     await pmClient.listPmMessages('t1', { limit: 10, before: 'm0' })
-    await pmClient.appendPmMessage('t1', { content: 'hi' })
-    await pmClient.patchPmMessage('t1', 'm1', { status: 'ok' })
-    await pmClient.ensurePmSandbox('t1', { injectHistory: true })
     await pmClient.startPmTurn('t1', { content: 'hi' })
     await pmClient.cancelPmTurn('t1')
     expect(pmClient.pmThreadChatWsUrl('t1')).toContain('/chat')

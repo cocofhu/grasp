@@ -301,7 +301,7 @@ func main() {
 		log.Fatal().Err(err).Msg("init dialogue epoch")
 	}
 	eng.SetBlobStore(blobStore)
-	eng.SetWorkspaceVarsLookup(func(workflowID string) []models.WorkspaceVariable {
+	eng.SetDefaultVarsLookup(func(workflowID string) []models.WorkspaceVariable {
 		return workspaceSvc.VariablesForWorkflow(workflowID)
 	})
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
@@ -481,7 +481,6 @@ func main() {
 	issueSvc.SetBlobStore(blobStore)
 	eng.SetIssueService(issueSvc)
 
-	requirementDraftSvc := services.NewRequirementDraftService(db)
 	notificationSvc := services.NewNotificationService(db, runSvc)
 
 	coord := shutdown.New(shutdownHTTPTimeout)
@@ -494,7 +493,6 @@ func main() {
 	wfSvc.SetAgents(agentSvc)
 	pmMCP := pmmcp.NewHost(pmSvc, pmProgress, wfSvc, runSvc, artifactSvc, eng)
 	pmMCP.SetAgents(agentSvc)
-	pmMCP.SetRequirementDrafts(requirementDraftSvc)
 	memoryMCP := memorymcp.NewHost(pmSvc)
 	contextMCP := contextmcp.NewHost(pmSvc)
 	schedulerMCP := schedulermcp.NewHost(db, pmSvc)
@@ -595,7 +593,6 @@ func main() {
 		SbxChats:            services.NewSandboxChats(sbxSvc),
 		Preview:             previewSvc,
 		Issues:              issueSvc,
-		RequirementDrafts:   requirementDraftSvc,
 		Notifications:       notificationSvc,
 		Eng:                 eng,
 		MCP:                 host,

@@ -1,10 +1,8 @@
-import type { RepoChoice, WorkflowCatalogItem } from '../apiTypes'
+import type { RepoChoice } from '../apiTypes'
 import type { Workflow, WorkflowVersion, WorkflowNotifyPolicy, WorkflowGraph } from '../../shared/types'
 import { req } from '../httpCore'
 
 export const workflowsClient = {
-  listWorkflowCatalog: (opts?: { signal?: AbortSignal }) =>
-    req<WorkflowCatalogItem[]>('/workflows/catalog', opts?.signal ? { signal: opts.signal } : undefined),
   listWorkflows: (params?: { signal?: AbortSignal }) => {
     return req<Workflow[]>('/workflows', params?.signal ? { signal: params.signal } : undefined)
   },

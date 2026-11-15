@@ -2,9 +2,7 @@
 // server/internal/nodereg; agent node products and outlets follow the chosen
 // Agent's capabilities (see web/src/lib/workflow/).
 
-import type { AgentCapabilities } from '@/lib/api/apiTypes'
 import type { NodeType, NodeTypeDef } from '@/lib/shared/types'
-import { declaredProducts } from '@/lib/workflow/agentCapabilities'
 
 export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
   input: {
@@ -33,19 +31,12 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     category: 'nodes.categories.control',
     fields: [
       { key: 'results', label: 'nodes.output.fields.results.label', type: 'output_sources', help: 'nodes.output.fields.results.help', optional: true },
-      {
-        key: 'auto_leftover_draft',
-        label: 'nodes.output.fields.auto_leftover_draft.label',
-        type: 'switch',
-        optional: true,
-        help: 'nodes.output.fields.auto_leftover_draft.help',
-      },
     ],
     outputs: [
       { key: 'outputCards', desc: 'nodes.output.outputs.outputCards.desc' },
       { key: 'results', desc: 'nodes.output.outputs.results.desc' },
     ],
-    defaults: { auto_leftover_draft: false },
+    defaults: {},
   },
   set_var: {
     type: 'set_var',
@@ -125,28 +116,6 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     },
     help: 'nodes.human_gate.help',
   },
-}
-
-export const PALETTE_GROUPS: { title: string; types: NodeType[] }[] = [
-  { title: 'nodes.palette.control', types: ['input', 'output', 'set_var', 'branch'] },
-  { title: 'nodes.palette.agent', types: ['agent'] },
-  { title: 'nodes.palette.collaboration', types: ['human_gate'] },
-]
-
-/**
- * Output rows of an agent node: the generic agent outputs plus, per declared
- * product, its rendered markdown key and raw `_json` key (page has no JSON).
- * Descriptions are i18n keys.
- */
-export function agentOutputDefs(caps: AgentCapabilities | null | undefined): { key: string; desc: string }[] {
-  const outs: { key: string; desc: string }[] = []
-  for (const p of declaredProducts(caps)) {
-    outs.push({ key: p.outputKey, desc: `nodes.schemas.${p.name}.markdown` })
-    if (p.outputJsonKey) outs.push({ key: p.outputJsonKey, desc: `nodes.schemas.${p.name}.json` })
-  }
-  const seen = new Set(outs.map((o) => o.key))
-  for (const o of NODE_DEFS.agent.outputs) if (!seen.has(o.key)) outs.push(o)
-  return outs
 }
 
 /** True when human_gate body_template binds page.html (PreviewIssue path). */

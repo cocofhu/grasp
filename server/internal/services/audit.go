@@ -596,29 +596,12 @@ func maskValue(v any, depth int, scanValues bool) any {
 
 func isSensitiveKey(key string) bool {
 	k := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
-	// Bare "value" is not treated as sensitive: workspace vars nest {name,value,secret}
-	// and are masked via MaskWorkspaceVarsForAudit before entering the payload tree.
 	for _, h := range sensitiveKeyHints {
 		if strings.Contains(k, h) {
 			return true
 		}
 	}
 	return false
-}
-
-// MaskWorkspaceVarsForAudit returns variables with secret values replaced.
-func MaskWorkspaceVarsForAudit(vars []models.WorkspaceVariable) []map[string]any {
-	out := make([]map[string]any, 0, len(vars))
-	for _, v := range vars {
-		val := v.Value
-		if v.Secret {
-			val = SecretMask
-		}
-		out = append(out, map[string]any{
-			"name": v.Name, "type": v.Type, "value": val, "secret": v.Secret,
-		})
-	}
-	return out
 }
 
 // MaskSandboxEnvForAudit returns env entries with secret values replaced.

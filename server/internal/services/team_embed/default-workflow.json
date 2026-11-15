@@ -4,7 +4,6 @@
   "description": "需求澄清 → 实现 → 测试评审 → 提交 MR/PR;测试评审未通过时回到实现。仓库在工作流设置里绑定，运行时可挑选。",
   "needsRepo": true,
   "defaults": {
-    "inheritWorkspace": true,
     "variables": []
   },
   "graph": {

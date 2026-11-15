@@ -46,12 +46,10 @@ func (s *WorkspaceService) Workspace() (models.Workspace, error) {
 	return loadWorkspace(s.db)
 }
 
-// Update patches name/description/variables/notifyPolicy/
-// unknownModelDisplayName. Nil pointers mean "leave unchanged"; non-nil
-// slices replace the whole list with secret-preserving merge. Non-nil
-// notifyPolicy replaces the whole policy. Non-nil unknownModelDisplayName is
+// Update patches name/description/notifyPolicy/unknownModelDisplayName.
+// Nil pointers mean "leave unchanged". Non-nil notifyPolicy replaces the whole policy. Non-nil unknownModelDisplayName is
 // normalized (trim; empty/default label → unset; >64 runes → error).
-func (s *WorkspaceService) Update(name *string, description *string, vars *[]models.WorkspaceVariable, notify *models.WorkspaceNotifyPolicy, unknownModelDisplayName *string) (models.Workspace, error) {
+func (s *WorkspaceService) Update(name *string, description *string, notify *models.WorkspaceNotifyPolicy, unknownModelDisplayName *string) (models.Workspace, error) {
 	p, err := loadWorkspace(s.db)
 	if err != nil {
 		return models.Workspace{}, err
@@ -65,13 +63,6 @@ func (s *WorkspaceService) Update(name *string, description *string, vars *[]mod
 	}
 	if description != nil {
 		p.Description = *description
-	}
-	if vars != nil {
-		merged, err := mergeWorkspaceVars(p.Variables, *vars)
-		if err != nil {
-			return models.Workspace{}, err
-		}
-		p.Variables = merged
 	}
 	if notify != nil {
 		p.NotifyPolicy = NormalizeWorkspaceNotifyPolicy(*notify)
@@ -90,37 +81,13 @@ func (s *WorkspaceService) Update(name *string, description *string, vars *[]mod
 	return p, nil
 }
 
-// VariablesForWorkflow returns the effective workflow variables (plaintext):
-// workspace variables when inherited, overridden by the workflow's own.
+// VariablesForWorkflow returns the workflow's own default variables (plaintext).
 func (s *WorkspaceService) VariablesForWorkflow(workflowID string) []models.WorkspaceVariable {
 	var wf models.WorkflowDef
-	if err := s.db.Select("id", "defaults").First(&wf, "id = ?", workflowID).Error; err != nil {
+	if err := s.db.Select("id", "defaults").First(&wf, "id = ?", workflowID).Error; err != nil || wf.Defaults == nil {
 		return nil
 	}
-	p, err := loadWorkspace(s.db)
-	if err != nil {
-		return nil
-	}
-	if wf.Defaults == nil {
-		return p.Variables
-	}
-	vars := []models.WorkspaceVariable{}
-	if wf.Defaults.InheritWorkspace {
-		vars = append(vars, p.Variables...)
-	}
-	byName := map[string]int{}
-	for i, v := range vars {
-		byName[v.Name] = i
-	}
-	for _, v := range wf.Defaults.Variables {
-		if i, ok := byName[v.Name]; ok {
-			vars[i] = v
-		} else {
-			byName[v.Name] = len(vars)
-			vars = append(vars, v)
-		}
-	}
-	return vars
+	return wf.Defaults.Variables
 }
 
 // WorkspaceTokenBreakdown summarizes all ledger usage with workflow and PM

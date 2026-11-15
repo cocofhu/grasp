@@ -7,8 +7,8 @@ import { agentConfigRelPath, defaultSettingsPlaceholder } from '@/lib/agent/back
 import type { AgentStudioDraft, DraftFile } from '@/lib/agent/agentStudioDraft'
 import type { CtxTarget } from '@/components/agent/ExplorerContextMenu.vue'
 
-export type FilesStep = 'list' | 'edit'
-export type FilesOpenSnapshot = { path: string; openPaths: string[] }
+type FilesStep = 'list' | 'edit'
+type FilesOpenSnapshot = { path: string; openPaths: string[] }
 
 export interface AgentFilesPanelProps {
   draft: AgentStudioDraft

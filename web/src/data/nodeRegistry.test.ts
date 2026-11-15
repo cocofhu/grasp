@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import manifest from './nodeManifest.generated.json'
 import {
   NODE_DEFS,
-  PALETTE_GROUPS,
-  agentOutputDefs,
   defaultHumanGateForm,
   isPageHtmlGateBody,
   nodeColor,
@@ -20,7 +18,6 @@ function lookup(obj: unknown, key: string): unknown {
 describe('nodeRegistry', () => {
   it('defines exactly the manifest node types', () => {
     expect(Object.keys(NODE_DEFS).sort()).toEqual(manifest.nodeTypes.map((n) => n.type).sort())
-    expect(PALETTE_GROUPS.flatMap((g) => g.types).sort()).toEqual(Object.keys(NODE_DEFS).sort())
   })
 
   it('configures the agent node with profile, goal and timeout only', () => {
@@ -33,21 +30,6 @@ describe('nodeRegistry', () => {
     expect(cases.every((c) => c.id && !('goto' in c))).toBe(true)
   })
 
-  it('derives agent outputs from declared products', () => {
-    const keys = agentOutputDefs(CLARIFY_CAPS).map((o) => o.key)
-    expect(keys.slice(0, 4)).toEqual(['clarified_requirement', 'clarified_requirement_json', 'plan', 'plan_json'])
-    expect(keys).toContain('page')
-    expect(keys).not.toContain('page_json')
-    expect(keys).toContain('content')
-    expect(agentOutputDefs(TEST_REVIEW_CAPS).map((o) => o.key).slice(0, 4)).toEqual([
-      'test_result',
-      'test_result_json',
-      'review',
-      'review_json',
-    ])
-    expect(agentOutputDefs(undefined)).toEqual(NODE_DEFS.agent.outputs)
-  })
-
   it('exposes merge_request as a non-verdict product of the deliver Agent', () => {
     const mr = manifest.schemas.find((s) => s.name === 'merge_request')
     expect(mr).toMatchObject({
@@ -58,7 +40,6 @@ describe('nodeRegistry', () => {
     })
     expect(mr && 'verdict' in mr).toBe(false)
     const caps = { interaction: 'auto' as const, reads: ['*'], writes: [{ schema: 'merge_request', required: true }] }
-    expect(agentOutputDefs(caps).map((o) => o.key).slice(0, 2)).toEqual(['merge_request', 'merge_request_json'])
   })
 
   it('every i18n key referenced by node defs exists in both locales', () => {
@@ -68,7 +49,6 @@ describe('nodeRegistry', () => {
       for (const f of def.fields) for (const k of [f.label, f.help, f.placeholder]) if (k) keys.add(k)
       for (const o of def.outputs) keys.add(o.desc)
     }
-    for (const o of agentOutputDefs(CLARIFY_CAPS)) keys.add(o.desc)
     for (const s of manifest.schemas) {
       keys.add(`nodes.schemas.${s.name}.label`)
       keys.add(`nodes.schemas.${s.name}.markdown`)

@@ -13,7 +13,7 @@ func TestAppendMessageExternalizesImages(t *testing.T) {
 	pm := NewPmService(db, nil)
 	pm.SetBlobStore(blob.NewMemory())
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("BlobProj", "", nil)
+	_, err := ps.CreateFixture("BlobProj", "")
 	if err != nil {
 		t.Fatal(err)
 	}

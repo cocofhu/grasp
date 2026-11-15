@@ -31,7 +31,6 @@ vi.mock('@/lib/api/api', () => ({
     listCredentials: mocks.get,
     createCredential: mocks.create,
     putCredential: mocks.put,
-    deleteCredential: mocks.del,
     removeCredential: mocks.remove,
     listModelConnections: mocks.connections,
     listModelConnectionModels: mocks.connectionModels,
@@ -390,12 +389,10 @@ describe('WorkspaceCredentialsPanel', () => {
 
   it('uses the short English credential list copy', () => {
     const copy = enPages.pages.workspace.credentials
-    expect(copy.groups.other.title).toBe('Other')
     expect(copy.typeAi).toBe('Model')
     expect(copy.typeGit).toBe('Repository')
     expect(copy.edit).toBe('Edit')
     expect(copy.fillIn).toBe('Fill in')
-    expect(copy.summary.apiKeys).toBe('Model slots')
     expect(copy.replacePlaceholder).toBe('Enter a new value to replace it')
     expect(copy.valuePlaceholder).toBe('Enter a credential. It is sent only when you save.')
   })

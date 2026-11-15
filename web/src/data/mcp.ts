@@ -193,18 +193,4 @@ export const BUILTIN_MCPS: McpServer[] = [
     ],
     conventionKey: 'mcp.pmAgentFs.convention',
   },
-  {
-    id: 'pm-prd-manager',
-    name: 'pm-prd-manager',
-    builtin: true,
-    scope: 'workspace',
-    descKey: 'mcp.pmPrdManager.desc',
-    overviewKey: 'mcp.pmPrdManager.overview',
-    tools: [
-      { name: 'pm_list_requirement_drafts', signatureKey: 'mcp.pmPrdManager.tools.pm_list_requirement_drafts.signature', descKey: 'mcp.pmPrdManager.tools.pm_list_requirement_drafts.desc', io: 'read' },
-      { name: 'pm_get_requirement_draft', signatureKey: 'mcp.pmPrdManager.tools.pm_get_requirement_draft.signature', descKey: 'mcp.pmPrdManager.tools.pm_get_requirement_draft.desc', io: 'read' },
-      { name: 'pm_create_requirement_draft', signatureKey: 'mcp.pmPrdManager.tools.pm_create_requirement_draft.signature', descKey: 'mcp.pmPrdManager.tools.pm_create_requirement_draft.desc', io: 'write' },
-    ],
-    conventionKey: 'mcp.pmPrdManager.convention',
-  },
 ]

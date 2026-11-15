@@ -66,12 +66,6 @@ const CATALOG = [
       'pm_create_agent_from_template',
     ],
   },
-  {
-    id: 'pm-prd-manager',
-    scope: 'workspace' as const,
-    toolCount: 3,
-    writeTools: ['pm_create_requirement_draft'],
-  },
 ] as const
 
 const INTEGRATIONS_SCOPE_KEYS = [
@@ -119,7 +113,6 @@ describe('BUILTIN_MCPS artifact-store catalog', () => {
     const te = i18n.global.te.bind(i18n.global)
 
     expect(te('mcp.integrations.toolCount')).toBe(true)
-    expect(te('mcp.integrations.openDetail')).toBe(true)
     expect(te('mcp.integrations.backToCatalog')).toBe(true)
     expect(te('mcp.integrations.toolsTitle')).toBe(true)
     expect(te('mcp.integrations.alwaysAvailable')).toBe(true)

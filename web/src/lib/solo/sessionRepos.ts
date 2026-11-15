@@ -46,7 +46,3 @@ export function soloCreateChoices(ids: string[], branches: Record<string, string
       return branch ? { projectId, branch } : { projectId }
     })
 }
-
-export function branchOfRepo(repo: Pick<SessionRepo, 'branch'>, remoteDefault: string): string {
-  return repo.branch?.trim() || remoteDefault
-}

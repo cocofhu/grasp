@@ -4,7 +4,6 @@ import type { Artifact, Run } from '@/lib/shared/types'
 import {
   REACT_STAGE_TAB_GRID,
   REACT_STAGE_TAB_NOVNC,
-  applyPreviewArtifactFromRun,
   applyPreviewArtifactName,
   artifactFingerprint,
   artifactFriendlyNameKey,
@@ -15,7 +14,6 @@ import {
   extractVisualHtmlSummary,
   buildArtifactVersionChoices,
   filterStageGridArtifacts,
-  historicalStageArtifactId,
   inboxStageRemoteKind,
   isBookkeepingArtifact,
   isFeedbackArtifactName,
@@ -35,9 +33,7 @@ import {
   findArtifactByName,
   isOwnNodeArtifact,
   isAppPreviewRemoteNode,
-  isClarifyGraphNode,
   latestOwnNodeHtmlName,
-  nextTabAfterClose,
   openStagePreviewTab,
   previewTabId,
   clarifyStageRemoteKind,
@@ -100,10 +96,6 @@ describe('reactArtifactPreview helpers', () => {
   })
 
   it('detects clarify graph nodes from caps', () => {
-    const run = { nodes: [gnode('c1', '澄清', ASK_CAPS), gnode('a1', '实现', PREVIEW_REVIEW_CAPS)] } as unknown as Run
-    expect(isClarifyGraphNode(run, 'c1')).toBe(true)
-    expect(isClarifyGraphNode(run, 'a1')).toBe(false)
-    expect(isClarifyGraphNode(run, 'other')).toBe(false)
     expect(isAppPreviewRemoteNode(gnode('p', '预览', PREVIEW_REVIEW_CAPS))).toBe(true)
     expect(isAppPreviewRemoteNode(gnode('c', '澄清', CLARIFY_CAPS))).toBe(false)
     expect(isAppPreviewRemoteNode({ type: 'human_gate', caps: PREVIEW_REVIEW_CAPS })).toBe(false)
@@ -119,8 +111,8 @@ describe('reactArtifactPreview helpers', () => {
     expect(canAnnotateStageArtifact(true, { nodeId: 'plan' }, 'research')).toBe(false)
     expect(canAnnotateStageArtifact(true, { nodeId: 'research' }, 'research')).toBe(true)
     expect(canAnnotateStageArtifact(false, { nodeId: 'research' }, 'research')).toBe(false)
-    expect(canAnnotateStageArtifact(true, { id: historicalStageArtifactId('visual', 1), nodeId: 'visual' }, 'visual')).toBe(false)
-    expect(isHistoricalStageArtifact({ id: historicalStageArtifactId('visual', 1) })).toBe(true)
+    expect(canAnnotateStageArtifact(true, { id: 'historical-page:visual:1', nodeId: 'visual' }, 'visual')).toBe(false)
+    expect(isHistoricalStageArtifact({ id: 'historical-page:visual:1' })).toBe(true)
   })
 
   it('does not flatten historical visual snapshots into extra grid cards', () => {
@@ -208,11 +200,6 @@ describe('reactArtifactPreview helpers', () => {
     expect(openStagePreviewTab(['a.html'], 'b.md')).toEqual(['a.html', 'b.md'])
     expect(openStagePreviewTab(['a.html', 'b.md'], 'a.html')).toEqual(['a.html', 'b.md'])
     expect(closeStagePreviewTab(['a.html', 'b.md'], 'a.html')).toEqual(['b.md'])
-    expect(nextTabAfterClose(['a.html', 'b.md'], 'b.md', previewTabId('b.md'))).toBe(previewTabId('a.html'))
-    expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'))).toBe(REACT_STAGE_TAB_GRID)
-    expect(nextTabAfterClose(['a.html', 'b.md'], 'a.html', previewTabId('b.md'))).toBe(previewTabId('b.md'))
-    expect(nextTabAfterClose(['a.html'], 'a.html', previewTabId('a.html'), true)).toBe(REACT_STAGE_TAB_NOVNC)
-    expect(nextTabAfterClose(['a.html'], 'a.html', REACT_STAGE_TAB_NOVNC)).toBe(REACT_STAGE_TAB_NOVNC)
   })
 
   it('diffs fingerprints for create/update and filters auto-pin visibility (g1.1)', () => {
@@ -229,7 +216,7 @@ describe('reactArtifactPreview helpers', () => {
     const page = art({ id: 'p', name: 'page.html', kind: 'html', nodeId: 'visual_1' })
     const alias = art({ id: 'a', name: visualNodePageName('visual_1'), kind: 'html', nodeId: 'visual_1' })
     const hist = art({
-      id: historicalStageArtifactId('visual_1', 1),
+      id: 'historical-page:visual_1:1',
       name: 'page.html#iter-1',
       kind: 'html',
       nodeId: 'visual_1',
@@ -336,14 +323,6 @@ describe('reactArtifactPreview helpers', () => {
     const filled = applyPreviewArtifactName(onlyTop, 'c2', 'note.md')
     expect(filled.clarifyByNode?.c2.previewArtifact).toBe('note.md')
     expect(filled.clarifyByNode?.c2.turns[0].text).toBe('keep')
-    const incoming = {
-      artifacts: [art({ id: 'a2', name: 'page.html', revision: 4 })],
-      clarifyByNode: { c1: { nodeId: 'c1', turns: [], done: false, previewArtifact: 'page.html' } },
-    } as unknown as Run
-    const merged = applyPreviewArtifactFromRun(named, incoming)
-    expect(merged.artifacts[0].name).toBe('page.html')
-    expect(merged.clarifyByNode?.c1.previewArtifact).toBe('page.html')
-    expect(merged.clarifyByNode?.c1.turns[0].text).toBe('hi')
   })
 
   it('activates a pin when it changes or the named artifact first appears', () => {
@@ -481,7 +460,7 @@ describe('reactArtifactPreview helpers', () => {
     const page = art({ id: 'p', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
     const approvePage = art({ id: 'ap', name: 'page.html', kind: 'html', nodeId: 'approve_7gl6' })
     const hist = art({
-      id: historicalStageArtifactId('visual_bqc5', 1),
+      id: 'historical-page:visual_bqc5:1',
       name: 'page.html#iter-1',
       kind: 'html',
       nodeId: 'visual_bqc5',

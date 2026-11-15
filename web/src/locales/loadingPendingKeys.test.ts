@@ -72,8 +72,6 @@ describe('loading/pending Demo-locked locale keys', () => {
     expect(enPages.pages.publicGate.loading).toBe('Loading…')
     expect(zhPages.pages.publicGate.submitting).toBe('提交中…')
     expect(enPages.pages.publicGate.submitting).toBe('Submitting…')
-    expect(zhPages.pages.publicGate.confirming).toBe('正在确认…')
-    expect(enPages.pages.publicGate.confirming).toBe('Confirming…')
     expect(zhPages.pages.publicGate.networkError).toBe('网络错误，请稍后重试')
     expect(enPages.pages.publicGate.networkError).toBe('Network error. Please try again.')
     expect(zhPages.pages.publicGate.securityCheckFailed).toBe('安全校验未通过，请再试一次「确认并流转」')
@@ -94,8 +92,6 @@ describe('loading/pending Demo-locked locale keys', () => {
   })
 
   it('locks ReAct sending to 发送中…/Sending… and does not retarget preview feedback sending', () => {
-    expect(zhPages.pages.gateApproval.reactRevise.sending).toBe('发送中…')
-    expect(enPages.pages.gateApproval.reactRevise.sending).toBe('Sending…')
     expect(zhPages.pages.appPreview.feedback.sending).toBe('提交中…')
     expect(enPages.pages.appPreview.feedback.sending).toBe('Submitting…')
   })

@@ -103,25 +103,25 @@ describe('ExportVersionModal', () => {
     const wrapper = mountModal(true)
     await wrapper.setProps({
       localDraft: { nodes: [], edges: [] },
-      defaults: { inheritWorkspace: false, variables: [{ name: 'TOKEN', type: 'string', secret: true, value: 'private-editor-secret' }], gateAuto: { enabled: true, agentName: 'reviewer', variable: 'review', prompt: 'Inspect', enabledMcps: [] } },
+      defaults: { variables: [{ name: 'TOKEN', type: 'string', secret: true, value: 'private-editor-secret' }], gateAuto: { enabled: true, agentName: 'reviewer', variable: 'review', prompt: 'Inspect', enabledMcps: [] } },
     })
     await flushPromises()
     await wrapper.findAll('button').at(-1)!.trigger('click')
     await flushPromises()
     const envelope = ioMocks.downloadJson.mock.calls[0][1]
-    expect(envelope.defaults).toMatchObject({ inheritWorkspace: false, variables: [{ name: 'TOKEN', secret: true }], gateAuto: { agentName: 'reviewer' } })
+    expect(envelope.defaults).toMatchObject({ variables: [{ name: 'TOKEN', secret: true }], gateAuto: { agentName: 'reviewer' } })
     expect(envelope.defaults.variables[0]).not.toHaveProperty('value')
     expect(apiMocks.getWorkflow).not.toHaveBeenCalled()
     wrapper.unmount()
   })
   it('exports the fresh saved head defaults instead of stale list metadata', async () => {
-    apiMocks.getWorkflow.mockResolvedValue({ nodes: [], edges: [], defaults: { inheritWorkspace: false, variables: [{ name: 'branch', type: 'string', value: 'release' }] } })
+    apiMocks.getWorkflow.mockResolvedValue({ nodes: [], edges: [], defaults: { variables: [{ name: 'branch', type: 'string', value: 'release' }] } })
     const wrapper = mountModal(true)
-    await wrapper.setProps({ defaults: { inheritWorkspace: true, variables: [] } })
+    await wrapper.setProps({ defaults: { variables: [] } })
     await flushPromises()
     await wrapper.findAll('button').at(-1)!.trigger('click')
     await flushPromises()
-    expect(ioMocks.downloadJson.mock.calls[0][1].defaults).toMatchObject({ inheritWorkspace: false, variables: [{ name: 'branch', value: 'release' }] })
+    expect(ioMocks.downloadJson.mock.calls[0][1].defaults).toMatchObject({ variables: [{ name: 'branch', value: 'release' }] })
     wrapper.unmount()
   })
 })

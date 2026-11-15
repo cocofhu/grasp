@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
   const signedInWorkspace = { name: 'Workspace', description: '', variables: [] }
-  return { signedInWorkspace, workspace: ref<typeof signedInWorkspace | null>(signedInWorkspace), entries: ref<{ workflowId: string; favoritedAt: number }[]>([]), listWorkflowCatalog: vi.fn(), listRuns: vi.fn(), getWorkflow: vi.fn(), openLaunch: vi.fn(), error: vi.fn() }
+  return { signedInWorkspace, workspace: ref<typeof signedInWorkspace | null>(signedInWorkspace), entries: ref<{ workflowId: string; favoritedAt: number }[]>([]), listRuns: vi.fn(), getWorkflow: vi.fn(), openLaunch: vi.fn(), error: vi.fn() }
 })
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, loading: ref(false), ensureLoaded: async () => mocks.workspace.value }) }))
@@ -51,7 +51,6 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   mocks.workspace.value = mocks.signedInWorkspace
   mocks.entries.value = []
-  mocks.listWorkflowCatalog.mockResolvedValue([])
   mocks.listRuns.mockResolvedValue({ items: [r('a', cur('impl', 'agent', 'auto', 'running')), r('b', cur('gate', 'gate', 'gate', 'waiting_human'), 'waiting_human'), r('c', undefined, 'completed')], total: 3 })
 })
 afterEach(() => { vi.useRealTimers(); document.body.replaceChildren() })

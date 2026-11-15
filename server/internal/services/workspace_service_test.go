@@ -18,7 +18,7 @@ func TestWorkspaceUpdateNameAndDescription(t *testing.T) {
 	}
 	s := NewWorkspaceService(db)
 	name, desc := "  Alpha2 ", "d2"
-	ws, err := s.Update(&name, &desc, nil, nil, nil)
+	ws, err := s.Update(&name, &desc, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestWorkspaceUpdateNameAndDescription(t *testing.T) {
 		t.Fatalf("update = %+v", ws)
 	}
 	blank := "  "
-	if _, err := s.Update(&blank, nil, nil, nil, nil); !errors.Is(err, ErrEmptyWorkspaceName) {
+	if _, err := s.Update(&blank, nil, nil, nil); !errors.Is(err, ErrEmptyWorkspaceName) {
 		t.Fatalf("blank name: %v", err)
 	}
 	if n := s.WorkflowCount(); n != 0 {
@@ -40,13 +40,8 @@ func TestWorkspaceUpdateNameAndDescription(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSecretMergeAndMask(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "secret.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewWorkspaceService(db)
-	p, err := s.CreateFixture("S", "", []models.WorkspaceVariable{
+func TestWorkflowVarsSecretMergeAndMask(t *testing.T) {
+	existing, err := sanitizeWorkspaceVars([]models.WorkspaceVariable{
 		{Name: "api_key", Type: "string", Value: "sk-123", Secret: true},
 		{Name: "region", Type: "string", Value: "cn", Secret: false},
 	})
@@ -61,99 +56,57 @@ func TestWorkspaceSecretMergeAndMask(t *testing.T) {
 	if maskedEnv[0].Value != SecretMask || maskedEnv[1].Value != "visible" {
 		t.Fatalf("mask env = %+v", maskedEnv)
 	}
-	maskedVars := MaskedWorkspaceVars(p.Variables)
+	maskedVars := MaskedWorkspaceVars(existing)
 	if maskedVars[0].Value != SecretMask || maskedVars[1].Value != "cn" {
 		t.Fatalf("mask vars = %+v", maskedVars)
 	}
 
 	// Empty/mask keeps plaintext; new value overwrites; toggle secret.
-	vars := []models.WorkspaceVariable{
+	merged, err := mergeWorkspaceVars(existing, []models.WorkspaceVariable{
 		{Name: "api_key", Type: "string", Value: "", Secret: true},
 		{Name: "region", Type: "string", Value: "us", Secret: true}, // become secret with new value
-	}
-	p, err = s.Update(nil, nil, &vars, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var apiKey, region models.WorkspaceVariable
-	for _, v := range p.Variables {
-		switch v.Name {
-		case "api_key":
-			apiKey = v
-		case "region":
-			region = v
-		}
-	}
-	if apiKey.Value != "sk-123" {
-		t.Fatalf("api_key preserved = %v", apiKey.Value)
-	}
-	if region.Value != "us" || !region.Secret {
-		t.Fatalf("region = %+v", region)
-	}
-}
-
-func TestWorkspaceSecretToggleRequiresExplicitPublicValue(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "toggle.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewWorkspaceService(db)
-	_, err = s.CreateFixture("T", "", []models.WorkspaceVariable{
-		{Name: "api_key", Type: "string", Value: "sk-real", Secret: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if merged[0].Value != "sk-123" {
+		t.Fatalf("api_key preserved = %v", merged[0].Value)
+	}
+	if merged[1].Value != "us" || !merged[1].Secret {
+		t.Fatalf("region = %+v", merged[1])
+	}
+}
+
+func TestWorkflowVarsSecretToggleRequiresExplicitPublicValue(t *testing.T) {
+	existing := []models.WorkspaceVariable{{Name: "api_key", Type: "string", Value: "sk-real", Secret: true}}
 
 	// A mask is not consent to expose the stored secret as a public value.
 	vars := []models.WorkspaceVariable{{Name: "api_key", Type: "string", Value: SecretMask, Secret: false}}
-	if _, err = s.Update(nil, nil, &vars, nil, nil); !errors.Is(err, ErrSecretPlaceholderOnPublicValue) {
+	if _, err := mergeWorkspaceVars(existing, vars); !errors.Is(err, ErrSecretPlaceholderOnPublicValue) {
 		t.Fatalf("un-secret mask accepted: %v", err)
 	}
-	stored, _ := s.Workspace()
-	if !stored.Variables[0].Secret || stored.Variables[0].Value != "sk-real" {
-		t.Fatal("rejected update changed the stored secret")
-	}
 	for _, value := range []any{"", nil, "public replacement"} {
-		// Restore a secret before checking each transition.
-		secret := []models.WorkspaceVariable{{Name: "api_key", Type: "string", Value: "sk-real", Secret: true}}
-		if _, err = s.Update(nil, nil, &secret, nil, nil); err != nil {
-			t.Fatal(err)
-		}
 		vars[0].Value = value
-		p, err := s.Update(nil, nil, &vars, nil, nil)
+		merged, err := mergeWorkspaceVars(existing, vars)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := p.Variables[0]; got.Secret || got.Value != value {
+		if got := merged[0]; got.Secret || got.Value != value {
 			t.Fatalf("un-secret value=%v produced %+v", value, got)
 		}
 	}
 }
 
-func TestWorkspaceRejectsMaskOnRenamedKey(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "rename.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewWorkspaceService(db)
-	_, err = s.CreateFixture("R", "", []models.WorkspaceVariable{{Name: "token", Type: "string", Value: "v", Secret: true}})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestWorkflowVarsRejectMaskOnRenamedKey(t *testing.T) {
+	existing := []models.WorkspaceVariable{{Name: "token", Type: "string", Value: "v", Secret: true}}
 	vars := []models.WorkspaceVariable{{Name: "token2", Type: "string", Value: SecretMask, Secret: true}}
-	if _, err := s.Update(nil, nil, &vars, nil, nil); !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
+	if _, err := mergeWorkspaceVars(existing, vars); !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
 		t.Fatalf("rename with mask: %v", err)
 	}
 }
 
-func TestWorkspaceRejectsMaskOnCreateVars(t *testing.T) {
-	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "create-mask.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewWorkspaceService(db)
-	_, err = s.CreateFixture("C", "", []models.WorkspaceVariable{
+func TestWorkflowVarsRejectMaskOnCreate(t *testing.T) {
+	_, err := sanitizeWorkspaceVars([]models.WorkspaceVariable{
 		{Name: "api_key", Type: "string", Value: SecretMask, Secret: true},
 	})
 	if !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
@@ -181,14 +134,18 @@ func TestWorkspaceVariablesForWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewWorkspaceService(db)
-	if _, err := s.CreateFixture("LookMe", "", []models.WorkspaceVariable{{Name: "v1", Type: "string", Value: "1"}}); err != nil {
+	if err := db.Create(&models.WorkflowDef{ID: "wf-bare", Name: "w", Version: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.WorkflowDef{ID: "wf-look", Name: "w", Version: 1}).Error; err != nil {
+	if vars := s.VariablesForWorkflow("wf-bare"); vars != nil {
+		t.Fatalf("workflow without defaults = %+v", vars)
+	}
+	wf := models.WorkflowDef{ID: "wf-look", Name: "look", Version: 1, Defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "token", Type: "string", Value: "workflow-token", Secret: true}}}}
+	if err := db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
 	vars := s.VariablesForWorkflow("wf-look")
-	if len(vars) != 1 || vars[0].Name != "v1" {
+	if len(vars) != 1 || vars[0].Value != "workflow-token" || !vars[0].Secret {
 		t.Fatalf("vars=%+v", vars)
 	}
 	if s.VariablesForWorkflow("missing") != nil {
@@ -290,12 +247,12 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewWorkspaceService(db)
-	p, err := s.CreateFixture("UnkAlias", "", nil)
+	p, err := s.CreateFixture("UnkAlias", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	alias := "gpt-5"
-	p, err = s.Update(nil, nil, nil, nil, &alias)
+	p, err = s.Update(nil, nil, nil, &alias)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +260,7 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("alias=%q", p.UnknownModelDisplayName)
 	}
 	sameAsDefault := models.TokenUsageModelUnknownDisplay
-	p, err = s.Update(nil, nil, nil, nil, &sameAsDefault)
+	p, err = s.Update(nil, nil, nil, &sameAsDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +268,7 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("new default name should clear, got %q", p.UnknownModelDisplayName)
 	}
 	sameAsLegacy := models.TokenUsageModelUnknown
-	p, err = s.Update(nil, nil, nil, nil, &sameAsLegacy)
+	p, err = s.Update(nil, nil, nil, &sameAsLegacy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,11 +276,11 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("default name should clear, got %q", p.UnknownModelDisplayName)
 	}
 	tooLong := strings.Repeat("x", 65)
-	if _, err := s.Update(nil, nil, nil, nil, &tooLong); !errors.Is(err, ErrUnknownModelDisplayNameTooLong) {
+	if _, err := s.Update(nil, nil, nil, &tooLong); !errors.Is(err, ErrUnknownModelDisplayNameTooLong) {
 		t.Fatalf("want too-long err, got %v", err)
 	}
 	blank := "   "
-	p, err = s.Update(nil, nil, nil, nil, &blank)
+	p, err = s.Update(nil, nil, nil, &blank)
 	if err != nil {
 		t.Fatal(err)
 	}

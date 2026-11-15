@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { api, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConnection } from '@/lib/api/api'
 import { credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'

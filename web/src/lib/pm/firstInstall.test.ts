@@ -16,12 +16,10 @@ import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { ONBOARDING_WORKFLOW_NAMES, suppressOnboarding } from './onboardingWizard'
 import {
   closeFirstInstall,
-  closeOnboarding,
   firstInstallCompletedAt,
   onboardingMode,
   onboardingOpen,
   markFirstInstallCompleted,
-  openFirstInstall,
   openRetryOnboarding,
   probeFirstInstall,
   resetFirstInstallProbe,
@@ -113,11 +111,6 @@ describe('firstInstall', () => {
   })
 
   it('open/close and completion signal are manual controls', () => {
-    openFirstInstall()
-    expect(onboardingOpen.value).toBe(true)
-    expect(onboardingMode.value).toBe('firstInstall')
-    closeFirstInstall()
-    expect(onboardingOpen.value).toBe(false)
     openRetryOnboarding()
     expect(onboardingOpen.value).toBe(true)
     expect(onboardingMode.value).toBe('retry')
@@ -131,10 +124,8 @@ describe('firstInstall', () => {
 
   it('advances the workflow catalog only when onboarding succeeds', () => {
     const before = workflowCatalogRevision.value
-    openFirstInstall()
-    closeFirstInstall()
     openRetryOnboarding()
-    closeOnboarding()
+    closeFirstInstall()
     expect(onboardingOpen.value).toBe(false)
     expect(workflowCatalogRevision.value).toBe(before)
 

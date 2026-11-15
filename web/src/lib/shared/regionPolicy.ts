@@ -2,14 +2,14 @@ export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'openc
 type RegionSite = 'domestic' | 'international'
 type RegionMode = 'strict' | 'preserve-special'
 
-export type RegionOption = {
+type RegionOption = {
   id: string
   site: RegionSite
   labelKey: string
   hintKey: string
 }
 
-export type RegionPolicy = {
+type RegionPolicy = {
   regionEnvKey: string
   defaultRegion: string
   options: readonly RegionOption[]

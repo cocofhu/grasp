@@ -127,15 +127,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/workspace/shared-agent-config", h.PutSharedAgent)
 		api.POST("/workspace/shared-agent-config/test", h.CreateSharedAgentTest)
 
-		api.GET("/workspace/requirement-drafts", h.ListRequirementDrafts)
-		api.POST("/workspace/requirement-drafts", h.CreateRequirementDraft)
-		api.GET("/workspace/requirement-drafts/:draftId", h.GetRequirementDraft)
-		api.PUT("/workspace/requirement-drafts/:draftId", h.UpdateRequirementDraft)
-		api.PATCH("/workspace/requirement-drafts/:draftId", h.UpdateRequirementDraft)
-		api.PATCH("/workspace/requirement-drafts/:draftId/status", h.PatchRequirementDraftStatus)
-		api.PATCH("/workspace/requirement-drafts/:draftId/schedule", h.PatchRequirementDraftSchedule)
-		api.DELETE("/workspace/requirement-drafts/:draftId", h.DeleteRequirementDraft)
-
 		api.GET("/agent-teams/templates", h.ListAgentTeamTemplates)
 		api.POST("/agent-teams/bootstrap", h.BootstrapAgentTeam)
 		api.GET("/agent-teams/bootstrap/:id", h.GetAgentTeamBootstrap)

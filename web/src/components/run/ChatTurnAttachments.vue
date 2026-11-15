@@ -10,7 +10,6 @@ import type { ClarifyImage } from '@/lib/shared/types'
 import { isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
-import Icon from '../ui/Icon.vue'
 
 const props = defineProps<{
   images: ClarifyImage[]

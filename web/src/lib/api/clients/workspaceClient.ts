@@ -3,9 +3,6 @@ import type {
   AuditEvent,
   AuditFacets,
   AuditStats,
-  RequirementDraft,
-  RequirementDraftCreateBody,
-  RequirementDraftSchedulePatch,
 } from '../../shared/types'
 import { origin, req } from '../httpCore'
 import type {
@@ -31,7 +28,6 @@ import type {
 
 export const workspaceClient = {
   listModelConfigurations: () => req<{ items: ModelConfiguration[] }>('/workspace/model-configurations'),
-  getModelConfiguration: (id: string) => req<ModelConfiguration>(`/workspace/model-configurations/${encodeURIComponent(id)}`),
   createModelConfiguration: (body: ModelConfigurationBody) => req<ModelConfiguration>('/workspace/model-configurations', { method: 'POST', body: JSON.stringify(body) }),
   updateModelConfiguration: (id: string, body: Partial<ModelConfigurationBody>) => req<ModelConfiguration>(`/workspace/model-configurations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteModelConfiguration: (id: string) => req<{ status: string }>(`/workspace/model-configurations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -39,7 +35,6 @@ export const workspaceClient = {
   listModelConnectionModels: (id: string) => req<{ models: ModelConnection['models']; error?: string }>(`/workspace/model-connections/${encodeURIComponent(id)}/models`),
   createModelConnection: (body: ModelConnectionBody) => req<ModelConnection>('/workspace/model-connections', { method: 'POST', body: JSON.stringify(body) }),
   updateModelConnection: (id: string, body: Partial<ModelConnectionBody>) => req<ModelConnection>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
-  deleteModelConnection: (id: string) => req<{ status: string }>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listToolCapabilities: () => req<{ items: ToolCapability[] }>('/workspace/tool-capabilities'),
   updateWorkspace: (body: Partial<Workspace>) =>
     req<Workspace>('/workspace', { method: 'PATCH', body: JSON.stringify(body) }),
@@ -74,11 +69,6 @@ export const workspaceClient = {
     req<CredentialItem>(
       `/workspace/credentials/${encodeURIComponent(credentialId)}`,
       { method: 'PUT', body: JSON.stringify(body) },
-    ),
-  deleteCredential: (credentialId: string) =>
-    req<{ status: string }>(
-      `/workspace/credentials/${encodeURIComponent(credentialId)}`,
-      { method: 'DELETE' },
     ),
   /** "Sign in with GitHub" (OAuth device flow); the device code and token stay on the server. */
   getGitHubDeviceLogin: () =>
@@ -120,68 +110,6 @@ export const workspaceClient = {
   removeCredential: (credentialId: string) =>
     req<{ status: string }>(
       `/workspace/credentials/${encodeURIComponent(credentialId)}/account`,
-      { method: 'DELETE' },
-    ),
-
-  listRequirementDrafts: (
-    params?: { status?: 'open' | 'done' | 'all'; q?: string },
-  ) => {
-    const q = new URLSearchParams()
-    if (params?.status) q.set('status', params.status)
-    if (params?.q) q.set('q', params.q)
-    const qs = q.toString()
-    return req<{ items: RequirementDraft[] }>(
-      `/workspace/requirement-drafts${qs ? `?${qs}` : ''}`,
-    )
-  },
-  getRequirementDraft: (draftId: string) =>
-    req<RequirementDraft>(
-      `/workspace/requirement-drafts/${encodeURIComponent(draftId)}`,
-    ),
-  createRequirementDraft: (body?: RequirementDraftCreateBody) =>
-    req<RequirementDraft>(
-      `/workspace/requirement-drafts`,
-      {
-        method: 'POST',
-        body: body ? JSON.stringify(body) : undefined,
-      },
-    ),
-  updateRequirementDraft: (
-    draftId: string,
-    body: { title: string; bodyMarkdown?: string },
-  ) =>
-    req<RequirementDraft>(
-      `/workspace/requirement-drafts/${encodeURIComponent(draftId)}`,
-      { method: 'PUT', body: JSON.stringify(body) },
-    ),
-  patchRequirementDraftStatus: (
-    draftId: string,
-    status: 'open' | 'done',
-  ) =>
-    req<RequirementDraft>(
-      `/workspace/requirement-drafts/${encodeURIComponent(draftId)}/status`,
-      { method: 'PATCH', body: JSON.stringify({ status }) },
-    ),
-  patchRequirementDraftSchedule: (
-    draftId: string,
-    body: RequirementDraftSchedulePatch,
-  ) => {
-    const payload: Record<string, unknown> = {}
-    if (body.kind !== undefined) payload.kind = body.kind
-    if (body.startAt !== undefined) payload.startAt = body.startAt
-    if (body.dueAt !== undefined) payload.dueAt = body.dueAt
-    if (body.progress !== undefined) payload.progress = body.progress
-    if (body.parentId !== undefined) {
-      payload.parentId = body.parentId == null ? '' : body.parentId
-    }
-    return req<RequirementDraft>(
-      `/workspace/requirement-drafts/${encodeURIComponent(draftId)}/schedule`,
-      { method: 'PATCH', body: JSON.stringify(payload) },
-    )
-  },
-  deleteRequirementDraft: (draftId: string) =>
-    req<{ status: string }>(
-      `/workspace/requirement-drafts/${encodeURIComponent(draftId)}`,
       { method: 'DELETE' },
     ),
 

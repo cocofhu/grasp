@@ -17,7 +17,6 @@ import {
   forgetShareUrl,
   remainingSecFromExpiresAt,
   shareApiErrorMessage,
-  shareStatusLabel,
 } from './gateShareLink'
 
 const response = (body: unknown, status = 200) =>
@@ -56,8 +55,6 @@ describe('gateShareLink additional coverage', () => {
     expect(remainingSecFromExpiresAt(undefined, undefined)).toBeUndefined()
     expect(formatRemainingSec(undefined, t)).toContain('expired')
     expect(formatRemainingSec(30, t)).toContain('remainingMinutes:1')
-    expect(shareStatusLabel({ state: 'revoked' }, t)).toContain('stateRevoked')
-    expect(shareStatusLabel({ state: 'expired' }, t)).toContain('stateExpired')
     expect(shareApiErrorMessage('permission_denied', t)).toContain('permissionDenied')
     expect(shareApiErrorMessage('', t)).toContain('shareFailed')
     expect(shareApiErrorMessage(new Error('backend detail'), t)).toBe('backend detail')

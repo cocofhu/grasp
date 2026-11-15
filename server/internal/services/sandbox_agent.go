@@ -345,7 +345,6 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 		ArtifactStoreMCP: true, MemoryStoreMCP: true, ContextStoreMCP: true,
 		TaskSchedulerMCP: true, PmProgressMCP: true,
 		PmWorkflowReadMCP: true, PmWorkflowWriteMCP: true, PmAgentFSMCP: true,
-		PmPrdManagerMCP: true,
 	}
 	out := make([]sandbox.MCPServerSpec, 0, len(in))
 	for _, sp := range in {
@@ -419,7 +418,7 @@ func BuildAgentPlatformMCPSpecs(agentName, sharedToken string) []sandbox.MCPServ
 }
 
 // BuildPmRoleMCPSpecs builds PM-only role MCP specs (pm-progress / pm-workflow-read /
-// pm-workflow-write / pm-agent-fs / pm-prd-manager).
+// pm-workflow-write / pm-agent-fs).
 // nil enabledMcps means defaults; an explicit empty list injects none.
 func BuildPmRoleMCPSpecs(sharedToken string, enabledMcps []string) []sandbox.MCPServerSpec {
 	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")

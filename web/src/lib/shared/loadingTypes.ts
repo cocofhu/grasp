@@ -28,15 +28,3 @@ export const DEFAULT_MIN_VISIBLE_MS: Record<LoadingMode, number> = {
 
 /** Default GET timeout for the shared loading layer only (not global api). */
 export const DEFAULT_LOADING_TIMEOUT_MS = 15_000
-
-export function resolveTerminalState(opts: {
-  aborted?: boolean
-  timedOut?: boolean
-  error?: unknown
-  empty?: boolean
-}): LoadingTerminalState {
-  if (opts.aborted) return 'cancelled'
-  if (opts.timedOut || opts.error) return 'error'
-  if (opts.empty) return 'empty'
-  return 'success'
-}

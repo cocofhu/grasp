@@ -3,12 +3,10 @@ import type {
   AgentCronJob,
   PmChatThread,
   ChatMessage,
-  ProgressCitation,
   AttachedContext,
   ClarifyImage,
 } from '../../shared/types'
 import { req, wsUrl } from '../httpCore'
-import type { SandboxView } from '../apiTypes'
 
 export const pmClient = {
   // PM Leader
@@ -40,8 +38,6 @@ export const pmClient = {
       method: 'POST',
       body: JSON.stringify(body || {}),
     }),
-  getPmThread: (tid: string) =>
-    req<PmChatThread>(`/workspace/pm/threads/${tid}`),
   deletePmThread: (tid: string) =>
     req<{ status: string }>(`/workspace/pm/threads/${tid}`, { method: 'DELETE' }),
   listPmMessages: (
@@ -56,37 +52,6 @@ export const pmClient = {
       `/workspace/pm/threads/${tid}/messages${q ? `?${q}` : ''}`,
     )
   },
-  appendPmMessage: (
-    tid: string,
-    body: {
-      role?: string
-      content: string
-      images?: ClarifyImage[]
-      citations?: ProgressCitation[]
-      attachedContext?: AttachedContext
-    },
-  ) =>
-    req<ChatMessage>(`/workspace/pm/threads/${tid}/messages`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  patchPmMessage: (
-    tid: string,
-    mid: string,
-    body: { status: 'ok' | 'failed' | string; failKind?: string },
-  ) =>
-    req<ChatMessage>(`/workspace/pm/threads/${tid}/messages/${mid}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
-  ensurePmSandbox: (
-    tid: string,
-    body?: { attachedContext?: AttachedContext; injectHistory?: boolean },
-  ) =>
-    req<{ sandbox: SandboxView; preamble?: string; thread: PmChatThread }>(
-      `/workspace/pm/threads/${tid}/sandbox`,
-      { method: 'POST', body: JSON.stringify(body || {}) },
-    ),
   /** Queue a PM turn: persists the user message (or reuses retryOf); the server readies the sandbox. */
   startPmTurn: (
     tid: string,

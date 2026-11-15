@@ -258,22 +258,6 @@ export function formatRemainingSec(
   return t('pages.gatesInbox.share.remainingMinutes', { n: mins })
 }
 
-export function shareStatusLabel(
-  st: GateShareInboxStatus | undefined,
-  t: (key: string, values?: Record<string, unknown>) => string,
-): string {
-  const state = st?.state || 'none'
-  if (state === 'active') {
-    return t('pages.gatesInbox.share.stateActive', {
-      remaining: formatRemainingSec(st?.remainingSec, t),
-    })
-  }
-  if (state === 'used') return t('pages.gatesInbox.share.stateUsed')
-  if (state === 'revoked') return t('pages.gatesInbox.share.stateRevoked')
-  if (state === 'expired') return t('pages.gatesInbox.share.stateExpired')
-  return t('pages.gatesInbox.share.stateNone')
-}
-
 type PublicGatePreviewImage = {
   mimeType?: string
   name?: string

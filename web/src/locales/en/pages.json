@@ -10,8 +10,6 @@
       "truncated": "Preview shows the first 2 MB. Download the file for the full content."
     },
     "dashboard": {
-      "title": "Start a pre-dev clarification in one sentence",
-      "subtitle": "Pick a Grasp workflow; the first message becomes the Run title",
       "placeholder": "Start your next iteration quickly",
       "placeholders": [
         "Start your next iteration quickly",
@@ -20,11 +18,8 @@
         "Copy or layout tweaks — one sentence is enough",
         "Attach a doc or screenshot to start clarifying"
       ],
-      "noWorkflows": "No workflows are available on Home. Enable Home visibility for a published workflow that starts with a clarify Agent.",
       "unpublishedWorkflows": "“{name}” has unpublished changes. Publish it to show it on Home.",
       "goPublish": "Open the editor to publish",
-      "goCanvas": "Open the canvas and connect Grasp after start",
-      "goWorkflows": "View all workflows",
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
@@ -52,7 +47,6 @@
       "sourceSolo": "Solo",
       "accountingIncomplete": "Some usage is incomplete, pending or from unverified historical records. These totals show recorded usage and may differ from actual consumption.",
       "title": "Token usage",
-      "subtitle": "Analyze token consumption, model usage and estimated costs across workflows, the assistant and Agent Studio.",
       "analysisRange": "Analysis scope",
       "sourceLabel": "Source",
       "unknownBadge": "Unknown",
@@ -69,8 +63,6 @@
       "emptyTitle": "No token data",
       "emptyHint": "No reported token usage for the current filters; unreported usage is not shown as zero.",
       "clearFilters": "Clear filters",
-      "sourceWorkflow": "Workflow",
-      "sourcePm": "Workspace management",
       "modelAll": "Model: all",
       "kpiTotal": "Total tokens",
       "kpiInOutCache": "Input / output",
@@ -202,15 +194,10 @@
       "fxNodeType": "Node type",
       "fxStatus": "Status",
       "fxPhase": "Phase",
-      "fxSource": "Source",
       "fxClearAll": "Clear all",
       "fxChipLabel": "{name}: {value}",
       "fxChipRemove": "Clear filter: {name}",
       "fxAllSources": "All sources",
-      "tabOverview": "Overview",
-      "tabBreakdown": "Breakdown",
-      "tabPatterns": "Timing",
-      "tabDetails": "Details",
       "workflowsTable": "Workflow details",
       "colWorkflow": "Workflow",
       "weekdays": {
@@ -292,7 +279,6 @@
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
       "tokenStats": {
-        "title": "Token stats",
         "windowAria": "Time window",
         "windows": {
           "24h": "Last 24 hours",
@@ -301,37 +287,8 @@
           "90d": "Last 90 days",
           "all": "All time"
         },
-        "loading": "Loading Token stats…",
-        "loadFailed": "Failed to load Token stats. Please retry.",
-        "retry": "Retry",
-        "trendTitle": "Usage trend · stacked by source",
-        "compositionTitle": "Usage composition",
-        "rankTitle": "Usage ranking",
-        "rankSub": "Workflow top + Workspace assistant",
-        "rankHint": "\"Other\" = remaining workflows outside the top (not Workspace assistant). Workspace assistant is a separate row.",
-        "grainDay": "Daily · local timezone",
-        "grainWeek": "Weekly · local timezone",
-        "grainHour": "Hourly · local timezone",
-        "compTotal": "Total {n}",
-        "donutCenter": "Total",
-        "other": "Other",
         "workflow": "Workflow",
-        "pm": "Workspace assistant",
-        "value": "Value",
-        "share": "Share",
-        "emptyTrendTitle": "No Token data",
-        "emptyTrendHint": "No reported Token usage in this window (includes workflows and Workspace assistant); unreported usage is not shown as 0",
-        "emptyCompTitle": "No usage composition",
-        "emptyCompHint": "No reported usage composition data yet",
-        "emptyRankTitle": "No usage ranking",
-        "emptyRankHint": "No reported Token usage yet; ranking placeholders are not shown",
-        "modelCompositionTitle": "Model composition",
-        "modelRankTitle": "Model usage ranking",
-        "modelRankSub": "Top10 · rest → other",
-        "modelOther": "other (remaining models)",
-        "filledTag": "includes filled data",
-        "emptyModelCompHint": "No model composition yet",
-        "emptyModelRankHint": "No model ranking yet"
+        "pm": "Workspace assistant"
       },
       "segments": {
         "label": "Filter by status",
@@ -341,20 +298,16 @@
         "completed": "Completed"
       },
       "columns": {
-        "active": "In progress",
         "running": "Running",
         "waitingHuman": "Waiting for human",
         "completed": "Completed"
       },
       "hints": {
-        "active": "running + waiting for human",
-        "completedOnly": "completed only",
         "inProgress": "In progress",
         "inReview": "Needs attention",
         "doneRecent": "Recent 20"
       },
       "empty": {
-        "active": "No in-progress requirements",
         "running": "No running requirements",
         "waitingHuman": "No requirements waiting for human",
         "completed": "No completed requirements yet"
@@ -372,7 +325,6 @@
         "currentNode": "Current node",
         "progress": "Progress",
         "duration": "Duration",
-        "hint": "Cards open a summary first; open the full run detail when ready. Closing keeps you on the board.",
         "dismiss": "Keep browsing",
         "openDetail": "Open run detail"
       },
@@ -394,26 +346,19 @@
     },
     "onboarding": {
       "title": "First-time setup",
-      "titleCreate": "New workspace setup",
       "titleRetry": "Continue setup",
       "railCap": "Steps",
       "prev": "Back",
       "next": "Next",
-      "skip": "Skip",
       "later": "Maybe later",
       "dismissedHint": "It won't open automatically again. Click \"New workflow\", then \"Finish the guide\", whenever you're ready.",
       "generate": "Generate setup",
       "generating": "Generating…",
       "close": "Close",
-      "cta": "Finish install setup",
-      "emptyTitle": "Finish first-time setup",
       "emptyDesc": "Configure the model backend, API key and Git, create the Clarify / Implement / Test & review / Deliver Agents plus an empty Solo Agent, and publish the Default Workflow. Does not start a run.",
-      "emptyDescCreate": "Configure the model backend, API key and Git, create this workspace's four Agents (prefixed with the workspace name), add an empty Solo Agent, and publish the Default Workflow. Does not start a run.",
-      "workflowName": "Default Workflow",
       "steps": {
         "prefs": "Preferences",
         "model": "Configure coding tool",
-        "key": "API key",
         "git": "Git",
         "gitCredentials": "Git credentials",
         "team": "Team",
@@ -429,42 +374,14 @@
         "themeLight": "Light"
       },
       "acp": {
-        "meta": "Choose a general model API or a coding tool. Keys are stored in this workspace and shared by all Agents.",
-        "region": "Region",
-        "paths": {
-          "apiKey": {
-            "title": "Use a model vendor API key",
-            "desc": "You already have a key from OpenAI, Anthropic, DeepSeek or another vendor. Pick any model, or connect your own compatible service."
-          },
-          "cli": {
-            "title": "Use a coding tool",
-            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, DeepSeek Harness (DSH), or Kimi Code. DSH takes a DeepSeek API key, Kimi Code a subscription-console API key (kimi.com/code/console for China, kimi.ai/code/console for International), Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
-          }
-        },
-        "cliLabel": "Choose a coding tool",
-        "apiKeyVendorsLabel": "Common model vendors",
-        "apiKeyVendorsHint": "You can search vendors and models in the next step, or enter the address of your own service."
-      },
-      "apiKey": {
-        "meta": "Enter the API key for the selected service. This is required.",
-        "required": "Please enter an API Key.",
-        "hint": "Stored only in this workspace, never shown in logs or artifacts.",
-        "howTo": "How to get it",
-        "placeholder": "Paste your API key",
-        "codexMeta": "Signing in to ChatGPT with a device code in workspace credentials is recommended; you can also paste the login file produced by codex login on your computer (it must include refresh_token). This is required.",
-        "codexLabel": "ChatGPT login file",
-        "codexPlaceholder": "Paste the full contents of ~/.codex/auth.json",
-        "codexRequired": "Paste the Codex login file first.",
-        "change": "Change backend",
-        "vendorTitle": "Model vendor API key"
+        "region": "Region"
       },
       "git": {
         "meta": "Set up a code repository with its credential and commit author; it is bound to the default workflow. You can skip and add one later in Settings → Repositories.",
         "repoCredSection": "Repository and access credentials",
         "skip": "Skip",
         "unskip": "Configure now",
-        "skippedHint": "Skipped: add a repository later in Settings → Repositories and bind it in workflow settings.",
-        "foot": "Credentials stay in this workspace and are never included when an Agent is exported."
+        "skippedHint": "Skipped: add a repository later in Settings → Repositories and bind it in workflow settings."
       },
       "gitCredentials": {
         "meta": "Private repositories need a credential: create one below and pick it for the repository on the next step. Public repositories can skip ahead.",
@@ -476,7 +393,6 @@
         "emailLabel": "Email",
         "namePlaceholder": "e.g. Ada Lovelace",
         "emailPlaceholder": "you{'@'}example.com",
-        "hint": "Agents sign commits in this repository with this name and email.",
         "chip": "Commit signature",
         "default": "Sandbox default"
       },
@@ -492,20 +408,11 @@
         "browserOff": "browser tools off"
       },
       "repo": {
-        "section": "Target repository",
-        "credSection": "Access credentials",
         "urlLabel": "Repository URL",
         "branchLabel": "Branch",
         "branchPlaceholder": "empty uses the default branch",
-        "hint": "Leave empty to pick a repository when you start a run.",
         "cloneTo": "Runs download the repository into the {dir} folder of the workspace.",
-        "chip": "Repo",
-        "githubToken": "GitHub access token",
-        "gitlabToken": "GitLab access token",
-        "gitlabUrl": "GitLab address",
-        "sshKey": "SSH private key",
-        "knownHosts": "Trusted hosts (optional)",
-        "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the workspace credentials."
+        "chip": "Repo"
       },
       "team": {
         "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model group for each.",
@@ -513,18 +420,14 @@
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
         "required": "Required",
-        "optional": "Optional",
         "interactionClarify": "Multi-turn chat",
         "interactionAuto": "Runs on its own",
         "review": "Human review",
         "preview": "App preview",
         "noPreview": "No preview",
-        "writes": "Writes",
         "nameLabel": "Name",
         "namePlaceholder": "Agent name",
         "modelLabel": "Model group",
-        "modelPlaceholder": "Empty = workspace default",
-        "modelInherit": "Empty = {model}",
         "foot": "All four are created. Names are locked and cannot be deleted or renamed on the Agents page.",
         "toastFixNames": "Fix the Agent names first",
         "nameIssues": {
@@ -575,12 +478,9 @@
         "failLoop": "When Test & review fails, the work goes back to Implement (up to 3 times).",
         "noReview": "Test & review is not selected: the workflow moves on right after Implement.",
         "summary": "Will write",
-        "keyOn": "Set",
         "repoSkip": "Not set",
         "gitSkip": "Skipped",
-        "reuseHint": "Resources with the same name are reused and updated, never duplicated. Nothing runs automatically.",
         "gitCred": "Repository credential",
-        "agentsValue": "{n}",
         "wfLabel": "Workflow",
         "wfValue": "Default Workflow (published)",
         "inputSub": "Your request",
@@ -605,7 +505,6 @@
         "written": "Configuration written"
       },
       "toastOk": "Generated — Run not started automatically",
-      "toastNeedKey": "Please enter an API Key",
       "toastErr": "Bootstrap failed",
       "railSub": "Model, team and workflow in a few minutes.",
       "railFoot": "You can change all of this later.",
@@ -622,15 +521,6 @@
         "credentials": "Connect a coding tool or API account"
       },
       "prefsMeta": "Interface language and theme, plus the preview abilities Agents get.",
-      "prefsMetaCreate": "Workspace name, plus the preview abilities Agents get.",
-      "ready": "Ready",
-      "modelSetup": {
-        "description": "Choose a model using the credentials saved in the previous step, or select an existing model configuration.",
-        "selected": "Default team model",
-        "selectedHint": "All four Agents use this model by default. You can customize each later.",
-        "title": "Add a model",
-        "hint": "Choose a coding tool and a saved credential, then select the model."
-      },
       "solo": {
         "emptyShort": "Empty Agent for Solo",
         "description": "An empty Solo Agent is created by default for Solo conversations, using the model and Git settings selected above."
@@ -649,15 +539,11 @@
       "toastBadGitUser": "Invalid commit name or email"
     },
     "tokenByModel": {
-      "tipTitle": "Usage tip",
-      "close": "Close",
       "sourceUpstream": "upstream · reported",
       "sourceBridge": "via ACP_BRIDGE_MODEL",
       "sourceUnknown": "Unknown model",
       "unknownBadge": "Unknown",
       "modelTableTitle": "Usage by model",
-      "colModel": "Model",
-      "colSource": "Source",
       "colSubtotal": "Subtotal"
     },
     "workspace": {
@@ -676,116 +562,6 @@
         "agentsRequiredTitle": "Can't create a workflow yet",
         "agentsRequired": "A new workflow needs these four Agents. Still missing: {missing}. Finish the guide first.",
         "goOnboarding": "Finish the guide"
-      },
-      "tabRequirementDrafts": "Requirement drafts",
-      "requirementDrafts": {
-        "filterOpen": "Open",
-        "filterDone": "Done",
-        "filterAll": "All",
-        "new": "New",
-        "searchPh": "Search by title…",
-        "listEmpty": "No matching drafts. Try another filter, or create one.",
-        "emptyDetail": "No draft selected. Pick one on the left, or click New to start with a title placeholder.",
-        "emptyBodyPreview": "Body is empty — you can save a title placeholder first.",
-        "editLabel": "Edit draft",
-        "statusOpen": "Open",
-        "statusDone": "Done",
-        "created": "Created",
-        "updated": "Updated",
-        "markDone": "Mark as done",
-        "markOpen": "Mark as open",
-        "titleLabel": "Title (required)",
-        "titlePh": "e.g. Capture payment retry requirement",
-        "titleRequired": "Title cannot be blank after trimming. Enter a title before saving.",
-        "bodyLabel": "Markdown body (optional) · source + live preview",
-        "bodyPh": "Supports headings, lists, links, and image URLs…",
-        "source": "Source",
-        "preview": "Preview",
-        "unsaved": "Unsaved",
-        "leaveTitle": "Discard unsaved changes?",
-        "leaveBody": "Cancel to stay on this draft and keep the buffer. Confirm to discard and continue.",
-        "leaveConfirm": "Discard and continue",
-        "noUnsavedToast": "No unsaved changes",
-        "findPh": "Find in source…",
-        "findNext": "Next",
-        "findClose": "Close",
-        "findNoMatch": "No matches",
-        "find": "Find",
-        "collapsePreview": "Collapse preview",
-        "expandPreview": "Expand preview",
-        "sashTitle": "Drag to resize",
-        "tbH1": "Heading 1",
-        "tbH2": "Heading 2",
-        "tbH3": "Heading 3",
-        "tbBold": "Bold Ctrl/Cmd+B",
-        "tbItalic": "Italic Ctrl/Cmd+I",
-        "tbUl": "Bullet list",
-        "tbOl": "Numbered list",
-        "tbLink": "Link",
-        "tbCode": "Inline code",
-        "tbFence": "Code block",
-        "tbTable": "Table template",
-        "tbFind": "Find Ctrl/Cmd+F",
-        "deleteTitle": "Permanently delete?",
-        "deleteBody": "This cannot be restored from this feature. Archiving as done and deleting are different paths — permanently remove this draft?",
-        "deleteConfirm": "Delete permanently",
-        "createdToast": "Created an open draft (edit the title, then save)",
-        "savedToast": "Saved",
-        "archivedToast": "Archived as done",
-        "reopenedToast": "Reopened",
-        "deletedToast": "Permanently deleted",
-        "loadFailed": "Failed to load requirement drafts",
-        "createFailed": "Failed to create requirement draft",
-        "saveFailed": "Failed to save requirement draft",
-        "statusFailed": "Failed to update status",
-        "deleteFailed": "Failed to delete requirement draft",
-        "viewEdit": "Edit",
-        "viewGantt": "Gantt",
-        "viewMilestones": "Milestones",
-        "kindRequirement": "Requirement",
-        "kindMilestone": "Milestone",
-        "newModalTitle": "New draft",
-        "newModalHint": "Pick a type first. Cancel does not create a draft.",
-        "newModalContinue": "Create",
-        "milestoneDueLabel": "Milestone date (required)",
-        "milestoneDueRequired": "A milestone date is required to create.",
-        "scheduleBlockTitle": "Schedule (saves immediately)",
-        "scheduleHint": "Dates, progress, and parent save immediately; title and body still need Save.",
-        "collapseSchedule": "Collapse schedule",
-        "expandSchedule": "Expand schedule",
-        "scheduleSaved": "Schedule updated",
-        "startAtLabel": "Start",
-        "dueAtLabel": "Due",
-        "progressLabel": "Progress",
-        "parentLabel": "Parent requirement",
-        "parentNone": "None (top-level)",
-        "kindLabel": "Type",
-        "openBody": "Open body",
-        "ganttEmptyScheduled": "No scheduled items for this filter. Add dates from Unscheduled, or change filters.",
-        "unscheduledTitle": "Unscheduled",
-        "scaleDay": "Day",
-        "scaleWeek": "Week",
-        "scaleMonth": "Month",
-        "inspectorEmpty": "Select a name row, bar, or diamond to edit schedule.",
-        "inspectorTitle": "Inspector",
-        "milestonesEmpty": "No milestones for this filter. Create one, or change filters.",
-        "todayLabel": "Today",
-        "scheduleFailed": "Failed to update schedule",
-        "errDueBeforeStart": "Due date must not be before start date.",
-        "errInvalidDate": "Invalid date. Use YYYY-MM-DD.",
-        "errMilestoneDue": "Milestone date is required.",
-        "errInvalidParent": "Invalid parent: only top-level requirements, one level only.",
-        "errHasChildren": "This item still has children, so it cannot become a milestone or nest under another parent.",
-        "errKindNeedsDate": "Converting to milestone requires an existing start or due date.",
-        "errInvalidProgress": "Progress must be an integer from 0 to 100.",
-        "errInvalidKind": "Invalid type.",
-        "contextualParentHint": "Context parent",
-        "groupRowHint": "Group (unscheduled itself)",
-        "emptyTitle": "Turn an idea into the next step",
-        "emptyHint": "Start with a draft, then add details, dates and milestones.",
-        "noMatchesTitle": "No matching drafts",
-        "noMatchesHint": "Try another keyword or adjust the filter to find other requirements.",
-        "clearFilters": "Clear filters"
       },
       "notify": {
         "deliverySection": "Notification delivery",
@@ -834,7 +610,6 @@
         "updateFailed": "Failed to update home visibility"
       },
       "audit": {
-        "description": "Trace workflow and system actions, tool calls and execution results.",
         "title": "Audit",
         "loading": "Loading audit events…",
         "loadFailed": "Failed to load audit",
@@ -919,7 +694,6 @@
         "mcpWorkflowRead": "Same-workspace workflow read queries (list / graph / versions / runs / pending gates)",
         "mcpWorkflowWrite": "Same-workspace workflow writes (create / update / publish / start / approve / cancel)",
         "mcpAgentFs": "List workspace agents + edit same-workspace Agent workspaces (host-side, not Run sandbox; visible after Studio refresh)",
-        "mcpPrdManager": "Workspace assistant only · list / get / create requirement drafts",
         "gateAutoVar": "Auto-invoke Workspace assistant on gates · switch variable",
         "gateAutoVarPlaceholder": "Workspace boolean variable name, e.g. pm_auto_gate",
         "gateAutoVarHint": "Name of a run variable that must exist and be truthy. Leave empty to disable. Saving does not require the variable to exist yet.",
@@ -1231,20 +1005,9 @@
       "colName": "Name",
       "colStatus": "Status",
       "colUpdated": "Updated",
-      "colVarName": "Name",
-      "colType": "Type",
-      "colDefault": "Default",
-      "plain": "Plain",
-      "secret": "Secret",
-      "varsEmptyTitle": "No workflow variables yet",
-      "varsEmptyDesc": "Add a row to configure workspace-level defaults.",
       "sharedAgent": {
         "extendHint": "Workspace Runs and Agent Studio Chat test overlay Agent settings on shared files, MCP and environment variables. Each Agent separately opts into model and Git defaults.",
-        "discard": "Discard",
-        "genericCredentialTitle": "Workspace default credential",
-        "genericCredentialHint": "An Agent that already chose a credential uses its own. One that has not, and uses the same kind, uses this one.",
-        "runtimeDesc": "Which account and model this workspace's Agents use by default.",
-        "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
+        "discard": "Discard"
       },
       "credentials": {
         "stepKind": "Choose type",
@@ -1258,9 +1021,7 @@
           "ssh": "SSH access",
           "other": "Other credentials"
         },
-        "eyebrow": "SECURITY CREDENTIALS",
         "title": "Workspace credentials",
-        "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
         "empty": "This workspace has no managed credentials yet.",
         "add": "Add",
         "addModel": "New model group",
@@ -1288,12 +1049,6 @@
         "knownHostsEmpty": "Not provided",
         "knownHostsConfigured": "Known hosts configured",
         "knownHostsNotConfigured": "No known hosts",
-        "pickTitle": "Credential to use",
-        "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
-        "codingPickHint": "When nothing is selected, the Agent uses the workspace default credential. When one is selected, only that one is used.",
-        "pickEmpty": "This kind has no saved credential yet.",
-        "pickEmptyNamed": "No saved {kind} credential yet.",
-        "pickClear": "Clear selection",
         "kinds": {
           "cursor": "Cursor",
           "claude_code": "Claude Code",
@@ -1307,22 +1062,11 @@
           "deepseek_harness": "DeepSeek Harness",
           "kimi_code": "Kimi Code"
         },
-        "summary": {
-          "total": "Credential slots",
-          "configured": "Configured",
-          "apiKeys": "Model slots"
-        },
-        "groups": {
-          "other": {
-            "title": "Other"
-          }
-        },
         "typeAi": "Model",
         "typeGit": "Repository",
         "typeSsh": "SSH",
         "typeMcp": "MCP",
         "typeCustom": "Custom",
-        "type": "Type",
         "value": "Credential value",
         "configured": "Configured",
         "notConfigured": "Not configured",
@@ -1444,24 +1188,15 @@
           }
         }
       },
-      "varName": "Name",
-      "varValue": "Default",
-      "varDescPlaceholder": "Description (optional)",
-      "varOptionsPlaceholder": "Options, comma-separated, e.g. a, b, c",
-      "selectPlaceholder": "Select…",
-      "addRow": "Add row",
       "saved": "Saved",
       "nameLabel": "Name",
       "descLabel": "Description (optional)"
     },
     "workflowList": {
       "title": "Workflows",
-      "subtitle": "Visual dev workflows · GitLab/repo optional (empty = artifact-only flow)",
       "deleteTitle": "Delete workflow · {name}",
       "deleteWarning": "This cannot be undone: deletes all versions, runs, artifacts, and gates for this workflow.",
       "deleteConfirm": "Delete workflow {name}?",
-      "repoNeeds": "Required",
-      "repoNotNeeded": "Not required",
       "moreActions": "More actions",
       "emptyHint": "Start with a blank workflow or import a configuration.",
       "noMatchesHint": "Try another keyword or clear your search to see all workflows.",
@@ -1484,10 +1219,7 @@
         "noEdit": "No drag · no inspector editing"
       },
       "publishFailed": "Publish failed:",
-      "hiddenFromHome": "This workflow has unpublished changes and is hidden from Home until you publish it.",
       "runDraftHint": " · saves draft before start",
-      "singleInputOnly": "A workflow may have only one input node",
-      "duplicateSuccessEdge": "This node already has an unconditional success edge; the workflow takes only one path. To split, add a condition on the edge or use a branch node.",
       "graphErrors": {
         "missingInput": "Missing input node: exactly one input is required as the start",
         "tooManyInputs": "Too many input nodes: only one input is allowed",
@@ -1503,7 +1235,6 @@
       },
       "nodeChips": {
         "agent": "Agent {name}",
-        "artifact": "Artifact {name}",
         "routes": "{n} routes",
         "variables": "{n} variables",
         "actions": "{n} actions"
@@ -1518,94 +1249,18 @@
       "publish": {
         "title": "Publish workflow · {name}"
       },
-      "canvas": {
-        "emptyTitle": "Drag nodes from the left",
-        "emptyDesc": "Build your dev workflow",
-        "defaultBranch": "ELSE",
-        "branchN": "Branch {n}",
-        "checkpoint": "CP",
-        "checkpointTitle": "Rollback checkpoint",
-        "gateActionFallback": "No goto → route by when",
-        "structuredExitFallback": "No goto → route by when",
-        "appPreviewSubtitle": "Pick annotate · Await confirmation",
-        "appPreviewBody": "Confirm & continue · inbox",
-        "humanGateSubtitle": "Human approval",
-        "humanGateBody": "Confirm & continue · inbox"
-      },
-      "palette": {
-        "searchPlaceholder": "Search nodes",
-        "footerHint": "Drag nodes onto the canvas. Repository (GitLab/generic git) is optional for artifact-only flows."
-      },
-      "edgeInspector": {
-        "title": "Transition",
-        "transitionKind": "Transition kind",
-        "whenGuard": "When guard",
-        "whenPlaceholder": "action == 'approve'  {'|'}  vars.attempt < vars.max_ci_fix  {'|'}  json(\"ci_result.json\").success",
-        "whenHelp": "Route when true. Supports vars.x / nodes.x.outputs.y / exists() / json(). Use branch/set_var for complex conditions.",
-        "carry": "Variables / errors carried upstream",
-        "carryPlaceholder": "last_error, ci_failures",
-        "carryHelp": "Comma-separated. Downstream prompts may use {'{{vars.last_error}}'}.",
-        "maxAttempts": "maxAttempts",
-        "maxAttemptsHelp": "Stop rolling back after this many attempts; target should be a checkpoint.",
-        "edgeLabel": "Edge label (canvas)",
-        "edgeLabelPlaceholder": "Approve / Revise / Retry",
-        "kinds": {
-          "success": {
-            "label": "Success transition",
-            "desc": "After success, when guard is true"
-          },
-          "failure": {
-            "label": "Failure transition",
-            "desc": "When the node fails"
-          },
-          "rollback": {
-            "label": "Rollback transition",
-            "desc": "Return to checkpoint with variable snapshot"
-          }
-        }
-      },
       "inspector": {
-        "nodeSuffix": "node",
         "deleteNode": "Delete node",
-        "tabConfig": "Config",
-        "tabHelp": "Help",
         "nodeName": "Node name",
-        "noAgents": "No agents yet — create one in Agent Studio",
-        "emptyAgent": "(empty · no Agent)",
-        "agentProfileHint": "Choose any Agent in the workspace, or leave this empty.",
-        "staleBannerTitle": "stale reference",
-        "staleBannerBody": "Current Agent profile \"{name}\" is {reason}. Pick a same-workspace Agent before saving.",
-        "staleReasons": {
-          "foreign": "not this workspace",
-          "deleted": "deleted"
-        },
         "selectBody": "— Select content to show —",
         "connectUpstreamForBody": "Connect upstream plan/artifact nodes first",
-        "selectResult": "— Select final result source —",
-        "connectUpstreamForResult": "Connect upstream nodes first",
         "newAction": "New action",
         "defaultFieldLabel": "Field",
-        "promptVarHint": "Connect upstream nodes / define globals to insert references here",
-        "outputs": "Output variables",
-        "varGroups": {
-          "global": "Global variables",
-          "upstream": "Upstream outputs"
-        },
         "actions": {
           "idPlaceholder": "id",
           "labelPlaceholder": "Button label",
-          "goto": "Go to",
-          "gotoDefault": "(Route by when / action)",
           "requireForm": "Require form",
-          "requireFormHint": "When enabled, this action requires the form before submit",
-          "add": "Add action"
-        },
-        "conditional": {
-          "whenVar": "When variable",
-          "noInject": "(Do not inject)",
-          "whenPresent": "exists and is non-empty",
-          "textPlaceholder": "Text appended to prompt end",
-          "help": "For ReAct backfill after a human gate writes a global variable."
+          "requireFormHint": "When enabled, this action requires the form before submit"
         },
         "form": {
           "keyPlaceholder": "key",
@@ -1613,14 +1268,7 @@
           "add": "Add field"
         },
         "cases": {
-          "priority": "Priority {n} · first match wins",
-          "deleteBranch": "Delete branch",
-          "whenPlaceholder": "exists(\"design.md\") / json(\"x.json\").status == \"ok\"",
-          "elseFallback": "When none of the above match",
-          "insert": "Insert:",
-          "goto": "Go to",
-          "selectTarget": "Select target…",
-          "addElseIf": "Add ELSE IF branch"
+          "deleteBranch": "Delete branch"
         },
         "variables": {
           "namePlaceholder": "Variable name e.g. feature",
@@ -1640,8 +1288,7 @@
         "assignments": {
           "selectVar": "Select variable…",
           "exprPlaceholder": "Expression e.g. vars.attempt + 1 / true / \"done\"",
-          "add": "Add assignment",
-          "noVars": "No global variables yet — add them on the Input node."
+          "add": "Add assignment"
         },
         "outputSources": {
           "emptySelected": "No sources selected — runtime will show \"Workflow complete.\"",
@@ -1662,8 +1309,6 @@
     "runList": {
       "title": "Run history",
       "subtitle": "Filter by workflow and status",
-      "tagsLabel": "Tags",
-      "queued": "queued",
       "cancelConfirm": "Only this run is stopped; the list row status will refresh after success.",
       "deleteConfirm": "Only this run is removed; the list will refresh after success.",
       "deleteSuccess": "Run deleted; list refreshed",
@@ -1684,13 +1329,11 @@
       "moreActions": "More actions"
     },
     "runDetail": {
-      "title": "Run #{id}",
       "tagsLabel": "Tags",
       "exportLogs": "Export logs",
       "loadingWorkflow": "Loading…",
       "loadingRun": "Loading run details…",
       "loadingChip": "Loading…",
-      "switchingNode": "Switching node…",
       "loadFailedTitle": "Unable to load run details right now",
       "loadFailedDesc": "A network or service error occurred. Please retry shortly. Contact an admin if it persists.",
       "loadFailedChip": "Load failed",
@@ -1762,7 +1405,6 @@
         "artifacts": "Artifacts"
       },
       "sandboxEnv": {
-        "title": "Run sandbox env snapshot",
         "hint": "Bound at start, read-only; secrets are masked.",
         "empty": "This Run has no run-level sandbox env.",
         "key": "Key",
@@ -1790,28 +1432,18 @@
       }
     },
     "gatesInbox": {
-      "title": "Conversation",
       "processedBanner": "Item already processed — removed from inbox; your draft/form is preserved.",
-      "gateType": "Human gate",
-      "clarifyType": "Needs clarify",
-      "reviewType": "Needs review",
-      "previewType": "App Preview",
-      "preflightType": "Preflight",
-      "startingType": "Starting",
-      "replyingType": "Replying",
       "startFailedTitle": "Sandbox failed to start",
       "startFailedDesc": "This approval's sandbox never came up and the run stopped. Open the run detail to see why.",
       "startFailedDismiss": "Dismiss",
       "loadingRun": "Loading run details…",
       "listLoadingHint": "Loading conversation…",
-      "reviewFinished": "Confirmed and advanced",
       "reviewFinishedPending": "Confirmed and advanced; list not updated yet — refresh shortly",
       "reviewFinishFailed": "Failed to confirm and advance; please retry",
       "share": {
         "copyLink": "Copy temp link",
         "copyLinkAria": "Copy temporary approval link",
         "shareApproval": "Share approval",
-        "shareApprovalAria": "Open share-approval link manager",
         "createCopy": "Create and copy link",
         "createCopyAria": "Create a temporary approval link and copy it",
         "createOnly": "Create link",
@@ -1839,17 +1471,11 @@
         "clipboardFallback": "Clipboard unavailable. Select the URL below and copy it manually.",
         "urlHiddenUntilCopy": "The full link can be copied after create. Refreshing this tab still lets you copy the same URL.",
         "copyUnavailable": "Cannot copy the same URL again. You can only regenerate or revoke (regenerate immediately revokes the old link).",
-        "needRegenToCopy": "The full URL is not available here. Regenerate or revoke — do not treat regenerate as a copy shortcut.",
         "regenerate": "Regen (inherit preset)",
         "revoke": "Revoke now",
         "confirmRegen": "Regenerating immediately revokes the old link and restarts the same TTL and permission preset from now. Continue?",
         "confirmRevoke": "The link will stop working immediately. Revoke now?",
         "usedReadonly": "Approval already finished. This link was used and cannot be created again.",
-        "stateNone": "Not created",
-        "stateActive": "Active · {remaining}",
-        "stateUsed": "Used",
-        "stateRevoked": "Revoked",
-        "stateExpired": "Expired",
         "expired": "Expired",
         "remainingDays": "{n}d",
         "remainingHours": "{n}h",
@@ -1885,16 +1511,13 @@
       "badgeReview": "External review",
       "badgeClarify": "Pending clarification",
       "kindHintClarify": "External clarification",
-      "heading": "Approval workbench",
       "visualProduct": "Visual page artifact",
       "structuredProduct": "Structured artifact",
       "appPreviewProduct": "App preview",
-      "appPreviewHint": "Remote preview is temporarily unavailable. Please retry.",
       "appPreviewMobileHint": "Mobile browsers do not provide full remote desktop or picking. Open this link on a desktop browser.",
       "appPreviewUnavailable": "Remote preview is unavailable or the connection failed. Please retry.",
       "appPreviewLinkInactive": "This share link is no longer valid. Remote desktop and picking are unavailable.",
       "emptyProduct": "No redacted artifact to review",
-      "emptyTurns": "No conversation yet",
       "sessionEnded": "Session ended",
       "sessionEndedHint": "Session ended. You can only confirm and advance",
       "sessionEndedHintGate": "Session ended. You can only confirm and advance or reject",
@@ -1904,21 +1527,12 @@
       "reactOnlyDeadendBody": "The session has ended, so ReAct replies are unavailable. This link also forbids confirm / reject advance. Wait for the link to expire, or ask an admin to revoke / mint a new one.",
       "sessionEndedHintReactOnly": "Session ended. This link forbids confirm / reject advance",
       "remaining": "{remaining} left",
-      "approve": "Confirm and advance",
       "reject": "Reject",
-      "confirm": "Confirm and advance",
-      "approveAria": "Confirm and advance",
       "rejectAria": "Reject and explain why",
-      "confirmAria": "Confirm and advance this review",
-      "confirmHint": "Accept the current persisted product and continue (no Agent)",
-      "confirmHintClarify": "The system will wrap up, write the structured requirement, then advance. This may wait on the Agent.",
       "clarifyNotFinished": "Clarification is not finished. Keep answering, then confirm again. The link remains valid.",
       "upstreamEmpty": "No upstream context to compare",
-      "nameLabel": "Your name (required, audit only)",
       "namePh": "Enter your name",
-      "commentLabel": "Comment / reason",
       "commentPh": "Required to confirm or reject",
-      "commentRequired": "Name and comment are required",
       "auditRequired": "Name and comment are required",
       "unavailable": "Cannot submit. Refresh and try again.",
       "replyFailed": "Send failed. The link remains valid — try again.",
@@ -1929,7 +1543,6 @@
       "doneConfirmed": "Confirmed",
       "busy": "Review is in progress. Try again shortly",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it.",
-      "abortAndConfirm": "Abort current turn and confirm",
       "validationFailed": "Product validation failed. The link remains valid — try again shortly",
       "doneHint": "This link is now invalid. You can close this page.",
       "expired": "This link has expired",
@@ -1942,7 +1555,6 @@
       "invalidHint": "This link is invalid. Ask the sender whether it is still valid.",
       "loading": "Loading…",
       "submitting": "Submitting…",
-      "confirming": "Confirming…",
       "networkError": "Network error. Please try again.",
       "securityCheckFailed": "Security check failed. Please try Confirm and advance again.",
       "linkInvalid": "This link is no longer valid. Please reopen the review link.",
@@ -1952,11 +1564,9 @@
     },
     "notifications": {
       "title": "Notifications",
-      "subtitle": "Review completed and failed workflows and their results.",
       "loading": "Loading notifications…",
       "filterEmpty": "No notifications match this filter",
       "filterEmptyHint": "Try All / Unread / Read",
-      "pageRange": "Page {page} · {from}–{to} / {total}",
       "pagerSummary": "{total} items · {pageSize} per page",
       "filter": {
         "all": "All",
@@ -1966,7 +1576,6 @@
     },
     "artifacts": {
       "title": "Artifacts",
-      "subtitle": "Browse, find and download files from workflows and conversations.",
       "treeTitle": "Artifact sources",
       "treeSearchPlaceholder": "Search workflows or sessions…",
       "sessionArtifacts": "Agent session artifacts",
@@ -1981,37 +1590,6 @@
       "newestFirst": "Newest first",
       "noMatchingSources": "No matching sources"
     },
-    "integrations": {
-      "title": "Integrations",
-      "subtitle": "Built-in MCP always available · repo/CI secrets (e.g. GITLAB_TOKEN) can only be configured in Workspace credentials; env values can reference {'${vars.NAME}'}",
-      "sectionTitle": "Built-in MCP · run-scoped injection",
-      "noConfigNeeded": "No setup required",
-      "alwaysAvailable": "Always available"
-    },
-    "triggers": {
-      "title": "Triggers",
-      "subtitle": "Manual trigger only today; others on the roadmap pending backend support",
-      "available": "Available now",
-      "planned": "Planned",
-      "items": {
-        "manual": {
-          "type": "Manual",
-          "desc": "Start from UI · POST /api/workflows/:id/runs"
-        },
-        "webhook": {
-          "type": "Webhook",
-          "desc": "POST /hooks/{id} + HMAC (planned)"
-        },
-        "cron": {
-          "type": "Cron",
-          "desc": "Scheduled runs (planned)"
-        },
-        "gitlab": {
-          "type": "GitLab events",
-          "desc": "Issue/MR comment trigger (planned)"
-        }
-      }
-    },
     "settings": {
       "followGateway": "Follow gateway",
       "title": "General",
@@ -2019,8 +1597,6 @@
       "saved": "Saved",
       "workspaceSaveFailed": "Workspace information failed to save: {reason}",
       "platformSaveFailed": "Platform settings failed to save: {reason}",
-      "loadingTitle": "Loading…",
-      "loadingDesc": "Loading platform settings…",
       "loadFailed": "Load failed",
       "saveFailed": "Save failed",
       "usageRefreshFailed": "Usage refresh failed",
@@ -2228,19 +1804,15 @@
     },
     "agentStudio": {
       "toolPicker": {
-        "title": "Coding tool",
         "site": "Service region"
       },
-      "title": "Agent Studio",
       "errorPrefix": "Error:",
-      "empty": "No agents yet. Use \"Create Agent team\" for a full roster, or \"New Agent\" for a single one.",
       "emptyTeamTitle": "Launch a full team from one entry",
       "emptyTeamDesc": "After you fill workspace background and runtime config, a sandbox creates the workspace, PM, and 4 engineers.",
       "emptyTeamCta": "Create Agent team",
       "emptyTeamOrSingle": "or create a single Agent",
       "emptyWorkspaceTitle": "No agents in this workspace yet",
       "emptyWorkspaceDesc": "Create an Agent bound to this workspace. Teams are set up when you create the workspace.",
-      "createTeam": "Create Agent team",
       "unsaved": "Unsaved",
       "saved": "Saved",
       "tabs": {
@@ -2262,24 +1834,10 @@
         "title": "Agents",
         "searchPlaceholder": "Search agents",
         "empty": "No workspaces yet. Create a workspace first.",
-        "createAgentHere": "New agent in this workspace",
-        "manage": "Manage",
-        "manageTitle": "Agent management",
-        "manageIntro": "All agents. Use Rename here to change the identity name; Delete permanently destroys the entity.",
-        "manageEmpty": "No agents",
-        "manageRename": "Rename",
-        "manageSearchPlaceholder": "Search agent names",
-        "manageSearchCount": "{matched} matches / {total} total",
-        "manageTotalCount": "{total} agents",
-        "manageNoMatchTitle": "No matching agents",
-        "manageNoMatchDesc": "Try a different name keyword.",
-        "manageClearSearch": "Clear search",
-        "renameViaManage": "Rename (open management)",
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
         "contextRename": "Rename",
         "contextDelete": "Delete",
-        "noSelection": "No agent selected.",
-        "metaRenameHint": "Right-click the agent in the agent switcher to rename it. The identity name is not editable here."
+        "noSelection": "No agent selected."
       },
       "explorer": {
         "title": "Explorer",
@@ -2297,8 +1855,6 @@
         "delete": "Delete",
         "close": "Close",
         "selectOrCreate": "Select or create a file on the left to edit",
-        "lines": "{n} lines",
-        "chars": "{n} chars",
         "markdownBadge": "Split + sync + minimap",
         "newFileInFolder": "New file here",
         "newFolderInFolder": "New folder here",
@@ -2306,13 +1862,11 @@
       },
       "workspaceHistory": {
         "title": "Version history",
-        "empty": "No revisions yet. They appear after the first Studio save or MCP write.",
         "emptyNoFile": "Open a file to see version history for that file only.",
         "emptyNoRevisions": "No revisions for this file yet. They appear after a Studio save or MCP write.",
         "noFileOpen": "No file open",
         "clickToViewDiff": "click to view vs parent",
         "modalDiffTitle": "vs parent · {sha}",
-        "diffTitle": "vs parent · {sha}",
         "collapse": "Collapse",
         "expand": "Expand history",
         "noDiff": "(no file diff)",
@@ -2322,8 +1876,6 @@
         "restoreReason": "Restore reason",
         "restoreConfirm": "Confirm restore",
         "restoreDefault": "Restore to {sha}: undo mistaken edit",
-        "restorePath": "full-tree restore",
-        "baselinePath": "full-tree snapshot (baseline)",
         "saveTitle": "Save workspace",
         "saveHint": "If this save touches multiple files, each path gets its own revision with the same reason.",
         "saveReasonLabel": "Change reason",
@@ -2351,7 +1903,7 @@
         "memoryVars": "Long-term memory (Agent home workspace)",
         "contextVars": "Conversation context (persisted chat recall)",
         "schedulerVars": "Scheduled tasks (definition MCP; platform runs them)",
-        "agentScopeNote": "Declare in any agent mcp[]. Workspace assistant consult sandboxes also inject these three; enable pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs / pm-prd-manager in workspace Workspace assistant settings, not here.",
+        "agentScopeNote": "Declare in any agent mcp[]. Workspace assistant consult sandboxes also inject these three; enable pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs in workspace Workspace assistant settings, not here.",
         "addMemoryStore": "+ Add long-term memory",
         "addContextStore": "+ Add conversation context",
         "addTaskScheduler": "+ Add scheduled tasks",
@@ -2369,15 +1921,6 @@
           "scheduler": "Scheduled tasks executed by the platform."
         },
         "agentMcpAlreadyExists": "{name} already exists; no duplicate entry added",
-        "agentScopeBadge": "Agent-scoped platform MCP: used in test sandboxes and declared scenes; Workspace assistant consult injects the same endpoints automatically. Independent from artifact-store (run-scoped).",
-        "pmVarsTitle": "Workspace assistant consult variables",
-        "pmScopeTag": "Workspace assistant",
-        "pmUrl": "Workspace assistant MCP endpoint (consult scenes only)",
-        "pmToken": "Consult session token (consult scenes only)",
-        "pmScopeNote": "Consult scenes only: injected by the platform into consult sandboxes; workflow runs do not use this entry. Keep separate from run-scoped variables above.",
-        "addPmLeader": "+ Add Workspace assistant MCP (prefilled vars)",
-        "pmAlreadyExists": "pm-leader already exists; no duplicate entry added",
-        "pmScopeBadge": "Scope: injected only in Workspace assistant consult scenes; workflow runs do not use this entry. Independent from artifact-store (run-scoped); do not merge into one service.",
         "serviceName": "Service name e.g. context7",
         "transportCommand": "Command (stdio)",
         "remove": "Remove",
@@ -2391,23 +1934,12 @@
       },
       "env": {
         "hint": "Ordinary environment variables are injected into the Agent sandbox. Secrets (ACP keys, Git tokens, SSH) can only be configured in Workspace credentials. Values support run-scoped and {'${vars.NAME}'} globals.",
-        "backendAuthTitle": "Auth credential for current backend",
-        "backendAuthCredentialsBody": "This secret can only be configured in Workspace credentials and is injected into the sandbox at runtime; env vars must not contain it.",
         "backendAuthIntro": "When acpBackend={backend}, configure the matching key in Workspace credentials (values are not shown in plain text):",
         "backendAuthMasked": "Stored encrypted in workspace credentials and injected at runtime",
-        "regionLabel": "Site",
-        "regionPublic": "International (public)",
-        "regionInternal": "China (internal)",
-        "regionIoa": "iOA",
-        "regionStaging": "Staging",
-        "regionCn": "China (trae.cn)",
-        "regionIntl": "International (trae.ai)",
         "add": "Add env var",
         "parseError": "Invalid env JSON:",
-        "customConfigCallout": "Manage workspace credentials first. Besides Env keys, advanced auth / params can still go in the backend config file: {path}.",
         "secretCredentialsOnly": "Secrets (ACP keys, Git tokens, SSH) must be configured in Workspace credentials; env vars cannot contain this key",
-        "goCredentials": "Open credentials",
-        "openSettingsFile": "Open in Files"
+        "goCredentials": "Open credentials"
       },
       "mcpHelp": {
         "link": "Help",
@@ -2445,157 +1977,10 @@
         "special": "Existing special configuration: {value}"
       },
       "git": {
-        "title": "Git connection",
-        "subtitle": "Pick a recommended setup; it can coexist with existing Tokens — runtime is not mutually exclusive. Configure SSH in the workspace Credentials tab.",
-        "choiceHint": "Pick a recommended setup; it can coexist with existing Tokens — runtime is not mutually exclusive. Configure SSH in the workspace Credentials tab.",
-        "openWizard": "Configuration wizard",
-        "adjustType": "Adjust type",
-        "chooseTitle": "Choose Git credential type",
-        "chooseHint": "Confirmation updates this draft immediately and is persisted only by Save changes.",
-        "confirmApply": "Confirm and apply",
         "boundary": "This only checks field shape. It does not verify referenced values, token validity, network access, or remote clone / push permissions.",
-        "unresolved": "Runtime resolve",
         "runtimeResolve": "Runtime resolve",
         "runtimeResolveHint": "When the repo list uses a recommended variable, this page does not expand per repository; resolution happens at runtime. That is expected, not an error.",
-        "envHint": "GitHub / GitLab tokens and SSH can only be configured in Workspace credentials; env vars must not contain GITHUB_TOKEN / GITLAB_TOKEN. Configure concrete repo URLs in Studio.",
-        "done": "Done",
-        "varsHint": "Supports {'${vars.*}'} references",
-        "schemeHttps": "HTTPS",
-        "schemeSsh": "SSH",
-        "repoUrlLabel": "Global repos (read-only example)",
-        "repoUrlHint": "Configure repos in workflow globals (each clones to /root/workspace/NAME/); sandbox startup.sh clones and picks credentials from it",
-        "recommendedEnv": "Recommended env vars",
-        "applyRecommended": "Add recommended vars",
-        "applyRecommendedDone": "Recommended vars added",
-        "newBadge": "new",
-        "statusOk": "Configuration shape complete",
-        "statusErr": "Credential configuration shape incomplete",
-        "types": {
-          "github_https": "GitHub",
-          "gitlab_https": "GitLab",
-          "ssh": "SSH",
-          "unknown": "Connection type pending"
-        },
-        "typeHints": {
-          "github_https": "Uses a token",
-          "gitlab_https": "Uses a token",
-          "ssh": "Uses a private key"
-        },
-        "source": {
-          "auto": "Auto-detected",
-          "user": "Applied (unsaved)",
-          "invalid": "Selection invalid",
-          "none": "Not selected"
-        },
-        "status": {
-          "disabled": {
-            "title": "Git not enabled",
-            "description": "GIT_REPOS is not set. Choose a credential type and add recommended vars, or skip this step."
-          },
-          "complete": {
-            "title": "Configuration shape complete",
-            "description": "Required fields are present. This does not verify connectivity or permissions."
-          },
-          "incomplete": {
-            "title": "Credentials incomplete",
-            "description": "The type was identified, but one or more repositories are missing required fields."
-          },
-          "needs_type": {
-            "title": "Choose a credential type",
-            "description": "Select GitHub / GitLab / SSH, add recommended vars, or skip. Runtime repo references are not expanded on this page."
-          },
-          "needs_confirmation": {
-            "title": "Credential type needs confirmation",
-            "description": "The saved selection conflicts with repository evidence, or the type is invalid. Re-select GitHub / GitLab / SSH."
-          },
-          "unsupported": {
-            "title": "Currently unsupported",
-            "description": "The repository URL or provider / protocol mix exceeds this Agent's single global credential capability."
-          }
-        },
-        "providers": {
-          "github": "GitHub (github.com)",
-          "gitlab": "GitLab (gitlab.com)",
-          "selfGithub": "Self-hosted GitHub / GHE",
-          "selfGitlab": "Self-hosted GitLab",
-          "gitea": "Gitea / self-hosted"
-        }
-      },
-      "meta": {
-        "layoutTitle": "Sandbox layout (WSP/1)",
-        "layoutIntro": "Persisted per agent; applied when creating sandboxes. Switching ACP backend fills recommended configRoot; manual overrides are respected.",
-        "acpBackend": "Backend engine",
-        "acpBackendDesc": "Each Agent profile binds one backend; Run routes by this field (no node-level override). Defaults to cursor. OpenCode uses an API key with mainstream model vendors. Codex uses a ChatGPT login file, not an API key.",
-        "configRoot": "Config root",
-        "configRootDesc": "Agent workspace (rules/skills/mcp.json) RW mount path in container.",
-        "workspaceDir": "Workspace directory",
-        "workspaceDirDesc": "Repo clone and execution dir (WORKSPACE_DIR).",
-        "derivedPaths": "Derived paths (fixed by protocol from configRoot)",
-        "capabilitiesNote": "GET /api/capabilities describes paths and runtime features after sandbox start.",
-        "regionTitle": "Service site",
-        "regionNewBadge": "New",
-        "regionDesc": "Choose domestic or international CLI endpoint; value is stored in env region key",
-        "regionInternal": "China",
-        "regionPublic": "International",
-        "regionCn": "China",
-        "regionIntl": "International",
-        "regionHintCodebuddyInternal": "copilot.tencent.com",
-        "regionHintCodebuddyPublic": "codebuddy.ai",
-        "regionHintTraeCn": "docs.trae.cn",
-        "regionHintTraeIntl": "www.trae.ai"
-      },
-      "openCode": {
-        "title": "Model vendor and model",
-        "desc": "Pick a vendor and a model. The model is required; the service address is only needed for a proxy or your own service.",
-        "providerLabel": "Provider",
-        "providerSearchPlaceholder": "Search vendors, or type a vendor name…",
-        "providerSelfHosted": "This vendor is not in the list, so it is treated as your own service: enter its address below and type the model name it provides.",
-        "modelLabel": "Model",
-        "modelPlaceholder": "Pick, or type a model name",
-        "modelPlaceholderCustom": "Type a model name, e.g. my-model",
-        "modelHint": "Pick a model from the list, or type its name (e.g. deepseek-flash).",
-        "modelHintTyped": "This provider isn't in the list, so type the model name it provides.",
-        "modelUnknown": "This model isn't in the list and may fail to start. Pick one from the list, or make sure your service really provides it.",
-        "modelSearchPlaceholder": "Search, or type a model name…",
-        "modelRequired": "Pick or type a model, e.g. deepseek-v4-pro.",
-        "baseLabel": "Service address",
-        "basePlaceholder": "Leave blank to use the vendor default",
-        "basePlaceholderCustom": "Enter your endpoint root address",
-        "baseHint": "Usually not needed. Fill this in for a proxy or your own endpoint.",
-        "baseHintOwn": "Root of the OpenAI-compatible API, usually ending in /v1.",
-        "baseRequired": "Your own service needs a service address.",
-        "visionLabel": "Vision",
-        "visionHint": "Turn this on so the model can see images. Off means text only.",
-        "advancedSummary": "Advanced (tap to see the technical details)",
-        "advancedHint": "If the model id already contains a slash (e.g. deepseek/deepseek-flash), type it exactly as-is. If you type only the model name, the provider prefix is added automatically.",
-        "credentialTitle": "Model provider API Key",
-        "credentialDesc": "Pick one for this Agent. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list. The key stays in workspace credentials and only a mask is shown here.",
-        "credentialAdd": "Add",
-        "credentialSaveUse": "Save and use",
-        "credentialSave": "Save",
-        "credentialCurrent": "In use",
-        "credentialEmpty": "No model provider API key yet",
-        "credentialName": "Alias",
-        "credentialNamePlaceholder": "e.g. Shared team key",
-        "credentialNameRequired": "Enter an alias",
-        "credentialKey": "API Key",
-        "credentialKeyRequired": "Enter an API key",
-        "credentialReplace": "Replace",
-        "credentialClear": "Remove",
-        "credentialReplaceHint": "Only the new API key is submitted. The previous key is not shown.",
-        "credentialReplaceSave": "Save",
-        "credentialVendorModel": "{vendor} · {model}",
-        "providers": {
-          "openai": "OpenAI",
-          "anthropic": "Anthropic",
-          "google": "Google Gemini",
-          "openrouter": "OpenRouter",
-          "deepseek": "DeepSeek",
-          "moonshotai": "Moonshot / Kimi",
-          "alibaba": "Alibaba Qwen",
-          "xai": "xAI Grok",
-          "custom": "Own service (OpenAI-compatible)"
-        }
+        "envHint": "GitHub / GitLab tokens and SSH can only be configured in Workspace credentials; env vars must not contain GITHUB_TOKEN / GITLAB_TOKEN. Configure concrete repo URLs in Studio."
       },
       "mobile": {
         "back": "Back",
@@ -2706,17 +2091,7 @@
         }
       },
       "configPaths": {
-        "mcp": "MCP config",
-        "rules": "Rules",
-        "skills": "Skills",
-        "commands": "Commands",
-        "env": "Environment",
-        "root": "(root)",
-        "mcpNote": "schema: mcpServers",
-        "rulesNote": "*.md / *.mdc rule files",
-        "skillsNote": "Executable skill directories",
-        "commandsNote": "commands/*.md slash commands",
-        "envNote": "Injected via container environment"
+        "root": "(root)"
       },
       "teamWizard": {
         "title": "Create Agent team",
@@ -2726,8 +2101,6 @@
         "previewLine": "Team: {team} · PM: {pm} · {n} engineers",
         "steps": {
           "team": "Team info",
-          "acp": "Agent",
-          "apiKey": "API Key",
           "repo": "Repository",
           "mcp": "MCP",
           "env": "Env vars",
@@ -2741,9 +2114,6 @@
           "background": "Team context",
           "backgroundPlaceholder": "Describe the team goals, stack, repositories and workflow needs. This becomes the sandbox team creation prompt.",
           "backgroundHint": "Like a prompt: injected into the sandbox to generate the engineer team."
-        },
-        "acp": {
-          "meta": "Used as the default ACP for the PM and engineers. Pick a start path first — same as onboarding and New Agent."
         },
         "mcp": {
           "meta": "Default mcp[] for the team; applied when creating the PM and engineers. artifact-store is prefilled.",
@@ -2760,8 +2130,6 @@
         "review": {
           "meta": "Create the PM in this workspace, then start a sandbox to generate four engineers from the reference roster.",
           "team": "Team",
-          "set": "Set",
-          "skip": "Skipped (add later)",
           "none": "None",
           "roster": "Roster: 1 PM + 4 engineers · 5 total",
           "background": "Team context (creation prompt)",
@@ -2816,11 +2184,6 @@
           "basics": "Basics",
           "acp": "Tool & model",
           "apiKey": "Model",
-          "env": "ENV",
-          "mcp": "MCP",
-          "rules": "Rules",
-          "skills": "Skills",
-          "commands": "Commands",
           "review": "Confirm"
         },
         "basics": {
@@ -2837,156 +2200,17 @@
           "templateHintPack": "Will apply {name}."
         },
         "acp": {
-          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy, Trae, and Kimi Code also require a China or International site; International is the default.",
           "remapTitle": "Switch Backend?",
           "remapBody": "MCP / Skills / Commands / Rules may depend on the current paths. Switching remaps to the new configRoot; cancel keeps the current Backend."
-        },
-        "apiKey": {
-          "meta": "Put Token auth in Workspace shared Agent config; you can skip this step — create will not write API Keys into a single Agent.",
-          "metaPick": "When this Backend already has a credential, pick it here. You can skip this step. Create does not write the API key into this Agent's environment.",
-          "modeGroup": "Auth method",
-          "modeSaved": "Use a saved credential",
-          "modeSavedHint": "Use a credential already saved in the workspace. The secret is not written into this Agent",
-          "emptySkip": "This Backend has no saved credential yet. Save one under workspace credentials, or skip this step.",
-          "modeApiKey": "Paste API Key",
-          "modeApiKeyHint": "Reference only; it is not written into a single Agent. Save it in the workspace shared Agent config",
-          "modeCustomConfig": "Custom config",
-          "modeCustomConfigHint": "Edit settings.json; written to Agent files on create",
-          "backendBanner": "Current Backend: {backend}.",
-          "inputLabel": "Paste API key (optional; not written into a single Agent)",
-          "inputPlaceholder": "Prefer skipping; configure in Workspace shared Agent config",
-          "skipHint": "Prefer Skip / Next; set Tokens under Workspace → shared Agent config.",
-          "codexInputLabel": "Paste the ChatGPT login file (optional; not written into a single Agent)",
-          "codexInputPlaceholder": "Paste the full contents of ~/.codex/auth.json",
-          "codexSkipHint": "Prefer Skip / Next; paste the login file under Workspace → shared Agent config.",
-          "notes": {
-            "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
-            "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
-            "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
-            "codex": "Codex uses a ChatGPT login, not an API key. To call OpenAI with an API key, use OpenCode. Signing in with a device code in workspace credentials is recommended; the platform renews the login and sandboxes never get the refresh_token.",
-            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately.",
-            "kimi": "Use an API key created in the Kimi Code subscription console. China connects to api.kimi.com and International to api.kimi.ai. Leave the model empty to use K3.1 Pro; available models depend on your subscription."
-          },
-          "paths": {
-            "cursor": {
-              "step1": "Open Cursor Dashboard → Settings → API Keys",
-              "step2": "Create an API Key and copy it",
-              "step3": "Paste the key below"
-            },
-            "claude": {
-              "step1": "Open Anthropic Console → API Keys (or Claude Platform → Settings → Keys)",
-              "step2": "Create a key and copy it",
-              "step3": "Paste the key below"
-            },
-            "codebuddy": {
-              "step1": "Confirm the site selected in the Agent step (International / China / …)",
-              "step2": "Open that site's console Profile / API Keys page and create a key",
-              "step3": "Paste the key below"
-            },
-            "trae": {
-              "step1": "In the Trae enterprise console: Profile → Access tokens → CLI login token",
-              "step2": "Generate a trae-lt-… token and copy it",
-              "step3": "Paste the token below"
-            },
-            "opencode": {
-              "step1": "Pick a vendor (OpenAI, Anthropic, OpenRouter and more, or your own service)",
-              "step2": "Create an API key in the vendor console; your own service also needs its address",
-              "step3": "Paste the key and pick a model"
-            },
-            "codex": {
-              "step1": "Recommended: choose Codex in workspace credentials and sign in to ChatGPT with a device code; no file to copy",
-              "step2": "Or run codex login on a computer that can open a browser and copy the entire contents of ~/.codex/auth.json (it must include refresh_token)",
-              "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
-              "step4": "Paste the file contents below; stop using this login on your computer to avoid renewal conflicts"
-            },
-            "deepseek": {
-              "step1": "Sign in to the DeepSeek platform.",
-              "step2": "Create an API key on the API Keys page.",
-              "step3": "Copy the key below, or save it as a workspace credential."
-            },
-            "kimi": {
-              "step1": "Open the Kimi Code console for your site: kimi.com/code/console or kimi.ai/code/console.",
-              "step2": "Create an API key in the subscription console’s API Keys section.",
-              "step3": "Paste only the key. A login file containing access_token or refresh_token is rejected."
-            }
-          },
-          "links": {
-            "cursorDashboard": "Open Cursor Dashboard",
-            "cursorDocs": "Cursor docs",
-            "claudeConsole": "Anthropic Console",
-            "claudeKeys": "Claude Platform Keys",
-            "claudeDocs": "Anthropic docs",
-            "codebuddyPublic": "Apply key (International)",
-            "codebuddyInternal": "Apply key (China)",
-            "codebuddyIoa": "Apply key (iOA)",
-            "codebuddyStaging": "Apply key (Staging)",
-            "traeTokenDocs": "Trae CLI login-token docs",
-            "opencodeProviders": "Supported vendors",
-            "codexAuth": "Codex login docs",
-            "deepseekKeys": "DeepSeek API Keys",
-            "kimiDomestic": "Apply key (China)",
-            "kimiInternational": "Apply key (International)"
-          },
-          "customConfig": {
-            "cardTitle": "Backend config file",
-            "targetPath": "Target path ·",
-            "agentFiles": "relative Agent files:",
-            "editorHint": "Written to Agent files on create; copied to configRoot at runtime. Empty content can be skipped.",
-            "invalidJson": "Invalid JSON — fix before continuing.",
-            "notes": {
-              "claude": "Use settings.json env fields for auth instead of pasting a key here.",
-              "codebuddy": "CodeBuddy can use settings.json for env; platform staging fields merge with your content.",
-              "opencode": "Writes opencode.json (not settings.json). Configure provider, baseURL, and model.",
-              "generic": "File is still written under configRoot; whether the CLI consumes it depends on the backend. Prefer Env keys; custom config is an advanced path."
-            }
-          },
-          "howTo": "How to get it"
-        },
-        "git": {
-          "meta": "Pick GitHub / GitLab / SSH, or skip. Credentials already saved in the workspace can be selected here.",
-          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step."
-        },
-        "env": {
-          "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."
-        },
-        "mcp": {
-          "meta": "Configure MCP servers. When skipped or the mcp list is empty, the server writes the default artifact-store.",
-          "hasArtifact": "artifact-store already included"
-        },
-        "rules": {
-          "meta": "Edit the alwaysApply identity rule. Skipping still writes the system default template."
-        },
-        "skills": {
-          "meta": "Scaffold skills/*/SKILL.md into Agent.files[].",
-          "namePlaceholder": "skill name (letters, digits, _, -)",
-          "add": "Add Skill"
-        },
-        "commands": {
-          "meta": "Scaffold commands/*.md into Agent.files[].",
-          "namePlaceholder": "command name (letters, digits, _, -)",
-          "add": "Add Command"
         },
         "review": {
           "meta": "Review the summary, then create once. Cancel/close does not persist. Configure MCP / Rules and other capabilities later in Studio.",
           "name": "Name",
           "template": "Template",
           "acp": "Agent",
-          "apiKeyConfigured": "API Key · configured",
-          "apiKeySkipped": "API Key · not set",
-          "customConfigWritten": "Custom config · written",
           "authReminder": "Auth reminder",
           "authReminderDetail": "Auth is required before runs; you can complete it in Studio Env. This reminder does not block create.",
-          "env": "ENV",
-          "mcp": "MCP",
-          "rulesDefault": "Rules · default will be written",
-          "rulesCustom": "Rules · customized",
-          "skills": "Skills",
-          "commands": "Commands",
-          "modelSource_inherit": "Inherit this tool’s workspace model source",
-          "modelSource_platform": "Tool platform authorization",
-          "defaultModel": "Tool default",
           "modelSource_configuration": "Model configuration",
-          "modelSource_connection": "Model connection",
           "icon": "Icon selected",
           "iconNone": "No icon, use the initial"
         }
@@ -3025,8 +2249,7 @@
           "clearConfirm": "Clear all memories for this Agent?",
           "titleRequired": "Title is required",
           "empty": "No memories yet",
-          "updatedBy": "Updated by {user}",
-          "lockDesc": "Any signed-in user can manage memories here."
+          "updatedBy": "Updated by {user}"
         },
         "context": {
           "hint": "View/delete threads here; start new consults in Workspace assistant.",
@@ -3076,8 +2299,6 @@
       },
       "cliModel": {
         "label": "Model",
-        "runtimeTitle": "Runtime",
-        "runtimeDesc": "Which account this Agent signs in with and which model it runs.",
         "auto": "Auto",
         "autoSub": "{cli} picks the model",
         "autoRow": "Auto (CLI default)",
@@ -3120,66 +2341,11 @@
           "pick": "Pick",
           "close": "Close"
         },
-        "effortLabel": "Reasoning effort",
-        "effortDesc": "Higher thinks deeper but runs slower.",
-        "effortUnsupported": "This model does not support reasoning effort",
-        "effort": {
-          "auto": "Auto",
-          "low": "Low",
-          "medium": "Medium",
-          "high": "High",
-          "xhigh": "Extra high",
-          "max": "Max",
-          "ultra": "Ultra"
-        },
-        "switched": "Switched to {cli}; model reset to auto",
-        "undo": "Undo",
         "managedBy": "Managed by the model in Metadata",
         "inheritDefault": "Inherit default config",
         "inheritDefaultFrom": "Workspace default",
-        "follow": "Follow config",
-        "followDefault": "Default",
-        "specify": "Set separately",
-        "sharedKicker": "Workspace shared config",
-        "followNote": "Following this config by default. This Agent has no model of its own, and it follows later changes to the workspace default.",
-        "fromShared": "From the workspace shared config",
         "pickOne": "Choose a model",
-        "specifySub": "Only this Agent",
-        "backToFollow": "Back to shared config",
-        "goEdit": "Edit",
-        "inspectorLabel": "Model",
-        "inspectorEdit": "Change in Agent settings",
-        "wizardHint": "Not sure? Start with auto; you can change it later in Agent settings."
-      },
-      "pmScopeTag": "Workspace assistant",
-      "repoAccess": {
-        "title": "Repository access",
-        "desc": "Selected repositories get their own access credentials when a sandbox starts: HTTPS tokens are scoped by repository path and each SSH repository gets its own key, alongside the Git credential above. Only access is injected; nothing is cloned automatically.",
-        "sharedDesc": "Every Agent inherits the repositories selected here unless it customizes them in its own meta tab. Each repository is injected with its own access credential; only access is injected and nothing is cloned automatically.",
-        "selected": "{n} selected",
-        "manage": "Manage repositories",
-        "inherit": "Use workspace default",
-        "inheritHint": "Inherits the repository access selected in Agent defaults",
-        "inheritedEmpty": "Agent defaults select no repositories, so no per-repository credentials are injected.",
-        "loadFailed": "Failed to load repositories",
-        "retry": "Retry",
-        "empty": "No repositories yet",
-        "emptyHint": "Add a repository and pick its access credential in Repositories settings, then select it here.",
-        "add": "Add repository",
-        "search": "Search by name or URL",
-        "selectAll": "Select all available",
-        "clear": "Clear",
-        "deleted": "Repository was deleted",
-        "remove": "Remove",
-        "noCredential": "No access credential",
-        "mismatch": "URL does not match access method",
-        "noCredentialHint": "Pick an access credential that matches the URL in Repositories settings first",
-        "noMatch": "No matching repositories",
-        "access": {
-          "github_https": "GitHub HTTPS",
-          "gitlab_https": "GitLab HTTPS",
-          "ssh": "SSH"
-        }
+        "specifySub": "Only this Agent"
       }
     },
     "runLaunch": {
@@ -3204,7 +2370,6 @@
       "inputParagraph": "Enter {key} … (paste images)",
       "inputNumber": "Enter number",
       "requiredMissing": "Required field missing: {field}",
-      "starting": "Starting workflow…",
       "triggerManual": "Trigger: manual",
       "priorityLabel": "Priority",
       "priorityHint": "Affects queue admission only; does not interrupt a running run.",
@@ -3239,7 +2404,6 @@
         "success": "Imported \"{name}\"; opening editor…",
         "missingAgentProfiles": "Imported, but missing Agent refs were found: {list}. Fix them in the editor before saving.",
         "issueMissing": "missing",
-        "issueForeign": "not this workspace",
         "discardTitle": "Unsaved changes will be lost",
         "discardBody": "The editor has unsaved changes. Importing will discard them. Continue?",
         "discardConfirm": "Continue import"
@@ -3279,7 +2443,6 @@
       "formEmptyNotice": "Fill in all fields before submitting",
       "thinking": "Agent is thinking…",
       "thinkingBusy": "Thinking…",
-      "outputting": "Writing",
       "thought": "Thought process",
       "thoughtGenerating": "Generating…",
       "thoughtInterrupted": "Interrupted",
@@ -3354,7 +2517,6 @@
       "retry": "Retry",
       "done": "Interaction complete — continuing",
       "closed": "Run ended — interaction closed",
-      "connectingHint": "Connecting. You can start chatting shortly.",
       "connectingInputPlaceholder": "Connecting — input is temporarily unavailable",
       "connectingStageTitle": "Preparing the session",
       "connectingStagePullingTitle": "Pulling the image",
@@ -3411,11 +2573,6 @@
       "demoSelected": "Selected",
       "readonly": "Read-only",
       "unreadFab": "{n} new messages — click to jump to bottom",
-      "clickToEnlarge": "Click to enlarge",
-      "imagePreviewTitle": "Image preview · {label}",
-      "imageFallback": "Image",
-      "imageFallbackN": "Image {n}",
-      "imagePreviewAria": "Preview {label}",
       "queueDragTitle": "Drag to reorder",
       "queueDragAria": "Drag to change send order",
       "queueEditTitle": "Re-edit",
@@ -3429,7 +2586,6 @@
       "visitEndedAutoRetry": "The run has ended, so this message was not sent. It will be sent automatically after resuming.",
       "draftKept": "The run has ended. Your draft is kept and will be back in the composer after resuming.",
       "stashImagesDropped": "{n} image(s) were too large to keep. Add them again after resuming.",
-      "queueEditBlocked": "An attachment is too large to move the current draft onto the queue. Fix attachments first.",
       "queueEditLost": "Draft was queued, but the item to edit could not be found. Click the pencil on the queue row again.",
       "queueAttachmentBadge": "Files×{n}",
       "queueAnnotationBadge": "Note",
@@ -3441,14 +2597,10 @@
     "reviewComposer": {
       "sendClarify": "Send reply",
       "send": "Send",
-      "reject": "Send back for revision",
-      "pass": "Approve & continue",
       "gateHint": "Select text → Add to Chat, hover a field and click ⤴, or enable HTML pick-to-annotate; attach images, then Send for in-place edits, or Confirm & continue when ready.",
       "thresholdHint": "Send when any of text ∪ annotation ∪ image is set. Annotation-only or image-only is OK.",
-      "openIssuesRejectHint": "Open issues are enough to send; draft text, annotations, or images are optional.",
       "openIssuesSendHint": "With open issues you can keep Sending for in-place edits; draft text, annotations, or images are optional.",
       "openIssuesConfirmHint": "Confirm & continue is blocked while issues remain open — Send changes or close issues first.",
-      "discardDraftConfirm": "Sidebar still has unsent annotation chips, draft text, or images. Confirming will discard them. Continue?",
       "alreadyAdded": "Already added",
       "chipField": "Whole field",
       "chipQuote": "Excerpt",
@@ -3463,8 +2615,6 @@
       "progressCount": "{done} / {total} completed",
       "closeTab": "Close",
       "newTab": "New tab",
-      "novncTab": "noVNC",
-      "novncCardTitle": "Remote desktop",
       "novncCardMeta": "Sandbox browser · pick to annotate",
       "fixedIdeTitle": "IDE",
       "fixedIdeMeta": "Sandbox IDE",
@@ -3477,8 +2627,6 @@
       "appCardTitle": "App preview",
       "appCardMeta": "App preview · pick to annotate",
       "readonlyBadge": "Read-only",
-      "iterationBadge": "Iteration {n}",
-      "iterationName": "{name} · iteration {n}",
       "novncMissing": "This node has no sandbox, so noVNC cannot open.",
       "ideMissing": "This node has no sandbox, so the IDE cannot open.",
       "terminalMissing": "This node has no sandbox, so the terminal cannot open.",
@@ -3495,21 +2643,10 @@
       "kindImage": "Image",
       "kindText": "Text",
       "kindFile": "File",
-      "revision": "v{n}",
-      "meta": "{kind} · v{n} · {time}",
-      "metaKindTime": "{kind} · {time}",
       "metaNameKindTime": "{name} · {kind} · {time}",
-      "friendlyResearch": "Research",
-      "friendlyClarified": "Clarified requirement",
-      "friendlyVisual": "Web preview",
       "versionChip": "v{n}",
       "versionChipLatest": "v{n} · latest",
       "versionMenu": "Choose version"
-    },
-    "reviewShell": {
-      "drawerHandle": "Drag handle to resize",
-      "drawerHandleAria": "Drag handle up or down to resize the review drawer",
-      "resizeSash": "Drag to resize sidebar · double-click to reset"
     },
     "appPreview": {
       "share": {
@@ -3548,9 +2685,6 @@
       "loading": "Loading preview…",
       "noPorts": "The Agent's sandbox has not started yet; no desktop to watch",
       "loadFailed": "Failed to load preview ports. Retry available.",
-      "refreshing": "Refreshing port list…",
-      "unavailable": "Preview service unavailable",
-      "connectionLost": "Preview connection lost",
       "sandboxRecycled": "Sandbox recycled; preview unavailable",
       "directOpenTab": "Open in new tab",
       "directOpenTabShort": "Open directly in new tab",
@@ -3625,10 +2759,7 @@
     },
     "gateApproval": {
       "reactRevise": {
-        "title": "ReAct reject & revise (no sandbox restart)",
         "placeholder": "Describe what to change (attach images optional); sent to the upstream producer to edit its product in place…",
-        "send": "Reject & revise",
-        "sending": "Sending…",
         "failed": "ReAct revise failed",
         "issueSavedReviseFailed": "Feedback was saved but reject failed — you can retry",
         "annotationOnly": "(annotation reject)",
@@ -3639,9 +2770,6 @@
       "subtitle": "Human gate · workflow paused (waiting_human)",
       "loadingArtifact": "Loading artifact…",
       "loadingPreviewIssues": "Loading preview issues, please wait…",
-      "failWithCount": "Reject ({n} issues)",
-      "rejectWithCount": "Reject · {n}",
-      "failNeedsComment": "Please fill in the review comment first",
       "loadPreviewIssuesFailed": "Failed to load preview issues. Switch tabs or refresh the page to retry.",
       "formPlaceholder": "Enter {label}",
       "submitMissing": "Fill \"{label}\" before submitting",
@@ -3691,15 +2819,12 @@
       "discardSwitchConfirm": "This artifact has unsaved changes. Switch and discard the draft?",
       "discardConfirmApprove": "You have unsaved edit drafts. OK discards them and runs {label}; Cancel returns to editing. (Approve does not auto-save the draft.)",
       "discardConfirmRevise": "You have unsaved edit drafts. OK discards them and runs {label} (revise to Agent); Cancel returns to editing.",
-      "helpApprove": "Edit then confirm:",
       "helpApproveDetail": "small fixes — save, preview, then Confirm & continue; downstream sees the revision.",
       "helpCold": "Review the artifacts, then Confirm & continue.",
       "helpColdWithEdit": "Review the artifacts, then Confirm & continue. To change content, use Edit product.",
-      "helpRevise": "Send edits:",
       "helpReviseDetail": "use when the Agent should revise in place; no need to save the draft first.",
       "helpReviseDetailNoIssues": "send a non-empty review comment to revise in place; no need to save the draft first.",
       "helpReviseDetailNoIssuesNoForm": "You can Confirm & continue; to request changes, send review feedback first.",
-      "helpReviseWithIssues": "Review feedback submitted:",
       "helpReviseWithIssuesDetail": "keep sending to revise in place; Confirm & continue stays disabled until open feedback is cleared.",
       "helpReviseWithIssuesColdDetail": "Feedback has been recorded — use the button below to send it back together with the recorded issues; once cleared you can Confirm & continue.",
       "commentPins": {
@@ -3831,7 +2956,6 @@
       "gitDetection": "Git detection",
       "artifactsMcp": "Artifacts · written via artifact-store MCP",
       "output": "Output",
-      "workflowComplete": "Workflow complete.",
       "noPreviewCardsTitle": "No previewable result cards this run",
       "noPreviewCardsBody": "The run completed successfully. Final result sources are empty, or no output node ran. This is not a load failure.",
       "noPreviewCardsHint": "You can still browse all raw artifacts on this page's Artifacts tab.",
@@ -3846,8 +2970,6 @@
         "kindCustom": "Custom",
         "kindCustomHtml": "Custom · HTML",
         "kindFailed": "Failed",
-        "previewUnavailableTitle": "Unable to preview",
-        "previewUnavailableBody": "page.html content is unavailable or the preview failed to load. It will not fall back to Markdown source.",
         "previewLoadErrorLabel": "Preview unavailable",
         "previewLoadErrorTitle": "Unable to load visual page",
         "previewLoadErrorBody": "Artifact fetch failed. Markdown source fallback is disabled.",
@@ -3859,46 +2981,10 @@
       "nodeNoOutput": "This node produced no output yet"
     },
     "llmTranscript": {
-      "summary": "{nodes} nodes · {turns} turns",
-      "tokens": "tokens {n}",
-      "loading": "Loading transcript…",
       "loadFailed": "Could not load the full transcript; showing prompt previews",
-      "retry": "Retry",
-      "empty": "This run has no LLM conversation yet",
-      "expandAll": "Expand all",
-      "collapseAll": "Collapse all",
-      "showThought": "Show thinking",
-      "follow": "Follow latest",
-      "jumpTo": "Jump to node",
-      "source": {
-        "instruction": "Node instruction",
-        "human": "Human reply",
-        "followup": "Platform follow-up"
-      },
       "speaker": {
-        "platform": "Platform",
-        "human": "Human",
         "agent": "Agent"
       },
-      "images": "{n} images",
-      "expandPrompt": "Show all",
-      "collapsePrompt": "Collapse",
-      "promptTruncated": "Prompt too long; truncated when saved",
-      "promptPreview": "Preview only; loading full text",
-      "copy": "Copy",
-      "copied": "Copied",
-      "thought": "Thinking",
-      "plan": "Plan",
-      "mcp": "{n} platform tool calls",
-      "artifact": "Artifact",
-      "answering": "Answering…",
-      "waitingAnswer": "Waiting for the model…",
-      "noReply": "No text reply this turn",
-      "turnFailed": "Turn failed",
-      "execError": "Execution failed",
-      "locate": "View in timeline",
-      "turns": "{n} turns",
-      "duration": "Took {time}",
       "trace": {
         "transition": "Moved to \"{to}\"",
         "transitionFailure": "Took failure branch to \"{to}\"",
@@ -4000,7 +3086,6 @@
       "empty": "No executions yet",
       "iterationTitle": "Repeated execution of this node (loop-back / gate revise)",
       "duration": "Duration {time}",
-      "tokens": "tokens {n}",
       "tokensEmpty": "tokens —",
       "partInput": "Input",
       "partOutput": "Output",
@@ -4136,7 +3221,6 @@
     "artifactList": {
       "platform": "Platform artifacts",
       "run": "Run artifacts",
-      "subtitle": "(auto-saved node outputs)",
       "emptyPlatform": "No platform artifacts",
       "emptyRun": "No artifacts in this run",
       "artSearchPlaceholder": "Search artifacts (name / node / run)…",
@@ -4175,7 +3259,6 @@
       "imageLoadFailed": "Failed to load image",
       "retry": "Retry",
       "contentEmpty": "This artifact is empty",
-      "platformStorage": "Platform storage",
       "fallbackPlainText": "fallback · plain text",
       "modeToggleAria": "Preview mode",
       "modeStructured": "Structured UI",
@@ -4198,7 +3281,6 @@
         "scenarios": "User scenarios",
         "functional": "Functional requirements ({n})",
         "acceptance": "Acceptance",
-        "priority": "Priority",
         "nonFunctional": "Non-functional requirements",
         "metric": "Metric",
         "interfaces": "External interfaces",
@@ -4226,7 +3308,6 @@
         "expected": "Expected",
         "actual": "Actual",
         "expectedActual": "Expected vs actual",
-        "gap": "Gap",
         "reproduction": "Reproduction",
         "impact": "Impact",
         "rootCause": "Root cause",
@@ -4335,7 +3416,6 @@
         "sectionLabel": "Repositories",
         "hint": "Pick repositories registered in Settings → Repositories. Credentials and commit authors come from each repository; an empty branch uses its default."
       },
-      "repoPlaceholder": "Optional: git clone URL (empty = blank workspace)",
       "stepSandbox": {
         "title": "Preparing the workspace…",
         "hint": "First-time setup may take a moment."
@@ -4361,7 +3441,6 @@
       "wsFailed": "WebSocket connection failed",
       "execError": "Execution error",
       "loadingHistory": "Loading conversation history…",
-      "thought": "Thought process",
       "plan": "Plan",
       "generating": "Generating…",
       "queue": "Outbound queue · {n}",
@@ -4400,10 +3479,7 @@
       "resizeSash": "Drag to resize",
       "edit": "Edit",
       "preview": "Preview",
-      "split": "Split",
-      "live": "Live",
-      "collapsePreview": "Collapse preview",
-      "expandPreview": "Expand preview"
+      "split": "Split"
     },
     "login": {
       "title": "Sign in",
@@ -4456,7 +3532,6 @@
       "outOfScopeBody": "Webhook callbacks · SSE/WS live events · external resume of human approval · OpenAPI export · platform-wide unified Key management",
       "copy": "Copy",
       "copied": "Copied",
-      "copySuccess": "Copied to clipboard",
       "copyFailed": "Copy failed",
       "createKeyTitle": "Create API Key",
       "copyKeyHint": "Copy and save it now — you will not see the plaintext again after closing.",
@@ -4497,7 +3572,6 @@
         "candidatesBusy": "Candidates are still being processed. Wait a moment, then send again.",
         "promptTooLong": "Page candidate requests are limited to 2000 characters. Shorten the request and retry.",
         "previewUnavailable": "Live design tools in the preview are unavailable. Reopen the preview and retry.",
-        "title": "Page candidates",
         "heads": {
           "generate": "{n} candidates for {target}",
           "insert": "Insert {n} candidates next to {target}",
@@ -4521,8 +3595,6 @@
           "done": "Done",
           "unknown": "Unknown"
         },
-        "viewing": "Viewing {current} / {total}",
-        "viewingOriginal": "Viewing the original",
         "original": "Original",
         "gotoOriginal": "Show the original to compare",
         "selected": "Candidate {n} was used",
@@ -4566,7 +3638,6 @@
       "mcpPacks": "Available MCPs",
       "hint": "Override shared defaults. Variables declared on the graph still take precedence. Saved settings apply to subsequent execution.",
       "variables": "Default variables",
-      "inheritVariables": "Inherit workspace variables",
       "variableName": "Variable name",
       "variableType": "Variable type",
       "defaultValue": "Default value",
@@ -4645,14 +3716,9 @@
       "time": "Time",
       "tool": "Coding tool",
       "model": "Model",
-      "group": "Model group",
       "effort": "Reasoning effort",
       "duration": "Duration",
-      "notReported": "Not reported",
-      "unknownModel": "Unattributed tokens",
-      "sourceReported": "Provider reported",
-      "sourceAttribution": "Attributed to the execution model",
-      "sourceUnknown": "Model not reported"
+      "notReported": "Not reported"
     },
     "solo": {
       "title": "Solo chats",
@@ -4664,8 +3730,6 @@
       "emptyList": "No Solo sessions yet",
       "showAll": "Show all sessions",
       "untitled": "Untitled session",
-      "noProject": "No repository",
-      "backToList": "Back to sessions",
       "closeSession": "Close",
       "limitTitle": "Sandbox limit reached",
       "limitHint": "Up to {max} sandboxes can run at once. Stop an idle environment and try again.",
@@ -4692,11 +3756,9 @@
         "noMatch": "No matching model",
         "unavailable": "Unavailable",
         "unavailableSelection": "The selected model or group is unavailable. Choose another model to continue.",
-        "reset": "That model is no longer in the configuration. The primary model is selected again.",
         "catalogFailed": "The model list did not load. The saved model stays selected.",
         "catalogFailedDefault": "The model list did not load. The default primary model stays in use.",
         "reasoningEffort": "Reasoning effort",
-        "effortAuto": "Default",
         "effortReset": "Use the highest effort",
         "backToModels": "Back to models",
         "effortResetNotice": "The selected reasoning effort is unavailable. Using this model's highest effort.",
@@ -4721,8 +3783,6 @@
       },
       "projectSelect": {
         "none": "No repository",
-        "noneHint": "Empty workspace, nothing cloned",
-        "group": "Repositories",
         "search": "Search repositories",
         "empty": "No matching repository",
         "create": "Add repository",
@@ -4732,8 +3792,6 @@
         "title": "New Solo session",
         "agent": "Agent",
         "project": "Repository",
-        "branch": "Branch",
-        "branchPlaceholder": "Default branch",
         "titleLabel": "Title (optional)",
         "titlePlaceholder": "Defaults to the first message",
         "firstMessage": "First message (optional)",
@@ -4758,15 +3816,7 @@
         "projectsEmpty": "Add Git repositories you use often and pick them at launch."
       },
       "header": {
-        "rename": "Rename",
-        "console": "Terminal",
-        "vscode": "VS Code",
-        "env": "Environment",
-        "more": "More",
-        "close": "Close",
-        "restart": "Restart",
-        "delete": "Delete session",
-        "editProject": "Edit repository"
+        "close": "Close"
       },
       "link": {
         "reconnecting": "Connection lost, reconnecting…"
@@ -4792,15 +3842,9 @@
         "send": "Send",
         "stop": "Stop",
         "attach": "Attach files",
-        "queue": "{n} queued",
-        "removeQueued": "Remove from queue",
         "turnFailed": "This turn failed",
         "stopped": "Stopped",
-        "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
-        "empty": "{agent} is ready. Start chatting.",
-        "reposFrozen": "These repositories were frozen at launch and cannot be added or removed in this session.",
-        "imagesOnly": "(attachments)",
         "plan": "Plan"
       },
       "closedBar": {
@@ -4823,26 +3867,7 @@
         "confirm": "Delete"
       },
       "env": {
-        "title": "Session environment",
-        "agent": "Agent",
-        "backend": "CLI",
-        "model": "Model",
-        "repo": "Repository",
-        "branch": "Branch",
-        "remoteDefault": "Remote default branch",
-        "dir": "Directory",
-        "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
-        "vars": "Environment variables",
-        "hint": "Only names and origins are shown, never values.",
-        "all": "All",
-        "empty": "Available once the sandbox starts",
-        "source": {
-          "platform": "Platform",
-          "agent": "Agent",
-          "project": "Repository",
-          "credential": "Credential",
-          "system": "System"
-        }
+        "remoteDefault": "Remote default branch"
       },
       "errors": {
         "session_closed": "The session is closed. Restart it first.",
@@ -4991,10 +4016,7 @@
         "assistantSettings": "Choose the Agent behind the assistant, connect Channels and set automatic approval rules.",
         "schedules": "Run Agent tasks on a schedule and deliver the results to a Channel.",
         "audit": "Review tool calls and MCP access made by Agents in this workspace.",
-        "notificationPolicy": "Decide which events notify people and which Channel delivers them.",
-        "projects": "Manage the repositories and default branches that workflow runs use.",
-        "variables": "Inject shared environment variables and configuration into every Agent run.",
-        "general": "Manage workspace details, brand copy, run concurrency and sandbox resources."
+        "notificationPolicy": "Decide which events notify people and which Channel delivers them."
       },
       "stats": {
         "credentialsTotal": "Credentials",
@@ -5016,17 +4038,12 @@
         "mcpKeys": "Access keys",
         "notifyChannels": "Connected Channels",
         "notifyStatus": "Notifications",
-        "notifyOn": "On",
-        "notifyOff": "Off",
         "projectsTotal": "Repositories",
-        "variablesTotal": "Shared variables",
         "schedulesTotal": "Schedules",
         "schedulesEnabled": "Enabled",
         "notifyEvents": "Subscribed events",
         "projectsUsed": "Used",
         "projectsHosts": "Repository hosts",
-        "variablesWithDefault": "With default",
-        "variablesTypes": "Types",
         "schedulesDeliver": "Deliver to Channel",
         "sandboxes": "Sandboxes / limit"
       },
@@ -5041,10 +4058,6 @@
         "missingModel": "Model missing",
         "requiredRoles": "Helper model missing",
         "fallback": "Needs attention"
-      },
-      "credentialStatus": {
-        "configured": "Configured",
-        "pending": "Needs a value"
       }
     },
     "artifactEditor": {

@@ -15,8 +15,8 @@ func TestWorkspaceSettings(t *testing.T) {
 	if w.Code != 200 || jsonField(w.Body.String(), "name") != models.DefaultWorkspaceName {
 		t.Fatal(w.Body.String())
 	}
-	w = h.do("PUT", "/api/workspace", map[string]any{"name": "Workspace", "description": "updated", "variables": []map[string]any{{"name": "TOKEN", "type": "string", "secret": true, "value": "sensitive"}}})
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "****") || strings.Contains(w.Body.String(), "sensitive") {
+	w = h.do("PUT", "/api/workspace", map[string]any{"name": "Workspace", "description": "updated", "variables": []map[string]any{{"name": "TOKEN", "type": "string", "value": "ignored"}}})
+	if w.Code != 200 || jsonField(w.Body.String(), "description") != "updated" || strings.Contains(w.Body.String(), "variables") {
 		t.Fatal(w.Body.String())
 	}
 	for _, body := range []any{map[string]any{"name": " "}, "invalid"} {

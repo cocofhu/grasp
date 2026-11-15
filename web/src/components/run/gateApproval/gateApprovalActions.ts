@@ -1,5 +1,5 @@
-export type ActionIconName = 'check' | 'arrow-left' | 'refresh'
-export type ActionVariant = 'ok' | 'neutral'
+type ActionIconName = 'check' | 'arrow-left' | 'refresh'
+type ActionVariant = 'ok' | 'neutral'
 
 export const POSITIVE_ACTION_IDS = new Set(['pass', 'approve'])
 export const REVERT_ACTION_IDS = new Set(['fail', 'revise', 'limit'])

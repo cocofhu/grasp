@@ -58,7 +58,6 @@ export interface PublishedWorkflowSnapshot {
 }
 
 export interface WorkflowDefaults {
-  inheritWorkspace: boolean
   variables: WorkspaceVariable[]
   notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
@@ -136,7 +135,6 @@ export interface WorkspaceVariable {
 export interface Workspace {
   name: string
   description: string
-  variables: WorkspaceVariable[]
   workflowCount?: number
   /**
    * Sum of workflow StateRun.Usage + post-feature PM ChatMessage.Usage.
@@ -466,50 +464,6 @@ export interface MemoryItem {
   updatedBy: string
   createdAt: string
   updatedAt: string
-}
-
-/** Workspace-scoped requirement draft (「需求草稿」); status open|done. */
-export type RequirementDraftKind = 'requirement' | 'milestone'
-
-export interface RequirementDraft {
-  id: string
-  title: string
-  bodyMarkdown: string
-  status: 'open' | 'done'
-  /** requirement | milestone */
-  kind: RequirementDraftKind
-  /** YYYY-MM-DD begin date (requirements); empty when unscheduled. */
-  startAt: string
-  /** YYYY-MM-DD end date or milestone date; empty when unscheduled. */
-  dueAt: string
-  /** 0–100; independent of status. */
-  progress: number
-  /** Optional top-level requirement id (one-level grouping). */
-  parentId: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export type RequirementDraftStatusFilter = 'open' | 'done' | 'all'
-
-export type RequirementDraftViewMode = 'edit' | 'gantt' | 'milestones'
-
-export interface RequirementDraftSchedulePatch {
-  kind?: RequirementDraftKind
-  startAt?: string
-  dueAt?: string
-  progress?: number
-  /** Omit to leave unchanged; null or '' clears parent. */
-  parentId?: string | null
-}
-
-export interface RequirementDraftCreateBody {
-  kind?: RequirementDraftKind
-  title?: string
-  startAt?: string
-  dueAt?: string
-  progress?: number
-  parentId?: string | null
 }
 
 export interface AgentCronJob {

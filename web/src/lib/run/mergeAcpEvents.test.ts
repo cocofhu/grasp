@@ -82,8 +82,6 @@ describe('mergeAcpEvents', () => {
     const tailPrev = asMerged([
       ev({ t: 1, kind: 'thought', text: '流式思考' }),
     ])
-    const prev = [...older, ...tailPrev]
-
     const incoming: AcpEvent[] = []
     const mergedTail = mergeAcpEvents(tailPrev, incoming, { live: true })
     const withPrefix = [...older, ...mergedTail]

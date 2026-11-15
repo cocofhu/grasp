@@ -2,7 +2,6 @@
   "mcp": {
     "integrations": {
       "title": "集成",
-      "subtitle": "管理内置 MCP 与仓库 / CI 凭据；可在 Agent 元信息中配置环境变量。",
       "sectionTitle": "内置 MCP · 按作用域注入",
       "noConfigNeeded": "无需配置",
       "noConfigHere": "无需在此配置",
@@ -15,10 +14,8 @@
       "scopeWorkspace": "作用域：工作区 / 助手会话",
       "entryPathLabel": "使用入口：",
       "entryPath": "设置 → 助手设置",
-      "entryPathExternal": "设置 → 外部 MCP",
       "entryPathAgent": "Agent Studio → MCP",
       "toolCount": "{n} 个工具 · 点击查看详细说明",
-      "openDetail": "打开详述",
       "backToCatalog": "返回目录",
       "toolsTitle": "工具列表",
       "io": {
@@ -28,7 +25,6 @@
       "scopeAgent": "scope: agent / 通用"
     },
     "artifactStore": {
-      "name": "artifact-store",
       "desc": "平台产物存储 · 全局注入到本次运行的每个节点(含沙箱 Agent),用于读写中间/最终产物",
       "overview": "平台内置产物存储 MCP。每次运行开始时由编排器注入到本次 run 的全部节点（含沙箱 Agent），凭 run token 隔离作用域。Agent 通过 MCP 读写中间/最终产物，编排器作为 Host 负责持久化。",
       "convention": "沙箱约定(强制):节点声明的「产物契约 produces」中的文件,Agent 必须在结束当前轮次前通过 write_artifact 全部写入;写完产物后还必须调用 node_complete 标记完成。否则编排器在节点完成时校验失败。校验顺序固定为「平台默认检查必须通过 → 再可选业务 RPC」。该约定由平台注入的 system rules 强制下发到沙箱。",
@@ -169,14 +165,9 @@
           "signature": "get_history_detail(node_id, iteration?, include_log?)",
           "desc": "下钻查看某次执行/门禁的完整细节(状态、输出、变量;门禁含人工动作)"
         }
-      },
-      "io": {
-        "write": "write",
-        "read": "read"
       }
     },
     "memoryStore": {
-      "name": "memory-store",
       "desc": "通用长期记忆 · 按工作区+Agent 隔离，任意 Agent 可在 mcp[] 声明",
       "overview": "Agent 级长期记忆 MCP。按工作区中的 Agent 隔离。先 list/search 再 get；重要结论 upsert。",
       "convention": "在 Agent Studio 添加 memory-store（{'${GRASP_MEMORY_URL/TOKEN}'}）。工作区助手咨询沙箱会自动注入。",
@@ -204,7 +195,6 @@
       }
     },
     "contextStore": {
-      "name": "context-store",
       "desc": "对话上下文 · 平台自动落 QA，Agent 经 MCP 渐进回看",
       "overview": "对话上下文 MCP。存储为 ChatThread/ChatMessage 单一事实源；每次 Chat 自动落库。按 Agent 隔离。",
       "convention": "工作区助手咨询自动注入。请用 list_conversations / get_messages 拉取历史，勿依赖 ACP session 全文。",
@@ -232,7 +222,6 @@
       }
     },
     "taskScheduler": {
-      "name": "task-scheduler",
       "desc": "Agent 级定时任务 · 定义面 MCP；平台调度执行",
       "overview": "Agent 级定时任务。仅工作区助手咨询可写；到点新建沙箱 Chat。任务独占 cron 线程。",
       "convention": "create_job 仅工作区助手咨询可用。执行由平台调度器完成，每次新沙箱。",
@@ -264,7 +253,6 @@
       }
     },
     "pmProgress": {
-      "name": "pm-progress",
       "desc": "工作区助手专用 · 工作区进度/阻塞/风险只读",
       "overview": "工作区进度 MCP。在工作区助手咨询沙箱中按已启用的能力注入。",
       "convention": "设置 → 助手设置中启用 pm-progress。",
@@ -296,7 +284,6 @@
       }
     },
     "pmWorkflowRead": {
-      "name": "pm-workflow-read",
       "desc": "工作区助手专用 · 当前工作区工作流只读查询",
       "overview": "工作流 list/get/graph/versions/runs 与待审批门禁查询，仅限当前工作区。",
       "convention": "设置 → 助手设置中启用 pm-workflow-read。",
@@ -332,7 +319,6 @@
       }
     },
     "pmWorkflowWrite": {
-      "name": "pm-workflow-write",
       "desc": "工作区助手专用 · 当前工作区工作流写操作",
       "overview": "创建/更新/复制/删除工作流、发布、启动 Run、审批门禁与取消 Run，仅限当前工作区。",
       "convention": "设置 → 助手设置中启用 pm-workflow-write。",
@@ -376,7 +362,6 @@
       }
     },
     "pmAgentFs": {
-      "name": "pm-agent-fs",
       "desc": "工作区助手专用 · 列出 Agent 并编辑其工作目录",
       "overview": "列出当前工作区的全部 Agent 成员（self 为当前助手，other 为其他成员），并对同工作区任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
       "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
@@ -428,26 +413,6 @@
         "pm_fs_restore": {
           "signature": "pm_fs_restore(agentName, sha, reason)",
           "desc": "整树恢复到指定版本并追加 restore 记录（必填 reason）"
-        }
-      }
-    },
-    "pmPrdManager": {
-      "name": "pm-prd-manager",
-      "desc": "工作区助手专用 · 查看与创建需求草稿",
-      "overview": "列出当前工作区需求草稿摘要、读取全文，并创建 open 草稿。列表不含正文；创建缺省标题为「未命名需求」。本轮不提供更新/改状态/删除。",
-      "convention": "设置 → 助手设置或渠道 MCP 勾选中启用 pm-prd-manager（默认启用；若已保存专用 MCP 列表，需手动勾选）。未启用时调用返回 mcp disabled。",
-      "tools": {
-        "pm_list_requirement_drafts": {
-          "signature": "pm_list_requirement_drafts(status?, query?)",
-          "desc": "列出当前工作区需求草稿摘要（id/title/status/updatedAt/createdAt，不含正文）"
-        },
-        "pm_get_requirement_draft": {
-          "signature": "pm_get_requirement_draft(draftId)",
-          "desc": "读取单条需求草稿全文（含 bodyMarkdown）"
-        },
-        "pm_create_requirement_draft": {
-          "signature": "pm_create_requirement_draft(title?, bodyMarkdown?)",
-          "desc": "创建 open 需求草稿；缺省标题为「未命名需求」"
         }
       }
     }

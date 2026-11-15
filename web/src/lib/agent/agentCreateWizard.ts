@@ -3,7 +3,6 @@ import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 import {
   ACP_BACKENDS,
-  isManagedRegionKey,
   normalizeRegions,
   regionSummary,
   switchBackendRegions,
@@ -79,16 +78,6 @@ export const WIZARD_STEPS: WizardStepDef[] = [
 
 const DEFAULT_CONFIG_ROOT = '/root/.cursor'
 const DEFAULT_WORKSPACE_DIR = '/root/workspace'
-
-const GIT_ENV_KEYS = new Set([
-  'GIT_REPOS',
-  'GITHUB_TOKEN',
-  'GITHUB_URL',
-  'GITLAB_TOKEN',
-  'GITLAB_URL',
-  'GIT_SSH_PRIVATE_KEY',
-  'GIT_SSH_KNOWN_HOSTS',
-])
 
 /** Starting capabilities of a blank Agent: one autonomous run reading every product. */
 function blankAgentCapabilities(): AgentCapabilities {
@@ -269,14 +258,6 @@ export function validateBasics(draft: WizardDraft, existingNames: string[]): str
   const normalized = normalizeAgentName(draft.name)
   if (existingNames.includes(normalized)) return 'exists'
   return ''
-}
-
-export function envConfiguredCount(draft: WizardDraft, gitOnly = false): number {
-  return draft.env.filter((e) => {
-    const k = e.k.trim()
-    if (!k) return false
-    return gitOnly ? GIT_ENV_KEYS.has(k) : !GIT_ENV_KEYS.has(k) && !isManagedRegionKey(k)
-  }).length
 }
 
 type ReviewChipKind = 'ok' | 'empty' | 'def'

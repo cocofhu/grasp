@@ -91,26 +91,3 @@ export function conflictingAlias(items: KindItem[], kind: CredentialKind, alias:
   }
   return ''
 }
-
-export function backendKind(backend: string): CredentialKind | undefined {
-  switch (backend) {
-    case 'cursor':
-      return kindById('cursor')
-    case 'claude_code':
-      return kindById('claude_code')
-    case 'codebuddy':
-      return kindById('codebuddy')
-    case 'trae':
-      return kindById('trae')
-    case 'codex':
-      return kindById('codex')
-    case 'deepseek_harness':
-      return kindById('deepseek_harness')
-    case 'kimi_code':
-      return kindById('kimi_code')
-    case 'opencode':
-      return kindById('opencode')
-    default:
-      return undefined
-  }
-}

@@ -348,7 +348,7 @@ function asProcessItems(processes: ProcessAtom[]): RawStat[] {
 }
 
 function attachShareAndColor(items: RawStat[], wallSec: number): StatItem[] {
-  return items.map((it, i) => ({
+  return items.map((it) => ({
     ...it,
     sharePct: sharePct(it.durationSec, wallSec),
     color: nodeColor(it.type),
@@ -459,7 +459,7 @@ export function aggregateMultiRuns(
   const tokenKpi: MultiRunUsageSummary = summarizeMultiRunUsage(perRunTotals, wallSumSec)
 
   const items: MultiRunItem[] = order
-    .map((k, i) => {
+    .map((k) => {
       const it = map.get(k)!
       const runHits = it.runIds.size
       const avgSec = runHits > 0 ? Math.round(it.durationSec / runHits) : 0

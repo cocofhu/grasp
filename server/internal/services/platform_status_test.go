@@ -77,7 +77,7 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 		}
 	}
 
-	_, err = workspace.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 		}
 	}
 
-	_, err = workspace.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestPlatformStatus_readsNewUsageWithoutCache(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err = workspace.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -161,13 +161,13 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	if err != nil {
 		return nil, fmt.Errorf("ingest launch attachments: %w", err)
 	}
-	// Resolve the live value of every global variable: workspace defaults first,
+	// Resolve the live value of every global variable: workflow defaults first,
 	// then Graph.Variables + launcher-submitted Ask values (latter wins on name).
-	var workspaceVars []models.WorkspaceVariable
-	if e.workspaceVarsLookup != nil {
-		workspaceVars = e.workspaceVarsLookup(def.ID)
+	var defaultVars []models.WorkspaceVariable
+	if e.defaultVarsLookup != nil {
+		defaultVars = e.defaultVarsLookup(def.ID)
 	}
-	seeded, err := resolveStartVars(graph, inputs, workspaceVars)
+	seeded, err := resolveStartVars(graph, inputs, defaultVars)
 	if err != nil {
 		return nil, err
 	}
@@ -284,16 +284,16 @@ func (e *Engine) UpdateRunTitle(runID, title string) (*models.Run, error) {
 }
 
 // resolveStartVars computes the initial live value of every declared global
-// variable. Workspace variables are seeded first; Graph.Variables then overlay
+// variable. Workflow default variables are seeded first; Graph.Variables then overlay
 // (and Ask vars take submitted values). Required Ask variables must end up
 // non-blank. Submitted values are coerced to the variable's type so
 // guards/templates see numbers and bools, not strings from the launch form.
-// Every variable is persisted under the single {{vars.x}} namespace. Workspace
+// Every variable is persisted under the single {{vars.x}} namespace. The default
 // seed alone does not inject values into the container OS environ.
-func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []models.WorkspaceVariable) ([]models.RunVariable, error) {
-	byName := make(map[string]models.RunVariable, len(workspaceVars)+len(g.Variables))
-	order := make([]string, 0, len(workspaceVars)+len(g.Variables))
-	for _, v := range workspaceVars {
+func resolveStartVars(g models.Graph, submitted map[string]any, defaultVars []models.WorkspaceVariable) ([]models.RunVariable, error) {
+	byName := make(map[string]models.RunVariable, len(defaultVars)+len(g.Variables))
+	order := make([]string, 0, len(defaultVars)+len(g.Variables))
+	for _, v := range defaultVars {
 		if v.Name == "" {
 			continue
 		}
@@ -324,7 +324,7 @@ func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []
 		if _, exists := byName[v.Name]; !exists {
 			order = append(order, v.Name)
 		}
-		// A graph variable overlaying a secret workspace variable stays
+		// A graph variable overlaying a secret default variable stays
 		// secret (masking by name is the conservative choice).
 		byName[v.Name] = models.RunVariable{Name: v.Name, Type: v.Type, Value: coerceVar(val, v.Type), Secret: byName[v.Name].Secret}
 	}

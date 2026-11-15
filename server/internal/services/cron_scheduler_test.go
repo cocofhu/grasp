@@ -34,7 +34,7 @@ func TestCronSchedulerClaimRelease(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("CronClaim", "", nil)
+	_, err := ps.CreateFixture("CronClaim", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestCronSchedulerStaleClaimReclaim(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("CronStale", "", nil)
+	_, err := ps.CreateFixture("CronStale", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestCronSchedulerShanghaiNextRunAtDueAt0200Z(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("CronShanghaiDue", "", nil)
+	_, err := ps.CreateFixture("CronShanghaiDue", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestCronSchedulerFinishJobUsesCronExpr(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("CronNext", "", nil)
+	_, err := ps.CreateFixture("CronNext", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestCronSchedulerExecuteUnavailable(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("CronExec", "", nil)
+	_, err := ps.CreateFixture("CronExec", "")
 	if err != nil {
 		t.Fatal(err)
 	}

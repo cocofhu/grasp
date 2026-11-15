@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assembleCreatePayload, applyAcpBackend, buildDefaultRule, buildReviewSummary, configRootFor, freshDraft, hasPathDeps, envConfiguredCount, validateBasics, WIZARD_STEPS, ACP_BACKENDS } from './agentCreateWizard'
+import { assembleCreatePayload, applyAcpBackend, buildDefaultRule, buildReviewSummary, configRootFor, freshDraft, hasPathDeps, validateBasics, WIZARD_STEPS, ACP_BACKENDS } from './agentCreateWizard'
 describe('Agent creation data contract', () => {
  it('has one combined tool and named-model step and no Git step', () => {
   expect(WIZARD_STEPS.map(step => [step.id, step.skip])).toEqual([['basics', false], ['acp', false], ['review', false]])
@@ -69,6 +69,5 @@ describe('Agent creation data contract', () => {
   d.icon = null
   expect(assembleCreatePayload(d)).not.toHaveProperty('icon')
   d.env.push({ k: 'FEATURE', v: 'on' }, { k: '', v: '' })
-  expect(envConfiguredCount(d)).toBe(1)
  })
 })

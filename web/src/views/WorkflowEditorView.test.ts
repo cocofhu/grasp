@@ -326,7 +326,7 @@ describe('WorkflowEditorView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }))
     await flushPromises()
     expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
-    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults).toEqual({ inheritWorkspace: true, variables: [] })
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults).toEqual({ variables: [] })
   })
 
   it('does not inject defaults into an existing workflow', async () => {
@@ -343,7 +343,7 @@ describe('WorkflowEditorView', () => {
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="workflow-inherit-row"]').get('span').trigger('click')
+    await wrapper.get('[data-testid="workflow-notify-row"] [role="switch"]').trigger('click')
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="defaults-close"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(false)
@@ -351,7 +351,7 @@ describe('WorkflowEditorView', () => {
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="workflow-inherit-row"] [role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-testid="workflow-notify-row"] [role="switch"]').attributes('aria-checked')).toBe('true')
   })
 
   it('still updates the defaults footer when reduced motion is on', async () => {
@@ -507,7 +507,7 @@ describe('WorkflowEditorView', () => {
   })
 
   it('keeps migrated ordinary defaults through metadata save and subsequent publication', async () => {
-    const defaults = { inheritWorkspace: false, variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], notifyPolicy: { enabled: false, defaultEvents: ['failed'], channelIds: ['original-channel'] }, gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
+    const defaults = { variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], notifyPolicy: { enabled: false, defaultEvents: ['failed'], channelIds: ['original-channel'] }, gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
     apiMocks.getWorkflow.mockResolvedValue(workflow({ defaults }))
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-name"]').setValue('metadata changed')
@@ -519,7 +519,7 @@ describe('WorkflowEditorView', () => {
   })
 
   it('restores backup content while preserving a newer server name by default', async () => {
-    const current = workflow({ name: 'server name', defaults: { inheritWorkspace: false, variables: [{ name: 'PRESERVED', type: 'string', value: 'current' }] } })
+    const current = workflow({ name: 'server name', defaults: { variables: [{ name: 'PRESERVED', type: 'string', value: 'current' }] } })
     apiMocks.getWorkflow.mockResolvedValue(current)
     localStorage.setItem(BACKUP_PREFIX + current.id, JSON.stringify({ savedAt: 1, snapshot: JSON.stringify({ name: 'old local name', description: 'local changes', nodes: current.nodes, edges: current.edges }) }))
     const { wrapper } = await mountEditor()

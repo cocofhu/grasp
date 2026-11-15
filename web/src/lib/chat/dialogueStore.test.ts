@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
 import {
   addOptimisticSend,
   clearDialogues,
@@ -11,7 +10,6 @@ import {
   rejectOptimisticSend,
   requestDialogueResync,
   setDialogueFetcher,
-  useDialogue,
 } from './dialogueStore'
 import { prefixDigest, type DialogueState } from './dialogueState'
 
@@ -44,12 +42,10 @@ afterEach(() => {
 })
 
 describe('dialogueStore', () => {
-  it('keeps only the newest version per node', async () => {
-    const view = useDialogue(() => key)
+  it('keeps only the newest version per node', () => {
     expect(ingestDialogue(frame(2, ['a', 'b']))).toBe(true)
     expect(ingestDialogue(frame(1, ['a']))).toBe(false)
-    await nextTick()
-    expect(view.value.rows.map((r) => r.id)).toEqual(['a', 'b'])
+    expect(getDialogue(key)!.rows.map((r) => r.id)).toEqual(['a', 'b'])
     expect(ingestDialogue({ type: 'review', seq: 3 })).toBe(false)
   })
 

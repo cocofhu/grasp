@@ -1952,9 +1952,8 @@ func decodePageItems(b []byte, out *[]map[string]any) error {
 func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
 	b, _ := json.Marshal(body)
 	var in struct {
-		Name        string                     `json:"name"`
-		Description string                     `json:"description"`
-		Variables   []models.WorkspaceVariable `json:"variables"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 	_ = json.Unmarshal(b, &in)
 	p, err := hn.h.Workspace.Workspace()
@@ -1967,7 +1966,7 @@ func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
 	if name == "" {
 		name = p.Name
 	}
-	p, err = hn.h.Workspace.Update(&name, &in.Description, &in.Variables, nil, nil)
+	p, err = hn.h.Workspace.Update(&name, &in.Description, nil, nil)
 	if err != nil {
 		w.WriteHeader(400)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})

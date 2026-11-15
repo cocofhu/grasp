@@ -31,7 +31,6 @@ export function isHomeSectionPath(path: string): boolean {
     path === '/dashboard' ||
     isNodeConversationPath(path) ||
     path.startsWith('/solo') ||
-    path === '/requirements' ||
     path === '/assistant'
   )
 }

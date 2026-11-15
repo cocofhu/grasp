@@ -1,4 +1,4 @@
-import type { Run, RunCurrentNode } from '@/lib/shared/types'
+import type { Run } from '@/lib/shared/types'
 import { enteringAutoNode, isObservableNode, recentCurrentNode } from './recentRuns'
 
 /** Pure helpers for the live (read-only) view of an auto node. */
@@ -14,17 +14,6 @@ type LiveDecision =
   | { kind: 'follow'; nodeId: string }
   | { kind: 'wait'; nodeId: string; label: string }
   | { kind: 'detail' }
-
-/**
- * The auto node the run is on now (server currentNode: kind=agent, mode=auto,
- * state=running), or null. A confirm can name the next automatic agent before
- * its visit exists (state=entering). That visit is not observable yet; the
- * live page waits for it instead of leaving.
- */
-export function runningAutoNode(run: Run): RunCurrentNode | null {
-  const n = recentCurrentNode(run)
-  return n && n.kind === 'agent' && n.mode === 'auto' && n.state === 'running' ? n : null
-}
 
 /**
  * Decide what the live view shows for `requested` (route ?node=, may be empty),

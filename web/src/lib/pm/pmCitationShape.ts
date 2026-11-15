@@ -8,10 +8,6 @@ const GATE_TARGET_RE = /^run-[0-9a-f]{8}(?::[a-z0-9][a-z0-9_.-]*)?$/i
 const PLAN_ID_RE = /^g\d+(?:\.\d+)?$/i
 const PLAN_SCOPED_RE = /^run-[0-9a-f]{8}:g\d+(?:\.\d+)?$/i
 
-export function isValidRunIdShape(id: string): boolean {
-  return RUN_ID_RE.test(id.trim())
-}
-
 /** True when the route id cannot be a real Run (e.g. bare "trigger"). */
 export function isClearlyInvalidRunRouteId(id: string): boolean {
   const t = id.trim()

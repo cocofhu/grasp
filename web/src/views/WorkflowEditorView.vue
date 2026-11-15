@@ -91,7 +91,7 @@ const wf = reactive<Workflow>({
   needsRepo: false,
   nodes: [],
   edges: [],
-  ...(routeId === 'new' ? { defaults: { inheritWorkspace: true, variables: [] } } : {}),
+  ...(routeId === 'new' ? { defaults: { variables: [] } } : {}),
 })
 const { fields: askFieldsComputed } = useWorkflowAskInputs(wf)
 

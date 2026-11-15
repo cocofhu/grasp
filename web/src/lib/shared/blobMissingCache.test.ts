@@ -3,7 +3,6 @@ import {
   beginAutoLoad,
   beginManualRetry,
   blobMissingCacheDebug,
-  hasAutoAttempted,
   isKnownMissing,
   markLoaded,
   markMissing,
@@ -34,7 +33,6 @@ describe('blobMissingCache', () => {
   it('beginAutoLoad: same id auto GET permission ≤1 across callers (g1.2)', () => {
     expect(beginAutoLoad('id-a')).toBe('proceed')
     expect(beginAutoLoad('id-a')).toBe('blocked_pending')
-    expect(hasAutoAttempted('id-a')).toBe(true)
 
     markMissing('id-a')
     expect(isKnownMissing('id-a')).toBe(true)
