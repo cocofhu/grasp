@@ -29,6 +29,8 @@ const props = withDefaults(
     tools?: AgentTool[]
     /** The reply is still streaming. */
     streaming?: boolean
+    /** Bumped by the host when replayed frames land as a batch; that text is not typed out. */
+    replayBatches?: number
     /** Finished on its own (thought summaries show 已完成 while streaming). */
     completed?: boolean
     interrupted?: boolean
@@ -61,6 +63,7 @@ const props = withDefaults(
     thought: '',
     tools: () => [],
     streaming: false,
+    replayBatches: 0,
     completed: false,
     interrupted: false,
     hideThought: false,
@@ -200,8 +203,8 @@ const lastText = computed(() => {
   return b && b.kind !== 'tools' ? { key: b.key, kind: b.kind, text: b.text } : null
 })
 watch(
-  () => [lastText.value, props.streaming] as const,
-  ([last, streaming], prev) => {
+  () => [lastText.value, props.streaming, props.replayBatches] as const,
+  ([last, streaming, batches], prev) => {
     if (!last || (!streaming && !prev?.[1])) return
     if (last.key !== liveKey) {
       reveal.reset()
@@ -210,8 +213,9 @@ watch(
       liveKind = last.kind
     }
     reveal.setTarget(last.text)
-    // Text already there at mount (reload / reconnect) shows at once; only later chunks animate.
-    if (!streaming || !prev) {
+    // Text already there at mount (reload / reconnect) or landing in a replay
+    // batch shows at once; only live chunks animate.
+    if (!streaming || !prev || batches !== prev[2]) {
       reveal.flush()
       preview.flush()
     }

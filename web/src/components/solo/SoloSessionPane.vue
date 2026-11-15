@@ -536,6 +536,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 v-if="turn.steps.length || !turn.streaming"
                 :parts="partsOf(turn)"
                 :streaming="turn.streaming"
+                :replay-batches="turn.replayBatches"
                 :completed="!turn.streaming && !turnInterrupted(turn)"
                 :interrupted="turnInterrupted(turn)"
                 :started-at="turn.startedAt"

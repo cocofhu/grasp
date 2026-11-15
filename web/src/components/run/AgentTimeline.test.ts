@@ -101,6 +101,26 @@ describe('AgentTimeline', () => {
     }
   })
 
+  it('shows a replay batch whole, including a short new step, and types out live chunks after it', async () => {
+    vi.stubEnv('VITEST', '')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] })
+    try {
+      const w = mountTimeline({ streaming: true, parts: [{ kind: 'message', text: 'x' }] })
+      const shown = () => w.findAll('[data-testid="agent-timeline-message"]').at(-1)!.text().length
+      const tail = 'y'.repeat(200)
+      await w.setProps({ replayBatches: 1, parts: [{ kind: 'message', text: 'x'.repeat(5000) }, { kind: 'tool', title: 'Run' }, { kind: 'message', text: tail }] })
+      await vi.advanceTimersByTimeAsync(20)
+      expect(shown()).toBe(tail.length)
+      await w.setProps({ parts: [{ kind: 'message', text: 'x'.repeat(5000) }, { kind: 'tool', title: 'Run' }, { kind: 'message', text: tail + 'z'.repeat(200) }] })
+      await vi.advanceTimersByTimeAsync(100)
+      expect(shown()).toBeGreaterThan(tail.length)
+      expect(shown()).toBeLessThan(tail.length + 200)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('keeps the thought being written open and closes it when the next step lands', async () => {
     const w = mountTimeline({ streaming: true, parts: [{ kind: 'thought', text: 'hmm' }] })
     const details = () => w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement

@@ -343,8 +343,8 @@ describe('NotificationsView pagination (g1/g2/g4)', () => {
 })
 
 describe('NotificationsView pagination conventions (g4.4 / g1.5)', () => {
-  it('keeps min-h-11 on tabs and mark-all', () => {
-    expect(viewSrc).toMatch(/min-h-11 border border-line bg-transparent/)
+  it('keeps min-h-11 on tabs and on mobile mark-all', () => {
+    expect(viewSrc).toMatch(/notification-mark-all h-8 max-md:min-h-11/)
     expect(viewSrc).toMatch(/min-h-11 border-b-2 border-transparent px-4/)
   })
 
