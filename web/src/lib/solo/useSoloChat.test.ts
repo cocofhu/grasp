@@ -205,6 +205,54 @@ describe('useSoloChat', () => {
     })
   })
 
+  it('applies a running turn replayed after the history read in one batch', async () => {
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    await flushPromises()
+    const item = { id: 'active', text: 'active', images: [] }
+    socket.emit({ type: 'session', event: 'queue_state', seq: 3, sessionGeneration: 1, revision: 1, busy: true, activeItem: item, items: [] })
+    socket.emit({ type: 'session', event: 'turn_begin', seq: 1, sessionGeneration: 1, revision: 2, item })
+    socket.emit({ ...acp('long '), seq: 2 })
+    expect(chat.busy.value).toBe(true)
+    expect(chat.turns.value.find(turn => turn.id === 'live:active')?.steps).toEqual([])
+    socket.emit({ ...acp('reply'), seq: 3 })
+    expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('long reply')
+    expect(chat.turns.value.find(turn => turn.id === 'live:active')?.replayBatches).toBe(1)
+    socket.emit({ ...acp('!'), seq: 4 })
+    expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('long reply!')
+    expect(chat.turns.value.find(turn => turn.id === 'live:active')?.replayBatches).toBe(1)
+    app.unmount()
+  })
+
+  it('ends a replay that stops before the snapshot seq after a quiet pause', async () => {
+    vi.useFakeTimers()
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      const socket = FakeSocket.all[0]!
+      socket.open()
+      await flushPromises()
+      const item = { id: 'active', text: 'active', images: [] }
+      // The last published frame (seq 4) was a status frame, which is not replayed.
+      socket.emit({ type: 'session', event: 'queue_state', seq: 4, sessionGeneration: 1, revision: 1, busy: true, activeItem: item, items: [] })
+      socket.emit({ type: 'session', event: 'turn_begin', seq: 1, sessionGeneration: 1, revision: 2, item })
+      socket.emit({ ...acp('partial'), seq: 2 })
+      expect(chat.turns.value.find(turn => turn.id === 'live:active')?.steps).toEqual([])
+      await vi.advanceTimersByTimeAsync(150)
+      expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('partial')
+      // Replay frames delayed past the pause still batch until the first live frame.
+      socket.emit({ ...acp(' more'), seq: 3 })
+      expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('partial')
+      socket.emit({ ...acp(' live'), seq: 5 })
+      expect(chat.turns.value.find(turn => turn.id === 'live:active')?.text).toBe('partial more live')
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('rebases state and replay sequence on a new subscription to a recreated server stream', async () => {
     vi.useFakeTimers()
     const { chat, app } = mountChat()

@@ -16,6 +16,8 @@ export type SoloTurn = ChatMessageMetadata & {
   steps: SoloStep[]
   plan: { content: string; status: string }[]
   streaming: boolean
+  /** Agent turn: bumped each time a batch of replayed frames is applied. */
+  replayBatches?: number
   images?: ClarifyImage[]
   annotations?: ReactAnnotation[]
   /** User turn: contexts explicitly picked with @. */
