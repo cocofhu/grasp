@@ -52,6 +52,9 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 	if row.CleanupPending {
 		return fmt.Errorf("sandbox is not available for idle recovery")
 	}
+	if row.RecoveryPhase == "releasing" {
+		return s.finishSavedRelease(ctx, row)
+	}
 	if row.Status == "stopped" {
 		return nil
 	}
@@ -121,9 +124,9 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 		}
 	}
 	if err == nil {
-		// Stop is the gateway's durable pause or release contract. The gateway
-		// keeps the create specification, so Start can rebuild without copying
-		// credentials into this service's backup records.
+		// Stop commits the gateway's backend-specific recovery operation. E2B
+		// uses its provider API contract, not a physical storage-reclaim receipt.
+		// The gateway retains the specification and provider restore-point IDs.
 		err = s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints())
 	}
 	if err != nil {
@@ -265,9 +268,14 @@ func (s *SandboxService) recordReclaimFailure(ctx context.Context, row *models.S
 	if probeErr == nil && status == "running" && row.RecoveryPhase != "releasing" {
 		next = "running"
 	}
-	// A paused VM alone does not prove that its snapshot is durable. Keep
-	// counting the allocation until the provider confirms a successful save.
-	_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND status = ?", row.ID, "saving").Updates(map[string]any{
+	if probeErr == nil && row.RecoveryPhase == "releasing" && workloadReleasedStatus(status) {
+		next = "stopped"
+		s.teardownLive(row.ID)
+	}
+	// Preserve the incomplete operation even if the provider confirms compute
+	// has stopped. Releasing quota is not a claim that its backup cleanup or
+	// physical storage reclamation has completed; wake must finish this intent.
+	_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND recovery_phase = ? AND cleanup_pending = ?", row.ID, row.RecoveryPhase, false).Updates(map[string]any{
 		"status": next, "error": "保存或释放未完成，可重试：" + truncErr(cause),
 	}).Error
 }
@@ -349,14 +357,9 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 	if row.RecoveryKind == "files" && !hasPoint {
 		return nil, false, errors.New("saved workspace recovery point is missing")
 	}
-	if kind == "snapshot" && status != "running" {
-		// Provider auto-pause and an interrupted save can leave a VM stopped
-		// before its upload is durable. Verify the idempotent pause contract
-		// before allowing either an automatic or an explicit wake.
-		if err := s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints()); err != nil {
-			return nil, false, fmt.Errorf("verify paused recovery point: %w", err)
-		}
-	}
+	// A provider-paused snapshot resumes through Start's native recovery
+	// contract. Repeating Stop here can create another snapshot or prune history;
+	// only the persisted releasing intent above authorizes a Stop retry.
 	if kind == "files" && hasPoint {
 		if err := s.verifyRecoveryPoint(ctx, point); err != nil {
 			return nil, false, err
@@ -474,11 +477,11 @@ func (s *SandboxService) RetryRecoveryCleanup(ctx context.Context) {
 			_ = s.Destroy(ctx, row.ID)
 			continue
 		}
-		if row.Purpose == SandboxPurposeSolo && row.Status == "stopped" {
-			// A crash or failed retention prune can happen after the durable
-			// workload release but before the manual-stop session update.
+		if row.Purpose == SandboxPurposeSolo && row.Status == "stopped" && row.RecoveryPhase == "" {
+			// A crash or failed archive prune can happen after the completed
+			// recovery operation but before the manual-stop session update.
 			res := s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status = ?", row.ID, models.SoloStatusStopping).
-				Update("status", models.SoloStatusStopped)
+				Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""})
 			if res.Error == nil && res.RowsAffected > 0 {
 				s.invokeSoloPausedHook(row.ID)
 			}
@@ -546,7 +549,8 @@ func (s *SandboxService) reconcileRecoveryState(ctx context.Context, row *models
 			return
 		}
 		if fresh.Purpose == SandboxPurposeSolo {
-			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status = ?", row.ID, models.SoloStatusStopping).Update("status", models.SoloStatusStopped)
+			s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status = ?", row.ID, models.SoloStatusStopping).
+				Updates(map[string]any{"status": models.SoloStatusStopped, "error": ""})
 			s.invokeSoloPausedHook(row.ID)
 		}
 		return
@@ -564,16 +568,16 @@ func (s *SandboxService) reconcileRecoveryState(ctx context.Context, row *models
 		if fresh.Status == "saving" && fresh.RecoveryKind == "files" {
 			return // no durable release intent: an older archive cannot authorize deletion
 		}
-		// Retry the idempotent durable-stop contract. VM state alone is not
-		// evidence that snapshot upload finished before the previous exit.
-		if err := s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints()); err != nil {
-			return
-		}
 		if kind == "files" {
 			if _, ok := latestRecoveryPoint(fresh); !ok {
 				return
 			}
+			if err := s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints()); err != nil {
+				return
+			}
 		}
+		// Standard E2B can pause independently of Grasp. Observe that state
+		// without manufacturing a new recovery point; Start owns readiness.
 		status = "stopped"
 	}
 	if row.Status == "saving" && observed == "running" {
@@ -614,6 +618,7 @@ func (s *SandboxService) finishSavedRelease(ctx context.Context, row *models.San
 		return errors.New("release recovery kind is missing")
 	}
 	if err := s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints()); err != nil {
+		s.recordReclaimFailure(ctx, row, err)
 		return err
 	}
 	if err := s.db.Model(&models.Sandbox{}).Where("id = ? AND recovery_phase = ?", row.ID, "releasing").Updates(map[string]any{"status": "stopped", "recovery_phase": "", "error": ""}).Error; err != nil {

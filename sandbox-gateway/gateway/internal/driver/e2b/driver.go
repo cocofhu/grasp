@@ -201,7 +201,7 @@ func (d *Driver) restoreEndpoints() error {
 	// HTTP connections can take them from the host's ephemeral port range.
 	for _, e := range d.entries {
 		r := &e.record
-		if r.Phase != "running" && r.Phase != "paused" {
+		if r.Phase != "running" && r.Phase != "paused" && r.Phase != "releasing" {
 			continue
 		}
 		for port, local := range r.Ports {
@@ -644,12 +644,19 @@ func (d *Driver) observe(ctx context.Context, r *record) error {
 }
 
 func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error) {
-	if r.Phase == "deleting" {
-		return handle(r, nil, driver.StatusNotFound), nil
+	if r.Restore != nil {
+		// An uncertain creation may own compute even when the old guest is gone.
+		if !r.Restore.Dispatched {
+			return handle(r, nil, driver.StatusStopped), nil
+		}
+		return handle(r, nil, driver.StatusPending), nil
 	}
 	s, err := d.client.Get(ctx, r.Provider.ID)
 	if errors.Is(err, ErrNotFound) {
 		_ = d.tunnels.Close(r.Provider.ID)
+		if (r.Phase == "paused" || r.Phase == "releasing") && latestRecoveryPoint(r) != nil {
+			return handle(r, nil, driver.StatusStopped), nil
+		}
 		return handle(r, nil, driver.StatusNotFound), nil
 	}
 	if err != nil {
@@ -658,9 +665,16 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 	if !d.owns(s, r.ID) {
 		return nil, errors.New("E2B provider ownership mismatch")
 	}
+	if r.Phase == "deleting" || r.Phase == "releasing" {
+		status := driver.StatusRunning
+		if s.State == "paused" || s.State == "stopped" {
+			status = driver.StatusStopped
+		}
+		return handle(r, nil, status), nil
+	}
 	if s.State == "paused" || s.State == "stopped" {
 		if r.Phase != "paused" {
-			r.Phase = "paused"
+			r.Phase, r.LatestSnapshotID = "paused", ""
 			if err := d.save(r); err != nil {
 				return nil, err
 			}
@@ -681,7 +695,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 		return nil, err
 	}
 	if r.Phase != "running" {
-		r.Phase = "running"
+		r.Phase, r.LatestSnapshotID = "running", ""
 		if err := d.save(r); err != nil {
 			return nil, err
 		}
@@ -786,40 +800,121 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 }
 
 func (d *Driver) PauseSnapshot(ctx context.Context, id string, keep int) error {
+	if keep < 1 {
+		return errors.New("snapshot retention must be positive")
+	}
 	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
 	}
 	defer e.mu.Unlock()
-	if e.record.Phase == "deleting" {
+	r := &e.record
+	if r.Phase == "deleting" {
 		return ErrNotFound
 	}
-	current, getErr := d.client.Get(ctx, e.record.Provider.ID)
-	if getErr != nil {
-		return getErr
+	if r.Restore != nil {
+		return errors.New("E2B snapshot restore is pending")
+	}
+	// The capture is already committed. Retry release without recapturing the
+	// briefly resumed source, which may have advanced beyond the saved state.
+	if r.Phase == "releasing" {
+		return d.finishSnapshotRelease(ctx, r, keep)
+	}
+	current, err := d.client.Get(ctx, r.Provider.ID)
+	if errors.Is(err, ErrNotFound) && r.Phase == "paused" && latestRecoveryPoint(r) != nil {
+		r.BackupKeep = keep
+		return d.pruneSnapshots(ctx, r, keep)
+	}
+	if err != nil {
+		return err
 	}
 	if !d.owns(current, id) {
 		return errors.New("E2B provider ownership mismatch")
 	}
-	if current.State != "paused" && current.State != "stopped" {
-		if err = d.client.Pause(ctx, e.record.Provider.ID, keep); err != nil {
+	paused := current.State == "paused" || current.State == "stopped"
+	if !paused && keep > 1 {
+		if r.CaptureName == "" {
+			var nonce [16]byte
+			if _, err := rand.Read(nonce[:]); err != nil {
+				return errors.New("cannot allocate E2B snapshot name")
+			}
+			r.CaptureName = "grasp-" + hex.EncodeToString(nonce[:])
+			r.RecoveryPoints = append([]recoveryPoint{{Name: r.CaptureName, SourceID: r.Provider.ID, CreatedAt: time.Now().UTC()}}, r.RecoveryPoints...)
+			if err := d.save(r); err != nil {
+				return err
+			}
+		}
+		if err := d.captureRecoveryPoint(ctx, r, true); err != nil {
+			return err
+		}
+		for _, p := range r.RecoveryPoints {
+			if p.Name == r.CaptureName {
+				r.LatestSnapshotID = p.ID
+			}
+		}
+		r.Phase, r.CaptureName, r.BackupKeep = "releasing", "", keep
+		if err := d.save(r); err != nil {
+			return err
+		}
+		return d.finishSnapshotRelease(ctx, r, keep)
+	}
+	// keep1, or an independently paused guest: trust the native snapshot.
+	// Do not resume it solely to manufacture historical recovery points.
+	if !paused {
+		if err := d.client.Pause(ctx, r.Provider.ID); err != nil {
 			return err
 		}
 	}
-	e.record.Phase = "paused"
-	d.tunnels.Suspend(e.record.Provider.ID)
-	if err := d.save(&e.record); err != nil {
+	r.Phase, r.CaptureName, r.LatestSnapshotID, r.BackupKeep = "paused", "", "", keep
+	d.tunnels.Suspend(r.Provider.ID)
+	if err := d.save(r); err != nil {
 		return err
 	}
-	return d.client.WaitSnapshotReady(ctx, e.record.Provider.ID)
-
+	return d.pruneSnapshots(ctx, r, keep)
 }
+
+func (d *Driver) finishSnapshotRelease(ctx context.Context, r *record, keep int) error {
+	if keep < 1 {
+		return errors.New("snapshot retention must be positive")
+	}
+	if latestRecoveryPoint(r) == nil {
+		return errors.New("E2B committed snapshot is missing; refusing release")
+	}
+	current, err := d.client.Get(ctx, r.Provider.ID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if err == nil && !d.owns(current, r.ID) {
+		return errors.New("E2B release ownership mismatch")
+	}
+	if err := d.deleteConfirmed(ctx, r.Provider.ID); err != nil {
+		return err
+	}
+	d.tunnels.Suspend(r.Provider.ID)
+	r.Phase, r.BackupKeep = "paused", keep
+	if err := d.save(r); err != nil {
+		return err
+	}
+	return d.pruneSnapshots(ctx, r, keep)
+}
+
 func (d *Driver) Start(ctx context.Context, id string) error {
 	e, err := d.lockEntry(id)
 	if err != nil {
 		return err
 	}
 	defer e.mu.Unlock()
+	if e.record.Phase == "releasing" {
+		// A source DELETE may have succeeded before its response or the phase
+		// commit reached us. Finish that durable intent before restoring the
+		// checkpoint; never create a second guest while release is uncertain.
+		if err := d.finishSnapshotRelease(ctx, &e.record, e.record.BackupKeep); err != nil {
+			return err
+		}
+	}
+	if e.record.Restore != nil && e.record.Phase != "deleting" {
+		return d.restoreLatest(ctx, &e.record)
+	}
 	if e.record.Phase == "running" {
 		h, err := d.refresh(ctx, &e.record)
 		if err != nil {
@@ -834,6 +929,9 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 		return errors.New("E2B sandbox is not paused")
 	}
 	current, getErr := d.client.Get(ctx, e.record.Provider.ID)
+	if errors.Is(getErr, ErrNotFound) {
+		return d.restoreLatest(ctx, &e.record)
+	}
 	if getErr != nil {
 		return getErr
 	}
@@ -861,7 +959,7 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 	if err = d.convergeResumed(ctx, &e.record); err != nil {
 		return err
 	}
-	e.record.Phase = "running"
+	e.record.Phase, e.record.LatestSnapshotID = "running", ""
 	return d.save(&e.record)
 }
 
@@ -870,6 +968,27 @@ func (d *Driver) cleanup(ctx context.Context, e *entry) error {
 		return nil
 	}
 	r := &e.record
+	if r.Restore != nil {
+		if err := d.discoverRestore(ctx, r); err != nil {
+			return err
+		}
+		if r.Restore.SandboxID != "" && r.Restore.SandboxID != r.Provider.ID {
+			current, err := d.client.Get(ctx, r.Restore.SandboxID)
+			if err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+			if err == nil && (!d.owns(current, r.ID) || current.Metadata[restoreLabel] != r.Restore.Token) {
+				return errors.New("E2B restore cleanup ownership mismatch")
+			}
+			if err := d.deleteConfirmed(ctx, r.Restore.SandboxID); err != nil {
+				return err
+			}
+		}
+		r.Restore = nil
+		if err := d.save(r); err != nil {
+			return err
+		}
+	}
 	_ = d.tunnels.Close(r.Provider.ID)
 	// A timed-out POST may have created a sandbox before its response was
 	// received. Discover only our reserved owner+gateway metadata to retire it.
@@ -932,10 +1051,14 @@ func (d *Driver) cleanup(ctx context.Context, e *entry) error {
 			return errors.New("refusing to delete E2B sandbox owned by another gateway")
 		}
 		// The guest may already be gone while its snapshots still occupy disk.
-		// Keep the authenticated provider identity until physical GC is proven.
+		// Keep the authenticated provider identity until standard DELETE and GET agree.
 		if err = d.deleteConfirmed(ctx, r.Provider.ID); err != nil {
 			return err
 		}
+	}
+	r.CaptureName, r.LatestSnapshotID = "", ""
+	if err := d.pruneSnapshots(ctx, r, 0); err != nil {
+		return &driver.CleanupPendingError{WorkloadReleased: true}
 	}
 	// Entry identity and journal retirement are one operation with respect to
 	// Create. Never unlink a replacement's journal after an old snapshot ran.
@@ -1069,6 +1192,11 @@ func (d *Driver) sweepEntry(ctx context.Context, e *entry) {
 		}
 	} else if e.record.Phase == "running" {
 		d.renewLease(bounded, e)
+	}
+	if e.record.Phase != "deleting" {
+		if err := d.cleanupSnapshots(bounded, &e.record); err != nil {
+			log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B snapshot deletion pending retry")
+		}
 	}
 }
 

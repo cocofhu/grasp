@@ -153,7 +153,8 @@ func runtimeBootstrapScript(data []byte) (string, error) {
 	}
 }
 
-// Stop stops a sandbox and retains its resource for a later Resume.
+// Stop saves recovery state and releases the workload for a later Resume.
+// The gateway owns provider-specific persistence and restore-point identifiers.
 func (m *Manager) Stop(ctx context.Context, id string, keep int) error {
 	if execution.Worktree() {
 		return fmt.Errorf("local worktree environments have no gateway stop")
