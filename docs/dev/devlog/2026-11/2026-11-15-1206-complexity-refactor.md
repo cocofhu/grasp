@@ -1,0 +1,37 @@
+# 2026-11-15（#1206：降低核心代码复杂度，清理无调用方代码）
+
+- 日期：2026-11-15
+- 范围：`server/internal/{engine,mcp,services,handlers,router}/`、`server/cmd/server/main.go`、`sandbox-gateway/sandbox/internal/provider/oneshot/`、`web/src/lib/{inbox,run,chat,composables,solo}/`、`web/e2e/helpers/`、`web/LIB_DOMAIN_MAP.json`。
+- 做了什么：
+  - **工作流引擎**（第 3 项）：失败报告汇总改为启动装配时注入 `RunFailureAggregator` 窄接口（`eng.SetRunFailureAggregator(runSvc)`），未注入时与 `IssueResolver` 一样回退到基于 `e.db` 的 `RunService`。需求草稿和反馈台账已在 #1248、#1210 随功能删除。现在引擎运行中只在未注入时回退创建服务。
+  - **oneshot**（第 5 项）：`runOnce` 拆为 `turnArgs`、`startTurnProcess`、`killGroupOnCancel`、`feedStdin`、`waitTurnProcess`、`joinOutputs`、`applyLogFile`。进程与管道归 `turnProcess`；输出产生的事件、会话 id、用量、停止原因归新的 `turnAccumulator`（`turn.go`）。`Codec` 边界不变。
+  - **MCP**（第 6 项）：352 行的 `runTool` `switch` 改为 `builtinToolHandlers` 登记表，处理函数按产物、交互、计划、历史、结构化、预览分文件，`case` 代码原样搬移。
+  - **Solo**（第 2 项）：`soloChat.execute` 拆为 `saveUserMessage`、`prepareTurn`、`buildTurnInput`、`runAgent`、`saveTurnResult`。`solo.go`（2042 行）按职责逐字拆到 `solo_turn.go`、`solo_model_settings.go`、`solo_queue.go`、`solo_sandbox.go`，并用 AST 核对过名称和源码。结构体注释写明 `SoloService.mu` 和 `soloChat.mu` 各自保护的状态。继续使用 `chatsession` 的 FIFO 和单 worker。
+  - **收件箱**（第 1 项）：从 `useGatesInbox` 拆出 `createInboxProcessingState`（已处理三元组、处理中意图、处理锁）、`createInboxContextFlight`（上下文请求取消和尾随刷新）、`createInboxInputGuard`（输入草稿、最近输入、监听挂载卸载）。`useGatesInbox` 通过解构保留原有局部名。
+  - **实时同步**（第 1 项）：收件箱主会话、收件箱跟随、运行详情、Live 四处 `WS /runs/:id/events` 的连接生命周期收拢到 `openRunEventsSocket`（`lib/run/runEventsSocket.ts`），负责创建、保存、心跳、过期 socket 守卫、重连、重连后补读 Live、解析帧。首个快照"是否属于版本化会话"的判断原本在收件箱和运行详情各写一遍，现在统一为 `reviewState.isVersionedSnapshot`。各页的帧处理分支原样留在页面的 `onFrame` 中。
+  - **清理无调用方代码**：
+    - 删除没有任何客户端调用的 `GET /api/node-registry`（前端使用 `gen-nodereg` 生成的清单）和登录态 `POST /api/runs/:id/nodes/:nodeId/live-sessions/discard-all`（分享页使用 `/public/approvals/live-discard-all`，不受影响），连同处理函数和只测这两个路由的用例。`/api/workspace/maintenance` 是管理员停机维护接口，保留。
+    - 删除两个未使用的测试辅助方法（`stopFixture.sandboxName` / `hasSystem`）。
+    - 从组合式函数的返回对象中删除没有任何使用方的成员：`useGatesInbox` 31 个，`useGateApproval` 16 个，其余 9 个文件共 18 个。其中 `listLoadGeneration`、`queryWaitGen`、`dialogueRailsFilled` 等返回的只是创建时的数值快照。随之删除只为返回而存在的 `useSoloChat.rename`（重命名由侧栏直接调用 API）和 `useClarifyChat` 中未使用的 `renderMarkdown` 导入。去掉 e2e 辅助文件和新模块中几个无外部引用的 `export`。
+- 为什么：#1206 指出状态归属不清、重复编排、多职责对象使维护成本高。按状态所有权和规则入口拆分后，每段状态只有一个拥有者，重复的连接代码只有一份实现。无调用方的接口和返回成员会误导阅读者，也增加维护面。
+- 保持不变：
+  - HTTP/MCP/WS 字段、错误码、文案、状态转换、持久化顺序、锁语义都不变。删除的两个接口没有任何调用方。
+  - 引擎：`run_error.json` 的写入时机、内容和 fail-open 行为不变。
+  - oneshot：回合以进程退出而非管道 EOF 结束（#619）；后台 shell 监督和结果后宽限期杀进程（#765、#767）；被占用的管道排空到 `io.Discard`；取消优先；原生会话累计用量差分（`5b2701fd`、`62915df2`）。
+  - MCP：`tools/list` 输出、可见性和授权规则、错误文案都不变。
+  - Solo：交付文件不被覆盖，`ok` 时才清除前言标志。
+  - 前端：访问代次、会话版本、`dialogueRevision` 过期失效、`deliverOrBufferGateAcp` 缓冲交付、重连后的恢复顺序都不变，没有新增恢复循环。Live 页原先连帧处理抛出的异常也一起忽略，这个行为保留。确认仪式、分享面板等被源码守卫测试固定在 `useGatesInbox.ts` 中的代码未动。
+  - 纯结构调整和无调用方代码删除，不改 CHANGELOG。oneshot 属于运行时包逻辑，随 server 发布，不需要新镜像。
+- 如何验证：
+  - 新增测试：
+    - `TestRunErrorArtifactUsesInjectedAggregator`。
+    - `TestBuiltinToolsDeclaredAndHandled` 和 `TestRunToolUnknownName`。
+    - 两个 Solo 表征测试（`TestSoloTurnReplyKeepsDeliveredFiles`、`TestSoloTurnRestartPreambleThenCleared`），重构前先在原代码上以 `-count=3` 跑通。
+    - `inboxProcessing.test.ts`、`inboxInputGuard.test.ts`、`runEventsSocket.test.ts`，以及 `isVersionedSnapshot` 用例。
+  - 原有测试和源码守卫测试不变通过。
+  - 死代码按以下方式识别：Go 用 `deadcode` 和 `deadcode -test`；前端用 `knip`；路由按客户端引用核对；组合式函数的返回成员要求在整个 `src`（含模板、测试）中除定义文件外没有任何出现。返回对象被整体传给子组件的情况（如 `useGateApproval` 的 `s.xxx`）已排除。
+  - 门禁：
+    - `server/`：golangci-lint、`go vet ./...`、gen-configdoc 检查、`go test ./...`、`cover-check-server.sh 90`。
+    - `sandbox/`：golangci-lint、`go vet`、`go test`；`sandbox-gateway/`：`cover-check-sandbox.sh 90`。
+    - `web/`：lint、`vue-tsc`、`npm test -- --coverage`、`npm run build`、`npm run test:e2e:ci`。
+  - 本机是 Grasp 沙箱，会注入环境变量，沙箱测试在 `env -i` 的干净环境中运行。

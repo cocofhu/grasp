@@ -26,10 +26,6 @@ func TestLiveSessionsHTTP(t *testing.T) {
 	if s, ok := out["sessions"].([]any); !ok || len(s) != 0 {
 		t.Fatalf("sessions = %v", out["sessions"])
 	}
-	d := h.do(http.MethodPost, "/api/runs/run-live/nodes/research1/live-sessions/discard-all", nil)
-	if d.Code != 200 || parseJSON(t, d)["discarding"] != float64(0) {
-		t.Fatalf("discard all: %d %s", d.Code, d.Body.String())
-	}
 	r := h.do(http.MethodPost, "/api/runs/run-live/nodes/research1/reply", map[string]any{
 		"live": map[string]any{"op": "discard", "sid": "sid001"},
 	})

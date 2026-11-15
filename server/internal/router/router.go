@@ -57,7 +57,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/health", h.Health)
 		api.GET("/live", h.Live)
-		api.GET("/node-registry", h.NodeRegistry)
 		api.GET("/stats/dashboard", h.DashboardStats)
 		api.GET("/stats/token", h.GetGlobalTokenStats)
 		api.GET("/stats/token/events", h.ListTokenUsageEvents)
@@ -233,7 +232,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/runs/:id/nodes/:nodeId/preview-share", h.ManageAppPreviewShare)
 		api.DELETE("/runs/:id/nodes/:nodeId/preview-share", h.ManageAppPreviewShare)
 		api.GET("/runs/:id/nodes/:nodeId/live-sessions", h.LiveSessions)
-		api.POST("/runs/:id/nodes/:nodeId/live-sessions/discard-all", h.LiveDiscardAll)
 		api.GET("/runs/:id/nodes/:nodeId/preview-issues", h.ListPreviewIssues)
 		api.POST("/runs/:id/nodes/:nodeId/preview-issues", h.CreatePreviewIssue)
 		api.DELETE("/runs/:id/nodes/:nodeId/preview-issues/:issueId", h.DeletePreviewIssue)

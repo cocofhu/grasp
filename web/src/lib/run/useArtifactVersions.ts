@@ -78,11 +78,9 @@ export function useArtifactVersions() {
   }
 
   return {
-    archivedById,
     choicesFor,
     ensureVersions,
     ensureVersionContent,
-    historicalContent,
     resolveVersionedArtifact,
   }
 }
