@@ -31,343 +31,70 @@ func (h *Host) runTool(runID, token, name string, args map[string]any) (string, 
 	if name == liveUpdateTool {
 		return h.runLiveUpdate(runID, token, args)
 	}
-	switch name {
-	case "get_history":
-		return h.getConversationHistory(runID, token, args)
-	case "read_reference":
-		return h.readReference(runID, token, args)
-	case "upload_image_artifact":
-		aname := asString(args["name"])
-		content := asString(args["content"])
-		if aname == "" {
-			return "error: 'name' is required", true
-		}
-		id, err := h.UploadImageArtifact(runID, token, h.ActiveNode(runID), aname, content)
-		if err != nil {
-			return "upload_image_artifact failed: " + err.Error(), true
-		}
-		return fmt.Sprintf("ok: uploaded image artifact %q (id=%s)", aname, id), false
-	case "write_artifact":
-		aname := asString(args["name"])
-		content := asString(args["content"])
-		kind := asString(args["kind"])
-		if aname == "" {
-			return "error: 'name' is required", true
-		}
-		if strings.TrimSpace(aname) == PreflightArtifactName {
-			return "write_artifact failed: preflight.json 只能通过 set_preflight 写入,不能用 write_artifact 伪造", true
-		}
-		writer := h.ActiveNode(runID)
-		if h.reviewAgentInReview(runID) {
-			if owner := h.artifactWriterNode(runID, token, aname); owner != "" {
-				writer = owner
-			}
-		}
-		id, err := h.WriteArtifact(runID, token, writer, aname, content, kind)
-		if err != nil {
-			return "write_artifact failed: " + err.Error(), true
-		}
-		return fmt.Sprintf("ok: wrote artifact %q (id=%s)", aname, id), false
-	case "read_artifact":
-		if aname := asString(args["name"]); h.authorize(runID, token) && !h.readAllowed(runID, token, aname) {
-			return readDeniedMsg("read_artifact", aname), true
-		}
-		content, err := h.ReadArtifact(runID, token, asString(args["name"]))
-		if err != nil {
-			return "read_artifact failed: " + err.Error(), true
-		}
-		return content, false
-	case "list_artifacts":
-		infos, err := h.ListArtifacts(runID, token)
-		if err != nil {
-			return "list_artifacts failed: " + err.Error(), true
-		}
-		readable := infos[:0]
-		for _, info := range infos {
-			if h.readAllowed(runID, token, info.Name) {
-				readable = append(readable, info)
-			}
-		}
-		b, _ := json.Marshal(readable)
-		return string(b), false
-	case "ask_question":
-		if !h.authorize(runID, token) {
-			return "ask_question failed: " + ErrUnauthorized.Error(), true
-		}
-		// Granted Agents, plus any Agent parked in its post-run review: an
-		// autonomous run has no human watching, so it must not stall on a
-		// choice that will never be surfaced.
-		if !toolAllowed(h.ActiveCaps(runID), models.ToolAskQuestion) && !h.reviewAgentInReview(runID) {
-			return "ask_question 仅在被授予该工具的 Agent 或复审阶段可用;请直接给出结论。", true
-		}
-		qs := parseQuestions(args["questions"])
-		if len(qs) == 0 {
-			return "ask_question failed: 'questions' 为空或格式不正确", true
-		}
-		h.SetPendingQuestions(runID, h.ActiveNode(runID), qs)
-		return fmt.Sprintf("ok: 已记录 %d 个问题并展示给用户。请结束本轮回复,等待用户在界面完成选择后再继续。", len(qs)), false
-	case "ask_form":
-		if !h.authorize(runID, token) {
-			return "ask_form failed: " + ErrUnauthorized.Error(), true
-		}
-		if !toolAllowed(h.ActiveCaps(runID), models.ToolAskForm) {
-			return toolDeniedMsg("ask_form"), true
-		}
-		forms := parseForms(args)
-		if len(forms) == 0 {
-			return "ask_form failed: 'fields' 为空或格式不正确(每项需要 name+label; type 仅 text|url)", true
-		}
-		h.SetPendingForms(runID, h.ActiveNode(runID), forms)
-		nFields := 0
-		for _, f := range forms {
-			nFields += len(f.Fields)
-		}
-		return fmt.Sprintf("ok: 已记录表单(%d 个字段)并展示给用户。请结束本轮回复,等待用户填写后再继续。", nFields), false
-	case "set_plan":
-		if !h.authorize(runID, token) {
-			return "set_plan failed: " + ErrUnauthorized.Error(), true
-		}
-		if !h.nodeToolAllowed(runID, "set_plan") {
-			return toolDeniedMsg("set_plan"), true
-		}
-		doc, err := parsePlan(args)
-		if err != nil {
-			return "set_plan failed: " + err.Error(), true
-		}
-		b, _ := json.MarshalIndent(doc, "", "  ")
-		if _, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), PlanArtifactName, string(b), "json"); err != nil {
-			return "set_plan failed: " + err.Error(), true
-		}
-		nSub := 0
-		for _, g := range doc.Goals {
-			nSub += len(g.Subgoals)
-		}
-		return fmt.Sprintf("ok: 已写入计划(%d 个大目标 / %d 个小目标)", len(doc.Goals), nSub), false
-	case "get_plan":
-		if !h.authorize(runID, token) {
-			return "get_plan failed: " + ErrUnauthorized.Error(), true
-		}
-		if !h.readAllowed(runID, token, PlanArtifactName) {
-			return readDeniedMsg("get_plan", PlanArtifactName), true
-		}
-		content, err := h.ReadArtifact(runID, token, PlanArtifactName)
-		if err != nil {
-			return "get_plan failed: 尚无计划(plan.json)", true
-		}
-		return content, false
-	case "update_plan_status":
-		if !h.authorize(runID, token) {
-			return "update_plan_status failed: " + ErrUnauthorized.Error(), true
-		}
-		if !h.nodeToolAllowed(runID, models.ToolUpdatePlanStatus) {
-			return toolDeniedMsg(models.ToolUpdatePlanStatus), true
-		}
-		// Any authorized node may advance item status; plan structure stays plan-node-only.
-		id := asString(args["id"])
-		status := asString(args["status"])
-		if id == "" {
-			return "update_plan_status failed: 'id' is required", true
-		}
-		if !validPlanStatus(status) {
-			return "update_plan_status failed: status 须为 pending|in_progress|done", true
-		}
-		content, err := h.ReadArtifact(runID, token, PlanArtifactName)
-		if err != nil {
-			return "update_plan_status failed: 尚无计划(plan.json)", true
-		}
-		var doc planDoc
-		if err := json.Unmarshal([]byte(content), &doc); err != nil {
-			return "update_plan_status failed: 计划解析失败", true
-		}
-		if !applyPlanStatus(&doc, id, status) {
-			return "update_plan_status failed: 未找到计划项 id=" + id, true
-		}
-		b, _ := json.MarshalIndent(doc, "", "  ")
-		// Status backfill must not steal authorship: plan product
-		// panels bind plan.json by writer nodeId. implement is only marking
-		// progress on the existing run-scoped plan.
-		writer := h.artifactWriterNode(runID, token, PlanArtifactName)
-		if writer == "" {
-			writer = h.ActiveNode(runID)
-		}
-		if _, err := h.WriteArtifact(runID, token, writer, PlanArtifactName, string(b), "json"); err != nil {
-			return "update_plan_status failed: " + err.Error(), true
-		}
-		return fmt.Sprintf("ok: 已更新 %s=%s;剩余未完成 %d 项", id, status, len(planIncomplete(doc))), false
-	case "list_run_history":
-		if !h.authorize(runID, token) {
-			return "list_run_history failed: " + ErrUnauthorized.Error(), true
-		}
-		if h.history == nil {
-			return "list_run_history failed: 历史不可用", true
-		}
-		node := asString(args["node_id"])
-		if node == "" {
-			node = h.ActiveNode(runID)
-		}
-		out, err := h.RunHistory(runID, node, asBool(args["all"]), asBool(args["only_feedback"]))
-		if err != nil {
-			return "list_run_history failed: " + err.Error(), true
-		}
-		return out, false
-	case "get_history_detail":
-		if !h.authorize(runID, token) {
-			return "get_history_detail failed: " + ErrUnauthorized.Error(), true
-		}
-		if h.history == nil {
-			return "get_history_detail failed: 历史不可用", true
-		}
-		node := asString(args["node_id"])
-		if node == "" {
-			return "get_history_detail failed: 'node_id' is required", true
-		}
-		out, err := h.ExecutionDetail(runID, node, asInt(args["iteration"]), asBool(args["include_log"]))
-		if err != nil {
-			return "get_history_detail failed: " + err.Error(), true
-		}
-		return out, false
-	case "set_clarified_requirement":
-		doc, err := structured.ParseClarifiedRequirement(args)
-		tracksRootCause := h.ActiveCaps(runID).WritesSchema(models.SchemaRootCause)
-		if err == nil && tracksRootCause && doc.WorkKind == "" {
-			err = fmt.Errorf("本 Agent 声明了根因产物,写入需求时 work_kind 必填(bug|feature|other)")
-		}
-		msg, isErr := h.structuredSet(runID, token, "set_clarified_requirement", structured.ClarifiedRequirementArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入需求(%d 目标 / %d 条功能需求)", len(doc.Goals), len(doc.FunctionalRequirements)))
-		if !isErr && tracksRootCause && doc.WorkKind != "" && doc.WorkKind != structured.WorkKindBug {
-			// Non-bug work must not keep a leftover root_cause.json.
-			h.deleteArtifactIfPresent(runID, token, structured.RootCauseArtifactName)
-		}
-		return msg, isErr
-	case "get_clarified_requirement":
-		return h.structuredGet(runID, token, "get_clarified_requirement", structured.ClarifiedRequirementArtifactName)
-	case "set_research":
-		doc, err := structured.ParseResearch(args)
-		return h.structuredSet(runID, token, "set_research", structured.ResearchArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入调研(%d 问 / %d 发现)", len(doc.Questions), len(doc.Findings)))
-	case "get_research":
-		return h.structuredGet(runID, token, "get_research", structured.ResearchArtifactName)
-	case "set_root_cause":
-		doc, err := structured.ParseRootCause(args)
-		if err == nil {
-			if cr, rerr := h.ReadArtifact(runID, token, structured.ClarifiedRequirementArtifactName); rerr == nil {
-				if wk := structured.ClarifiedWorkKind(cr); wk != "" && wk != structured.WorkKindBug {
-					err = fmt.Errorf("工作类型为 %s,不能写入 root_cause.json", wk)
-				}
-			}
-		}
-		return h.structuredSet(runID, token, "set_root_cause", structured.RootCauseArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入根因报告(%d 证据 / %d 图)", len(doc.Evidence), len(doc.Diagrams)))
-	case "get_root_cause":
-		return h.structuredGet(runID, token, "get_root_cause", structured.RootCauseArtifactName)
-	case "set_test_result":
-		doc, err := structured.ParseTestResult(args)
-		if err == nil {
-			// Validate refs then store artifact-only screenshots.
-			if valErr := doc.ValidateScreenshotArtifacts(func(name string) bool {
-				_, rerr := h.ReadArtifact(runID, token, name)
-				return rerr == nil
-			}); valErr != nil {
-				return "set_test_result failed: " + valErr.Error(), true
-			}
-		}
-		return h.structuredSet(runID, token, "set_test_result", structured.TestResultArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入测试结果(✅%d ❌%d ⏭️%d)", doc.Passed, doc.Failed, doc.Skipped))
-	case "get_test_result":
-		return h.structuredGet(runID, token, "get_test_result", structured.TestResultArtifactName)
-	case "set_review":
-		doc, err := structured.ParseReview(args)
-		return h.structuredSet(runID, token, "set_review", structured.ReviewArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入评审(结论 %s,%d 条意见)", doc.Verdict, len(doc.Findings)))
-	case "get_review":
-		return h.structuredGet(runID, token, "get_review", structured.ReviewArtifactName)
-	case "set_implementation_result":
-		doc, err := structured.ParseImplementationResult(args)
-		return h.structuredSet(runID, token, "set_implementation_result", structured.ImplementationResultArtifactName, doc, err,
-			"ok: 已写入实现结果")
-	case "get_implementation_result":
-		return h.structuredGet(runID, token, "get_implementation_result", structured.ImplementationResultArtifactName)
-	case "set_merge_request":
-		doc, err := structured.ParseMergeRequest(args)
-		return h.structuredSet(runID, token, "set_merge_request", structured.MergeRequestArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入合并请求(%d 个仓库)", len(doc.Items)))
-	case "get_merge_request":
-		return h.structuredGet(runID, token, "get_merge_request", structured.MergeRequestArtifactName)
-	case "set_preflight":
-		doc, err := structured.ParsePreflight(args)
-		return h.structuredSet(runID, token, "set_preflight", structured.PreflightArtifactName, doc, err,
-			fmt.Sprintf("ok: 已写入环境确认(%d 个字段)", len(doc.Fields)))
-	case "get_preflight":
-		return h.structuredGet(runID, token, "get_preflight", structured.PreflightArtifactName)
-	case "set_preview":
-		if !h.authorize(runID, token) {
-			return "set_preview failed: " + ErrUnauthorized.Error(), true
-		}
-		if !h.nodeToolAllowed(runID, models.ToolSetPreview) {
-			return toolDeniedMsg("set_preview"), true
-		}
-		portRaw, hasPort := args["port"]
-		urlRaw := strings.TrimSpace(asString(args["url"]))
-		hasURL := urlRaw != ""
-		if hasPort == hasURL {
-			return "set_preview failed: 必须恰好提供 port 或 url 之一", true
-		}
-		label := asString(args["label"])
-		nodeID := h.ActiveNode(runID)
-		if hasURL {
-			display, err := h.setPreviewURL(runID, nodeID, urlRaw, label)
-			if err != nil {
-				return "set_preview failed: " + err.Error(), true
-			}
-			return fmt.Sprintf("ok: 外部 URL 预览已注册: %s", display), false
-		}
-		port, err := parsePreviewPort(portRaw)
-		if err != nil {
-			return "set_preview failed: " + err.Error(), true
-		}
-		reg, err := h.setPreviewPort(runID, nodeID, port, label)
-		if err != nil {
-			return "set_preview failed: " + err.Error(), true
-		}
-		return previewPortResult(port, reg), false
-	case "set_artifact_preview":
-		if !h.authorize(runID, token) {
-			return "set_artifact_preview failed: " + ErrUnauthorized.Error(), true
-		}
-		if !h.nodeToolAllowed(runID, models.ToolSetArtifactPreview) {
-			return toolDeniedMsg("set_artifact_preview"), true
-		}
-		aname := strings.TrimSpace(asString(args["name"]))
-		if aname == "" {
-			return "set_artifact_preview failed: 'name' is required", true
-		}
-		if _, ok := h.store.Get(runID, aname); !ok {
-			return "set_artifact_preview failed: 产物不存在: " + aname, true
-		}
-		nodeID := h.ActiveNode(runID)
-		h.mu.RLock()
-		hook := h.artifactPreview
-		if solo {
-			hook = h.soloArtifactPreview
-		}
-		h.mu.RUnlock()
-		if hook != nil {
-			if err := hook(runID, nodeID, aname); err != nil {
-				return "set_artifact_preview failed: " + err.Error(), true
-			}
-		} else if solo {
-			return "set_artifact_preview failed: Solo 产物预览不可用", true
-		}
-		return fmt.Sprintf("ok: 已设置产物预览 %q", aname), false
-	case "node_complete":
-		// Clarify dialogue before human confirm: treat as unknown.
-		if h.hideNodeComplete(runID) {
-			return "unknown tool: node_complete", true
-		}
-		return h.nodeComplete(runID, token, args)
-	default:
-		return "unknown tool: " + name, true
+	if run, ok := builtinToolHandlers[name]; ok {
+		return run(h, runID, token, args)
 	}
+	return "unknown tool: " + name, true
+}
+
+// toolHandler runs one built-in tool. Authorization and capability checks are
+// the handler's own, so each tool keeps its exact error wording.
+type toolHandler func(h *Host, runID, token string, args map[string]any) (string, bool)
+
+// builtinToolHandlers maps every tool artifactTools declares to its handler,
+// plus get_history / read_reference (declared beside their readers) and the
+// unlisted upload_image_artifact used by the sandbox artifact-upload CLI.
+// File, page and live_update tools are declared and dispatched by their own
+// files. TestBuiltinToolsDeclaredAndHandled keeps both sides in sync.
+var builtinToolHandlers = map[string]toolHandler{
+	// artifacts
+	"upload_image_artifact": (*Host).toolUploadImageArtifact,
+	"write_artifact":        (*Host).toolWriteArtifact,
+	"read_artifact":         (*Host).toolReadArtifact,
+	"list_artifacts":        (*Host).toolListArtifacts,
+	// interaction
+	"ask_question": (*Host).toolAskQuestion,
+	"ask_form":     (*Host).toolAskForm,
+	// plan
+	"set_plan":           (*Host).toolSetPlan,
+	"get_plan":           (*Host).toolGetPlan,
+	"update_plan_status": (*Host).toolUpdatePlanStatus,
+	// history and references
+	"get_history":        (*Host).getConversationHistory,
+	"read_reference":     (*Host).readReference,
+	"list_run_history":   (*Host).toolListRunHistory,
+	"get_history_detail": (*Host).toolGetHistoryDetail,
+	// structured products
+	"set_clarified_requirement": (*Host).toolSetClarifiedRequirement,
+	"get_clarified_requirement": structuredGetter("get_clarified_requirement", structured.ClarifiedRequirementArtifactName),
+	"set_research":              (*Host).toolSetResearch,
+	"get_research":              structuredGetter("get_research", structured.ResearchArtifactName),
+	"set_root_cause":            (*Host).toolSetRootCause,
+	"get_root_cause":            structuredGetter("get_root_cause", structured.RootCauseArtifactName),
+	"set_test_result":           (*Host).toolSetTestResult,
+	"get_test_result":           structuredGetter("get_test_result", structured.TestResultArtifactName),
+	"set_review":                (*Host).toolSetReview,
+	"get_review":                structuredGetter("get_review", structured.ReviewArtifactName),
+	"set_implementation_result": (*Host).toolSetImplementationResult,
+	"get_implementation_result": structuredGetter("get_implementation_result", structured.ImplementationResultArtifactName),
+	"set_merge_request":         (*Host).toolSetMergeRequest,
+	"get_merge_request":         structuredGetter("get_merge_request", structured.MergeRequestArtifactName),
+	"set_preflight":             (*Host).toolSetPreflight,
+	"get_preflight":             structuredGetter("get_preflight", structured.PreflightArtifactName),
+	// preview
+	"set_preview":          (*Host).toolSetPreview,
+	"set_artifact_preview": (*Host).toolSetArtifactPreview,
+	// outcome
+	"node_complete": (*Host).toolNodeComplete,
+}
+
+// toolNodeComplete treats node_complete as unknown during a clarify dialogue
+// before the human confirmed it.
+func (h *Host) toolNodeComplete(runID, token string, args map[string]any) (string, bool) {
+	if h.hideNodeComplete(runID) {
+		return "unknown tool: node_complete", true
+	}
+	return h.nodeComplete(runID, token, args)
 }
 
 // nodeComplete records the agent's completion mark for the active node.
@@ -426,30 +153,6 @@ func (h *Host) nodeComplete(runID, token string, args map[string]any) (string, b
 	return fmt.Sprintf("ok: 已记录完成标记(%s)", sum), false
 }
 
-// structuredSet is the shared handler for every set_<x> structured-product
-// tool: it authorizes the run, gates the tool by the Agent's declared writes, then
-// (when parsing succeeded) writes the normalized doc as the reserved JSON
-// artifact and returns okMsg.
-func (h *Host) structuredSet(runID, token, tool, name string, doc any, parseErr error, okMsg string) (string, bool) {
-	if !h.authorize(runID, token) {
-		return tool + " failed: " + ErrUnauthorized.Error(), true
-	}
-	if !h.nodeToolAllowed(runID, tool) {
-		return toolDeniedMsg(tool), true
-	}
-	if parseErr != nil {
-		return tool + " failed: " + parseErr.Error(), true
-	}
-	b, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return tool + " failed: encode result: " + err.Error(), true
-	}
-	if _, err := h.WriteArtifact(runID, token, h.ActiveNode(runID), name, string(b), "json"); err != nil {
-		return tool + " failed: " + err.Error(), true
-	}
-	return okMsg, false
-}
-
 // reviewAgentInReview reports whether the active node is an auto Agent
 // currently parked in its post-run review phase.
 func (h *Host) reviewAgentInReview(runID string) bool {
@@ -459,22 +162,6 @@ func (h *Host) reviewAgentInReview(runID string) bool {
 // nodeToolAllowed gates a tool by the active Agent's capabilities.
 func (h *Host) nodeToolAllowed(runID, tool string) bool {
 	return toolAllowed(h.ActiveCaps(runID), tool)
-}
-
-// structuredGet is the shared handler for every get_<x> structured-product
-// tool: authorize then return the reserved artifact's raw JSON content.
-func (h *Host) structuredGet(runID, token, tool, name string) (string, bool) {
-	if !h.authorize(runID, token) {
-		return tool + " failed: " + ErrUnauthorized.Error(), true
-	}
-	if !h.readAllowed(runID, token, name) {
-		return readDeniedMsg(tool, name), true
-	}
-	content, err := h.ReadArtifact(runID, token, name)
-	if err != nil {
-		return tool + " failed: 尚无 " + name, true
-	}
-	return content, false
 }
 
 // parseQuestions coerces the loosely-typed ask_question arguments into
