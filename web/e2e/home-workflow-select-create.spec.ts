@@ -6,6 +6,9 @@ import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
+/** ONBOARDING_AGENT_NAMES in src/lib/pm/onboardingWizard.ts (that module needs a DOM). */
+const ONBOARDING_AGENT_NAMES = ['需求澄清', '实现', '测试评审', '交付']
+
 const SHOT = '/tmp/home-workflow-select-create-shots'
 mkdirSync(SHOT, { recursive: true })
 
@@ -88,6 +91,15 @@ async function mockApis(page: Page, opts: { workflows?: unknown[] } = {}) {
       contentType: 'application/json',
       body: JSON.stringify({ username: 'e2e', isAdmin: true }),
     })
+  })
+
+  // New workflows stay blocked until the onboarding Agents exist (#942).
+  await page.route(/\/api\/agents(\?.*)?$/, async (route) => {
+    await route.fulfill({ json: ONBOARDING_AGENT_NAMES.map((name) => ({ name })) })
+  })
+
+  await page.route(/\/api\/projects(\?.*)?$/, async (route) => {
+    await route.fulfill({ json: [] })
   })
 
   await page.route('**/api/config**', async (route) => {

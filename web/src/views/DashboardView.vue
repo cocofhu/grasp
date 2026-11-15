@@ -1283,16 +1283,23 @@ html.light .home-shell :deep(.home-particle-mesh__canvas) {
   opacity: 0.1;
 }
 
-/* Top inset shrinks before the column scrolls. Basis 120px, floor 48px:
-   the 72px of slack absorbs exactly one image-chip row (56px thumb + 6px
-   pt-1.5 + 8px mb-2 = 70px). A second chip row or the attach notice still
-   scrolls; re-check this budget if the chip thumb size changes.
+/* Top and bottom insets shrink before the column scrolls. Top: basis 120px,
+   floor 48px. Bottom: basis 40px, floor 0. The 112px of slack absorbs exactly
+   one image-chip row (56px thumb + ~36px name/size details + 6px pt-1.5 + 8px
+   mb-2 ≈ 111px). A second chip row or the attach notice still scrolls;
+   re-check this budget if the chip thumb or details size changes.
    The 520px breakpoint below uses a 4.25rem basis. Its floor is 36px so the
    ear that rises ~30px above the 240×200 crop at float-high plus jump-high
    stays inside this scrolling column. */
 .home-shell__content {
-  padding-bottom: 40px;
   scrollbar-width: none;
+}
+
+.home-shell__content::after {
+  content: '';
+  width: 100%;
+  flex: 0 1 40px;
+  min-height: 0;
 }
 
 .home-shell__content::-webkit-scrollbar {
@@ -1929,8 +1936,8 @@ html.light .home-shell__card--selected .home-shell__card-top {
 }
 
 @media (max-width: 520px) {
-  .home-shell__content {
-    padding-bottom: 2.5rem;
+  .home-shell__content::after {
+    flex-basis: 2.5rem;
   }
 
   .home-shell__content::before {

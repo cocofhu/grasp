@@ -61,7 +61,7 @@ test.describe('shell notification center (IA separation)', () => {
     // Workspace chrome: unread stays on the bell, not a primary 通知 item (plan g2.1).
     await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
     await expect(page.getByTestId('nav-notifications-badge')).toHaveCount(0)
-    await expect(page.getByRole('link', { name: '运行' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '历史执行', exact: true })).toHaveAttribute('href', '/runs')
     await expect(page.getByTestId('nav-workspace-chrome').getByRole('link', { name: '通知' })).toHaveCount(0)
 
     await page.getByTestId('run-notifications-bell').click()
