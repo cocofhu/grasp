@@ -70,6 +70,8 @@ import {
   knownInboxProcessingLock,
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { createInboxInputGuard } from '@/lib/inbox/inboxInputGuard'
+import { createInboxContextFlight, createInboxProcessingState } from '@/lib/inbox/inboxProcessing'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
 import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
@@ -99,8 +101,7 @@ import {
   type RunChain,
 } from '@/lib/inbox/runConversationChain'
 
-/** Input idle time after which a focused, emptied field stops holding list auto-apply. */
-export const TYPING_IDLE_MS = 2000
+export { TYPING_IDLE_MS } from '@/lib/inbox/inboxInputGuard'
 
 export function useGatesInbox() {
 
@@ -1113,99 +1114,30 @@ const listPanelBusy = computed(
 const clarifyConfirmError = ref<string | null>(null)
 const clarifyConfirmCanAbort = ref(false)
 
-/** Triples that left pending — never softRefresh/load inbox-context for these. */
-const processedTriples = new Set<string>()
-/** Processed triples observed absent from a subsequent list load (safe to unmark if they reappear). */
-const confirmedAbsentTriples = new Set<string>()
-/** Per-triple AbortController for in-flight inbox-context fetches. */
-const inboxContextAborts = new Map<string, AbortController>()
-/** Single-flight: one softRefresh/loadActiveRun at a time for the selected triple. */
-let inboxContextInFlight: string | null = null
-/** Terminal frames received during that flight retain one coalesced trailing refresh. */
-const inboxContextTrailingRefreshes = new Set<string>()
-/**
- * In-flight confirm intents (triple keys). Non-empty ⇒ list reselection / refresh
- * stay gated (race with lagging list). Force confirm is gated per-item only so a
- * neighbor can confirm while an earlier reactReply/resume is still pending.
- */
-const processingIntentKeys = ref(new Set<string>())
-const processingLock = computed(() => processingIntentKeys.value.size > 0)
+const {
+  processedTriples,
+  confirmedAbsentTriples,
+  processingIntentKeys,
+  processingLock,
+  addProcessingIntent,
+  removeProcessingIntent,
+  isProcessingIntent,
+  isItemCardDisabled,
+  markProcessed,
+  unmarkProcessed,
+  isProcessedTriple,
+  reconcileProcessedWithList,
+} = createInboxProcessingState()
 
-function addProcessingIntent(triple: string) {
-  const next = new Set(processingIntentKeys.value)
-  next.add(triple)
-  processingIntentKeys.value = next
-}
-
-function removeProcessingIntent(triple: string) {
-  if (!processingIntentKeys.value.has(triple)) return
-  const next = new Set(processingIntentKeys.value)
-  next.delete(triple)
-  processingIntentKeys.value = next
-}
-
-function isProcessingIntent(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'> | null | undefined) {
-  if (!it) return false
-  return processingIntentKeys.value.has(inboxTripleKey(it))
-}
-
-/** Per-item card/select gate — not the global processingLock (plan g1.2). */
-function isItemCardDisabled(it: InboxItem) {
-  return isProcessingIntent(it) || isProcessedTriple(it)
-}
-
-function markProcessed(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>) {
-  processedTriples.add(inboxTripleKey(it))
-}
-
-function unmarkProcessed(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'>) {
-  const key = inboxTripleKey(it)
-  processedTriples.delete(key)
-  confirmedAbsentTriples.delete(key)
-}
-
-function isProcessedTriple(it: Pick<InboxItem, 'runId' | 'nodeId' | 'iteration'> | null | undefined) {
-  if (!it) return false
-  return processedTriples.has(inboxTripleKey(it))
-}
-
-function abortInboxContext(triple: string) {
-  inboxContextTrailingRefreshes.delete(triple)
-  const ctrl = inboxContextAborts.get(triple)
-  if (!ctrl) return
-  ctrl.abort()
-  inboxContextAborts.delete(triple)
-  if (inboxContextInFlight === triple) inboxContextInFlight = null
-}
-
-function acquireInboxContextSignal(triple: string): AbortSignal | null {
-  // Single-flight: drop duplicate softRefresh/load while one request is in flight.
-  if (inboxContextInFlight === triple) return null
-  // Switching selection: abort the previous triple's in-flight request.
-  if (inboxContextInFlight && inboxContextInFlight !== triple) {
-    abortInboxContext(inboxContextInFlight)
-  }
-  abortInboxContext(triple)
-  const ctrl = new AbortController()
-  inboxContextAborts.set(triple, ctrl)
-  inboxContextInFlight = triple
-  return ctrl.signal
-}
-
-function releaseInboxContextSignal(triple: string, signal: AbortSignal) {
-  const ctrl = inboxContextAborts.get(triple)
-  const ownsFlight = ctrl?.signal === signal && inboxContextInFlight === triple
-  if (ctrl?.signal === signal) inboxContextAborts.delete(triple)
-  if (ownsFlight) inboxContextInFlight = null
-  if (!ownsFlight || signal.aborted || !inboxContextTrailingRefreshes.delete(triple)) return
-  // Run after the owner's finally finishes its loading cleanup. The selected
-  // triple may have moved or been processed while the request was in flight.
-  queueMicrotask(() => {
-    if (!active.value || inboxTripleKey(active.value) !== triple) return
-    if (!shouldFetchActiveInboxContext()) return
-    void softRefreshActiveRun()
-  })
-}
+const inboxContext = createInboxContextFlight((triple) => {
+  if (!active.value || inboxTripleKey(active.value) !== triple) return
+  if (!shouldFetchActiveInboxContext()) return
+  void softRefreshActiveRun()
+})
+const inboxContextAborts = inboxContext.aborts
+const abortInboxContext = inboxContext.abort
+const acquireInboxContextSignal = inboxContext.acquire
+const releaseInboxContextSignal = inboxContext.release
 
 /**
  * User clicked approve / force-finish clarify: short-circuit immediately so the
@@ -1757,24 +1689,6 @@ function ensureValidActive({ keepActive = false }: { keepActive?: boolean } = {}
   active.value = list[0]
 }
 
-/**
- * Allow re-fetch only after a processed triple was confirmed gone, then reappears as pending.
- * Avoids clearing the mark on the immediate lagging loadList that still contains the item.
- */
-function reconcileProcessedWithList(list: InboxItem[]) {
-  const pending = new Set(list.map((it) => inboxTripleKey(it)))
-  for (const key of [...processedTriples]) {
-    if (!pending.has(key)) {
-      confirmedAbsentTriples.add(key)
-      continue
-    }
-    if (confirmedAbsentTriples.has(key)) {
-      processedTriples.delete(key)
-      confirmedAbsentTriples.delete(key)
-    }
-  }
-}
-
 /** After an item leaves the list: neighbor active (or null). Never keep stale active. */
 /**
  * Where the inbox goes after an inline hand-off. Returns false to fall back to
@@ -1954,59 +1868,7 @@ const isClarifyEditing = computed(
 
 const isEditing = computed(() => isGateEditing.value || isClarifyEditing.value)
 
-/**
- * The focused text field (gate form, clarify composer, filters…) holds a
- * non-empty draft. Counted as editing for list auto-apply so the caret and the
- * typed text are never disturbed; an empty focused field (e.g. the composer
- * right after sending) does not freeze the list.
- */
-const focusedFieldHasDraft = ref(false)
-function isTextEntry(el: Element | null): el is HTMLElement {
-  if (!(el instanceof HTMLElement)) return false
-  if (el.isContentEditable) return true
-  if (el instanceof HTMLTextAreaElement) return true
-  if (el instanceof HTMLInputElement) {
-    return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type)
-  }
-  return false
-}
-function fieldHasDraft(el: HTMLElement): boolean {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim().length > 0
-  return (el.textContent || '').trim().length > 0
-}
-/**
- * The user typed into the focused field within the last TYPING_IDLE_MS. Clearing
- * a draft (Ctrl+A, Backspace) and typing on must not count as "done editing":
- * the hold lasts until the field blurs or input has been idle for a while.
- */
-const typingRecently = ref(false)
-let typingIdleTimer: ReturnType<typeof setTimeout> | null = null
-function clearTypingIdle() {
-  if (typingIdleTimer) clearTimeout(typingIdleTimer)
-  typingIdleTimer = null
-  typingRecently.value = false
-}
-function syncFocusedFieldDraft() {
-  const el = typeof document !== 'undefined' ? document.activeElement : null
-  const entry = isTextEntry(el)
-  focusedFieldHasDraft.value = entry && fieldHasDraft(el)
-  if (!entry) clearTypingIdle()
-}
-function onFieldInput(e: Event) {
-  syncFocusedFieldDraft()
-  const el = typeof document !== 'undefined' ? document.activeElement : null
-  if (!isTextEntry(el) || (e.target instanceof Node && !el.contains(e.target))) return
-  typingRecently.value = true
-  if (typingIdleTimer) clearTimeout(typingIdleTimer)
-  typingIdleTimer = setTimeout(() => {
-    typingIdleTimer = null
-    typingRecently.value = false
-  }, TYPING_IDLE_MS)
-}
-function onFocusOut() {
-  // activeElement is still the old field during focusout; read it next tick.
-  void nextTick(syncFocusedFieldDraft)
-}
+const { focusedFieldHasDraft, typingRecently, captureFocus, ...inputGuard } = createInboxInputGuard()
 
 /**
  * List auto-apply waits while the user is working: a non-empty gate form or
@@ -2078,36 +1940,6 @@ watch(autoApplyHeld, (held) => {
 watch(lastAutoAppliedAt, () => {
   void syncListAfterAutoApply()
 })
-
-/**
- * Snapshot the focused text field so a silent list reload can never take the
- * caret away. If the field is still connected nothing happens; if a re-render
- * replaced it, focus moves to its replacement (same data-testid) with the same
- * selection — but only when focus fell to <body>, never away from a field the
- * user moved to themselves.
- */
-function captureFocus(): (() => void) | null {
-  if (typeof document === 'undefined') return null
-  const el = document.activeElement
-  if (!isTextEntry(el)) return null
-  const tid = el.getAttribute('data-testid')
-  const sel =
-    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-      ? { start: el.selectionStart, end: el.selectionEnd }
-      : null
-  return () => {
-    if (el.isConnected || !tid) return
-    const cur = document.activeElement
-    if (cur && cur !== document.body) return
-    const next = document.querySelector(`[data-testid="${CSS.escape(tid)}"]`)
-    if (!(next instanceof HTMLElement) || !isTextEntry(next)) return
-    next.focus({ preventScroll: true })
-    if (sel && (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement)) {
-      const max = next.value.length
-      next.setSelectionRange(Math.min(sel.start ?? max, max), Math.min(sel.end ?? max, max))
-    }
-  }
-}
 
 let autoApplyGen = 0
 async function syncListAfterAutoApply() {
@@ -3041,7 +2873,7 @@ async function refreshActiveContext(
   const socket = activeRunWs
   const signal = acquireInboxContextSignal(triple)
   if (!signal) {
-    if (afterTurnEnd && inboxContextInFlight === triple) inboxContextTrailingRefreshes.add(triple)
+    if (afterTurnEnd) inboxContext.retainTrailingRefresh(triple)
     return
   }
   const abortRecovery = () => {
@@ -3843,10 +3675,7 @@ onMounted(() => {
   })
   peek({ source: 'mount' })
   releaseAutoApplyHold = addAutoApplyHold(() => autoApplyHeld.value)
-  syncFocusedFieldDraft()
-  document.addEventListener('focusin', syncFocusedFieldDraft)
-  document.addEventListener('focusout', onFocusOut)
-  document.addEventListener('input', onFieldInput)
+  inputGuard.attach()
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -3856,10 +3685,7 @@ onUnmounted(() => {
   stopStartingPoll()
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
-  document.removeEventListener('focusin', syncFocusedFieldDraft)
-  document.removeEventListener('focusout', onFocusOut)
-  document.removeEventListener('input', onFieldInput)
-  clearTypingIdle()
+  inputGuard.detach()
   // Leaving the page: this page no longer holds the list, so apply what is pending.
   releaseAutoApplyHold?.()
   releaseAutoApplyHold = null
@@ -3867,7 +3693,7 @@ onUnmounted(() => {
   closeActiveRunWs()
   reviewState.dispose()
   stopFollow()
-  for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
+  inboxContext.abortAll()
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
   clearVisibleMembership()
