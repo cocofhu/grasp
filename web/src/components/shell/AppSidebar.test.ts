@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -188,7 +191,13 @@ describe('AppSidebar', () => {
     wrapper.unmount()
   })
 
-  it('sidebar brand row uses compact gradient wordmark without wash (g1.1 / g2.2)', () => {
+  it('sidebar wordmark inherits the global Fredoka ink style (no local override)', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebar.vue'), 'utf8')
+    expect(src).not.toMatch(/brand-logo__name/)
+    expect(src).toMatch(/<BrandLogo size="md"/)
+  })
+
+  it('sidebar brand row uses compact ink wordmark without wash (g1.1 / g2.2)', () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
