@@ -3,7 +3,8 @@ import { replyTail } from '@/lib/run/replyTail'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
+import { applyRunLiveFrame } from '@/lib/run/runLiveCards'
+import { openRunEventsSocket } from '@/lib/run/runEventsSocket'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { nodeConversationPath } from '@/lib/run/nodeConversation'
@@ -584,48 +585,38 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const recovering = wsRun === id
     const visit = visitEpoch
     wsRun = id
-    reconnect.markConnecting()
-    let socket: WebSocket
-    try {
-      socket = new WebSocket(api.runEventsWsUrl(id))
-    } catch {
-      ws = null
-      reconnect.onClose()
-      return
-    }
-    ws = socket
-    heartbeat.start()
     let receivedSnapshot = false
-    socket.onopen = () => {
-      if (ws !== socket || !currentVisit(visit, id)) return
-      reconnect.markOpened()
-      heartbeat.touch()
-      if (recovering) void refreshRunLive(id)
-    }
-    socket.onmessage = (ev) => {
-      if (ws !== socket || !currentVisit(visit, id)) return
-      heartbeat.touch()
-      try {
-        const frame = JSON.parse(String(ev.data)) as LiveFrame
-        if (frame.type === 'snapshot' && !receivedSnapshot) {
-          receivedSnapshot = true
-          const snapshot = (frame as { run?: Run }).run
-          const sessions = snapshot?.reactSessions ?? {}
-          reviewState.reset()
-          reviewState.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
+    openRunEventsSocket<LiveFrame>({
+      runId: id,
+      heartbeat,
+      reconnect,
+      isCurrent: (socket) => ws === socket && currentVisit(visit, id),
+      adopt: (socket) => {
+        ws = socket
+      },
+      catchUp: recovering,
+      onCreateFailed: () => {
+        ws = null
+      },
+      onFrame: (frame) => {
+        try {
+          if (frame.type === 'snapshot' && !receivedSnapshot) {
+            receivedSnapshot = true
+            const snapshot = (frame as { run?: Run }).run
+            const sessions = snapshot?.reactSessions ?? {}
+            reviewState.reset()
+            reviewState.installSnapshot(sessions, snapshot?.reviewSessionGeneration)
+          }
+          onFrame(frame)
+          if (recovering && frame.type === 'snapshot' && !ended.value) void seed(true)
+        } catch {
+          /* ignore frames the page cannot apply */
         }
-        onFrame(frame)
-        if (recovering && frame.type === 'snapshot' && !ended.value) void seed(true)
-      } catch {
-        /* ignore malformed frames */
-      }
-    }
-    socket.onclose = () => {
-      if (ws !== socket || !currentVisit(visit, id)) return
-      ws = null
-      heartbeat.stop()
-      reconnect.onClose()
-    }
+      },
+      onClosed: () => {
+        ws = null
+      },
+    })
   }
 
   async function takeover() {

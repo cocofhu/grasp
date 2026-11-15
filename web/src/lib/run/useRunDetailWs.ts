@@ -2,8 +2,8 @@
  * Run 详情：WS 连接、对话面 ACP 再水合（seed/buffer/busy-retry）、reconnect。
  */
 import { nextTick, watch, type ComputedRef, type Ref } from 'vue'
-import { api } from '@/lib/api/api'
-import { applyRunLiveFrame, refreshRunLive } from '@/lib/run/runLiveCards'
+import { applyRunLiveFrame } from '@/lib/run/runLiveCards'
+import { openRunEventsSocket } from '@/lib/run/runEventsSocket'
 import { createPendingAcpBuffer } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferGateAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -472,146 +472,131 @@ export function useRunDetailWs(opts: {
       heartbeat.stop()
       socket?.close()
     }
-    wsReconnect.markConnecting()
-    let socket: WebSocket
     let dialogueRevision = 0
     let receivedSnapshot = false
-    try {
-      socket = new WebSocket(api.runEventsWsUrl(id))
-      ws = socket
-      heartbeat.start()
-    } catch {
-      wsReconnect.onClose()
-      return
-    }
-    socket.onopen = () => {
-      if (ws !== socket) return
-      wsConnected = true
-      wsReconnect.markOpened()
-      heartbeat.touch()
-      if (opts?.fromReconnect) void refreshRunLive(id)
-    }
-    socket.onclose = () => {
-      if (ws !== socket) return
-      wsConnected = false
-      ws = undefined
-      heartbeat.stop()
-      wsReconnect.onClose()
-    }
-    socket.onmessage = (ev) => {
-      if (ws !== socket) return
-      heartbeat.touch()
-      let m: any
-      try {
-        m = JSON.parse(ev.data)
-      } catch {
-        return
-      }
-      if (m.type === 'dialogue') {
-        ingestDialogue(m)
-        return
-      }
-      if (m.type === 'live') {
-        applyRunLiveFrame(m)
-        return
-      }
-      if (m.type === 'node_enter') {
-        reviewState.noteVisit(m.nodeId || '')
-        applySidebarEnter(runId.value, m, run.value?.nodes)
-        return
-      }
-      if (m.type === 'status') noteSidebarRunStatus(runId.value, m.status)
-      if (m.type === 'snapshot' && (m.run?.reactSessions || m.run?.id === id)) {
-        // A full run DTO omits the map once its last FIFO has gone idle.
-        const sessions = m.run.reactSessions ?? {}
-        if (!receivedSnapshot) {
-          receivedSnapshot = true
-          const versioned = reviewState.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
-          reviewState.reset()
-          if (versioned) {
-            const nodeId = run.value.gate?.reactUpstreamNodeId
-            if (nodeId) gateApprovalRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId })
-          }
-        }
-        const restored = reviewState.reconcileSnapshot({ reactSessions: sessions,
-          reviewSessionGeneration: m.run.reviewSessionGeneration }, undefined, dialogueNodes())
-        const restoredSessions = { ...run.value.reactSessions }
-        for (const frame of restored) {
-          if (frame.nodeId) restoredSessions[frame.nodeId] = reviewState.session(frame.nodeId)!
-        }
-        const revision = ++dialogueRevision
-        const nodeId = selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId
-        const sameDialogue = () =>
-          ws === socket &&
-          (selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId) === nodeId
-        const isCurrent = () => sameDialogue() && dialogueRevision === revision
-        run.value = { ...run.value, reactSessions: restoredSessions }
-        // queue_state → seed → flush → live (parity with Inbox g4.2).
-        void projectDialogueAfterLoad(run.value, isCurrent).then(() => {
-          // The disconnected interval may include turn_done and new questions.
-          // Restore the saved dialogue after its current producer becomes idle.
-          if (!sameDialogue() || !opts?.fromReconnect) return
-          const snap = nodeId ? run.value.reactSessions?.[nodeId] : undefined
-          if (
-            nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem
-          ) {
-            loadRun(false, true)
-          }
-        })
-        return
-      }
-      if (m.type === 'acp' && m.nodeId) {
-        const wsEvents: AcpEvent[] = Array.isArray(m.events) ? m.events : []
-        reviewState.noteAcp(m.nodeId, wsEvents)
-        mergeLiveWsAcpPage(m.nodeId, wsEvents)
-        if (typeof m.busy === 'boolean') {
-          // LiveLog / sandbox bridge only. Do not stop dialogue busySeedRetry and
-          // do not treat ACP busy=false as platform session idle (g1.2).
-          liveBusy[m.nodeId] = m.busy
-        }
-        liveNode.value = m.nodeId
-        if (!manual.value) selected.value = m.nodeId
-        // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
-        applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
-      } else if (m.type === 'review' && m.nodeId) {
-        if (!reviewState.acceptServer(m)) return
-        const session = reviewState.session(m.nodeId)
-        if (session) {
-          run.value = { ...run.value, reactSessions: { ...run.value.reactSessions, [m.nodeId]: session } }
-        }
-        if (
-          m.nodeId === selClarify.value?.nodeId ||
-          m.nodeId === run.value.gate?.reactUpstreamNodeId
-        ) dialogueRevision++
-        projectReviewFrame(m)
-        if (m.event === 'turn_done' || m.event === 'error') {
-          liveBusy[m.nodeId] = false
-          busySeedRetry.stop()
-          // Session is idle: loadRun writes back persisted clarify turns when
-          // the transcript fingerprint changed (plan g1.2). A shorter snapshot
-          // than a still-streaming local row is held inside fetchRunData.
-          loadRun(false, true)
-        }
-      } else if (
-        m.type === 'trace' ||
-        m.type === 'status' ||
-        m.type === 'react' ||
-        m.type === 'artifact_edit'
-      ) {
-        if (m.type === 'artifact_edit') notifyRunArtifactEdit()
-        // Auto path: never hard load (g1.3). Busy → chrome patch + shared preview entry (g1.1 / g2.1).
-        // patchRunChrome still merges a longer idle transcript so an empty Agent
-        // panel is not frozen while this gate remains true (plan g1.3).
-        if (isClarifySessionBusy()) {
-          void patchRunChrome?.()
-          if (m.type === 'artifact_edit') refreshArtifactPreview?.(m)
+    openRunEventsSocket<any>({
+      runId: id,
+      heartbeat,
+      reconnect: wsReconnect,
+      isCurrent: (socket) => ws === socket,
+      adopt: (socket) => {
+        ws = socket
+      },
+      catchUp: !!opts?.fromReconnect,
+      onOpen: () => {
+        wsConnected = true
+      },
+      onClosed: () => {
+        wsConnected = false
+        ws = undefined
+      },
+      onFrame: (m, socket) => {
+        if (m.type === 'dialogue') {
+          ingestDialogue(m)
           return
         }
-        if (m.type === 'status') liveNode.value = null
-        loadRun(false, true)
-        if (m.type === 'artifact_edit') refreshArtifactPreview?.(m)
-      }
-    }
+        if (m.type === 'live') {
+          applyRunLiveFrame(m)
+          return
+        }
+        if (m.type === 'node_enter') {
+          reviewState.noteVisit(m.nodeId || '')
+          applySidebarEnter(runId.value, m, run.value?.nodes)
+          return
+        }
+        if (m.type === 'status') noteSidebarRunStatus(runId.value, m.status)
+        if (m.type === 'snapshot' && (m.run?.reactSessions || m.run?.id === id)) {
+          // A full run DTO omits the map once its last FIFO has gone idle.
+          const sessions = m.run.reactSessions ?? {}
+          if (!receivedSnapshot) {
+            receivedSnapshot = true
+            const versioned = reviewState.hasVersion || typeof m.run.reviewSessionGeneration === 'number' || Object.values(sessions).some((snap: any) => typeof snap?.sessionGeneration === 'number')
+            reviewState.reset()
+            if (versioned) {
+              const nodeId = run.value.gate?.reactUpstreamNodeId
+              if (nodeId) gateApprovalRef.value?.applyReviewFrame?.({ event: 'session_reset', nodeId })
+            }
+          }
+          const restored = reviewState.reconcileSnapshot({ reactSessions: sessions,
+            reviewSessionGeneration: m.run.reviewSessionGeneration }, undefined, dialogueNodes())
+          const restoredSessions = { ...run.value.reactSessions }
+          for (const frame of restored) {
+            if (frame.nodeId) restoredSessions[frame.nodeId] = reviewState.session(frame.nodeId)!
+          }
+          const revision = ++dialogueRevision
+          const nodeId = selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId
+          const sameDialogue = () =>
+            ws === socket &&
+            (selClarify.value?.nodeId || run.value.gate?.reactUpstreamNodeId) === nodeId
+          const isCurrent = () => sameDialogue() && dialogueRevision === revision
+          run.value = { ...run.value, reactSessions: restoredSessions }
+          // queue_state → seed → flush → live (parity with Inbox g4.2).
+          void projectDialogueAfterLoad(run.value, isCurrent).then(() => {
+            // The disconnected interval may include turn_done and new questions.
+            // Restore the saved dialogue after its current producer becomes idle.
+            if (!sameDialogue() || !opts?.fromReconnect) return
+            const snap = nodeId ? run.value.reactSessions?.[nodeId] : undefined
+            if (
+              nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem
+            ) {
+              loadRun(false, true)
+            }
+          })
+          return
+        }
+        if (m.type === 'acp' && m.nodeId) {
+          const wsEvents: AcpEvent[] = Array.isArray(m.events) ? m.events : []
+          reviewState.noteAcp(m.nodeId, wsEvents)
+          mergeLiveWsAcpPage(m.nodeId, wsEvents)
+          if (typeof m.busy === 'boolean') {
+            // LiveLog / sandbox bridge only. Do not stop dialogue busySeedRetry and
+            // do not treat ACP busy=false as platform session idle (g1.2).
+            liveBusy[m.nodeId] = m.busy
+          }
+          liveNode.value = m.nodeId
+          if (!manual.value) selected.value = m.nodeId
+          // Dialogue-surface stream (ClarifyChat / GateApproval), not only LiveLog.
+          applyOrBufferDialogueAcp(m.nodeId, wsEvents, m.busy)
+        } else if (m.type === 'review' && m.nodeId) {
+          if (!reviewState.acceptServer(m)) return
+          const session = reviewState.session(m.nodeId)
+          if (session) {
+            run.value = { ...run.value, reactSessions: { ...run.value.reactSessions, [m.nodeId]: session } }
+          }
+          if (
+            m.nodeId === selClarify.value?.nodeId ||
+            m.nodeId === run.value.gate?.reactUpstreamNodeId
+          ) dialogueRevision++
+          projectReviewFrame(m)
+          if (m.event === 'turn_done' || m.event === 'error') {
+            liveBusy[m.nodeId] = false
+            busySeedRetry.stop()
+            // Session is idle: loadRun writes back persisted clarify turns when
+            // the transcript fingerprint changed (plan g1.2). A shorter snapshot
+            // than a still-streaming local row is held inside fetchRunData.
+            loadRun(false, true)
+          }
+        } else if (
+          m.type === 'trace' ||
+          m.type === 'status' ||
+          m.type === 'react' ||
+          m.type === 'artifact_edit'
+        ) {
+          if (m.type === 'artifact_edit') notifyRunArtifactEdit()
+          // Auto path: never hard load (g1.3). Busy → chrome patch + shared preview entry (g1.1 / g2.1).
+          // patchRunChrome still merges a longer idle transcript so an empty Agent
+          // panel is not frozen while this gate remains true (plan g1.3).
+          if (isClarifySessionBusy()) {
+            void patchRunChrome?.()
+            if (m.type === 'artifact_edit') refreshArtifactPreview?.(m)
+            return
+          }
+          if (m.type === 'status') liveNode.value = null
+          loadRun(false, true)
+          if (m.type === 'artifact_edit') refreshArtifactPreview?.(m)
+        }
+      },
+    })
   }
 
   return {
