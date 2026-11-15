@@ -255,14 +255,21 @@ html:not(.light) *:hover::-webkit-scrollbar,
 html:not(.light) *.is-scrolling::-webkit-scrollbar {
   background: rgb(var(--c-base));
 }
-/* Board columns inherit scrollbar-color from ancestors (the settings scroller
- * sets it). Chromium >= 121 then ignores every ::-webkit-scrollbar rule and
- * paints the native wide bar. On engines that support the pseudo, pin the
- * board root back to the initial values so the 4px rules above apply to the
- * column body. Do not set these on the column itself. Engines without the
- * pseudo keep the thin standard bar from the @supports not block above. */
+/* Board columns and every inner scroller on settings-style pages (artifacts,
+ * notifications, agents, sandboxes, settings) inherit scrollbar-color from the
+ * settings scroller. Chromium >= 121 then ignores every ::-webkit-scrollbar
+ * rule and paints the native wide bar. On engines that support the pseudo, pin
+ * the board root and the settings content wrapper back to the initial values
+ * so the 4px rules above apply to their descendants; the settings scroller
+ * itself keeps its 8px bar. Do not set these on the column itself. Engines
+ * without the pseudo keep the thin standard bar from the @supports not block
+ * above. */
 @supports selector(::-webkit-scrollbar) {
   .board-workbench {
+    scrollbar-width: initial;
+    scrollbar-color: initial;
+  }
+  .settings-shell-content {
     scrollbar-width: initial;
     scrollbar-color: initial;
   }
