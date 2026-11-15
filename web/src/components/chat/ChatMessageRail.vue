@@ -323,7 +323,15 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 .chat-message-rail-card-earlier { display: flex; flex: none; align-items: center; gap: 6px; margin-bottom: 2px; padding: 6px 10px; border-radius: 8px; font-size: 12px; color: rgb(var(--c-txt3)); }
 .chat-message-rail-card-earlier:hover { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
 .chat-message-rail-card-earlier:disabled { opacity: .6; }
-.chat-message-rail-list { min-height: 0; max-height: min(60vh, 480px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.chat-message-rail-list { min-height: 0; max-height: min(60vh, 480px); overflow-y: auto; overscroll-behavior: contain; }
+.chat-message-rail-list::-webkit-scrollbar { width: 4px; height: 4px; }
+.chat-message-rail-list::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.chat-message-rail-list::-webkit-scrollbar-corner { background: transparent; }
+.chat-message-rail-list::-webkit-scrollbar-track { background: transparent; }
+.chat-message-rail-list:hover::-webkit-scrollbar, .chat-message-rail-list.is-scrolling::-webkit-scrollbar, .chat-message-rail-list:hover::-webkit-scrollbar-track, .chat-message-rail-list.is-scrolling::-webkit-scrollbar-track { background: transparent; }
+.chat-message-rail-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+.chat-message-rail-list:hover::-webkit-scrollbar-thumb, .chat-message-rail-list.is-scrolling::-webkit-scrollbar-thumb { background: rgb(var(--c-line)); }
+.chat-message-rail-list:hover::-webkit-scrollbar-thumb:hover, .chat-message-rail-list.is-scrolling::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-line-strong)); }
 .chat-message-rail-row { position: relative; overflow: hidden; padding: 6px 10px 6px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 20px; color: rgb(var(--c-txt2)); transition: background 120ms ease, color 120ms ease; }
 .chat-message-rail-row.is-pointed { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
 .chat-message-rail-row.is-active { font-weight: 600; color: rgb(var(--c-txt)); }

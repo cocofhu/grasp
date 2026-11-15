@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { h, nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
@@ -348,5 +351,22 @@ describe('ChatMessageRail', () => {
     const ids = Array.from(document.querySelectorAll('[data-testid="chat-message-rail-card"]')).map(el => el.id)
     expect(ids).toHaveLength(2)
     expect(new Set(ids).size).toBe(2)
+  })
+
+  it('gives the card list a 4px arrowless scrollbar with a transparent track', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ChatMessageRail.vue'), 'utf8')
+    const listRule = css.match(/\.chat-message-rail-list \{[^}]*\}/)?.[0] || ''
+    expect(listRule).toMatch(/overflow-y:\s*auto/)
+    const listCss = css.split('\n').filter(line => line.includes('.chat-message-rail-list')).join('\n')
+    expect(listCss).not.toMatch(/scrollbar-width\s*:/)
+    expect(listCss).not.toMatch(/scrollbar-color\s*:/)
+    expect(css).toMatch(/\.chat-message-rail-list::-webkit-scrollbar\s*\{[^}]*width:\s*4px[^}]*height:\s*4px/)
+    expect(css).toMatch(/\.chat-message-rail-list::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/)
+    expect(css).toMatch(/\.chat-message-rail-list::-webkit-scrollbar-track\s*\{[^}]*background:\s*transparent/)
+    expect(css).toMatch(/\.chat-message-rail-list:hover::-webkit-scrollbar-track[^{]*\{[^}]*background:\s*transparent/)
+    expect(css).toMatch(/\.chat-message-rail-list:hover::-webkit-scrollbar,[^{]*\{[^}]*background:\s*transparent/)
+    expect(css).toMatch(/\.chat-message-rail-list::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent[^}]*border-radius:\s*999px/)
+    expect(css).toMatch(/\.chat-message-rail-list:hover::-webkit-scrollbar-thumb,[^{]*\{[^}]*background:\s*rgb\(var\(--c-line\)\)/)
+    expect(css).toMatch(/\.chat-message-rail-list:hover::-webkit-scrollbar-thumb:hover[^{]*\{[^}]*background:\s*rgb\(var\(--c-line-strong\)\)/)
   })
 })
