@@ -263,7 +263,7 @@ func (e *Engine) persistRunErrorArtifact(runID string) {
 			degrade = note
 		}
 	}
-	info := services.NewRunService(e.db).AggregateRunFailure(runID, degrade)
+	info := e.runFailures().AggregateRunFailure(runID, degrade)
 	body, err := services.MarshalRunErrorJSON(info)
 	if err != nil {
 		log.Warn().Str("run_id", runID).Err(err).Msg("marshal run_error.json failed")

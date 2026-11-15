@@ -480,6 +480,7 @@ func main() {
 	issueSvc := services.NewIssueService(db)
 	issueSvc.SetBlobStore(blobStore)
 	eng.SetIssueService(issueSvc)
+	eng.SetRunFailureAggregator(runSvc)
 
 	notificationSvc := services.NewNotificationService(db, runSvc)
 
