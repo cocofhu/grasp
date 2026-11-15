@@ -80,9 +80,9 @@ type SoloSandboxInfo struct {
 	HasCodeServer   bool   `json:"hasCodeServer"`
 	// Paused is set on live views of a running session whose provider
 	// sandbox is exited/stopped without a user stop.
-	Paused bool `json:"paused,omitempty"`
-	Error           string `json:"error,omitempty"`
-	CreatedAt       string `json:"createdAt,omitempty"`
+	Paused    bool   `json:"paused,omitempty"`
+	Error     string `json:"error,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
 }
 
 // SoloSessionView is the API shape of a session.
