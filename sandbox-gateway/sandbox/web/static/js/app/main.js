@@ -119,7 +119,7 @@ function fillModelLogo(el, model) {
     if (file) {
         const img = document.createElement('img');
         img.alt = '';
-        img.src = apiPath('static/provider-logos/' + file);
+        img.src = apiPath('assets/provider-logos/' + file);
         el.appendChild(img);
         return;
     }

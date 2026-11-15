@@ -191,7 +191,7 @@ defineExpose({
         </span>
         <button
           type="button"
-          class="notification-mark-all rounded-md min-h-11 border border-line bg-transparent px-3 text-[12px] text-txt2 hover:border-accent hover:text-accent disabled:opacity-40"
+          class="notification-mark-all h-8 max-md:min-h-11 rounded-md border border-line bg-transparent px-3 text-[12px] font-medium text-txt2 enabled:hover:border-accent/60 enabled:hover:bg-accent/5 enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
           data-testid="notifications-mark-all" :disabled="unreadCount === 0" @click="markAllRead()"
         >
           <Icon name="check" :size="14" />{{ t('shell.runNotifications.markAllRead') }}
@@ -314,16 +314,17 @@ defineExpose({
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  padding-bottom: 8px;
 }
 
 .notification-unread-summary {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   color: rgb(var(--c-txt3));
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .notification-summary-dot {
@@ -335,10 +336,12 @@ defineExpose({
 
 .notification-mark-all {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: 8px;
+  gap: 6px;
+  white-space: nowrap;
+  transition: color var(--dur-ui), border-color var(--dur-ui), background-color var(--dur-ui);
 }
 
 .notifications-scroll {
@@ -378,9 +381,14 @@ defineExpose({
   background: rgb(var(--c-accent) / .035);
 }
 
-.notification-filter:focus-visible, .notification-mark-all:focus-visible {
+.notification-filter:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / .5);
   outline-offset: -2px;
+}
+
+.notification-mark-all:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .5);
+  outline-offset: 2px;
 }
 
 .notification-signal {
@@ -550,7 +558,7 @@ defineExpose({
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .notification-row, .notification-open {
+  .notification-row, .notification-open, .notification-mark-all {
     transition: none;
   }
 }
