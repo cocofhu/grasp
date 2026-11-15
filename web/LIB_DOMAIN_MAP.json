@@ -243,6 +243,7 @@
       "sidebarHidden.ts",
       "sidebarSections.ts",
       "streamMarkdownPreview.ts",
+      "textareaCaret.ts",
       "theme.ts",
       "types.ts",
       "vncReconnect.ts"
@@ -288,7 +289,7 @@
     "inbox": 46,
     "pm": 7,
     "run": 75,
-    "shared": 39,
+    "shared": 40,
     "solo": 16,
     "workflow": 3,
     "workspace": 5

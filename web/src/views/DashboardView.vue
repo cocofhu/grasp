@@ -26,6 +26,7 @@ import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
 import { useBrandSettings } from '@/lib/composables/useBrandSettings'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
+import { textareaCaretRect } from '@/lib/shared/textareaCaret'
 import type { Workflow } from '@/lib/shared/types'
 import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
 import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
@@ -174,10 +175,73 @@ watch([homeMode, workflowId], () => {
   plusOpen.value = false
 })
 
+// The composer form clips its overflow, so both popovers live outside it: the
+// "+" menu is pinned under the button, the @ picker next to the typed @, like
+// an IDE completion popup.
+const composerBox = ref<HTMLElement | null>(null)
+const plusButton = ref<HTMLElement | null>(null)
+const plusAnchor = ref({ top: 0, left: 0 })
+const mentionStyle = ref<Record<string, string> | null>(null)
+const mentionPlacement = ref<'up' | 'down'>('down')
+const MENTION_WIDTH = 360
+/** Picker height used to decide whether it fits below the caret line. */
+const MENTION_HEIGHT = 330
+let popAnchorObserver: ResizeObserver | null = null
+
+function measurePlusAnchor() {
+  const box = composerBox.value?.getBoundingClientRect()
+  const plus = plusButton.value?.getBoundingClientRect()
+  if (!box || !plus) return
+  plusAnchor.value = { top: plus.bottom - box.top, left: plus.left - box.left }
+}
+
+function measureMentionAnchor() {
+  const at = mention.trigger.value
+  const el = textareaRef.value
+  const boxEl = composerBox.value
+  if (!at || !el || !boxEl) return
+  const box = boxEl.getBoundingClientRect()
+  const field = el.getBoundingClientRect()
+  const caret = textareaCaretRect(el, at.start)
+  const lineTop = Math.max(field.top, Math.min(field.bottom, field.top + caret.top))
+  const lineBottom = Math.min(field.bottom, lineTop + caret.height)
+  const width = Math.min(MENTION_WIDTH, box.width)
+  const left = Math.max(0, Math.min(field.left + caret.left - 10 - box.left, box.width - width))
+  const vv = window.visualViewport
+  const viewTop = vv?.offsetTop ?? 0
+  const viewBottom = viewTop + (vv?.height ?? window.innerHeight)
+  const up = viewBottom - lineBottom < MENTION_HEIGHT && lineTop - viewTop >= MENTION_HEIGHT
+  mentionPlacement.value = up ? 'up' : 'down'
+  mentionStyle.value = {
+    left: `${left}px`,
+    right: 'auto',
+    width: `${width}px`,
+    top: up ? 'auto' : `${lineBottom - box.top + 4}px`,
+    bottom: up ? `${box.bottom - lineTop + 4}px` : 'auto',
+  }
+}
+
+function measurePopAnchors() {
+  measurePlusAnchor()
+  measureMentionAnchor()
+}
+
 function onPlus() {
+  measurePlusAnchor()
   if (mentionEnabled.value) plusOpen.value = !plusOpen.value
   else openFilePicker()
 }
+
+watch(
+  () => mentionEnabled.value && mention.trigger.value ? mention.trigger.value.start : -1,
+  (start, prev) => {
+    if (start < 0) return
+    measureMentionAnchor()
+    // On a phone the keyboard covers the lower half; bring a newly opened picker into view.
+    if (prev === -1) void nextTick(() => composerBox.value?.querySelector('[data-testid="solo-reference-picker"]')?.scrollIntoView?.({ block: 'nearest' }))
+  },
+  { flush: 'post' },
+)
 
 function plusPickFiles() {
   plusOpen.value = false
@@ -322,6 +386,7 @@ function onTextInput() {
   autoGrow()
   typingTick.value++
   mention.updateTrigger()
+  if (mention.trigger.value) void nextTick(measureMentionAnchor)
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
@@ -739,9 +804,16 @@ onMounted(() => {
   window.addEventListener('pointerdown', onWindowPointerDown)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('scroll', closeWorkflowMenu, true)
+  measurePopAnchors()
+  if (typeof ResizeObserver !== 'undefined' && composerBox.value) {
+    popAnchorObserver = new ResizeObserver(measurePopAnchors)
+    popAnchorObserver.observe(composerBox.value)
+  }
 })
 
 onBeforeUnmount(() => {
+  popAnchorObserver?.disconnect()
+  popAnchorObserver = null
   clearPhTimers()
   clearLongPress()
   clearWorkflowNavHold()
@@ -834,12 +906,13 @@ onBeforeUnmount(() => {
             @remove="mention.drop(ti)"
           />
         </TransitionGroup>
-        <div class="relative w-full">
+        <div ref="composerBox" class="relative w-full">
         <Transition name="ref-pop">
           <ReferencePicker
             v-if="mentionEnabled && mention.trigger.value"
             ref="mentionPicker"
-            placement="down"
+            :placement="mentionPlacement"
+            :style="mentionStyle ?? undefined"
             :scope="mentionScope"
             :query="mention.trigger.value.query"
             :taken="mention.targets.value"
@@ -848,7 +921,11 @@ onBeforeUnmount(() => {
             @pick="mention.pick"
           />
         </Transition>
-        <div class="contents" data-home-plus>
+        <div
+          class="absolute h-0 w-0"
+          :style="{ top: `${plusAnchor.top}px`, left: `${plusAnchor.left}px` }"
+          data-home-plus
+        >
           <ReferencePlusMenu :open="plusOpen" placement="down" test-prefix="home-plus" @upload="plusPickFiles" @reference="plusReference" />
         </div>
         <form
@@ -877,6 +954,7 @@ onBeforeUnmount(() => {
               :disabled="composerBusy"
               autocomplete="off"
               @input="onTextInput"
+              @scroll="mention.trigger.value && measureMentionAnchor()"
               @keydown="onComposerKeydown"
               @compositionstart="composing = true"
               @compositionend="composing = false; mention.updateTrigger()"
@@ -901,6 +979,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="home-composer__toolbar flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
             <button
+              ref="plusButton"
               type="button"
               class="home-composer__plus flex h-8 w-8 shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
               :disabled="composerBusy"
