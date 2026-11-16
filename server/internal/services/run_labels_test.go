@@ -51,7 +51,12 @@ func TestCurrentNodeLabels(t *testing.T) {
 		Error: "sandbox setup failed: docker pull failed"})
 
 	runs := s.List(nil, "", "")
-	labels := s.CurrentNodeLabels(runs)
+	labels := map[string]string{}
+	for id, cn := range s.CurrentNodes(runs) {
+		if cn.Name != "" {
+			labels[id] = cn.Name
+		}
+	}
 
 	if labels["run-running"] != "实现" {
 		t.Fatalf("running label: got %q", labels["run-running"])

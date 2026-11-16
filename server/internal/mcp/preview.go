@@ -339,65 +339,6 @@ func (h *Host) IsPreviewKeepalivePID(runID string, pid int) bool {
 	return false
 }
 
-// SignalPreviewReady marks that a healthy set_preview completed for run/node
-// and wakes any WaitPreviewReady / early-finish watchers in the provider.
-func (h *Host) SignalPreviewReady(runID, nodeID string) {
-	if h == nil || runID == "" || nodeID == "" {
-		return
-	}
-	key := previewKey(runID, nodeID)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.previewReady == nil {
-		h.previewReady = map[string]chan struct{}{}
-	}
-	ch, ok := h.previewReady[key]
-	if !ok {
-		ch = make(chan struct{})
-		h.previewReady[key] = ch
-		close(ch)
-		return
-	}
-	select {
-	case <-ch:
-		// already signaled
-	default:
-		close(ch)
-	}
-}
-
-// PreviewReadyChan returns a channel closed when a healthy set_preview lands
-// for this run/node. The channel may already be closed.
-func (h *Host) PreviewReadyChan(runID, nodeID string) <-chan struct{} {
-	key := previewKey(runID, nodeID)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.previewReady == nil {
-		h.previewReady = map[string]chan struct{}{}
-	}
-	ch, ok := h.previewReady[key]
-	if !ok {
-		ch = make(chan struct{})
-		h.previewReady[key] = ch
-	}
-	return ch
-}
-
-// ResetPreviewReady clears the ready signal for a fresh production attempt
-// (e.g. nodeReq / ClearOutcome path). Idempotent.
-func (h *Host) ResetPreviewReady(runID, nodeID string) {
-	if h == nil {
-		return
-	}
-	key := previewKey(runID, nodeID)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.previewReady == nil {
-		return
-	}
-	delete(h.previewReady, key)
-}
-
 // ListPreviewPorts returns all preview ports for a run/node (memory + DB).
 func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 	h.mu.RLock()
@@ -745,7 +686,6 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
 	}
-	h.SignalPreviewReady(runID, nodeID)
 	reg := PreviewRegistration{ProxyURL: proxyURL}
 	if h.previewDirect(runID, nodeID) && host != "" && !private {
 		reg.PublicURL = strings.TrimRight(host, "/") + "/"
@@ -775,7 +715,6 @@ func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error
 			return "", err
 		}
 	}
-	h.SignalPreviewReady(runID, nodeID)
 	return normalized, nil
 }
 
@@ -797,7 +736,6 @@ func (h *Host) PutPreviewPortForTest(runID, nodeID string, port int, label strin
 	h.mu.Lock()
 	h.upsertPreviewMem(runID, nodeID, rec)
 	h.mu.Unlock()
-	h.SignalPreviewReady(runID, nodeID)
 }
 
 func parsePreviewPort(v any) (int, error) {

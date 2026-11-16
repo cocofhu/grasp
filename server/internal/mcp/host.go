@@ -131,9 +131,6 @@ type Host struct {
 	privateEndpoints bool
 	previewStore     PreviewStore
 	previewOps       PreviewSandboxOps
-	// previewReady signals healthy set_preview completion (keyed runID|nodeID).
-	// Closed channel = ready; absent entry = not yet signaled.
-	previewReady map[string]chan struct{}
 	// previewLocks serializes set_preview per sandbox: switching the injector
 	// upstream and writing the registration must not interleave.
 	previewLocks map[string]*sync.Mutex

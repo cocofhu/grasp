@@ -273,22 +273,11 @@ func TestListPreviewPortsMergeStore(t *testing.T) {
 	_ = time.Second
 }
 
-func TestPreviewReadySignalAndKeepalivePID(t *testing.T) {
+func TestPreviewKeepalivePID(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.1:3000"})
-	ch := h.PreviewReadyChan("r", "n")
-	select {
-	case <-ch:
-		t.Fatal("should not be ready yet")
-	default:
-	}
 	if _, err := h.setPreviewPort("r", "n", 3000, "web"); err != nil {
 		t.Fatal(err)
-	}
-	select {
-	case <-ch:
-	default:
-		t.Fatal("expected PreviewReady after healthy set_preview")
 	}
 	pids := h.ListPreviewKeepalivePIDs("r", "n")
 	if len(pids) != 1 || pids[0] != 4242 {
