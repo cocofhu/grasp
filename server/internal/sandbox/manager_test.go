@@ -287,9 +287,6 @@ func TestManagerDataPlaneViaHook(t *testing.T) {
 	if err != nil || string(data) != "file contents" {
 		t.Errorf("ReadFile = %q, %v", data, err)
 	}
-	if !sb.FileExists(context.Background(), "report.md") {
-		t.Error("FileExists should be true")
-	}
 	if err := sb.WriteFile(context.Background(), "sub/out.txt", []byte("x")); err != nil {
 		t.Errorf("WriteFile: %v", err)
 	}

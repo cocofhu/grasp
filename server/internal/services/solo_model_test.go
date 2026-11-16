@@ -46,7 +46,7 @@ func TestSoloSetCurrentModelRejectsOutsideConfiguration(t *testing.T) {
 	if err := db.Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err := solo.SetCurrentModel(context.Background(), row.ID, "alice", "nope")
+	_, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", new("nope"), nil)
 	var se *SoloError
 	if !errors.As(err, &se) || se.Code != "model_not_in_configuration" {
 		t.Fatalf("outside model: %v", err)
@@ -66,7 +66,7 @@ func TestSoloSetCurrentModelRejectsOutsideConfiguration(t *testing.T) {
 	if !reflect.DeepEqual(beforeCfg.Binding, afterCfg.Binding) {
 		t.Fatalf("model configuration changed: %+v", afterCfg.Binding)
 	}
-	if _, err := solo.SetCurrentModel(context.Background(), row.ID, "alice", "aux2"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", new("aux2"), nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = solo.Require(row.ID, "alice")
@@ -76,7 +76,7 @@ func TestSoloSetCurrentModelRejectsOutsideConfiguration(t *testing.T) {
 	if err := db.Model(row).Update("status", models.SoloStatusClosed).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModel(context.Background(), row.ID, "alice", "aux"); err == nil {
+	if _, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", new("aux"), nil); err == nil {
 		t.Fatal("closed session must reject a model change")
 	}
 }
@@ -104,14 +104,14 @@ func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 	solo.SetChatterForTest(gate)
 	solo.SetModelAlignerForTest(align)
 
-	if _, err := solo.Send(v.ID, "alice", "one", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "one", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "first turn started", func() bool { return gate.started() })
-	if _, err := solo.Send(v.ID, "alice", "two", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "two", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, v.ID, "alice", new("aux2"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if n := align.count(); n != 0 {
@@ -186,10 +186,10 @@ func TestSoloModelSwitchFailureRollsBack(t *testing.T) {
 	gate := newGateChat(false)
 	solo.SetChatterForTest(gate)
 	solo.SetModelAlignerForTest(&recordAligner{err: errors.New("bridge refused")})
-	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, v.ID, "alice", new("aux2"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "failed switch stops this turn", func() bool {
@@ -243,10 +243,10 @@ func TestSoloUnreadableModelRetriesWithoutRollback(t *testing.T) {
 	align := &recordAligner{err: ErrChatModelUnknown}
 	solo.SetChatterForTest(gate)
 	solo.SetModelAlignerForTest(align)
-	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, v.ID, "alice", new("aux2"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "first attempt", func() bool {
@@ -260,7 +260,7 @@ func TestSoloUnreadableModelRetriesWithoutRollback(t *testing.T) {
 	if gate.count() != 0 {
 		t.Fatal("unconfirmed model executed a prompt")
 	}
-	if _, err := solo.Send(v.ID, "alice", "again", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "again", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "retry", func() bool { return align.count() >= 2 })
@@ -292,10 +292,10 @@ func TestSoloModelNoticeClearsAfterLaterTurn(t *testing.T) {
 	solo.SetChatterForTest(gate)
 	aligner := &recordAligner{err: errors.New("bridge refused")}
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, v.ID, "alice", new("aux2"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "rolled back", func() bool {
@@ -306,7 +306,7 @@ func TestSoloModelNoticeClearsAfterLaterTurn(t *testing.T) {
 	aligner.mu.Lock()
 	aligner.err = nil
 	aligner.mu.Unlock()
-	if _, err := solo.Send(v.ID, "alice", "later", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "later", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "notice cleared", func() bool {

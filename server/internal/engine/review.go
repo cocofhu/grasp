@@ -122,7 +122,7 @@ func isReviewNode(node *models.Node) bool {
 // finalizes its products against the transcript (and leaves node_complete),
 // then finishNode commits, refreshes the handoff, judges and routes — or
 // reopens the dialogue when the revised result fails its checks.
-// Non-force revise turns are handled by EnqueueReviewTurn / pumpReviewSession
+// Non-force revise turns are handled by EnqueueReviewTurnAs / pumpReviewSession
 // (platform FIFO + turn_begin materialization). The caller (ReactReply) already
 // appended the human turn to conv and holds the per-conversation lock.
 func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactConversation, human string, images []models.PromptImage, force bool) error {
@@ -133,7 +133,7 @@ func (e *Engine) reviewReply(c *execCtx, node *models.Node, conv *models.ReactCo
 	e.host.SetActiveReview(runID, true)
 
 	if !force {
-		return errors.New("internal: review non-force must use EnqueueReviewTurn")
+		return errors.New("internal: review non-force must use EnqueueReviewTurnAs")
 	}
 
 	// Leave the pending inbox immediately (same as clarify force /

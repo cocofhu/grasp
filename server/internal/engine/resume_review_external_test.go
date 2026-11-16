@@ -35,7 +35,7 @@ func TestResumeReviewExternalConfirmAndLoginRevoke(t *testing.T) {
 	}
 	token := extractShareToken(t, created.URL)
 
-	res, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != nil {
 		t.Fatalf("external confirm: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
 	s := eng.getOrCreateReviewSession(run.ID, "prop", sessionKindReview)
 	s.SeedForTest([]*reviewQueueItem{{ID: "q1", Text: "排队中"}})
 
-	res, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != gateshare.ErrReviewBusy {
 		t.Fatalf("want ErrReviewBusy, got %v res=%+v", err, res)
 	}
@@ -86,7 +86,7 @@ func TestResumeReviewExternalBusyDoesNotBurnLink(t *testing.T) {
 	}
 
 	s.SeedForTest(nil)
-	res2, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res2, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != nil {
 		t.Fatalf("retry after ready: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestResumeReviewExternalValidationFailureDoesNotBurnLink(t *testing.T) {
 	rpc := &countingRPC{accept: false, msg: "业务校验未通过:产物不完整"}
 	eng.host.SetRPCOutcomeValidator(rpc)
 
-	res, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != gateshare.ErrReviewValidation {
 		t.Fatalf("want ErrReviewValidation, got %v res=%+v", err, res)
 	}
@@ -130,7 +130,7 @@ func TestResumeReviewExternalValidationFailureDoesNotBurnLink(t *testing.T) {
 	}
 
 	rpc.accept = true
-	res2, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res2, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != nil {
 		t.Fatalf("retry after accept: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestResumeReviewExternalClarifyConfirmAndIncompleteRollback(t *testing.T) {
 	provider.reactForceStayOpen = true
 	provider.mu.Unlock()
 
-	res, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != gateshare.ErrReviewValidation {
 		t.Fatalf("want ErrReviewValidation on unfinished clarify, got %v res=%+v", err, res)
 	}
@@ -212,7 +212,7 @@ func TestResumeReviewExternalClarifyConfirmAndIncompleteRollback(t *testing.T) {
 	provider.mu.Lock()
 	provider.reactForceStayOpen = false
 	provider.mu.Unlock()
-	res2, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res2, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != nil {
 		t.Fatalf("retry after wrap-up allowed: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestResumeReviewExternalAlreadyProcessedBusyWhileWaiting(t *testing.T) {
 		t.Fatalf("pre-consume: consumed=%v err=%v", consumed, err)
 	}
 
-	res, err := eng.ResumeReviewExternal(share, token, "confirm")
+	res, err := eng.ResumeReviewExternalOpts(share, token, "confirm", false)
 	if err != gateshare.ErrReviewBusy {
 		t.Fatalf("want busy while still waiting_human, got %v res=%+v", err, res)
 	}

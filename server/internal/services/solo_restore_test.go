@@ -83,7 +83,7 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	before := newRestoreChat(true)
 	solo.SetChatterForTest(before)
 	solo.SetModelAlignerForTest(&recordAligner{})
-	if _, err := solo.Send(id, "alice", "first", nil); err != nil {
+	if _, err := solo.SendWithReferences(id, "alice", "first", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -92,7 +92,7 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 		t.Fatal("first turn did not start")
 	}
 	for _, text := range []string{"second", "third"} {
-		if _, err := solo.Send(id, "alice", text, nil); err != nil {
+		if _, err := solo.SendWithReferences(id, "alice", text, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -105,7 +105,7 @@ func TestSoloQueuedTurnsSurviveRestart(t *testing.T) {
 	after := newRestoreChat(false)
 	restarted.SetChatterForTest(after)
 	restarted.SetModelAlignerForTest(&recordAligner{})
-	if _, err := restarted.Send(id, "alice", "must not overwrite saved queue", nil); err == nil {
+	if _, err := restarted.SendWithReferences(id, "alice", "must not overwrite saved queue", nil, nil); err == nil {
 		t.Fatal("new messages must not overwrite a queue awaiting startup restore")
 	}
 	session, err := restarted.Require(id, "alice")
@@ -241,7 +241,7 @@ func TestSoloStartupRestoreDoesNotInterruptNewTurns(t *testing.T) {
 	chat := newRestoreChat(true)
 	solo.SetChatterForTest(chat)
 	solo.SetModelAlignerForTest(&recordAligner{})
-	if _, err := solo.Send(view.ID, "alice", "new after startup", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "new after startup", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {

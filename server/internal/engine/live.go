@@ -306,14 +306,9 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	return sess, nil
 }
 
-// ReactReplyLiveCtxAs sends a plain chat message while a Live session is
-// open: the prompt tells the agent which variant "this" means.
-func (e *Engine) ReactReplyLiveCtxAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx) error {
-	return e.ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text, images, annotations, ctx, true)
-}
-
-// ReactReplyLiveCtxWithPermissionAs carries the server-derived Live permission
-// through the queue. A react_only comment cannot authorize Live tool writes,
+// ReactReplyLiveCtxWithPermissionAs sends a plain chat message while a Live
+// session is open: the prompt tells the agent which variant "this" means. It
+// carries the server-derived Live permission through the queue. A react_only comment cannot authorize Live tool writes,
 // even when its body includes a forged liveCtx.
 func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
 	return e.reactReplyLiveCtx(owner, runID, nodeID, "", text, images, annotations, ctx, allowLive)
@@ -325,8 +320,8 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionIDAs(owner, runID, nodeID, clien
 	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, allowLive, refs...)
 }
 
-// ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxAs carrying the sender's
-// optional clientMessageID with the queued turn.
+// ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxWithPermissionAs with Live
+// allowed, carrying the sender's optional clientMessageID with the queued turn.
 // refs are validated @ references (see services.PrepareScopedReferences).
 func (e *Engine) ReactReplyLiveCtxWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, refs ...models.MessageReference) error {
 	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, true, refs...)

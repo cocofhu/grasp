@@ -33,7 +33,9 @@ func TestMaxConcurrentAndSema(t *testing.T) {
 		t.Fatal("full")
 	}
 	s.Release()
-	s.Acquire()
+	if !s.TryAcquire() {
+		t.Fatal("released slot")
+	}
 	s.Release()
 	if s.Limit() != 1 {
 		t.Fatalf("limit=%d", s.Limit())

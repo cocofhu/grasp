@@ -377,22 +377,12 @@ func (e *Engine) SendReviewSessions(runID string, write func([]byte) error) erro
 	return nil
 }
 
-// EnqueueReviewTurn queues a revise turn for the parked producer session and
-// returns immediately with the new waiting count. Serial pump starts if idle.
-// Both ReactReply(force=false) and GateReactRevise share this entry (FR5).
-func (e *Engine) EnqueueReviewTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
-	return e.EnqueueReviewTurnAs("", runID, producerID, text, images, annotations, source, gateNodeID)
-}
-
-// EnqueueReviewTurnAs is EnqueueReviewTurn sent by owner (a pagebridge owner id).
+// EnqueueReviewTurnAs queues a revise turn sent by owner (a pagebridge owner
+// id) for the parked producer session and returns immediately with the new
+// waiting count. Serial pump starts if idle. Both ReactReply(force=false) and
+// GateReactRevise share this entry (FR5).
 func (e *Engine) EnqueueReviewTurnAs(owner, runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
 	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner, false, "")
-}
-
-// EnqueueClarifyTurn queues a classic react (需求澄清) turn onto the same platform
-// FIFO / WS frame protocol as review, returning immediately.
-func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.EnqueueClarifyTurnAs("", runID, nodeID, text, images, annotations)
 }
 
 // EnqueuePreviewShareTurn adds a guest turn to the existing
@@ -414,7 +404,9 @@ func (e *Engine) EnqueuePreviewShareTurn(owner, runID, nodeID, text string, imag
 	return err
 }
 
-// EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
+// EnqueueClarifyTurnAs queues a classic react (需求澄清) turn sent by owner (a
+// pagebridge owner id) onto the same platform FIFO / WS frame protocol as
+// review, returning immediately.
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
 	return e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, "", text, images, annotations)
 }

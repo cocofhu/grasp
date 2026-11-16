@@ -19,14 +19,3 @@ func (s *RunService) CurrentNodeIDs(runs []models.Run) map[string]string {
 	}
 	return ids
 }
-
-// RunFailedError returns the latest error message from failed StateRuns for a
-// failed run, or "" when none.
-func (s *RunService) RunFailedError(runID string) string {
-	var sr models.StateRun
-	if err := s.db.Where("run_id = ? AND status = ? AND error != ''", runID, "failed").
-		Order("id desc").First(&sr).Error; err != nil {
-		return ""
-	}
-	return sr.Error
-}

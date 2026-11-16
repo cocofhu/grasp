@@ -638,14 +638,14 @@ func TestLiveReplyWithCtx(t *testing.T) {
 	p.mu.Unlock()
 	db.Create(&models.LiveSession{ID: "sid006", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
 		Variants: []models.LiveVariant{{N: 2, Label: "紧凑"}}})
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "标题再大点", nil, nil, &models.LiveCtx{SID: "sid006", Current: 2}); err != nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "标题再大点", nil, nil, &models.LiveCtx{SID: "sid006", Current: 2}, true); err != nil {
 		t.Fatal(err)
 	}
 	// Unknown session: falls back to a plain reply.
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "hi", nil, nil, &models.LiveCtx{SID: "nosuch1", Current: 1}); err != nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "hi", nil, nil, &models.LiveCtx{SID: "nosuch1", Current: 1}, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "  ", nil, nil, &models.LiveCtx{SID: "sid006", Current: 2}); err == nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "  ", nil, nil, &models.LiveCtx{SID: "sid006", Current: 2}, true); err == nil {
 		t.Fatal("empty text should fail")
 	}
 	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
@@ -770,7 +770,7 @@ func TestLiveChatAcceptFreezesVariantAndParams(t *testing.T) {
 			}
 			p.mu.Unlock()
 			ctx := &models.LiveCtx{SID: "chat01", Current: 2, Params: map[string]any{"gap": "24px", "tone": "soft"}}
-			if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "就用这个", nil, nil, ctx); err != nil {
+			if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "就用这个", nil, nil, ctx, true); err != nil {
 				t.Fatal(err)
 			}
 			<-start
@@ -853,7 +853,7 @@ func TestLiveChatRefineAndInvalidVariant(t *testing.T) {
 	db.Create(&models.LiveSession{ID: "chat03", RunID: runID, NodeID: "preview", Mode: "replace", State: models.LiveStateReady,
 		Variants: []models.LiveVariant{{N: 1}, {N: 2}}})
 	p.setLiveMarkers("chat03")
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 3}); err == nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 3}, true); err == nil {
 		t.Fatal("nonexistent viewed variant should be rejected")
 	}
 	results := make(chan error, 1)
@@ -871,7 +871,7 @@ func TestLiveChatRefineAndInvalidVariant(t *testing.T) {
 		// No final ready report: the attached LiveRef must settle the turn.
 	}
 	p.mu.Unlock()
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "2 的标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 1}); err != nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "2 的标题大一点", nil, nil, &models.LiveCtx{SID: "chat03", Current: 1}, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {
@@ -1031,7 +1031,7 @@ func TestInterruptedChatAcceptanceRetriesFrozenRequestWithoutLiveCtx(t *testing.
 		results <- err
 	}
 	p.mu.Unlock()
-	if err := eng.ReactReplyLiveCtxAs("user:a", runID, "preview", "就用这个", nil, nil, &models.LiveCtx{SID: "accept01", Current: 2, Params: map[string]any{"gap": "24px"}}); err != nil {
+	if err := eng.ReactReplyLiveCtxWithPermissionAs("user:a", runID, "preview", "就用这个", nil, nil, &models.LiveCtx{SID: "accept01", Current: 2, Params: map[string]any{"gap": "24px"}}, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := eng.waitReviewReadyForTest(runID, "preview", 5*time.Second); err != nil {

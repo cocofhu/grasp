@@ -60,7 +60,7 @@ func TestSoloExecutionSnapshotSurvivesSelectionChangesAndFailures(t *testing.T) 
 				t.Fatal(err)
 			}
 			defer unsubscribe()
-			if _, err := solo.Send(view.ID, "alice", "test route metadata", nil); err != nil {
+			if _, err := solo.SendWithReferences(view.ID, "alice", "test route metadata", nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			select {
@@ -85,7 +85,7 @@ func TestSoloExecutionSnapshotSurvivesSelectionChangesAndFailures(t *testing.T) 
 			}
 			// This selection is for the following turn. It must not relabel the
 			// active response or change its reload representation.
-			if _, err := solo.SetCurrentModel(context.Background(), view.ID, "alice", "aux2"); err != nil {
+			if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux2"), nil); err != nil {
 				t.Fatal(err)
 			}
 			replayed, unReplay, err := solo.Subscribe(view.ID, "alice", 0)

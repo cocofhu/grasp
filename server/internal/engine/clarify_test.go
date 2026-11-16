@@ -309,7 +309,8 @@ func TestApproveOpenParksEmptyTranscript(t *testing.T) {
 		t.Fatalf("clarify open must persist empty transcript, got %d", len(conv.Messages))
 	}
 	found := false
-	for _, it := range services.NewRunService(db).AllPendingInboxItems() {
+	items, _ := services.NewRunService(db).PendingInboxItems("", nil, 0, 0)
+	for _, it := range items {
 		if c, ok := it.(services.ClarifyInboxItem); ok && c.RunID == run.ID && c.NodeID == "predev" {
 			found = true
 		}

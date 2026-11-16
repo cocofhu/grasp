@@ -221,16 +221,6 @@ func (s *RunService) PendingGate(runID string) (models.Gate, bool) {
 	return g, true
 }
 
-// AllPendingGates returns every unresolved gate whose run is still alive and
-// whose node is still waiting_human (gates inbox). Gates on terminal runs
-// (completed / failed / cancelled) are excluded: once a run ends its dangling
-// gate is no longer actionable and must not linger in the approvals inbox.
-func (s *RunService) AllPendingGates() []models.Gate {
-	var gates []models.Gate
-	pendingGateScope(s.db).Order("gates.requested_at desc").Find(&gates)
-	return gates
-}
-
 // Conversation returns the react conversation the run is currently at: the
 // active (not-done) dialogue if the run is paused awaiting human input,
 // otherwise the most recent completed one. A run may accumulate several react

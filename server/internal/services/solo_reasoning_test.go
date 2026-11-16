@@ -350,7 +350,7 @@ func TestSoloEffortWaitsForTurnBoundaryAndCarriesHistory(t *testing.T) {
 	aligner := &settingsAligner{}
 	solo.SetChatterForTest(gate)
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.Send(view.ID, "alice", "keep this context", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "keep this context", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "first turn", gate.started)
@@ -360,7 +360,7 @@ func TestSoloEffortWaitsForTurnBoundaryAndCarriesHistory(t *testing.T) {
 	if len(aligner.snapshot()) != 0 {
 		t.Fatal("effort interrupted the generating turn")
 	}
-	if _, err := solo.Send(view.ID, "alice", "next", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	gate.release()

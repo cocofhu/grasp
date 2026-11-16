@@ -6,7 +6,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestCurrentNodeIDsAndFailedError(t *testing.T) {
+func TestCurrentNodeIDs(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
 	g := models.Graph{Nodes: []models.Node{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}
@@ -27,12 +27,6 @@ func TestCurrentNodeIDsAndFailedError(t *testing.T) {
 	}
 	if _, ok := ids["r3"]; ok {
 		t.Fatal("failed should omit")
-	}
-	if s.RunFailedError("r3") != "boom" {
-		t.Fatalf("err=%q", s.RunFailedError("r3"))
-	}
-	if s.RunFailedError("missing") != "" {
-		t.Fatal("missing")
 	}
 	if s.CurrentNodeIDs(nil) != nil {
 		t.Fatal("empty")

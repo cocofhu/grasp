@@ -48,7 +48,7 @@ func TestSoloReplyKeepsQuestionsRaisedThisTurn(t *testing.T) {
 	sbx.host.SetPendingQuestions(runID, "solo", []models.ReactQuestion{{ID: "stale", Prompt: "Stale?"}})
 	solo.SetChatterForTest(&askChat{host: sbx.host, runID: runID})
 	solo.SetModelAlignerForTest(&recordAligner{})
-	if _, err := solo.Send(view.ID, "alice", "set up storage", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "set up storage", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var reply models.SoloMessage

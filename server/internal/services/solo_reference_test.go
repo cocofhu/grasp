@@ -161,7 +161,7 @@ func TestSoloSendPinsReferencesWhenTheTurnBegins(t *testing.T) {
 
 	gate := newGateChat(true)
 	solo.SetChatterForTest(gate)
-	if _, err := solo.Send(id, "alice", "第一轮", nil); err != nil {
+	if _, err := solo.SendWithReferences(id, "alice", "第一轮", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-gate.start

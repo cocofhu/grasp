@@ -444,9 +444,14 @@ func TestRunService(t *testing.T) {
 	if _, ok := s.PendingGate("rX"); ok {
 		t.Fatal("no gate for rX")
 	}
+	pendingGates := func() int {
+		var gates []models.Gate
+		pendingGateScope(s.db).Find(&gates)
+		return len(gates)
+	}
 	// Only r1's gate is actionable: r2 is completed, so its dangling gate is
 	// excluded from the inbox.
-	if len(s.AllPendingGates()) != 1 {
+	if pendingGates() != 1 {
 		t.Fatal("all pending gates")
 	}
 	// Live run with unresolved gate but node already left waiting_human.
@@ -456,8 +461,8 @@ func TestRunService(t *testing.T) {
 	if _, ok := s.PendingGate("r3"); ok {
 		t.Fatal("transferred node gate must not be pending")
 	}
-	if len(s.AllPendingGates()) != 1 {
-		t.Fatal("transferred gate must stay out of AllPendingGates")
+	if pendingGates() != 1 {
+		t.Fatal("transferred gate must stay out of pending gates")
 	}
 
 	// Conversations: active (done=false) preferred.

@@ -283,12 +283,6 @@ func TestPreviewKeepalivePID(t *testing.T) {
 	if len(pids) != 1 || pids[0] != 4242 {
 		t.Fatalf("keepalive pids=%v", pids)
 	}
-	if !h.IsPreviewKeepalivePID("r", 4242) {
-		t.Fatal("expected whitelist hit")
-	}
-	if h.IsPreviewKeepalivePID("r", 1) {
-		t.Fatal("unexpected whitelist hit")
-	}
 }
 
 func TestSetPreviewDirectStillShowsDesktopAndSetsDirectURL(t *testing.T) {

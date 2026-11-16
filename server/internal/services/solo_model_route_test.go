@@ -184,7 +184,7 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 	}
 	// Omitted configuration stays on the selected group, rather than returning
 	// to the Agent default when only the model or effort changes.
-	view, err = solo.SetCurrentModel(ctx, row.ID, "alice", "aux")
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", new("aux"), nil)
 	if err != nil || view.CurrentConfigurationID != other.ID || view.CurrentModelID != "aux" {
 		t.Fatalf("model-only selection lost group: %+v %v", view, err)
 	}
@@ -202,7 +202,7 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 	if err := db.Model(&other).Update("state", "disabled").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModel(ctx, row.ID, "alice", ""); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", new(""), nil); err == nil {
 		t.Fatal("disabled selected group was accepted")
 	}
 	current, _ = solo.Require(row.ID, "alice")
@@ -245,7 +245,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	solo.SetChatterForTest(gate)
 	aligner := &recordAligner{}
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.SetCurrentModel(ctx, view.ID, "alice", "aux"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, view.ID, "alice", new("aux"), nil); err != nil {
 		t.Fatal(err)
 	}
 	const callback = "fail-history-handoff-query"
@@ -257,7 +257,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Callback().Query().Remove(callback) })
-	if _, err := solo.Send(view.ID, "alice", "continue after switching", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "continue after switching", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "handoff failure finishes turn", func() bool {
@@ -274,7 +274,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	if err := db.Callback().Query().Remove(callback); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.Send(view.ID, "alice", "retry with context", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "retry with context", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "handoff retry uses saved history", func() bool {
@@ -370,10 +370,10 @@ func TestSoloAmbiguousModelSwitchStillSeedsHistoryWhenRetryIsNoop(t *testing.T) 
 	solo.SetChatterForTest(gate)
 	aligner := &ambiguousSoloModelAligner{}
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.SetCurrentModel(context.Background(), view.ID, "alice", "aux"); err != nil {
+	if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.Send(view.ID, "alice", "remember my task", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "remember my task", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "uncertain switch finishes", func() bool {
@@ -384,7 +384,7 @@ func TestSoloAmbiguousModelSwitchStillSeedsHistoryWhenRetryIsNoop(t *testing.T) 
 	if !row.ModelContextPending || row.CurrentModelID != "aux" || gate.count() != 0 {
 		t.Fatalf("uncertain switch lost pending handoff: %+v", row)
 	}
-	if _, err := solo.Send(view.ID, "alice", "continue", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "continue", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "no-op retry supplies context", func() bool {

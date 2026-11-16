@@ -416,7 +416,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				}
 			}
 			if name == "clarify" {
-				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "first cancellable", nil, nil); err != nil {
+				if _, err := hn.h.Eng.EnqueueClarifyTurnAs("", runID, nodeID, "first cancellable", nil, nil); err != nil {
 					t.Fatal(err)
 				}
 				select {
@@ -424,7 +424,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 				case <-time.After(3 * time.Second):
 					t.Fatal("clarify did not start")
 				}
-				if _, err := hn.h.Eng.EnqueueClarifyTurn(runID, nodeID, "next cancellable", nil, nil); err != nil {
+				if _, err := hn.h.Eng.EnqueueClarifyTurnAs("", runID, nodeID, "next cancellable", nil, nil); err != nil {
 					t.Fatal(err)
 				}
 				getTurn := func() string {

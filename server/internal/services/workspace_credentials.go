@@ -597,37 +597,6 @@ func (s *CredentialService) Get(id string) (CredentialView, error) {
 	return credentialView(row), nil
 }
 
-// ResolveEnv exposes only generic MCP and custom environment credentials.
-// Model and Git authorizations are resolved exclusively by explicit bindings.
-func (s *CredentialService) ResolveEnv() map[string]string {
-	var rows []models.Credential
-	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Find(&rows).Error != nil {
-		return nil
-	}
-	out := map[string]string{}
-	counts := map[string]int{}
-	for _, row := range rows {
-		if credentialEnvRow(row) && strings.TrimSpace(row.ValueEnc) != "" {
-			counts[strings.TrimSpace(row.EnvKey)]++
-		}
-	}
-	for _, row := range rows {
-		key := strings.TrimSpace(row.EnvKey)
-		if !credentialEnvRow(row) || counts[key] != 1 || strings.TrimSpace(row.ValueEnc) == "" {
-			continue
-		}
-		value, err := crypto.Decrypt(row.ValueEnc)
-		if err != nil {
-			log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable workspace credential")
-			continue
-		}
-		if value != "" {
-			out[key] = value
-		}
-	}
-	return out
-}
-
 func credentialAliasKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }

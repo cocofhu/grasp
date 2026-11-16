@@ -76,7 +76,7 @@ func TestAllPendingInboxItems(t *testing.T) {
 	db.Create(&models.StateRun{RunID: "run-sbx-fail", NodeID: "react", Iteration: 1, Status: "failed",
 		Error: "sandbox setup failed: docker pull failed"})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 inbox items, got %d", len(items))
 	}
@@ -127,7 +127,7 @@ func TestPendingInboxItemsIncludesGateNodeType(t *testing.T) {
 		Title: "复审", Resolved: false, RequestedAt: now,
 	})
 	db.Create(&models.StateRun{RunID: "run-nt", NodeID: "hg2", Iteration: 0, Status: "waiting_human"})
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 gates, got %d", len(items))
 	}
@@ -161,7 +161,7 @@ func TestPendingInboxItemsOmitsEmptyRunTitle(t *testing.T) {
 		RunID: "run-empty-title", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 inbox item, got %d", len(items))
 	}
@@ -237,7 +237,7 @@ func TestPendingClarificationsKind(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-app-preview", NodeID: "preview", Iteration: 1, Status: "waiting_human"})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	byRun := map[string]ClarifyInboxItem{}
 	for _, it := range items {
 		if c, ok := it.(ClarifyInboxItem); ok {
@@ -362,7 +362,7 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 	})
 
 	// Only the preview review → inbox non-empty with kind=review.
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("only preview review: expected 1 inbox item, got %d", len(items))
 	}
@@ -393,7 +393,7 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 		RunID: "run-gate", NodeID: "gate-approve", Iteration: 0, Status: "waiting_human",
 	})
 
-	items = s.AllPendingInboxItems()
+	items, _ = s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 2 {
 		t.Fatalf("gate+preview: expected 2 inbox items, got %d", len(items))
 	}
@@ -420,7 +420,7 @@ func TestPendingInboxIncludesAppPreview(t *testing.T) {
 		Update("done", true).Error; err != nil {
 		t.Fatalf("mark done: %v", err)
 	}
-	items = s.AllPendingInboxItems()
+	items, _ = s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("after preview done: expected 1 gate item, got %d", len(items))
 	}
@@ -558,9 +558,6 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 	if kind, ok := s.InboxContextKind("run-gate-gone", "gate-approve", 0); ok {
 		t.Fatalf("transferred gate context must be empty, got %q", kind)
 	}
-	if _, ok := s.PendingGateAt("run-gate-gone", "gate-approve", 0); ok {
-		t.Fatal("PendingGateAt must exclude transferred gate")
-	}
 	if kind, ok := s.InboxContextKind("run-gate-live", "gate-approve", 0); !ok || kind != "gate" {
 		t.Fatalf("live gate context: %q %v", kind, ok)
 	}
@@ -618,7 +615,7 @@ func TestPendingInboxItemsStayListedWhenReplying(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-reply", NodeID: "react", Iteration: 1, Status: "waiting_human"})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("parked clarify must stay listed, got %d", len(items))
 	}

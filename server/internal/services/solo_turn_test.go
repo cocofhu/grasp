@@ -74,7 +74,7 @@ func TestSoloTurnReplyKeepsDeliveredFiles(t *testing.T) {
 	})
 	chat := &deliveringChat{db: db, sessionID: v.ID}
 	solo.SetChatterForTest(chat)
-	if _, err := solo.Send(v.ID, "alice", "send me the report", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "send me the report", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var user models.SoloMessage
@@ -120,7 +120,7 @@ func TestSoloTurnRestartPreambleThenCleared(t *testing.T) {
 	}
 	chat := &deliveringChat{db: db, sessionID: v.ID}
 	solo.SetChatterForTest(chat)
-	if _, err := solo.Send(v.ID, "alice", "now add logout", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "now add logout", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "preamble cleared", func() bool {
@@ -135,7 +135,7 @@ func TestSoloTurnRestartPreambleThenCleared(t *testing.T) {
 		c := solo.lookup(v.ID)
 		return c != nil && c.sess.Ready()
 	})
-	if _, err := solo.Send(v.ID, "alice", "and a footer", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "and a footer", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "second prompt", func() bool { return chat.prompt(1) != "" })

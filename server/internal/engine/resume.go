@@ -371,13 +371,8 @@ func (e *Engine) ReactConfirmAs(owner, runID, nodeID, humanText string, images [
 	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning, "", refs...)
 }
 
-// ReactReplyRetryLast covers the last human turn after an empty/failed agent
-// reply without inserting another human row (plan g2.1).
-func (e *Engine) ReactReplyRetryLast(runID, nodeID string) error {
-	return e.ReactReplyRetryLastAs("", runID, nodeID)
-}
-
-// ReactReplyRetryLastAs is ReactReplyRetryLast sent by owner.
+// ReactReplyRetryLastAs covers the last human turn, sent by owner, after an
+// empty/failed agent reply without inserting another human row (plan g2.1).
 func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
 	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true, false, "")
 }
@@ -512,7 +507,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	}
 
 	// Review force: human turn is recorded, then git wrap-up + finalize.
-	// Review !force already returned via EnqueueReviewTurn above.
+	// Review !force already returned via EnqueueReviewTurnAs above.
 	if isReviewNode(node) {
 		if !force {
 			return errors.New("internal: review non-force must enqueue")
@@ -525,7 +520,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		return e.reviewReply(c, node, &conv, prompt, images, true)
 	}
 
-	// Classic clarify !force already returned via EnqueueClarifyTurn above.
+	// Classic clarify !force already returned via EnqueueClarifyTurnAs above.
 	// Only force wrap-up remains on the synchronous path.
 	if !force {
 		return errors.New("internal: clarify non-force must enqueue")

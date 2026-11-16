@@ -290,11 +290,11 @@ func TestSoloManualStopProtectsQueuedTurn(t *testing.T) {
 	f := newStopFixture(t)
 	busy := newRestoreChat(true)
 	f.solo.SetChatterForTest(busy)
-	if _, err := f.solo.Send(f.id, "alice", "work", nil); err != nil {
+	if _, err := f.solo.SendWithReferences(f.id, "alice", "work", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-busy.started
-	if _, err := f.solo.Send(f.id, "alice", "next", nil); err != nil {
+	if _, err := f.solo.SendWithReferences(f.id, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err == nil {

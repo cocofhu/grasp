@@ -68,13 +68,9 @@ func (s *SoloService) newChat(id string) *soloChat {
 	return c
 }
 
-// Send queues a user turn. It returns the number of turns ahead of it.
-func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (int, error) {
-	return s.SendWithReferences(id, user, text, images, nil)
-}
-
-// SendWithReferences queues a user turn with explicit @ picks. References
-// only come from refs; the text is never parsed for @.
+// SendWithReferences queues a user turn with explicit @ picks and returns the
+// number of turns ahead of it. References only come from refs; the text is
+// never parsed for @.
 func (s *SoloService) SendWithReferences(id, user, text string, images []models.PromptImage, refs []ReferenceInput, picks ...models.ReactAnnotation) (int, error) {
 	row, err := s.Require(id, user)
 	if err != nil {

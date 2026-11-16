@@ -53,7 +53,7 @@ func TestOfficialToolAuthorizationLifecycleAndIsolation(t *testing.T) {
 			if err != nil || len(items) != 1 || items[0].Name != "Renamed account" || strings.Contains(string(encoded), "test-key") {
 				t.Fatalf("credential DTO lost or exposed secret: %s %v", encoded, err)
 			}
-			if len(credentials.ResolveEnv()) != 0 {
+			if len(credentials.CredentialEnvKeys()) != 0 {
 				t.Fatal("tool credentials were injected without an explicit binding")
 			}
 			if err := credentials.Clear(key.ID); err != nil {

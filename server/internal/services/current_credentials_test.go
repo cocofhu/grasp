@@ -19,7 +19,6 @@ func TestCredentialReadsNeverCreateDefaultSlots(t *testing.T) {
 		if err != nil || rows == nil || len(rows) != 0 {
 			t.Fatal("empty credential store did not return an empty array")
 		}
-		s.ResolveEnv()
 		s.ResolveReferences()
 		s.CredentialEnvKeys()
 		var count int64
@@ -62,7 +61,7 @@ func TestOnlyExplicitCurrentCredentialsAreVisibleAndUsable(t *testing.T) {
 		if err != nil || len(listed) != 0 {
 			t.Fatal("old credentials appeared in the current store")
 		}
-		if len(s.ResolveEnv()) != 0 || len(s.ResolveReferences()) != 0 || len(s.CredentialEnvKeys()) != 0 {
+		if len(s.ResolveReferences()) != 0 || len(s.CredentialEnvKeys()) != 0 {
 			t.Fatal("old credentials entered runtime substitutions")
 		}
 		for _, row := range rows {

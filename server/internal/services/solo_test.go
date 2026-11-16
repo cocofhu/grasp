@@ -238,7 +238,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if err := db.First(&models.Sandbox{}, sb.ID).Error; err == nil {
 		t.Fatal("close should destroy the sandbox")
 	}
-	if _, err := solo.Send(id, "alice", "again", nil); err == nil {
+	if _, err := solo.SendWithReferences(id, "alice", "again", nil, nil); err == nil {
 		t.Fatal("send on closed session should fail")
 	}
 
@@ -629,7 +629,7 @@ func TestSoloTurnHasNoTotalDeadline(t *testing.T) {
 	})
 	chat := &deadlineChat{done: make(chan struct{})}
 	solo.SetChatterForTest(chat)
-	if _, err := solo.Send(v.ID, "alice", "a long coding task", nil); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "a long coding task", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -659,7 +659,7 @@ func TestSoloSendExternalizesImages(t *testing.T) {
 	chat := &imageChat{done: make(chan struct{})}
 	solo.SetChatterForTest(chat)
 	raw := []models.PromptImage{{Data: "aGVsbG8=", MimeType: "image/png", Name: "shot.png"}}
-	if _, err := solo.Send(v.ID, "alice", "", raw); err == nil || !strings.Contains(err.Error(), "blob store not configured") {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "", raw, nil); err == nil || !strings.Contains(err.Error(), "blob store not configured") {
 		t.Fatalf("missing blob store: %v", err)
 	}
 	if chat.calls != 0 {
@@ -667,7 +667,7 @@ func TestSoloSendExternalizesImages(t *testing.T) {
 	}
 
 	solo.SetBlobStore(blob.NewMemory())
-	if _, err := solo.Send(v.ID, "alice", "", raw); err != nil {
+	if _, err := solo.SendWithReferences(v.ID, "alice", "", raw, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {

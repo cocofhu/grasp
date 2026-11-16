@@ -38,7 +38,7 @@ func TestStartingClarifyListedAsStarting(t *testing.T) {
 		Status: "running", StartedAt: &started,
 	})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 starting item, got %d", len(items))
 	}
@@ -88,7 +88,7 @@ func TestStartingClarifyBecomesParkedWithoutDuplicate(t *testing.T) {
 		Messages: []models.ReactMessage{},
 	})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -124,7 +124,7 @@ func TestStartingClarifyExcludesFailedAndAutoAgents(t *testing.T) {
 		RunID: "run-agent", NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "running",
 	})
 
-	if items := s.AllPendingInboxItems(); len(items) != 0 {
+	if items, _ := s.PendingInboxItems("", nil, 0, 0); len(items) != 0 {
 		t.Fatalf("expected no inbox items, got %d: %+v", len(items), items)
 	}
 	if s.IsStartingClarify("run-failed", "ap", 1) {

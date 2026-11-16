@@ -30,7 +30,7 @@ func TestModelConnectionCRUDAndSharedCredential(t *testing.T) {
 	if key.Purpose != "model_api" || key.ToolID != "" || key.EnvKey != "" || key.SecretRevision != 1 {
 		t.Fatalf("bad domain credential: %+v", key)
 	}
-	if env := credentials.ResolveEnv(); len(env) != 0 {
+	if env := credentials.CredentialEnvKeys(); len(env) != 0 {
 		t.Fatalf("model key globally injected: %v", env)
 	}
 	first, err := service.Create(connectionInput(key.ID))

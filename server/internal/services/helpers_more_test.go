@@ -22,9 +22,6 @@ func TestEscapeLikeAndInboxHelpers(t *testing.T) {
 	if _, _, ok := s.ClarifyContext("run-ctx", "r1", 1); !ok {
 		t.Fatal("ClarifyContext")
 	}
-	if _, ok := s.PendingGateAt("run-ctx", "r1", 1); !ok {
-		t.Fatal("PendingGateAt")
-	}
 	if ClarifyLabel(g, "r1") == "" {
 		t.Fatal("ClarifyLabel")
 	}

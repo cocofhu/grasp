@@ -22,14 +22,14 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _, _ = solo.Close(context.Background(), view.ID, "alice") }()
-	if _, err := solo.Send(view.ID, "alice", "first", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "first", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "active preview turn", func() bool { return gate.count() == 1 })
 	chat := solo.lookup(view.ID)
 	chat.onAcp(json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","content":{"text":"Thinking before a reply"}}}`))
 	chat.onAcp(json.RawMessage(`{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"read-1","title":"read_file","status":"in_progress"}}`))
-	if _, err := solo.Send(view.ID, "alice", "queued", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "queued", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	solo.appendSystem(view.ID, "Model settings changed")
@@ -67,7 +67,7 @@ func TestSoloPreviewTranscriptKeepsLiveProcessBeforeTextAndQueue(t *testing.T) {
 		t.Fatal("removed turn remained in public queue")
 	}
 	for _, text := range []string{"first queued", "second queued"} {
-		if _, err := solo.Send(view.ID, "alice", text, nil); err != nil {
+		if _, err := solo.SendWithReferences(view.ID, "alice", text, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

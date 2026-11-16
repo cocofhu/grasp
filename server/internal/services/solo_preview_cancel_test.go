@@ -18,7 +18,7 @@ func TestSoloPreviewCancelTargetsCurrentTurnAndPreservesPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _, _ = solo.Close(context.Background(), view.ID, "alice") }()
-	if _, err := solo.Send(view.ID, "alice", "first", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "first", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "active preview", func() bool { return gate.count() == 1 })
@@ -26,7 +26,7 @@ func TestSoloPreviewCancelTargetsCurrentTurnAndPreservesPolicy(t *testing.T) {
 	if first == "" {
 		t.Fatal("active ID missing")
 	}
-	if _, err := solo.Send(view.ID, "alice", "queued", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "queued", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if solo.CancelPreviewTurn(view.ID, "bob", first) == nil {
@@ -46,7 +46,7 @@ func TestSoloPreviewCancelTargetsCurrentTurnAndPreservesPolicy(t *testing.T) {
 	if len(solo.PreviewPending(view.ID)) != 0 || gate.count() != 1 {
 		t.Fatal("Solo stop did not clear pending turns")
 	}
-	if _, err := solo.Send(view.ID, "alice", "next", nil); err != nil {
+	if _, err := solo.SendWithReferences(view.ID, "alice", "next", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "next preview", func() bool { return gate.count() == 2 })

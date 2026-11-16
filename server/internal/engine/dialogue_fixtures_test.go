@@ -177,7 +177,7 @@ func (c *clarifyFixtureEnv) script(turns ...runtime.ReactTurn) {
 
 func (c *clarifyFixtureEnv) send(t *testing.T, text string, images ...models.PromptImage) {
 	t.Helper()
-	if _, err := c.eng.EnqueueClarifyTurn(c.runID, "clarify", text, images, nil); err != nil {
+	if _, err := c.eng.EnqueueClarifyTurnAs("", c.runID, "clarify", text, images, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -340,7 +340,7 @@ func TestDialogueContractFixtures(t *testing.T) {
 		c.release(t)
 		c.rec.snap(t)
 		c.holdTurns()
-		if err := c.eng.ReactReplyRetryLast(c.runID, "clarify"); err != nil {
+		if err := c.eng.ReactReplyRetryLastAs("", c.runID, "clarify"); err != nil {
 			t.Fatal(err)
 		}
 		c.waitReplyStarted(t)

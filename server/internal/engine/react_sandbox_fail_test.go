@@ -66,7 +66,8 @@ func TestReactSandboxSetupFailed(t *testing.T) {
 	}
 
 	rs := services.NewRunService(db)
-	for _, it := range rs.AllPendingInboxItems() {
+	items, _ := rs.PendingInboxItems("", nil, 0, 0)
+	for _, it := range items {
 		if c, ok := it.(services.ClarifyInboxItem); ok && c.RunID == run.ID {
 			t.Fatalf("sandbox failure run must not appear in clarify inbox: %+v", c)
 		}
@@ -99,7 +100,8 @@ func TestReactClarifyGateStillWaitingHuman(t *testing.T) {
 
 	rs := services.NewRunService(db)
 	found := false
-	for _, it := range rs.AllPendingInboxItems() {
+	items, _ := rs.PendingInboxItems("", nil, 0, 0)
+	for _, it := range items {
 		if c, ok := it.(services.ClarifyInboxItem); ok && c.RunID == run.ID {
 			found = true
 		}
