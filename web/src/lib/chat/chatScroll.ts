@@ -1,6 +1,6 @@
 import { nextTick, ref } from 'vue'
 
-export function isChatNearBottom(el: HTMLElement, threshold: number): boolean {
+function isChatNearBottom(el: HTMLElement, threshold: number): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
 }
 
