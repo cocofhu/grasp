@@ -18,7 +18,7 @@ func TestWorkspaceUpdateNameAndDescription(t *testing.T) {
 	}
 	s := NewWorkspaceService(db)
 	name, desc := "  Alpha2 ", "d2"
-	ws, err := s.Update(&name, &desc, nil, nil)
+	ws, err := s.Update(&name, &desc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestWorkspaceUpdateNameAndDescription(t *testing.T) {
 		t.Fatalf("update = %+v", ws)
 	}
 	blank := "  "
-	if _, err := s.Update(&blank, nil, nil, nil); !errors.Is(err, ErrEmptyWorkspaceName) {
+	if _, err := s.Update(&blank, nil, nil); !errors.Is(err, ErrEmptyWorkspaceName) {
 		t.Fatalf("blank name: %v", err)
 	}
 	if n := s.WorkflowCount(); n != 0 {
@@ -252,7 +252,7 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatal(err)
 	}
 	alias := "gpt-5"
-	p, err = s.Update(nil, nil, nil, &alias)
+	p, err = s.Update(nil, nil, &alias)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("alias=%q", p.UnknownModelDisplayName)
 	}
 	sameAsDefault := models.TokenUsageModelUnknownDisplay
-	p, err = s.Update(nil, nil, nil, &sameAsDefault)
+	p, err = s.Update(nil, nil, &sameAsDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("new default name should clear, got %q", p.UnknownModelDisplayName)
 	}
 	sameAsLegacy := models.TokenUsageModelUnknown
-	p, err = s.Update(nil, nil, nil, &sameAsLegacy)
+	p, err = s.Update(nil, nil, &sameAsLegacy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,11 +276,11 @@ func TestWorkspaceUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatalf("default name should clear, got %q", p.UnknownModelDisplayName)
 	}
 	tooLong := strings.Repeat("x", 65)
-	if _, err := s.Update(nil, nil, nil, &tooLong); !errors.Is(err, ErrUnknownModelDisplayNameTooLong) {
+	if _, err := s.Update(nil, nil, &tooLong); !errors.Is(err, ErrUnknownModelDisplayNameTooLong) {
 		t.Fatalf("want too-long err, got %v", err)
 	}
 	blank := "   "
-	p, err = s.Update(nil, nil, nil, &blank)
+	p, err = s.Update(nil, nil, &blank)
 	if err != nil {
 		t.Fatal(err)
 	}

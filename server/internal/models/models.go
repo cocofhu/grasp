@@ -46,7 +46,7 @@ type Credential struct {
 	SecretKind     string         `json:"secretKind,omitempty"`
 	Host           string         `json:"host,omitempty"`
 	SecretRevision uint64         `json:"secretRevision"`
-	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | external_mcp | workflow
 	Provider       string         `json:"provider,omitempty"`
 	Name           string         `json:"name"`
 	Target         string         `json:"target,omitempty"`
@@ -85,9 +85,6 @@ type Workspace struct {
 	// PmGateAutoPrompt is an optional prompt appended after the system default
 	// gate-auto guidance when invoking the PM Leader.
 	PmGateAutoPrompt string `json:"gateAutoPrompt,omitempty"`
-	// NotifyPolicy is the workspace-level Run→IM notification default
-	// (enabled kill-switch + defaultEvents). See WorkspaceNotifyPolicy.
-	NotifyPolicy WorkspaceNotifyPolicy `gorm:"serializer:json" json:"notifyPolicy"`
 	// UnknownModelDisplayName is an optional workspace-level display alias for the
 	// 「未知/未分桶」token bucket. Empty means use the default label. Does not
 	// change persisted UsageByModel keys or merge with real model buckets.
@@ -102,9 +99,8 @@ type WorkflowDefaults struct {
 	Variables []WorkspaceVariable `json:"variables"`
 	// Repos are the repositories bound to the workflow, in clone order. A run
 	// takes all of them unless the launcher picks a subset.
-	Repos        []RepoChoice            `json:"repos,omitempty"`
-	NotifyPolicy *WorkspaceNotifyPolicy  `json:"notifyPolicy,omitempty"`
-	GateAuto     *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
+	Repos    []RepoChoice            `json:"repos,omitempty"`
+	GateAuto *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
 }
 
 type WorkflowGateAutoPolicy struct {
@@ -126,14 +122,11 @@ type WorkflowDef struct {
 	PublishedVersion int  `gorm:"default:0" json:"publishedVersion"`
 	NeedsRepo        bool `json:"needsRepo"`
 	// ShowOnHome gates Home cards + Home workflow search.
-	ShowOnHome bool `json:"showOnHome"`
-	// NotifyPolicy is the workflow-level override (off|inherit|custom + events).
-	// Zero value (empty mode) is treated as inherit at resolve time.
-	NotifyPolicy WorkflowNotifyPolicy `gorm:"serializer:json" json:"notifyPolicy"`
-	Graph        Graph                `gorm:"serializer:json" json:"-"`
-	CreatedAt    time.Time            `json:"-"`
-	UpdatedAt    time.Time            `json:"updatedAt"`
-	LastRunAt    *time.Time           `json:"lastRunAt,omitempty"`
+	ShowOnHome bool       `json:"showOnHome"`
+	Graph      Graph      `gorm:"serializer:json" json:"-"`
+	CreatedAt  time.Time  `json:"-"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	LastRunAt  *time.Time `json:"lastRunAt,omitempty"`
 }
 
 // Workflow status values derived by WorkflowDef.Status.
@@ -906,7 +899,7 @@ type PromptImage struct {
 //   - "test":  long-lived interactive sandbox for Agent chat-testing.
 //   - "run":   per-run workflow node sandbox, recorded for its (short) lifetime
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
-//   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
+//   - "agent": thread-bound agent session sandbox (consult / gate-auto / future roles).
 type Sandbox struct {
 	// Binding fingerprints retain only hashes, so reconnect can validate the
 	// exact applied authorization even after a control-plane restart.
@@ -1081,12 +1074,10 @@ func AllModels() []any {
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{},
 		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
-		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
 		&AuditEvent{},
 		&Credential{},
 		&ModelConnection{},
 		&ModelConfiguration{},
-		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},
 		&GateShareNonce{},

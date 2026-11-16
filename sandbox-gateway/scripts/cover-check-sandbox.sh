@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sandbox coverage gate: unit-testable packages (auth / backend* / config / correl).
-# Excludes acp/qqbot/service/handler/router (WS/CLI integration surfaces covered via e2e).
+# Excludes acp/service/handler/router (WS/CLI integration surfaces covered via e2e).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MIN="${1:-90}"

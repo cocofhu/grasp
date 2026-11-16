@@ -335,7 +335,7 @@ func SubstSlice(s []string, vars map[string]string) []string {
 // whose URL/command resolves to empty (e.g. artifact-store while the MCP
 // endpoint is disabled) is dropped.
 //
-// Workflow ACP never auto-injects live memory/context/scheduler endpoints;
+// Workflow ACP never auto-injects live memory/context endpoints;
 // declared entries for those names (or URL paths) are dropped here.
 func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 	mcp := c.effectiveAgent(req).MCP
@@ -371,12 +371,11 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 
 func isWorkflowDroppedPlatformMCP(name, url string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "memory-store", "context-store", "task-scheduler":
+	case "memory-store", "context-store":
 		return true
 	}
 	return strings.Contains(url, "/mcp/memory-store") ||
-		strings.Contains(url, "/mcp/context-store") ||
-		strings.Contains(url, "/mcp/task-scheduler/")
+		strings.Contains(url, "/mcp/context-store")
 }
 
 // hasArtifactStore reports whether a server named artifact-store survived

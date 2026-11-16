@@ -128,8 +128,6 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 		userID string
 	}{
 		{name: "consult", userID: "alice"},
-		{name: "cron", userID: "cron"},
-		{name: "channel", userID: "qq:group:abc"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tok := platformmcp.NewToken()

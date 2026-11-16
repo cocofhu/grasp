@@ -21,13 +21,13 @@ Agent env、工作区共享 env、Run env 与平台 `sandbox.env` 中出现密�
 | Git HTTPS | GitHub/GitLab Token、GitLab URL | 仓库选作访问凭据后，随 Git catalog 注入沙箱，只对该仓库地址生效；不作为普通 env |
 | Git SSH | 私钥、known_hosts | 同上，随 Git catalog 注入，只对该仓库地址生效 |
 | MCP / 自定义 | MCP Header/command env 或明确目标环境键；支持 `${credential:<id>}` | 仅展开到目标 MCP 或绑定键，不扩散到所有 Agent |
-| 渠道、外部 MCP、工作流 Key | 在工作区凭据页汇总查看 | 复用现有加密/hash 适配器；渠道/鉴权服务端使用，不注入沙箱 |
+| 外部 MCP、工作流 Key | 在工作区凭据页汇总查看 | 复用现有加密/hash 适配器；鉴权服务端使用，不注入沙箱 |
 
 只能来自工作区凭据的密钥键：`GRASP_CURSOR_API_KEY`、`GRASP_CLAUDE_API_KEY`、`GRASP_CODEBUDDY_API_KEY`、
 `GRASP_TRAE_API_KEY`、`GRASP_OPENCODE_API_KEY`、`GRASP_CODEX_AUTH_JSON`、`GRASP_DEEPSEEK_API_KEY`、`GITHUB_TOKEN`、`GITLAB_TOKEN`、`GIT_SSH_PRIVATE_KEY`、
 `GIT_SSH_KNOWN_HOSTS`，以及它们映射到的 CLI 变量 `CURSOR_API_KEY`、`ANTHROPIC_API_KEY`、`CODEBUDDY_API_KEY`、
 `TRAECLI_PERSONAL_ACCESS_TOKEN`、`OPENCODE_API_KEY`、`DEEPSEEK_API_KEY`，以及 dsh 别名 `ACP_DEEPSEEK_API_KEY`、`ACP_DEEPSEEK_HARNESS_API_KEY`。`GRASP_CODEX_AUTH_JSON` 只是登录文件槽位，不会映射成 CLI 环境变量。站点等非敏感项可写在 Agent env；模型、服务商与 API 地址通过具名模型配置管理，不能用 env 覆盖所选绑定。
-已配置值的凭据键不能被每次 Run 的临时 env 覆盖。平台注入的保留变量（`GRASP_ARTIFACT_*`、`GRASP_RUN_ID`、`GRASP_NODE_ID`、`GRASP_MEMORY_*`、`GRASP_CONTEXT_*`、`GRASP_SCHEDULER_*`、`GRASP_PM_*`、`CONFIG_ROOT`、`AGENT_PROVIDER`、沙箱密码）不能作为凭据键。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入工作区凭据页。
+已配置值的凭据键不能被每次 Run 的临时 env 覆盖。平台注入的保留变量（`GRASP_ARTIFACT_*`、`GRASP_RUN_ID`、`GRASP_NODE_ID`、`GRASP_MEMORY_*`、`GRASP_CONTEXT_*`、`GRASP_PM_*`、`CONFIG_ROOT`、`AGENT_PROVIDER`、沙箱密码）不能作为凭据键。部署密钥、数据库密码、Session/Gate/Artifact Token 等仍是平台配置或系统自动管理项，不进入工作区凭据页。
 
 ### 真实沙箱链路(多后端)
 

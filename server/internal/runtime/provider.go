@@ -96,7 +96,7 @@ type Options struct {
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
 	// keys overlay shared+Agent but never win over platform reserved write-backs.
 	// Only workflow openSandbox paths should wire this; Agent Studio / interactive
-	// test / PM chat / Cron must leave it nil so run env does not leak.
+	// test / PM chat must leave it nil so run env does not leak.
 	// KeepAliveForReview reuses an already-created sandbox and therefore keeps
 	// the environ from create time (no hot update); a later new sandbox for the
 	// same Run re-reads this snapshot.

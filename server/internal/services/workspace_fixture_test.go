@@ -12,12 +12,11 @@ import (
 func (s *WorkspaceService) CreateFixture(name, description string) (models.Workspace, error) {
 	now := time.Now()
 	ws := models.Workspace{
-		ID:           models.WorkspaceID,
-		Name:         name,
-		Description:  description,
-		NotifyPolicy: models.DefaultWorkspaceNotifyPolicy(),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:          models.WorkspaceID,
+		Name:        name,
+		Description: description,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},

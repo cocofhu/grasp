@@ -106,12 +106,6 @@
       "reason": "text-internal helper"
     },
     {
-      "symbol": "isValidPushTargetValue",
-      "file": "pm/cronDeliverTargets.ts",
-      "decision": "converge",
-      "reason": "cron-internal validator"
-    },
-    {
       "symbol": "captureStructuredElement",
       "file": "run/exportStructuredArtifact.ts",
       "decision": "converge",

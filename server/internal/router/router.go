@@ -133,15 +133,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/workspace/pm-leader", h.GetPmLeader)
 		api.PUT("/workspace/pm-leader", h.UpdatePmLeader)
-		api.GET("/workspace/cron-jobs", h.ListCronJobs)
-		api.GET("/workspace/notify-receipts", h.ListNotifyReceipts)
-		api.PATCH("/workspace/cron-jobs/:jobId", h.PatchCronJob)
-		api.DELETE("/workspace/cron-jobs/:jobId", h.DeleteCronJob)
-		// Plural multi-channel APIs (primary + secondary).
-		api.GET("/workspace/channels", h.ListChannels)
-		api.POST("/workspace/channels", h.CreateChannel)
-		api.PUT("/workspace/channels/:channelId", h.UpdateChannel)
-		api.DELETE("/workspace/channels/:channelId", h.DeleteChannel)
 		api.GET("/workspace/pm/memories", h.ListPmMemories)
 		api.GET("/workspace/pm/threads", h.ListPmThreads)
 		api.POST("/workspace/pm/threads", h.CreatePmThread)
@@ -192,7 +183,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/workflows/from-baseline", h.CreateWorkflowFromBaseline)
 		api.GET("/workflows/:id", h.GetWorkflow)
 		api.PUT("/workflows/:id", h.SaveWorkflow)
-		api.PATCH("/workflows/:id/notify-policy", h.PatchWorkflowNotifyPolicy)
 		api.PATCH("/workflows/:id/home-visibility", h.PatchWorkflowHomeVisibility)
 		api.DELETE("/workflows/:id", h.DeleteWorkflow)
 		api.GET("/workflows/:id/copy-preview", h.CopyWorkflowPreview)
@@ -286,9 +276,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/agents/:name/threads", h.ListAgentThreads)
 		api.GET("/agents/:name/threads/:tid/messages", h.GetAgentThreadMessages)
 		api.DELETE("/agents/:name/threads/:tid", h.DeleteAgentThread)
-		api.GET("/agents/:name/cron-jobs", h.ListAgentCronJobs)
-		api.PATCH("/agents/:name/cron-jobs/:jobId", h.PatchAgentCronJob)
-		api.DELETE("/agents/:name/cron-jobs/:jobId", h.DeleteAgentCronJob)
 
 		api.GET("/sandboxes", h.ListSandboxes)
 		api.GET("/sandboxes/capacity", h.SandboxCapacity)
@@ -359,10 +346,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	r.POST("/mcp/context-store", h.ContextMCPRPC)
 	r.GET("/mcp/context-store", h.ContextMCPRPC)
 	r.DELETE("/mcp/context-store", h.ContextMCPRPC)
-
-	r.POST("/mcp/task-scheduler/:agentName", h.SchedulerMCPRPC)
-	r.GET("/mcp/task-scheduler/:agentName", h.SchedulerMCPRPC)
-	r.DELETE("/mcp/task-scheduler/:agentName", h.SchedulerMCPRPC)
 
 	// Loopback-only, token-protected sessions used by `approving doctor
 	// --run-demo` to exercise the live MCP HTTP control plane.

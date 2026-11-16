@@ -199,7 +199,7 @@ func (h *Handlers) DeletePmThread(c *gin.Context) {
 		return
 	}
 	tid := c.Param("tid")
-	t, err := h.Pm.RequireWritableThread(tid, user)
+	t, err := h.Pm.GetThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -280,7 +280,7 @@ func (h *Handlers) AppendPmMessage(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
+	if _, err := h.Pm.GetThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -323,7 +323,7 @@ func (h *Handlers) PatchPmMessage(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
+	if _, err := h.Pm.GetThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -360,7 +360,7 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	thread, err := h.Pm.RequireWritableThread(tid, user)
+	thread, err := h.Pm.GetThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -465,7 +465,7 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	thread, err := h.Pm.RequireWritableThread(tid, user)
+	thread, err := h.Pm.GetThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -552,7 +552,7 @@ func (h *Handlers) CancelPmTurn(c *gin.Context) {
 		return
 	}
 	tid := c.Param("tid")
-	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
+	if _, err := h.Pm.GetThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -585,7 +585,7 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	}
 	tid := c.Param("tid")
 
-	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
+	if _, err := h.Pm.GetThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -706,31 +706,6 @@ func (h *Handlers) ContextMCPRPC(c *gin.Context) {
 	})
 }
 
-// SchedulerMCPRPC handles /mcp/task-scheduler/:agentName
-func (h *Handlers) SchedulerMCPRPC(c *gin.Context) {
-	if h.SchedulerMCP == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "scheduler mcp unavailable"})
-		return
-	}
-	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
-		c.Status(http.StatusOK)
-		return
-	}
-	agentName := c.Param("agentName")
-	token := bearer(c.GetHeader("Authorization"))
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "read body"})
-		return
-	}
-	status, resp := h.SchedulerMCP.ServeRPC(agentName, token, body)
-	if resp == nil {
-		c.Status(status)
-		return
-	}
-	c.Data(status, "application/json", resp)
-}
-
 func (h *Handlers) servePlatformMCP(c *gin.Context, fn func(token string, body []byte) (int, []byte)) {
 	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		c.Status(http.StatusOK)
@@ -753,18 +728,15 @@ func (h *Handlers) servePlatformMCP(c *gin.Context, fn func(token string, body [
 func (h *Handlers) registerPmPlatformTokens(threadID, userID, agent string, enabledMcps []string) string {
 	// enabledMcps is applied when building inject specs (BuildPmRoleMCPSpecs), not at token register time.
 	_ = enabledMcps
-	// Authenticated PM consult: memory/scheduler writes on. Workflow write tools
+	// Authenticated PM consult: memory writes on. Workflow write tools
 	// follow workspace EnabledMcps via BuildPmRoleMCPSpecs.
 	token := platformmcp.NewToken()
 	h.PMMCP.Restore(threadID, userID, agent, token)
 	if h.MemoryMCP != nil {
-		h.MemoryMCP.Restore(token, agent, threadID, userID, true)
+		h.MemoryMCP.Restore(token, agent, threadID, userID)
 	}
 	if h.ContextMCP != nil {
 		h.ContextMCP.Restore(token, agent, threadID, userID)
-	}
-	if h.SchedulerMCP != nil {
-		h.SchedulerMCP.Restore(token, agent, threadID, userID, true)
 	}
 	return token
 }
@@ -773,13 +745,10 @@ func (h *Handlers) restorePmPlatformTokens(threadID, userID, agent, token string
 	_ = enabledMcps
 	h.PMMCP.Restore(threadID, userID, agent, token)
 	if h.MemoryMCP != nil {
-		h.MemoryMCP.Restore(token, agent, threadID, userID, true)
+		h.MemoryMCP.Restore(token, agent, threadID, userID)
 	}
 	if h.ContextMCP != nil {
 		h.ContextMCP.Restore(token, agent, threadID, userID)
-	}
-	if h.SchedulerMCP != nil {
-		h.SchedulerMCP.Restore(token, agent, threadID, userID, true)
 	}
 }
 
@@ -793,111 +762,6 @@ func (h *Handlers) unregisterPmPlatformTokens(token string) {
 	if h.ContextMCP != nil {
 		h.ContextMCP.Unregister(token)
 	}
-	if h.SchedulerMCP != nil {
-		h.SchedulerMCP.Unregister(token)
-	}
-}
-
-// ListCronJobs handles GET /api/workspace/cron-jobs.
-// Returns all AgentCronJob rows (any agent); no agent filter.
-func (h *Handlers) ListCronJobs(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if _, ok := h.sessionUser(c); !ok {
-		return
-	}
-	items, err := h.Pm.ListCronJobs()
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-// ListNotifyReceipts handles GET /api/workspace/notify-receipts.
-func (h *Handlers) ListNotifyReceipts(c *gin.Context) {
-	if h.RunNotify == nil {
-		c.JSON(http.StatusOK, gin.H{"items": []any{}})
-		return
-	}
-	if _, ok := h.sessionUser(c); !ok {
-		return
-	}
-	items, err := h.RunNotify.ListReceipts()
-	if err != nil {
-		_ = c.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-// PatchCronJob handles PATCH /api/workspace/cron-jobs/:jobId.
-// Any authenticated user may toggle deliverToChannel (APIMiddleware / sessionUser);
-// memory writes stay admin-only.
-func (h *Handlers) PatchCronJob(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if _, ok := h.sessionUser(c); !ok {
-		return
-	}
-	var body struct {
-		DeliverToChannel *bool `json:"deliverToChannel"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if body.DeliverToChannel == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "deliverToChannel required"})
-		return
-	}
-	job, err := h.Pm.PatchCronJobDeliver(c.Param("jobId"), *body.DeliverToChannel)
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	h.recordAudit(services.AuditRecord{
-		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionCron,
-		ResourceType: "cron",
-		ResourceID:   c.Param("jobId"),
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "patch cron job",
-		Payload:      map[string]any{"deliverToChannel": *body.DeliverToChannel},
-	})
-	c.JSON(http.StatusOK, job)
-}
-
-// DeleteCronJob handles DELETE /api/workspace/cron-jobs/:jobId.
-// Any authenticated user may delete (aligned with PatchCronJob / sessionUser).
-// Unknown jobId returns 404. Cleanup matches Agent/MCP delete (runs + thread).
-func (h *Handlers) DeleteCronJob(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if _, ok := h.sessionUser(c); !ok {
-		return
-	}
-	if err := h.Pm.DeleteCronJob(c.Param("jobId")); err != nil {
-		writePmErr(c, err)
-		return
-	}
-	h.recordAudit(services.AuditRecord{
-		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionCron,
-		ResourceType: "cron",
-		ResourceID:   c.Param("jobId"),
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "delete cron job",
-		Payload:      map[string]any{"deleted": true},
-	})
-	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
 func writePmErr(c *gin.Context, err error) {
@@ -905,15 +769,13 @@ func writePmErr(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrWorkspaceMissing),
 		errors.Is(err, services.ErrPmThreadNotFound),
 		errors.Is(err, services.ErrPmMemoryNotFound),
-		errors.Is(err, services.ErrPmCronJobNotFound),
 		errors.Is(err, services.ErrPmMessageNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrPmLeaderDisabled),
 		errors.Is(err, services.ErrPmLeaderNoAgent),
 		errors.Is(err, services.ErrPmLeaderAgentMissing):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrPmAdminRequired),
-		errors.Is(err, services.ErrPmChannelReadOnly):
+	case errors.Is(err, services.ErrPmAdminRequired):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	default:
 		_ = c.Error(err)

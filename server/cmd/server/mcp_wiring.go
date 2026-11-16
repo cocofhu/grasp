@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/channels"
 	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/memorymcp"
@@ -12,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/platformmcp"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/rs/zerolog/log"
@@ -53,16 +51,15 @@ func wireArtifactMCPPersistence(host *mcp.Host, db *gorm.DB, runs *services.RunS
 	})
 }
 
-// platformMCPWire owns the shared register/restore/unregister paths for the
-// four platform MCP hosts so cron, channel, and sandbox-destroy hooks stay in
-// sync without duplicating the same four Unregister calls in main.
+// platformMCPWire owns the shared register/unregister paths for the platform
+// MCP hosts so gate-auto and sandbox-destroy hooks stay in sync without
+// duplicating the same Unregister calls in main.
 type platformMCPWire struct {
-	pm        *pmmcp.Host
-	memory    *memorymcp.Host
-	context   *contextmcp.Host
-	scheduler *schedulermcp.Host
-	pmSvc     *services.PmService
-	skills    *services.AgentService
+	pm      *pmmcp.Host
+	memory  *memorymcp.Host
+	context *contextmcp.Host
+	pmSvc   *services.PmService
+	skills  *services.AgentService
 }
 
 // agentExists gates platform MCP tokens on a live Agent.
@@ -87,9 +84,6 @@ func (w *platformMCPWire) unregister(token string) {
 	if w.context != nil {
 		w.context.Unregister(token)
 	}
-	if w.scheduler != nil {
-		w.scheduler.Unregister(token)
-	}
 }
 
 func (w *platformMCPWire) clearSandboxRef(threadID string) {
@@ -101,94 +95,6 @@ func (w *platformMCPWire) clearSandboxRef(threadID string) {
 	}
 }
 
-// registerCron mints a shared token for a cron execution. Memory writes are
-// allowed; scheduler write tools stay off. PM role MCPs are attached only when
-// the agent is the bound PM Leader.
-func (w *platformMCPWire) registerCron(threadID, agent string) (string, []sandbox.MCPServerSpec) {
-	if !w.agentExists(agent) {
-		log.Warn().Str("agent", agent).
-			Msg("cron platform MCP skipped: agent not found")
-		return "", nil
-	}
-	tok := platformmcp.NewToken()
-	if w.memory != nil {
-		w.memory.Restore(tok, agent, threadID, "cron", true)
-	}
-	if w.context != nil {
-		w.context.Restore(tok, agent, threadID, "cron")
-	}
-	if w.scheduler != nil {
-		w.scheduler.Restore(tok, agent, threadID, "cron", false)
-	}
-	specs := services.BuildAgentPlatformMCPSpecs(agent, tok)
-	if w.pmSvc != nil {
-		if binding, err := w.pmSvc.GetBinding(); err == nil &&
-			binding.Enabled && binding.AgentConfigRef == agent {
-			if w.pm != nil {
-				w.pm.Restore(threadID, "cron", agent, tok)
-			}
-			specs = append(specs, services.BuildPmRoleMCPSpecs(tok, binding.EnabledMcps)...)
-		}
-	}
-	return tok, specs
-}
-
-// registerChannel mints a shared token for an IM channel turn. Memory/scheduler
-// write gates follow caps from ChannelConfig (default off for unauthenticated
-// channel senders). Platform PM role MCP specs + session AllowedMcps come from
-// the channel's EnabledMcps (not Workspace.PmEnabledMcps).
-func (w *platformMCPWire) registerChannel(threadID, userID, agent string, enabledMcps []string, caps channels.SessionCaps) (string, []sandbox.MCPServerSpec) {
-	if w.pm == nil {
-		return "", nil
-	}
-	if !w.agentExists(agent) {
-		log.Warn().Str("agent", agent).
-			Msg("channel platform MCP skipped: agent not found")
-		return "", nil
-	}
-	tok := platformmcp.NewToken()
-	w.pm.RestoreWithMcps(threadID, userID, agent, tok, enabledMcps)
-	if w.memory != nil {
-		w.memory.Restore(tok, agent, threadID, userID, caps.AllowMemoryWrite)
-	}
-	if w.context != nil {
-		w.context.Restore(tok, agent, threadID, userID)
-	}
-	if w.scheduler != nil {
-		w.scheduler.Restore(tok, agent, threadID, userID, caps.AllowSchedulerWrite)
-	}
-	// Inject the full default PM role set so expanding Channel.EnabledMcps on a
-	// reused sandbox takes effect via session AllowedMcps without recreating
-	// the container; ServeRPC still gates by the channel list.
-	specs := append(
-		services.BuildAgentPlatformMCPSpecs(agent, tok),
-		services.BuildPmRoleMCPSpecs(tok, nil)...,
-	)
-	return tok, specs
-}
-
-func (w *platformMCPWire) restoreChannel(threadID, userID, agent, token string, enabledMcps []string, caps channels.SessionCaps) {
-	if !w.agentExists(agent) {
-		log.Warn().Str("agent", agent).
-			Msg("channel platform MCP restore skipped: agent not found")
-		return
-	}
-	if w.pm != nil {
-		// Re-bind AllowedMcps from the latest Channel.EnabledMcps so permission
-		// changes apply on the next reused-sandbox turn.
-		w.pm.RestoreWithMcps(threadID, userID, agent, token, enabledMcps)
-	}
-	if w.memory != nil {
-		w.memory.Restore(token, agent, threadID, userID, caps.AllowMemoryWrite)
-	}
-	if w.context != nil {
-		w.context.Restore(token, agent, threadID, userID)
-	}
-	if w.scheduler != nil {
-		w.scheduler.Restore(token, agent, threadID, userID, caps.AllowSchedulerWrite)
-	}
-}
-
 // registerPMPolicy authorizes an ordinary per-workflow PM policy explicitly.
 func (w *platformMCPWire) registerPMPolicy(threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec) {
 	if !w.agentExists(agent) {
@@ -196,13 +102,10 @@ func (w *platformMCPWire) registerPMPolicy(threadID, agent string, enabledMcps [
 	}
 	token := platformmcp.NewToken()
 	if w.memory != nil {
-		w.memory.Restore(token, agent, threadID, "system", true)
+		w.memory.Restore(token, agent, threadID, "system")
 	}
 	if w.context != nil {
 		w.context.Restore(token, agent, threadID, "system")
-	}
-	if w.scheduler != nil {
-		w.scheduler.Restore(token, agent, threadID, "system", false)
 	}
 	if w.pm != nil {
 		w.pm.RestoreWithMcps(threadID, "system", agent, token, services.EffectivePmEnabledMcps(enabledMcps))

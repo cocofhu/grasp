@@ -146,12 +146,6 @@ watch(
           data-test="mcp-add-context"
           @click="addAgentPlatformMcp('context-store')"
         >{{ t('pages.agentStudio.mcp.addContextStore') }}</button>
-        <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
-          type="button"
-          data-test="mcp-add-scheduler"
-          @click="addAgentPlatformMcp('task-scheduler')"
-        >{{ t('pages.agentStudio.mcp.addTaskScheduler') }}</button>
       </div>
       <div
         v-for="(m, i) in draft.mcp"

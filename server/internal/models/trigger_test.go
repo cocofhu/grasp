@@ -21,8 +21,8 @@ func TestParseTrigger(t *testing.T) {
 		{"手动触发", "", true},
 		{"API 触发", "", true},
 		{"PM MCP", "", true},
-		{"channel", "", true},
-		{"qq:cron-timezone-bug", "", true},
+		{"webhook", "", true},
+		{"custom:nightly-bug", "", true},
 		{" manual ", TriggerManual, false},
 	}
 	for _, tc := range cases {
@@ -56,7 +56,7 @@ func TestResolveTrigger(t *testing.T) {
 	if err != nil || got != TriggerAPI {
 		t.Fatalf("explicit wins: got %q err %v", got, err)
 	}
-	if _, err := ResolveTrigger("channel", TriggerAPI); err == nil {
+	if _, err := ResolveTrigger("webhook", TriggerAPI); err == nil {
 		t.Fatal("illegal must error")
 	}
 }

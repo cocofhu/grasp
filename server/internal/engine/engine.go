@@ -114,10 +114,6 @@ type Engine struct {
 	// shareRevoker invalidates unused GateShareLinks when a gate/run ends.
 	shareRevoker ShareLinkRevoker
 
-	// runNotify is an optional async observer for confirmed waiting_human /
-	// node-scoped failed transitions (QQ Run notify). Engine never blocks on it.
-	runNotify RunNotifier
-
 	// reviewSess holds per parked producer session FIFO + single worker for
 	// node-inline review, gate hot-revise and visitor lanes.
 	reviewSess chatsession.Registry[*reviewSession] // key: laneSessionKey

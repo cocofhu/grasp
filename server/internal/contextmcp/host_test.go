@@ -78,10 +78,6 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cronTh, err := pm.CreateCronThread("agent-a", "定时会话")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pm.AppendMessage(ta.ID, "user", "hello-a", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +85,6 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pm.AppendMessage(tb.ID, "user", "hello-b", nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pm.AppendMessage(cronTh.ID, "user", "hello-cron", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,8 +114,8 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 	if isErr {
 		t.Fatal(text)
 	}
-	if !strings.Contains(text, ta.ID) || !strings.Contains(text, cronTh.ID) {
-		t.Fatalf("list must include own + cron: %s", text)
+	if !strings.Contains(text, ta.ID) {
+		t.Fatalf("list must include own thread: %s", text)
 	}
 	if strings.Contains(text, tb.ID) || strings.Contains(text, taOther.ID) {
 		t.Fatalf("list must not include other agents/users: %s", text)
@@ -171,10 +164,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatal(text)
 	}
 	if !strings.Contains(text, "hello-a") || strings.Contains(text, "hello-b") || strings.Contains(text, "hello-carol") {
-		t.Fatalf("search must be user-scoped (+cron): %s", text)
-	}
-	if !strings.Contains(text, "hello-cron") {
-		t.Fatalf("search should include cron thread: %s", text)
+		t.Fatalf("search must be user-scoped: %s", text)
 	}
 	st, resp = h.ServeRPC(tokA, ctxToolCall(8, "search_messages", map[string]any{"query": ""}))
 	text, isErr = ctxToolText(t, resp)

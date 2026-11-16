@@ -17,9 +17,6 @@ func testKey(t *testing.T) {
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
 	testKey(t)
-	if !Available() {
-		t.Fatal("Available() = false after setting a valid key")
-	}
 	for _, pt := range []string{"", "hello", "app_secret_值-带中文", "a longer secret with spaces"} {
 		enc, err := Encrypt(pt)
 		if err != nil {
@@ -49,9 +46,6 @@ func TestEncryptNonceUnique(t *testing.T) {
 
 func TestNoKey(t *testing.T) {
 	t.Setenv(SecretsKeyEnv, "")
-	if Available() {
-		t.Fatal("Available() = true without a key")
-	}
 	if _, err := Encrypt("x"); err != ErrNoSecretsKey {
 		t.Fatalf("Encrypt without key: got %v want ErrNoSecretsKey", err)
 	}
@@ -62,16 +56,10 @@ func TestNoKey(t *testing.T) {
 
 func TestBadKey(t *testing.T) {
 	t.Setenv(SecretsKeyEnv, "not-base64!!")
-	if Available() {
-		t.Fatal("Available() = true for invalid base64 key")
-	}
 	if _, err := Encrypt("x"); err != ErrInvalidSecretsKey {
 		t.Fatalf("Encrypt bad base64: got %v want ErrInvalidSecretsKey", err)
 	}
 	t.Setenv(SecretsKeyEnv, base64.StdEncoding.EncodeToString([]byte("too-short")))
-	if Available() {
-		t.Fatal("Available() = true for a key that is not 32 bytes")
-	}
 	if _, err := Encrypt("x"); err != ErrInvalidSecretsKey {
 		t.Fatalf("Encrypt short key: got %v want ErrInvalidSecretsKey", err)
 	}

@@ -14,8 +14,6 @@ const apiMocks = vi.hoisted(() => ({
   getPmLeader: vi.fn(),
   updatePmLeader: vi.fn(),
   listAgents: vi.fn(),
-  getWorkspace: vi.fn(),
-  listChannels: vi.fn(),
   listPmThreads: vi.fn(),
 }))
 
@@ -33,8 +31,6 @@ vi.mock('@/lib/api/api', async () => {
       getPmLeader: apiMocks.getPmLeader,
       updatePmLeader: apiMocks.updatePmLeader,
       listAgents: apiMocks.listAgents,
-      getWorkspace: apiMocks.getWorkspace,
-      listChannels: apiMocks.listChannels,
       listPmThreads: apiMocks.listPmThreads,
     },
   }
@@ -52,44 +48,9 @@ const BINDING: PmLeaderBinding = {
   aclNote: 'note',
 }
 
-type ChannelFixture = {
-  channel?: Record<string, unknown> | null
-  secretsKeyConfigured?: boolean
-}
-
-async function mountPanel(
-  binding: PmLeaderBinding = BINDING,
-  channelFixture: ChannelFixture = { channel: null, secretsKeyConfigured: true },
-) {
+async function mountPanel(binding: PmLeaderBinding = BINDING) {
   apiMocks.getPmLeader.mockResolvedValue(binding)
   apiMocks.listAgents.mockResolvedValue([{ name: 'agent-1' }])
-  apiMocks.getWorkspace.mockResolvedValue({
-    name: 'Demo',
-    notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
-  })
-  apiMocks.listChannels.mockResolvedValue({
-    items: channelFixture.channel
-      ? [{
-          id: 'chn-1',
-          type: 'qq',
-          name: String((channelFixture.channel as any).name || 'QQ'),
-          enabled: !!(channelFixture.channel as any).enabled,
-          agentName: 'agent-1',
-          isPrimary: true,
-          enabledMcps: ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs'],
-          appId: String((channelFixture.channel as any).appId || 'app'),
-          appSecretSet: !!(channelFixture.channel as any).appSecretSet,
-          turnTimeoutSeconds: Number((channelFixture.channel as any).turnTimeoutSeconds || 0),
-          cronDeliver: !!(channelFixture.channel as any).cronDeliver,
-          cronDeliverTarget: (channelFixture.channel as any).cronDeliverTarget,
-          config: (channelFixture.channel as any).config || {},
-          createdAt: '',
-          updatedAt: '',
-        }]
-      : [],
-    secretsKeyConfigured: channelFixture.secretsKeyConfigured ?? true,
-    freeAgents: ['agent-1'],
-  })
   apiMocks.updatePmLeader.mockImplementation(async (body: Record<string, unknown>) => ({
     ...BINDING,
     ...body,
@@ -107,15 +68,7 @@ async function mountPanel(
     routes: [{ path: '/', component: { template: '<div />' } }, { path: '/agents', component: { template: '<div />' } }],
   })
   await router.push('/')
-  const w = mount(PmSettingsPanel, {
-    global: {
-      plugins: [i18n, router],
-      stubs: {
-        // Channel UI moved to PmChannelMultiPanel; keep leader tests focused.
-        PmChannelMultiPanel: true,
-      },
-    },
-  })
+  const w = mount(PmSettingsPanel, { global: { plugins: [i18n, router] } })
   await flushPromises()
   return w
 }
@@ -140,7 +93,7 @@ describe('PmSettingsPanel enabledMcps', () => {
     const mcpCodes = w.findAll('code').map((c) => c.text())
     expect(mcpCodes).toEqual(['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs'])
 
-    // PM MCP toggles are AppSwitch (role=switch); channel section has more switches after them.
+    // PM MCP toggles are AppSwitch (role=switch).
     const boxes = mcpSwitches(w)
     expect(boxes).toHaveLength(4)
     expect(boxes[0].attributes('aria-checked')).toBe('true')
@@ -204,13 +157,6 @@ describe('PmSettingsPanel enabledMcps', () => {
     expect(body.enabledMcps).toEqual([])
   })
 
-  it('embeds multi-channel panel host', async () => {
-    const w = await mountPanel()
-    // Stubbed child still mounts as PmChannelMultiPanel placeholder.
-    expect(w.find('pm-channel-multi-panel-stub').exists() || w.html().includes('PmChannelMultiPanel')).toBe(
-      true,
-    )
-  })
 })
 
 describe('PmSettingsPanel gate-auto config', () => {
@@ -245,16 +191,10 @@ describe('PmSettingsPanel gate-auto config', () => {
     expect(body.gateAutoPrompt).toBe('')
   })
 
-  it('keeps unsaved fields when a save fails or the channel updates independently', async () => {
+  it('keeps unsaved fields when a save fails', async () => {
     const w = await mountPanel()
     await w.get('[data-testid="pm-gate-auto-var"]').setValue('pending_approval')
     await mcpSwitches(w)[0].trigger('click')
-    const updatedWorkspace = { name: 'Updated from channel', description: '', variables: [] }
-    w.getComponent({ name: 'PmChannelMultiPanel' }).vm.$emit('workspace-updated', updatedWorkspace)
-    await flushPromises()
-    expect(w.emitted('workspace-updated')).toEqual([[updatedWorkspace]])
-    expect((w.get('[data-testid="pm-gate-auto-var"]').element as HTMLInputElement).value).toBe('pending_approval')
-
     apiMocks.updatePmLeader.mockRejectedValueOnce(new Error('Save failed'))
     await w.get('[data-testid="pm-leader-save"]').trigger('click')
     await flushPromises()
@@ -303,7 +243,7 @@ describe('PmSettingsPanel grouped settings', () => {
     expect(text).not.toContain('pages.workspace.pm.settingsHint')
 
     expect(text).toContain('任意已登录用户可启用/换绑/停用')
-    expect(text).toContain('通用记忆/上下文/调度器始终注入，不受此列表控制')
+    expect(text).toContain('通用记忆/上下文始终注入，不受此列表控制')
     expect(text).toContain('记忆请在 Agent Studio「数据 → 记忆」中管理')
   })
 
@@ -328,7 +268,7 @@ describe('PmSettingsPanel grouped settings', () => {
     })
     await router.push('/')
     const w2 = mount(PmSettingsPanel, {
-      global: { plugins: [i18n, router], stubs: { PmChannelMultiPanel: true } },
+      global: { plugins: [i18n, router] },
     })
     await flushPromises()
     const text = w2.text()
@@ -337,7 +277,7 @@ describe('PmSettingsPanel grouped settings', () => {
     expect(text).toContain('当前无可绑定的 Agent，请先到 Agent 配置中心创建。')
     expect(text).toContain('前往 Agent 配置中心')
     expect(text).toContain('任意已登录用户可启用/换绑/停用')
-    expect(text).toContain('通用记忆/上下文/调度器始终注入，不受此列表控制')
+    expect(text).toContain('通用记忆/上下文始终注入，不受此列表控制')
     expect(text).not.toContain('无官方模板')
     expect(text).not.toContain('仅配置项目管理专用 MCP')
   })
@@ -348,15 +288,6 @@ describe('PmSettingsPanel grouped settings en locale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
-    apiMocks.getWorkspace.mockResolvedValue({
-      name: 'Demo',
-      notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
-    })
-    apiMocks.listChannels.mockResolvedValue({
-      items: [],
-      secretsKeyConfigured: true,
-      freeAgents: ['agent-1'],
-    })
   })
 
   it('English locale shows group titles and status', async () => {
@@ -374,7 +305,7 @@ describe('PmSettingsPanel grouped settings en locale', () => {
     })
     await router.push('/')
     const w = mount(PmSettingsPanel, {
-      global: { plugins: [i18n, router], stubs: { PmChannelMultiPanel: true } },
+      global: { plugins: [i18n, router] },
     })
     await flushPromises()
 
@@ -382,7 +313,7 @@ describe('PmSettingsPanel grouped settings en locale', () => {
     expect(w.findAll('h2').map((heading) => heading.text())).toEqual(['Default assistant', 'Workspace assistant MCPs', 'Automatic approval'])
     expect(w.find('[role="status"]').text()).toContain('Enabled')
     expect(text).toContain('Any signed-in user may enable, rebind, or disable')
-    expect(text).toContain('Shared memory/context/scheduler always inject and are not controlled here.')
+    expect(text).toContain('Shared memory/context always inject and are not controlled here.')
     expect(text).not.toContain('No official template')
     expect(text).not.toContain('pages.workspace.pm.settingsHint')
   })

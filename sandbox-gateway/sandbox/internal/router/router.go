@@ -16,7 +16,6 @@ import (
 
 	"backend/internal/auth"
 	"backend/internal/handler"
-	"backend/internal/qqbot"
 	"backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +25,6 @@ import (
 type Dependencies struct {
 	WebRoot       string // 含 index.html 与 static/ 的目录（绝对路径）
 	Chats         *service.ChatManager
-	QQBot         *qqbot.Service
 	Auth          *auth.Guard // 非 nil 且 Enabled() 时启用口令与登录页
 	LoginHTMLPath string      // login.html 绝对路径（启用 Auth 时必填）
 }
@@ -66,8 +64,6 @@ func New(deps *Dependencies) *gin.Engine {
 	r.GET("/api/capabilities", handler.Capabilities(deps.Chats.Default()))
 	r.GET("/api/models", handler.ModelsGET(deps.Chats))
 	r.POST("/api/model", handler.ModelPOST(deps.Chats))
-	r.GET("/api/qq/config", handler.QQConfig(deps.QQBot))
-	r.POST("/api/qq/config", handler.QQConfigUpdate(deps.QQBot))
 
 	// SPA 回退：未知 GET 仍回 index
 	r.NoRoute(func(c *gin.Context) {

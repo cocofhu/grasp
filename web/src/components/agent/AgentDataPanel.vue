@@ -2,17 +2,16 @@
 import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { computed, ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
-import type { MemoryItem, ChatThread, ChatMessage, AgentCronJob } from '@/lib/shared/types'
+import type { MemoryItem, ChatThread, ChatMessage } from '@/lib/shared/types'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import AppButton from '@/components/ui/AppButton.vue'
 
-export type DataSubTab = 'memory' | 'context' | 'jobs'
+export type DataSubTab = 'memory' | 'context'
 
 const props = withDefaults(
   defineProps<{ agentName: string; subTab?: DataSubTab }>(),
@@ -32,7 +31,6 @@ const loadFailed = ref(false)
 const loadDenied = ref(false)
 const deletingMemId = ref<string | null>(null)
 const deletingThreadId = ref<string | null>(null)
-const deletingJobId = ref<string | null>(null)
 
 function classifyLoadError(err: unknown) {
   const status = httpStatusOf(err)
@@ -201,87 +199,19 @@ async function removeThread(id: string) {
   }
 }
 
-const jobs = ref<AgentCronJob[]>([])
-const jobsLoading = ref(false)
-const jobBusy = ref<string | null>(null)
-
-async function loadJobs(localSeq = dataSeq.beginListRequest()) {
-  const keepStale = jobs.value.length > 0
-  jobsLoading.value = true
-  loadFailed.value = false
-  loadDenied.value = false
-  try {
-    const res = await api.listAgentCronJobs(props.agentName)
-    if (!dataSeq.isCurrentSeq(localSeq)) return
-    jobs.value = res.items || []
-  } catch (e: unknown) {
-    if (!dataSeq.isCurrentSeq(localSeq)) return
-    if (keepStale) {
-      toast.error(permissionMessage(e))
-      return
-    }
-    classifyLoadError(e)
-  } finally {
-    if (!dataSeq.isCurrentSeq(localSeq)) return
-    jobsLoading.value = false
-  }
-}
-async function patchJob(job: AgentCronJob, body: { enabled?: boolean; deliverToChannel?: boolean }) {
-  jobBusy.value = job.id
-  try {
-    const updated = await api.patchAgentCronJob(props.agentName, job.id, body)
-    const idx = jobs.value.findIndex((j) => j.id === job.id)
-    if (idx >= 0) jobs.value[idx] = { ...jobs.value[idx], ...updated }
-    if (body.enabled !== undefined) {
-      toast.success(
-        body.enabled
-          ? t('pages.agentStudio.data.jobs.enabledOn')
-          : t('pages.agentStudio.data.jobs.enabledOff'),
-      )
-    } else if (body.deliverToChannel !== undefined) {
-      toast.success(
-        body.deliverToChannel
-          ? t('pages.agentStudio.data.jobs.deliverOn')
-          : t('pages.agentStudio.data.jobs.deliverOff'),
-      )
-    }
-  } catch (e: any) {
-    toast.error(permissionMessage(e))
-    await loadJobs()
-  } finally {
-    jobBusy.value = null
-  }
-}
-async function removeJob(id: string) {
-  if (!confirm(t('pages.agentStudio.data.jobs.deleteConfirm'))) return
-  deletingJobId.value = id
-  try {
-    await api.deleteAgentCronJob(props.agentName, id)
-    await loadJobs()
-    toast.success(t('pages.agentStudio.data.jobs.deleted'))
-  } catch (e: any) {
-    toast.error(permissionMessage(e))
-  } finally {
-    deletingJobId.value = null
-  }
-}
-
 function reload() {
   const localSeq = dataSeq.beginListRequest()
-  if (sub.value === 'memory') {
-    void loadMemories(localSeq)
-  } else if (sub.value === 'context') {
-    void loadThreads(localSeq)
-  } else void loadJobs(localSeq)
+  if (sub.value === 'memory') void loadMemories(localSeq)
+  else void loadThreads(localSeq)
 }
 watch(() => [props.agentName, sub.value], () => reload())
 onMounted(() => reload())
 
 const tabLoading = computed(() =>
-  sub.value === 'memory' ? memLoading.value : sub.value === 'context' ? ctxLoading.value : jobsLoading.value,
+  sub.value === 'memory' ? memLoading.value : ctxLoading.value,
 )
 const tabHasItems = computed(() =>
-  sub.value === 'memory' ? memories.value.length > 0 : sub.value === 'context' ? threads.value.length > 0 : jobs.value.length > 0,
+  sub.value === 'memory' ? memories.value.length > 0 : threads.value.length > 0,
 )
 const showRefreshProgress = computed(() => tabLoading.value && tabHasItems.value)
 const showSkeleton = computed(
@@ -298,7 +228,7 @@ const showSkeleton = computed(
       </p>
       <SlidingTabs :value="sub" indicator-class="rounded bg-accent-dim" class="mt-3 flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <button
-          v-for="k in (['memory', 'context', 'jobs'] as const)"
+          v-for="k in (['memory', 'context'] as const)"
           :key="k"
           type="button"
           class="shrink-0 rounded px-2.5 text-[12px]"
@@ -428,7 +358,7 @@ const showSkeleton = computed(
       </div>
 
       <!-- context: any authenticated user -->
-      <div v-else-if="sub === 'context'" class="space-y-3" :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
+      <div v-else class="space-y-3" :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
         <p class="text-[12px] text-txt3">{{ t('pages.agentStudio.data.context.hint') }}</p>
         <div
           v-if="showSkeleton"
@@ -447,7 +377,7 @@ const showSkeleton = computed(
             <div class="flex items-center gap-2" :class="isMobile ? 'min-h-11 py-2' : 'py-2'">
               <button type="button" class="min-w-0 flex-1 text-left" :class="isMobile ? 'min-h-11' : ''" @click="openThread(th.id)">
                 <div class="truncate text-[13px] font-medium">{{ th.title || th.id }}</div>
-                <div class="text-[11px] text-txt3">{{ th.kind || 'user' }} · {{ threadCounts[th.id] || 0 }} msgs · {{ fmtTime(th.updatedAt) }}</div>
+                <div class="text-[11px] text-txt3">{{ threadCounts[th.id] || 0 }} msgs · {{ fmtTime(th.updatedAt) }}</div>
               </button>
               <button
                 type="button"
@@ -472,135 +402,6 @@ const showSkeleton = computed(
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- jobs: list + write for any authenticated user -->
-      <div v-else class="space-y-3" :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
-        <p class="text-[12px] text-txt3">
-          {{ t('pages.agentStudio.data.jobs.hint') }}
-        </p>
-        <div
-          v-if="showSkeleton"
-          class="overflow-x-auto border-y border-line/60"
-          data-testid="agent-data-jobs-skeleton"
-          aria-hidden="true"
-        >
-          <div v-if="isMobile" class="space-y-3 p-2">
-            <div v-for="n in 3" :key="'job-skel-m-' + n" class="border-b border-line/60 py-4">
-              <div class="h-3.5 w-1/2 bg-elevated animate-pulse" />
-              <div class="mt-2 h-8 w-full bg-elevated animate-pulse" />
-            </div>
-          </div>
-          <table v-else class="w-full text-left text-sm">
-            <thead class="text-xs text-txt3">
-              <tr>
-                <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colName') }}</th>
-                <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colSchedule') }}</th>
-                <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colEnabled') }}</th>
-                <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colDeliver') }}</th>
-                <th class="px-2 py-1.5" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="n in 4" :key="'job-skel-' + n" class="border-t border-line">
-                <td v-for="c in 5" :key="'jc' + c" class="px-2 py-2"><div class="h-3 w-3/4 bg-elevated animate-pulse" /></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else-if="!jobs.length" class="text-sm text-txt3">{{ t('pages.agentStudio.data.jobs.empty') }}</div>
-
-        <!-- narrow: card stack (no 5-col table) -->
-        <div v-else-if="isMobile" class="space-y-3" data-testid="agent-cron-mobile-cards">
-          <div
-            v-for="job in jobs"
-            :key="job.id"
-            class="border-b border-line/60 py-4"
-            data-testid="agent-cron-card"
-          >
-            <div class="text-[13px] font-medium text-txt">{{ job.name }}</div>
-            <div class="mt-1 text-[12px] text-txt2">{{ job.scheduleKind }}: {{ job.scheduleExpr }}</div>
-            <div class="mt-3 space-y-2">
-              <label class="flex min-h-11 items-center justify-between gap-3 text-[12px] text-txt2">
-                <span>{{ t('pages.agentStudio.data.jobs.colEnabled') }}</span>
-                <AppSwitch
-                  data-testid="agent-cron-enabled"
-                  :model-value="job.enabled"
-                  :disabled="jobBusy === job.id"
-                  :aria-label="t('pages.agentStudio.data.jobs.colEnabled')"
-                  @update:model-value="patchJob(job, { enabled: $event })"
-                />
-              </label>
-              <label class="flex min-h-11 items-center justify-between gap-3 text-[12px] text-txt2">
-                <span>{{ t('pages.agentStudio.data.jobs.colDeliver') }}</span>
-                <AppSwitch
-                  data-testid="agent-cron-deliver"
-                  :model-value="job.deliverToChannel"
-                  :disabled="jobBusy === job.id"
-                  :aria-label="t('pages.agentStudio.data.jobs.colDeliver')"
-                  @update:model-value="patchJob(job, { deliverToChannel: $event })"
-                />
-              </label>
-              <button
-                type="button"
-                class="mt-1 min-h-11 w-full rounded border border-err/30 px-3 text-[12px] text-err disabled:cursor-not-allowed disabled:opacity-40"
-                data-testid="agent-cron-delete"
-                :disabled="jobBusy === job.id || deletingJobId === job.id"
-                @click="removeJob(job.id)"
-              >
-                {{ deletingJobId === job.id ? t('common.buttons.deleting') : t('common.buttons.delete') }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- desktop: table -->
-        <table v-else class="w-full text-left text-sm" data-testid="agent-cron-desktop-table">
-          <thead class="text-xs text-txt3">
-            <tr>
-              <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colName') }}</th>
-              <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colSchedule') }}</th>
-              <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colEnabled') }}</th>
-              <th class="px-2 py-1.5">{{ t('pages.agentStudio.data.jobs.colDeliver') }}</th>
-              <th class="px-2 py-1.5" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="job in jobs" :key="job.id" class="border-t border-line">
-              <td class="px-2 py-2">{{ job.name }}</td>
-              <td class="px-2 py-2 text-txt2">{{ job.scheduleKind }}: {{ job.scheduleExpr }}</td>
-              <td class="px-2 py-2">
-                <AppSwitch
-                  data-testid="agent-cron-enabled"
-                  :model-value="job.enabled"
-                  :disabled="jobBusy === job.id"
-                  :aria-label="t('pages.agentStudio.data.jobs.colEnabled')"
-                  @update:model-value="patchJob(job, { enabled: $event })"
-                />
-              </td>
-              <td class="px-2 py-2">
-                <AppSwitch
-                  data-testid="agent-cron-deliver"
-                  :model-value="job.deliverToChannel"
-                  :disabled="jobBusy === job.id"
-                  :aria-label="t('pages.agentStudio.data.jobs.colDeliver')"
-                  @update:model-value="patchJob(job, { deliverToChannel: $event })"
-                />
-              </td>
-              <td class="px-2 py-2 text-right">
-                <button
-                  type="button"
-                  class="text-[11px] text-err disabled:cursor-not-allowed disabled:opacity-40"
-                  data-testid="agent-cron-delete"
-                  :disabled="jobBusy === job.id || deletingJobId === job.id"
-                  @click="removeJob(job.id)"
-                >
-                  {{ deletingJobId === job.id ? t('common.buttons.deleting') : t('common.buttons.delete') }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
   </div>

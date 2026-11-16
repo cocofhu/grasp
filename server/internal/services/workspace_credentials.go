@@ -152,8 +152,8 @@ func (s *CredentialService) githubLoginOnce(token string) func(envKey, host stri
 	}
 }
 
-// validCredentialType lists the types stored in Credential. Channel,
-// external MCP and workflow keys are read-only adapter views over their own
+// validCredentialType lists the types stored in Credential. External MCP
+// and workflow keys are read-only adapter views over their own
 // services and cannot be created here.
 func validCredentialType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {

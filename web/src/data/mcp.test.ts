@@ -20,12 +20,6 @@ const CATALOG = [
     writeTools: [] as string[],
   },
   {
-    id: 'task-scheduler',
-    scope: 'agent' as const,
-    toolCount: 6,
-    writeTools: ['create_job', 'update_job', 'delete_job', 'run_job_now'],
-  },
-  {
     id: 'pm-progress',
     scope: 'workspace' as const,
     toolCount: 6,

@@ -274,9 +274,7 @@ func (e *Engine) stepRoute(c *execCtx, node *models.Node, oc nodeOutcome, opts f
 			if opts.trigger == triggerConfirm {
 				e.clearPendingAuto(c)
 			}
-			if e.finish(runID, "failed") && opts.trigger == triggerAuto {
-				e.fireRunNotify(c, node, models.NotifyKindFailed)
-			}
+			e.finish(runID, "failed")
 			return finishResult{ended: true}
 		}
 		return e.continueTo(c, next, opts.trigger)

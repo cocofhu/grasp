@@ -206,22 +206,12 @@ func (h *Host) threadVisible(sess *Session, threadID string) bool {
 	if t.AgentName != sess.AgentName {
 		return false
 	}
-	kind := t.Kind
-	if kind == "" {
-		kind = models.ChatThreadKindUser
-	}
-	if kind == models.ChatThreadKindCron {
-		return true
-	}
-	if sess.UserID == "cron" {
-		return false
-	}
 	return t.UserID == sess.UserID
 }
 
 func toolSchemas() []map[string]any {
 	return []map[string]any{
-		platformmcp.Tool("list_conversations", "列出当前用户可见的会话索引（本人用户会话 + Agent 定时会话；不含消息全文）。", nil),
+		platformmcp.Tool("list_conversations", "列出当前用户可见的会话索引（本人用户会话；不含消息全文）。", nil),
 		platformmcp.Tool("get_messages", "分页读取某会话消息（默认 limit=20）。", map[string]any{
 			"conversationId": map[string]any{"type": "string", "description": "可选；默认当前会话"},
 			"limit":          map[string]any{"type": "number"},

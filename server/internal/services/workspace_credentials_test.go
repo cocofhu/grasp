@@ -119,7 +119,7 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 			t.Fatalf("%s: want ErrCredentialEnvKey, got %v", in.Name, err)
 		}
 	}
-	for _, typ := range []string{"channel", "external_mcp", "workflow"} {
+	for _, typ := range []string{"external_mcp", "workflow"} {
 		if _, err := s.Create(CredentialInput{Purpose: typ, Type: typ, Name: typ, EnvKey: "X", Value: "v"}); !errors.Is(err, ErrCredentialPurpose) {
 			t.Fatalf("%s: adapter type must not be creatable, got %v", typ, err)
 		}

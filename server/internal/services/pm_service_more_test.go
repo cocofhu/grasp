@@ -51,7 +51,7 @@ func TestPmDeleteThreadByID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread("agent-a", "cron")
+	th, err := pm.CreateThread("alice", "t", "agent-a", "")
 	if err != nil {
 		t.Fatal(err)
 	}

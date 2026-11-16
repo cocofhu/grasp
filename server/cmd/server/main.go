@@ -21,11 +21,6 @@ import (
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
-	"github.com/cocofhu/grasp/internal/channels"
-	"github.com/cocofhu/grasp/internal/channels/dingtalk"
-	"github.com/cocofhu/grasp/internal/channels/feishu"
-	"github.com/cocofhu/grasp/internal/channels/qq"
-	"github.com/cocofhu/grasp/internal/channels/wecom"
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/crypto"
@@ -45,7 +40,6 @@ import (
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
 	"github.com/cocofhu/grasp/internal/solobackup"
@@ -110,7 +104,7 @@ func main() {
 	}
 
 	// At-rest secret encryption reads its key from the live config (security.
-	// secrets_key, with GRASP_SECRETS_KEY env override) so channel credentials
+	// secrets_key, with GRASP_SECRETS_KEY env override) so stored credentials
 	// stay encrypted in the DB and the key is managed like any other config value.
 	// Without one, non-production servers fall back to a key file beside the DB.
 	fallbackKey := secretsKeyFallback(cfg)
@@ -377,6 +371,9 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
+	if err := agentSvc.StripRetiredSchedulerMCP(); err != nil {
+		log.Fatal().Err(err).Msg("strip retired task-scheduler MCP from agents")
+	}
 	agentSvc.SetSharedAgent(sharedAgentSvc)
 	agentSvc.SetModelConfigurationResolver(resolveModelConfiguration)
 	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
@@ -496,15 +493,13 @@ func main() {
 	pmMCP.SetAgents(agentSvc)
 	memoryMCP := memorymcp.NewHost(pmSvc)
 	contextMCP := contextmcp.NewHost(pmSvc)
-	schedulerMCP := schedulermcp.NewHost(db, pmSvc)
 	recordMCPAudit := func(rec services.AuditRecord) { auditSvc.Record(rec) }
 	pmMCP.SetAuditRecorder(recordMCPAudit)
 	memoryMCP.SetAuditRecorder(recordMCPAudit)
 	contextMCP.SetAuditRecorder(recordMCPAudit)
-	schedulerMCP.SetAuditRecorder(recordMCPAudit)
 	mcpWire := &platformMCPWire{
 		pm: pmMCP, memory: memoryMCP, context: contextMCP,
-		scheduler: schedulerMCP, pmSvc: pmSvc, skills: agentSvc,
+		pmSvc: pmSvc, skills: agentSvc,
 	}
 	pmTurns := services.NewPmTurnRunner(pmSvc, sbxSvc)
 	pmTurns.SetCitationDeps(runSvc, artifactSvc, wfSvc)
@@ -512,51 +507,11 @@ func main() {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)
 	})
-	sbxSvc.SetTestSchedulerHooks(services.TestSchedulerHooks{
-		Register: func(profile, runID, token string) {
-			schedulerMCP.Restore(token, profile, runID, "test", false)
-		},
-		Unregister: schedulerMCP.Unregister,
-	})
-
-	cronSched := services.NewCronScheduler(db, pmSvc, sbxSvc, pmTurns, services.CronTokenHooks{
-		Register:   mcpWire.registerCron,
-		Unregister: mcpWire.unregister,
-	})
-	gateAutoSvc := services.NewGateAutoInvokeService(db, pmSvc, sbxSvc, pmTurns, services.CronTokenHooks{
-		RegisterPM: mcpWire.registerPMPolicy,
-		Register:   mcpWire.registerCron,
+	gateAutoSvc := services.NewGateAutoInvokeService(db, pmSvc, sbxSvc, pmTurns, services.GateAutoTokenHooks{
+		Register:   mcpWire.registerPMPolicy,
 		Unregister: mcpWire.unregister,
 	})
 	eng.SetGateAutoInvoker(gateAutoEngineAdapter{svc: gateAutoSvc})
-	runNotifySvc := services.NewRunNotifyService(db, nil, cfg.Server.PublicAdvertise)
-	eng.SetRunNotifier(runNotifyEngineAdapter{svc: runNotifySvc})
-	// External IM channels (QQ today; extensible). Each bot binds one Agent. Configs are DB-managed via the admin WebUI and hot-reloaded.
-	// Memory/scheduler writes follow ChannelConfig session caps (default off).
-	// pm-workflow-write is controlled by channel EnabledMcps — enable it only
-	// when channel-side mutations are desired.
-	channelHooks := channels.MCPTokenHooks{
-		Register:       mcpWire.registerChannel,
-		RestoreOnReuse: mcpWire.restoreChannel,
-		Unregister:     mcpWire.unregister,
-	}
-	channelBridge := channels.NewChannelBridge(pmSvc, sbxSvc, pmTurns, channelHooks)
-	channelSvc := services.NewChannelConfigService(db)
-	channelSvc.SetAgentService(agentSvc)
-	channelMgr := channels.NewManager(channelBridge, map[string]channels.AdapterFactory{
-		models.ChannelTypeQQ:       qq.New,
-		models.ChannelTypeWeCom:    wecom.New,
-		models.ChannelTypeFeishu:   feishu.New,
-		models.ChannelTypeDingTalk: dingtalk.New,
-	}, crypto.Decrypt)
-	channelMgr.SetLoader(channelSvc.ListRaw)
-	channelSvc.SetRuntimeLookup(channelMgr.RuntimeState)
-	channelSvc.SetOnChange(channelMgr.Reload)
-	channelSvc.SetOnlineLookup(channelMgr.IsOnline)
-	channelMgr.ApplyOnBoot()
-	cronSched.SetChannelDeliverer(channelMgr)
-	runNotifySvc.SetDeliverer(channelMgr)
-	cronSched.Start(sweeperCtx)
 
 	fileDelivery := services.NewArtifactDeliveryService(db, artifactSvc, previewSvc)
 	fileDelivery.CurrentTurn = func(runID, nodeID string) (services.ArtifactTurn, error) {
@@ -604,12 +559,9 @@ func main() {
 		PMMCP:               pmMCP,
 		MemoryMCP:           memoryMCP,
 		ContextMCP:          contextMCP,
-		SchedulerMCP:        schedulerMCP,
 		Settings:            settingsSvc,
 		Shutdown:            coord,
 		Auth:                authSvc,
-		Channels:            channelSvc,
-		RunNotify:           runNotifySvc,
 		Browser:             browserSvc,
 		Audit:               auditSvc,
 		ExternalMcp:         externalMcpSvc,
@@ -627,7 +579,6 @@ func main() {
 		PageBridge:          pageHub,
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
-		PublicAdvertise:     cfg.Server.PublicAdvertise,
 		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,
@@ -642,12 +593,10 @@ func main() {
 		if begin {
 			coord.BeginDraining()
 			eng.Halt()
-			cronSched.Pause()
 			gateAutoSvc.BeginMaintenance()
-			channelMgr.BeginMaintenance()
 		}
-		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount()}
-		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount()}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && gateAutoSvc.PendingMaintenance() == 0
 		state["safeToStop"] = safe && maintenancePrepared.Load()
 		if begin && safe {
 			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {
@@ -718,7 +667,6 @@ func main() {
 	// next process reattaches running agent sandboxes and resumes their nodes.
 	stopSweeper()
 	codexLoginMgr.Stop()
-	channelMgr.StopAll()
 	browserSvc.Stop()
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownHTTPTimeout)

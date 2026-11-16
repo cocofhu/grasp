@@ -266,7 +266,7 @@ describe('AgentStudio MCP PM leader prefills', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    const selectors = ['mcp-add-artifact', 'mcp-add-memory', 'mcp-add-context', 'mcp-add-scheduler'] as const
+    const selectors = ['mcp-add-artifact', 'mcp-add-memory', 'mcp-add-context'] as const
     for (const testId of selectors) {
       const btn = wrapper.get(`[data-test="${testId}"]`)
       expect(btn.classes()).toContain('text-[11px]')
@@ -278,7 +278,6 @@ describe('AgentStudio MCP PM leader prefills', () => {
     expect(wrapper.get('[data-test="mcp-add-artifact"]').text()).toBe('+ 添加产物存储')
     expect(wrapper.get('[data-test="mcp-add-memory"]').text()).toBe('+ 添加长期记忆')
     expect(wrapper.get('[data-test="mcp-add-context"]').text()).toBe('+ 添加对话上下文')
-    expect(wrapper.get('[data-test="mcp-add-scheduler"]').text()).toBe('+ 添加定时任务')
   })
 
   it('adds memory-store from the agent platform card without changing artifact-store', async () => {
@@ -307,7 +306,6 @@ describe('AgentStudio MCP PM leader prefills', () => {
     expect(wrapper.get('[data-test="mcp-add-memory"]').text()).toContain('添加长期记忆')
     expect(wrapper.get('[data-test="mcp-add-memory"]').classes()).toContain('text-[11px]')
     expect(wrapper.get('[data-test="mcp-add-context"]').classes()).toContain('text-[11px]')
-    expect(wrapper.get('[data-test="mcp-add-scheduler"]').classes()).toContain('text-[11px]')
     expect(wrapper.find('[data-test="mcp-add-artifact"]').exists()).toBe(false)
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-preset-key"]').text()).toBe('artifact-store')
@@ -1014,7 +1012,7 @@ describe('AgentStudio mobile core path', () => {
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'data', sub: 'jobs' })
+    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'data', sub: 'context' })
     const wrapper = trackMount(
       mount(AgentStudioView, {
         global: {

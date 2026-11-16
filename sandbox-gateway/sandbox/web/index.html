@@ -48,11 +48,6 @@
             </button>
         </div>
         <div class="cc-header-right">
-            <button type="button" class="cc-qq-btn" id="btnQQConfig" title="配置 QQ 机器人" aria-label="配置 QQ 机器人">
-                <svg class="cc-qq-svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fill="currentColor" fill-rule="nonzero" d="M17.535 12.514l-.696-1.796c0-.021.01-.375.01-.558C16.848 7.088 15.446 4 12 4c-3.446 0-4.848 3.088-4.848 6.16 0 .183.009.537.01.558l-.696 1.796c-.19.515-.38 1.05-.517 1.51-.657 2.189-.444 3.095-.282 3.115.348.043 1.354-1.648 1.354-1.648 0 .98.488 2.258 1.542 3.18-.394.127-.878.32-1.188.557-.28.214-.245.431-.194.52.22.385 3.79.245 4.82.125 1.03.12 4.599.26 4.82-.126.05-.088.085-.305-.194-.519-.311-.237-.795-.43-1.19-.556 1.055-.923 1.542-2.202 1.542-3.181 0 0 1.007 1.691 1.355 1.648.162-.02.378-.928-.283-3.116-.14-.463-.325-.994-.516-1.509z"/>
-                </svg>
-            </button>
             <button type="button" class="cc-stop-btn" id="btnCancel" title="停止当前轮次" aria-label="停止当前轮次">
                 <span data-runtime-icon="chat-stop" data-icon-size="18"></span>
             </button>
@@ -104,47 +99,6 @@
                 </div>
             </div>
         </footer>
-    </div>
-</div>
-
-<div class="cc-qq-modal-backdrop" id="qqDrawerBackdrop" hidden></div>
-<div class="cc-qq-modal" id="qqDrawer" role="dialog" aria-modal="true" aria-labelledby="qqConfigTitle" hidden>
-    <div class="cc-qq-modal-panel">
-    <div class="cc-qq-modal-head">
-        <div class="cc-qq-modal-title" id="qqConfigTitle">配置 QQ 机器人</div>
-        <button type="button" class="cc-drawer-close" id="qqDrawerClose" aria-label="关闭"><span data-runtime-icon="close" data-icon-size="16"></span></button>
-    </div>
-    <form class="cc-qq-modal-body" id="qqConfigForm">
-        <p class="cc-drawer-hint">
-            使用 QQ 官方机器人 WebSocket 网关模式连接，无需公网地址。
-            在 <a href="https://q.qq.com/qqbot/openclaw/" target="_blank">QQ 开放平台</a> 获取 AppID 和 AppSecret。
-            <strong style="color:var(--danger,#e53935)">QQ机器人仅限本人使用，请勿将机器人分享到外部。</strong>
-        </p>
-        <label class="cc-field cc-field-row">
-            <input type="checkbox" id="qqEnabled"/>
-            <span>启用 QQ 机器人</span>
-            <span class="cc-qq-status" id="qqConnectionStatus">未检测</span>
-        </label>
-        <label class="cc-field">
-            <span class="cc-field-label">App ID</span>
-            <input class="cc-field-input" id="qqAppId" autocomplete="off" placeholder="QQ 机器人 AppID"/>
-        </label>
-        <label class="cc-field">
-            <span class="cc-field-label">App Secret</span>
-            <input class="cc-field-input" id="qqAppSecret" type="password" autocomplete="new-password"
-                   placeholder="留空表示保留已有密钥"/>
-        </label>
-        <label class="cc-field">
-            <span class="cc-field-label">允许的 OpenID（可选，每行一个）</span>
-            <textarea class="cc-field-input" id="qqAllowOpenIds" placeholder="留空表示不限制私聊用户"></textarea>
-        </label>
-        <label class="cc-field">
-            <span class="cc-field-label">允许的群 OpenID（可选，每行一个）</span>
-            <textarea class="cc-field-input" id="qqAllowGroupOpenIds" placeholder="留空表示不限制群聊"></textarea>
-        </label>
-        <div class="cc-qq-config-status" id="qqConfigStatus" role="status" aria-live="polite"></div>
-        <button type="submit" class="cc-btn cc-btn-primary cc-btn-block">保存配置</button>
-    </form>
     </div>
 </div>
 

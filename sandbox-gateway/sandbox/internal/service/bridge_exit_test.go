@@ -69,7 +69,7 @@ func TestAgentExitDetachesBeforeReapingAndDoesNotDisturbReconnect(t *testing.T) 
 	if len(b.evLog.snapshot()) != 1 || len(b.userDoneBuf.snapshotDone()) != 1 {
 		t.Fatal("unexpected exit erased the conversation evidence")
 	}
-	if err := b.ChatWithOpID("must reject", "bad", "chat", nil); err == nil {
+	if err := b.ChatWithLimits("must reject", "bad", "chat", nil, 0, 0); err == nil {
 		t.Fatal("chat accepted an unavailable session")
 	}
 	newCtx, newCancel := context.WithCancel(context.Background())
@@ -127,7 +127,7 @@ func TestClosedSessionRejectedBeforeWatcherRuns(t *testing.T) {
 	if b.Session() != nil || b.info("").Connected {
 		t.Fatal("closed session still advertised as connected")
 	}
-	if err := b.ChatWithOpID("hello", "closed", "chat", nil); err == nil {
+	if err := b.ChatWithLimits("hello", "closed", "chat", nil, 0, 0); err == nil {
 		t.Fatal("closed session accepted another prompt")
 	}
 	if n, _, _ := b.PromptQueueInfo(); n != 0 {
@@ -264,7 +264,7 @@ func TestBridgeRecoversAfterACPProtocolFailure(t *testing.T) {
 	if _, err := b.EnsureAgent("", "", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.ChatWithOpID("first turn", "bad", "chat", nil); err != nil {
+	if err := b.ChatWithLimits("first turn", "bad", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	awaitSignal(t, watcherDone)
@@ -276,7 +276,7 @@ func TestBridgeRecoversAfterACPProtocolFailure(t *testing.T) {
 	if _, err := b.EnsureAgent("", "", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.ChatWithOpID("retry explicitly", "good", "chat", nil); err != nil {
+	if err := b.ChatWithLimits("retry explicitly", "good", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	waitIdle(t, b)

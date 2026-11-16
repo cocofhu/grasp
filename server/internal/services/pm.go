@@ -30,27 +30,7 @@ var (
 	ErrPmMessageInvalidRole = errors.New("仅支持标记用户消息的失败状态")
 	// ErrPmAdminRequired is returned for admin-only memory / admin paths (not PM Leader bind).
 	ErrPmAdminRequired = errors.New("需要平台管理员权限")
-	// ErrPmCronJobNotFound is returned when a cron job is missing.
-	ErrPmCronJobNotFound = errors.New("定时任务不存在")
-	// ErrPmChannelReadOnly is returned when a Web client tries to write/delete a channel thread.
-	ErrPmChannelReadOnly = errors.New("渠道会话为只读，不可当普通 Web 线程编辑或删除")
 )
-
-// IsChannelUserID reports whether userID is a registered channel synthetic identity
-// (qq:… / wecom:… / feishu:…).
-func IsChannelUserID(userID string) bool {
-	for _, typ := range models.RegisteredChannelTypes() {
-		if strings.HasPrefix(userID, typ+":") {
-			return true
-		}
-	}
-	return false
-}
-
-// IsSyntheticThreadUserID reports cron/channel synthetic owners that must not trigger UI merge.
-func IsSyntheticThreadUserID(userID string) bool {
-	return IsChannelUserID(userID) || strings.HasPrefix(userID, "cron:")
-}
 
 // Valid PM chat fail kinds (product-level categories).
 const (

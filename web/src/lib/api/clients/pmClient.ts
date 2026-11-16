@@ -1,6 +1,5 @@
 import type {
   PmLeaderBinding,
-  AgentCronJob,
   PmChatThread,
   ChatMessage,
   AttachedContext,
@@ -22,15 +21,6 @@ export const pmClient = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  listCronJobs: () =>
-    req<{ items: AgentCronJob[] }>(`/workspace/cron-jobs`),
-  patchCronJob: (jobId: string, body: { deliverToChannel: boolean }) =>
-    req<AgentCronJob>(`/workspace/cron-jobs/${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
-  deleteCronJob: (jobId: string) =>
-    req<{ status: string }>(`/workspace/cron-jobs/${jobId}`, { method: 'DELETE' }),
   listPmThreads: () =>
     req<{ items: PmChatThread[] }>(`/workspace/pm/threads`),
   createPmThread: (body?: { title?: string }) =>

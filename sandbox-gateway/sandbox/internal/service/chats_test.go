@@ -87,7 +87,7 @@ func TestChatManagerCreateRenameDeleteAndCap(t *testing.T) {
 	sess := &blockingSess{stubSess: stubSess{id: "s-a"}}
 	attach(a, sess)
 	c := dialBridge(t, a)
-	if err := a.ChatWithOpID("hi", "op-1", "chat", nil); err != nil {
+	if err := a.ChatWithLimits("hi", "op-1", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && f.OpID == "op-1" })
@@ -182,12 +182,12 @@ func TestChatsAreIsolated(t *testing.T) {
 	cDef := dialBridge(t, def)
 	cOther := dialBridge(t, other)
 
-	if err := def.ChatWithOpID("to default", "op-def", "chat", nil); err != nil {
+	if err := def.ChatWithLimits("to default", "op-def", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	readUntil(t, cDef, func(f wsFrame) bool { return f.Op == "event" && f.OpID == "op-def" })
 
-	if err := other.ChatWithOpID("to other", "op-other", "chat", nil); err != nil {
+	if err := other.ChatWithLimits("to other", "op-other", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	// Other's client sees its own turn begin; it must never see op-def frames.

@@ -97,36 +97,18 @@ const {
   copyAssistantText,
   showThreadsAside,
   showChatSection,
-  channelTypeOf,
-  isChannelThread,
-  channelBadgeLabel,
-  channelBadgeClass,
-  channelReadonlyTitle,
-  channelReadonlyHint,
   threadDisplayTitle,
-  channelSourceLine,
   activeThread,
-  activeIsChannel,
   activeThreadTitle,
   showEmptyHint,
   showHistoryTip,
   historyTipText,
   historyTipClass,
   showIdleSuggestions,
-  channelCtx,
-  channelDetailOpen,
-  channelDetailTitle,
-  channelDetailSource,
-  closeChannelCtx,
-  openChannelCtx,
-  openChannelDetail,
-  closeChannelDetail,
-  onChannelCtxAction,
   FAIL_KIND_KEYS,
   failMeta,
   applyRestoreMobileChat,
   isFailedUser,
-  isChannelHint,
   loadThreads,
   activateThread,
   selectThread,
@@ -201,7 +183,7 @@ function toggleArtifacts() { workspace.value?.toggleFromArtifactIcon() }
 const messageNavigation = computed(() => {
   const items: Array<{ id: string; title: string; preview: string }> = []
   for (const message of messages.value) {
-    if (message.role === 'user' && !isChannelHint(message)) {
+    if (message.role === 'user') {
       items.push({ id: message.id, title: message.content?.trim() ? message.content : t('pages.chatNavigation.attachmentMessage'), preview: '' })
     } else if (message.role === 'assistant' && items.length) {
       const item = items[items.length - 1]!
@@ -298,34 +280,14 @@ function showConversationHistory() { workspace.value?.close() }
             th.id === activeId ? 'bg-elevated font-medium text-txt' : '',
             isMobile ? 'min-h-[44px] py-3' : 'py-2',
           ]"
-          :data-channel="isChannelThread(th) ? '1' : '0'"
           :disabled="turnBusy && th.id !== activeId"
           @click="selectThread(th.id)"
-          @contextmenu="openChannelCtx($event, th)"
         >
           <span class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             <span class="min-w-0 truncate text-[13px]">{{ threadDisplayTitle(th) }}</span>
-            <span
-              v-if="isChannelThread(th)"
-              class="rounded-md inline-flex shrink-0 items-center border px-1 text-[9px] font-bold tracking-wide leading-4"
-              :class="channelBadgeClass(th)"
-              data-testid="pm-qq-tag"
-              :data-channel-kind="channelTypeOf(th)"
-              :title="channelSourceLine(th)"
-            >{{ channelBadgeLabel(th) }}</span>
-            <span
-              v-if="th.unspoken"
-              class="rounded-md inline-flex shrink-0 items-center border border-warn/45 px-1 text-[9px] leading-4 text-warn"
-              data-testid="pm-unspoken-tag"
-            >{{ t('pages.workspace.pm.unspoken') }}</span>
-            <span
-              v-else
-              class="rounded-md inline-flex shrink-0 items-center border border-line bg-elevated px-1 text-[9px] font-bold tracking-wide leading-4 text-txt3"
-              data-testid="pm-web-tag"
-            >{{ t('pages.workspace.pm.channelBadgeWeb') }}</span>
           </span>
           <span
-            v-if="!turnBusy && !isChannelThread(th)"
+            v-if="!turnBusy"
             class="hidden text-xs text-txt3 group-hover:inline"
             data-testid="pm-thread-delete"
             data-icon-motion-host
@@ -372,26 +334,6 @@ function showConversationHistory() { workspace.value?.close() }
         >
           <div class="flex min-w-0 items-center gap-2 overflow-hidden">
             <span class="min-w-0 truncate text-sm font-medium text-txt">{{ activeThreadTitle }}</span>
-            <span
-              v-if="activeIsChannel"
-              class="rounded-md inline-flex shrink-0 items-center border px-1 text-[9px] font-bold tracking-wide leading-4"
-              :class="channelBadgeClass(activeThread)"
-              data-testid="pm-qq-tag-header"
-              :data-channel-kind="channelTypeOf(activeThread)"
-              :title="channelSourceLine(activeThread)"
-            >{{ channelBadgeLabel(activeThread) }}</span>
-            <span
-              v-if="activeThread?.unspoken"
-              class="rounded-md inline-flex shrink-0 items-center border border-warn/45 px-1 text-[9px] leading-4 text-warn"
-              data-testid="pm-unspoken-tag-header"
-            >{{ t('pages.workspace.pm.unspoken') }}</span>
-          </div>
-          <div
-            v-if="activeIsChannel"
-            class="truncate text-[11px] text-txt3"
-            data-testid="pm-channel-subtitle"
-          >
-            {{ channelSourceLine(activeThread) }}
           </div>
         </div>
         <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</span>
@@ -462,26 +404,7 @@ function showConversationHistory() { workspace.value?.close() }
         </div>
 
         <template v-for="m in messages" :key="m.id">
-          <div
-            v-if="isChannelHint(m)"
-            class="rounded-lg mx-auto flex max-w-[92%] items-start gap-2 self-center border border-warn/35 bg-warn/[0.08] px-3 py-2 text-[12px] text-txt"
-            :data-msg-id="m.id"
-            :data-chat-anchor="m.id"
-            data-testid="pm-channel-hint"
-          >
-            <span
-              class="rounded-md shrink-0 border border-warn/35 px-1.5 py-px text-[10px] font-bold tracking-wide text-warn"
-            >
-              {{ t('pages.workspace.pm.channelHintLabel') }}
-            </span>
-            <div class="min-w-0">
-              <div>{{ m.content }}</div>
-              <div class="mt-0.5 text-[11px] text-txt2">
-                {{ t('pages.workspace.pm.channelHintMeta') }}
-              </div>
-            </div>
-          </div>
-          <div v-else-if="m.role === 'user'" class="flex gap-2.5 flex-row-reverse" :data-msg-id="m.id" :data-chat-message-id="m.id" :data-chat-anchor="m.id">
+          <div v-if="m.role === 'user'" class="flex gap-2.5 flex-row-reverse" :data-msg-id="m.id" :data-chat-message-id="m.id" :data-chat-anchor="m.id">
             <div class="min-w-0 max-w-[85%]">
               <div v-if="m.images?.length" class="mb-1.5 flex flex-wrap justify-end gap-1.5">
                 <template v-for="(im, ii) in m.images" :key="ii">
@@ -663,25 +586,7 @@ function showConversationHistory() { workspace.value?.close() }
       </div>
       </div>
 
-      <div v-if="activeIsChannel" class="shrink-0 border-t border-line/60 py-4" data-testid="pm-channel-readonly">
-        <div class="mx-auto flex max-w-3xl items-start gap-2.5">
-          <div
-            class="rounded-full flex h-7 w-7 shrink-0 items-center justify-center border border-accent-2/35 bg-accent/15 text-accent-2"
-            aria-hidden="true"
-          >
-            <Icon name="lock" :size="14" :interactive="false" />
-          </div>
-          <div class="min-w-0">
-            <strong class="block text-[13px] font-semibold text-txt">
-              {{ channelReadonlyTitle(activeThread) }}
-            </strong>
-            <p class="mt-0.5 text-xs text-txt3">
-              {{ channelReadonlyHint(activeThread) }}
-            </p>
-          </div>
-        </div>
-      </div>
-      <div v-else-if="!canContinueThread" class="flex shrink-0 flex-wrap items-center justify-center gap-3 border-t border-line/60 py-4 text-center text-xs leading-5 text-txt2" data-testid="pm-history-readonly">
+      <div v-if="!canContinueThread" class="flex shrink-0 flex-wrap items-center justify-center gap-3 border-t border-line/60 py-4 text-center text-xs leading-5 text-txt2" data-testid="pm-history-readonly">
         <span>{{ t(enabled ? 'pages.workspace.pm.threadUnavailableHint' : 'pages.workspace.pm.pausedComposerHint') }}</span>
         <AppButton v-if="turnBusy" size="sm" icon="close" data-testid="pm-paused-stop" @click="stop">{{ t('pages.workspace.pm.stop') }}</AppButton>
       </div>
@@ -801,75 +706,6 @@ function showConversationHistory() { workspace.value?.close() }
       <ConversationArtifactBrowser :target="artifactTarget" />
     </template>
     </ConversationWorkspace>
-  </div>
-
-  <!-- Channel context menu -->
-  <div
-    v-if="channelCtx"
-    class="fixed inset-0 z-40"
-    data-testid="pm-channel-ctx-backdrop"
-    @click="closeChannelCtx"
-    @contextmenu.prevent="closeChannelCtx"
-  />
-  <div
-    v-if="channelCtx"
-    class="rounded-lg fixed z-50 min-w-[160px] border border-line bg-elevated py-1 shadow-card"
-    data-testid="pm-channel-ctx-menu"
-    role="menu"
-    :style="{ left: `${channelCtx.x}px`, top: `${channelCtx.y}px` }"
-  >
-    <button
-      type="button"
-      role="menuitem"
-      class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-txt2 hover:bg-overlay hover:text-txt"
-      data-testid="pm-channel-ctx-detail"
-      @click="onChannelCtxAction"
-    >
-      <Icon name="doc" :size="13" />
-      {{ t('pages.workspace.pm.channelViewDetail') }}
-    </button>
-  </div>
-
-  <!-- Channel detail modal -->
-  <div
-    v-if="channelDetailOpen"
-    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
-    data-testid="pm-channel-detail-backdrop"
-    role="dialog"
-    aria-modal="true"
-    @click.self="closeChannelDetail"
-  >
-    <div class="rounded-xl w-full max-w-[360px] border border-line bg-surface shadow-card">
-      <div class="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold text-txt">
-        <span>{{ t('pages.workspace.pm.channelDetailTitle') }}</span>
-        <button
-          type="button"
-          class="px-2 text-txt2 hover:text-txt"
-          :aria-label="t('pages.workspace.pm.channelDetailClose')"
-          data-testid="pm-channel-detail-close"
-          @click="closeChannelDetail"
-        ><Icon name="close" :size="12" /></button>
-      </div>
-      <div class="flex flex-col gap-3 p-3.5">
-        <div>
-          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.workspace.pm.channelDetailLabelTitle') }}</div>
-          <div class="rounded-lg border border-line bg-base px-2.5 py-2 text-[13px] text-txt" data-testid="pm-channel-detail-title">
-            {{ channelDetailTitle }}
-          </div>
-        </div>
-        <div>
-          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.workspace.pm.channelDetailLabelSource') }}</div>
-          <div class="rounded-lg border border-line bg-base px-2.5 py-2 text-[13px] text-txt" data-testid="pm-channel-detail-source">
-            {{ channelDetailSource }}
-          </div>
-        </div>
-      </div>
-      <div class="flex justify-end border-t border-line px-3.5 py-2.5">
-        <AppButton size="sm" variant="outline" data-testid="pm-channel-detail-ok" @click="closeChannelDetail">
-          {{ t('pages.workspace.pm.channelDetailClose') }}
-        </AppButton>
-      </div>
-    </div>
   </div>
 
   <ChatImagePreviewModal

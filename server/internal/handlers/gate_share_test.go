@@ -501,9 +501,6 @@ func TestGateShareIgnoresForwardedHostOnCreate(t *testing.T) {
 	if strings.Contains(url, "evil.example") {
 		t.Fatalf("share URL must ignore X-Forwarded-Host: %s", url)
 	}
-	if strings.Contains(url, "example.test") {
-		t.Fatalf("share URL must not use PublicAdvertise: %s", url)
-	}
 	if !strings.Contains(url, "https://approving.example.com/public/approvals#t=") {
 		t.Fatalf("expected Request.Host origin, got %s", url)
 	}
@@ -539,9 +536,6 @@ func TestGateShareMintsFromRequestHostPublicAndLoopback(t *testing.T) {
 			url, _ := parseJSON(t, w)["url"].(string)
 			if !strings.Contains(url, tc.want) {
 				t.Fatalf("expected origin %q in %s", tc.want, url)
-			}
-			if strings.Contains(url, "example.test") {
-				t.Fatalf("must not mint from PublicAdvertise: %s", url)
 			}
 		})
 	}

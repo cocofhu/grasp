@@ -1,5 +1,5 @@
 /**
- * Production RunDetailView harness for completed QQ deep link:
+ * Production RunDetailView harness for the completed-run deep link:
  * /run-completed-output.html?node=end&tab=output[&empty=1]
  */
 import '../src/styles/global.css'

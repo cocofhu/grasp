@@ -149,19 +149,6 @@ func (s *PmService) PurgeAgentEverywhere(agentName string) error {
 				return err
 			}
 		}
-		var jobIDs []string
-		if err := tx.Model(&models.AgentCronJob{}).Where("agent_name = ?", agentName).
-			Pluck("id", &jobIDs).Error; err != nil {
-			return err
-		}
-		if len(jobIDs) > 0 {
-			if err := tx.Where("job_id IN ?", jobIDs).Delete(&models.AgentCronRun{}).Error; err != nil {
-				return err
-			}
-			if err := tx.Where("id IN ?", jobIDs).Delete(&models.AgentCronJob{}).Error; err != nil {
-				return err
-			}
-		}
 		return tx.Model(&models.Workspace{}).
 			Where("pm_leader_agent = ?", agentName).
 			Updates(map[string]any{
@@ -172,7 +159,7 @@ func (s *PmService) PurgeAgentEverywhere(agentName string) error {
 	})
 }
 
-// RenameAgentScopedData rewrites agent_name on memories/threads/cron and PM
+// RenameAgentScopedData rewrites agent_name on memories/threads and PM
 // Leader refs when an Agent is renamed. Agent names are global.
 func (s *PmService) RenameAgentScopedData(oldName, newName string) error {
 	oldName = strings.TrimSpace(oldName)
@@ -187,10 +174,6 @@ func (s *PmService) RenameAgentScopedData(oldName, newName string) error {
 			return err
 		}
 		if err := tx.Model(&models.ChatThread{}).Where("agent_name = ?", oldName).
-			Updates(map[string]any{"agent_name": newName, "updated_at": now}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&models.AgentCronJob{}).Where("agent_name = ?", oldName).
 			Updates(map[string]any{"agent_name": newName, "updated_at": now}).Error; err != nil {
 			return err
 		}
@@ -235,4 +218,10 @@ func (s *PmService) SearchMemories(agentName, q string, limit int) ([]map[string
 		})
 	}
 	return out, nil
+}
+
+// EscapeLike escapes % and _ for SQL LIKE patterns (parameterized queries).
+func EscapeLike(q string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(q)
 }

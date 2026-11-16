@@ -218,7 +218,7 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 
 // SaveAs creates or updates a workflow definition. Create stores v1. On update,
 // identical graph/name/description is a version no-op (non-versioned settings
-// such as NeedsRepo / ShowOnHome / NotifyPolicy still persist); any content
+// such as NeedsRepo / ShowOnHome still persist); any content
 // change appends Version+1 with the given source in one transaction.
 // The incoming Version/PublishedVersion are ignored: the service owns them.
 func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
@@ -243,10 +243,6 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 		}
 		if err := s.validateGraph(wf); err != nil {
 			return err
-		}
-		wf.NotifyPolicy = NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
-		if wf.NotifyPolicy.Mode == "" {
-			wf.NotifyPolicy.Mode = models.NotifyModeInherit
 		}
 		// Create always starts hidden on Home (plan g1.3).
 		wf.ShowOnHome = false
@@ -285,12 +281,10 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 		wf.Name != existing.Name ||
 		wf.Description != existing.Description
 	settingsChanged := !reflect.DeepEqual(wf.Defaults, existing.Defaults) || wf.NeedsRepo != existing.NeedsRepo ||
-		wf.ShowOnHome != existing.ShowOnHome ||
-		!WorkflowNotifyPoliciesEqual(wf.NotifyPolicy, existing.NotifyPolicy)
+		wf.ShowOnHome != existing.ShowOnHome
 	if !contentChanged && !settingsChanged {
 		// True no-op: skip DB write so GORM does not bump UpdatedAt.
 		wf.UpdatedAt = existing.UpdatedAt
-		wf.NotifyPolicy = existing.NotifyPolicy
 		return nil
 	}
 	if contentChanged {
@@ -298,7 +292,6 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 			return err
 		}
 	}
-	wf.NotifyPolicy = NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 	wf.UpdatedAt = time.Now()
 	if !contentChanged {
 		return s.db.Save(wf).Error
@@ -346,26 +339,6 @@ func pruneWorkflowVersions(tx *gorm.DB, workflowID string, head int) error {
 	}
 	return tx.Where("workflow_id = ? AND version IN ?", workflowID, candidates[MaxUnpinnedWorkflowVersions:]).
 		Delete(&models.WorkflowVersion{}).Error
-}
-
-// UpdateNotifyPolicy persists only the workflow-level NotifyPolicy override.
-// It loads the current row and never touches Graph / Version, so a list-row
-// inline edit cannot roll back a newer editor graph (notify-only path).
-func (s *WorkflowService) UpdateNotifyPolicy(id string, policy models.WorkflowNotifyPolicy) (models.WorkflowDef, error) {
-	var wf models.WorkflowDef
-	if err := s.db.First(&wf, "id = ?", id).Error; err != nil {
-		return wf, ErrWorkflowNotFound
-	}
-	policy = NormalizeWorkflowNotifyPolicy(policy)
-	if WorkflowNotifyPoliciesEqual(policy, wf.NotifyPolicy) {
-		return wf, nil
-	}
-	wf.NotifyPolicy = policy
-	wf.UpdatedAt = time.Now()
-	if err := s.db.Save(&wf).Error; err != nil {
-		return wf, err
-	}
-	return wf, nil
 }
 
 // UpdateShowOnHome persists only the Home-visibility flag.

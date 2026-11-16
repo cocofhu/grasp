@@ -2,9 +2,10 @@ package contextmcp
 
 import (
 	"encoding/json"
-	"github.com/cocofhu/grasp/internal/platformmcp"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/platformmcp"
 )
 
 func TestContextMCPServeRPCMetaMethods(t *testing.T) {

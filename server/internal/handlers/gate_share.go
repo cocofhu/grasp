@@ -17,7 +17,7 @@ type createShareBody struct {
 }
 
 // shareOrigin mints gate/review share URL origins from this request's Host.
-// Never prefer public_advertise (that remains for QQ/preview deep links) and
+// Never prefer public_advertise (that is only for preview links) and
 // never trust client X-Forwarded-Host. Scheme uses TLS / X-Forwarded-Proto.
 func (h *Handlers) shareOrigin(c *gin.Context) string {
 	scheme := "http"

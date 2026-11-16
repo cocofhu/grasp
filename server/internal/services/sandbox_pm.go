@@ -11,7 +11,6 @@ import (
 const (
 	MemoryStoreMCP     = "memory-store"
 	ContextStoreMCP    = "context-store"
-	TaskSchedulerMCP   = "task-scheduler"
 	PmProgressMCP      = "pm-progress"
 	PmWorkflowReadMCP  = "pm-workflow-read"
 	PmWorkflowWriteMCP = "pm-workflow-write"

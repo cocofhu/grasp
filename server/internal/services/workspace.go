@@ -34,10 +34,6 @@ func loadWorkspace(db *gorm.DB) (models.Workspace, error) {
 	return p, nil
 }
 
-func workspaceRow(db *gorm.DB) *gorm.DB {
-	return db.Model(&models.Workspace{}).Where("id = ?", models.WorkspaceID)
-}
-
 // Workspace returns the workspace configuration.
 func (s *WorkspaceService) Workspace() (models.Workspace, error) {
 	if s == nil || s.db == nil {
@@ -46,10 +42,10 @@ func (s *WorkspaceService) Workspace() (models.Workspace, error) {
 	return loadWorkspace(s.db)
 }
 
-// Update patches name/description/notifyPolicy/unknownModelDisplayName.
-// Nil pointers mean "leave unchanged". Non-nil notifyPolicy replaces the whole policy. Non-nil unknownModelDisplayName is
+// Update patches name/description/unknownModelDisplayName.
+// Nil pointers mean "leave unchanged". Non-nil unknownModelDisplayName is
 // normalized (trim; empty/default label → unset; >64 runes → error).
-func (s *WorkspaceService) Update(name *string, description *string, notify *models.WorkspaceNotifyPolicy, unknownModelDisplayName *string) (models.Workspace, error) {
+func (s *WorkspaceService) Update(name *string, description *string, unknownModelDisplayName *string) (models.Workspace, error) {
 	p, err := loadWorkspace(s.db)
 	if err != nil {
 		return models.Workspace{}, err
@@ -63,9 +59,6 @@ func (s *WorkspaceService) Update(name *string, description *string, notify *mod
 	}
 	if description != nil {
 		p.Description = *description
-	}
-	if notify != nil {
-		p.NotifyPolicy = NormalizeWorkspaceNotifyPolicy(*notify)
 	}
 	if unknownModelDisplayName != nil {
 		normalized, err := NormalizeUnknownModelDisplayName(*unknownModelDisplayName)

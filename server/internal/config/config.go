@@ -135,13 +135,13 @@ type StorageConfig struct {
 }
 
 // SecurityConfig holds cross-cutting secrets. SecretsKey is the master key used
-// to encrypt at-rest credentials (external channel app_secret) — treat it like
+// to encrypt at-rest workspace credentials — treat it like
 // a fixed salt: set it once and keep it stable, since rotating it makes existing
 // ciphertext undecryptable. Inject via K8s Secret env in production rather than
 // committing it to git.
 type SecurityConfig struct {
 	// SecretsKey is a base64-encoded 32-byte AES-256 key. Empty disables
-	// credential encryption (channel app_secret cannot be saved).
+	// credential encryption (secret credentials cannot be saved).
 	SecretsKey string `yaml:"secrets_key"`
 }
 
@@ -237,9 +237,8 @@ type ServerConfig struct {
 	// the run-scoped artifact-store MCP. Empty defaults to
 	// http://host.docker.internal:<port>.
 	MCPAdvertise string `yaml:"mcp_advertise"`
-	// PublicAdvertise is the browser-facing base URL for preview proxy links
-	// and Run→QQ notification deep links (/runs/{id}). Empty defaults to
-	// http://localhost:<port>; QQ clients cannot open relative /runs paths.
+	// PublicAdvertise is the browser-facing base URL for preview proxy links.
+	// Empty defaults to http://localhost:<port>.
 	PublicAdvertise string `yaml:"public_advertise"`
 	// FrameAncestors lists the origins (space or comma separated) that may
 	// embed workspace pages in an iframe. Empty forbids embedding.

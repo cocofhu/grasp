@@ -52,8 +52,8 @@ func TestAuditMaskAndRecord(t *testing.T) {
 		ResourceType: "run",
 		ResourceID:   "run-1",
 		Outcome:      models.AuditOutcomeOK,
-		Summary:      "cron start",
-		Payload:      map[string]any{"trigger": "cron"},
+		Summary:      "api start",
+		Payload:      map[string]any{"trigger": "api"},
 	})
 
 	items, total, err := s.ListPage(AuditListFilter{Page: 1, PageSize: 20})

@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { Workflow } from '@/lib/shared/types'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
-import AppSelect from '@/components/ui/AppSelect.vue'
 import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
 import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import NewWorkflowMenu from '@/components/workflow/NewWorkflowMenu.vue'
@@ -45,11 +42,6 @@ const {
   copyPreviewLoading,
   copyModal,
   exportTarget,
-  savingNotifyWfId,
-  wfNotifyMode,
-  wfNotifyHas,
-  setWorkflowNotifyMode,
-  toggleWorkflowNotifyEvent,
   savingHomeWfId,
   toggleWorkflowShowOnHome,
   existingNames,
@@ -84,28 +76,6 @@ const {
   handleFileChange,
   fmtTime
 } = useWorkflows()
-const expandedNotifyId = ref<string | null>(null)
-const notifyModes = computed(() => [
-  { value: 'off', label: t('pages.workspace.notify.modeOff') },
-  { value: 'inherit', label: t('pages.workspace.notify.modeInherit') },
-  { value: 'custom', label: t('pages.workspace.notify.modeCustom') },
-])
-const notifyModesWithDefaults = computed(() => notifyModes.value.map(mode => mode.value === 'inherit' ? { ...mode, label: t('pages.workflowList.notifyInheritDefaults') } : mode))
-function notifyModesFor(workflow: Workflow) {
-  return workflow.defaults?.notifyPolicy ? notifyModesWithDefaults.value : notifyModes.value
-}
-const notifyEvents = [
-  { value: 'waiting_human', labelKey: 'pages.workspace.notify.segWaitingHuman' },
-  { value: 'failed', labelKey: 'pages.workspace.notify.segFailed' },
-  { value: 'completed', labelKey: 'pages.workspace.notify.segCompleted' },
-] as const
-
-function onNotifyModeChange(workflow: Workflow, mode: string) {
-  if (mode !== 'off' && mode !== 'inherit' && mode !== 'custom') return
-  expandedNotifyId.value = mode === 'custom' ? workflow.id : null
-  if (mode === wfNotifyMode(workflow)) return
-  void setWorkflowNotifyMode(workflow, mode)
-}
 </script>
 
 <template>
@@ -148,12 +118,11 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
       </div>
     </div>
     <table v-else class="workflow-directory" data-testid="workflows-desktop-table">
-      <colgroup><col /><col class="workflow-col-status" /><col class="workflow-col-notify" /><col class="workflow-col-home" /><col class="workflow-col-updated" /><col class="workflow-col-actions" /></colgroup>
+      <colgroup><col /><col class="workflow-col-status" /><col class="workflow-col-home" /><col class="workflow-col-updated" /><col class="workflow-col-actions" /></colgroup>
       <thead>
         <tr>
           <th>{{ t('pages.workspace.colName') }}</th>
           <th>{{ t('pages.workspace.colStatus') }}</th>
-          <th>{{ t('pages.workspace.notify.colPolicy') }}</th>
           <th class="text-center">{{ t('pages.workspace.homeVisibility.col') }}</th>
           <th>{{ t('pages.workspace.colUpdated') }}</th>
           <th class="text-right">{{ t('common.table.actions') }}</th>
@@ -167,30 +136,6 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
           </td>
           <td class="workflow-status-cell">
             <span class="workflow-status" :data-status="w.status"><span class="workflow-status-dot" aria-hidden="true" /><span class="workflow-status-label">{{ t(w.status === 'published' ? 'common.status.published' : 'common.status.draft') }}</span></span>
-          </td>
-          <td class="workflow-notify-cell" :data-testid="isMobile ? 'wf-notify-inline' : 'wf-notify-cell'" @click.stop>
-            <div class="workflow-notify-controls">
-              <AppSelect
-                :model-value="wfNotifyMode(w)"
-                :options="notifyModesFor(w)"
-                :disabled="savingNotifyWfId === w.id"
-                :aria-label="`${w.name} · ${t('pages.workspace.notify.colPolicy')}`"
-                variant="ghost"
-                size="sm"
-                class="workflow-notify-select"
-                data-testid="wf-notify-mode"
-                @update:model-value="onNotifyModeChange(w, $event)"
-              />
-              <button v-if="wfNotifyMode(w) === 'custom'" type="button" class="workflow-notify-edit" :disabled="savingNotifyWfId === w.id" :aria-label="t('pages.workflowList.notificationEvents')" :title="t('pages.workflowList.notificationEvents')" :aria-expanded="expandedNotifyId === w.id" :aria-controls="`workflow-notify-events-${w.id}`" data-testid="wf-notify-edit-events" @click="expandedNotifyId = expandedNotifyId === w.id ? null : w.id"><Icon name="settings" :size="13" /></button>
-              <span v-if="savingNotifyWfId === w.id" class="sr-only" role="status" data-testid="wf-notify-saving">{{ t('common.buttons.saving') }}</span>
-            </div>
-            <fieldset v-if="wfNotifyMode(w) === 'custom' && expandedNotifyId === w.id" :id="`workflow-notify-events-${w.id}`" class="workflow-notify-events" data-testid="wf-notify-events">
-              <legend class="sr-only">{{ t('pages.workflowList.notificationEvents') }}</legend>
-              <label v-for="event in notifyEvents" :key="event.value">
-                <input type="checkbox" :checked="wfNotifyHas(w, event.value)" :disabled="savingNotifyWfId === w.id" @change="toggleWorkflowNotifyEvent(w, event.value)" />
-                <span>{{ t(event.labelKey) }}</span>
-              </label>
-            </fieldset>
           </td>
           <td class="workflow-home-cell" :data-testid="isMobile ? 'wf-home-visibility-inline' : 'wf-home-visibility-cell'" @click.stop>
             <span class="workflow-mobile-label">{{ t('pages.workspace.homeVisibility.col') }}</span>
@@ -377,7 +322,6 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 .workflow-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px; text-align: center; }
 .workflow-directory { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; }
 .workflow-col-status { width: 82px; }
-.workflow-col-notify { width: 176px; }
 .workflow-col-home { width: 72px; }
 .workflow-col-updated { width: 82px; }
 .workflow-col-actions { width: 142px; }
@@ -393,18 +337,6 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 .workflow-status-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: rgb(var(--c-txt3) / .6); }
 .workflow-status-label { line-height: 18px; }
 .workflow-status[data-status="published"] > .workflow-status-dot { background: rgb(var(--c-ok) / .7); }
-.workflow-notify-controls { display: flex; min-width: 0; align-items: center; gap: 4px; }
-.workflow-notify-select { min-width: 0; width: 116px; flex: none; }
-/* Directory only: the ghost trigger's own inset would push the name off the column title. */
-.workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm) { height: 30px; min-height: 30px; padding-block: 0; padding-inline-start: 0; border-width: 0; font-size: 12px; line-height: 18px; }
-.workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm > span) { line-height: 18px; }
-.workflow-row:has(.workflow-notify-events) > .workflow-status-cell,
-.workflow-row:has(.workflow-notify-events) > .workflow-notify-cell { vertical-align: top; }
-.workflow-notify-edit { display: flex; width: 24px; height: 28px; flex: none; align-items: center; justify-content: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
-.workflow-notify-edit:hover, .workflow-notify-edit[aria-expanded="true"] { background: rgb(var(--c-txt) / .045); color: rgb(var(--c-txt)); }
-.workflow-notify-events { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 0; border: 0; padding: 0; }
-.workflow-notify-events label { display: inline-flex; align-items: center; gap: 5px; color: rgb(var(--c-txt2)); font-size: 11px; white-space: nowrap; }
-.workflow-notify-events input { accent-color: rgb(var(--c-accent)); }
 .workflow-home-cell { text-align: center; }
 .workflow-home-switch { transform: scale(.85); transform-origin: center; }
 .workflow-mobile-label { display: none; }
@@ -421,11 +353,10 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 @container workflow-directory (max-width: 740px) {
   .workflow-directory, .workflow-directory tbody { display: block; }
   .workflow-directory colgroup, .workflow-directory thead { display: none; }
-  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'notify home' 'updated actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0 16px 12px; }
+  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'updated home' '. actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0 16px 12px; }
   .workflow-directory .workflow-row td { min-width: 0; border: 0; padding: 0; }
   .workflow-name-cell { grid-area: name; }
   .workflow-status-cell { grid-area: status; justify-self: end; }
-  .workflow-notify-cell { grid-area: notify; }
   .workflow-home-cell { grid-area: home; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
   .workflow-mobile-label { display: inline; color: rgb(var(--c-txt3)); font-size: 11px; }
   .workflow-updated-cell { grid-area: updated; }
@@ -435,9 +366,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
   .workflow-toolbar { gap: 10px; padding-bottom: 12px; }
   .workflow-search { width: 100%; height: 40px; }
   .workflow-toolbar-actions { justify-content: flex-end; width: 100%; }
-  .workflow-row-actions > button, .workflow-more-action, .workflow-notify-edit, .workflow-menu-action { min-height: 44px; }
-  .workflow-notify-edit { width: 32px; }
+  .workflow-row-actions > button, .workflow-more-action, .workflow-menu-action { min-height: 44px; }
   .workflow-status { height: auto; }
-  .workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm) { height: auto; min-height: 44px; }
 }
 </style>

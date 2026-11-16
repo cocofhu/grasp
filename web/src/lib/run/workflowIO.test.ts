@@ -43,7 +43,6 @@ describe('buildEnvelope', () => {
         { name: 'masked', type: 'string', secret: true, value: '****' },
         { name: 'branch', type: 'string', value: 'main' },
       ],
-      notifyPolicy: { enabled: true, channelIds: ['channel-id'], defaultEvents: ['failed'] },
       gateAuto: { enabled: true, agentName: 'reviewer', variable: 'auto', prompt: 'Review this', enabledMcps: ['pm-progress'] },
     }
     const env = buildEnvelope({ name: 'Portable', description: '', needsRepo: false, defaults }, { nodes: [], edges: [], variables: [{ name: 'inputSecret', secret: true, value: 'private-input' }] })

@@ -2,9 +2,7 @@ package services
 
 import (
 	"errors"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
@@ -324,7 +322,7 @@ func TestNormalizePmEnabledMcps(t *testing.T) {
 	if len(got) != 3 || got[0] != "pm-workflow-read" || got[1] != "pm-progress" || got[2] != "pm-agent-fs" {
 		t.Fatalf("filtered=%v", got)
 	}
-	got = EffectivePmEnabledMcps([]string{"memory-store", "task-scheduler"})
+	got = EffectivePmEnabledMcps([]string{"memory-store", "context-store"})
 	if len(got) != 0 {
 		t.Fatalf("explicit all-invalid should be empty, got %v", got)
 	}
@@ -380,150 +378,5 @@ func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 	}
 	if hits[0]["title"] != "A记" {
 		t.Fatalf("hit=%v", hits[0])
-	}
-}
-
-func TestPmChannelThreadListMergeAndACL(t *testing.T) {
-	db := setupPmDB(t)
-	pm := NewPmService(db, nil)
-	ps := NewWorkspaceService(db)
-	_, err := ps.CreateFixture("ChProj", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	base := time.Now().UTC().Truncate(time.Second)
-	webOlder, err := pm.CreateThread("alice", "Web 旧", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	guild, err := pm.CreateThread("qq:guild:ch1", "频道会话", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	group, err := pm.CreateThread("qq:group:g1", "群会话", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c2c, err := pm.CreateThread("qq:c2c:u1", "   ", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wecom, err := pm.CreateThread("wecom:c2c:zhangsan", "企微会话", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pm.CreateCronThread("agent", "cron job"); err != nil {
-		t.Fatal(err)
-	}
-	webNewer, err := pm.CreateThread("alice", "Web 新", "agent", "user")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Explicit timestamps: webNewer > guild > webOlder (mixed order).
-	stamps := map[string]time.Time{
-		webNewer.ID: base.Add(3 * time.Hour),
-		guild.ID:    base.Add(2 * time.Hour),
-		group.ID:    base.Add(90 * time.Minute),
-		c2c.ID:      base.Add(time.Hour),
-		wecom.ID:    base.Add(50 * time.Minute),
-		webOlder.ID: base,
-	}
-	for id, ts := range stamps {
-		if err := db.Model(&models.ChatThread{}).Where("id = ?", id).Update("updated_at", ts).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	listed, err := pm.ListThreads("alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 6 {
-		t.Fatalf("want 2 web + 4 channel (no cron), got %d: %+v", len(listed), listed)
-	}
-	foundWecom := false
-	for _, th := range listed {
-		if th.UserID == "wecom:c2c:zhangsan" {
-			foundWecom = true
-			if !th.Unspoken {
-				t.Fatal("wecom thread without channel inbound must be unspoken")
-			}
-		}
-	}
-	if !foundWecom {
-		t.Fatal("wecom thread missing from list")
-	}
-	if listed[0].ID != webNewer.ID || listed[1].ID != guild.ID || listed[5].ID != webOlder.ID {
-		ids := make([]string, len(listed))
-		for i, th := range listed {
-			ids[i] = th.ID
-		}
-		t.Fatalf("mixed updated_at desc order wrong: %v", ids)
-	}
-	for _, th := range listed {
-		if strings.HasPrefix(th.UserID, "cron:") {
-			t.Fatalf("cron must not appear: %+v", th)
-		}
-	}
-
-	// Synthetic qq: lookup stays owner-only (ChannelBridge).
-	onlyGuild, err := pm.ListThreads("qq:guild:ch1")
-	if err != nil || len(onlyGuild) != 1 || onlyGuild[0].ID != guild.ID {
-		t.Fatalf("synthetic list=%+v err=%v", onlyGuild, err)
-	}
-
-	// Bob (other member) can read channel threads.
-	got, err := pm.GetThread(guild.ID, "bob")
-	if err != nil || got.ID != guild.ID {
-		t.Fatalf("bob read channel: %+v err=%v", got, err)
-	}
-	// Bob cannot read alice web thread.
-	if _, err := pm.GetThread(webNewer.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
-		t.Fatalf("bob must not read alice web: %v", err)
-	}
-
-	// Write/delete rejected for channel.
-	if _, err := pm.RequireWritableThread(guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
-		t.Fatalf("want ErrPmChannelReadOnly, got %v", err)
-	}
-	if err := pm.DeleteThread(guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
-		t.Fatalf("delete channel: %v", err)
-	}
-	if _, err := pm.GetThreadByID(guild.ID); err != nil {
-		t.Fatal("channel thread must still exist after rejected delete")
-	}
-
-	// Own web thread remains writable/deletable.
-	if _, err := pm.RequireWritableThread(webNewer.ID, "alice"); err != nil {
-		t.Fatal(err)
-	}
-	if err := pm.DeleteThread(webNewer.ID, "alice"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestIsChannelUserIDPrefixes(t *testing.T) {
-	if !IsChannelUserID("qq:guild:x") || !IsChannelUserID("qq:group:y") || !IsChannelUserID("qq:c2c:z") {
-		t.Fatal("expected qq: prefixes")
-	}
-	if !IsChannelUserID("wecom:c2c:zhangsan") || !IsChannelUserID("wecom:group:wr") {
-		t.Fatal("expected wecom: prefixes")
-	}
-	if !IsChannelUserID("feishu:c2c:oc_x") || !IsChannelUserID("feishu:group:oc_g") {
-		t.Fatal("expected feishu: prefixes to match")
-	}
-	if !IsChannelUserID("feishu:c2c:oc_x") {
-		t.Fatal("IsChannelUserID should cover feishu")
-	}
-	if !IsChannelUserID("dingtalk:c2c:staff1") || !IsChannelUserID("dingtalk:group:cid") {
-		t.Fatal("expected dingtalk: prefixes to match")
-	}
-	if !IsChannelUserID("dingtalk:group:cid") {
-		t.Fatal("IsChannelUserID should cover dingtalk")
-	}
-	if IsChannelUserID("cron:agent") || IsChannelUserID("alice") || IsChannelUserID("") {
-		t.Fatal("unexpected channel match")
 	}
 }

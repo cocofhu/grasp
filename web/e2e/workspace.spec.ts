@@ -179,7 +179,7 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/assistant', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/workspace"]')).toHaveCount(0)
   await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
@@ -317,20 +317,9 @@ test('settings and workspace retain the same app rail while changing directory',
   await expect.poll(railAppearance).toEqual(before)
 })
 
-test('workflow notification controls save the selected policy and custom events', async ({ page }) => {
+test('workflow directory search filters and clears', async ({ page }) => {
   await page.goto('/workspace.html')
-  const row = page.getByTestId('workflows-desktop-table').locator('tbody tr').first()
-  const policy = row.getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]')
-  await policy.click()
-  await page.getByRole('option', { name: '自定义', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workflows[0].notifyPolicy.mode)).toBe('custom')
-  const event = row.getByRole('checkbox', { name: '运行完成', exact: true })
-  await expect(event).toBeVisible()
-  await event.check()
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workflows[0].notifyPolicy.events)).toContain('completed')
-  await policy.click()
-  await page.getByRole('option', { name: '关闭', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workflows[0].notifyPolicy.mode)).toBe('off')
+  await expect(page.getByTestId('workflows-desktop-table').locator('tbody tr')).toHaveCount(12)
   await page.getByRole('searchbox').last().fill('no-such-workflow')
   await expect(page.getByTestId('workflows-empty')).toHaveAttribute('data-empty-kind', 'search')
   await page.getByRole('button', { name: '清空搜索', exact: true }).click()

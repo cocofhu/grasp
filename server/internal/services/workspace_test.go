@@ -2,10 +2,11 @@ package services
 
 import (
 	"errors"
-	"github.com/cocofhu/grasp/internal/database"
-	"github.com/cocofhu/grasp/internal/models"
 	"path/filepath"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 func TestWorkspaceMissingRowReportsError(t *testing.T) {

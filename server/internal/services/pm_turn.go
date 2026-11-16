@@ -59,7 +59,7 @@ type pmChatter interface {
 }
 
 // PmTurnRunner runs PM consult turns: one chatsession FIFO per thread, shared
-// by the web UI, IM channels, cron and gate-auto. Turns run on a background
+// by the web UI and gate-auto. Turns run on a background
 // context; viewers subscribe and get a snapshot plus the active turn's frames.
 type PmTurnRunner struct {
 	pm   *PmService
@@ -438,12 +438,6 @@ func (r *PmTurnRunner) persistTurnFailure(threadID, userMsgID, failKind string) 
 	if _, err := r.pm.UpdateMessageFailure(threadID, userMsgID, "failed", failKind); err != nil {
 		log.Warn().Err(err).Str("thread", threadID).Str("op", "msg_failure").Msg("pm turn persist failed")
 	}
-}
-
-// ExtractAgentMessageText pulls agent_message_chunk text from a raw ACP frame.
-// Non-message / tool frames return empty so channel Reply can suppress noise.
-func ExtractAgentMessageText(raw json.RawMessage) string {
-	return extractPmAgentText(raw)
 }
 
 // extractPmAgentText pulls agent_message_chunk text from a raw ACP frame.

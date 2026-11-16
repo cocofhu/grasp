@@ -9,8 +9,6 @@ const MOBILE_VIEWS = [
   '/solo',
   '/settings/projects',
   '/settings/assistant',
-  '/settings/schedules',
-  '/settings/notification-policy',
   '/settings/external-mcp',
   '/settings/shared-agent',
   '/artifacts',

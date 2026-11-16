@@ -17,7 +17,6 @@ const apiMocks = vi.hoisted(() => ({
   publishWorkflow: vi.fn(),
   listAgents: vi.fn(),
   getWorkspace: vi.fn(),
-  listChannels: vi.fn(),
   listWorkflowVersions: vi.fn(),
   getWorkflowVersionGraph: vi.fn(),
   restoreWorkflowVersion: vi.fn(),
@@ -155,7 +154,6 @@ beforeEach(() => {
   apiMocks.restoreWorkflowVersion.mockImplementation(async (_id: string, v: number) => workflow({ version: 4, name: `restored-v${v}` }))
   apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', capabilities: TEST_REVIEW_CAPS }])
   apiMocks.getWorkspace.mockResolvedValue({ name: '我的工作区' })
-  apiMocks.listChannels.mockResolvedValue({ items: [] })
   apiMocks.listCredentials.mockResolvedValue({ items: [] })
 })
 
@@ -343,7 +341,7 @@ describe('WorkflowEditorView', () => {
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="workflow-notify-row"] [role="switch"]').trigger('click')
+    await wrapper.get('[data-testid="workflow-gate-row"] [role="switch"]').trigger('click')
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="defaults-close"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(false)
@@ -351,7 +349,7 @@ describe('WorkflowEditorView', () => {
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="workflow-notify-row"] [role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="workflow-gate-row"] [role="switch"]').attributes('aria-checked')).toBe('true')
   })
 
   it('still updates the defaults footer when reduced motion is on', async () => {
@@ -507,7 +505,7 @@ describe('WorkflowEditorView', () => {
   })
 
   it('keeps migrated ordinary defaults through metadata save and subsequent publication', async () => {
-    const defaults = { variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], notifyPolicy: { enabled: false, defaultEvents: ['failed'], channelIds: ['original-channel'] }, gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
+    const defaults = { variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
     apiMocks.getWorkflow.mockResolvedValue(workflow({ defaults }))
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-name"]').setValue('metadata changed')

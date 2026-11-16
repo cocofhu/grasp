@@ -99,7 +99,7 @@ export function useRunDetailSelection(opts: {
     if (id === 'gate') toast.warn(t('pages.runDetail.gateRemoved'))
   }
   const nodeTab = ref('output')
-  /** When set, watch(selected) must not steal tab=output (QQ deep link / live complete). */
+  /** When set, watch(selected) must not steal tab=output (deep link / live complete). */
   const outputFocusLock = ref(false)
 
   function graphNodesForFocus() {
@@ -145,7 +145,7 @@ export function useRunDetailSelection(opts: {
     showMobileTimelinePanel()
   }
 
-  /** Parse ?node=&tab=output (completed QQ deep link). Returns true when applied. */
+  /** Parse ?node=&tab=output (completed-run deep link). Returns true when applied. */
   function applyOutputDeepLinkFocus(): boolean {
     const qNode = queryParam('node')
     const qTab = queryParam('tab')

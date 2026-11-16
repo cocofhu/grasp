@@ -106,12 +106,9 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     expect(url).toContain('/audit/export')
   })
 
-  it('pmClient issues PM and cron requests', async () => {
+  it('pmClient issues PM requests', async () => {
     await pmClient.getPmLeader()
     await pmClient.updatePmLeader({ enabled: true })
-    await pmClient.listCronJobs()
-    await pmClient.patchCronJob('j1', { deliverToChannel: true })
-    await pmClient.deleteCronJob('j1')
     await pmClient.listPmThreads()
     await pmClient.createPmThread({ title: 't' })
     await pmClient.deletePmThread('t1')

@@ -41,7 +41,7 @@ type Session struct {
 	AgentName string
 	Attached  *models.AttachedContext
 	// AllowedMcps, when non-nil, overrides Workspace.PmEnabledMcps for ServeRPC
-	// authorization (channel turns). nil keeps the Web/gate workspace binding check.
+	// authorization (per-workflow PM policy). nil keeps the workspace binding check.
 	AllowedMcps []string
 	// External marks sessions created for external MCP (Bearer API key).
 	External   bool
@@ -263,7 +263,7 @@ func (h *Host) ServeRPC(mcpID, token string, body []byte) (status int, resp []by
 			Error:   &platformmcp.RPCError{Code: -32004, Message: "unknown mcp: " + mcpID},
 		})
 	}
-	// Enforce enabledMcps: channel sessions carry AllowedMcps; Web/gate fall
+	// Enforce enabledMcps: per-workflow PM policy sessions carry AllowedMcps; others fall
 	// back to Workspace.PmEnabledMcps. Fail closed when the binding cannot be
 	// loaded so a load failure never widens access.
 	var allowedList []string

@@ -1,5 +1,5 @@
 import type { RepoChoice } from '../apiTypes'
-import type { Workflow, WorkflowVersion, WorkflowNotifyPolicy, WorkflowGraph } from '../../shared/types'
+import type { Workflow, WorkflowVersion, WorkflowGraph } from '../../shared/types'
 import { req } from '../httpCore'
 
 export const workflowsClient = {
@@ -17,12 +17,6 @@ export const workflowsClient = {
     req<Workflow>('/workflows/from-baseline', {
       method: 'POST',
       body: JSON.stringify({ name, repos }),
-    }),
-  /** Notify-only: never sends nodes/edges (avoids stale list-cache graph rollback). */
-  patchWorkflowNotifyPolicy: (id: string, notifyPolicy: WorkflowNotifyPolicy) =>
-    req<Workflow>(`/workflows/${id}/notify-policy`, {
-      method: 'PATCH',
-      body: JSON.stringify({ notifyPolicy }),
     }),
   /** Home-visibility only: never sends nodes/edges (plan g1.2). */
   patchWorkflowHomeVisibility: (id: string, showOnHome: boolean) =>

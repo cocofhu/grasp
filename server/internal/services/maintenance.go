@@ -3,18 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/cocofhu/grasp/internal/models"
 	"os"
 	"path/filepath"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
-// Pause stops cron admission while executions already claimed continue draining.
-func (s *CronScheduler) Pause() {
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
-	s.paused.Store(true)
-}
-func (s *CronScheduler) ActiveExecutions() int64 { return s.active.Load() }
 func (r *PmTurnRunner) ActiveThreads() int {
 	r.mu.Lock()
 	threads := make([]*pmThread, 0, len(r.threads))

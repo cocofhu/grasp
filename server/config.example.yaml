@@ -114,8 +114,8 @@ auth:
   # 用 scripts/gen-auth-hash.sh 生成自有 bcrypt 哈希；公开示例不携带可登录账号。
   users: []
 
-# 至此静态安全项。secrets_key 是存储加密主密钥(AES-256),用于加密外部渠道
-# (QQ 等)在 DB 里的 app_secret。视作固定盐:设一次后保持不变,轮换会导致已存
+# 至此静态安全项。secrets_key 是存储加密主密钥(AES-256),用于加密工作区凭据
+# 在 DB 里的密文。视作固定盐:设一次后保持不变,轮换会导致已存
 # 密文无法解密。生成:`head -c 32 /dev/urandom | base64`。生产建议经 K8s Secret
 # 注入环境变量 GRASP_SECRETS_KEY 覆盖本值,不要把真实密钥提交进 git。
 # 留空时:非 production 模式在 SQLite 库旁自动生成 secrets.key(随库一起备份);

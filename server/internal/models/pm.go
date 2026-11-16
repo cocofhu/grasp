@@ -21,18 +21,16 @@ type MemoryItem struct {
 
 // ChatThread is a consult thread in the workspace.
 // Human UI lists by UserID. MCP context-store visibility is the caller's
-// user threads plus the agent's cron threads (not other users' consults).
+// own user threads (not other users' consults).
 type ChatThread struct {
 	ID     string `gorm:"primaryKey" json:"id"`
 	UserID string `gorm:"index" json:"userId"`
 	// AgentName is the PM Agent that owns this conversation for MCP isolation.
 	// Preserved when the workspace rebinds to another Agent.
 	AgentName string `gorm:"index" json:"agentName,omitempty"`
-	// Kind: user (interactive) | cron (scheduler-owned exclusive thread).
+	// Kind: user (interactive).
 	Kind  string `gorm:"index" json:"kind,omitempty"`
 	Title string `json:"title"`
-	// Unspoken is a computed flag: channel thread with no source=channel inbound.
-	Unspoken bool `json:"unspoken,omitempty" gorm:"-"`
 	// SandboxRef stores the bound models.Sandbox.ID as a decimal string when a
 	// PM consult sandbox is live for this thread. Empty means unbound.
 	SandboxRef string    `json:"sandboxRef,omitempty"`
@@ -40,11 +38,8 @@ type ChatThread struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
-// Chat thread kinds.
-const (
-	ChatThreadKindUser = "user"
-	ChatThreadKindCron = "cron"
-)
+// ChatThreadKindUser is the interactive consult thread kind.
+const ChatThreadKindUser = "user"
 
 // ChatMessage is one persisted turn in a PM Leader thread (context-store SoT).
 type ChatMessage struct {
@@ -58,8 +53,8 @@ type ChatMessage struct {
 	// FailKind classifies why a turn failed (only when Status=failed).
 	// Values: connection | sandbox | empty | unknown | stopped.
 	FailKind string `json:"failKind,omitempty"`
-	// Source tags how the turn was produced (user chat vs cron vs channel).
-	Source string `json:"source,omitempty"` // user | cron | channel | ""
+	// Source tags how the turn was produced.
+	Source string `json:"source,omitempty"` // user | ""
 	// Images are optional base64 attachments the user sent with this turn.
 	Images          []PromptImage      `gorm:"serializer:filejson" json:"images,omitempty"`
 	Citations       []ProgressCitation `gorm:"serializer:filejson" json:"citations,omitempty"`
@@ -110,99 +105,4 @@ type ChatTurnDraft struct {
 	SandboxID uint      `json:"sandboxId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// AgentCronJob is an Agent-owned scheduled task (task-scheduler MCP).
-type AgentCronJob struct {
-	ID           string `gorm:"primaryKey" json:"id"`
-	AgentName    string `gorm:"index" json:"agentName"`
-	ThreadID     string `gorm:"index" json:"threadId"`
-	Name         string `json:"name"`
-	Prompt       string `json:"prompt"`
-	ScheduleKind string `json:"scheduleKind"` // at | every | cron
-	ScheduleExpr string `json:"scheduleExpr"`
-	Timezone     string `json:"timezone,omitempty"`
-	Enabled      bool   `gorm:"index" json:"enabled"`
-	// DeliverToChannel pushes the turn result to the channel bound to this
-	// job's AgentName (per-job switch). No-op when that Agent has no channel
-	// with CronDeliver enabled.
-	DeliverToChannel  bool       `json:"deliverToChannel"`
-	NextRunAt         *time.Time `gorm:"index" json:"nextRunAt,omitempty"`
-	LastRunAt         *time.Time `json:"lastRunAt,omitempty"`
-	LastStatus        string     `json:"lastStatus,omitempty"`
-	LastError         string     `json:"lastError,omitempty"`
-	ConsecutiveErrors int        `json:"consecutiveErrors"`
-	ClaimedAt         *time.Time `json:"claimedAt,omitempty"`
-	ClaimOwner        string     `json:"claimOwner,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
-}
-
-// ChannelConfig is an external IM channel binding managed via the admin WebUI.
-// The workspace may have multiple QQ channels (one primary + zero or more secondary).
-// Each channel binds exactly one Agent for inbound turns; AppID stays globally
-// unique. The design is channel-agnostic: Type selects the adapter, and Config
-// carries adapter-specific extras.
-//
-// The app secret is stored AES-GCM encrypted (crypto.Encrypt) in AppSecretEnc
-// and never serialized to the client.
-type ChannelConfig struct {
-	ID   string `gorm:"primaryKey" json:"id"`
-	Type string `gorm:"index" json:"type"` // qq | wecom | feishu | dingtalk
-	Name string `json:"name"`
-	// Enabled toggles whether the Manager starts an adapter for this row.
-	Enabled bool `gorm:"index" json:"enabled"`
-	// AgentName is the PM Agent that answers inbound turns on this channel.
-	// At most one channel per Agent (enforced in service + partial unique index).
-	AgentName string `gorm:"index" json:"agentName"`
-	// IsPrimary marks the workspace's primary channel (at most one).
-	// Its agent mirrors Workspace.PmLeaderAgent for Web/gate paths; secondary
-	// channels have equal channel capabilities.
-	IsPrimary bool `gorm:"index" json:"isPrimary"`
-	// EnabledMcps lists platform PM role MCP ids for channel turns only
-	// (pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs).
-	// nil → defaults; explicit empty → none. Web/gate still use Workspace.PmEnabledMcps.
-	EnabledMcps []string `gorm:"serializer:json" json:"enabledMcps,omitempty"`
-	// AppID is the bot's public app id (unique across configs).
-	AppID string `gorm:"index" json:"appId"`
-	// AppSecretEnc is the AES-GCM encrypted app secret (never returned).
-	AppSecretEnc string `json:"-"`
-	// TurnTimeoutSeconds overrides the PM turn deadline for this channel's turns
-	// (0 → platform default). Applies only to channel/cron turns, not workflow nodes.
-	TurnTimeoutSeconds int `json:"turnTimeoutSeconds"`
-	// CronDeliver marks this channel as the cron result push target for its
-	// bound Agent's jobs (not a workspace-wide singleton).
-	CronDeliver bool `json:"cronDeliver"`
-	// CronDeliverTarget is the push destination as "scene:conversationId"
-	// (e.g. "guild:123", "group:openid", "c2c:openid").
-	CronDeliverTarget string `json:"cronDeliverTarget,omitempty"`
-	// Config holds adapter-specific extra settings (sandbox base URL, intents…).
-	Config    map[string]any `gorm:"serializer:json" json:"config,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-}
-
-// Channel types.
-const (
-	ChannelTypeQQ       = "qq"
-	ChannelTypeWeCom    = "wecom"
-	ChannelTypeFeishu   = "feishu"
-	ChannelTypeDingTalk = "dingtalk"
-)
-
-// RegisteredChannelTypes returns channel types the platform can persist/start.
-func RegisteredChannelTypes() []string {
-	return []string{ChannelTypeQQ, ChannelTypeWeCom, ChannelTypeFeishu, ChannelTypeDingTalk}
-}
-
-// AgentCronRun is one execution record for an AgentCronJob.
-type AgentCronRun struct {
-	ID         string     `gorm:"primaryKey" json:"id"`
-	JobID      string     `gorm:"index" json:"jobId"`
-	Status     string     `json:"status"` // ok | skipped | error
-	Error      string     `json:"error,omitempty"`
-	SandboxID  uint       `json:"sandboxId,omitempty"`
-	MessageID  string     `json:"messageId,omitempty"`
-	StartedAt  time.Time  `json:"startedAt"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 }

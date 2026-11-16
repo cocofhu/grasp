@@ -82,11 +82,6 @@ type Bridge struct {
 	// 会话级事件日志（内存全量）；刷新页面后随 connected 下发，前端重放以恢复聊天界面
 	evLog eventLog
 
-	// 会话事件订阅者；用于 QQ 等外部通道复用同一套 session/update 广播。
-	eventSubMu     sync.Mutex
-	eventSubNextID int
-	eventSubs      map[int]func(json.RawMessage)
-
 	// 本会话选择的模型；空表示跟随 ChatManager 的默认模型（-model / ACP_BRIDGE_MODEL）。
 	model string
 	// reasoningEffort belongs to this chat; changing it never mutates process env.
@@ -156,7 +151,6 @@ func NewBridge() *Bridge {
 		clients:         make(map[*websocket.Conn]*wsClient),
 		autoPermission:  true,
 		evLog:           eventLog{},
-		eventSubs:       make(map[int]func(json.RawMessage)),
 		turnIdle:        idle,
 		turnMax:         max,
 	}

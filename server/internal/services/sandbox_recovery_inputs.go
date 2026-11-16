@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +54,7 @@ func (s *SandboxService) prepareRecoveryInputs(row *models.Sandbox) (sandbox.Spe
 		extra.LaunchKind, extra.InitialChatModel = "solo", appliedChatModelID(&session)
 		extra.InitialChatReasoningEffort = &session.AppliedReasoningEffort
 	case "test":
-		specs = s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent, s.testMcpVars(row.RunID, row.Token, row.Profile))
+		specs = s.buildTestSandboxSpecs(agent, s.mcpVars(row.RunID, row.Token))
 		extra.LaunchKind = "test"
 	case SandboxPurposeAgent, "pm":
 		var err error
@@ -164,8 +163,6 @@ func (s *SandboxService) recoveryRoleMCPs(row *models.Sandbox) ([]sandbox.MCPSer
 		switch name {
 		case MemoryStoreMCP, ContextStoreMCP:
 			path = "/mcp/" + name
-		case TaskSchedulerMCP:
-			path = "/mcp/task-scheduler/" + url.PathEscape(row.Profile)
 		default:
 			if !isRecoveryRoleMCP(name) {
 				return nil, fmt.Errorf("cannot reconstruct role MCP %q", name)
@@ -179,7 +176,7 @@ func (s *SandboxService) recoveryRoleMCPs(row *models.Sandbox) ([]sandbox.MCPSer
 }
 
 func isRecoveryRoleMCP(name string) bool {
-	if name == MemoryStoreMCP || name == ContextStoreMCP || name == TaskSchedulerMCP {
+	if name == MemoryStoreMCP || name == ContextStoreMCP {
 		return true
 	}
 	return len(FilterPmEnabledMcps([]string{name})) == 1

@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
@@ -40,19 +39,6 @@ func TestPurgeAgentEverywhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobX := models.AgentCronJob{
-		ID: "job-x", AgentName: "agent-x", ThreadID: thX.ID,
-		Name: "tick", Prompt: "do", ScheduleKind: "every", ScheduleExpr: "1h",
-		Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if err := db.Create(&jobX).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&models.AgentCronRun{
-		ID: "run-x", JobID: jobX.ID, Status: "ok", StartedAt: time.Now(),
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
 	en := true
 	agent := "agent-x"
 	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
@@ -81,11 +67,6 @@ func TestPurgeAgentEverywhere(t *testing.T) {
 	threadsY, _ := pm.ListThreadsForAgent("agent-y")
 	if len(threadsY) != 1 || threadsY[0].ID != thY.ID {
 		t.Fatalf("agent-y thread must survive: %v", threadsY)
-	}
-	var jobs int64
-	db.Model(&models.AgentCronJob{}).Where("id = ?", "job-x").Count(&jobs)
-	if jobs != 0 {
-		t.Fatalf("job-x should be deleted")
 	}
 	b, err := pm.GetBinding()
 	if err != nil {

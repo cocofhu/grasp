@@ -134,8 +134,8 @@ describe('formatTrigger', () => {
 
   it('returns unmapped free-form values unchanged', () => {
     i18n.global.locale.value = 'en'
-    expect(formatTrigger('channel')).toBe('channel')
-    expect(formatTrigger('qq:cron-timezone-bug')).toBe('qq:cron-timezone-bug')
-    expect(formatTrigger('cron-nightly')).toBe('cron-nightly')
+    expect(formatTrigger('webhook')).toBe('webhook')
+    expect(formatTrigger('custom:nightly-bug')).toBe('custom:nightly-bug')
+    expect(formatTrigger('nightly-build')).toBe('nightly-build')
   })
 })

@@ -221,37 +221,6 @@
         }
       }
     },
-    "taskScheduler": {
-      "desc": "Agent scheduled tasks · definition MCP; platform executes",
-      "overview": "Agent-level cron. Writes only in Workspace assistant consult; each fire uses a fresh sandbox.",
-      "convention": "create_job requires Workspace assistant consult. Platform scheduler runs Chat.",
-      "tools": {
-        "list_jobs": {
-          "signature": "list_jobs()",
-          "desc": "List jobs"
-        },
-        "list_job_runs": {
-          "signature": "list_job_runs(jobId, limit?)",
-          "desc": "Run history"
-        },
-        "create_job": {
-          "signature": "create_job(name, prompt, scheduleKind, scheduleExpr)",
-          "desc": "Create job"
-        },
-        "update_job": {
-          "signature": "update_job(jobId, …)",
-          "desc": "Update job"
-        },
-        "delete_job": {
-          "signature": "delete_job(jobId)",
-          "desc": "Delete job"
-        },
-        "run_job_now": {
-          "signature": "run_job_now(jobId)",
-          "desc": "Queue now"
-        }
-      }
-    },
     "pmProgress": {
       "desc": "Workspace assistant only · workspace progress / blockers (read-only)",
       "overview": "Workspace progress MCP injected in Workspace assistant consult when enabled.",

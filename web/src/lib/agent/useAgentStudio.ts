@@ -29,7 +29,7 @@ function isStudioTab(q: unknown): q is StudioTab {
 }
 
 function parseDataSub(q: unknown): DataSubTab {
-  if (q === 'context' || q === 'jobs' || q === 'memory') return q
+  if (q === 'context' || q === 'memory') return q
   return 'memory'
 }
 

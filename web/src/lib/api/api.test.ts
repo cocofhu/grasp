@@ -400,28 +400,6 @@ describe('api.createWorkflowFromBaseline', () => {
   })
 })
 
-describe('api.patchWorkflowNotifyPolicy', () => {
-  it('PATCHes notify-only body without nodes/edges', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        id: 'w1',
-        status: 'published',
-        notifyPolicy: { mode: 'custom', events: ['failed'] },
-      }),
-    )
-    await expect(
-      api.patchWorkflowNotifyPolicy('w1', { mode: 'custom', events: ['failed'] }),
-    ).resolves.toMatchObject({ id: 'w1', status: 'published' })
-    const call = fetchMock.mock.calls[fetchMock.mock.calls.length - 1]
-    expect(String(call?.[0])).toMatch(/\/workflows\/w1\/notify-policy$/)
-    expect(call?.[1]).toMatchObject({ method: 'PATCH' })
-    const body = JSON.parse(String(call?.[1]?.body))
-    expect(body).toEqual({ notifyPolicy: { mode: 'custom', events: ['failed'] } })
-    expect(body.nodes).toBeUndefined()
-    expect(body.edges).toBeUndefined()
-  })
-})
-
 describe('api.patchWorkflowHomeVisibility', () => {
   it('PATCHes showOnHome-only body without nodes/edges (plan g1.2 / g2.1)', async () => {
     fetchMock.mockResolvedValueOnce(

@@ -1,81 +1,13 @@
 package services
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"gorm.io/gorm"
 )
-
-func TestCronMaintenanceWaitsForClaimToBecomeActive(t *testing.T) {
-	db := setupPmDB(t)
-	now := time.Now().Add(-time.Minute)
-	job := models.AgentCronJob{ID: "maintenance-race", Enabled: true, NextRunAt: &now, ScheduleKind: "every", ScheduleExpr: "1h"}
-	if err := db.Create(&job).Error; err != nil {
-		t.Fatal(err)
-	}
-	claimEntered, claimRelease := make(chan struct{}), make(chan struct{})
-	finishEntered, finishRelease := make(chan struct{}), make(chan struct{})
-	if err := db.Callback().Update().Before("gorm:update").Register("test:block-cron-claim", func(tx *gorm.DB) {
-		if values, ok := tx.Statement.Dest.(map[string]any); ok && tx.Statement.Table == "agent_cron_jobs" && values["claim_owner"] != nil && values["claim_owner"] != "" {
-			close(claimEntered)
-			<-claimRelease
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Callback().Create().Before("gorm:create").Register("test:block-cron-completion", func(tx *gorm.DB) {
-		if tx.Statement.Table == "agent_cron_runs" {
-			close(finishEntered)
-			<-finishRelease
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	s := NewCronScheduler(db, nil, nil, nil, CronTokenHooks{})
-	tickDone := make(chan struct{})
-	go func() { defer close(tickDone); s.tick(context.Background()) }()
-	<-claimEntered
-	pauseDone := make(chan struct{})
-	go func() { defer close(pauseDone); s.Pause() }()
-	select {
-	case <-pauseDone:
-		close(claimRelease)
-		close(finishRelease)
-		<-tickDone
-		t.Fatal("maintenance paused while an uncounted claim could still launch")
-	case <-time.After(50 * time.Millisecond):
-	}
-	close(claimRelease)
-	<-pauseDone
-	<-finishEntered
-	if active := s.ActiveExecutions(); active != 1 {
-		t.Errorf("maintenance lost the admitted execution: %d", active)
-	}
-	close(finishRelease)
-	<-tickDone
-	deadline := time.Now().Add(time.Second)
-	for s.ActiveExecutions() != 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if s.ActiveExecutions() != 0 {
-		t.Fatal("completed execution remained active")
-	}
-	// Once Pause returns, even a due job cannot be newly claimed.
-	if err := db.Model(&job).Updates(map[string]any{"enabled": true, "next_run_at": now}).Error; err != nil {
-		t.Fatal(err)
-	}
-	s.tick(context.Background())
-	var runs int64
-	if err := db.Model(&models.AgentCronRun{}).Count(&runs).Error; err != nil || runs != 1 {
-		t.Fatalf("paused scheduler admitted more work: runs=%d err=%v", runs, err)
-	}
-}
 
 func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
 	setCredentialKey(t)
@@ -142,7 +74,7 @@ func TestMaintenanceArchiveIsPrivateAndRejectsSymlinks(t *testing.T) {
 func TestWorkflowGatePolicyUsesOrdinaryOverrideAndStopsAdmission(t *testing.T) {
 	db := newTestDB(t)
 	pm := NewPmService(db, NewAgentService(t.TempDir()))
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
+	svc := NewGateAutoInvokeService(db, pm, nil, nil, GateAutoTokenHooks{})
 	wf := models.WorkflowDef{ID: "override", Name: "override", Defaults: &models.WorkflowDefaults{GateAuto: &models.WorkflowGateAutoPolicy{Enabled: true, AgentName: "reviewer", Variable: "approve", Prompt: "inspect", EnabledMcps: []string{"pm-workflow-write"}}}}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatal(err)

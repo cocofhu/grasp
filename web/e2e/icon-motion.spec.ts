@@ -28,9 +28,7 @@ test('all registered icons are complete at rest and have real single-play hover 
     await button.hover()
     const icon = button.locator('svg.app-icon')
     await expect(icon).toHaveAttribute('data-icon-motion', 'once')
-    if (await button.innerText() === 'qq') {
-      expect(await animationCount(icon), 'Brand geometry stays static').toBe(0)
-    } else if (await animationCount(icon) === 0) missing.push(await button.innerText())
+    if (await animationCount(icon) === 0) missing.push(await button.innerText())
   }
   expect(missing, 'Every registered action icon must animate a visible part').toEqual([])
   expect(errors).toEqual([])

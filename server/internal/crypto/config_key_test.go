@@ -32,9 +32,6 @@ func TestKeySourceFromConfigYAML(t *testing.T) {
 		crypto.SetKeySource(func() string { return "" })
 	})
 
-	if !crypto.Available() {
-		t.Fatal("Available()=false with security.secrets_key set and env empty")
-	}
 	enc, err := crypto.Encrypt("from-yaml")
 	if err != nil {
 		t.Fatalf("Encrypt via config key: %v", err)

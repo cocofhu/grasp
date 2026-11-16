@@ -45,15 +45,6 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if err := hn.db.First(&stored, "id = ?", old.ID).Error; err != nil || stored.ValueEnc != ciphertext || stored.Purpose != "" {
 		t.Fatal("old encrypted data was changed")
 	}
-	if err := hn.h.Agents.Save(services.Agent{Name: "channel-adapter", AcpBackend: "cursor"}); err != nil {
-		t.Fatal(err)
-	}
-	hn.h.Channels = services.NewChannelConfigService(hn.db)
-	hn.h.Channels.SetAgentService(hn.h.Agents)
-	channel, err := hn.h.Channels.Create(services.ChannelConfigInput{Type: models.ChannelTypeQQ, Name: "QQ service", AppID: "adapter-app", AppSecret: "synthetic-channel-secret", AgentName: "channel-adapter"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	hn.h.McpKeys = services.NewWorkspaceMcpApiKeyService(hn.db)
 	mcp, err := hn.h.McpKeys.Create("MCP service")
 	if err != nil {
@@ -71,7 +62,7 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if response.Code != http.StatusOK {
 		t.Fatalf("list=%d", response.Code)
 	}
-	if strings.Contains(response.Body.String(), old.ID) || strings.Contains(response.Body.String(), "synthetic-channel-secret") || strings.Contains(response.Body.String(), mcp.Plaintext) || strings.Contains(response.Body.String(), key.Plaintext) {
+	if strings.Contains(response.Body.String(), old.ID) || strings.Contains(response.Body.String(), mcp.Plaintext) || strings.Contains(response.Body.String(), key.Plaintext) {
 		t.Fatal("list exposed an old row or a service secret")
 	}
 	var listed struct {
@@ -80,7 +71,7 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"channel:" + channel.ID: false, "external_mcp:" + mcp.Key.ID: false, "workflow:" + key.Key.ID: false}
+	want := map[string]bool{"external_mcp:" + mcp.Key.ID: false, "workflow:" + key.Key.ID: false}
 	for _, item := range listed.Items {
 		if _, ok := want[item.ID]; ok && item.Source != "workspace" && item.Configured {
 			want[item.ID] = true

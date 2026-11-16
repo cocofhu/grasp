@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -169,7 +168,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("test sandbox start failed")
-		s.unregisterTestScheduler(token)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "cleanup_pending": true, "updated_at": time.Now(),
 		})
@@ -187,8 +185,8 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	}()
 
 	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
-	vars := runtime.MergeEnvIntoTemplateVars(s.testMcpVars(runID, token, profile), agentEnv)
-	specs := s.buildTestSandboxSpecs(profile, runID, token, agent, vars)
+	vars := runtime.MergeEnvIntoTemplateVars(s.mcpVars(runID, token), agentEnv)
+	specs := s.buildTestSandboxSpecs(agent, vars)
 
 	env := map[string]string{}
 	for k, v := range s.env {
@@ -326,7 +324,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		acp.Close()
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
-		s.unregisterTestScheduler(token)
 		s.releaseSandboxScope("test", runID, "test_sandbox_removed")
 		return
 	}
@@ -544,8 +541,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		specs = filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 		specs = append(specs, s.soloPlatformSpecs(&row)...)
 	} else {
-		specs = s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent,
-			s.testMcpVars(row.RunID, row.Token, row.Profile))
+		specs = s.buildTestSandboxSpecs(agent, s.mcpVars(row.RunID, row.Token))
 	}
 	// Rebuild + SSH-sync ConfigHome so remote pods missing mcp.json/rules
 	// (hostPath ignored by K8s gateway) heal on reconnect.
@@ -655,8 +651,6 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
 	} else if row.Purpose == SandboxPurposeSolo {
 		defer s.invokeSoloDestroyHook(row.ID)
-	} else if row.Purpose == "test" {
-		s.unregisterTestScheduler(row.Token)
 	}
 	if err := s.db.Delete(&models.Sandbox{}, id).Error; err != nil {
 		return err
@@ -917,38 +911,14 @@ func (s *SandboxService) mcpVars(runID, token string) map[string]string {
 	}
 }
 
-func (s *SandboxService) testMcpVars(runID, token, profile string) map[string]string {
-	vars := s.mcpVars(runID, token)
-	profile = strings.TrimSpace(profile)
-	if profile == "" {
-		return vars
-	}
-	base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/")
-	if base == "" {
-		return vars
-	}
-	vars["GRASP_SCHEDULER_URL"] = config.RewriteMisconfiguredMCPAdvertise(
-		base + "/mcp/task-scheduler/" + url.PathEscape(profile))
-	vars["GRASP_SCHEDULER_TOKEN"] = token
-	return vars
-}
-
-func (s *SandboxService) buildTestSandboxSpecs(profile, runID, token string, agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
+func (s *SandboxService) buildTestSandboxSpecs(agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
 	mcpVars := vars
 	if s.credentialReferences != nil {
 		// Resolve credential references only while rendering MCP configuration;
 		// do not copy their plaintext values into the sandbox environment.
 		mcpVars = runtime.MergeEnvIntoTemplateVars(s.credentialReferences(), vars)
 	}
-	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
-	if strings.TrimSpace(profile) == "" {
-		return specs
-	}
-	s.registerTestScheduler(profile, runID, token)
-	if sched := BuildTestSchedulerMCPSpec(profile, token); sched.Name != "" {
-		specs = dedupeMCPByName(append(specs, sched))
-	}
-	return specs
+	return filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 }
 
 // resolveAgentMCP maps an Agent's MCP entries to sandbox specs, substituting

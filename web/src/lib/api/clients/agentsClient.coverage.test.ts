@@ -21,7 +21,7 @@ describe('agentsClient request coverage', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('builds agent, team, workspace bundle, revision, memory, thread, and cron requests', async () => {
+  it('builds agent, team, workspace bundle, revision, memory, and thread requests', async () => {
     const agent = { name: 'agent / one', description: 'reviewer' } as never
 
     await agentsClient.listAgents()
@@ -50,9 +50,6 @@ describe('agentsClient request coverage', () => {
     await agentsClient.listAgentThreads('agent / one')
     await agentsClient.listAgentThreadMessages('agent / one', 't1')
     await agentsClient.deleteAgentThread('agent / one', 't1')
-    await agentsClient.listAgentCronJobs('agent / one')
-    await agentsClient.patchAgentCronJob('agent / one', 'j1', { enabled: true })
-    await agentsClient.deleteAgentCronJob('agent / one', 'j1')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/agents/agent%20%2F%20one/rename', expect.objectContaining({
       method: 'POST',

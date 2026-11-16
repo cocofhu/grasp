@@ -30,7 +30,7 @@
 |----|------|
 | HTTP 客户端 | `web/src/lib/api/api.ts` → 按域拆 client，保留聚合 `export const api` |
 | Inbox / Gate | `GatesInboxView.vue`、`GateApproval.vue`、`ClarifyChat.vue` |
-| Project / PM | `ProjectDetailView.vue`、`PmLeaderChat.vue`、`RequirementDraftsPanel.vue`、`PmChannelMultiPanel.vue` |
+| Project / PM | `ProjectDetailView.vue`、`PmLeaderChat.vue`、`RequirementDraftsPanel.vue` |
 | Agent | `AgentStudioView.vue`、`AgentFilesPanel.vue`、`AgentCreateWizard.vue` |
 | Run | `RunDetailView.vue`、`ArtifactPreview.vue`、`ExecutionStatsPanel.vue` |
 | Server | `server/internal/services/sandbox.go`、`pm.go` 同包按职责拆文件 |
@@ -108,7 +108,7 @@
 |----|--------------|
 | api | `web/src/lib/api/{httpCore,apiTypes}.ts` + `clients/*Client.ts`（避开 E2E `**/api/{agents,runs,workflows}**` 路径碰撞）+ 聚合 `api.ts`；`api.test.ts` 绿 |
 | Inbox/Gate/Clarify | `useGatesInbox` / `useGateApproval` / `useClarifyChat`；SFC 变壳 |
-| Project/PM/草稿 | `useProjectDetail` / `useRequirementDrafts` / `usePmLeaderChat` / `usePmChannelMulti` |
+| Project/PM/草稿 | `useProjectDetail` / `useRequirementDrafts` / `usePmLeaderChat` |
 | Agent | `useAgentStudio` / `useAgentFilesPanel` / `useAgentCreateWizard` |
 | Run | `useRunDetail` / `useArtifactPreview` / `useExecutionStats` |
 | Sandbox | `sandbox_{run,test_pool,view}.go`；保留 `sandbox_agent` / `sandbox_pm` |

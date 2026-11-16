@@ -52,8 +52,6 @@ const (
 	AuditActionRunCancelled    = "run.cancelled"
 	AuditActionMCPCall         = "mcp.call"
 	AuditActionAuditExport     = "audit.export"
-	AuditActionChannel         = "channel.config"
-	AuditActionCron            = "cron.config"
 )
 
 // Audit outcome values.

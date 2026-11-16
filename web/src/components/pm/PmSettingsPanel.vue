@@ -5,16 +5,13 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import PmChannelMultiPanel from '@/components/pm/PmChannelMultiPanel.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import type { Agent } from '@/lib/api/api'
-import type { PmLeaderBinding, Workspace } from '@/lib/shared/types'
+import type { PmLeaderBinding } from '@/lib/shared/types'
 
-const props = defineProps<{ workspace?: Workspace | null }>()
 const emit = defineEmits<{
   changed: [PmLeaderBinding]
-  'workspace-updated': [workspace: Workspace]
 }>()
 
 const { t } = useI18n()
@@ -36,7 +33,6 @@ const gateAutoVar = ref('')
 const gateAutoPrompt = ref('')
 const loading = ref(true)
 const saving = ref(false)
-const localWorkspace = ref<Workspace | null>(props.workspace || null)
 
 const noAgents = computed(() => !loading.value && agents.value.length === 0)
 const controlsDisabled = computed(() => noAgents.value || saving.value)
@@ -108,17 +104,6 @@ const aclText = computed(
   () => binding.value?.aclNote || t('pages.workspace.pm.aclMemoryNote'),
 )
 
-const channelWorkspace = computed<Workspace>(() => {
-  if (localWorkspace.value) return localWorkspace.value
-  if (props.workspace) return props.workspace
-  return {
-    name: '',
-    description: '',
-    variables: [],
-    notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
-  }
-})
-
 function toggleMcp(id: string) {
   if (controlsDisabled.value) return
   const set = new Set(enabledMcps.value)
@@ -130,13 +115,7 @@ function toggleMcp(id: string) {
 async function load() {
   loading.value = true
   try {
-    const [b, list, proj] = await Promise.all([
-      api.getPmLeader(),
-      api.listAgents(),
-      props.workspace
-        ? Promise.resolve(props.workspace)
-        : api.getWorkspace().catch(() => null),
-    ])
+    const [b, list] = await Promise.all([api.getPmLeader(), api.listAgents()])
     binding.value = b
     agents.value = list || []
     selectedAgent.value = b.agentConfigRef || ''
@@ -146,7 +125,6 @@ async function load() {
       : ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs']
     gateAutoVar.value = b.gateAutoVar || ''
     gateAutoPrompt.value = b.gateAutoPrompt || ''
-    if (proj) localWorkspace.value = proj
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
@@ -188,11 +166,6 @@ async function save() {
   }
 }
 
-function onWorkspaceUpdated(p: Workspace) {
-  localWorkspace.value = p
-  emit('workspace-updated', p)
-}
-
 watch(noAgents, (empty) => {
   if (empty) enabled.value = false
 })
@@ -203,13 +176,6 @@ watch(selectedAgent, (name) => {
     binding.value = { ...binding.value, agentError: '' }
   }
 })
-
-watch(
-  () => props.workspace,
-  (p) => {
-    if (p) localWorkspace.value = p
-  },
-)
 
 void load()
 </script>
@@ -349,12 +315,6 @@ void load()
           {{ saving ? t('common.buttons.saving') : t('pages.workspace.pm.saveLeaderButton') }}
         </AppButton>
       </div>
-
-      <PmChannelMultiPanel
-        :workspace="channelWorkspace"
-        :pm-leader-agent="selectedAgent"
-        @workspace-updated="onWorkspaceUpdated"
-      />
     </template>
   </div>
 </template>

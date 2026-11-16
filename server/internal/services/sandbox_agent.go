@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -42,23 +41,6 @@ func (s *SandboxService) invokeAgentDestroyHook(threadID, token string) {
 	}
 }
 
-// SetTestSchedulerHooks registers purpose=test read-only scheduler injection.
-func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
-	s.testScheduler = h
-}
-
-func (s *SandboxService) registerTestScheduler(profile, runID, token string) {
-	if s.testScheduler.Register != nil {
-		s.testScheduler.Register(profile, runID, token)
-	}
-}
-
-func (s *SandboxService) unregisterTestScheduler(token string) {
-	if s.testScheduler.Unregister != nil && token != "" {
-		s.testScheduler.Unregister(token)
-	}
-}
-
 // AgentSandboxOpenOpts configures a thread-bound agent sandbox open.
 // Role-specific MCP servers (e.g. pm-progress) are passed in PlatformSpecs by
 // the caller; this API itself is role-agnostic.
@@ -68,9 +50,9 @@ type AgentSandboxOpenOpts struct {
 	SharedToken   string
 	PlatformSpecs []sandbox.MCPServerSpec
 	// Reuse, when true, reuses a running/creating sandbox for the same thread.
-	// Cron and one-shot turns should leave this false.
+	// One-shot turns (gate-auto) should leave this false.
 	Reuse bool
-	// RunIDPrefix labels the synthetic run id (e.g. "agent", "agentcron").
+	// RunIDPrefix labels the synthetic run id (e.g. "agent", "agentoneshot").
 	RunIDPrefix string
 }
 
@@ -124,7 +106,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 		if opts.Reuse {
 			prefix = "agent"
 		} else {
-			prefix = "agentcron"
+			prefix = "agentoneshot"
 		}
 	}
 	runID := prefix + "-" + sanitizeID(threadID)
@@ -154,7 +136,7 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 }
 
 // agentContainerExtra carries the Solo-only knobs of startAgentContainer.
-// The zero value keeps the PM / cron behavior.
+// The zero value keeps the PM consult behavior.
 type agentContainerExtra struct {
 	Repos []models.SessionRepo
 	// Resident selects Solo ownership callbacks; its idle policy is shared.
@@ -214,7 +196,7 @@ func (t *envTracker) mark(env map[string]string, label string) {
 }
 
 // OpenAgentSandboxFresh always creates a new agent sandbox (no thread reuse).
-// Used by cron and other one-shot agent turns.
+// Used by one-shot agent turns such as gate-auto.
 func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, threadID, sharedToken string, platformSpecs []sandbox.MCPServerSpec) (*models.Sandbox, error) {
 	row, _, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
 		Profile:       profile,
@@ -222,7 +204,7 @@ func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, thr
 		SharedToken:   sharedToken,
 		PlatformSpecs: platformSpecs,
 		Reuse:         false,
-		RunIDPrefix:   "agentcron",
+		RunIDPrefix:   "agentoneshot",
 	})
 	return row, err
 }
@@ -343,7 +325,7 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 	}
 	deny := map[string]bool{
 		ArtifactStoreMCP: true, MemoryStoreMCP: true, ContextStoreMCP: true,
-		TaskSchedulerMCP: true, PmProgressMCP: true,
+		PmProgressMCP:     true,
 		PmWorkflowReadMCP: true, PmWorkflowWriteMCP: true, PmAgentFSMCP: true,
 	}
 	out := make([]sandbox.MCPServerSpec, 0, len(in))
@@ -353,8 +335,7 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 			continue
 		}
 		if strings.Contains(sp.URL, "/mcp/runs/") || strings.Contains(sp.URL, "/mcp/pm/") ||
-			strings.Contains(sp.URL, "/mcp/memory-store") || strings.Contains(sp.URL, "/mcp/context-store") ||
-			strings.Contains(sp.URL, "/mcp/task-scheduler/") {
+			strings.Contains(sp.URL, "/mcp/memory-store") || strings.Contains(sp.URL, "/mcp/context-store") {
 			continue
 		}
 		out = append(out, sp)
@@ -385,35 +366,17 @@ func sanitizeID(s string) string {
 	return s
 }
 
-// BuildTestSchedulerMCPSpec returns a single task-scheduler inject spec for
-// purpose=test sandboxes (read-only scheduler session; no memory/context).
-func BuildTestSchedulerMCPSpec(agentName, sharedToken string) sandbox.MCPServerSpec {
-	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
-	if base == "" || sharedToken == "" || strings.TrimSpace(agentName) == "" {
-		return sandbox.MCPServerSpec{}
-	}
-	auth := map[string]string{"Authorization": "Bearer " + sharedToken}
-	escapedAgent := url.PathEscape(agentName)
-	return sandbox.MCPServerSpec{
-		Name:    TaskSchedulerMCP,
-		URL:     config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/task-scheduler/" + escapedAgent),
-		Headers: auth,
-	}
-}
-
 // BuildAgentPlatformMCPSpecs builds role-agnostic platform MCP inject specs
-// (memory-store / context-store / task-scheduler) for any Agent session.
+// (memory-store / context-store) for any Agent session.
 func BuildAgentPlatformMCPSpecs(agentName, sharedToken string) []sandbox.MCPServerSpec {
 	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
 	if base == "" || sharedToken == "" || strings.TrimSpace(agentName) == "" {
 		return nil
 	}
 	auth := map[string]string{"Authorization": "Bearer " + sharedToken}
-	escapedAgent := url.PathEscape(agentName)
 	return []sandbox.MCPServerSpec{
 		{Name: MemoryStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/memory-store"), Headers: auth},
 		{Name: ContextStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/context-store"), Headers: auth},
-		{Name: TaskSchedulerMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/task-scheduler/" + escapedAgent), Headers: auth},
 	}
 }
 

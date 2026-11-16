@@ -14,7 +14,6 @@ import (
 	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/platformmcp"
 	"github.com/cocofhu/grasp/internal/pmmcp"
-	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -173,11 +172,6 @@ func TestPlatformMCPUnavailable(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("context mcp: %d", w.Code)
 	}
-	r.POST("/mcp/task-scheduler/:agentName", h.SchedulerMCPRPC)
-	w = doRaw(r, http.MethodPost, "/mcp/task-scheduler/a1", `{}`, "")
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("scheduler mcp: %d", w.Code)
-	}
 }
 
 func setupPmMCPStack(t *testing.T) *harness {
@@ -186,7 +180,6 @@ func setupPmMCPStack(t *testing.T) *harness {
 
 	hn.h.MemoryMCP = memorymcp.NewHost(hn.h.Pm)
 	hn.h.ContextMCP = contextmcp.NewHost(hn.h.Pm)
-	hn.h.SchedulerMCP = schedulermcp.NewHost(hn.db, hn.h.Pm)
 	return hn
 }
 
@@ -215,36 +208,6 @@ func TestPmDeleteThreadUnregistersPlatformMCP(t *testing.T) {
 	}
 	if _, ok := hn.h.PMMCP.TokenForThread(tid); ok {
 		t.Fatal("token should be unregistered")
-	}
-}
-
-func TestSchedulerMCPRPCHandler(t *testing.T) {
-	hn := setupPmMCPStack(t)
-
-	agent := "pm-agent"
-	tok := platformmcp.NewToken()
-	hn.h.SchedulerMCP.Restore(tok, agent, "thr-s", "admin", true)
-
-	w := doRaw(hn.r, http.MethodGet, "/mcp/task-scheduler/"+agent, "", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("GET: %d", w.Code)
-	}
-	w = doRaw(hn.r, http.MethodDelete, "/mcp/task-scheduler/"+agent, "", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("DELETE: %d", w.Code)
-	}
-
-	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{"protocolVersion": "2024-11-05"},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/mcp/task-scheduler/"+agent, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
-	w = httptest.NewRecorder()
-	hn.r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("POST init: %d %s", w.Code, w.Body.String())
 	}
 }
 

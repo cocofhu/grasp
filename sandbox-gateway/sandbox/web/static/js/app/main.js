@@ -32,13 +32,6 @@ const btnTheme = document.getElementById('btnTheme');
 const btnAttach = document.getElementById('btnAttach');
 const fileInput = document.getElementById('fileInput');
 const attachPreview = document.getElementById('attachPreview');
-const btnQQConfig = document.getElementById('btnQQConfig');
-const qqDrawer = document.getElementById('qqDrawer');
-const qqDrawerBackdrop = document.getElementById('qqDrawerBackdrop');
-const qqDrawerClose = document.getElementById('qqDrawerClose');
-const qqConfigForm = document.getElementById('qqConfigForm');
-const qqConfigStatus = document.getElementById('qqConfigStatus');
-const qqConnectionStatus = document.getElementById('qqConnectionStatus');
 const html = document.documentElement;
 
 const THEME_STORAGE_KEY = 'acp-bridge-theme';
@@ -361,121 +354,6 @@ if (btnTheme) {
         try {
             localStorage.setItem(THEME_STORAGE_KEY, next);
         } catch (_) {
-        }
-    });
-}
-
-/* ── QQ 机器人配置弹窗 ── */
-function setQQConfigStatus(text, kind = '') {
-    if (!qqConfigStatus) return;
-    qqConfigStatus.textContent = text || '';
-    qqConfigStatus.classList.toggle('cc-qq-config-status--error', kind === 'error');
-    qqConfigStatus.classList.toggle('cc-qq-config-status--ok', kind === 'ok');
-}
-
-function setQQConnectionStatus(cfg) {
-    if (!qqConnectionStatus) return;
-    const text = cfg?.status || '未检测';
-    qqConnectionStatus.textContent = text;
-    qqConnectionStatus.title = text;
-    qqConnectionStatus.classList.toggle('cc-qq-status--ok', !!cfg?.connected);
-    qqConnectionStatus.classList.toggle('cc-qq-status--error', !!cfg?.enabled && !cfg?.connected);
-}
-
-function splitLines(value) {
-    return String(value || '')
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-}
-
-function joinLines(value) {
-    return Array.isArray(value) ? value.join('\n') : '';
-}
-
-async function loadQQConfig() {
-    if (!qqConfigForm) return;
-    setQQConfigStatus('正在加载配置…');
-    const res = await fetch(apiPath('api/qq/config'), {headers: {'Accept': 'application/json'}});
-    if (!res.ok) throw new Error(await res.text());
-    const cfg = await res.json();
-    document.getElementById('qqEnabled').checked = !!cfg.enabled;
-    document.getElementById('qqAppId').value = cfg.appId || '';
-    document.getElementById('qqAppSecret').value = '';
-    document.getElementById('qqAppSecret').placeholder = cfg.appSecretSet ? '已保存，留空表示不修改' : 'QQ 机器人 AppSecret';
-    document.getElementById('qqAllowOpenIds').value = joinLines(cfg.allowOpenIds);
-    document.getElementById('qqAllowGroupOpenIds').value = joinLines(cfg.allowGroupOpenIds);
-    setQQConnectionStatus(cfg);
-    setQQConfigStatus('配置已加载', 'ok');
-}
-
-function openQQDrawer() {
-    if (!qqDrawer || !qqDrawerBackdrop) return;
-    qqDrawer.hidden = false;
-    qqDrawerBackdrop.hidden = false;
-    loadQQConfig().catch((err) => setQQConfigStatus(err.message || String(err), 'error'));
-}
-
-function closeQQDrawer() {
-    if (qqDrawer) qqDrawer.hidden = true;
-    if (qqDrawerBackdrop) qqDrawerBackdrop.hidden = true;
-}
-
-if (btnQQConfig) btnQQConfig.addEventListener('click', openQQDrawer);
-if (qqDrawerClose) qqDrawerClose.addEventListener('click', closeQQDrawer);
-if (qqDrawerBackdrop) qqDrawerBackdrop.addEventListener('click', closeQQDrawer);
-
-let _qqPollTimer = null;
-
-function pollQQStatus(maxAttempts = 10, interval = 2000) {
-    let attempts = 0;
-    if (_qqPollTimer) clearInterval(_qqPollTimer);
-    _qqPollTimer = setInterval(async () => {
-        attempts++;
-        try {
-            const res = await fetch(apiPath('api/qq/config'), {headers: {'Accept': 'application/json'}});
-            if (!res.ok) return;
-            const cfg = await res.json();
-            setQQConnectionStatus(cfg);
-            if (cfg.connected || !cfg.enabled || attempts >= maxAttempts) {
-                clearInterval(_qqPollTimer);
-                _qqPollTimer = null;
-                if (cfg.connected) setQQConfigStatus('已连接', 'ok');
-            }
-        } catch (_) {
-            // ignore
-        }
-    }, interval);
-}
-
-if (qqConfigForm) {
-    qqConfigForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        try {
-            setQQConfigStatus('正在保存…');
-            const payload = {
-                enabled: document.getElementById('qqEnabled').checked,
-                appId: document.getElementById('qqAppId').value.trim(),
-                appSecret: document.getElementById('qqAppSecret').value.trim(),
-                allowOpenIds: splitLines(document.getElementById('qqAllowOpenIds').value),
-                allowGroupOpenIds: splitLines(document.getElementById('qqAllowGroupOpenIds').value),
-            };
-            const res = await fetch(apiPath('api/qq/config'), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const cfg = await res.json();
-            document.getElementById('qqAppSecret').value = '';
-            document.getElementById('qqAppSecret').placeholder = cfg.appSecretSet ? '已保存，留空表示不修改' : 'QQ 机器人 AppSecret';
-            setQQConnectionStatus(cfg);
-            setQQConfigStatus('配置已保存', 'ok');
-            if (cfg.enabled && !cfg.connected) {
-                pollQQStatus();
-            }
-        } catch (err) {
-            setQQConfigStatus(err.message || String(err), 'error');
         }
     });
 }
@@ -846,10 +724,6 @@ if (mermaidLightbox) {
 
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (qqDrawer && !qqDrawer.hidden) {
-        closeQQDrawer();
-        return;
-    }
     if (mermaidLightbox && !mermaidLightbox.hidden) {
         closeMermaidLightbox();
         return;

@@ -68,9 +68,6 @@ type SandboxService struct {
 	// agentOnDestroy revokes thread-bound agent MCP sessions when a
 	// purpose=agent|pm sandbox is torn down (optional; SetAgentSandboxDestroyHook).
 	agentOnDestroy AgentSandboxDestroyHook
-	// testScheduler hooks Register/Restore and Unregister for purpose=test
-	// read-only task-scheduler injection (optional; SetTestSchedulerHooks).
-	testScheduler TestSchedulerHooks
 	// codexLogins pushes the platform's Codex login to interactive sandboxes
 	// (optional; SetCodexLogins). Sandboxes never write a login back.
 	codexLogins *runtime.CodexLoginHub
@@ -79,12 +76,6 @@ type SandboxService struct {
 	soloRouteRuntime soloRouteOps
 	// soloBridgeReady defaults to sandbox.WaitForACPReady; tests replace it.
 	soloBridgeReady func(context.Context, *sandbox.Sandbox) error
-}
-
-// TestSchedulerHooks wires purpose=test scheduler session lifecycle.
-type TestSchedulerHooks struct {
-	Register   func(profile, runID, token string)
-	Unregister func(token string)
 }
 
 // liveSandbox is the in-memory connection state for a running sandbox.

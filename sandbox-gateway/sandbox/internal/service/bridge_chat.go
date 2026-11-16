@@ -425,13 +425,8 @@ func (b *Bridge) ensureSelectableModel() {
 	}
 }
 
-// ChatWithOpID 与 WebSocket 单次 chat 帧共用 oid（与 InMessage.ID 一致）；action 默认 chat。
-// 无 oid 时自动生成（非 WS 入口时仍可有可搜日志键）。
-func (b *Bridge) ChatWithOpID(text, opID, action string, images []PromptImage) error {
-	return b.ChatWithLimits(text, opID, action, images, 0, 0)
-}
-
-// ChatWithLimits 同 ChatWithOpID；maxDuration>0 时限制本回合总时长，idleTimeout>0 时覆盖本回合的无动作时限。
+// ChatWithLimits 与 WebSocket 单次 chat 帧共用 oid（与 InMessage.ID 一致）；action 默认 chat，
+// 无 oid 时自动生成。maxDuration>0 时限制本回合总时长，idleTimeout>0 时覆盖本回合的无动作时限。
 func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage, maxDuration, idleTimeout time.Duration) error {
 	t := strings.TrimSpace(text)
 	if t == "" && len(images) == 0 {

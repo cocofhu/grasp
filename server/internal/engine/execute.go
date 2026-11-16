@@ -414,7 +414,6 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 					}
 					e.fireGateAutoInvoke(c, node)
 					e.fireClarifyFirstMessage(c, node, outcome.clarifyReplyToResume)
-					e.fireRunNotify(c, node, models.NotifyKindWaitingHuman)
 				}
 			}
 			return
@@ -429,9 +428,7 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			}
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "sandbox setup failed"})
 			e.refreshProgress(c)
-			if e.finish(runID, "failed") {
-				e.fireRunNotify(c, node, models.NotifyKindFailed)
-			}
+			e.finish(runID, "failed")
 			return
 		default:
 			r := e.finishNode(c, node, outcome, finishOpts{trigger: triggerAuto})
