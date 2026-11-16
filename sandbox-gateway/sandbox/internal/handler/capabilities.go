@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"backend/internal/agents"
+	"backend/internal/desktop"
 	"backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -53,13 +54,17 @@ func BuildCapabilities(bridge *service.Bridge) gin.H {
 			"codeServer": true,
 			"port":       envInt("CODE_SERVER_PORT", 8744),
 		},
-		// 应用预览桌面(可选):沙箱内 Xvfb+Chromium+x11vnc+websockify。
-		// 平台为开启应用预览的 Agent 注入 enableEnv=1 后 dial cdpPort / websockifyPort。
+		// 预览栈:沙箱内 Xvfb+Chromium+x11vnc+websockify,始终启动;平台 dial cdpPort / websockifyPort。
 		"preview": gin.H{
 			"vnc":            true,
 			"cdpPort":        9222,
 			"websockifyPort": 6080,
-			"enableEnv":      "VNC_PREVIEW",
+		},
+		// 桌面变体(/etc/grasp-desktop):桌面壳、启动台与软互锁接口。
+		"desktop": gin.H{
+			"available":   desktop.DefaultPaths().Available(),
+			"statusPath":  "/api/desktop/status",
+			"controlPath": "/api/desktop/control",
 		},
 		// 配置注入契约：工作流把 MCP/RULE/SKILL/ENV 写到这些声明位置；
 		// 参考布局即 /root/.cursor，整树 bind-mount 进沙箱。
