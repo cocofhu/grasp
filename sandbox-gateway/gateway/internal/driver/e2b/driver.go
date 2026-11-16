@@ -519,7 +519,7 @@ func (d *Driver) provision(ctx context.Context, r *record, environment, workspac
 		}
 	}
 	config, _ := json.Marshal(map[string]any{"secret": r.RelayKey, "marker": r.ID, "ports": []int{22, 8765, 8744}, "workspace": workspace})
-	bootstrap := "#!/bin/bash\nset -u\nsource /run/grasp-e2b/env.sh\nmkdir -p -- \"$WORKSPACE_DIR\"\n/grasp-bootstrap.sh fetch\ncode=$?\nprintf '%s' \"$code\" > /run/grasp-e2b/bootstrap.exit\nexit \"$code\"\n"
+	bootstrap := "#!/bin/bash\nset -u\nsource /run/grasp-e2b/env.sh\nexport GRASP_SERVICES_LOG=/run/grasp-e2b/bootstrap.log\nmkdir -p -- \"$WORKSPACE_DIR\"\n/grasp-bootstrap.sh fetch\ncode=$?\nprintf '%s' \"$code\" > /run/grasp-e2b/bootstrap.exit\nexit \"$code\"\n"
 	files := map[string][]byte{"relay.json": config, "env.sh": []byte(environment), "bootstrap.sh": []byte(bootstrap)}
 	for _, name := range []string{"relay.json", "env.sh", "bootstrap.sh"} {
 		if err := d.client.WriteFile(ctx, &r.Provider, root+"/"+name, files[name]); err != nil {

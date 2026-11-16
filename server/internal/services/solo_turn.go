@@ -274,12 +274,14 @@ func (s *SoloService) buildTurnInput(sessionID string, q *soloTurn, refs []model
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble || prep.switched || row.ModelContextPending || row.ResumeContextPending {
+	if row.NeedsPreamble || prep.switched || row.ModelContextPending || row.ResumeContextPending || row.SessionContextPending {
 		header := soloModelPreambleHeader
 		if row.NeedsPreamble {
 			header = soloRestartPreambleHeader
 		} else if row.ResumeContextPending {
 			header = soloResumePreambleHeader
+		} else if row.SessionContextPending && !prep.switched && !row.ModelContextPending {
+			header = soloSessionResetPreambleHeader
 		} else if prep.switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloReasoningPreambleHeader
 		}
@@ -357,7 +359,7 @@ func (c *soloChat) saveTurnResult(turnID string, started time.Time, prep soloTur
 		s.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).Update("status", out.status)
 	}
 	if in.usedPreamble && out.status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false})
+		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false, "session_context_pending": false})
 	}
 	// A switch that failed on an earlier turn leaves model_notice set. Once a
 	// later turn succeeds on the model that is already applied, the banner is
@@ -380,8 +382,9 @@ func recordSoloUsage(db *gorm.DB, sessionID string, sandboxID uint, usage *model
 }
 
 const (
-	soloResumePreambleHeader  = "（系统提示）沙箱已从停止状态恢复，仓库、工作区和未提交的改动都已保留。请结合下面的对话记录继续：\n\n"
-	soloRestartPreambleHeader = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
+	soloResumePreambleHeader       = "（系统提示）沙箱已从停止状态恢复，仓库、工作区和未提交的改动都已保留。请结合下面的对话记录继续：\n\n"
+	soloSessionResetPreambleHeader = "（系统提示）编码工具没能接上原来的会话，已新开会话。仓库和工作区没有变化，已有改动都还在。请结合下面的对话记录继续：\n\n"
+	soloRestartPreambleHeader      = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
 	// A model switch restarts only the coding agent. This header must not say
 	// the sandbox was recreated, the repository was cloned again, or uncommitted
 	// work was lost.

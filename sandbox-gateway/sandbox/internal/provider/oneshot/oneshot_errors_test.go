@@ -135,22 +135,103 @@ func TestOneShotFailureExplainsBeforeDone(t *testing.T) {
 	}
 }
 
-func TestOneShotFailedResumeAndRetry(t *testing.T) {
+func shrinkResumeRetries(t *testing.T, n int) {
+	t.Helper()
+	saved := resumeRetryDelays
+	resumeRetryDelays = make([]time.Duration, n)
+	t.Cleanup(func() { resumeRetryDelays = saved })
+}
+
+func promptDoneFrame(t *testing.T, frames []map[string]any) map[string]any {
+	t.Helper()
+	for _, f := range frames {
+		if f["type"] == "prompt_done" {
+			return f
+		}
+	}
+	t.Fatalf("no prompt_done: %v", frames)
+	return nil
+}
+
+const unreachableAPI = `printf '%s\n' 'error:Failed to reach the Cursor API'; printf '%s\n' 'Failed to reach the Cursor API' >&2; exit 1`
+
+func TestOneShotResumeConnectionFailureRetriesSameSession(t *testing.T) {
+	shrinkResumeRetries(t, 3)
+	tlsAborted := `printf '%s\n' 'ConnectError: [aborted] Client network socket disconnected before secure TLS connection was established' >&2; exit 1`
+	c := &diagnosticFake{scripts: []string{tlsAborted, unreachableAPI, `printf '%s\n' 'sid:S0' 'text:recovered' 'done'`}}
+	s, frames := openDiagnosticSession(t, c, "S0")
+	result, err := s.Prompt(context.Background(), "说中文", nil)
+	if err != nil || result.StopReason != "end_turn" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	got := frames.take()
+	assertDiagnosticBoundary(t, got, "end_turn", 0)
+	if done := promptDoneFrame(t, got); done["sessionReset"] != nil || done["sessionId"] != "S0" {
+		t.Fatalf("connection retry must keep the session: %v", done)
+	}
+	if seq := strings.Join(c.resumes, "/"); seq != "S0/S0/S0" {
+		t.Fatalf("resume sequence=%q, want the same session every time", seq)
+	}
+}
+
+func TestOneShotPersistentConnectionFailureKeepsResumePointer(t *testing.T) {
+	shrinkResumeRetries(t, 2)
+	c := &diagnosticFake{scripts: []string{unreachableAPI, unreachableAPI, unreachableAPI, `printf '%s\n' 'sid:S0' 'text:back' 'done'`}}
+	s, frames := openDiagnosticSession(t, c, "S0")
+	result, err := s.Prompt(context.Background(), "hi", nil)
+	if err == nil || result.StopReason != "failed" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if text := assertDiagnosticBoundary(t, frames.take(), "failed", 1); !strings.Contains(text, "Failed to reach the Cursor API") {
+		t.Fatalf("diagnostic=%q", text)
+	}
+	if s.SessionID() != "S0" {
+		t.Fatalf("connection failures dropped the session pointer: %q", s.SessionID())
+	}
+	if _, err := s.Prompt(context.Background(), "hi again", nil); err != nil {
+		t.Fatal(err)
+	}
+	if seq := strings.Join(c.resumes, "/"); seq != "S0/S0/S0/S0" {
+		t.Fatalf("resume sequence=%q", seq)
+	}
+}
+
+func TestOneShotRejectedResumeReportsSessionReset(t *testing.T) {
+	shrinkResumeRetries(t, 3)
+	c := &diagnosticFake{scripts: []string{`printf '%s\n' 'invalid saved session' >&2; exit 1`, `printf '%s\n' 'sid:S1' 'text:fresh' 'done'`}}
+	s, frames := openDiagnosticSession(t, c, "S0")
+	if _, err := s.Prompt(context.Background(), "hi", nil); err != nil {
+		t.Fatal(err)
+	}
+	done := promptDoneFrame(t, frames.take())
+	if done["sessionReset"] != true || done["previousSessionId"] != "S0" || done["sessionId"] != "S1" {
+		t.Fatalf("fresh-session fallback must be reported: %v", done)
+	}
+	if seq := strings.Join(c.resumes, "/"); seq != "S0/" {
+		t.Fatalf("resume sequence=%q", seq)
+	}
+}
+
+func TestOneShotFailedFallbackKeepsResumePointer(t *testing.T) {
 	c := &diagnosticFake{scripts: []string{
-		`printf '%s\n' 'error:resume connection refused'; printf '%s\n' 'resume connection refused' >&2; exit 1`,
-		`printf '%s\n' 'fresh session TLS handshake failed' >&2; exit 1`,
-		`printf '%s\n' 'sid:S1' 'text:recovered' 'done'`,
+		`printf '%s\n' 'error:invalid saved session'; exit 1`,
+		`printf '%s\n' 'fresh session rejected' >&2; exit 1`,
+		`printf '%s\n' 'sid:S0' 'text:recovered' 'done'`,
 	}}
-	s, frames := openDiagnosticSession(t, c, "stale-session")
+	s, frames := openDiagnosticSession(t, c, "S0")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	result, err := s.Prompt(ctx, "change the icon", nil)
 	if err == nil || result.StopReason != "failed" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	text := assertDiagnosticBoundary(t, frames.take(), "failed", 1)
-	if !strings.Contains(text, "fresh session TLS handshake failed") || strings.Contains(text, "resume connection refused") {
+	failed := frames.take()
+	text := assertDiagnosticBoundary(t, failed, "failed", 1)
+	if !strings.Contains(text, "fresh session rejected") || strings.Contains(text, "invalid saved session") {
 		t.Fatalf("must explain the final failed attempt: %q", text)
+	}
+	if done := promptDoneFrame(t, failed); done["sessionReset"] != nil {
+		t.Fatalf("no replacement session was established: %v", done)
 	}
 	result, err = s.Prompt(ctx, "change the icon", nil)
 	if err != nil || result.StopReason != "end_turn" {
@@ -161,7 +242,7 @@ func TestOneShotFailedResumeAndRetry(t *testing.T) {
 	if got, _ := firstText(retryFrames); got != "recovered" {
 		t.Fatalf("retry answer=%q", got)
 	}
-	if got := strings.Join(c.resumes, "/"); got != "stale-session//" {
+	if got := strings.Join(c.resumes, "/"); got != "S0//S0" {
 		t.Fatalf("resume sequence=%q", got)
 	}
 }

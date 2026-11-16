@@ -434,6 +434,10 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	if result == nil {
 		return nil, nil, err
 	}
+	if result.SessionReset {
+		log.Warn().Uint("sandbox", id).Msg("coding agent replaced its native session; next Solo turn carries dialogue context")
+		s.db.Model(&models.SoloSession{}).Where("sandbox_id = ?", id).Update("session_context_pending", true)
+	}
 	// A partial reply is not a completed turn. ChatStream preserves it with a
 	// nil error for callers that inspect Interrupted; this usage-only API must
 	// surface an unexpected interruption before discarding that flag. Explicit
