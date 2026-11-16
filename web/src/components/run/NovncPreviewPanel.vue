@@ -5,6 +5,7 @@ import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
 import { PreviewVncChannel } from '@/lib/shared/previewVncChannel'
 import { createPreviewFpsCounter } from '@/lib/shared/previewFps'
+import { useDesktopControl } from '@/lib/composables/useDesktopControl'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import {
   VNC_HEARTBEAT_MS,
@@ -81,6 +82,11 @@ const control = ref(false)
 const inputEnabled = computed(() => control.value || inspect.value)
 const controlToggleLabel = computed(() =>
   t(control.value ? 'pages.appPreview.novnc.returnControl' : 'pages.appPreview.novnc.takeOver'),
+)
+/** Desktop image only (never for public share tickets): status bar and soft interlock. */
+const desktop = useDesktopControl(() => (props.wsUrl ? undefined : props.sandboxId), control)
+const desktopHolderLabel = computed(() =>
+  t(control.value ? 'pages.appPreview.desktop.holderYou' : desktop.userHolds.value ? 'pages.appPreview.desktop.holderOther' : 'pages.appPreview.desktop.holderAgent'),
 )
 const picked = ref<AppPreviewPickPayload | null>(null)
 const address = ref('about:blank')
@@ -1073,6 +1079,29 @@ onBeforeUnmount(() => {
       >
         {{ t('pages.appPreview.novnc.reconnect') }}
       </button>
+    </div>
+
+    <div
+      v-if="desktop.isDesktop.value"
+      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-elevated px-3 py-1 text-[11px] text-txt2"
+      data-testid="desktop-status-bar"
+    >
+      <span class="inline-flex items-center gap-1 font-medium text-txt">
+        <Icon name="monitor" :size="12" />{{ t('pages.appPreview.desktop.title') }}
+      </span>
+      <span data-testid="desktop-holder" :class="control ? 'text-accent' : ''">{{ desktopHolderLabel }}</span>
+      <span data-testid="desktop-agent" :class="desktop.agentBusy.value ? 'text-warn' : 'text-txt3'">
+        {{ t(desktop.agentBusy.value ? 'pages.appPreview.desktop.agentBusy' : 'pages.appPreview.desktop.agentIdle') }}
+      </span>
+      <span v-if="desktop.status.value && !desktop.status.value.shellReady" class="text-txt3" data-testid="desktop-starting">
+        {{ t('pages.appPreview.desktop.starting') }}
+      </span>
+      <span v-if="control && desktop.agentBusy.value" class="basis-full text-warn" data-testid="desktop-takeover-tip">
+        {{ t('pages.appPreview.desktop.takeoverTip') }}
+      </span>
+      <span v-else-if="!control && desktop.agentBusy.value" class="basis-full text-txt3" data-testid="desktop-takeover-hint">
+        {{ t('pages.appPreview.desktop.takeoverHint') }}
+      </span>
     </div>
 
     <div

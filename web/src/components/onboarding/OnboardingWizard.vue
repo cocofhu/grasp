@@ -260,15 +260,6 @@ function toggleGitSkipped() {
   draft.value.gitSkipped = !draft.value.gitSkipped
 }
 
-function toggleVncPreview() {
-  draft.value.vncPreview = !draft.value.vncPreview
-  if (!draft.value.vncPreview) draft.value.browserMcp = false
-}
-
-function toggleBrowserMcp() {
-  draft.value.browserMcp = !draft.value.browserMcp
-  if (draft.value.browserMcp) draft.value.vncPreview = true
-}
 
 function validatePrefs(): boolean { return true }
 
@@ -521,14 +512,7 @@ function editWorkflow() {
                     </li>
                     <li class="onb-status is-ok" data-testid="onboarding-success-preview">
                       <Icon name="check" :size="14" />
-                      <span>
-                        {{
-                          t('pages.onboarding.success.preview', {
-                            vnc: draft.vncPreview ? t('pages.onboarding.preview.vncOn') : t('pages.onboarding.preview.vncOff'),
-                            mcp: draft.browserMcp ? t('pages.onboarding.preview.browserOn') : t('pages.onboarding.preview.browserOff'),
-                          })
-                        }}
-                      </span>
+                      <span>{{ t('pages.onboarding.success.preview') }}</span>
                     </li>
                   </ul>
                 </section>
@@ -628,41 +612,6 @@ function editWorkflow() {
                       <p class="onb-hint">
                         {{ t('pages.onboarding.language.detected') }}
                       </p>
-                    </section>
-                    <section>
-                      <div class="onb-sub">
-                        {{ t('pages.onboarding.preview.section') }}
-                      </div>
-                      <div class="onb-rows mt-2">
-                        <button
-                          type="button"
-                          role="switch"
-                          class="onb-row"
-                          :aria-checked="draft.vncPreview"
-                          data-testid="onboarding-vnc-preview"
-                          @click="toggleVncPreview"
-                        >
-                          <span class="min-w-0 flex-1 text-left">
-                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.vncLabel') }}</strong>
-                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.vncHint') }}</span>
-                          </span>
-                          <span class="onb-switch" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          role="switch"
-                          class="onb-row"
-                          :aria-checked="draft.browserMcp"
-                          data-testid="onboarding-browser-mcp"
-                          @click="toggleBrowserMcp"
-                        >
-                          <span class="min-w-0 flex-1 text-left">
-                            <strong class="block text-[13px] font-medium text-txt">{{ t('pages.onboarding.preview.browserLabel') }}</strong>
-                            <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.onboarding.preview.browserHint') }}</span>
-                          </span>
-                          <span class="onb-switch" aria-hidden="true" />
-                        </button>
-                      </div>
                     </section>
                   </div>
                 </template>

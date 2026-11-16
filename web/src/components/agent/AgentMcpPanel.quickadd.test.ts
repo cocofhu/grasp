@@ -1,12 +1,25 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import { ARTIFACT_STORE, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMcpPanel from './AgentMcpPanel.vue'
+
+vi.mock('@/lib/agent/mcpPresets', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/agent/mcpPresets')>()
+  return {
+    ...real,
+    loadMcpPresets: async () => [
+      { id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } },
+      { id: 'browser', requiresDesktop: false, server: { name: 'chrome-devtools', command: 'chrome-devtools-mcp', args: ['--browser-url=http://127.0.0.1:9222'] } },
+      { id: 'desktop', requiresDesktop: true, server: { name: 'desktop', command: '/opt/grasp-runtime/current/bin/grasp-desktop', args: ['mcp'] } },
+      { id: 'blender', requiresDesktop: true, server: { name: 'blender', command: '/usr/local/bin/blender-mcp', env: { BLENDER_MCP_PORT: '6092' } } },
+    ],
+  }
+})
 
 /** Reactive so component-side mutations and test-side edits both re-render. */
 function draft(over: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
@@ -91,20 +104,41 @@ describe('AgentMcpPanel', () => {
     const w = mountPanel(d)
     await flushPromises()
 
-    expect(w.find('[data-test="mcp-add-artifact"]').exists()).toBe(true)
-    await w.get('[data-test="mcp-add-artifact"]').trigger('click')
+    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(true)
+    await w.get('[data-test="mcp-add-artifact-store"]').trigger('click')
     await flushPromises()
 
     expect(d.mcp[0].name).toBe(ARTIFACT_STORE)
     expect(d.mcp[0].headers[0].k).toBe('Authorization')
-    expect(w.find('[data-test="mcp-add-artifact"]').exists()).toBe(false)
+    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(false)
     expect(w.get('[data-test="mcp-display-name"]').text()).toBe('产物存储')
     expect(w.find('[data-test="mcp-scope-note"]').exists()).toBe(true)
     expect(w.find('[data-test="mcp-custom-name"]').exists()).toBe(false)
 
     // A direct second call is still a no-op.
-    ;(w.vm as any).addArtifactStore()
+    ;(w.vm as any).addPreset((w.vm as any).presets[0])
     expect(d.mcp).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('quick-adds browser, desktop and Blender presets with a desktop-image note', async () => {
+    const d = draft({ mcp: [{ name: 'custom', transport: 'url', url: 'https://x', headers: [], command: '', args: '', env: [] }] })
+    const w = mountPanel(d)
+    await flushPromises()
+
+    expect(w.get('[data-test="mcp-add-desktop"]').attributes('title')).toBe('需要桌面镜像')
+    expect(w.get('[data-test="mcp-add-browser"]').attributes('title')).toBeUndefined()
+    await w.get('[data-test="mcp-add-browser"]').trigger('click')
+    await w.get('[data-test="mcp-add-desktop"]').trigger('click')
+    await w.get('[data-test="mcp-add-blender"]').trigger('click')
+    await flushPromises()
+
+    expect(d.mcp.map((m) => m.name)).toEqual(['custom', 'chrome-devtools', 'desktop', 'blender'])
+    expect(d.mcp[2]).toMatchObject({ transport: 'command', command: '/opt/grasp-runtime/current/bin/grasp-desktop', args: 'mcp' })
+    expect(d.mcp[3].env).toEqual([{ k: 'BLENDER_MCP_PORT', v: '6092' }])
+    expect(w.findAll('[data-test="mcp-desktop-note"]')).toHaveLength(2)
+    expect(w.find('[data-test="mcp-add-browser"]').exists()).toBe(false)
+    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(true)
     w.unmount()
   })
 

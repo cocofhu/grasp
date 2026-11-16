@@ -395,17 +395,6 @@
         "chip": "Commit signature",
         "default": "Sandbox default"
       },
-      "preview": {
-        "section": "Preview",
-        "vncLabel": "Page preview",
-        "browserLabel": "Browser tools",
-        "vncHint": "See the app an Agent opens right inside the page.",
-        "browserHint": "Lets Agents use a browser to check pages (also turns on page preview).",
-        "vncOn": "page preview on",
-        "vncOff": "page preview off",
-        "browserOn": "browser tools on",
-        "browserOff": "browser tools off"
-      },
       "repo": {
         "urlLabel": "Repository URL",
         "branchLabel": "Branch",
@@ -499,7 +488,7 @@
         "gitOk": "Git credentials saved (values hidden).",
         "gitSkip": "The repository has no credential. For a private repository, pick one in Settings → Repositories.",
         "gitUserOk": "Commit signature: {name} <{email}>.",
-        "preview": "Preview: {vnc}, {mcp}.",
+        "preview": "The shared Agent includes the browser tool by default; adjust it in the MCP tab.",
         "created": "Created",
         "written": "Configuration written"
       },
@@ -1373,6 +1362,7 @@
         "ide": "IDE",
         "acp": "Agent",
         "novnc": "Browser",
+        "computer": "Computer",
         "log": "Log"
       },
       "terminalStatus": {
@@ -1385,7 +1375,7 @@
       "acpNativeUnavailable": "This sandbox has no ACP bridge service (8765).",
       "acpLoading": "Connecting to ACP",
       "novncUnavailable": "Browser component not started",
-      "novncUnavailableHint": "This sandbox has no VNC preview (VNC_PREVIEW not set), or the desktop failed to start. Use the Terminal / ACP tabs.",
+      "novncUnavailableHint": "The preview stack in this sandbox did not start. Use the Terminal / ACP tabs.",
       "novncConnecting": "Checking browser component…",
       "novncOpen": "Open",
       "novncAddressPlaceholder": "about:blank",
@@ -1504,12 +1494,17 @@
         "artifactToken": "run-bound access token",
         "globalVar": "{'${vars.NAME}'} — workflow global, e.g. {'${vars.feature}'}",
         "addArtifactStore": "+ Add artifact store",
+        "addBrowser": "+ Browser",
+        "addDesktop": "+ Desktop control",
+        "addBlender": "+ Blender",
+        "requiresDesktop": "Requires the desktop image",
         "quickAddLabel": "Quick add",
         "displayName": {
           "artifact": "Artifact store"
         },
         "scopeNote": {
-          "artifact": "Run-isolated artifact service for this run."
+          "artifact": "Run-isolated artifact service for this run.",
+          "desktopImage": "Works only in desktop-image sandboxes; on the default image the tools return a clear notice."
         },
         "serviceName": "Service name e.g. context7",
         "transportCommand": "Command (stdio)",
@@ -2216,6 +2211,17 @@
       "directOpenTab": "Open in new tab",
       "directOpenTabShort": "Open directly in new tab",
       "externalUrlHint": "External URL opens directly; pick-annotate is unavailable on cross-origin sites.",
+      "desktop": {
+        "title": "Computer",
+        "holderYou": "You are in control",
+        "holderAgent": "Agent in control",
+        "holderOther": "Another viewer is in control",
+        "agentBusy": "Agent running",
+        "agentIdle": "Agent idle",
+        "starting": "Desktop starting…",
+        "takeoverTip": "The Agent is running: its mouse and keyboard actions are refused while you are in control and resume once you return it.",
+        "takeoverHint": "The Agent is using the computer; taking over pauses its mouse and keyboard actions."
+      },
       "novnc": {
         "back": "Back",
         "forward": "Forward",

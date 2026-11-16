@@ -210,8 +210,6 @@ export type OnboardingDraft = {
   gitSkipped: boolean
   commitName: string
   commitEmail: string
-  vncPreview: boolean
-  browserMcp: boolean
   team: OnboardingTeamMember[]
 }
 type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
@@ -224,8 +222,6 @@ type OnboardingBootstrapBody = {
   repoCredentialId?: string
   commitName?: string
   commitEmail?: string
-  vncPreview?: boolean
-  browserMcp?: boolean
   agents?: OnboardingAgentChoice[]
 }
 
@@ -280,7 +276,7 @@ export function shouldAutoOpenOnboarding(workflows: { name?: string }[], agents:
  *   (not browser/OS). firstInstall/retry keep detectSystemLocale().
  */
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {
-  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', region: '', repoUrl: '', repoBranch: '', repoCredentialId: '', gitSkipped: false, commitName: '', commitEmail: '', vncPreview: true, browserMcp: true, team: freshOnboardingTeam() }
+  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', region: '', repoUrl: '', repoBranch: '', repoCredentialId: '', gitSkipped: false, commitName: '', commitEmail: '', team: freshOnboardingTeam() }
 }
 
 /** Mirrors the server's RepoNameFromURL so the wizard can preview the clone dir. */
@@ -310,7 +306,7 @@ export function gitConfigured(draft: OnboardingDraft): boolean {
 }
 
 export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstrapBody {
-  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, language: draft.language, vncPreview: draft.vncPreview, browserMcp: draft.browserMcp }
+  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, language: draft.language }
   if (draft.region.trim()) body.region = draft.region.trim()
   if (repoConfigured(draft)) {
     body.repoUrl = draft.repoUrl.trim()

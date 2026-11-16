@@ -3,7 +3,6 @@ import {
   TEAM_ENGINEER_COUNT,
   TEAM_WIZARD_STEPS,
   assembleTeamBootstrapPayload,
-  artifactStorePreset,
   freshTeamDraft,
   syncDerivedNames,
   validateTeamBasics,
@@ -15,9 +14,9 @@ describe('agentTeamWizard', () => {
     expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual(['team', 'model', 'mcp', 'env', 'review'])
   })
 
-  it('prefills artifact-store and no env', () => {
+  it('starts without MCP or env (the wizard seeds artifact-store from server presets)', () => {
     const d = freshTeamDraft()
-    expect(d.mcp[0]).toMatchObject(artifactStorePreset())
+    expect(d.mcp).toEqual([])
     expect(d.env).toEqual([])
     expect(TEAM_ENGINEER_COUNT).toBe(4)
   })
@@ -56,6 +55,7 @@ describe('agentTeamWizard', () => {
   it('assembles bootstrap payload with mcp/env', () => {
     const d = freshTeamDraft()
     d.teamName = 'Demo'
+    d.mcp.push({ name: 'artifact-store', transport: 'url', url: '${GRASP_ARTIFACT_URL}', headers: [], command: '', args: '', env: [] })
     syncDerivedNames(d)
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload).not.toHaveProperty('teamName')

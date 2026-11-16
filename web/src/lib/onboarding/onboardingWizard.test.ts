@@ -91,13 +91,11 @@ describe('onboardingWizard', () => {
     expect(assembleBootstrapBody(d).language).toBe('zh-CN')
   })
 
-  it('sends the repository commit identity and can turn preview flags off', () => {
+  it('sends the repository commit identity without preview flags', () => {
     const d = freshOnboardingDraft()
     expect(gitIdentityConfigured(d)).toBe(false)
     d.commitName = ' Ada Lovelace '
     d.commitEmail = ' ada@example.com '
-    d.vncPreview = false
-    d.browserMcp = false
     expect(gitIdentityConfigured(d)).toBe(false)
     expect(assembleBootstrapBody(d)).not.toHaveProperty('commitName')
     d.repoUrl = 'https://github.com/org/web.git'
@@ -105,8 +103,8 @@ describe('onboardingWizard', () => {
     const body = assembleBootstrapBody(d)
     expect(body.commitName).toBe('Ada Lovelace')
     expect(body.commitEmail).toBe('ada@example.com')
-    expect(body.vncPreview).toBe(false)
-    expect(body.browserMcp).toBe(false)
+    expect(body).not.toHaveProperty('vncPreview')
+    expect(body).not.toHaveProperty('browserMcp')
   })
 
   it('sends the repo only when a URL is given, branch only alongside it', () => {

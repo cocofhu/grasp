@@ -41,6 +41,12 @@ vi.mock('@/lib/api/api', async () => {
       listModelConfigurations: async () => ({ items: [] }),
       listModelConnections: async () => ({ items: [] }),
       listToolCapabilities: async () => ({ items: [] }),
+      listMcpPresets: async () => ({
+        presets: [
+          { id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}' } },
+          { id: 'browser', requiresDesktop: false, server: { name: 'chrome-devtools', command: 'chrome-devtools-mcp' } },
+        ],
+      }),
       listAgents: mocks.listAgents,
       saveAgent: mocks.saveAgent,
       renameAgent: mocks.renameAgent,
@@ -265,13 +271,14 @@ describe('AgentStudio MCP tab', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    const btn = wrapper.get('[data-test="mcp-add-artifact"]')
+    const btn = wrapper.get('[data-test="mcp-add-artifact-store"]')
     expect(btn.classes()).toContain('text-[11px]')
     expect(btn.classes()).toContain('px-2')
     expect(btn.classes()).toContain('py-1')
     expect(btn.classes()).not.toContain('text-xs')
     expect(btn.classes()).not.toContain('py-0.5')
     expect(btn.text()).toBe('+ 添加产物存储')
+    expect(wrapper.get('[data-test="mcp-add-browser"]').text()).toBe('+ 浏览器')
     for (const retired of ['mcp-add-memory', 'mcp-add-context', 'mcp-add-scheduler']) {
       expect(wrapper.find(`[data-test="${retired}"]`).exists()).toBe(false)
     }
@@ -299,7 +306,7 @@ describe('AgentStudio MCP tab', () => {
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('运行级变量(运行时替换')
     expect(wrapper.get('[data-test="mcp-help-link"]').text()).toBe('帮助')
-    expect(wrapper.find('[data-test="mcp-add-artifact"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(false)
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-preset-key"]').text()).toBe('artifact-store')
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-scope-note"]').text()).toContain('本次运行隔离的产物服务')

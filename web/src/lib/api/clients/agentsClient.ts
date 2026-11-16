@@ -4,6 +4,7 @@ import type {
   Agent,
   AgentTemplate,
   CliModelsResponse,
+  MCPPreset,
   WorkspaceAgentsImportResult,
   TeamBootstrapRequest,
   TeamBootstrapSession,
@@ -30,6 +31,7 @@ export const agentsClient = {
   // agents (reusable, user-defined Agent identities referenced by agent_profile:
   // skill/rules + MCP servers + environment variables)
   listAgents: () => req<Agent[]>('/agents'),
+  listMcpPresets: () => req<{ presets: MCPPreset[] }>('/mcp-presets'),
   getAgent: (name: string) => req<Agent>(`/agents/${encodeURIComponent(name)}`),
   bootstrapOnboarding: (
     body: {
@@ -42,8 +44,6 @@ export const agentsClient = {
       repoCredentialId?: string
       commitName?: string
       commitEmail?: string
-      vncPreview?: boolean
-      browserMcp?: boolean
       agents?: { templateId: string; name?: string; modelConfigurationId?: string }[]
     },
   ) =>
