@@ -1488,10 +1488,6 @@
         "restoreReason": "回滚原因",
         "restoreConfirm": "确认回滚",
         "restoreDefault": "回滚到 {sha}：撤销误改",
-        "saveTitle": "保存工作目录",
-        "saveHint": "若本次保存改了多个文件，会按路径拆成多条历史，原因相同。",
-        "saveReasonLabel": "变更原因",
-        "defaultSaveReason": "Studio 保存",
         "source": {
           "system": "基线",
           "studio": "Studio",
