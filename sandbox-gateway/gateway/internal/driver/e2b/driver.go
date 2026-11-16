@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -304,9 +305,9 @@ func (d *Driver) Create(parent context.Context, spec driver.Spec) (result *drive
 	if len(spec.Mounts) > 0 || spec.Config != nil && spec.Config.HostPath != "" {
 		return nil, errors.New("E2B cannot mount gateway host paths; use bundle injection")
 	}
-	env := make(map[string]string, len(spec.Env)+3)
-	for k, v := range spec.Env {
-		env[k] = v
+	env := maps.Clone(spec.Env)
+	if env == nil {
+		env = map[string]string{}
 	}
 	if spec.WorkspaceDir != "" {
 		env["WORKSPACE_DIR"] = spec.WorkspaceDir
