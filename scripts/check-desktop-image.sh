@@ -14,7 +14,7 @@ test -L /usr/local/bin/grasp-desktop
 for cmd in Xvfb x11vnc websockify socat chrome-devtools-mcp \
            openbox plank fcitx5 dbus-launch feh import xdotool wmctrl xdpyinfo \
            blender blender-mcp godot drawio Slicer gimp inkscape kdenlive melt \
-           freecad openscad kicad qgis paraview sol kigo mousepad evince lxterminal pcmanfm; do
+           freecad openscad kicad qgis paraview /usr/games/sol /usr/games/kigo mousepad evince lxterminal pcmanfm; do
   command -v "$cmd" >/dev/null || { echo "missing $cmd" >&2; exit 1; }
 done
 locale -a | grep -qi "zh_CN.utf8"

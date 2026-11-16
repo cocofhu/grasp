@@ -16,6 +16,6 @@
   {"id": "qgis", "name": "QGIS", "nameZh": "QGIS 地理信息", "exec": ["qgis"], "cli": "qgis_process run <algorithm> -- <args>", "category": "science", "icons": ["qgis", "org.qgis.qgis"]},
   {"id": "paraview", "name": "ParaView", "nameZh": "ParaView 可视化", "exec": ["paraview"], "cli": "pvpython <script.py>", "category": "science", "icons": ["paraview"]},
   {"id": "slicer", "name": "3D Slicer", "nameZh": "3D Slicer 医学影像", "exec": ["Slicer"], "cli": "Slicer --no-main-window --python-script <script.py>", "category": "science", "icons": ["/opt/slicer/share/icons/hicolor/scalable/apps/Slicer.svg", "/opt/slicer/slicer.png"]},
-  {"id": "solitaire", "name": "Solitaire", "nameZh": "纸牌", "exec": ["sol"], "category": "games", "icons": ["gnome-aisleriot", "sol"]},
-  {"id": "go", "name": "Go", "nameZh": "围棋", "exec": ["kigo"], "category": "games", "icons": ["kigo", "org.kde.kigo"]}
+  {"id": "solitaire", "name": "Solitaire", "nameZh": "纸牌", "exec": ["/usr/games/sol"], "category": "games", "icons": ["gnome-aisleriot", "sol"]},
+  {"id": "go", "name": "Go", "nameZh": "围棋", "exec": ["/usr/games/kigo"], "category": "games", "icons": ["kigo", "org.kde.kigo"]}
 ]
