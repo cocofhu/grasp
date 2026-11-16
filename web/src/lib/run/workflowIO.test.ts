@@ -43,7 +43,6 @@ describe('buildEnvelope', () => {
         { name: 'masked', type: 'string', secret: true, value: '****' },
         { name: 'branch', type: 'string', value: 'main' },
       ],
-      gateAuto: { enabled: true, agentName: 'reviewer', variable: 'auto', prompt: 'Review this', enabledMcps: ['pm-progress'] },
     }
     const env = buildEnvelope({ name: 'Portable', description: '', needsRepo: false, defaults }, { nodes: [], edges: [], variables: [{ name: 'inputSecret', secret: true, value: 'private-input' }] })
     expect(env.defaults).toEqual({ ...defaults, variables: [
@@ -56,8 +55,8 @@ describe('buildEnvelope', () => {
     expect(serialized).not.toContain('private-token')
     expect(serialized).not.toContain('private-input')
     expect(serialized).not.toContain('****')
-    env.defaults!.gateAuto!.enabledMcps.push('pm-agent-fs')
-    expect(defaults.gateAuto.enabledMcps).toEqual(['pm-progress'])
+    env.defaults!.variables![2]!.value = 'changed'
+    expect(defaults.variables[2].value).toBe('main')
     expect(defaults.variables[0].value).toBe('private-token')
   })
   it('drops workspace-specific repository bindings from the export', () => {

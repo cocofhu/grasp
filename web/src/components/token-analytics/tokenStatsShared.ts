@@ -6,10 +6,9 @@ export const TOKEN_PART_COLORS = {
   cacheWrite: '#c9c0ff',
 } as const
 
-/** Trend/rank source colors (workflow / pm share purple; PM distinguished by dashed line). */
+/** Trend/rank source colors. */
 export const TOKEN_SOURCE_COLORS = {
   workflow: '#6d5cff',
-  pm: '#6d5cff',
 } as const
 
 export type TokenPartKey = keyof typeof TOKEN_PART_COLORS

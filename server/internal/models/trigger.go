@@ -9,11 +9,10 @@ import (
 const (
 	TriggerManual = "manual"
 	TriggerAPI    = "api"
-	TriggerPMMCP  = "pm_mcp"
 )
 
 // AllowedTriggers is the authoritative whitelist for new Run.Trigger values.
-var AllowedTriggers = []string{TriggerManual, TriggerAPI, TriggerPMMCP}
+var AllowedTriggers = []string{TriggerManual, TriggerAPI}
 
 // ParseTrigger validates an exact lowercase trigger code.
 // Empty / whitespace-only input returns ("", nil) meaning "not provided"
@@ -25,10 +24,10 @@ func ParseTrigger(s string) (string, error) {
 		return "", nil
 	}
 	switch trimmed {
-	case TriggerManual, TriggerAPI, TriggerPMMCP:
+	case TriggerManual, TriggerAPI:
 		return trimmed, nil
 	default:
-		return "", fmt.Errorf("invalid trigger %q (want manual|api|pm_mcp)", s)
+		return "", fmt.Errorf("invalid trigger %q (want manual|api)", s)
 	}
 }
 

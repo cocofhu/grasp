@@ -218,21 +218,12 @@ func TestWorkspaceRestoreKeepsIdentityIcon(t *testing.T) {
 	if err := s.Save(iconAgent("lab", &AgentIcon{IconID: "code", Color: "green"})); err != nil {
 		t.Fatal(err)
 	}
-	sha, err := s.WriteWorkspaceFileVcs("lab", "a.md", "v1", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "seed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.WriteWorkspaceFileVcs("lab", "a.md", "v2", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "edit",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	sha := commitWorkspaceFile(t, s, "lab", "a.md", "v1", "seed")
+	commitWorkspaceFile(t, s, "lab", "a.md", "v2", "edit")
 	if _, err := s.RestoreWorkspaceVcs("lab", sha, "u", "rollback"); err != nil {
 		t.Fatal(err)
 	}
-	body, err := s.ReadWorkspaceFile("lab", "a.md")
+	body, err := readWorkspaceFile(s, "lab", "a.md")
 	if err != nil || body != "v1" {
 		t.Fatalf("workspace=%q err=%v", body, err)
 	}

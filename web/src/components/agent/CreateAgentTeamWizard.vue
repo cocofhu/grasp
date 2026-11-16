@@ -10,8 +10,6 @@ import AppModal from '@/components/ui/AppModal.vue'
 import { boundConfigurationIds } from '@/lib/agent/modelBindings'
 import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { api, type ModelBinding, type ModelConfiguration, type TeamBootstrapSession } from '@/lib/api/api'
-import type { Project } from '@/lib/api/apiTypes'
-import { repoShort } from '@/lib/solo/soloPrefs'
 import {
   TEAM_ENGINEER_COUNT,
   TEAM_WIZARD_STEPS,
@@ -26,7 +24,6 @@ import {
 
 const props = defineProps<{
   open: boolean
-  existingNames: string[]
 }>()
 
 const emit = defineEmits<{
@@ -40,12 +37,6 @@ const fieldError = ref('')
 const submitError = ref('')
 const submitting = ref(false)
 const modelValid = ref(false)
-const projects = ref<Project[]>([])
-const repoOptions = computed(() => [
-  { value: '', label: t('pages.agentStudio.teamWizard.repo.none') },
-  ...projects.value.map((p) => ({ value: p.id, label: p.name, hint: repoShort(p.repoUrl) })),
-])
-const selectedRepo = computed(() => projects.value.find((p) => p.id === draft.value.repoId))
 const resourceManagerOpen = ref(false)
 const resourcesVersion = ref(0)
 const models = ref<ModelConfiguration[]>([])
@@ -61,7 +52,6 @@ async function refreshResources() {
   resourceManagerOpen.value = false
   resourcesVersion.value++
   if (returningFromManager) modelValid.value = false
-  void api.listProjects().then((rows) => { projects.value = rows }).catch(() => { projects.value = [] })
   try {
     models.value = (await api.listModelConfigurations()).items || []
     if (returningFromManager && configurationId) {
@@ -79,14 +69,12 @@ async function refreshResources() {
   }
 }
 const stepAnimKey = ref(0)
-const bgExpanded = ref(true)
 
 const currentStep = computed(() => TEAM_WIZARD_STEPS[draft.value.step])
 const progressPct = computed(() => ((draft.value.step + 1) / TEAM_WIZARD_STEPS.length) * 100)
 const previewLine = computed(() =>
   t('pages.agentStudio.teamWizard.previewLine', {
     team: draft.value.teamName.trim() || '—',
-    pm: draft.value.pmName || '—',
     n: TEAM_ENGINEER_COUNT,
   }),
 )
@@ -126,7 +114,6 @@ function goSkip() {
   const step = currentStep.value
   if (!step.skip || submitting.value) return
   draft.value.skipped[step.id] = true
-  if (step.id === 'repo') draft.value.repoId = ''
   draft.value.step++
   stepAnimKey.value++
 }
@@ -134,7 +121,7 @@ function goSkip() {
 function goNext() {
   if (submitting.value) return
   if (currentStep.value.id === 'team') {
-    const err = validateTeamBasics(draft.value, props.existingNames)
+    const err = validateTeamBasics(draft.value)
     if (err) {
       fieldError.value = t(`pages.agentStudio.teamWizard.errors.${err}`)
       return
@@ -152,7 +139,7 @@ function goNext() {
 }
 
 async function submit() {
-  const err = validateTeamBasics(draft.value, props.existingNames)
+  const err = validateTeamBasics(draft.value)
   if (err) {
     draft.value.step = 0
     fieldError.value = t(`pages.agentStudio.teamWizard.errors.${err}`)
@@ -189,19 +176,6 @@ function addMcp() {
 function restoreArtifact() {
   if (draft.value.mcp.some((m) => m.name.trim() === 'artifact-store')) return
   draft.value.mcp.unshift(artifactStorePreset())
-}
-
-function addNamedMcp(name: string) {
-  if (draft.value.mcp.some((m) => m.name.trim() === name)) return
-  draft.value.mcp.push({
-    name,
-    transport: 'url',
-    url: '',
-    headers: [],
-    command: '',
-    args: '',
-    env: [],
-  })
 }
 
 function removeMcp(i: number) {
@@ -292,7 +266,7 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
 
                 <template v-if="currentStep.id === 'team'">
                   <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.team.meta') }}</p>
-                  <div class="mb-4 grid gap-3 md:grid-cols-2">
+                  <div class="grid gap-3 md:grid-cols-2">
                     <label class="block">
                       <span class="mb-1.5 block text-[12px] font-medium text-txt2">
                         {{ t('pages.agentStudio.teamWizard.team.teamName') }}
@@ -317,30 +291,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                       />
                     </label>
                   </div>
-                  <label class="mb-4 block">
-                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">
-                      {{ t('pages.agentStudio.teamWizard.team.pmName') }}
-                      <span class="text-err">*</span>
-                    </span>
-                    <input
-                      v-model="draft.pmName"
-                      class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                      @input="draft.pmTouched = true"
-                    />
-                  </label>
-                  <label class="block">
-                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">
-                      {{ t('pages.agentStudio.teamWizard.team.background') }}
-                      <span class="text-err">*</span>
-                    </span>
-                    <textarea
-                      v-model="draft.background"
-                      rows="6"
-                      class="rounded-md w-full resize-y border border-line bg-base px-3 py-2 text-[13px] leading-6 text-txt outline-none focus:border-accent"
-                      :placeholder="t('pages.agentStudio.teamWizard.team.backgroundPlaceholder')"
-                    />
-                    <p class="mt-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.teamWizard.team.backgroundHint') }}</p>
-                  </label>
                   <div class="rounded-lg mt-4 border border-accent/35 bg-accent-dim/40 px-3 py-2.5 text-[12px] text-accent-2">
                     {{ previewLine }}
                   </div>
@@ -350,15 +300,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                 <template v-else-if="currentStep.id === 'model'">
                   <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" :allow-all-configurations="false" @validity="modelValid = $event" />
                   <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
-                </template>
-
-                <template v-else-if="currentStep.id === 'repo'">
-                  <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.repo.meta') }}</p>
-                  <div class="block max-w-md">
-                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.teamWizard.repo.label') }}</span>
-                    <AppSelect v-model="draft.repoId" :options="repoOptions" :aria-label="t('pages.agentStudio.teamWizard.repo.label')" searchable data-testid="team-wizard-repo" />
-                  </div>
-                  <RouterLink to="/settings/projects" class="mt-3 inline-block text-[12px] text-accent-2">{{ t('pages.agentStudio.teamWizard.repo.manage') }}</RouterLink>
                 </template>
 
                 <template v-else-if="currentStep.id === 'mcp'">
@@ -416,8 +357,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <div class="flex flex-wrap gap-2">
                     <AppButton size="sm" variant="outline" icon="plus" @click="addMcp">{{ t('pages.agentStudio.teamWizard.mcp.add') }}</AppButton>
                     <AppButton size="sm" variant="ghost" @click="restoreArtifact">{{ t('pages.agentStudio.teamWizard.mcp.restoreArtifact') }}</AppButton>
-                    <AppButton size="sm" variant="ghost" icon="plus" @click="addNamedMcp('memory-store')">memory-store</AppButton>
-                    <AppButton size="sm" variant="ghost" icon="plus" @click="addNamedMcp('context-store')">context-store</AppButton>
                   </div>
                   <p class="mt-3 text-[11px] text-txt3">{{ t('pages.agentStudio.teamWizard.mcp.runVars') }}</p>
                 </template>
@@ -442,23 +381,12 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.review.meta') }}</p>
                   <div class="rounded-lg border border-line bg-elevated px-4 py-3 text-[13px] leading-7 text-txt2">
                     <div>{{ t('pages.agentStudio.teamWizard.review.team') }}：<strong class="text-txt">{{ draft.teamName }}</strong></div>
-                    <div>PM：<strong class="text-txt">{{ draft.pmName }}</strong></div>
                     <div>{{ c.model }}：<strong class="text-txt">{{ selectedModel?.name || draft.modelConfigurationId }}</strong></div>
-                    <div>{{ t('pages.agentStudio.teamWizard.repo.label') }}：<strong class="text-txt">{{ selectedRepo?.name || t('pages.agentStudio.teamWizard.review.none') }}</strong></div>
                     <div>MCP：<strong class="text-txt">{{ mcpNames }}</strong></div>
                     <div>Env：<strong class="text-txt">{{ envSummary }}</strong></div>
                     <div class="mt-2">
                       {{ t('pages.agentStudio.teamWizard.review.roster') }}
                     </div>
-                  </div>
-                  <div class="rounded-lg mt-3 border border-line bg-base px-3 py-2">
-                    <button type="button" class="mb-1 text-[12px] text-accent-2" @click="bgExpanded = !bgExpanded">
-                      {{ t('pages.agentStudio.teamWizard.review.background') }}
-                    </button>
-                    <pre
-                      v-if="bgExpanded"
-                      class="m-0 whitespace-pre-wrap font-sans text-[12px] leading-5 text-txt2"
-                    >{{ draft.background }}</pre>
                   </div>
                   <p
                     v-if="!hasArtifact"

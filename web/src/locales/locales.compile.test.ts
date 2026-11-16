@@ -55,9 +55,9 @@ function compileErrors(source: string): number[] {
 }
 
 describe('locale message-compiler scan', () => {
-  it('baseCompile fails on unescaped ${GRASP_MEMORY_URL/TOKEN} (regression probe)', () => {
+  it('baseCompile fails on unescaped ${GRASP_ARTIFACT_URL/TOKEN} (regression probe)', () => {
     const bad =
-      '在 Agent Studio 添加 memory-store（${GRASP_MEMORY_URL/TOKEN}）。PM 咨询沙箱会自动注入。'
+      '在 Agent Studio 添加 artifact-store（${GRASP_ARTIFACT_URL/TOKEN}）。'
     const codes = compileErrors(bad)
     expect(codes.length).toBeGreaterThan(0)
     expect(codes).toContain(CompileErrorCodes.INVALID_TOKEN_IN_PLACEHOLDER)
@@ -90,30 +90,28 @@ describe('locale message-compiler scan', () => {
     expect(flagged).toEqual([])
   })
 
-  it('memoryStore.convention uses literal interpolation and still displays ${GRASP_MEMORY_URL/TOKEN}', async () => {
+  it('agentStudio.mcp.globalVar uses literal interpolation and still displays ${vars.feature}', async () => {
     const leaves = loadAllLocaleLeaves()
-    const conventions = leaves.filter((l) => l.keyPath.includes('memoryStore') && l.keyPath.endsWith('.convention'))
-    expect(conventions).toHaveLength(2)
-    for (const c of conventions) {
+    const vars = leaves.filter((l) => l.keyPath.endsWith('agentStudio.mcp.globalVar'))
+    expect(vars).toHaveLength(2)
+    for (const c of vars) {
       expect(compileErrors(c.value)).toEqual([])
-      // Source uses literal interpolation {'${...}'}
-      expect(c.value).toContain("{'${GRASP_MEMORY_URL/TOKEN}'}")
+      expect(c.value).toContain("{'${vars.feature}'}")
     }
 
-    // Runtime render (vue-i18n) must still show the env-var literal, not strip braces.
     const { createI18n } = await import('vue-i18n')
-    const zh = conventions.find((c) => c.keyPath.startsWith('zh-CN/'))!.value
-    const en = conventions.find((c) => c.keyPath.startsWith('en/'))!.value
+    const zh = vars.find((c) => c.keyPath.startsWith('zh-CN/'))!.value
+    const en = vars.find((c) => c.keyPath.startsWith('en/'))!.value
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
       messages: {
-        'zh-CN': { mcp: { memoryStore: { convention: zh } } },
-        en: { mcp: { memoryStore: { convention: en } } },
+        'zh-CN': { mcp: { globalVar: zh } },
+        en: { mcp: { globalVar: en } },
       },
     })
-    expect(String(i18n.global.t('mcp.memoryStore.convention'))).toContain('${GRASP_MEMORY_URL/TOKEN}')
+    expect(String(i18n.global.t('mcp.globalVar'))).toContain('${vars.feature}')
     i18n.global.locale.value = 'en'
-    expect(String(i18n.global.t('mcp.memoryStore.convention'))).toContain('${GRASP_MEMORY_URL/TOKEN}')
+    expect(String(i18n.global.t('mcp.globalVar'))).toContain('${vars.feature}')
   })
 })

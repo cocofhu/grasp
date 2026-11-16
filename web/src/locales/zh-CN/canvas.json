@@ -297,8 +297,7 @@
         "save": "保存",
         "restore": "恢复",
         "restoredFrom": "恢复自 v{n}",
-        "import": "导入",
-        "pm": "PM 修改"
+        "import": "导入"
       },
       "previewing": "正在预览 v{n}（只读）",
       "restoreThis": "恢复此版本",

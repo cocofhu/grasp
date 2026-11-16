@@ -8,75 +8,24 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// TestBuildConsumptionRankOrder locks the fixed slot order: Top workflows → PM → other.
-// Even when PM.total exceeds some workflow totals, PM must not insert mid-workflow (no 12PM34).
+// TestBuildConsumptionRankOrder locks the fixed slot order: Top workflows (desc) → other.
 func TestBuildConsumptionRankOrder(t *testing.T) {
-	assertOrder := func(t *testing.T, rows []TokenStatsWorkflow) {
-		t.Helper()
-		var sawPM, sawOther bool
-		for i, w := range rows {
-			switch w.Kind {
-			case TokenStatsKindWorkflow:
-				if sawPM || sawOther {
-					t.Fatalf("workflow after pm/other at [%d]: %+v", i, rows)
-				}
-			case TokenStatsKindPM:
-				if sawOther {
-					t.Fatalf("pm after other at [%d]: %+v", i, rows)
-				}
-				if sawPM {
-					t.Fatalf("duplicate pm at [%d]: %+v", i, rows)
-				}
-				sawPM = true
-			case TokenStatsKindOther:
-				if !w.Other {
-					t.Fatalf("other kind without Other flag: %+v", w)
-				}
-				if sawOther {
-					t.Fatalf("duplicate other at [%d]: %+v", i, rows)
-				}
-				sawOther = true
-				if i != len(rows)-1 {
-					t.Fatalf("other must be last: %+v", rows)
-				}
-			default:
-				t.Fatalf("unexpected kind %q at [%d]", w.Kind, i)
+	t.Run("top_only", func(t *testing.T) {
+		rows := buildConsumptionRank(map[string]int64{"wf-a": 1000, "wf-b": 100, "wf-c": 50}, map[string]string{"wf-a": "approve-main", "wf-b": "doc-review"})
+		if len(rows) != 3 {
+			t.Fatalf("len=%d want 3", len(rows))
+		}
+		for i, want := range []int64{1000, 100, 50} {
+			if rows[i].Kind != TokenStatsKindWorkflow || rows[i].Total != want || rows[i].Other {
+				t.Fatalf("row[%d]=%+v want workflow %d", i, rows[i], want)
 			}
 		}
-	}
-
-	t.Run("pm_between_top_and_other_even_when_pm_total_high", func(t *testing.T) {
-		totals := map[string]int64{
-			"wf-a": 1000,
-			"wf-b": 100,
-			"wf-c": 50,
-		}
-		names := map[string]string{
-			"wf-a": "approve-main",
-			"wf-b": "doc-review",
-			"wf-c": "调研",
-		}
-		// PM total (800) sits between wf-a and wf-b; old full-sort would yield 12PM34.
-		rows := buildConsumptionRank(totals, names, 800, true)
-		assertOrder(t, rows)
-		if len(rows) != 4 {
-			t.Fatalf("len=%d want 4 (3 wf + pm)", len(rows))
-		}
-		if rows[0].Kind != TokenStatsKindWorkflow || rows[0].Total != 1000 {
-			t.Fatalf("top1=%+v", rows[0])
-		}
-		if rows[1].Kind != TokenStatsKindWorkflow || rows[1].Total != 100 {
-			t.Fatalf("top2=%+v", rows[1])
-		}
-		if rows[2].Kind != TokenStatsKindWorkflow || rows[2].Total != 50 {
-			t.Fatalf("top3=%+v", rows[2])
-		}
-		if rows[3].Kind != TokenStatsKindPM || rows[3].Total != 800 {
-			t.Fatalf("pm=%+v want last before other", rows[3])
+		if rows[2].Name != "wf-c" {
+			t.Fatalf("unnamed workflow falls back to id: %+v", rows[2])
 		}
 	})
 
-	t.Run("with_other_pm_before_other", func(t *testing.T) {
+	t.Run("other_is_last", func(t *testing.T) {
 		totals := map[string]int64{}
 		names := map[string]string{}
 		for i := 1; i <= 12; i++ {
@@ -84,44 +33,17 @@ func TestBuildConsumptionRankOrder(t *testing.T) {
 			totals[id] = int64(i * 100)
 			names[id] = id
 		}
-		rows := buildConsumptionRank(totals, names, 9999, true)
-		assertOrder(t, rows)
-		if len(rows) != 12 { // Top10 + PM + other
-			t.Fatalf("len=%d want 12", len(rows))
+		rows := buildConsumptionRank(totals, names)
+		if len(rows) != 11 { // Top10 + other
+			t.Fatalf("len=%d want 11", len(rows))
 		}
-		if rows[10].Kind != TokenStatsKindPM || rows[10].Total != 9999 {
-			t.Fatalf("pm slot=%+v", rows[10])
-		}
-		if rows[11].Kind != TokenStatsKindOther || !rows[11].Other {
-			t.Fatalf("other slot=%+v", rows[11])
-		}
-		// Top block still desc by total.
 		for i := 1; i < 10; i++ {
 			if rows[i].Total > rows[i-1].Total {
 				t.Fatalf("top not desc at %d: %+v", i, rows[:10])
 			}
 		}
-	})
-
-	t.Run("no_pm_no_pm_row", func(t *testing.T) {
-		totals := map[string]int64{"a": 10, "b": 5}
-		names := map[string]string{"a": "A", "b": "B"}
-		rows := buildConsumptionRank(totals, names, 0, false)
-		assertOrder(t, rows)
-		for _, w := range rows {
-			if w.Kind == TokenStatsKindPM {
-				t.Fatalf("unexpected pm: %+v", rows)
-			}
-		}
-	})
-
-	t.Run("pm_without_other", func(t *testing.T) {
-		totals := map[string]int64{"a": 10}
-		names := map[string]string{"a": "A"}
-		rows := buildConsumptionRank(totals, names, 3, true)
-		assertOrder(t, rows)
-		if len(rows) != 2 || rows[1].Kind != TokenStatsKindPM {
-			t.Fatalf("want Top→PM: %+v", rows)
+		if rows[10].Kind != TokenStatsKindOther || !rows[10].Other || rows[10].Total != 300 {
+			t.Fatalf("other slot=%+v", rows[10])
 		}
 	})
 }

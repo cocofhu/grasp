@@ -40,22 +40,6 @@ export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
 const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
 export const ARTIFACT_STORE = 'artifact-store'
-const MEMORY_STORE = 'memory-store'
-const CONTEXT_STORE = 'context-store'
-
-export const AGENT_PLATFORM_MCPS = [
-  {
-    name: MEMORY_STORE,
-    url: '${GRASP_MEMORY_URL}',
-    token: '${GRASP_MEMORY_TOKEN}',
-  },
-  {
-    name: CONTEXT_STORE,
-    url: '${GRASP_CONTEXT_URL}',
-    token: '${GRASP_CONTEXT_TOKEN}',
-  },
-] as const
-
 export function recToKV(rec?: Record<string, string>): KV[] {
   return Object.entries(rec || {}).map(([k, v]) => ({ k, v }))
 }
@@ -166,16 +150,6 @@ export function hydrateStudioDraft(a: Agent): AgentStudioDraft {
   return loaded
 }
 
-type PlatformPresetKind = 'artifact' | 'memory' | 'context'
-
-export function platformPresetKind(name: string): PlatformPresetKind | null {
-  const n = name.trim()
-  if (n === ARTIFACT_STORE) return 'artifact'
-  if (n === MEMORY_STORE) return 'memory'
-  if (n === CONTEXT_STORE) return 'context'
-  return null
-}
-
 export function isPlatformPresetName(name: string) {
-  return platformPresetKind(name) !== null
+  return name.trim() === ARTIFACT_STORE
 }

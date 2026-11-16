@@ -6,76 +6,10 @@ import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 const ARTIFACT_TOOL_COUNT = 34
 const ARTIFACT_REQUIRED_TOOLS = ['list_run_history', 'get_history_detail', 'node_complete', 'set_artifact_preview', 'set_preflight', 'get_preflight', 'ask_form', 'set_root_cause', 'get_root_cause'] as const
 
-const CATALOG = [
-  {
-    id: 'memory-store',
-    scope: 'agent' as const,
-    toolCount: 5,
-    writeTools: ['upsert_memory', 'delete_memory'],
-  },
-  {
-    id: 'context-store',
-    scope: 'agent' as const,
-    toolCount: 5,
-    writeTools: [] as string[],
-  },
-  {
-    id: 'pm-progress',
-    scope: 'workspace' as const,
-    toolCount: 6,
-    writeTools: [] as string[],
-  },
-  {
-    id: 'pm-workflow-read',
-    scope: 'workspace' as const,
-    toolCount: 7,
-    writeTools: [] as string[],
-  },
-  {
-    id: 'pm-workflow-write',
-    scope: 'workspace' as const,
-    toolCount: 9,
-    writeTools: [
-      'pm_create_workflow',
-      'pm_update_workflow',
-      'pm_copy_workflow',
-      'pm_delete_workflow',
-      'pm_publish_workflow',
-      'pm_start_run',
-      'pm_decide_node',
-      'pm_react_reply',
-      'pm_cancel_run',
-    ],
-  },
-  {
-    id: 'pm-agent-fs',
-    scope: 'workspace' as const,
-    toolCount: 12,
-    writeTools: [
-      'pm_fs_write',
-      'pm_fs_delete',
-      'pm_fs_mkdir',
-      'pm_fs_rename',
-      'pm_fs_restore',
-      'pm_create_agent_from_template',
-    ],
-  },
-] as const
-
 const INTEGRATIONS_SCOPE_KEYS = [
   'mcp.integrations.scopeRun',
-  'mcp.integrations.scopeWorkspace',
-  'mcp.integrations.scopeAgent',
   'mcp.integrations.alwaysAvailable',
-  'mcp.integrations.seenInPmLeader',
-  'mcp.integrations.seenInAgentStudio',
-  'mcp.integrations.addViaAgentStudio',
-  'mcp.integrations.notRunScoped',
   'mcp.integrations.noConfigNeeded',
-  'mcp.integrations.noConfigHere',
-  'mcp.integrations.entryPath',
-  'mcp.integrations.entryPathAgent',
-  'mcp.integrations.entryPathLabel',
   'mcp.integrations.io.write',
   'mcp.integrations.io.read',
 ] as const
@@ -94,7 +28,6 @@ describe('BUILTIN_MCPS artifact-store catalog', () => {
 
   it('exposes artifact-store with the catalog tools including history, node_complete, and root_cause', () => {
     expect(store).toBeDefined()
-    expect(store!.scope).toBe('run')
     expect(store!.tools).toHaveLength(ARTIFACT_TOOL_COUNT)
     const names = store!.tools.map((t) => t.name)
     for (const name of ARTIFACT_REQUIRED_TOOLS) {
@@ -124,37 +57,16 @@ describe('BUILTIN_MCPS artifact-store catalog', () => {
 })
 
 describe('BUILTIN_MCPS platform catalog', () => {
-  it.each(CATALOG)('$id has expected scope, tools, and write set', (entry) => {
-    const mcp = BUILTIN_MCPS.find((m) => m.id === entry.id)
-    expect(mcp).toBeDefined()
-    expect(mcp!.name).toBe(entry.id)
-    expect(mcp!.scope).toBe(entry.scope)
-    expect(mcp!.tools).toHaveLength(entry.toolCount)
-    expect(mcp!.tools.filter((t) => t.io === 'write').map((t) => t.name).sort()).toEqual(
-      [...entry.writeTools].sort(),
-    )
+  it('lists artifact-store as the only built-in MCP', () => {
+    expect(BUILTIN_MCPS.map((m) => m.id)).toEqual(['artifact-store'])
   })
 
-  it.each(['zh-CN', 'en'] as const)('%s platform MCP i18n keys are complete', (locale) => {
+  it.each(['zh-CN', 'en'] as const)('%s integrations i18n keys are complete', (locale) => {
     i18n.global.locale.value = locale
     const te = i18n.global.te.bind(i18n.global)
-
     for (const key of INTEGRATIONS_SCOPE_KEYS) {
       expect(te(key), `${locale} missing ${key}`).toBe(true)
       expect(i18n.global.t(key)).not.toMatch(/^mcp\./)
-    }
-
-    for (const entry of CATALOG) {
-      const mcp = BUILTIN_MCPS.find((m) => m.id === entry.id)!
-      expect(te(mcp.descKey)).toBe(true)
-      expect(te(mcp.overviewKey!)).toBe(true)
-      expect(te(mcp.conventionKey!)).toBe(true)
-      for (const tool of mcp.tools) {
-        expect(te(tool.descKey), `${locale} missing ${tool.descKey}`).toBe(true)
-        expect(te(tool.signatureKey), `${locale} missing ${tool.signatureKey}`).toBe(true)
-        expect(i18n.global.t(tool.descKey)).not.toMatch(/^mcp\./)
-        expect(i18n.global.t(tool.signatureKey)).not.toMatch(/^mcp\./)
-      }
     }
   })
 

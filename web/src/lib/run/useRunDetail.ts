@@ -42,11 +42,16 @@ import { armSidebarHandoff, clearSidebarHandoff, readSidebarHandoff, sidebarHand
 import { resolveHandoffProcessAuto, sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
-import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
 import { ingestDialogues } from '@/lib/chat/dialogueStore'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 type RunLoadErrorKind = 'not_found' | 'network_or_server'
+
+/** True when the route id cannot be a real Run (e.g. bare "trigger"); Run ids always start with run-. */
+function isClearlyInvalidRunRouteId(id: string): boolean {
+  const t = id.trim()
+  return !t || !/^run-/i.test(t)
+}
 
 export type RunViewMode = 'canvas' | 'timeline' | 'stats' | 'llm'
 

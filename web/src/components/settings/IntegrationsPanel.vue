@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
@@ -9,9 +9,6 @@ import { BUILTIN_MCPS, type McpServer } from '@/data/mcp'
 
 const { t } = useI18n()
 const selected = ref<McpServer | null>(null)
-const isWorkspaceScope = computed(() => selected.value?.scope === 'workspace')
-const isAgentScope = computed(() => selected.value?.scope === 'agent')
-const isRunScope = computed(() => selected.value?.scope === 'run')
 
 function openDetail(m: McpServer) {
   selected.value = m
@@ -19,18 +16,6 @@ function openDetail(m: McpServer) {
 
 function backToCatalog() {
   selected.value = null
-}
-
-function scopeLabelKey(scope: McpServer['scope']): string {
-  if (scope === 'workspace') return 'mcp.integrations.scopeWorkspace'
-  if (scope === 'agent') return 'mcp.integrations.scopeAgent'
-  return 'mcp.integrations.scopeRun'
-}
-
-function availabilityBadgeKey(scope: McpServer['scope']): string {
-  if (scope === 'workspace') return 'mcp.integrations.seenInPmLeader'
-  if (scope === 'agent') return 'mcp.integrations.seenInAgentStudio'
-  return 'mcp.integrations.alwaysAvailable'
 }
 </script>
 
@@ -71,9 +56,9 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
                 <Icon name="chevron-right" :size="16" />
               </div>
               <template #meta>
-                <span>{{ t(scopeLabelKey(m.scope)) }}</span>
+                <span>{{ t('mcp.integrations.scopeRun') }}</span>
                 <span aria-hidden="true">·</span>
-                <span>{{ t(availabilityBadgeKey(m.scope)) }}</span>
+                <span>{{ t('mcp.integrations.alwaysAvailable') }}</span>
               </template>
             </SettingsRow>
           </button>
@@ -84,18 +69,10 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
         <div class="mb-7 text-[13px] leading-5 text-txt3">
           <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
             <code class="text-xs">{{ selected.id }}</code>
-            <span>{{ t(scopeLabelKey(selected.scope)) }}</span>
-            <span>{{ t(availabilityBadgeKey(selected.scope)) }}</span>
+            <span>{{ t('mcp.integrations.scopeRun') }}</span>
+            <span>{{ t('mcp.integrations.alwaysAvailable') }}</span>
           </div>
-          <template v-if="isWorkspaceScope">
-            <p class="mb-0 mt-3">{{ t('mcp.integrations.notRunScoped') }} · {{ t('mcp.integrations.noConfigHere') }}</p>
-            <p class="mb-0 mt-1">{{ t('mcp.integrations.entryPathLabel') }}<span class="text-txt2">{{ t('mcp.integrations.entryPath') }}</span></p>
-          </template>
-          <template v-else-if="isAgentScope">
-            <p class="mb-0 mt-3">{{ t('mcp.integrations.notRunScoped') }} · {{ t('mcp.integrations.addViaAgentStudio') }}</p>
-            <p class="mb-0 mt-1">{{ t('mcp.integrations.entryPathLabel') }}<span class="text-txt2">{{ t('mcp.integrations.entryPathAgent') }}</span></p>
-          </template>
-          <p v-else-if="isRunScope" class="mb-0 mt-3">{{ t('mcp.integrations.noConfigNeeded') }}</p>
+          <p class="mb-0 mt-3">{{ t('mcp.integrations.noConfigNeeded') }}</p>
         </div>
 
         <SettingsSection :title="t('mcp.integrations.toolsTitle') + ' · ' + selected.tools.length">

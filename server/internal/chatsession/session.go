@@ -356,7 +356,7 @@ func (s *Session[T]) cancel(clearQueue bool, turnID string) bool {
 		s.persist(state)
 	}
 	// Settle removed items before cancellation releases the active turn's
-	// finalization (e.g. PM failure persistence against the same thread).
+	// finalization (e.g. chat failure persistence against the same thread).
 	// Keep the transition gate, but never the state mutex, across callbacks.
 	if len(dropped) > 0 && s.cfg.OnDropped != nil {
 		s.cfg.OnDropped(dropped)

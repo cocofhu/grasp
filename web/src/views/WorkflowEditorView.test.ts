@@ -341,7 +341,7 @@ describe('WorkflowEditorView', () => {
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="workflow-gate-row"] [role="switch"]').trigger('click')
+    await wrapper.get(`[data-testid="workflow-variables-settings"] button[aria-label="${t('pages.workspaceDefaults.addVariable')}"]`).trigger('click')
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="defaults-close"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-defaults-panel"]').exists()).toBe(false)
@@ -349,7 +349,7 @@ describe('WorkflowEditorView', () => {
     expect(status(wrapper)).toBe('dirty')
     await wrapper.get('[data-testid="editor-defaults"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="workflow-gate-row"] [role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.findAll('[data-variable-row]')).toHaveLength(1)
   })
 
   it('still updates the defaults footer when reduced motion is on', async () => {
@@ -505,7 +505,7 @@ describe('WorkflowEditorView', () => {
   })
 
   it('keeps migrated ordinary defaults through metadata save and subsequent publication', async () => {
-    const defaults = { variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
+    const defaults = { variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], repos: [{ projectId: 'p-app', branch: 'main' }] }
     apiMocks.getWorkflow.mockResolvedValue(workflow({ defaults }))
     const { wrapper } = await mountEditor()
     await wrapper.get('[data-testid="editor-name"]').setValue('metadata changed')

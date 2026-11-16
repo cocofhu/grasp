@@ -828,8 +828,8 @@ func TestDashboardService(t *testing.T) {
 		t.Fatalf("stats counts: %+v", st)
 	}
 	// No workspace usage → Token fields stay null (not 0).
-	if st.TotalTokens != nil || st.WorkflowTokens != nil || st.PMTokens != nil {
-		t.Fatalf("expected null tokens without usage, got total=%v wf=%v pm=%v",
-			st.TotalTokens, st.WorkflowTokens, st.PMTokens)
+	if st.TotalTokens != nil || st.WorkflowTokens != nil {
+		t.Fatalf("expected null tokens without usage, got total=%v wf=%v",
+			st.TotalTokens, st.WorkflowTokens)
 	}
 }

@@ -12,8 +12,8 @@ import { soloPrefs } from './soloPrefs'
 import { isSandboxLimitError, soloErrorText } from './soloErrors'
 import { soloCreateChoices } from './sessionRepos'
 import { useSoloSessions } from './useSoloSessions'
-import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/pm/onboardingWizard'
-import { firstInstallCompletedAt } from '@/lib/pm/firstInstall'
+import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/onboarding/onboardingWizard'
+import { firstInstallCompletedAt } from '@/lib/onboarding/firstInstall'
 
 function listedEfforts(efforts?: string[]) {
   return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]

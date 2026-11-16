@@ -106,7 +106,7 @@ Image tags and digests can be overridden in `.env`; see [`.env.example`](.env.ex
 
 ### Bundled role agents
 
-`agents/` includes five prebuilt roles: `PMAgent`, `ClarifyAgent`, `ImplementAgent`, `TestReviewAgent`, and `DeliverAgent`.
+`agents/` includes four prebuilt roles: `ClarifyAgent`, `ImplementAgent`, `TestReviewAgent`, and `DeliverAgent`.
 
 ```bash
 ./agents/pack.sh               # pack all into agents/dist/

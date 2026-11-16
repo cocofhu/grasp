@@ -1,5 +1,5 @@
 // Package crypto provides reversible encryption for secrets stored at rest
-// (e.g. external channel credentials in the DB). The master key (base64-encoded
+// (e.g. workspace credentials in the DB). The master key (base64-encoded
 // 32 bytes) is supplied by a pluggable key source: by default the
 // GRASP_SECRETS_KEY environment variable, but the server wires it to the
 // config layer (config: security.secrets_key, env override wins) via

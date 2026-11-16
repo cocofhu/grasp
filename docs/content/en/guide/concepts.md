@@ -131,15 +131,6 @@ Each run has an isolated artifact MCP. Agents call tools such as:
 
 Isolation is by run token, leaving an inspectable paper trail.
 
-## PM: `pm-agent-fs` (workspace members + Agent workspace)
-
-A workspace PM Leader can enable the dedicated MCP `pm-agent-fs` (on by default; existing installations with an explicit EnabledMcps list must opt in under PM settings):
-
-- `pm_list_workspace_agents`: list every Agent in the workspace (self / other relative to the PM)
-- `pm_fs_*`: list/read/write/delete/mkdir/rename the **host-side** `workspace/` of any workspace agent (**not** Run sandbox FS)
-
-Writes land on the same disk tree as Agent Studio「Agent workspace」and are visible after **refresh or reopen** (no live hot-reload). If Studio still has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits during demos.
-
 ## Single-repo self-hosting
 
 `sandbox-gateway` and the generic sandbox image sources live in this repository. One clone is enough to self-host.

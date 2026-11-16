@@ -47,12 +47,8 @@ describe('user-facing copy remediation keys', () => {
   })
 
   it('attachment fallback is neutral without 仅* / only', () => {
-    expect(zh.global.t('pages.workspace.pm.imagesOnly')).toBe('附件')
     expect(zh.global.t('pages.agentChatTester.imagesOnly')).toBe('附件')
-    expect(en.global.t('pages.workspace.pm.imagesOnly')).toBe('Attachments')
-    expect(zh.global.t('pages.workspace.pm.imagesOnly')).not.toMatch(/仅/)
-    expect(en.global.t('pages.workspace.pm.imagesOnly')).not.toMatch(/only/i)
-    expect(zh.global.t('pages.workspace.pm.inputPh')).toContain('50 MiB')
+    expect(zh.global.t('pages.agentChatTester.imagesOnly')).not.toMatch(/仅/)
   })
 
   it('chat-test entry copy points to Agent Studio Chat test (g2.3)', () => {
@@ -68,13 +64,6 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.workspace.sharedAgent.extendHint')).not.toMatch(/only from this panel/i)
     expect(zh.global.t('pages.agentStudio.tabs.test')).toBe('对话测试')
     expect(en.global.t('pages.agentStudio.tabs.test')).toBe('Chat test')
-  })
-
-  it('pm status/error copy drops internal jargon', () => {
-    expect(zh.global.t('pages.workspace.pm.busyStreaming')).not.toMatch(/Steam/i)
-    expect(zh.global.t('pages.workspace.pm.failSandboxDesc')).not.toMatch(/自动收场/)
-    expect(zh.global.t('pages.workspace.pm.failEmptyDesc')).not.toMatch(/未落库|空气泡/)
-    expect(zh.global.t('pages.workspace.pm.failUnknownDesc')).not.toMatch(/无法归入/)
   })
 
   // Freeze contract: Approve opening hint stays exact zh「请先描述目标…」(en existing).
@@ -220,51 +209,20 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.tokenByModel.unknownBadge')).toBe('未知')
   })
 
-  it('user-facing product naming uses 工作区助手 / Workspace assistant consistently', () => {
-    const zhKeys = [
-      'common.runTrigger.pmMcp',
-      'pages.board.tokenStats.pm',
-      'pages.workspace.pm.enabledMcps',
+  it('user-facing copy no longer mentions the removed workspace assistant', () => {
+    const keys = [
       'pages.agentStudio.dialogs.renameCascadeHint',
-      'pages.agentStudio.data.context.hint',
-      'mcp.pmProgress.desc',
-      'mcp.pmWorkflowRead.desc',
-      'mcp.pmWorkflowWrite.desc',
-      'mcp.pmAgentFs.desc',
     ] as const
-    for (const key of zhKeys) {
-      const text = zh.global.t(key)
-      expect(text, key).toMatch(/工作区助手/)
-      expect(text, key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
+    for (const key of keys) {
+      expect(zh.global.t(key), key).not.toMatch(/工作区助手|助手设置/)
+      expect(en.global.t(key), key).not.toMatch(/Workspace assistant|Assistant settings/i)
+      expect(zh.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
+      expect(en.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
     }
 
-    const enKeys = [
-      'common.runTrigger.pmMcp',
-      'pages.board.tokenStats.pm',
-      'pages.workspace.pm.enabledMcps',
-      'pages.workspace.pm.gateAutoVar',
-      'pages.agentStudio.dialogs.renameCascadeHint',
-      'pages.agentStudio.data.context.hint',
-      'mcp.pmProgress.desc',
-      'mcp.pmWorkflowRead.desc',
-      'mcp.pmWorkflowWrite.desc',
-      'mcp.pmAgentFs.desc',
-    ] as const
-    for (const key of enKeys) {
-      const text = en.global.t(key)
-      expect(text, key).toMatch(/Workspace assistant/)
-      expect(text, key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
-      expect(text, key).not.toMatch(/PM-only|project PM/i)
-    }
-
-    expect(zh.global.t('common.runTrigger.pmMcp')).toBe('工作区助手 MCP')
-    expect(en.global.t('common.runTrigger.pmMcp')).toBe('Workspace assistant MCP')
-
-    // Token source visible copy: 工作流 / Workflow + 工作区助手 / Workspace assistant
+    expect(en.global.t('pages.board.tokenStats.chat')).toBe('pages.board.tokenStats.chat')
     expect(zh.global.t('pages.board.tokenStats.workflow')).toBe('工作流')
-    expect(zh.global.t('pages.board.tokenStats.pm')).toBe('工作区助手')
     expect(en.global.t('pages.board.tokenStats.workflow')).toBe('Workflow')
-    expect(en.global.t('pages.board.tokenStats.pm')).toBe('Workspace assistant')
     // Do not verify Title Case with case-insensitive /workflow/ substring
     expect(en.global.t('pages.board.tokenStats.workflow')).not.toBe('workflow')
 
@@ -274,20 +232,6 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.appPreview.novnc.cancelInspect')).toBe('Cancel annotation')
     expect(zh.global.t('pages.appPreview.novnc.cancelInspect')).not.toMatch(/取消取点/)
 
-
-    const tokenSourceNoPmKeys = [
-      'pages.board.tokenStats.workflow',
-      'pages.board.tokenStats.pm',
-    ] as const
-    for (const key of tokenSourceNoPmKeys) {
-      expect(zh.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
-      expect(en.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
-    }
-
-    for (const key of ['pmProgress', 'pmWorkflowRead', 'pmWorkflowWrite', 'pmAgentFs']) {
-      expect(zh.global.t(`mcp.${key}.convention`)).toContain('设置 → 助手设置')
-      expect(en.global.t(`mcp.${key}.convention`)).toContain('Settings → Assistant settings')
-    }
 
     // MCP server ids stay as protocol names
   })

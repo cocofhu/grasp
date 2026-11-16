@@ -4,7 +4,6 @@ import { i18n } from './i18n'
 const TRIGGER_LABEL_KEYS: Record<string, string> = {
   manual: 'common.runTrigger.manual',
   api: 'common.runTrigger.api',
-  pm_mcp: 'common.runTrigger.pmMcp',
 }
 
 export function formatTrigger(raw: string): string {

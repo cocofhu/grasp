@@ -13,7 +13,6 @@ import (
 const (
 	GlobalTokenStatsSourceAll      = "all"
 	GlobalTokenStatsSourceWorkflow = "workflow"
-	GlobalTokenStatsSourcePM       = "pm"
 	GlobalTokenStatsSourceStudio   = "studio"
 	GlobalTokenStatsSourceSolo     = "solo"
 
@@ -39,7 +38,7 @@ type GlobalTokenStatsQuery struct {
 	Granularity      string // optional hour|day|week override
 	Timezone         string
 	UTCOffsetMinutes *int
-	Source           string // all|workflow|pm|studio|solo
+	Source           string // all|workflow|studio|solo
 	Status           string // ok|failed|cancelled
 	Phase            string // production|interactive|chat
 	ModelKey         string
@@ -59,7 +58,6 @@ type GlobalTokenStatsKPI struct {
 	CacheReadTokens  int64    `json:"cacheReadTokens"`
 	CacheWriteTokens int64    `json:"cacheWriteTokens"`
 	WorkflowTotal    int64    `json:"workflowTotal"`
-	PmTotal          int64    `json:"pmTotal"`
 	StudioTotal      int64    `json:"studioTotal"`
 	SoloTotal        int64    `json:"soloTotal"`
 	FailedTotal      int64    `json:"failedTotal"`
@@ -114,7 +112,7 @@ type GlobalTokenStatsNamedBucket struct {
 type GlobalTokenStatsTreeNode struct {
 	Key      string                     `json:"key"`
 	Name     string                     `json:"name"`
-	Kind     string                     `json:"kind"` // workflow|pm|studio|solo|nodeType
+	Kind     string                     `json:"kind"` // workflow|studio|solo|nodeType
 	Value    int64                      `json:"value"`
 	Cost     float64                    `json:"cost,omitempty"`
 	Children []GlobalTokenStatsTreeNode `json:"children,omitempty"`
@@ -579,7 +577,7 @@ func filterRowsByWindow(rows []globalTokenUsageRow, win windowSlice, loc *time.L
 
 type tokenBucketAgg struct {
 	input, output, cacheRead, cacheWrite int64
-	workflow, pm, studio, solo, failed   int64
+	workflow, studio, solo, failed       int64
 	cost                                 float64
 }
 
@@ -587,7 +585,6 @@ type globalAgg struct {
 	buckets      map[string]*tokenBucketAgg
 	composition  TokenStatsComposition
 	workflowTot  int64
-	pmTot        int64
 	studioTot    int64
 	soloTot      int64
 	failedTot    int64
@@ -743,8 +740,6 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 		}
 
 		switch row.source {
-		case TokenStatsKindPM:
-			agg.pmTot += total
 		case GlobalTokenStatsSourceStudio:
 			agg.studioTot += total
 		case GlobalTokenStatsSourceSolo:
@@ -888,8 +883,6 @@ func addTreeRow(p *treeAgg, row globalTokenUsageRow) {
 	total := row.usage.Total()
 	var mid *treeAgg
 	switch row.source {
-	case TokenStatsKindPM:
-		mid = p.child("_pm", "PM", "pm")
 	case GlobalTokenStatsSourceStudio:
 		mid = p.child("_studio", "Studio", "studio")
 	case GlobalTokenStatsSourceSolo:
@@ -960,8 +953,6 @@ func addUsageToBucket(b *tokenBucketAgg, u models.TokenUsage, source string) {
 	b.cacheWrite += u.CacheWriteTokens
 	tot := u.Total()
 	switch source {
-	case TokenStatsKindPM:
-		b.pm += tot
 	case GlobalTokenStatsSourceStudio:
 		b.studio += tot
 	case GlobalTokenStatsSourceSolo:
@@ -993,7 +984,6 @@ func bucketsFromAgg(buckets map[string]*tokenBucketAgg, nowLocal time.Time, win 
 			Bucket:           k,
 			Total:            b.input + b.output + b.cacheRead + b.cacheWrite,
 			WorkflowTotal:    b.workflow,
-			PmTotal:          b.pm,
 			StudioTotal:      b.studio,
 			SoloTotal:        b.solo,
 			FailedTotal:      b.failed,
@@ -1019,7 +1009,6 @@ func buildGlobalKPI(cur, prev *globalAgg) GlobalTokenStatsKPI {
 		CacheReadTokens:  cur.composition.CacheReadTokens,
 		CacheWriteTokens: cur.composition.CacheWriteTokens,
 		WorkflowTotal:    cur.workflowTot,
-		PmTotal:          cur.pmTot,
 		StudioTotal:      cur.studioTot,
 		SoloTotal:        cur.soloTot,
 		FailedTotal:      cur.failedTot,
@@ -1067,7 +1056,6 @@ func trendFromBuckets(buckets map[string]*tokenBucketAgg) []TokenStatsBucket {
 			Bucket:        k,
 			Total:         b.input + b.output + b.cacheRead + b.cacheWrite,
 			WorkflowTotal: b.workflow,
-			PmTotal:       b.pm,
 			StudioTotal:   b.studio,
 			SoloTotal:     b.solo,
 			Cost:          b.cost,
@@ -1141,7 +1129,7 @@ func buildGlobalWorkflowRank(cur *globalAgg) []TokenStatsWorkflow {
 			totals[id] = agg.total
 		}
 	}
-	rows := buildConsumptionRank(totals, cur.wfNames, 0, false)
+	rows := buildConsumptionRank(totals, cur.wfNames)
 	topIDs := make(map[string]struct{}, len(rows))
 	for i := range rows {
 		row := &rows[i]

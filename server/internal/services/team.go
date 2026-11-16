@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
-	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/google/uuid"
 )
@@ -25,16 +23,12 @@ var (
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
 type TeamBootstrapRequest struct {
-	Prefix                string   `json:"prefix"`
-	PMName                string   `json:"pmName"`
-	Background            string   `json:"background"`
-	ModelConfigurationID  string   `json:"modelConfigurationId"`
-	ModelConfigurationIDs []string `json:"modelConfigurationIds,omitempty"`
-	Region                string   `json:"region,omitempty"`
-	// RepoID is an optional repository the PM's sandbox clones.
-	RepoID string            `json:"repoId,omitempty"`
-	MCP    []MCPServer       `json:"mcp,omitempty"`
-	Env    map[string]string `json:"env,omitempty"`
+	Prefix                string            `json:"prefix"`
+	ModelConfigurationID  string            `json:"modelConfigurationId"`
+	ModelConfigurationIDs []string          `json:"modelConfigurationIds,omitempty"`
+	Region                string            `json:"region,omitempty"`
+	MCP                   []MCPServer       `json:"mcp,omitempty"`
+	Env                   map[string]string `json:"env,omitempty"`
 }
 
 // TeamBootstrapEvent is one progress log line for the UI.
@@ -53,51 +47,34 @@ type TeamBootstrapResource struct {
 
 // TeamBootstrapSession tracks an in-flight or finished team bootstrap.
 type TeamBootstrapSession struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"` // starting|running|pulling|ready|failed
-	Error     string `json:"error,omitempty"`
-	PMAgent   string `json:"pmAgent,omitempty"`
-	SandboxID string `json:"sandboxId,omitempty"`
-	// SandboxStatus mirrors gateway/local sandbox lifecycle (pulling|creating|running|error).
-	SandboxStatus string                  `json:"sandboxStatus,omitempty"`
-	Prefix        string                  `json:"prefix,omitempty"`
-	Background    string                  `json:"background,omitempty"`
-	AgentNames    []string                `json:"agentNames,omitempty"`
-	Events        []TeamBootstrapEvent    `json:"events"`
-	Resources     []TeamBootstrapResource `json:"resources"`
-	CreatedAt     time.Time               `json:"createdAt"`
-	UpdatedAt     time.Time               `json:"updatedAt"`
-}
-
-// TeamSandbox is the SandboxService surface used by team bootstrap (g3.3).
-type TeamSandbox interface {
-	Open(ctx context.Context, profile string, repos []models.SessionRepo) (*models.Sandbox, error)
-	GetView(ctx context.Context, id uint) (*SandboxView, error)
+	ID         string                  `json:"id"`
+	Status     string                  `json:"status"` // starting|running|ready|failed
+	Error      string                  `json:"error,omitempty"`
+	Prefix     string                  `json:"prefix,omitempty"`
+	AgentNames []string                `json:"agentNames,omitempty"`
+	Events     []TeamBootstrapEvent    `json:"events"`
+	Resources  []TeamBootstrapResource `json:"resources"`
+	CreatedAt  time.Time               `json:"createdAt"`
+	UpdatedAt  time.Time               `json:"updatedAt"`
 }
 
 // TeamService orchestrates Create Agent Team bootstrap + scoped template creates.
 type TeamService struct {
 	Workspace *WorkspaceService
 	Skills    *AgentService
-	Pm        *PmService
-	Sbx       TeamSandbox
 	// Credentials resolves the selected model references.
 	Credentials *CredentialService
-	// Projects resolves the PM sandbox's repository.
-	Projects *ProjectService
 
 	mu         sync.Mutex
 	sessions   map[string]*TeamBootstrapSession
 	sessionReq map[string]normalizedTeamReq
 }
 
-// NewTeamService wires dependencies (Sbx may be nil in unit tests).
-func NewTeamService(workspace *WorkspaceService, skills *AgentService, pm *PmService, sbx TeamSandbox) *TeamService {
+// NewTeamService wires dependencies.
+func NewTeamService(workspace *WorkspaceService, skills *AgentService) *TeamService {
 	return &TeamService{
 		Workspace:  workspace,
 		Skills:     skills,
-		Pm:         pm,
-		Sbx:        sbx,
 		sessions:   map[string]*TeamBootstrapSession{},
 		sessionReq: map[string]normalizedTeamReq{},
 	}
@@ -123,14 +100,11 @@ func (s *TeamService) GetSession(id string) (TeamBootstrapSession, error) {
 	return cp, nil
 }
 
-// Bootstrap creates PM and engineer Agents in the existing workspace.
-func (s *TeamService) Bootstrap(ctx context.Context, req TeamBootstrapRequest) (TeamBootstrapSession, error) {
+// Bootstrap creates engineer Agents in the existing workspace.
+func (s *TeamService) Bootstrap(req TeamBootstrapRequest) (TeamBootstrapSession, error) {
 	norm, err := s.normalizeRequest(req)
 	if err != nil {
 		return TeamBootstrapSession{}, err
-	}
-	if _, ok := s.Skills.Get(norm.PMName); ok {
-		return TeamBootstrapSession{}, fmt.Errorf("%w: %s", ErrTeamAgentConflict, norm.PMName)
 	}
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(norm.Prefix, role.RoleLabelZH)
@@ -140,12 +114,11 @@ func (s *TeamService) Bootstrap(ctx context.Context, req TeamBootstrapRequest) (
 	}
 
 	sess := &TeamBootstrapSession{
-		ID:         "team-" + uuid.NewString()[:12],
-		Status:     "starting",
-		Prefix:     norm.Prefix,
-		Background: norm.Background,
-		CreatedAt:  time.Now().UTC(),
-		UpdatedAt:  time.Now().UTC(),
+		ID:        "team-" + uuid.NewString()[:12],
+		Status:    "starting",
+		Prefix:    norm.Prefix,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 	s.mu.Lock()
 	s.sessions[sess.ID] = sess
@@ -153,12 +126,12 @@ func (s *TeamService) Bootstrap(ctx context.Context, req TeamBootstrapRequest) (
 	s.mu.Unlock()
 	s.appendEvent(sess.ID, "sys", "bootstrap session "+sess.ID)
 
-	go s.runBootstrap(ctx, sess.ID, norm)
+	go s.runBootstrap(sess.ID, norm)
 	return s.GetSession(sess.ID)
 }
 
-// Retry re-runs sandbox provisioning for a failed bootstrap session (idempotent skips).
-func (s *TeamService) Retry(ctx context.Context, sessionID string) (TeamBootstrapSession, error) {
+// Retry continues engineer provisioning for a failed bootstrap session (existing agents are skipped).
+func (s *TeamService) Retry(sessionID string) (TeamBootstrapSession, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	cur, err := s.GetSession(sessionID)
 	if err != nil {
@@ -178,20 +151,16 @@ func (s *TeamService) Retry(ctx context.Context, sessionID string) (TeamBootstra
 		sess.Error = ""
 	})
 	s.appendEvent(sessionID, "sys", "retry bootstrap "+sessionID)
-	go s.runRetry(ctx, sessionID, req)
+	go s.runRetry(sessionID, req)
 	return s.GetSession(sessionID)
 }
 
 type normalizedTeamReq struct {
 	WorkspaceName         string
 	Prefix                string
-	PMName                string
-	Background            string
-	AcpBackend            string
 	ModelConfigurationID  string
 	ModelConfigurationIDs []string
 	Region                string
-	Repo                  *models.SessionRepo
 	MCP                   []MCPServer
 	Env                   map[string]string
 }
@@ -202,38 +171,12 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		return normalizedTeamReq{}, err
 	}
 	prefix := strings.TrimSpace(req.Prefix)
-	pmName := strings.TrimSpace(req.PMName)
-	background := strings.TrimSpace(req.Background)
 	if prefix == "" {
 		return normalizedTeamReq{}, fmt.Errorf("%w: prefix is required", ErrTeamValidation)
-	}
-	if background == "" {
-		return normalizedTeamReq{}, fmt.Errorf("%w: background is required", ErrTeamValidation)
-	}
-	pmName, err = NormalizeAndValidateAgentName(pmName)
-	if err != nil {
-		if pmName == "" {
-			pmName, err = NormalizeAndValidateAgentName(PMDisplayName(prefix))
-		}
-		if err != nil {
-			return normalizedTeamReq{}, fmt.Errorf("%w: pmName: %v", ErrTeamValidation, err)
-		}
 	}
 	configuration, err := s.Credentials.requireModelConfigurationSet(req.ModelConfigurationID, req.ModelConfigurationIDs)
 	if err != nil {
 		return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
-	}
-	var repo *models.SessionRepo
-	if id := strings.TrimSpace(req.RepoID); id != "" {
-		if s.Projects == nil {
-			return normalizedTeamReq{}, errors.New("project service unavailable")
-		}
-		p, err := s.Projects.Get(id)
-		if err != nil {
-			return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
-		}
-		snap := SessionRepoFromProject(p, "", 0)
-		repo = &snap
 	}
 	mcp := req.MCP
 	if len(mcp) == 0 {
@@ -250,19 +193,15 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 	return normalizedTeamReq{
 		WorkspaceName:         workspace.Name,
 		Prefix:                prefix,
-		PMName:                pmName,
-		Background:            background,
-		AcpBackend:            configuration.Backend,
 		ModelConfigurationID:  configuration.ID,
 		ModelConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...),
 		Region:                strings.TrimSpace(req.Region),
-		Repo:                  repo,
 		MCP:                   mcp,
 		Env:                   env,
 	}, nil
 }
 
-func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req normalizedTeamReq) {
+func (s *TeamService) runBootstrap(sessionID string, req normalizedTeamReq) {
 	fail := func(err error) {
 		s.setStatus(sessionID, "failed", err.Error())
 		s.appendEvent(sessionID, "err", err.Error())
@@ -280,40 +219,11 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	s.addResource(sessionID, "workspace", ws.Name, "")
 	s.appendEvent(sessionID, "ok", "workspace ready: "+ws.Name)
 
-	// Create PM agent
-	s.appendEvent(sessionID, "sys", "creating PM "+req.PMName)
-	pmAgent, err := s.buildPMAgent(req)
-	if err != nil {
-		fail(err)
-		return
-	}
-	if err := s.Skills.Save(pmAgent); err != nil {
-		fail(err)
-		return
-	}
-	s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
-		sess.PMAgent = req.PMName
-		sess.AgentNames = append(sess.AgentNames, req.PMName)
-	})
-	s.addResource(sessionID, "agent", req.PMName, "PM Leader")
-	s.appendEvent(sessionID, "ok", "PM agent saved")
-
-	enabled := true
-	mcps := append([]string{}, DefaultPmEnabledMcps...)
-	if !ws.PmLeaderEnabled && ws.PmLeaderAgent == "" {
-		if _, err := s.Pm.UpdateBinding(&enabled, &req.PMName, mcps, nil, nil); err != nil {
-			fail(fmt.Errorf("bind PM Leader: %w", err))
-			return
-		}
-	}
-	s.appendEvent(sessionID, "ok", "PM Leader bound")
-
-	s.appendEvent(sessionID, "warn", "inject Prompt（团队背景）:\n"+truncateRunes(req.Background, 400))
 	s.appendEvent(sessionID, "warn", fmt.Sprintf("provision %d engineers from templates (inherit mcp/env)", len(TeamEngineerTemplates)))
 
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
-		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
+		s.appendEvent(sessionID, "sys", "create agent from template "+role.ID+": "+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
 			TemplateID:            role.ID,
 			Name:                  name,
@@ -333,30 +243,20 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		})
 	}
 
-	s.finishBootstrap(ctx, sessionID, req)
+	s.finishBootstrap(sessionID)
 }
 
-func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normalizedTeamReq) {
+func (s *TeamService) runRetry(sessionID string, req normalizedTeamReq) {
 	fail := func(err error) {
 		s.setStatus(sessionID, "failed", err.Error())
 		s.appendEvent(sessionID, "err", err.Error())
-	}
-	cur, err := s.GetSession(sessionID)
-	if err != nil {
-		fail(err)
-		return
-	}
-	// PM not created yet → full bootstrap.
-	if strings.TrimSpace(cur.PMAgent) == "" {
-		s.runBootstrap(ctx, sessionID, req)
-		return
 	}
 	s.setStatus(sessionID, "running", "")
 	s.appendEvent(sessionID, "sys", "retry: continue engineer provision (skip existing)")
 
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
-		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
+		s.appendEvent(sessionID, "sys", "create agent from template "+role.ID+": "+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
 			TemplateID:            role.ID,
 			Name:                  name,
@@ -398,114 +298,15 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		}
 	}
 
-	s.finishBootstrap(ctx, sessionID, req)
+	s.finishBootstrap(sessionID)
 }
 
-func (s *TeamService) finishBootstrap(ctx context.Context, sessionID string, req normalizedTeamReq) {
-	cur, err := s.GetSession(sessionID)
-	if err != nil {
-		s.setStatus(sessionID, "failed", err.Error())
-		return
-	}
-	pmName := cur.PMAgent
-	if pmName == "" {
-		pmName = req.PMName
-	}
-	if s.Sbx != nil && pmName != "" {
-		s.appendEvent(sessionID, "sys", "starting sandbox for "+pmName)
-		var repos []models.SessionRepo
-		if req.Repo != nil {
-			repos = []models.SessionRepo{*req.Repo}
-		}
-		sb, err := s.Sbx.Open(ctx, pmName, repos)
-		if err != nil {
-			// Quota / missing agent: roster is already created; surface a warn and still finish
-			// ready so the user can open Studio. Pull/create failures after Open are failed below.
-			s.appendEvent(sessionID, "warn", "sandbox start deferred: "+err.Error())
-		} else if sb != nil {
-			sid := fmt.Sprintf("%d", sb.ID)
-			s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
-				sess.SandboxID = sid
-				sess.SandboxStatus = strings.TrimSpace(sb.Status)
-			})
-			s.appendEvent(sessionID, "ok", "sandbox "+sid+" status="+sb.Status)
-			// Do not mark ready while image is still pulling/creating (g3.3 / review v1).
-			if err := s.waitTeamSandboxReady(ctx, sessionID, sb.ID); err != nil {
-				s.appendEvent(sessionID, "err", "sandbox ready failed: "+err.Error())
-				s.setStatus(sessionID, "failed", err.Error())
-				return
-			}
-		}
-	}
-	s.appendEvent(sessionID, "ok", fmt.Sprintf("done: 1 PM + %d engineers (total %d)", len(TeamEngineerTemplates), 1+len(TeamEngineerTemplates)))
+func (s *TeamService) finishBootstrap(sessionID string) {
+	s.appendEvent(sessionID, "ok", fmt.Sprintf("done: %d engineers", len(TeamEngineerTemplates)))
 	s.setStatus(sessionID, "ready", "")
 }
 
-// waitTeamSandboxReady polls GetView until running, or fails on error/timeout.
-// While status=pulling the session stays on status=pulling so TeamBootstrapPanel can show pull loading.
-func (s *TeamService) waitTeamSandboxReady(ctx context.Context, sessionID string, sandboxID uint) error {
-	if s.Sbx == nil {
-		return nil
-	}
-	deadline := time.Now().Add(20 * time.Minute)
-	announcedPulling := false
-	poll := 500 * time.Millisecond
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("sandbox %d timeout waiting for running (incl. image pull)", sandboxID)
-		}
-		view, err := s.Sbx.GetView(ctx, sandboxID)
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(poll):
-			}
-			continue
-		}
-		st := strings.TrimSpace(view.Status)
-		s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
-			sess.SandboxStatus = st
-		})
-		switch st {
-		case "running":
-			if announcedPulling {
-				s.appendEvent(sessionID, "ok", "runtime image ready")
-			}
-			s.setStatus(sessionID, "running", "")
-			return nil
-		case "error", "stopped":
-			msg := strings.TrimSpace(view.Error)
-			if msg == "" {
-				msg = "sandbox " + st
-			}
-			return fmt.Errorf("%s", msg)
-		case "pulling":
-			if !announcedPulling {
-				s.appendEvent(sessionID, "sys", "pulling runtime image…")
-				announcedPulling = true
-			}
-			s.setStatus(sessionID, "pulling", "")
-			poll = 500 * time.Millisecond
-		default:
-			// creating / unknown: keep session running (not ready) while we wait.
-			if announcedPulling {
-				s.setStatus(sessionID, "running", "")
-			}
-			poll = 500 * time.Millisecond
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(poll):
-		}
-	}
-}
-
-// CreateFromTemplateArgs is used by MCP and bootstrap.
+// CreateFromTemplateArgs is used by bootstrap.
 type CreateFromTemplateArgs struct {
 	TemplateID            string
 	Name                  string
@@ -578,67 +379,6 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 	return tmpl, nil
 }
 
-func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
-	tmpl, err := loadTeamAgentTemplate(TeamPMEmbedName)
-	if err != nil {
-		return Agent{}, err
-	}
-	tmpl.Name = req.PMName
-	backend := req.AcpBackend
-	tmpl.InheritModel = false
-	tmpl.AcpBackend = backend
-	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
-	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
-		tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
-	}
-	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: req.ModelConfigurationID, ConfigurationIDs: append([]string(nil), req.ModelConfigurationIDs...)}
-
-	mergedEnv := map[string]string{}
-	for k, v := range tmpl.Env {
-		mergedEnv[k] = v
-	}
-	for k, v := range req.Env {
-		k = strings.TrimSpace(k)
-		if k != "" {
-			mergedEnv[k] = v
-		}
-	}
-	applyOnboardingAgentRegion(mergedEnv, backend, req.Region)
-	tmpl.Env = stripTokenKeysFromEnvMap(mergedEnv)
-
-	if len(req.MCP) > 0 {
-		tmpl.MCP = req.MCP
-	} else if len(tmpl.MCP) == 0 {
-		tmpl.MCP = DefaultPlatformMCP()
-	}
-
-	tmpl.Files = upsertAgentFile(tmpl.Files, "rules/team-context.md", teamPMContextMarkdown(req))
-	return tmpl, nil
-}
-
-func teamPMContextMarkdown(req normalizedTeamReq) string {
-	var b strings.Builder
-	b.WriteString("---\n")
-	b.WriteString("description: 团队背景与建团编制（始终应用；由创建 Agent 团队写入）\n")
-	b.WriteString("alwaysApply: true\n")
-	b.WriteString("---\n\n")
-	b.WriteString("# 团队上下文 · " + req.PMName + "\n\n")
-	b.WriteString("## 团队背景（建团 Prompt）\n\n")
-	b.WriteString(strings.TrimSpace(req.Background))
-	b.WriteString("\n\n## 编制约定\n\n")
-	b.WriteString("- 命名前缀：`" + req.Prefix + "`\n")
-	b.WriteString(fmt.Sprintf("- 工作区：`%s`（你与 %d 名工程师在此协作）\n", req.WorkspaceName, len(TeamEngineerTemplates)))
-	b.WriteString("- PM：`" + req.PMName + "`\n")
-	b.WriteString("- 工程师命名：`{前缀}{角色}`（" + teamRoleLabels() + "）\n\n")
-	if req.Repo != nil {
-		b.WriteString("## 仓库\n\n")
-		b.WriteString("- " + req.Repo.Name + "：`" + req.Repo.RepoURL + "`，克隆在 `/root/workspace/" + req.Repo.RepoDirName + "/`\n\n")
-	}
-	b.WriteString("## 工作方式\n\n")
-	b.WriteString("先 `pm_list_workspace_agents` 确认编制，再按工作流分派工程师；缺人时用模板补齐，勿覆盖重名。\n")
-	return b.String()
-}
-
 func upsertAgentFile(files []AgentFile, path, content string) []AgentFile {
 	path = strings.TrimSpace(path)
 	for i := range files {
@@ -690,20 +430,4 @@ func (s *TeamService) patchSession(id string, fn func(*TeamBootstrapSession)) {
 	}
 	fn(sess)
 	sess.UpdatedAt = time.Now().UTC()
-}
-
-func truncateRunes(s string, max int) string {
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return string(r[:max]) + "…"
-}
-
-func teamRoleLabels() string {
-	labels := make([]string, 0, len(TeamEngineerTemplates))
-	for _, r := range TeamEngineerTemplates {
-		labels = append(labels, r.RoleLabelZH)
-	}
-	return strings.Join(labels, "/")
 }

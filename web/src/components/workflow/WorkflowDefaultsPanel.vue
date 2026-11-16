@@ -7,27 +7,15 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import { api } from '@/lib/api/api'
-import type { Agent } from '@/lib/api/api'
 import type { Project, RepoChoice } from '@/lib/api/apiTypes'
 import type { WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
-const props = defineProps<{ workflow: Workflow; agents: Agent[] }>()
+const props = defineProps<{ workflow: Workflow }>()
 const { t } = useI18n()
 const projects = ref<Project[]>([])
 const projectsLoading = ref(true)
 const error = ref('')
-const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs']
 const defaults = computed(() => props.workflow.defaults)
-const selectedMcps = computed(() => defaults.value?.gateAuto?.enabledMcps ?? packs)
 const variableTypes = computed(() => ['string', 'paragraph', 'number', 'bool', 'select'].map((value) => ({ value, label: t(`common.varTypes.${value}`) })))
-const agentOptions = computed(() => {
-  const options = props.agents.map((agent) => ({ value: agent.name, label: agent.name }))
-  const selected = defaults.value?.gateAuto?.agentName
-  if (selected && !options.some((option) => option.value === selected)) options.push({ value: selected, label: selected })
-  return [{ value: '', label: t('pages.workspaceDefaults.selectAgent') }, ...options]
-})
-function toggleSelection(values: string[] | undefined, value: string): string[] {
-  return values?.includes(value) ? values.filter((item) => item !== value) : [...(values || []), value]
-}
 function ensureDefaults(): WorkflowDefaults {
   const config = props.workflow.defaults ||= { variables: [] }
   // Go serializes an empty variable slice as null on migrated data.
@@ -41,14 +29,6 @@ function setRepos(value: RepoChoice[]) {
 }
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-}
-function isSwitchEvent(event: MouseEvent) {
-  const target = event.target
-  return target instanceof Element && !!target.closest('[role="switch"]')
-}
-function toggleGate(event: MouseEvent) {
-  if (isSwitchEvent(event)) return
-  overrideGate(!defaults.value?.gateAuto)
 }
 const plusMotion = ref(0)
 let variableSeq = 0
@@ -122,13 +102,6 @@ function onVariableTransitionEnd(variable: WorkspaceVariable, event: TransitionE
   if (event.propertyName && event.propertyName !== 'grid-template-rows') return
   commitRemoval(variable)
 }
-const gateFallback: NonNullable<WorkflowDefaults['gateAuto']> = { enabled: false, agentName: '', variable: '', prompt: '', enabledMcps: [] }
-const gateForm = computed(() => defaults.value?.gateAuto ?? gateFallback)
-function setGateField<K extends keyof NonNullable<WorkflowDefaults['gateAuto']>>(key: K, value: NonNullable<WorkflowDefaults['gateAuto']>[K]) {
-  const gate = props.workflow.defaults?.gateAuto
-  if (!gate) return
-  gate[key] = value
-}
 function setVariableValue(variable: WorkspaceVariable, input: string) { variable.value = variable.type === 'number' ? (input === '' ? '' : Number(input)) : input }
 function setVariableName(variable: WorkspaceVariable, name: string) {
   // The server can preserve a masked value only under its existing name.
@@ -148,11 +121,6 @@ function setVariableType(variable: WorkspaceVariable, type: string) {
     const value = variable.value == null ? '' : String(variable.value).trim()
     variable.value = value === '' ? '' : Number.isFinite(Number(value)) ? Number(value) : 0
   } else variable.value = variable.value == null ? '' : String(variable.value)
-}
-function overrideGate(value: boolean) {
-  const config = ensureDefaults()
-  if (value) config.gateAuto = { enabled: false, agentName: '', variable: '', prompt: '', enabledMcps: [] }
-  else delete config.gateAuto
 }
 async function loadProjects() {
   try { projects.value = await api.listProjects() }
@@ -230,43 +198,6 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="defaults-section" data-testid="workflow-gate-settings">
-      <div class="defaults-heading defaults-toggle" data-testid="workflow-gate-row" @click="toggleGate">
-        <span class="defaults-icon"><Icon name="check" :size="18" /></span>
-        <div class="min-w-0 flex-1">
-          <h3 class="font-semibold text-txt">{{ t('pages.workspaceDefaults.gateTitle') }}</h3>
-          <p class="defaults-hint">{{ t('pages.workspaceDefaults.gateHint') }}</p>
-        </div>
-        <AppSwitch :model-value="!!defaults?.gateAuto" :aria-label="t('pages.workspaceDefaults.gateOverride')" @update:model-value="overrideGate" />
-      </div>
-      <div
-        class="defaults-expansion"
-        :class="{ 'is-open': !!defaults?.gateAuto }"
-        data-testid="workflow-gate-expansion"
-        :inert="defaults?.gateAuto ? undefined : true"
-      >
-        <div class="defaults-expansion-clip">
-          <div class="space-y-4 border-t border-line p-4">
-            <div class="defaults-row">
-              <span>{{ t('pages.workspaceDefaults.gateEnabled') }}</span>
-              <AppSwitch :model-value="!!gateForm.enabled" :aria-label="t('pages.workspaceDefaults.gateEnabled')" @update:model-value="setGateField('enabled', $event)" />
-            </div>
-            <div>
-              <p class="defaults-label">{{ t('pages.workspaceDefaults.agent') }}</p>
-              <AppSelect :model-value="gateForm.agentName" :options="agentOptions" searchable size="sm" :placeholder="t('pages.workspaceDefaults.selectAgent')" :aria-label="t('pages.workspaceDefaults.agent')" @update:model-value="setGateField('agentName', $event)" />
-            </div>
-            <label class="block text-xs text-txt2">{{ t('pages.workspaceDefaults.variableName') }}<input :value="gateForm.variable" class="input mt-2 w-full font-mono text-xs" @input="setGateField('variable', ($event.target as HTMLInputElement).value)" /></label>
-            <label class="block text-xs text-txt2">{{ t('pages.workspaceDefaults.prompt') }}<textarea :value="gateForm.prompt" class="input mt-2 w-full text-xs" rows="3" @input="setGateField('prompt', ($event.target as HTMLTextAreaElement).value)" /></label>
-            <div>
-              <p class="defaults-label">{{ t('pages.workspaceDefaults.mcpPacks') }}</p>
-              <div class="flex flex-wrap gap-2">
-                <AppButton v-for="pack in packs" :key="pack" variant="outline" size="sm" :aria-pressed="selectedMcps.includes(pack)" :class="{ 'defaults-choice-selected': selectedMcps.includes(pack) }" @click="setGateField('enabledMcps', toggleSelection(selectedMcps, pack))">{{ pack }}</AppButton>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -286,32 +217,6 @@ onBeforeUnmount(() => {
 .defaults-row {
   @apply flex items-center justify-between gap-3 text-xs text-txt2;
 }
-.defaults-label {
-  @apply mb-2 text-xs text-txt2;
-}
-.defaults-choice-selected {
-  @apply border-accent/30 bg-accent/10 text-accent;
-}
-.defaults-toggle {
-  cursor: pointer;
-  transition: background-color var(--dur-press) var(--ease-out-expo);
-}
-.defaults-toggle:active {
-  background-color: rgb(var(--c-elevated));
-}
-.defaults-expansion {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 180ms var(--ease-out-expo),
-    opacity 180ms var(--ease-out-expo);
-}
-.defaults-expansion.is-open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-.defaults-expansion-clip,
 .defaults-var-clip {
   min-height: 0;
   overflow: hidden;
@@ -330,8 +235,6 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  .defaults-toggle,
-  .defaults-expansion,
   .defaults-var {
     transition: none;
     animation: none;

@@ -34,7 +34,7 @@ func (s *switchableAgents) setReview(name string, on bool) {
 func newSwitchableAgents(review bool) *switchableAgents {
 	c := capsResearch.Clone()
 	c.Review = review
-	return &switchableAgents{caps: map[string]*models.AgentCapabilities{"pm-agent": c}}
+	return &switchableAgents{caps: map[string]*models.AgentCapabilities{"planner-agent": c}}
 }
 
 func persistedReview(t *testing.T, eng *Engine, runID, nodeID string) bool {
@@ -80,7 +80,7 @@ func TestRefreshReviewFlagFollowsAgent(t *testing.T) {
 		t.Fatal("refresh must not mutate the shared fixture")
 	}
 
-	agents.setReview("pm-agent", true)
+	agents.setReview("planner-agent", true)
 	c, _ = eng.loadCtx("run-refresh")
 	eng.refreshReviewFlag(c, c.graph.FindNode("prop"))
 	if !persistedReview(t, eng, "run-refresh", "prop") {
@@ -102,7 +102,7 @@ func TestRefreshReviewFlagKeepsParkedReview(t *testing.T) {
 	waitReactPause(t, db, run.ID, "prop")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	agents.setReview("pm-agent", false)
+	agents.setReview("planner-agent", false)
 	if !persistedReview(t, eng, run.ID, "prop") {
 		t.Fatal("parked review node must keep its review flag")
 	}

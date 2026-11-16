@@ -500,7 +500,7 @@ func (s *WorkflowService) Restore(id string, version int) (models.WorkflowDef, e
 
 // renameAgentProfileRefsFailHook, when non-nil, is invoked inside
 // RenameAgentProfileRefs before persisting. Tests use it to simulate write
-// failure so RenameAgent can verify Skill/Pm/Org rollback.
+// failure so RenameAgent can verify Skill/chat/Org rollback.
 var renameAgentProfileRefsFailHook func() error
 
 // SetRenameAgentProfileRefsFailHookForTest injects a persist failure for tests.

@@ -1,0 +1,29 @@
+# 2026-11-15（移除工作区助手、助手设置与外部 MCP）
+
+- 日期：2026-11-15
+- 范围：`server/internal/{handlers,services,engine,models,router,envauth,database}/`、`server/cmd/server/`、`web/src/{views,components,lib,data,router,locales}/`、`web/e2e/`、`agents/`、`docs/{content,site}/`、`README*.md`、`CONTRIBUTING.md`、`server/README.md`。
+- 做了什么：
+  - **工作区助手（PM Leader）**：删除 `/assistant` 对话页、`/settings/assistant` 设置页，以及 `/api/workspace/pm-leader`、`/api/workspace/pm/*`（线程、消息、记忆、沙箱、回合、聊天 WS）全部接口。同时删除 `/mcp/pm/:mcpId` 主机（`pm-progress`、`pm-workflow-read`、`pm-workflow-write`、`pm-agent-fs`），以及助手引用、进度卡片、线程视图等服务。`Workspace` 去掉 `pmLeaderEnabled`、`pmLeaderAgent`、`pmEnabledMcps`、`gateAutoVar`、`gateAutoPrompt`。
+  - **门禁自动调用助手（gate auto）**：删除引擎 `gate_auto`、服务端调用和启动适配器，工作流默认设置去掉 `gateAuto` 字段和对应面板。
+  - **外部 MCP**：删除 `/settings/external-mcp` 页、`/api/workspace/external-mcp*` 接口和 `/mcp/workspace*` 主机。同时删除工作区 MCP API Key，以及凭据类型 `external_mcp`。
+  - **Channel 接入**：IM 渠道保留，移到新页面 `/settings/channels`（设置导航「Channel 接入」）。渠道去掉「主渠道」、`enabledMcps` 和「同步助手」，删除渠道时不再需要选新的主渠道。推送目标候选改由新接口 `GET /api/workspace/channels/threads` 提供（列出各渠道的会话）。Channel 与定时任务的 Agent 会话照常运行，沙箱用途 `agent` 的显示名改为「Agent 会话」。（同批后续已整体移除 Channel、定时任务与通知策略，见 [2026-11-15-remove-channels-notify](2026-11-15-remove-channels-notify.md)。）
+  - **团队创建向导**：只创建工程师，不再创建 PM、不再选仓库、不再填写背景。`TeamBootstrapRequest` 去掉 `pmName`、`background`、`repoId`，会话去掉 `pmAgent`、`sandboxId`、`sandboxStatus`、`background`，状态去掉 `pulling`。完成后自动选中第一个新建的 Agent。删除内置模板 `PMAgent` 和 `agents/` 中的打包项。
+  - **其他**：删除运行触发方式 `pm_mcp`、工作流版本来源 `pm`、Agent 工作目录版本来源 `pm-mcp`/`external-mcp`，以及只供助手 MCP 使用的 Agent 工作目录读写接口（`ListWorkspace`、`WriteWorkspaceFileVcs` 等）。保留的版本历史测试改为直接经 `Vcs.CommitChange` 提交。环境变量保留前缀去掉不再注入的 `GRASP_PM_`。`models/pm.go` 改名为 `chat.go`（Channel/定时任务会话仍使用这些表）。
+  - **PM 命名与存量数据**：代码、接口和存储中不再有 PM。Token 来源 `pm` 改为 `chat`（接口字段 `pmTokens`、`pmTotal` 改为 `chatTokens`、`chatTotal`，结构树键 `_pm` 改为 `_chat`；同批后续删除 `chat` 来源，存量记录启动时删除，见 [移除通知策略与 Channel](2026-11-15-remove-channels-notify.md)）；审计调用者 `pm` 改为 `member`。启动时新增 `retireWorkspaceAssistant`（`database/retired_assistant.go`，同批后续合并为 `retired_features.go` 的 `retireRemovedFeatures`）：
+    - 改写存量取值：`token_usage_events`/`token_usage_reports` 的 `source` `pm` → `chat`，`audit_events.caller_kind` `pm` → `member`，`runs.trigger` `pm_mcp` → `api`，`workflow_versions.source` `pm` → `save`。用 `UpdateColumn`，不改 `updated_at`。
+    - 删除旧列：`workspaces.pm_leader_enabled`/`pm_leader_agent`/`pm_enabled_mcps`/`pm_gate_auto_var`/`pm_gate_auto_prompt`，`channel_configs.is_primary`（先删索引，SQLite 要求）/`enabled_mcps`，`chat_messages.citations`/`attached_context`。
+    - 删除旧表：`external_mcp_settings`、`workspace_mcp_api_keys`。
+    - 缺表、缺列都算成功，重复执行无副作用。
+  - **前端清理**：删除 `components/pm/`、`lib/pm/` 和相关 e2e（`gate-auto-pm-settings`、`pm-citation-fp`、`pm-tail-window-lazyload`、`workspace-external-mcp`）。`pm-run-load-error`、`pm-channel-multi` 改名为 `run-load-error`、`channels-panel`，并按新页面重写。`LIB_DOMAIN_MAP.json` 去掉 `pm` 域，新增 `onboarding` 域。
+  - **文档与官网**：删除 `pm-agent-fs` 说明和 Demo 页。官网删除 GraspPM 展示页，并行展示页的启动面板去掉 PM 角色。
+- 为什么：产品聚焦云端 Agent 与工作流。工作区助手、外部 MCP 及其设置与这两条主线重叠，维护面大，所以前后端整体删除，不保留兼容入口。
+- 保持不变：
+  - 审计记录的内容（摘要、`resource_type`、payload）属于历史记录，不改写；只改调用者分类枚举。Agent 工作目录的版本历史在 git 提交信息里，来源 `pm-mcp`/`external-mcp` 不改写，页面原样显示。
+  - 原工作区助手网页端的会话（`chat_threads` 中非渠道、非定时任务的 `user` 会话）保留在库中但已无入口，没有按前缀猜测删除，避免误删渠道会话。
+  - Token 统计口径不变：Channel 与定时任务会话的用量仍单独成一类，只是名字从 `pm` 改为 `chat`。
+  - 旧地址 `/assistant`、`/settings/assistant`、`/settings/external-mcp` 经通配路由回到首页。
+  - 审计、凭据、Agent Studio 与工作流其他功能行为不变（Channel、定时任务、通知策略在同批后续移除）。
+- 如何验证：
+  - `server/`：golangci-lint、`go vet ./...`、gen-configdoc 检查、`go test ./...`、`cover-check-server.sh 90`、`go test ./internal/runtime/ -run 'TestRunAgent|TestReact'`。新增 `ListChannelThreads` 处理函数与服务测试、`cron_jobs_test.go`，以及 `TestRetireWorkspaceAssistantRewritesValuesAndDropsStorage`（预置旧列、索引、旧表和 `pm` 取值，执行两次后检查改写和删除，并确认删列后仍能新增渠道）。
+  - `web/`：lint、`vue-tsc`、`npm test -- --coverage`（573 个文件、6157 个用例通过，行覆盖 91.77%）、`npm run build`。相关 Playwright（`channels-panel`、`run-load-error`、`workspace`、`chat-image-surfaces`、`message-reliability`、`conversation-workspace`、`workflow-canvas`、`mobile-browser-contract`、`workspace-audit`、`run-list-trigger`、`token-analytics`、`onboarding-wizard` 等 18 个文件）159 个用例通过；PM 改名后重跑 `token-analytics`、`workspace-audit`、`run-list-trigger`、`file-attach-harness`、`channels-panel`、`workspace`、`unknown-model-display-name`、`run-detail-mobile-panel`，66 个用例通过。`file-attach-harness` 原先点击已删除的 PM 标签页，已改为只测剩余输入框。
+  - `docs/`：`npm run build` 通过；`js/home.js` 通过 `node --check`。

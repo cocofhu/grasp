@@ -114,16 +114,13 @@ func publishedSnapshotDTO(wf models.WorkflowDef, published []*models.WorkflowVer
 // workspaceDTO shapes the workspace for the frontend with secret values masked.
 // totalTokens is nil when no Usage has been reported (UI "—");
 // a non-nil 0 means usage was reported and sums to zero.
-// workflowTokens / pmTokens expose the source split for the workspace Token tip.
+// workflowTokens exposes the workflow share for the workspace Token tip.
 func workspaceDTO(p models.Workspace, workflowCount int64, tokens services.WorkspaceTokenBreakdown) gin.H {
 	return gin.H{
 		"name": p.Name, "description": p.Description,
 		"workflowCount":           workflowCount,
 		"totalTokens":             tokens.Total,
 		"workflowTokens":          tokens.Workflow,
-		"pmTokens":                tokens.PM,
-		"pmLeaderEnabled":         p.PmLeaderEnabled,
-		"pmLeaderAgent":           p.PmLeaderAgent,
 		"unknownModelDisplayName": p.UnknownModelDisplayName,
 		"createdAt":               p.CreatedAt, "updatedAt": p.UpdatedAt,
 	}

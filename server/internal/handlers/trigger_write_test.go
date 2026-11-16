@@ -51,7 +51,7 @@ func TestInternalStartRunTriggerDefaultsAndRejects(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("illegal %q: want 400 got %d %s", trig, w.Code, w.Body.String())
 		}
-		if !strings.Contains(w.Body.String(), "manual|api|pm_mcp") {
+		if !strings.Contains(w.Body.String(), "manual|api") {
 			t.Fatalf("illegal %q: error missing allow-list: %s", trig, w.Body.String())
 		}
 		// Ensure no run was persisted with the illegal trigger.
@@ -103,7 +103,7 @@ func TestV1StartRunTriggerDefaultsExplicitAndRejects(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("illegal: want 400 got %d %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "manual|api|pm_mcp") {
+	if !strings.Contains(w.Body.String(), "manual|api") {
 		t.Fatalf("error missing allow-list: %s", w.Body.String())
 	}
 	var count int64

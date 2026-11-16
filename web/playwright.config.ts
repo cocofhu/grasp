@@ -10,7 +10,7 @@ const baseURL = `http://127.0.0.1:${e2ePort}`
 // Without a UTF-8 locale Chromium reports non-ASCII download names (e.g. 语音.wav) as "download".
 const browserEnv = process.env.LANG || process.env.LC_ALL ? undefined : { ...process.env, LANG: 'C.UTF-8' }
 
-const MOBILE_CRITICAL_TESTS = /(?:mobile-browser-contract|gate-mobile-fill|run-detail-mobile|run-detail-mobile-panel|agent-studio-mobile-data|board-workspace|workspace-(?:credentials|shared-env|external-mcp|audit)|desktop-sidebar-hide|shell-loading|artifacts-page-version)\.spec\.ts/
+const MOBILE_CRITICAL_TESTS = /(?:mobile-browser-contract|gate-mobile-fill|run-detail-mobile|run-detail-mobile-panel|board-workspace|workspace-(?:credentials|shared-env|audit)|desktop-sidebar-hide|shell-loading|artifacts-page-version)\.spec\.ts/
 
 export default defineConfig({
   testDir: './e2e',

@@ -13,8 +13,8 @@ import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useWorkflowImport } from '@/lib/run/useWorkflowImport'
 import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
 import type { ClarifyImage, Workflow } from '@/lib/shared/types'
-import { openRetryOnboarding } from '@/lib/pm/firstInstall'
-import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/pm/onboardingWizard'
+import { openRetryOnboarding } from '@/lib/onboarding/firstInstall'
+import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/onboarding/onboardingWizard'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 
 export function useWorkflows() {

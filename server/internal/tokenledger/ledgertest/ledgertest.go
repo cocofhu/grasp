@@ -1,6 +1,6 @@
-// Package ledgertest rebuilds the token ledger from StateRun / ChatMessage
-// usage that tests seed directly, so stats tests can keep seeding node and
-// message rows instead of driving the live ledger sinks.
+// Package ledgertest rebuilds the token ledger from StateRun usage that tests
+// seed directly, so stats tests can keep seeding node rows instead of driving
+// the live ledger sinks.
 package ledgertest
 
 import (
@@ -10,7 +10,7 @@ import (
 )
 
 // Sync replaces every ledger row with entries derived from the seeded
-// StateRun / assistant ChatMessage usage. Safe to call repeatedly.
+// StateRun usage. Safe to call repeatedly.
 func Sync(db *gorm.DB) error {
 	if err := db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.TokenUsageEvent{}).Error; err != nil {
 		return err
@@ -37,20 +37,6 @@ func Sync(db *gorm.DB) error {
 			Phase: models.TokenLedgerPhaseProduction, Status: tokenledger.StatusFromNode(sr.Status),
 			RunID: sr.RunID, NodeID: sr.NodeID, NodeType: sr.NodeType,
 			Usage: sr.Usage, ByModel: sr.UsageByModel,
-		})
-	}
-	var msgs []models.ChatMessage
-	if err := db.Where("role = ? AND (usage IS NOT NULL OR usage_by_model IS NOT NULL)", "assistant").Find(&msgs).Error; err != nil {
-		return err
-	}
-	for _, m := range msgs {
-		if m.CreatedAt.IsZero() {
-			continue
-		}
-		tokenledger.Record(db, tokenledger.Entry{
-			At: m.CreatedAt, Source: models.TokenLedgerSourcePM,
-			Phase: models.TokenLedgerPhaseChat, Status: models.TokenLedgerStatusOK,
-			ThreadID: m.ThreadID, Usage: m.Usage, ByModel: m.UsageByModel,
 		})
 	}
 	return nil

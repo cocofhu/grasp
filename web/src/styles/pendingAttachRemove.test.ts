@@ -62,13 +62,6 @@ describe('pending attachment remove button colors', () => {
         click: '@click="$emit(\'remove\', index)"',
       },
       {
-        file: 'components/pm/PmLeaderChat.vue',
-        radius: null,
-        forbiddenRadius: ['rounded', 'rounded-full', 'rounded-none'],
-        click: '@click.stop="removeAttachment(ii)"',
-        disabled: ':disabled="busy"',
-      },
-      {
         file: 'components/ui/ParagraphInput.vue',
         radius: 'rounded-full',
         forbiddenRadius: ['rounded-none'],

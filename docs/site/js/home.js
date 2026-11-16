@@ -10,21 +10,21 @@
         heroTitleIdle: "Delivery · Orchestration",
         parAsk: "Run sign-in, billing, and notifications in parallel — start now.",
         parReply: "Got it. Parallel workflows for the three requirements are up and running.",
-        pmPlaceholder: "Say the next thing to GraspPM…",
+        parPlaceholder: "Describe what to start…",
         idleMeta: "Idle",
         bootingMeta: "Booting",
         readyMeta: "Ready",
         busyMeta: "Running",
         waitingGateMeta: "Waiting on gate",
         doneMeta: "Done",
-        capParStart: "Chat confirmed — running in parallel…",
+        capParStart: "IM confirmed — running in parallel…",
         capParBoot: "Confirmed — spinning up parallel runtimes",
         capParRun: "Three requirements running in parallel — research / plan",
         capParImpl: "Implement writing code in parallel — no interference",
         capParTest: "Tests keep running; billing waits at a gate — parallel, not blocked",
         capParShip: "Two MRs submitted; billing still awaiting approval",
         capParGate: "Gate cleared — billing submits its MR",
-        capParDone: "Chat start → parallel run → closed out",
+        capParDone: "IM start → parallel run → closed out",
         approveCaptions: [
           "Several workflows run in parallel; some nodes will need clarify or approval.",
           "Todos from different Runs ingest into Gates Inbox (clarify 2 + approve 2).",
@@ -84,30 +84,27 @@
         approveLightMsg: "Release notes look fine — approve.",
         approveAside: "Review comment",
         approveAnnot: "Issue",
-        pmAsk:
-          "How do we guarantee quality? Research industry harness practices and software engineering experience for this open-source project.",
-        pmConfirm: "Confirmed — start the workflow with this plan.",
       }
     : {
         heroTitles: ["自我迭代 · 编排", "需求交付 · 编排", "视觉评审 · 编排"],
         heroTitleIdle: "需求交付 · 编排",
         parAsk: "并行推进登录鉴权、计费结算、消息通知这三个需求，现在启动。",
         parReply: "收到。已按三条需求拉起并行工作流，开始执行。",
-        pmPlaceholder: "跟 GraspPM 说下一句…",
+        parPlaceholder: "描述要启动的需求…",
         idleMeta: "待机",
         bootingMeta: "拉起中",
         readyMeta: "就绪",
         busyMeta: "执行中",
         waitingGateMeta: "等待门禁",
         doneMeta: "完成",
-        capParStart: "对话确认启动，并行推进中…",
+        capParStart: "IM 确认启动，并行推进中…",
         capParBoot: "已确认启动 — 拉起并行执行环境",
         capParRun: "三条需求并行开跑 — research / plan",
         capParImpl: "Implement 并行写代码 — 互不干扰",
         capParTest: "测试继续跑；计费停在门禁 — 并行不互相堵",
         capParShip: "两条已提交 MR；计费仍等批准",
         capParGate: "门禁通过 — 计费补交 MR",
-        capParDone: "对话启动 → 并行执行 → 收口完成",
+        capParDone: "IM 启动 → 并行执行 → 收口完成",
         approveCaptions: [
           "多条工作流并行运行；部分节点即将需要人工澄清或审批。",
           "待办从不同 Run 汇入统一 Gates Inbox（澄清 2 + 审批 2）。",
@@ -164,9 +161,6 @@
         approveLightMsg: "发布说明摘要看起来没问题，可直接批准。",
         approveAside: "审批意见",
         approveAnnot: "问题",
-        pmAsk:
-          "有什么办法可以保证质量？调研一下业界的 harness 和软件工程经验，看看怎么保证这个开源项目的质量。",
-        pmConfirm: "确认，按这个方案启动工作流。",
       };
 
   if (hero) {
@@ -469,7 +463,7 @@
     el.classList.remove("is-caret");
   }
 
-  /* Parallel showcase — chat start → runtime containers → lanes */
+  /* Parallel showcase — IM start → runtime containers → lanes */
   const parallelNodes = {
     auth: ["auth-research", "auth-impl", "auth-test", "auth-ship"],
     billing: ["billing-plan", "billing-impl", "billing-gate", "billing-ship"],
@@ -538,7 +532,7 @@
     if (!composer) return;
     composer.classList.remove("is-typing");
     composer.textContent = "";
-    composer.setAttribute("data-placeholder", COPY.pmPlaceholder);
+    composer.setAttribute("data-placeholder", COPY.parPlaceholder);
   }
 
   async function typeParComposer(root, text, signal) {
@@ -1124,160 +1118,9 @@
     renderApproveStage(root, 6);
   }
 
-  /* PM showcase — typewriter chat, no bottom caption */
-  const PM_PLACEHOLDER = COPY.pmPlaceholder;
-
-  function scrollPmThread(root, behavior = "smooth") {
-    const thread = within(root, "[data-pm-thread]");
-    if (!thread) return;
-    thread.scrollTo({ top: thread.scrollHeight, behavior });
-  }
-
-
-  async function typeComposer(root, text, signal) {
-    const composer = within(root, "[data-pm-composer]");
-    if (!composer) return;
-    composer.classList.add("is-typing");
-    composer.removeAttribute("data-placeholder");
-    await typeText(composer, text, signal, 30);
-    if (signal.aborted) return;
-    await sleep(220);
-  }
-
-  function resetComposer(root) {
-    const composer = within(root, "[data-pm-composer]");
-    if (!composer) return;
-    composer.classList.remove("is-typing");
-    composer.textContent = "";
-    composer.setAttribute("data-placeholder", PM_PLACEHOLDER);
-  }
-
-  async function typeMsg(root, n, signal) {
-    const msg = within(root, `[data-pm-msg="${n}"]`);
-    if (!msg) return;
-    const bubble = within(msg, "[data-pm-text]");
-    const out = within(msg, "[data-pm-typeout]");
-    const extra = within(msg, "[data-pm-extra]");
-    const full = bubble?.dataset.pmText || "";
-    if (out) out.textContent = "";
-    if (extra) extra.hidden = true;
-    msg.classList.add("is-show");
-    requestAnimationFrame(() => scrollPmThread(root, "auto"));
-    await typeText(out, full, signal, 22);
-    if (signal.aborted) return;
-    if (extra) {
-      extra.hidden = false;
-      scrollPmThread(root);
-    } else {
-      scrollPmThread(root);
-    }
-  }
-
-  function hideAllMsgs(root) {
-    root.querySelectorAll("[data-pm-msg]").forEach((el) => {
-      el.classList.remove("is-show");
-      const out = within(el, "[data-pm-typeout]");
-      if (out) {
-        out.textContent = "";
-        out.classList.remove("is-caret");
-      }
-      const extra = within(el, "[data-pm-extra]");
-      if (extra) extra.hidden = true;
-    });
-    const thread = within(root, "[data-pm-thread]");
-    if (thread) thread.scrollTop = 0;
-  }
-
-  function setCounts(root, running, waiting) {
-    const r = within(root, "[data-pm-running]");
-    const w = within(root, "[data-pm-waiting]");
-    if (r) r.textContent = String(running);
-    if (w) w.textContent = String(waiting);
-  }
-
-  function setStep(root, n, state, label) {
-    const li = within(root, `[data-pm-step="${n}"]`);
-    const tag = within(root, `[data-pm-step-tag="${n}"]`);
-    if (li) {
-      li.classList.remove("is-proposed", "is-running", "is-waiting", "is-done");
-      if (state) li.classList.add(`is-${state}`);
-    }
-    if (tag) tag.textContent = label;
-  }
-
-  function resetSteps(root) {
-    for (let i = 1; i <= 3; i += 1) setStep(root, i, "", "proposed");
-    for (let i = 4; i <= 6; i += 1) setStep(root, i, "", "queued");
-  }
-
-  async function playPm(root, signal) {
-    const ask = COPY.pmAsk;
-    const confirm = COPY.pmConfirm;
-
-    while (!signal.aborted) {
-      hideAllMsgs(root);
-      resetSteps(root);
-      setCounts(root, 0, 0);
-      resetComposer(root);
-      await sleep(350);
-      if (signal.aborted) break;
-
-      await typeComposer(root, ask, signal);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 1, signal);
-      resetComposer(root);
-      await sleep(280);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 2, signal);
-      await sleep(400);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 3, signal);
-      setStep(root, 1, "proposed", "proposed");
-      setStep(root, 2, "proposed", "proposed");
-      setStep(root, 3, "proposed", "proposed");
-      scrollPmThread(root);
-      await sleep(500);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 4, signal);
-      setCounts(root, 0, 1);
-      await sleep(400);
-      if (signal.aborted) break;
-
-      await typeComposer(root, confirm, signal);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 5, signal);
-      resetComposer(root);
-      setCounts(root, 0, 0);
-      await sleep(280);
-      if (signal.aborted) break;
-
-      await typeMsg(root, 6, signal);
-      setStep(root, 4, "running", "running");
-      setStep(root, 5, "running", "running");
-      setStep(root, 6, "queued", "queued");
-      setCounts(root, 2, 0);
-      scrollPmThread(root);
-      await sleep(700);
-      if (signal.aborted) break;
-
-      setStep(root, 4, "done", "done");
-      setStep(root, 5, "running", "60%");
-      setStep(root, 6, "waiting", "pending");
-      setCounts(root, 1, 1);
-      await typeMsg(root, 7, signal);
-      await sleep(1500);
-    }
-  }
-
   const players = {
     parallel: playParallel,
     approve: playApprove,
-    pm: playPm,
   };
 
   const controllers = new Map();
@@ -1302,20 +1145,6 @@
         setLiveChip(el, "● live run");
       } else if (key === "approve") {
         applyApproveReducedMotion(el);
-      } else if (key === "pm") {
-        el.querySelectorAll("[data-pm-msg]").forEach((m) => {
-          m.classList.add("is-show");
-          const bubble = m.querySelector("[data-pm-text]");
-          const out = m.querySelector("[data-pm-typeout]");
-          const extra = m.querySelector("[data-pm-extra]");
-          if (out && bubble) out.textContent = bubble.dataset.pmText || "";
-          if (extra) extra.hidden = false;
-        });
-        for (let i = 1; i <= 3; i += 1) setStep(el, i, "proposed", "proposed");
-        for (let i = 4; i <= 6; i += 1) setStep(el, i, "done", "done");
-        setCounts(el, 0, 0);
-        resetComposer(el);
-        scrollPmThread(el, "auto");
       }
       return;
     }

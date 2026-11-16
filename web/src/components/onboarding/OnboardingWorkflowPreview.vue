@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { OnboardingWorkflowPreview } from '@/lib/pm/onboardingWizard'
+import type { OnboardingWorkflowPreview } from '@/lib/onboarding/onboardingWizard'
 
 const props = defineProps<{ preview: OnboardingWorkflowPreview }>()
 

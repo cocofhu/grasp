@@ -13,7 +13,7 @@ import (
 // parseGlobalTokenStatsQuery reads the shared /stats/token filter params.
 // Query: window=24h|7d|30d|90d|all (default all), from/to=YYYY-MM-DD (custom
 // range, overrides window), granularity=hour|day|week, timezone,
-// utcOffsetMinutes, source=all|workflow|pm|studio, status=ok|failed|cancelled,
+// utcOffsetMinutes, source=all|workflow|studio|solo, status=ok|failed|cancelled,
 // phase=production|interactive|chat, modelKey, workflowId, nodeType, runId.
 func parseGlobalTokenStatsQuery(c *gin.Context) (services.GlobalTokenStatsQuery, bool) {
 	return parseTokenStatsQuery(c, services.TokenStatsWindowAll)

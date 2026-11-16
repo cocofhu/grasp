@@ -5,7 +5,6 @@ import "time"
 // Token ledger sources.
 const (
 	TokenLedgerSourceWorkflow = "workflow"
-	TokenLedgerSourcePM       = "pm"
 	TokenLedgerSourceStudio   = "studio"
 	TokenLedgerSourceSolo     = "solo"
 )
@@ -25,7 +24,7 @@ const (
 )
 
 // TokenUsageEvent is one append-only token-consumption ledger row. Every LLM
-// usage report (workflow node save/flush, PM turn, Studio chat) writes one row
+// usage report (workflow node save/flush, Studio chat, Solo) writes one row
 // per model bucket, so analytics can GROUP BY any dimension without joining
 // through mutable workflow rows. Name fields are snapshots taken at
 // write time and survive workflow deletion.

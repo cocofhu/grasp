@@ -305,7 +305,7 @@ func reactOnlyGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm", "prompt": "澄清"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "planner", "prompt": "澄清"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

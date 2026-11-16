@@ -65,7 +65,7 @@ const resourceOptions = ref<AuditFacetResource[]>([])
 const AUDIT_PAGE_SIZE_OPTIONS = [5, 10, 20]
 
 const CALLER_LABEL_KEYS: Record<string, string> = {
-  pm: 'pages.workspace.audit.callerPm',
+  member: 'pages.workspace.audit.callerMember',
   apikey: 'pages.workspace.audit.callerApiKey',
   system: 'pages.workspace.audit.callerSystem',
   external: 'pages.workspace.audit.callerExternal',
@@ -91,7 +91,7 @@ const nodeDdOptions = computed<AuditDdOption[]>(() => [
 
 const callerDdOptions = computed<AuditDdOption[]>(() => [
   { value: '', label: t('pages.workspace.audit.filterAll') },
-  { value: 'pm', label: t('pages.workspace.audit.callerPm'), sub: t('pages.workspace.audit.callerPmSub') },
+  { value: 'member', label: t('pages.workspace.audit.callerMember'), sub: t('pages.workspace.audit.callerMemberSub') },
   { value: 'apikey', label: t('pages.workspace.audit.callerApiKey'), sub: t('pages.workspace.audit.callerApiKeySub') },
   { value: 'system', label: t('pages.workspace.audit.callerSystem'), sub: t('pages.workspace.audit.callerSystemSub') },
   { value: 'external', label: t('pages.workspace.audit.callerExternal'), sub: t('pages.workspace.audit.callerExternalSub') },
@@ -223,7 +223,7 @@ function shortRun(id: string) {
 }
 
 function callerLabel(ev: AuditEvent) {
-  const kind = ev.callerKind || (ev.unattributable || ev.actor === 'system' ? 'system' : 'pm')
+  const kind = ev.callerKind || (ev.unattributable || ev.actor === 'system' ? 'system' : 'member')
   const key = CALLER_LABEL_KEYS[kind]
   return key ? t(key) : kind
 }

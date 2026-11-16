@@ -8,13 +8,11 @@ import CodeEditor from '@/components/ui/CodeEditor.vue'
 import McpConfigHelpModal from '@/components/agent/McpConfigHelpModal.vue'
 import type { MCPServer } from '@/lib/api/api'
 import {
-  AGENT_PLATFORM_MCPS,
   ARTIFACT_STORE,
   DEFAULT_CONFIG_ROOT,
   apiMcpToDraft,
   draftMcpToApi,
   isPlatformPresetName,
-  platformPresetKind,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
 
@@ -31,10 +29,6 @@ const transportOptions = computed(() => [{ value: 'url', label: 'HTTP (url)' }, 
 
 const hasArtifactStore = computed(() => !!props.draft.mcp.some((m) => m.name.trim() === ARTIFACT_STORE))
 
-function hasAgentPlatformMcp(name: string) {
-  return !!props.draft.mcp.some((m) => m.name.trim() === name)
-}
-
 function addMcp() {
   props.draft.mcp.push({ name: '', transport: 'url', url: '', headers: [], command: '', args: '', env: [] })
 }
@@ -50,24 +44,6 @@ function addArtifactStore() {
     transport: 'url',
     url: '${GRASP_ARTIFACT_URL}',
     headers: [{ k: 'Authorization', v: 'Bearer ${GRASP_ARTIFACT_TOKEN}' }],
-    command: '',
-    args: '',
-    env: [],
-  })
-}
-
-function addAgentPlatformMcp(name: (typeof AGENT_PLATFORM_MCPS)[number]['name']) {
-  const spec = AGENT_PLATFORM_MCPS.find((m) => m.name === name)
-  if (!spec) return
-  if (hasAgentPlatformMcp(name)) {
-    emit('toast', t('pages.agentStudio.mcp.agentMcpAlreadyExists', { name }))
-    return
-  }
-  props.draft.mcp.push({
-    name: spec.name,
-    transport: 'url',
-    url: spec.url,
-    headers: [{ k: 'Authorization', v: `Bearer ${spec.token}` }],
     command: '',
     args: '',
     env: [],
@@ -134,18 +110,6 @@ watch(
           data-test="mcp-add-artifact"
           @click="addArtifactStore"
         >{{ t('pages.agentStudio.mcp.addArtifactStore') }}</button>
-        <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
-          type="button"
-          data-test="mcp-add-memory"
-          @click="addAgentPlatformMcp('memory-store')"
-        >{{ t('pages.agentStudio.mcp.addMemoryStore') }}</button>
-        <button
-          class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
-          type="button"
-          data-test="mcp-add-context"
-          @click="addAgentPlatformMcp('context-store')"
-        >{{ t('pages.agentStudio.mcp.addContextStore') }}</button>
       </div>
       <div
         v-for="(m, i) in draft.mcp"
@@ -157,7 +121,7 @@ watch(
       >
         <div class="mb-2 flex items-center gap-2">
           <div v-if="isPlatformPresetName(m.name)" class="min-w-0 flex-1">
-            <div class="text-[12px] font-medium text-txt" data-test="mcp-display-name">{{ t(`pages.agentStudio.mcp.displayName.${platformPresetKind(m.name)}`) }}</div>
+            <div class="text-[12px] font-medium text-txt" data-test="mcp-display-name">{{ t('pages.agentStudio.mcp.displayName.artifact') }}</div>
             <div class="font-mono text-[10.5px] text-txt3" data-test="mcp-preset-key">{{ m.name.trim() }}</div>
           </div>
           <input
@@ -200,7 +164,7 @@ watch(
           class="mt-3 border-l-2 border-ok/35 pl-3 text-[11px] leading-5 text-txt2"
           data-test="mcp-scope-note"
         >
-          {{ t(`pages.agentStudio.mcp.scopeNote.${platformPresetKind(m.name)}`) }}
+          {{ t('pages.agentStudio.mcp.scopeNote.artifact') }}
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="addMcp">{{ t('pages.agentStudio.mcp.addService') }}</AppButton>

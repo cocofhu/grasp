@@ -113,32 +113,6 @@ export const workspaceClient = {
       { method: 'DELETE' },
     ),
 
-  getExternalMcp: () =>
-    req<{ enabled: boolean; enabledPacks: string[]; mcpBaseUrl: string; updatedAt?: string }>(
-      `/workspace/external-mcp`,
-    ),
-  updateExternalMcp: (
-    body: { enabled: boolean; enabledPacks: string[] },
-  ) =>
-    req<{ enabled: boolean; enabledPacks: string[]; mcpBaseUrl: string; updatedAt?: string }>(
-      `/workspace/external-mcp`,
-      { method: 'PUT', body: JSON.stringify(body) },
-    ),
-  listMcpKeys: () =>
-    req<{ id: string; name: string; key_prefix: string; created_at: string }[]>(
-      `/workspace/external-mcp/keys`,
-    ),
-  createMcpKey: (name: string) =>
-    req<{ id: string; name: string; key: string; key_prefix: string; created_at: string }>(
-      `/workspace/external-mcp/keys`,
-      { method: 'POST', body: JSON.stringify({ name }) },
-    ),
-  revokeMcpKey: (keyId: string) =>
-    req<{ status: string }>(
-      `/workspace/external-mcp/keys/${encodeURIComponent(keyId)}`,
-      { method: 'DELETE' },
-    ),
-
   /** Workspace audit timeline (paginated). Default time window: 24h. */
   listAudit: (
     params?: {

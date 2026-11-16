@@ -74,15 +74,9 @@ func TestRenameAgent_cascadesWorkflowAndReturnsCount(t *testing.T) {
 	}
 }
 
-func TestRenameAgent_workflowCascadeFailureRollsBackSkillPm(t *testing.T) {
+func TestRenameAgent_workflowCascadeFailureRollsBackSkill(t *testing.T) {
 	hn := newHarness(t)
-	skills := hn.h.Agents
-	hn.h.Pm = services.NewPmService(hn.db, skills)
-
 	seedAgent(t, hn, "old-agent")
-	if _, err := hn.h.Pm.UpsertMemory("old-agent", "T", "c", "admin", "u"); err != nil {
-		t.Fatal(err)
-	}
 
 	clear := services.SetRenameAgentProfileRefsFailHookForTest(func() error {
 		return errors.New("inject cascade fail")
@@ -98,13 +92,5 @@ func TestRenameAgent_workflowCascadeFailureRollsBackSkillPm(t *testing.T) {
 	}
 	if hn.h.Agents.Exists("new-agent") {
 		t.Fatal("new-agent directory should not remain after rollback")
-	}
-	mem, _ := hn.h.Pm.ListMemories("old-agent")
-	if len(mem) != 1 {
-		t.Fatalf("pm memories should be back under old-agent, got %d", len(mem))
-	}
-	memNew, _ := hn.h.Pm.ListMemories("new-agent")
-	if len(memNew) != 0 {
-		t.Fatalf("pm memories leaked under new-agent: %d", len(memNew))
 	}
 }

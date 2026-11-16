@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
@@ -166,7 +165,7 @@ func TestWorkspaceTokenBreakdown(t *testing.T) {
 		}
 	}
 	syncTokenLedger(t, db)
-	if bd := s.TokenBreakdown(); bd.Total != nil || bd.Workflow != nil || bd.PM != nil {
+	if bd := s.TokenBreakdown(); bd.Total != nil || bd.Workflow != nil {
 		t.Fatalf("empty breakdown = %+v", bd)
 	}
 
@@ -184,30 +183,8 @@ func TestWorkspaceTokenBreakdown(t *testing.T) {
 	})
 	syncTokenLedger(t, db)
 	bd := s.TokenBreakdown()
-	if bd.Workflow == nil || *bd.Workflow != 128 || bd.PM != nil || bd.Total == nil || *bd.Total != 128 {
+	if bd.Workflow == nil || *bd.Workflow != 128 || bd.Total == nil || *bd.Total != 128 {
 		t.Fatalf("workflow-only breakdown = %+v", bd)
-	}
-
-	mustCreate(&models.ChatThread{ID: "th-pm", UserID: "u1", Title: "t"})
-	mustCreate(&models.ChatMessage{
-		ID: "msg-hist", ThreadID: "th-pm", Role: "assistant", Content: "old",
-		Status: "ok", CreatedAt: time.Now(),
-	})
-	mustCreate(&models.ChatMessage{
-		ID: "msg-pm", ThreadID: "th-pm", Role: "assistant", Content: "hi",
-		Status: "ok", CreatedAt: time.Now(),
-		Usage: &models.TokenUsage{InputTokens: 2},
-	})
-	syncTokenLedger(t, db)
-	merged := s.TokenBreakdown()
-	if merged.Total == nil || *merged.Total != 130 {
-		t.Fatalf("total=%v want 130", merged.Total)
-	}
-	if merged.Workflow == nil || *merged.Workflow != 128 {
-		t.Fatalf("workflow=%v want 128", merged.Workflow)
-	}
-	if merged.PM == nil || *merged.PM != 2 {
-		t.Fatalf("pm=%v want 2", merged.PM)
 	}
 }
 

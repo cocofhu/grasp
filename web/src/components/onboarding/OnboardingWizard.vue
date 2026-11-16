@@ -40,7 +40,7 @@ import {
   type OnboardingMode,
   type OnboardingStepId,
   type OnboardingTemplateId,
-} from '@/lib/pm/onboardingWizard'
+} from '@/lib/onboarding/onboardingWizard'
 
 type OnboardingCompletedResult = OnboardingBootstrapResult
 

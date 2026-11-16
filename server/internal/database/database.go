@@ -259,7 +259,7 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	if err := deleteRetiredSSHKnownHosts(db); err != nil {
 		return nil, err
 	}
-	if err := dropRetiredCronChannels(db); err != nil {
+	if err := retireRemovedFeatures(db); err != nil {
 		return nil, err
 	}
 	if err := ensureWorkspace(db); err != nil {

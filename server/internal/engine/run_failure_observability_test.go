@@ -7,30 +7,8 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/platformmcp"
-	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/services"
 )
-
-// extractMCPToolText pulls the first text content blob from a tools/call RPC response.
-func extractMCPToolText(t *testing.T, resp []byte) string {
-	t.Helper()
-	var envelope struct {
-		Result struct {
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-			IsError bool `json:"isError"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(resp, &envelope); err != nil {
-		t.Fatalf("unmarshal mcp resp: %v\n%s", err, resp)
-	}
-	if envelope.Result.IsError || len(envelope.Result.Content) == 0 {
-		t.Fatalf("mcp tool error: %s", resp)
-	}
-	return envelope.Result.Content[0].Text
-}
 
 func researchEarlyFailGraph() models.Graph {
 	return models.Graph{
@@ -46,10 +24,10 @@ func researchEarlyFailGraph() models.Graph {
 	}
 }
 
-// TestResearchEarlyFailureThreeChannelsNonEmpty locks the clarified acceptance:
+// TestResearchEarlyFailureChannelsNonEmpty locks the clarified acceptance:
 // first-node (research) Agent/sandbox-style failure must expose a non-empty
-// reason via run_error.json, AggregateRunFailure (DTO/API), and PM MCP.
-func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
+// reason via run_error.json and AggregateRunFailure (DTO/API).
+func TestResearchEarlyFailureChannelsNonEmpty(t *testing.T) {
 	eng, db, fp := setupEngineGraphP(t, researchEarlyFailGraph())
 	fp.mu.Lock()
 	fp.failLeft = map[string]int{"research": 1}
@@ -100,69 +78,6 @@ func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
 	// Must not synthesize node_complete.json for infrastructure failure.
 	if _, has := arts.Get(run.ID, "node_complete.json"); has {
 		t.Fatal("must not synthesize node_complete.json on infra failure")
-	}
-
-	// (c) ArtifactSummary + pm_list_runs
-	pm := services.NewPmService(db, nil)
-	en := true
-	agent := "agent-a"
-	if _, err := pm.UpdateBinding(&en, &agent, []string{pmmcp.MCPProgress, pmmcp.MCPWorkflowRead}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	progress := services.NewPmProgress(pm, rs, arts)
-	summary := progress.ArtifactSummary(run.ID, 10)
-	sumErr, _ := summary["error"].(string)
-	if sumErr == "" {
-		t.Fatalf("ArtifactSummary missing error: %+v", summary)
-	}
-	// After finish, run_error.json should appear in the product list.
-	if summary["empty"] == true {
-		t.Fatalf("expected run_error.json in artifacts: %+v", summary)
-	}
-
-	host := pmmcp.NewHost(pm, progress, services.NewWorkflowService(db), rs, arts, eng)
-	tok := platformmcp.NewToken()
-	host.Restore("thr-obs", "tester", "agent-a", tok)
-	req, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{
-			"name":      "pm_list_runs",
-			"arguments": map[string]any{"workflowId": "wf", "limit": 5},
-		},
-	})
-	st, resp := host.ServeRPC(pmmcp.MCPWorkflowRead, tok, req)
-	if st != 200 {
-		t.Fatalf("pm_list_runs status=%d body=%s", st, resp)
-	}
-	text := extractMCPToolText(t, resp)
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		t.Fatalf("payload: %v\n%s", err, text)
-	}
-	found := false
-	switch rows := payload["runs"].(type) {
-	case []any:
-		for _, row := range rows {
-			m, _ := row.(map[string]any)
-			if m["id"] == run.ID {
-				found = true
-				if errStr, _ := m["error"].(string); errStr == "" {
-					t.Fatalf("pm_list_runs row missing error: %+v", m)
-				}
-			}
-		}
-	case []map[string]any:
-		for _, m := range rows {
-			if m["id"] == run.ID {
-				found = true
-				if errStr, _ := m["error"].(string); errStr == "" {
-					t.Fatalf("pm_list_runs row missing error: %+v", m)
-				}
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("run not in pm_list_runs: %s", text)
 	}
 }
 

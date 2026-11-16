@@ -15,10 +15,9 @@ const (
 	// ModeWorktree runs agents in this image, with no sandbox container.
 	ModeWorktree = "worktree"
 
-	LaunchRun       = "run"
-	LaunchSolo      = "solo"
-	LaunchTest      = "test"
-	LaunchAssistant = "assistant"
+	LaunchRun  = "run"
+	LaunchSolo = "solo"
+	LaunchTest = "test"
 )
 
 // Mode returns the image execution mode. Anything other than worktree is sandbox,

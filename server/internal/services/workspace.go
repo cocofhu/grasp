@@ -83,13 +83,12 @@ func (s *WorkspaceService) VariablesForWorkflow(workflowID string) []models.Work
 	return wf.Defaults.Variables
 }
 
-// WorkspaceTokenBreakdown summarizes all ledger usage with workflow and PM
-// subtotals. A nil field means no usage was reported for that scope (UI "—");
+// WorkspaceTokenBreakdown summarizes all ledger usage with the workflow
+// subtotal. A nil field means no usage was reported for that scope (UI "—");
 // a non-nil 0 means reported and totals to zero.
 type WorkspaceTokenBreakdown struct {
 	Total    *int64 // All sources (nil when no source reported).
 	Workflow *int64
-	PM       *int64
 }
 
 // TokenBreakdown sums every ledger source, matching GlobalTokenStats.
@@ -105,11 +104,8 @@ func (s *WorkspaceService) TokenBreakdown() WorkspaceTokenBreakdown {
 	var out WorkspaceTokenBreakdown
 	for _, r := range rows {
 		v := r.Total
-		switch r.Source {
-		case models.TokenLedgerSourceWorkflow:
+		if r.Source == models.TokenLedgerSourceWorkflow {
 			out.Workflow = &v
-		case models.TokenLedgerSourcePM:
-			out.PM = &v
 		}
 		if out.Total == nil {
 			out.Total = new(int64)

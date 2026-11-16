@@ -30,20 +30,6 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	if extra.LaunchKind == "test" {
 		vars = s.mcpVars(runID, sharedToken)
 	}
-	for _, sp := range platformSpecs {
-		switch sp.Name {
-		case MemoryStoreMCP:
-			vars["GRASP_MEMORY_URL"] = sp.URL
-			vars["GRASP_MEMORY_TOKEN"] = sharedToken
-		case ContextStoreMCP:
-			vars["GRASP_CONTEXT_URL"] = sp.URL
-			vars["GRASP_CONTEXT_TOKEN"] = sharedToken
-		case PmProgressMCP, PmWorkflowReadMCP, PmWorkflowWriteMCP:
-			vars["GRASP_PM_URL"] = sp.URL
-			vars["GRASP_PM_TOKEN"] = sharedToken
-		}
-	}
-
 	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
 	vars = runtime.MergeEnvIntoTemplateVars(vars, agentEnv)
 	mcpVars := vars
@@ -144,7 +130,7 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	env["GRASP_RUN_ID"] = runID
 	kind := strings.TrimSpace(extra.LaunchKind)
 	if kind == "" {
-		kind = "assistant"
+		kind = "test"
 	}
 	env["GRASP_LAUNCH_KIND"] = kind
 	sandbox.ApplyPasswords(env, sharedToken)

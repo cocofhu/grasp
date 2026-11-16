@@ -10,15 +10,12 @@ import (
 	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
-	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/embed"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/mcp"
-	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
-	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
@@ -39,13 +36,7 @@ type Handlers struct {
 	SbxChats            *services.SandboxChats
 	Eng                 *engine.Engine
 	MCP                 *mcp.Host
-	Pm                  *services.PmService
-	PmProgress          *services.PmProgress
-	PmTurns             *services.PmTurnRunner
 	Solo                *services.SoloService
-	PMMCP               *pmmcp.Host
-	MemoryMCP           *memorymcp.Host
-	ContextMCP          *contextmcp.Host
 	Preview             *services.PreviewService
 	Issues              *services.IssueService
 	Notifications       *services.NotificationService
@@ -54,8 +45,6 @@ type Handlers struct {
 	Auth                *auth.Service
 	Browser             *browser.Service
 	Audit               *services.AuditService
-	ExternalMcp         *services.ExternalMcpService
-	McpKeys             *services.WorkspaceMcpApiKeyService
 	Credentials         *services.CredentialService
 	GitHubDevice        *services.GitHubDeviceFlowService
 	CodexDevice         *services.CodexDeviceFlowService
@@ -71,6 +60,11 @@ type Handlers struct {
 	Embed *embed.Store
 	// PageBridge relays page_* tool commands to drawers that allow them.
 	PageBridge *pagebridge.Hub
+	// PublicAdvertise is the browser-facing base for preview links.
+	// Gate/review share URLs mint from Request.Host instead. Public CSRF
+	// compares Origin/Referer to this request's Host (never client
+	// X-Forwarded-Host; advertise host is not used for CSRF).
+	PublicAdvertise string
 	// FrameAncestors are the origins allowed to embed workspace pages.
 	FrameAncestors []string
 	Team           *services.TeamService

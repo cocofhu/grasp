@@ -28,7 +28,7 @@ const (
 )
 
 // RunFailureInfo is the single aggregated failure view distributed to Run detail
-// DTO/API, run_error.json, and PM/MCP.
+// DTO/API, run_error.json, and MCP.
 type RunFailureInfo struct {
 	Reason          string `json:"reason"`
 	FailedNode      string `json:"failedNode,omitempty"`
@@ -121,6 +121,13 @@ func (info RunFailureInfo) DisplayReason() string {
 // ShortDisplayReason truncates DisplayReason for list rows.
 func (info RunFailureInfo) ShortDisplayReason(max int) string {
 	return truncateStr(info.DisplayReason(), max)
+}
+
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // MarshalRunErrorJSON serializes RunFailureInfo for ArtifactService.Save.

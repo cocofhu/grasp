@@ -335,7 +335,7 @@ func SubstSlice(s []string, vars map[string]string) []string {
 // whose URL/command resolves to empty (e.g. artifact-store while the MCP
 // endpoint is disabled) is dropped.
 //
-// Workflow ACP never auto-injects live memory/context endpoints;
+// Workflow ACP never auto-injects live memory/context/scheduler endpoints;
 // declared entries for those names (or URL paths) are dropped here.
 func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 	mcp := c.effectiveAgent(req).MCP
@@ -345,11 +345,7 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 	vars := c.templateVars(req)
 	out := make([]sandbox.MCPServerSpec, 0, len(mcp))
 	for _, m := range mcp {
-		if m.Name == "" {
-			continue
-		}
-
-		if isWorkflowDroppedPlatformMCP(m.Name, m.URL) {
+		if m.Name == "" || IsRetiredPlatformMCP(m.Name, m.URL) {
 			continue
 		}
 		url := config.RewriteMisconfiguredMCPAdvertise(SubstVars(m.URL, vars))
@@ -369,13 +365,25 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 	return out
 }
 
-func isWorkflowDroppedPlatformMCP(name, url string) bool {
+// IsRetiredPlatformMCP reports whether an Agent mcp[] entry points at a removed
+// platform MCP (memory, context, scheduler, assistant or workspace). Saved
+// Agents may still list them; their endpoints no longer exist, so they are
+// never injected.
+func IsRetiredPlatformMCP(name, url string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "memory-store", "context-store":
+	case "memory-store", "context-store", "task-scheduler",
+		"pm-progress", "pm-workflow-read", "pm-workflow-write", "pm-agent-fs":
 		return true
 	}
-	return strings.Contains(url, "/mcp/memory-store") ||
-		strings.Contains(url, "/mcp/context-store")
+	for _, marker := range []string{
+		"/mcp/memory-store", "/mcp/context-store", "/mcp/task-scheduler/", "/mcp/pm/", "/mcp/workspace",
+		"${GRASP_MEMORY_", "${GRASP_CONTEXT_", "${GRASP_SCHEDULER_", "${GRASP_PM_",
+	} {
+		if strings.Contains(url, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasArtifactStore reports whether a server named artifact-store survived

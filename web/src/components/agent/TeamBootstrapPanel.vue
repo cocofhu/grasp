@@ -9,9 +9,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  openPm: [name: string]
-  selectPm: [name: string]
-  done: []
+  done: [name?: string]
   refresh: []
 }>()
 
@@ -21,23 +19,13 @@ const pollError = ref('')
 const retrying = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 let lastResourceCount = 0
-let highlightedPm = false
 
 const badgeClass = computed(() => {
   const s = session.value?.status
   if (s === 'ready') return 'border-ok/40 bg-ok/10 text-ok'
   if (s === 'failed') return 'border-err/40 bg-err/10 text-err'
   if (s === 'running') return 'border-ok/40 bg-ok/10 text-ok'
-  if (s === 'pulling' || isPullingSandbox.value) return 'border-warn/40 bg-warn/10 text-warn'
   return 'border-warn/40 bg-warn/10 text-warn'
-})
-
-/** True when session or nested sandbox lifecycle reports image pull (g3.3). */
-const isPullingSandbox = computed(() => {
-  const s = session.value
-  if (!s) return false
-  if (s.status === 'pulling') return true
-  return (s.sandboxStatus || '').trim().toLowerCase() === 'pulling'
 })
 
 const badgeText = computed(() => {
@@ -45,9 +33,6 @@ const badgeText = computed(() => {
   if (s === 'ready') {
     const n = session.value?.agentNames?.length || 0
     return t('pages.agentStudio.teamWizard.progress.ready', { n })
-  }
-  if (isPullingSandbox.value) {
-    return t('pages.agentStudio.teamWizard.progress.pulling')
   }
   return t(`pages.agentStudio.teamWizard.progress.${s}`)
 })
@@ -63,10 +48,6 @@ async function poll() {
     }
     if (s.status === 'ready' || s.status === 'failed') {
       emit('refresh')
-      if (s.status === 'ready' && s.pmAgent && !highlightedPm) {
-        highlightedPm = true
-        emit('selectPm', s.pmAgent)
-      }
       stop()
     }
   } catch (e: any) {
@@ -111,7 +92,6 @@ watch(
   () => props.sessionId,
   () => {
     lastResourceCount = 0
-    highlightedPm = false
     startPolling()
   },
 )
@@ -130,7 +110,7 @@ function lineClass(kind: string) {
     <div class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
       <div class="min-w-0">
         <h2 class="m-0 truncate text-[15px] font-semibold text-txt">
-          {{ t('pages.agentStudio.teamWizard.progress.title', { name: session?.pmAgent || '…' }) }}
+          {{ t('pages.agentStudio.teamWizard.progress.title', { name: session?.prefix || '…' }) }}
         </h2>
         <p class="m-0 mt-0.5 text-[12px] text-txt3">
           {{ t('pages.agentStudio.teamWizard.progress.sub') }}
@@ -146,14 +126,6 @@ function lineClass(kind: string) {
       {{ session?.error || pollError }}
     </div>
 
-    <div
-      v-else-if="isPullingSandbox"
-      class="shrink-0 border-b border-warn/35 bg-warn/10 px-4 py-2 text-[12px] text-warn"
-      data-testid="team-bootstrap-pulling"
-      aria-live="polite"
-    >
-      {{ t('pages.agentStudio.teamWizard.progress.pullingHint') }}
-    </div>
 
     <div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1.15fr_0.85fr]">
       <div class="scroll-area min-h-0 overflow-y-auto border-r border-line p-4 font-mono text-[12px] leading-5">
@@ -201,16 +173,9 @@ function lineClass(kind: string) {
         {{ retrying ? t('pages.agentStudio.teamWizard.submitting') : t('pages.agentStudio.teamWizard.progress.retry') }}
       </AppButton>
       <AppButton
-        v-if="session?.status === 'ready' && session.pmAgent"
-        variant="primary"
-        @click="emit('openPm', session.pmAgent)"
-      >
-        {{ t('pages.agentStudio.teamWizard.progress.openPm') }}
-      </AppButton>
-      <AppButton
         v-if="session?.status === 'ready'"
-        variant="outline"
-        @click="emit('done')"
+        variant="primary"
+        @click="emit('done', session.agentNames?.[0])"
       >
         {{ t('pages.agentStudio.teamWizard.progress.done') }}
       </AppButton>

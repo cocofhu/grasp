@@ -866,7 +866,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
     </div>
 
     <AppModal :open="defaultsOpen" :title="t('pages.workspaceDefaults.title')" :width="720" @close="defaultsOpen = false">
-      <WorkflowDefaultsPanel :workflow="wf" :agents="allAgents || []" />
+      <WorkflowDefaultsPanel :workflow="wf" />
       <template #footer>
         <p class="defaults-save-status mr-auto min-w-0 text-xs" :class="defaultsNotice?.kind === 'error' ? 'text-err' : 'text-txt2'" data-testid="defaults-save-status" role="status" :data-state="defaultsNotice?.kind || 'idle'">
           <span v-if="defaultsNotice" :key="defaultsNotice.kind + defaultsNotice.text" class="defaults-save-fade">{{ defaultsNotice.text }}</span>

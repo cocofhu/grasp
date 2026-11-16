@@ -99,7 +99,7 @@ in [`web/package.json`](web/package.json). This is a subset of the full suite
 - `cancel-run.spec.ts` — cancel run across statuses
 - `agent-create-wizard.spec.ts` — agent create wizard happy path
 - `board-workspace.spec.ts` — workspace board and its separate usage entry
-- `workspace-{credentials,shared-env,external-mcp,audit}.spec.ts` — workspace
+- `workspace-{credentials,shared-env,audit}.spec.ts` — workspace
   configuration, secret masking and execution audit
 - `artifact-library.spec.ts`, `conversation-workspace.spec.ts` — artifact
   filtering/version previews and chat-side artifact panels

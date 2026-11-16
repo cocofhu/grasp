@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,pm,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils; icons/ trusted SVG catalog and native runtime shared with Icon.vue",
+  "principle": "Align with components/{run,agent,inbox,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; onboarding/ first-install and onboarding wizard state; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils; icons/ trusted SVG catalog and native runtime shared with Icon.vue",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -120,12 +120,9 @@
       "usePendingGates.ts",
       "useReviewTextSelection.ts"
     ],
-    "pm": [
+    "onboarding": [
       "firstInstall.ts",
-      "onboardingWizard.ts",
-      "pmCitationShape.ts",
-      "pmTurnState.ts",
-      "usePmLeaderChat.ts"
+      "onboardingWizard.ts"
     ],
     "run": [
       "acpFailure.ts",
@@ -284,7 +281,7 @@
     "composables": 19,
     "icons": 2,
     "inbox": 46,
-    "pm": 5,
+    "onboarding": 2,
     "run": 74,
     "shared": 40,
     "solo": 16,

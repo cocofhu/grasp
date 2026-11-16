@@ -241,7 +241,7 @@
         "colTime": "时间",
         "colSource": "来源 / 阶段",
         "colScope": "运行 / 节点",
-        "thread": "工作区助手会话",
+        "thread": "会话",
         "empty": "没有调用记录"
       },
       "pricing": {
@@ -287,8 +287,7 @@
           "90d": "近 90 天",
           "all": "全部历史"
         },
-        "workflow": "工作流",
-        "pm": "工作区助手"
+        "workflow": "工作流"
       },
       "segments": {
         "label": "筛选任务状态",
@@ -585,10 +584,10 @@
         "time7d": "近 7 天",
         "time30d": "近 30 天",
         "noRun": "暂无 Run",
-        "callerPmSub": "工作区助手者",
+        "callerMemberSub": "已登录用户",
         "callerApiKeySub": "外部触发",
         "callerSystemSub": "自动化",
-        "callerPm": "工作区助手",
+        "callerMember": "成员",
         "callerApiKey": "用户 API Key",
         "callerSystem": "系统",
         "callerExternal": "外部",
@@ -621,159 +620,7 @@
         "outcomeOk": "成功",
         "outcomeFail": "失败"
       },
-      "pm": {
-        "settingsTitle": "工作区助手设置",
-        "defaultAssistantSection": "默认助手",
-        "automaticApprovalSection": "自动审批",
-        "enable": "启用工作区助手",
-        "enablePermissionHint": "任意已登录用户可启用/换绑/停用",
-        "aclMemoryNote": "记忆请在 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。",
-        "enabledMcps": "工作区助手专用 MCP",
-        "enabledMcpsHint": "咨询沙箱按勾选注入。通用记忆/上下文始终注入，不受此列表控制。",
-        "mcpProgress": "工作区进度、阻塞、风险（只读）",
-        "mcpWorkflowRead": "同工作区工作流只读查询（list / graph / versions / runs / 待审批）",
-        "mcpWorkflowWrite": "同工作区工作流写操作（创建 / 更新 / 发布 / 启动 / 审批 / 取消）",
-        "mcpAgentFs": "列出工作区 Agent + 编辑同工作区 Agent 工作目录（非 Run 沙箱；Studio 刷新可见）",
-        "gateAutoVar": "遇门禁自动唤起 · 开关变量",
-        "gateAutoVarPlaceholder": "输入工作区布尔变量名，如 pm_auto_gate",
-        "gateAutoVarHint": "填写 run 中须存在且为真的变量名；留空则能力关闭，遇门禁不唤起。保存时不校验变量是否已存在。",
-        "gateAutoPrompt": "处理 Prompt（可选）",
-        "gateAutoPromptPlaceholder": "可选：追加在系统默认上下文与工具引导之后",
-        "gateAutoPromptHint": "留空则仅发送系统默认上下文与工具引导；非空时追加在默认内容之后。",
-        "badgeEnabled": "已启用",
-        "badgeDisabled": "未启用",
-        "badgeUnavailable": "Agent 不可用",
-        "badgeError": "Agent 异常",
-        "badgePending": "待绑定",
-        "agentStaleSuffix": "（失效）",
-        "bindAgent": "绑定 Agent",
-        "selectAgent": "选择已有 Agent…",
-        "noAgents": "当前无可绑定的 Agent，请先到 Agent 配置中心创建。",
-        "goAgents": "前往 Agent 配置中心",
-        "needAgent": "启用前必须选择一个 Agent",
-        "saveLeaderButton": "保存工作区助手配置",
-        "adminRequired": "需要平台管理员权限",
-        "disabledTitle": "工作区助手未启用",
-        "disabledHint": "绑定一个已有 Agent 并启用助手，随时了解工作进展、阻塞和风险。",
-        "unavailableTitle": "先为助手选择可用的 Agent",
-        "scopeLabel": "工作区咨询",
-        "threadsLoadFailed": "暂时无法加载会话",
-        "threadsLoadFailedDesc": "请重试以查看已有会话。",
-        "welcomeTitle": "今天想了解什么？",
-        "pausedHistoryHint": "助手已暂停，历史会话仍可查看。重新启用后可继续咨询。",
-        "defaultUnavailableHint": "默认 Agent 暂不可用，无法新建会话；已有会话使用各自的 Agent。",
-        "pausedComposerHint": "当前会话仅供查看，可在设置中重新启用助手。",
-        "threadUnavailableHint": "此会话的 Agent 暂不可用，历史消息仍可查看。",
-        "features": {
-          "progress": {
-            "title": "了解进展",
-            "desc": "汇总工作流与运行进度。"
-          },
-          "blockers": {
-            "title": "找到阻塞",
-            "desc": "梳理等待处理的事项。"
-          },
-          "risk": {
-            "title": "关注风险",
-            "desc": "发现异常与需要关注的趋势。"
-          }
-        },
-        "goSettings": "前往设置",
-        "settings": "设置",
-        "backToChat": "返回咨询",
-        "threads": "会话",
-        "newThread": "新建",
-        "untitled": "新会话",
-        "noThreads": "暂无会话，点击新建开始咨询。",
-        "emptyHint": "询问工作区整体进度、当前阻塞或风险趋势；也可附加文件说明问题。",
-        "suggestProgress": "工作区整体进度如何？",
-        "suggestBlockers": "当前卡在哪里？",
-        "suggestRisk": "最近有哪些风险趋势？",
-        "inputPh": "输入问题，Enter 发送；可粘贴或选择附件（≤50 MiB）",
-        "send": "发送",
-        "stop": "停止",
-        "regenerate": "重新生成",
-        "retry": "重试",
-        "images": "附件",
-        "imagesOnly": "附件",
-        "generating": "正在生成…",
-        "copyFull": "复制全文",
-        "copySuccess": "纯文本已复制到剪贴板",
-        "copyFailed": "复制失败，请手动选择文本",
-        "me": "我",
-        "loadingHistory": "正在加载历史对话…",
-        "historyScrollUp": "上滑加载更早消息",
-        "historyLoading": "正在加载更早消息…",
-        "historyLoadFailed": "加载失败 · 再次滚到顶部可重试",
-        "historyReachedStart": "已到最早消息",
-        "finalizing": "正在保存回复…",
-        "resuming": "正在续接回复…",
-        "loadFailed": "加载失败",
-        "loadFailedDesc": "无法加载会话消息，请检查网络后重试。",
-        "busyFinalizing": "正在保存本轮回复，请等待完成后再发送下一条。",
-        "busyResuming": "正在续接未完成回复，请等待终态后再发送下一条。",
-        "busyWaiting": "正在处理本轮（就绪 / 生成），请等待终态后再发送下一条。",
-        "busyPulling": "正在拉取镜像…",
-        "busyStreaming": "正在流式输出回复，请等待完成、失败或停止后再发送。",
-        "failConnectionTitle": "连接中断",
-        "failConnectionDesc": "页面刷新或连接中断导致本轮生成已停止。可点击重试；若有半成品已保留。",
-        "failPartialKeptMeta": "已停止 · 半成品已保留",
-        "failSandboxTitle": "沙箱超时",
-        "failSandboxDesc": "就绪等待或生成超过约 90 秒仍未完成，请稍后重试。",
-        "failEmptyTitle": "空回复",
-        "failEmptyDesc": "本轮未产出有效回复，请重试或换一种问法。",
-        "failUnknownTitle": "未知错误",
-        "failUnknownDesc": "处理中断，请重试。若问题持续，请检查网络连接。",
-        "failStoppedTitle": "已停止",
-        "failStoppedDesc": "你已停止本轮处理，半成品已丢弃，可重试。",
-        "failInterruptedTitle": "服务重启中断",
-        "failInterruptedDesc": "服务重启导致本轮生成中断，可点击重试。",
-        "openSource": "跳转原文",
-        "citationMissing": "引用目标不可用或无权限",
-        "citationInvalid": "引用无效或目标不存在",
-        "setupBadgeDisabled": "未启用",
-        "setupBadgeUnavailable": "待配置",
-        "setupStepsLabel": "启用步骤",
-        "setupStep1": "在设置里选择一个已有 Agent",
-        "setupStep2": "打开「启用助手」并保存",
-        "setupStep3": "回到这里开始咨询",
-        "setupPreviewQ1": "这周有哪些运行卡住了？",
-        "setupPreviewA1": "2 个运行在等待审批，另有 1 个测试节点失败过一次。",
-        "setupPreviewQ2": "先处理哪个？",
-        "setupPreviewA2": "建议先看等待最久的那个，它阻塞了 3 个下游任务。"
-      },
-      "externalMcp": {
-        "connectionTitle": "接入配置",
-        "subtitle": "供 Cursor / Claude 等外部 AI 通过 MCP 协议操作本工作区 PM 能力面（独立于内部工作区助手咨询）。",
-        "distinctHint": "此处开关与密钥仅作用于外部 MCP，不影响 Web/门禁内的工作区助手 Leader。",
-        "enable": "启用外部 MCP",
-        "enableHint": "默认关闭。开启后仍需有效工作区 API Key 与已勾选能力包方可调用。",
-        "packsTitle": "外部能力包",
-        "packsHint": "仅勾选的能力包会出现在 tools/list，并可被 call；与内部工作区助手 MCP 勾选相互独立。",
-        "urlTitle": "MCP 基址",
-        "urlHint": "外部客户端按包追加路径，例如 …/pm-progress、…/pm-workflow-write。",
-        "urlPending": "保存设置后显示",
-        "urlPackSuffix": "完整 URL 形如：{base}/pm-progress",
-        "keysTitle": "工作区 API Key",
-        "keysHint": "Bearer 鉴权外部 MCP。明文仅在创建时展示一次；吊销后立即失效。",
-        "createKey": "创建密钥",
-        "createKeyTitle": "新建工作区 MCP 密钥",
-        "keyCreatedTitle": "密钥已创建",
-        "keyName": "名称",
-        "keyNamePlaceholder": "例如 cursor-local",
-        "keyOnceHint": "请立即复制保存；关闭后将无法再次查看明文。",
-        "noKeys": "尚无密钥",
-        "revoke": "吊销",
-        "keyRevoked": "密钥已吊销",
-        "save": "保存外部 MCP 设置",
-        "saved": "外部 MCP 设置已保存",
-        "exampleTitle": "Cursor / Claude 配置示例",
-        "exampleHint": "将 YOUR_WORKSPACE_MCP_KEY 替换为上方创建的密钥；按需调整包路径后缀。",
-        "copy": "复制",
-        "copied": "已复制",
-        "copySuccess": "已复制到剪贴板",
-        "copyFailed": "复制失败"
-      },
+      "adminRequired": "需要平台管理员权限",
       "metaTitle": "工作区信息",
       "metaHint": "修改名称、描述或未知模型显示名后使用页底保存；保存成功后页头与用量展示将同步。",
       "nameRequired": "工作区名称不能为空",
@@ -1414,7 +1261,7 @@
         "worktree": "工作树",
         "sandbox": "沙箱",
         "sectionDesc": "执行模式由当前部署的镜像决定，此页只展示。",
-        "worktreeHelp": "本环境跑的是 Worktree 镜像。Solo、工作流、对话测试和助手都在这张镜像里启动，没有另一层容器边界。Git 仓库用本次工作树，没有仓库时用独立文件夹。命令来自镜像内的七种编码工具、git、gh、glab 和 Chromium。该值来自当前镜像。换成沙箱要改部署精简服务镜像加沙箱镜像。",
+        "worktreeHelp": "本环境跑的是 Worktree 镜像。Solo、工作流和对话测试都在这张镜像里启动，没有另一层容器边界。Git 仓库用本次工作树，没有仓库时用独立文件夹。命令来自镜像内的七种编码工具、git、gh、glab 和 Chromium。该值来自当前镜像。换成沙箱要改部署精简服务镜像加沙箱镜像。",
         "sandboxHelp": "本环境跑的是精简服务镜像加沙箱镜像。Agent 在沙箱容器里启动。该值来自当前镜像，不能在此修改。换成工作树要改部署 Worktree 镜像。",
         "banner": "本镜像带有七种 CLI、浏览器预览和构建工具链，没有 dockerd、sshd 和 code-server。Agent 与服务在同一个容器里。沙箱内存、回收和容量属于另一套沙箱部署，这里不提供。",
         "bannerNoSwitch": "首页、新建会话和启动运行没有模式开关。",
@@ -1475,8 +1322,7 @@
       },
       "purpose": {
         "run": "运行",
-        "test": "测试",
-        "agent": "工作区助手"
+        "test": "测试"
       },
       "status": {
         "busy": "对话中",
@@ -1489,8 +1335,7 @@
       },
       "source": {
         "workflow": "工作流",
-        "chatTest": "对话测试",
-        "pmConsult": "工作区助手咨询"
+        "chatTest": "对话测试"
       },
       "ttl": {
         "busy": "运行中(暂停回收)",
@@ -1587,7 +1432,7 @@
       },
       "errorPrefix": "出错:",
       "emptyTeamTitle": "用一个入口拉起整支团队",
-      "emptyTeamDesc": "填写工作区背景与运行配置后自动起沙箱：创建工作区、工作区经理与 4 名工程师。",
+      "emptyTeamDesc": "填写团队名与运行配置后，按参考编制自动创建 4 名工程师 Agent。",
       "emptyTeamCta": "创建 Agent 团队",
       "emptyTeamOrSingle": "或新建单个 Agent",
       "emptyWorkspaceTitle": "本工作区还没有 Agent",
@@ -1600,7 +1445,6 @@
         "env": "环境变量",
         "test": "对话测试",
         "meta": "元信息",
-        "data": "数据",
         "capabilities": "能力"
       },
       "switcher": {
@@ -1662,13 +1506,11 @@
         "source": {
           "system": "基线",
           "studio": "Studio",
-          "pm-mcp": "PM MCP",
-          "external-mcp": "外部 MCP",
           "restore": "回滚"
         }
       },
       "mcp": {
-        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。工作区助手 MCP 需手动添加,与 artifact-store 并列、互不合并。",
+        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。",
         "formEdit": "表单编辑",
         "rawJson": "原始 JSON",
         "runVarsTitle": "运行级变量(运行时替换到 url / headers / args / env)",
@@ -1677,25 +1519,13 @@
         "artifactToken": "绑定该 run 的访问令牌",
         "globalVar": "{'${vars.<全局变量名>}'} — 工作流全局变量,如 {'${vars.feature}'}",
         "addArtifactStore": "+ 添加产物存储",
-        "agentVarsTitle": "Agent 通用平台 MCP",
-        "agentScopeTag": "agent",
-        "memoryVars": "长期记忆（归属 Agent 主工作区）",
-        "contextVars": "对话上下文（Chat 落库回看）",
-        "agentScopeNote": "可在任意 Agent 的 mcp[] 声明。工作区助手咨询沙箱也会自动注入这三项；pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs 在工作区的工作区助手设置中启用，勿写在此处。",
-        "addMemoryStore": "+ 添加长期记忆",
-        "addContextStore": "+ 添加对话上下文",
         "quickAddLabel": "快捷添加",
         "displayName": {
-          "artifact": "产物存储",
-          "memory": "长期记忆",
-          "context": "对话上下文"
+          "artifact": "产物存储"
         },
         "scopeNote": {
-          "artifact": "本次运行隔离的产物服务。",
-          "memory": "长期记忆，归属主工作区。",
-          "context": "对话上下文，用于 Chat 落库回看。"
+          "artifact": "本次运行隔离的产物服务。"
         },
-        "agentMcpAlreadyExists": "已存在约定名 {name}，未新增重复条目",
         "serviceName": "服务名,如 context7",
         "transportCommand": "命令 (stdio)",
         "remove": "移除",
@@ -1719,11 +1549,7 @@
       "mcpHelp": {
         "link": "帮助",
         "title": "MCP 配置帮助",
-        "gotIt": "知道了",
-        "chip": {
-          "run": "运行级变量",
-          "agent": "Agent 平台 MCP"
-        }
+        "gotIt": "知道了"
       },
       "envHelp": {
         "link": "帮助",
@@ -1787,7 +1613,7 @@
         "createPlaceholder": "字母 / 数字 / - / _",
         "renameTitle": "重命名 Agent",
         "renameLabel": "新名称",
-        "renameCascadeHint": "将同步更新目录、工作区助手，以及工作流中的 Agent 配置引用",
+        "renameCascadeHint": "将同步更新目录，以及工作流中的 Agent 配置引用",
         "renameSuccess": "改名成功",
         "renameSuccessWithWorkflows": "改名成功，已更新 {n} 个工作流",
         "deleteAgentTitle": "删除 Agent",
@@ -1870,28 +1696,23 @@
       },
       "teamWizard": {
         "title": "创建 Agent 团队",
-        "headSub": "团队背景 + 运行配置 → 确认后自动起沙箱建团",
-        "confirmStart": "确认并启动沙箱",
+        "headSub": "团队名 + 运行配置 → 确认后按参考编制创建工程师 Agent",
+        "confirmStart": "确认并创建",
         "submitting": "正在提交",
-        "previewLine": "团队：{team} · PM：{pm} · {n} 名工程师",
+        "previewLine": "团队：{team} · {n} 名工程师",
         "steps": {
           "team": "团队信息",
-          "repo": "仓库",
           "mcp": "MCP",
           "env": "环境变量",
           "review": "确认创建"
         },
         "team": {
-          "meta": "设置团队名称与命名前缀；工程师将在沙箱中按参考编制生成。",
+          "meta": "设置团队名称与命名前缀；确认后按参考编制创建工程师。",
           "teamName": "团队名",
-          "prefix": "命名前缀",
-          "pmName": "PM Agent 名称",
-          "background": "团队背景",
-          "backgroundPlaceholder": "描述团队目标、技术栈、仓库形态与工作流诉求。将作为沙箱建团提示词。",
-          "backgroundHint": "类似 Prompt：确认后注入沙箱，据此生成工程师团队。"
+          "prefix": "命名前缀"
         },
         "mcp": {
-          "meta": "写入团队默认 mcp[]；创建 PM / 工程师时一并带上。默认已放入 artifact-store。",
+          "meta": "写入团队默认 mcp[]；创建工程师时一并带上。默认已放入 artifact-store。",
           "namePh": "名称",
           "headers": "请求头",
           "addHeader": "添加 Header",
@@ -1900,45 +1721,31 @@
           "runVars": "运行变量：{'${GRASP_ARTIFACT_URL}'} / {'${GRASP_ARTIFACT_TOKEN}'}"
         },
         "env": {
-          "meta": "写入 PM；工程师创建时默认继承。"
+          "meta": "创建工程师时一并写入。"
         },
         "review": {
-          "meta": "确认后将在当前工作区创建 PM，自动起沙箱并按参考编制生成 4 名工程师。",
+          "meta": "确认后将在当前工作区按参考编制创建 4 名工程师。",
           "team": "团队",
           "none": "无",
-          "roster": "编制：1 PM + 4 工程师 · 共 5",
-          "background": "团队背景（建团提示词）",
+          "roster": "编制：4 名工程师",
           "noArtifactWarn": "工作流角色通常需要 artifact-store；当前 MCP 列表未包含它。"
         },
         "errors": {
           "teamNameRequired": "请填写团队名",
-          "prefixRequired": "请填写命名前缀",
-          "backgroundRequired": "请填写团队背景（建团提示词）",
-          "pmRequired": "请填写 PM Agent 名称",
-          "pmInvalid": "PM 名称不合法（仅字母数字与 _/-）",
-          "pmExists": "该 PM 名称已存在"
+          "prefixRequired": "请填写命名前缀"
         },
         "progress": {
-          "title": "沙箱 · {name}",
-          "sub": "自动建团：工作区 / 工作区经理 / 工程师 Agent",
-          "starting": "sandbox starting…",
-          "running": "sandbox running",
-          "pulling": "正在拉取镜像…",
-          "pullingHint": "正在拉取运行时镜像，请稍候。拉取完成前不会标记为就绪。",
+          "title": "建团 · {name}",
+          "sub": "自动建团：工作区 / 工程师 Agent",
+          "starting": "starting…",
+          "running": "running",
           "ready": "team ready · {n} agents",
           "failed": "failed",
           "waiting": "等待进度…",
           "resources": "已产出资源",
-          "openPm": "打开工作区经理",
           "done": "完成",
           "retry": "重试",
           "keepCreated": "仅保留已创建资源"
-        },
-        "repo": {
-          "meta": "可选。PM 沙箱会克隆所选仓库，凭据和提交身份取自仓库配置。",
-          "label": "仓库",
-          "none": "不克隆仓库",
-          "manage": "管理仓库"
         }
       },
       "wizard": {
@@ -2005,30 +1812,6 @@
           "blue": "蓝",
           "purple": "紫",
           "pink": "粉"
-        }
-      },
-      "data": {
-        "title": "Agent 数据",
-        "hint": "工作区数据：在此管理记忆与上下文。",
-        "unsavedBinding": "主工作区修改尚未保存；数据面板仍使用已保存的主工作区。",
-        "tabs": {
-          "memory": "记忆",
-          "context": "上下文"
-        },
-        "memory": {
-          "titlePh": "标题",
-          "contentPh": "内容",
-          "add": "添加记忆",
-          "clear": "清空全部",
-          "clearConfirm": "确认清空该 Agent 的全部记忆？",
-          "titleRequired": "请填写记忆标题",
-          "empty": "暂无记忆",
-          "updatedBy": "更新者 {user}"
-        },
-        "context": {
-          "hint": "查看与清理会话；新咨询请到工作区助手。",
-          "empty": "暂无会话",
-          "deleteConfirm": "确认删除该会话及其消息？"
         }
       },
       "capabilities": {
@@ -3376,9 +3159,6 @@
     "workspaceDefaults": {
       "title": "工作流默认配置",
       "variablesHint": "画布中的同名变量优先。",
-      "gateTitle": "自动审批",
-      "gateHint": "开启后单独设置，关闭则继承工作区配置。",
-      "mcpPacks": "可用 MCP",
       "hint": "覆盖共享默认值，画布中的同名变量仍优先。设置保存后对后续执行生效。",
       "variables": "默认变量",
       "variableName": "变量名",
@@ -3391,11 +3171,6 @@
       "editable": "可修改",
       "secret": "密钥",
       "addVariable": "添加变量",
-      "gateOverride": "单独设置自动审批",
-      "gateEnabled": "启用自动审批",
-      "agent": "执行 Agent",
-      "selectAgent": "选择 Agent",
-      "prompt": "附加提示",
       "credentialTitle": "凭据绑定",
       "credentialHint": "为每个环境键选择凭据，或明确不注入。指定凭据失效时不会回退到其他凭据。",
       "inherit": "继承默认凭据",
@@ -3744,7 +3519,6 @@
     },
     "settingsOverview": {
       "desc": {
-        "assistantSettings": "选择助手使用的 Agent，并配置自动审批规则。",
         "audit": "查看工作区内 Agent 的工具调用与 MCP 访问记录。"
       },
       "stats": {
@@ -3760,11 +3534,6 @@
         "executionMode": "执行模式",
         "runningRuns": "运行中 / 并发上限",
         "sandboxMemory": "沙箱内存上限",
-        "mcpConnection": "对外连接",
-        "mcpEnabled": "已启用",
-        "mcpDisabled": "未启用",
-        "mcpPacks": "已开放能力包",
-        "mcpKeys": "访问密钥",
         "projectsTotal": "仓库",
         "projectsUsed": "使用过",
         "projectsHosts": "代码托管主机",

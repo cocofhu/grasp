@@ -1,8 +1,3 @@
-import type {
-  ChatThread,
-  ChatMessage,
-  MemoryItem,
-} from '../../shared/types'
 import { BASE, req } from '../httpCore'
 import { invalidateModelCatalog } from '../modelCatalogEvents'
 import type {
@@ -100,34 +95,6 @@ export const agentsClient = {
       `/agents/${encodeURIComponent(name)}/workspace/revisions/${encodeURIComponent(sha)}/restore`,
       { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
     ),
-
-  // Agent-scoped data (Studio).
-  listAgentMemories: (name: string) =>
-    req<{ items: MemoryItem[] }>(`/agents/${encodeURIComponent(name)}/memories`),
-  upsertAgentMemory: (name: string, body: { title: string; content: string }) =>
-    req<MemoryItem>(`/agents/${encodeURIComponent(name)}/memories`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  updateAgentMemory: (name: string, mid: string, body: { title?: string; content?: string }) =>
-    req<MemoryItem>(`/agents/${encodeURIComponent(name)}/memories/${mid}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
-  deleteAgentMemory: (name: string, mid: string) =>
-    req<{ status: string }>(`/agents/${encodeURIComponent(name)}/memories/${mid}`, { method: 'DELETE' }),
-  clearAgentMemories: (name: string) =>
-    req<{ status: string; count: number }>(`/agents/${encodeURIComponent(name)}/memories`, { method: 'DELETE' }),
-  listAgentThreads: (name: string) =>
-    req<{ items: ChatThread[]; messageCounts: Record<string, number> }>(
-      `/agents/${encodeURIComponent(name)}/threads`,
-    ),
-  listAgentThreadMessages: (name: string, tid: string) =>
-    req<{ items: ChatMessage[]; total: number }>(
-      `/agents/${encodeURIComponent(name)}/threads/${tid}/messages`,
-    ),
-  deleteAgentThread: (name: string, tid: string) =>
-    req<{ status: string }>(`/agents/${encodeURIComponent(name)}/threads/${tid}`, { method: 'DELETE' }),
 
   exportAgent: async (name: string): Promise<Blob> => {
     const res = await fetch(`${BASE}/agents/${encodeURIComponent(name)}/export`, {

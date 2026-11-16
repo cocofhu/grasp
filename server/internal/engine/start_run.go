@@ -83,7 +83,7 @@ func (e *Engine) publishedSnapshot(workflowID string) (models.WorkflowDef, model
 
 // StartRunFromPublished creates a run from the WorkflowVersion numbered
 // def.PublishedVersion. Empty trigger defaults to api; explicit values must be
-// whitelist codes (manual|api|pm_mcp). Used exclusively by /v1 external API.
+// whitelist codes (manual|api). Used exclusively by /v1 external API.
 // Priority is always normal (non-UI paths cannot set priority this period).
 func (e *Engine) StartRunFromPublished(workflowID string, inputs map[string]any, trigger string, tags []string, env []models.EnvEntry) (*models.Run, error) {
 	if e.IsHalted() {

@@ -3,7 +3,6 @@ import { createApp, defineComponent, h, ref } from 'vue'
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
-import PmLeaderChat from '../src/components/pm/PmLeaderChat.vue'
 import PreviewFeedbackChat from '../src/components/run/PreviewFeedbackChat.vue'
 import ParagraphInput from '../src/components/ui/ParagraphInput.vue'
 import AgentChatTester from '../src/components/agent/AgentChatTester.vue'
@@ -53,40 +52,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   const method = (init?.method || 'GET').toUpperCase()
 
-  if (url.includes('/pm/threads') && !url.includes('/messages') && !url.includes('/draft') && !url.includes('/sandbox') && method === 'GET') {
-    return json({ items: [{ id: 'thr-1', agentAvailable: true, title: '你好' }] })
-  }
-  if (url.includes('/pm/threads/thr-1/messages') && method === 'GET') {
-    return json({
-      items: [
-        {
-          id: 'u1',
-          role: 'user',
-          content: '看下这两张',
-          status: 'ok',
-          createdAt: '2026-08-09T00:00:00Z',
-          images: [
-            { data: PNG_A, mimeType: 'image/png', name: '看板截图.png' },
-            { data: PNG_B, mimeType: 'image/png', name: '表单截图.png' },
-            { data: 'DOCDATA', mimeType: 'application/pdf', name: '说明.docx' },
-          ],
-        },
-        {
-          id: 'a1',
-          role: 'assistant',
-          content: '已收到截图，可继续核对细节。',
-          status: 'ok',
-          createdAt: '2026-08-09T00:01:00Z',
-        },
-      ],
-      hasMore: false,
-    })
-  }
   if (url.includes('/draft')) {
     return json({ draft: null, live: false, hasFinal: false })
-  }
-  if (url.includes('/sandbox') && method === 'POST') {
-    return json({ sandbox: { id: 1, status: 'running' }, preamble: '', thread: { id: 'thr-1', agentAvailable: true, title: '你好' } })
   }
   if (url.includes('/sandboxes/1/eventlog')) {
     return json({
@@ -122,12 +89,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return json({})
 }
 
-type Surf = 'pm' | 'feedback' | 'para' | 'tester' | 'shared'
+type Surf = 'feedback' | 'para' | 'tester' | 'shared'
 
 const App = defineComponent({
   name: 'ChatImageSurfacesHarness',
   setup() {
-    const surf = ref<Surf>('pm')
+    const surf = ref<Surf>('feedback')
     const paraImages = ref<ClarifyImage[]>([
       { data: PNG_A, mimeType: 'image/png', name: '门禁附件.png' },
       { data: 'DOC', mimeType: 'application/pdf', name: '审计记录.txt' },
@@ -138,7 +105,6 @@ const App = defineComponent({
     const { preview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
     const tabs: { id: Surf; label: string }[] = [
-      { id: 'pm', label: '工作区助手' },
       { id: 'feedback', label: '预览反馈' },
       { id: 'para', label: '段落输入' },
       { id: 'tester', label: 'Agent 调试' },
@@ -170,22 +136,6 @@ const App = defineComponent({
             ),
           ),
         ),
-        surf.value === 'pm'
-          ? h(
-              'div',
-              { class: 'h-[640px] border border-line', 'data-testid': 'surf-panel-pm' },
-              [
-                h(PmLeaderChat, {
-                  binding: {
-                    enabled: true,
-                    agentAvailable: true,
-                    agentConfigRef: 'agent-1',
-                    aclNote: '',
-                  },
-                }),
-              ],
-            )
-          : null,
         surf.value === 'feedback'
           ? h(
               'div',

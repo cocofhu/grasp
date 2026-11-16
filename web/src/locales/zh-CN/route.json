@@ -20,11 +20,8 @@
     "embedImage": "图片预览",
     "embedDemo": "预览放大",
     "board": "看板",
-    "assistant": "工作区助手",
     "audit": "审计",
     "credentials": "凭据",
-    "assistantSettings": "助手设置",
-    "externalMcp": "外部 MCP",
     "runLive": "实时执行",
     "solo": "Solo 对话",
     "projects": "仓库"

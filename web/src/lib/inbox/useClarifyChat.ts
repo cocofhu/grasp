@@ -347,7 +347,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const overflowScroll = ref(false)
 const composing = ref(false)
 
-/** Near-bottom threshold (px), aligned with PmLeaderChat / approved Demo. */
+/** Near-bottom threshold (px), aligned with the approved Demo. */
 const STICK_THRESHOLD = 48
 const stickToBottom = ref(true)
 /** Unread real turns while off-bottom; never counts thinking placeholder. */
@@ -391,7 +391,7 @@ async function scrollBottom(force = false) {
 }
 
 /**
- * Enter / remount / session-switch stick sequence (aligned with PmLeaderChat + Demo):
+ * Enter / remount / session-switch stick sequence (aligned with the approved Demo):
  * pin on entry (scrollBottom already awaits nextTick), then re-pin after paint
  * so tall ReAct / high content blocks that lag one frame still land at the latest message.
  * Must not be used for incremental turn updates — those stay stick-gated.

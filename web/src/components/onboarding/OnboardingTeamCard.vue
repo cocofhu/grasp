@@ -6,7 +6,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import type { AgentCapabilities, ModelConfiguration } from '@/lib/api/apiTypes'
 import { summarizeCapabilities } from '@/lib/workflow/agentCapabilities'
-import { type OnboardingTeamMember, type TeamNameIssue } from '@/lib/pm/onboardingWizard'
+import { type OnboardingTeamMember, type TeamNameIssue } from '@/lib/onboarding/onboardingWizard'
 
 const props = defineProps<{
   member: OnboardingTeamMember

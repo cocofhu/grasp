@@ -12,7 +12,6 @@ import App from '../src/App.vue'
 
 const params = new URLSearchParams(window.location.search)
 const view = params.get('view') || '/workflows'
-const assistantMode = params.get('assistant') || 'ready'
 const settingsItems = [
   ['max_concurrent_runs', 6, 1, 64], ['sandbox_idle_ttl_minutes', 60, 1, undefined],
   ['max_sandboxes', 15, 1, undefined], ['sandbox_memory_mb', 4096, 512, 65536],
@@ -20,8 +19,8 @@ const settingsItems = [
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
 const names = ['产品研发', '代码审查', '自动化回归', '需求澄清', '数据分析', '发布检查', '文档维护', '安全扫描', '问题排查', 'API 集成', '体验优化', '周报汇总']
-const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager' }
-const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
+const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', unknownModelDisplayName: '' }
+const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, notifyPolicy: { mode: 'inherit', events: [] }, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
 for (const workflow of workflows) workflow.publishedSnapshot = { version: workflow.publishedVersion, name: workflow.name, description: workflow.description, nodes: workflow.nodes, edges: workflow.edges }
 const titles = ['优化工作流审批交互', '修复回归测试中的不稳定用例', '补充 API 接口说明', '检查发布前配置', '整理产品需求与验收条件', '更新周报与执行记录']
 const runs = titles.map((title, index) => ({ id: `run-${index + 1}`, workflowId: workflows[index].id, workflowName: workflows[index].name, title, status: index === 0 ? 'running' : index === 1 ? 'waiting_human' : 'completed', trigger: 'manual', startedAt: '2026-10-20T09:00:00Z', durationSec: 320, progress: index > 1 ? 100 : 45, currentNodeLabel: '执行', nodeRuns: {}, artifacts: [], currentNode: index === 0 ? { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } : index === 1 ? { id: 'gate', name: '门禁', iteration: 1, kind: 'gate', mode: 'gate', state: 'waiting_human' } : undefined }))
@@ -32,11 +31,6 @@ const artifactFiles: any[] = params.get('artifacts') === 'empty' ? [] : Array.fr
   workflowId: index < 12 ? 'wf-1' : index < 22 ? 'wf-2' : '', workflowName: index < 12 ? names[0] : index < 22 ? names[1] : '',
   sizeBytes: 2340 + index * 20, createdAt: `2026-10-20T09:${String(59-index).padStart(2, '0')}:00Z`, revision: index === 2 ? 2 : 1,
 }))
-if (assistantMode === 'conversation' && artifactFiles.length) {
-  artifactFiles[0].id = 'art-a1b2c3d4'
-  artifactFiles[1].id = 'art-b1b2c3d4'
-  artifactFiles[12].name = 'release-notes.md'
-}
 function isHiddenLedger(name: string) {
   return name === 'feedback_index.json' || name.startsWith('feedback.')
 }
@@ -51,11 +45,6 @@ function artifactContent(file: any) {
 }
 let artifactTreeAttempts = 0
 const calls: { path: string; method: string; body?: any }[] = []
-const pmThreads: any[] = ['history', 'active-history', 'orphan', 'unavailable-thread', 'conversation'].includes(assistantMode) ? [{ id: 'past-conversation', title: '本周研发进展', agentAvailable: assistantMode !== 'unavailable-thread' }] : []
-const conversationMessages = Array.from({ length: 16 }, (_, index) => [
-  { id: `question-${index}`, role: 'user', content: `第 ${index + 1} 轮：${['本周的研发进展如何？', '当前有哪些需要优先处理的问题？', '请整理发布检查结果。', '接下来如何安排验证？'][index % 4]}`, status: 'ok', createdAt: '2026-10-20T09:00:00Z' },
-  { id: `answer-${index}`, role: 'assistant', content: `## 第 ${index + 1} 轮进展\n\n本周已完成 API 文档与发布配置检查。工作流审批与产物浏览的关键流程已经通过验证。\n\n代码审查正在等待确认，建议优先处理回归测试中的不稳定用例。\n\n- 研发：完成核心交付\n- 测试：继续补充边界场景\n- 发布：确认负责人和上线时间`, status: 'ok', createdAt: '2026-10-20T09:01:00Z', citations: index === 15 ? [{ type: 'artifact', targetId: 'release-notes.md', summarySnippet: '发布说明' }, { type: 'artifact', targetId: 'art-b1b2c3d4', summarySnippet: '评审结论' }, { type: 'artifact', targetId: 'page.html', summarySnippet: '页面预览' }] : [] },
-]).flat()
 ;(window as any).__workspaceFixture = { workspace, workflows, calls, settingsItems, brand, artifactFiles }
 const fetchActual = window.fetch.bind(window)
 window.fetch = async (input, init) => {
@@ -86,24 +75,13 @@ window.fetch = async (input, init) => {
     const items = visibleArtifactFiles().filter(file => (!url.searchParams.has('workflowId') || file.workflowId === url.searchParams.get('workflowId')) && (!url.searchParams.has('session') || !file.workflowId) && [file.name, file.nodeId, file.runTitle].some(value => value.toLocaleLowerCase().includes(query)))
     data = { items, total: new Set(items.map(file => file.runId)).size, page: 1, pageSize: 20 }
   }
-  else if (/^\/artifacts\/[^/]+\/versions$/.test(path)) data = assistantMode === 'conversation' && path.includes('artifact-3') ? [{ artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 1, kind: 'html', sizeBytes: 2340, createdAt: '2026-10-20T08:00:00Z' }, { artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 2, kind: 'html', sizeBytes: 2380, createdAt: '2026-10-20T09:00:00Z' }] : []
+  else if (/^\/artifacts\/[^/]+\/versions$/.test(path)) data = []
   else if (/^\/artifacts\/[^/]+\/content$/.test(path)) { const file = artifactFiles.find(file => file.id === path.split('/')[2]); data = { ...file, content: artifactContent(file) } }
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
   else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
   else if (path === '/projects') data = []
   else if (path === '/solo/sessions') data = { sessions: [], maxSandboxes: 15, usedSandboxes: 0 }
-  else if (path === '/workspace/pm-leader') data = { enabled: !['disabled', 'history'].includes(assistantMode), agentAvailable: !['disabled', 'unavailable', 'orphan'].includes(assistantMode), agentConfigRef: 'manager', enabledMcps: [] }
-  else if (path === '/workspace/pm/threads') {
-    if (method === 'POST') { data = { id: 'new-conversation', title: '新会话', agentAvailable: true }; pmThreads.unshift(data) }
-    else data = { items: pmThreads }
-  }
-  else if (path === '/workspace/pm/threads/past-conversation/messages') data = assistantMode === 'conversation'
-    ? { items: url.searchParams.has('before') ? conversationMessages.slice(0, 12) : conversationMessages.slice(12), hasMore: !url.searchParams.has('before'), nextBefore: url.searchParams.has('before') ? undefined : 'question-6' }
-    : { items: [{ id: 'question', role: 'user', content: '本周的研发进展如何？', status: 'ok', createdAt: '2026-10-20T09:00:00Z' }, { id: 'answer', role: 'assistant', content: '本周已完成 API 文档与发布配置检查。\n\n代码审查正在等待确认，建议优先处理回归测试中的不稳定用例。', status: 'ok', createdAt: '2026-10-20T09:01:00Z' }], hasMore: false }
-  else if (path === '/workspace/pm/threads/new-conversation/turns') data = { message: { id: 'first-question', role: 'user', content: body.content, status: 'ok' }, waiting: 1 }
-  else if (path === '/workspace/external-mcp') data = { enabled: false, enabledPacks: [], mcpBaseUrl: `${location.origin}/mcp/workspace` }
-  else if (path.endsWith('/keys')) data = []
   else if (path === '/workspace/credentials') data = { items: [] }
   else if (path === '/workspace/shared-agent-config') data = { env: {}, mcp: [], files: [], acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace' }
   else if (path === '/workspace/run-tags') data = { tags: ['研发', '测试', '发布'] }

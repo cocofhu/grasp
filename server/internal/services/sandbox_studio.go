@@ -416,11 +416,8 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 		result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
 		if result != nil && result.OpID != "" {
 			source := models.TokenLedgerSourceStudio
-			switch row.Purpose {
-			case SandboxPurposeSolo:
+			if row.Purpose == SandboxPurposeSolo {
 				source = models.TokenLedgerSourceSolo
-			case SandboxPurposeAgent:
-				source = models.TokenLedgerSourcePM
 			}
 			tokenledger.Record(s.db, tokenledger.Entry{
 				ID: result.OpID, At: result.EndedAt, Source: source, Phase: models.TokenLedgerPhaseChat,
@@ -647,9 +644,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 			return s.cleanupFailure(id, err, true)
 		}
 	}
-	if isAgentSandboxPurpose(row.Purpose) {
-		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
-	} else if row.Purpose == SandboxPurposeSolo {
+	if row.Purpose == SandboxPurposeSolo {
 		defer s.invokeSoloDestroyHook(row.ID)
 	}
 	if err := s.db.Delete(&models.Sandbox{}, id).Error; err != nil {
@@ -742,6 +737,10 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 // sandbox-gateway orphanGC.minAge (10m default).
 const reconcileCreatingGrace = 10 * time.Minute
 
+// retiredSandboxPurposes mark sandboxes of the removed assistant, channel and
+// scheduled-task chats. Startup reconcile destroys any that remain.
+var retiredSandboxPurposes = map[string]bool{"agent": true, "pm": true}
+
 // ReconcileOnStartup syncs DB rows with live gateway state after a restart and
 // drops orphan managed sandboxes not tracked in the DB. Dropping a local row
 // always Destroy()s the gateway instance first so sandbox_gateway.sandboxes
@@ -764,6 +763,10 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
+		if retiredSandboxPurposes[row.Purpose] {
+			s.destroyLocalSandbox(ctx, row)
+			continue
+		}
 		if row.CleanupPending || row.RecoveryKind != "" || len(row.RecoveryPoints) > 0 || row.Status == "stopped" || row.Status == "saving" || row.Status == "resuming" {
 			tracked[row.Name] = true
 			continue

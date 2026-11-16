@@ -353,7 +353,7 @@ const {
 @container workflow-directory (max-width: 740px) {
   .workflow-directory, .workflow-directory tbody { display: block; }
   .workflow-directory colgroup, .workflow-directory thead { display: none; }
-  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'updated home' '. actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0 16px 12px; }
+  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'home home' 'updated actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0 16px 12px; }
   .workflow-directory .workflow-row td { min-width: 0; border: 0; padding: 0; }
   .workflow-name-cell { grid-area: name; }
   .workflow-status-cell { grid-area: status; justify-self: end; }

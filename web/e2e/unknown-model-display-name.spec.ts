@@ -30,7 +30,7 @@ function aliasedTokenStats() {
         bucket: '2026-07-20',
         total: 180,
         workflowTotal: 180,
-        pmTotal: 0,
+        soloTotal: 0,
         inputTokens: 80,
         outputTokens: 60,
         cacheReadTokens: 20,
@@ -110,13 +110,6 @@ test.describe('未知模型显示名', () => {
       }
       await route.continue()
     })
-    await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ enabled: false }),
-      })
-    })
     await routeApi(page, '**/api/agents**', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
@@ -179,7 +172,7 @@ test.describe('未知模型显示名', () => {
   function globalModelStats(stats: ReturnType<typeof aliasedTokenStats>) {
     return {
       ...stats,
-      kpi: { total: 180, inputTokens: 80, outputTokens: 60, cacheReadTokens: 20, cacheWriteTokens: 20, workflowTotal: 180, pmTotal: 0, runCount: 1, modelCount: 2 },
+      kpi: { total: 180, inputTokens: 80, outputTokens: 60, cacheReadTokens: 20, cacheWriteTokens: 20, workflowTotal: 180, soloTotal: 0, runCount: 1, modelCount: 2 },
       sources: [{ key: 'workflow', name: 'workflow', total: 180 }],
       nodeTypes: [], topRuns: [], prevTrend: [], modelTrends: [],
       filterOptions: { models: stats.modelRanking.map((model) => ({ key: model.modelKey, name: model.name })) },

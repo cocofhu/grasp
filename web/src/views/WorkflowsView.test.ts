@@ -111,6 +111,7 @@ describe('workspace workflow management', () => {
     mocks.isMobile.value = true
     mocks.patchWorkflowHomeVisibility.mockImplementation(async (_id, showOnHome) => ({ ...head, showOnHome }))
     const { wrapper } = await setup()
+    expect(wrapper.find('[data-testid="wf-notify-inline"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="wf-home-visibility-inline"]').exists()).toBe(true)
     const actions = wrapper.get('[data-testid="wf-actions-group"]')
     expect(actions.findAll('button')).toHaveLength(3)
@@ -258,15 +259,13 @@ describe('workspace workflow management', () => {
     emptyRun.wrapper.unmount()
   })
 
-  it('keeps the catalog status copy compact', async () => {
+  it('renders catalog status as a compact dot and label', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
-    const dir = dirname(fileURLToPath(import.meta.url))
-    const view = readFileSync(join(dir, 'WorkflowsView.vue'), 'utf8')
+    const view = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'WorkflowsView.vue'), 'utf8')
     expect(view).toMatch(/\.workflow-status \{[^}]*font-size:\s*12px/)
-    expect(view).toContain('class="workflow-status-label"')
-    expect(view).not.toMatch(/padding-left:\s*0/)
+    expect(view).not.toContain('workflow-notify')
     const { wrapper } = await setup()
     const row = wrapper.get('[data-workflow-id="wf-one"]')
     expect(row.get('.workflow-status-label').text()).toBe('草稿')
