@@ -48,7 +48,6 @@ const {
   gateStageEl,
   onQuoteAdd,
   productEditorRef,
-  feedbackChatRef,
   reactAnnotations,
   reactText,
   isEditing,

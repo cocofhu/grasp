@@ -47,8 +47,6 @@ function filterAgentsByScope(list: Agent[] | null | undefined): Agent[] { return
 
 const filesStep = ref<'list' | 'edit'>('list')
 const justSaved = ref(false)
-const showSaveReasonModal = ref(false)
-const saveReason = ref('')
 const historyRefreshKey = ref(0)
 const filesPanelRef = ref<InstanceType<typeof AgentFilesPanel> | null>(null)
 
@@ -504,7 +502,7 @@ function chooseAgentFromSheet(name: string) {
   }
 }
 
-async function save(reason?: string) {
+async function save() {
   if (!dirty.value) return false
   const capsIssue = draft.value?.capabilities ? validateCapabilities(draft.value.capabilities) : null
   if (capsIssue) {
@@ -520,18 +518,13 @@ async function save(reason?: string) {
   try {
     if (draft.value) {
       const payload = fromDraft(draft.value)
-      if (typeof reason === 'string' && reason.trim()) {
-        await api.saveAgent(payload, { reason: reason.trim() })
-      } else {
-        await api.saveAgent(payload)
-      }
+      await api.saveAgent(payload)
       const i = agents.value.findIndex((x) => x.name === payload.name)
       if (i >= 0) agents.value[i] = payload
       originalJson.value = JSON.stringify(payload)
       historyRefreshKey.value++
     }
     justSaved.value = true
-    showSaveReasonModal.value = false
     return true
   } catch (e: any) {
     error.value = String(e?.message || e)
@@ -539,16 +532,6 @@ async function save(reason?: string) {
   } finally {
     saving.value = false
   }
-}
-
-function promptSave() {
-  if (!dirty.value || saving.value) return
-  saveReason.value = t('pages.agentStudio.workspaceHistory.defaultSaveReason')
-  showSaveReasonModal.value = true
-}
-
-async function confirmSaveWithReason() {
-  return save(saveReason.value)
 }
 
 async function reloadAgentFromServer(name: string) {
@@ -897,16 +880,10 @@ onBeforeUnmount(() => {
   isMobile,
   route,
   router,
-  filesStep,
   justSaved,
-  showSaveReasonModal,
-  saveReason,
   historyRefreshKey,
-  promptSave,
-  confirmSaveWithReason,
   reloadAgentFromServer,
   filesPanelRef,
-  TAB_FADE_THRESHOLD,
   agentNameEl,
   tabStripEl,
   agentNameTruncated,
@@ -927,14 +904,12 @@ onBeforeUnmount(() => {
   onSheetTreeSelect,
   activeName,
   draft,
-  originalJson,
   tab,
   syncStudioQuery,
   loading,
   hasInitialLoaded,
   loadFailed,
   loadDenied,
-  studioSeq,
   error,
   saving,
   initialLoading,
@@ -951,7 +926,6 @@ onBeforeUnmount(() => {
   exporting,
   showBundleSecrets,
   pendingBundleExport,
-  agentImport,
   importFileInput,
   showImportDiscardConfirm,
   showImportConflict,
@@ -989,7 +963,6 @@ onBeforeUnmount(() => {
   chooseAgent,
   chooseAgentFromSheet,
   save,
-  doExport,
   triggerExport,
   cancelUnsavedExport,
   discardAndExport,
@@ -1015,12 +988,7 @@ onBeforeUnmount(() => {
   confirmDeleteAgent,
   promptOk,
   confirmOk,
-  measureAgentNameTruncation,
-  placeFullNameTip,
   onAgentNameClick,
   syncTabFade,
-  bindTabStripObserver,
-  onChromeReposition,
-  onChromeKeydown,
   }
 }

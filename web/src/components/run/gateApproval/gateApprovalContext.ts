@@ -137,8 +137,6 @@ export type GateApprovalState = {
   editReactQueuedItem: (index: number) => void | Promise<void>
   reactThinking: boolean
   reactStreamText: string
-  reactLiveHumanText: string
-  reactTurns: GateReactTurn[]
   reactTranscriptTurns: GateReactTurn[]
   reactStreamThought: string
   reactStreamTools: AgentTool[]
@@ -165,12 +163,6 @@ export type GateApprovalState = {
     currentText?: string
     style?: { color?: string; fontSize?: string; fontWeight?: string; fontFamily?: string; lineHeight?: string }
   }) => void
-  onAppPreviewPick: (payload: {
-    selector: string
-    tagName: string
-    outerHTML: string
-    url?: string
-  }) => void
   clearHtmlPreviewPick: () => void
   onAnnotateSave: (comment: string) => void
   onAnnotateSendChat: (comment: string) => void
@@ -179,7 +171,6 @@ export type GateApprovalState = {
   onCommentPinDelete: (pinId: string) => void
   onWriteCommentArtifact: () => void | Promise<void>
   loadPreviewIssues: () => void | Promise<void>
-  choose: (id: string) => void
   recordFeedbackIssue: () => void | Promise<void>
   sendHotReject: () => void | Promise<void>
   onComposerPass: () => void

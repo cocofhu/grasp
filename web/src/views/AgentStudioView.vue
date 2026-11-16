@@ -104,11 +104,7 @@ const {
   leaveConfirmDiscard,
   leaveConfirmCancel,
   load,
-  chooseAgentFromSheet,
   save,
-  confirmSaveWithReason,
-  showSaveReasonModal,
-  saveReason,
   historyRefreshKey,
   reloadAgentFromServer,
   triggerExport,
@@ -126,7 +122,6 @@ const {
   showCreateTeam,
   hideTeamCreate,
   embedded,
-  chooseAgent,
   onWizardCreated,
   onTeamBootstrapStarted,
   onTeamBootstrapRefresh,
@@ -985,27 +980,6 @@ async function createStudioChatTest(
       @close="showTeamWizard = false"
       @started="onTeamBootstrapStarted"
     />
-
-    <AppModal
-      :open="showSaveReasonModal"
-      :title="t('pages.agentStudio.workspaceHistory.saveTitle')"
-      :width="420"
-      @close="showSaveReasonModal = false"
-    >
-      <p class="text-[13px] leading-6 text-txt2">{{ t('pages.agentStudio.workspaceHistory.saveHint') }}</p>
-      <label class="mb-1 mt-2 block text-[12px] text-txt2">{{ t('pages.agentStudio.workspaceHistory.saveReasonLabel') }}</label>
-      <input
-        v-model="saveReason"
-        class="w-full rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
-      />
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="showSaveReasonModal = false">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton size="sm" variant="primary" :disabled="saving" @click="confirmSaveWithReason">
-          {{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}
-        </AppButton>
-      </template>
-    </AppModal>
-
 
     <Teleport to="body">
       <Transition name="studio-toast">

@@ -23,7 +23,6 @@ const {
   nameError,
   creating,
   createError,
-  pendingAcp,
   showAcpConfirm,
   stepAnimKey,
   currentStep,

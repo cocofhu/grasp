@@ -1488,10 +1488,6 @@
         "restoreReason": "Restore reason",
         "restoreConfirm": "Confirm restore",
         "restoreDefault": "Restore to {sha}: undo mistaken edit",
-        "saveTitle": "Save workspace",
-        "saveHint": "If this save touches multiple files, each path gets its own revision with the same reason.",
-        "saveReasonLabel": "Change reason",
-        "defaultSaveReason": "Studio save",
         "source": {
           "system": "baseline",
           "studio": "Studio",
