@@ -1,6 +1,8 @@
 package database
 
 import (
+	"encoding/json"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -42,7 +44,40 @@ func dropRetiredCronChannels(db *gorm.DB) error {
 			return err
 		}
 	}
-	return deleteRetiredThreads(db)
+	if err := deleteRetiredThreads(db); err != nil {
+		return err
+	}
+	return stripRetiredRecoveryMCP(db)
+}
+
+// stripRetiredRecoveryMCP drops task-scheduler from saved sandboxes' role MCP
+// list; recovery rejects role MCPs it can no longer rebuild.
+func stripRetiredRecoveryMCP(db *gorm.DB) error {
+	if !db.Migrator().HasColumn("sandboxes", "recovery_mcp_names") {
+		return nil
+	}
+	var rows []struct {
+		ID    uint
+		Names string `gorm:"column:recovery_mcp_names"`
+	}
+	if err := db.Table("sandboxes").Select("id, recovery_mcp_names").
+		Where("recovery_mcp_names LIKE ?", `%"task-scheduler"%`).Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var names []string
+		if json.Unmarshal([]byte(row.Names), &names) != nil {
+			continue
+		}
+		b, err := json.Marshal(slices.DeleteFunc(names, func(n string) bool { return n == "task-scheduler" }))
+		if err != nil {
+			return err
+		}
+		if err := db.Table("sandboxes").Where("id = ?", row.ID).Update("recovery_mcp_names", string(b)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func dropColumnIfPresent(db *gorm.DB, table, column string) error {

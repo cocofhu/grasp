@@ -2,6 +2,7 @@ package database
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -47,6 +48,11 @@ func TestDropRetiredCronChannelsIsIdempotent(t *testing.T) {
 		}
 	}
 
+	saved := models.Sandbox{RecoveryMCPNames: []string{"memory-store", "task-scheduler", "context-store"}}
+	if err := db.Create(&saved).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	for range 2 {
 		if err := dropRetiredCronChannels(db); err != nil {
 			t.Fatal(err)
@@ -71,6 +77,13 @@ func TestDropRetiredCronChannelsIsIdempotent(t *testing.T) {
 		db.Model(&models.ChatTurnDraft{}).Count(&drafts)
 		if msgs != 1 || drafts != 1 {
 			t.Fatalf("messages=%d drafts=%d", msgs, drafts)
+		}
+		var got models.Sandbox
+		if err := db.First(&got, saved.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got.RecoveryMCPNames, []string{"memory-store", "context-store"}) {
+			t.Fatalf("recovery MCP names = %v", got.RecoveryMCPNames)
 		}
 	}
 	if err := dropRetiredCronChannels(nil); err != nil {
