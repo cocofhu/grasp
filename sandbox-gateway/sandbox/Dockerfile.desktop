@@ -103,6 +103,7 @@ RUN test "$(git -C /tmp/blender_mcp rev-parse HEAD)" = "${BLENDER_MCP_REF}" && \
     python3 -m venv /opt/blender-mcp && \
     /opt/blender-mcp/bin/pip install --no-cache-dir /tmp/blender_mcp/mcp && \
     ln -sfn /opt/blender-mcp/bin/blender-mcp /usr/local/bin/blender-mcp && \
+    mkdir -p /tmp/blender_mcp/dist && \
     blender -b --factory-startup --command extension build \
       --source-dir /tmp/blender_mcp/addon/blender_mcp_addon --output-dir /tmp/blender_mcp/dist && \
     blender -b --command extension install-file -r user_default -e /tmp/blender_mcp/dist/mcp-*.zip && \

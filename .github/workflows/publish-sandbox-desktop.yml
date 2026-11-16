@@ -86,6 +86,16 @@ jobs:
             BASE_IMAGE=${{ steps.base.outputs.image }}
       - name: Smoke
         run: ./scripts/check-desktop-image.sh universal-sandbox:desktop-smoke
+      - name: Runtime bundle
+        run: |
+          docker buildx build -f server/Dockerfile --target sandbox-runtime-export \
+            --output type=local,dest="$RUNNER_TEMP/runtime" .
+      - name: Desktop E2E (shell, launcher, desktop MCP, interlock, Blender MCP)
+        run: ./sandbox-gateway/scripts/test-desktop-e2e.sh universal-sandbox:desktop-smoke "$RUNNER_TEMP/runtime/sandbox-runtime.tgz"
+      - name: Browser-mode baseline (default image)
+        env:
+          BASE: ${{ steps.base.outputs.image }}
+        run: ./sandbox-gateway/scripts/test-desktop-e2e.sh "$BASE" "$RUNNER_TEMP/runtime/sandbox-runtime.tgz" browser
       - name: Push
         env:
           TAGS: ${{ steps.meta.outputs.tags }}

@@ -202,6 +202,7 @@ bash -n sandbox/scripts/grasp-bootstrap.sh
 bash -n sandbox/scripts/services.sh
 bash -n scripts/test-runtime-bootstrap.sh
 bash -n scripts/test-runtime-e2e.sh
+bash -n scripts/test-desktop-e2e.sh
 bash -n scripts/test-inject.sh
 bash -n scripts/test-preview-inject-upstream.sh
 bash -n scripts/test-git-auth.sh
