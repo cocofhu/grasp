@@ -35,9 +35,11 @@
 
 </div>
 
-https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
+<p align="center">
+  <a href="media/grasp-readme-video.mp4"><img src="media/grasp-readme-video-poster.webp" alt="Play the Grasp product tour" width="100%" /></a>
+</p>
 
-<p align="center"><sub>Product demo: from a one-line request to clarification, implementation, review and delivery.</sub></p>
+<p align="center"><sub>80-second product tour (1080p, no sound): a one-line request, clarification with a page mock, the FSM canvas, a human gate, Solo, artifacts and token cost.</sub></p>
 
 **Grasp** is a self-hosted workspace for shipping software with coding agents. Describe a task in one sentence and run it as a **workflow** (a multi-step pipeline on a finite-state-machine canvas, with clarification, implementation, tests and human gates) or as a **Solo session** (one agent in its own sandbox). Either way, agents ask questions as clickable cards and hand back structured artifacts and live page previews instead of walls of text.
 
@@ -279,12 +281,6 @@ Not with the defaults. Replace the demo account, put HTTPS in front, and read [S
 ## Contributing
 
 Issues and pull requests are welcome: share a use case, report a bug, or improve workflows, agents and the UI. Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) for lint, test and E2E commands before submitting changes.
-
-If Grasp is useful to you, a star helps others find it.
-
-<a href="https://star-history.com/#cocofhu/grasp&Date">
-  <img src="https://api.star-history.com/svg?repos=cocofhu/grasp&type=Date" alt="Star history" width="600">
-</a>
 
 ## License
 

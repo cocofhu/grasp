@@ -35,9 +35,11 @@
 
 </div>
 
-https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
+<p align="center">
+  <a href="media/grasp-readme-video.mp4"><img src="media/grasp-readme-video-poster.webp" alt="播放 Grasp 产品演示" width="100%" /></a>
+</p>
 
-<p align="center"><sub>产品演示：从一句话需求到澄清、实现、评审和交付。</sub></p>
+<p align="center"><sub>80 秒产品演示（1080p，无声）：一句话需求、带页面原型的澄清、FSM 画布、人工门禁、Solo、产物和 Token 成本。</sub></p>
 
 **Grasp** 是一个自托管的工作区，用 Coding Agent 交付软件。一句话描述任务，选择用**工作流**来跑（FSM 画布上编排好的多步流程：需求澄清、实现、测试和人工门禁），或者用 **Solo 会话**来跑（在独立沙箱里与单个 Agent 对话）。两种方式下，Agent 都用可点选的卡片提问，交回结构化产物和可交互的页面预览，而不是一大段文字。
 
@@ -279,12 +281,6 @@ Grasp 不替代它们，而是调度它们。每个 Agent 节点、每轮 Solo �
 ## 参与贡献
 
 欢迎提交 Issue 和 Pull Request：分享使用场景、报告问题，或改进工作流、Agent 和界面。提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)、[AGENTS.md](AGENTS.md) 和 [行为准则](CODE_OF_CONDUCT.md)，各模块的 lint、单元测试与 E2E 命令详见其中。
-
-如果 Grasp 对你有帮助，点个 Star 能让更多人看到它。
-
-<a href="https://star-history.com/#cocofhu/grasp&Date">
-  <img src="https://api.star-history.com/svg?repos=cocofhu/grasp&type=Date" alt="Star history" width="600">
-</a>
 
 ## 许可证
 
