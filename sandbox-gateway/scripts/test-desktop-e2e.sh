@@ -66,12 +66,13 @@ p.terminate()
 }
 tool() { printf '{"method":"tools/call","params":{"name":"%s","arguments":%s}}\n' "$1" "${2:-{\}}"; }
 
-# print_memory: preview-stack resident memory (MiB, VmRSS summed per process name).
+# print_memory: preview-stack memory (MiB, PSS summed per process name, so
+# pages shared between Chromium processes are counted once).
 print_memory() {
   log "预览常驻内存（$mode）："
   in_box bash -c 'for d in /proc/[0-9]*; do
     n=$(cat "$d/comm" 2>/dev/null) || continue
-    r=$(sed -n "s/^VmRSS:[[:space:]]*\([0-9]*\).*/\1/p" "$d/status" 2>/dev/null)
+    r=$(sed -n "s/^Pss:[[:space:]]*\([0-9]*\).*/\1/p" "$d/smaps_rollup" 2>/dev/null)
     [ -n "$r" ] && echo "$n $r"
   done' | awk '
     $1 ~ /^(chrom|Xvfb|x11vnc|websockify|openbox|plank|fcitx5|grasp-desk|dbus-daemon)/ {
@@ -113,10 +114,10 @@ print_memory
 
 # --- 2. 启动台 ---
 api http://127.0.0.1:6091/apps | grep -q '"mousepad"' || die "启动台目录缺少 mousepad"
-code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' \
+code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H 'Origin: http://evil.example' \
   -d '{"id":"mousepad"}' http://127.0.0.1:6091/launch)"
 [ "$code" = 403 ] || die "跨源启动应返回 403，实际 $code"
-code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -d '{"id":"rm -rf"}' http://127.0.0.1:6091/launch)"
+code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"id":"rm -rf"}' http://127.0.0.1:6091/launch)"
 [ "$code" = 404 ] || die "白名单外 id 应返回 404，实际 $code"
 log "2. 启动台白名单与 Origin：通过"
 
@@ -161,7 +162,7 @@ grep -q '"isError": true' <<<"$out" && die "交还后 click 仍失败：$out"
 log "4. 软互锁：通过"
 
 # --- 5. Blender MCP ---
-in_box curl -fsS -X POST -d '{"id":"blender"}' http://127.0.0.1:6091/launch >/dev/null || die "启动 Blender 失败"
+api -X POST -d '{"id":"blender"}' http://127.0.0.1:6091/launch >/dev/null || die "启动 Blender 失败"
 for _ in $(seq 1 90); do
   in_box bash -c 'echo >/dev/tcp/127.0.0.1/6092' 2>/dev/null && break
   sleep 2
