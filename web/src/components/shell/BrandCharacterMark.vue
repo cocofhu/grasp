@@ -208,16 +208,24 @@ onBeforeUnmount(() => {
 }
 
 .brand-character__response { transition: transform 260ms cubic-bezier(.22, 1, .36, 1); }
-.brand-character__motion { animation: brand-character-sway 5.6s ease-in-out infinite; }
-.brand-character__breath { animation: brand-character-breathe 3.8s ease-in-out infinite; }
 .brand-character__face { transition: transform 220ms ease; }
 .brand-character__eyes { transform-box: fill-box; }
 .brand-character__eye {
   transform-box: fill-box;
   transform-origin: center;
-  animation: brand-character-blink 6.8s ease-in-out infinite;
 }
 .brand-character__eye--right { animation-delay: 35ms; }
+
+/* Animated SVG children repaint every frame (~60% of a core while the sidebar is
+   on screen), so loops run only while hovered; at rest the mark is still between
+   the timed idle actions. */
+.brand-character:hover .brand-character__motion,
+[data-testid="sidebar-brand-lockup"]:hover .brand-character__motion { animation: brand-character-sway 5.6s ease-in-out infinite; }
+.brand-character:hover .brand-character__breath,
+[data-testid="sidebar-brand-lockup"]:hover .brand-character__breath { animation: brand-character-breathe 3.8s ease-in-out infinite; }
+.brand-character:hover .brand-character__eye,
+[data-testid="sidebar-brand-lockup"]:hover .brand-character__eye { animation: brand-character-blink 6.8s ease-in-out infinite; }
+.brand-character:is(.idle-look, .idle-tilt) .brand-character__eye { animation: brand-character-blink 1.4s ease-in-out; }
 
 .brand-character:hover .brand-character__response,
 [data-testid="sidebar-brand-lockup"]:hover .brand-character__response,
