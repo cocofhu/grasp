@@ -8,7 +8,7 @@ All notable public-release changes are documented here.
   - 删除 `sandbox.image`、`sandbox.images.*`、`GRASP_SANDBOX_IMAGE` 和 `GRASP_SANDBOX_IMAGE_<BACKEND>`。仍配置时启动打印 warning 并忽略，不会启动失败。请把镜像迁到网关：Docker/K8s 用 `image` 或 `profiles`，E2B 用 `defaultTemplate` 或 `templates`，然后从 Grasp 配置中删除。
   - Grasp 创建沙箱时不再传镜像，只在命名网关连接配置了 `profile` 时传环境名。不再支持按编码工具使用不同镜像；所有编码工具共用网关的同一环境，切换模型分组或编码工具时也不再因镜像不同而拒绝原地切换。
   - 网关新增 `GET /api/v1/capabilities`，返回默认镜像（`defaultImage`）、`profiles`、驱动、端口和停止/磁盘语义，使用 v1 鉴权，未配置 API key 的本地网关也可调用；`GET /api/v2/info` 同样返回 `defaultImage`。Grasp 启动日志和 `doctor` 会显示网关的镜像；对接旧版网关时自动回退到 `/api/v2/info`。
-  - 升级顺序：先升级网关，再升级 Grasp。
+  - 升级顺序：先升级网关，再升级 Grasp。网关必须与本版本一起升级：3.3.0 的网关不识别 `SBGW_DOCKER_IMAGE`，新版 Grasp 配旧网关时沙箱会退回网关内置的 `universal-sandbox:local` 而无法创建。
 
 - 新增「云桌面」镜像，并统一 MCP 配置入口（破坏性变更）：
   - 删除沙箱环境变量 `VNC_PREVIEW` 和 `BROWSER_MCP`，代码不再读取；初始化向导和设置里对应的两个开关一并移除，能力接口去掉 `preview.enableEnv`。沙箱现在始终启动预览栈（Xvfb + Chromium + x11vnc + websockify），每个沙箱常驻内存约增加 460 MiB（实测 PSS：Chromium 360、Xvfb 61、websockify 30、x11vnc 13），与直连预览共存。
