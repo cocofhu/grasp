@@ -16,7 +16,7 @@ import SettingsRow from '@/components/settings/SettingsRow.vue'
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader.vue'
 import SettingsStatStrip from '@/components/settings/SettingsStatStrip.vue'
 import type { SettingsStatItem } from '@/components/settings/settingsStats'
-import { setBrandSettings, setExecutionMode } from '@/lib/composables/useBrandSettings'
+import { setBrandSettings } from '@/lib/composables/useBrandSettings'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -25,51 +25,36 @@ const { workspace, loading: workspaceLoading, error: workspaceError, ensureLoade
 
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
-const executionMode = ref<'worktree' | 'sandbox'>('sandbox')
-const worktreeMode = computed(() => executionMode.value === 'worktree')
-const executionLabel = computed(() =>
-  worktreeMode.value ? t('pages.settings.execution.worktree') : t('pages.settings.execution.sandbox'),
-)
-const executionHelp = computed(() =>
-  worktreeMode.value ? t('pages.settings.execution.worktreeHelp') : t('pages.settings.execution.sandboxHelp'),
-)
-
-const groups = computed(() => {
-  const all = [
-    {
-      id: 'concurrency',
-      icon: 'chart',
-      title: t('pages.settings.groups.concurrency.title'),
-      desc: t('pages.settings.groups.concurrency.desc'),
-      keys: ['max_concurrent_runs'],
-    },
-    {
-      id: 'recycle',
-      icon: 'refresh',
-      title: t('pages.settings.groups.recycle.title'),
-      desc: t('pages.settings.groups.recycle.desc'),
-      keys: ['sandbox_idle_ttl_minutes'],
-    },
-    {
-      id: 'capacity',
-      icon: 'layers',
-      title: t('pages.settings.groups.capacity.title'),
-      desc: t('pages.settings.groups.capacity.desc'),
-      keys: ['max_sandboxes'],
-    },
-    {
-      id: 'resources',
-      icon: 'server',
-      title: t('pages.settings.groups.resources.title'),
-      desc: worktreeMode.value
-        ? t('pages.settings.execution.sectionDesc')
-        : t('pages.settings.groups.resources.desc'),
-      keys: worktreeMode.value ? [] : ['sandbox_memory_mb', 'agent_idle_timeout_minutes'],
-    },
-  ]
-  if (!worktreeMode.value) return all
-  return all.filter((group) => group.id !== 'recycle' && group.id !== 'capacity')
-})
+const groups = computed(() => [
+  {
+    id: 'concurrency',
+    icon: 'chart',
+    title: t('pages.settings.groups.concurrency.title'),
+    desc: t('pages.settings.groups.concurrency.desc'),
+    keys: ['max_concurrent_runs'],
+  },
+  {
+    id: 'recycle',
+    icon: 'refresh',
+    title: t('pages.settings.groups.recycle.title'),
+    desc: t('pages.settings.groups.recycle.desc'),
+    keys: ['sandbox_idle_ttl_minutes'],
+  },
+  {
+    id: 'capacity',
+    icon: 'layers',
+    title: t('pages.settings.groups.capacity.title'),
+    desc: t('pages.settings.groups.capacity.desc'),
+    keys: ['max_sandboxes'],
+  },
+  {
+    id: 'resources',
+    icon: 'server',
+    title: t('pages.settings.groups.resources.title'),
+    desc: t('pages.settings.groups.resources.desc'),
+    keys: ['sandbox_memory_mb', 'agent_idle_timeout_minutes'],
+  },
+])
 
 const SETTING_UNITS: Record<string, string> = {
   sandbox_idle_ttl_minutes: 'common.minutes',
@@ -193,8 +178,8 @@ function barWidth(ratio: number): string {
 }
 
 const overviewStats = computed<SettingsStatItem[]>(() => {
-  const stats: SettingsStatItem[] = [
-    { key: 'execution-mode', icon: 'terminal', label: t('pages.settingsOverview.stats.executionMode'), value: executionLabel.value, tone: 'accent' },
+  const memory = itemOf('sandbox_memory_mb')
+  return [
     {
       key: 'running-runs',
       icon: 'chart',
@@ -203,19 +188,16 @@ const overviewStats = computed<SettingsStatItem[]>(() => {
       total: runLimit.value,
       tone: runRatio.value >= 1 ? 'warn' : 'neutral',
     },
+    {
+      key: 'sandboxes',
+      icon: 'layers',
+      label: t('pages.settingsOverview.stats.sandboxes'),
+      value: capacity.value?.used,
+      total: capacity.value?.limit,
+      tone: capacityRatio.value >= 1 ? 'warn' : 'neutral',
+    },
+    { key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value === 0 ? t('pages.settings.followGateway') : memory?.value, unit: memory?.value === 0 ? undefined : settingUnit('sandbox_memory_mb') },
   ]
-  if (worktreeMode.value) return stats
-  stats.push({
-    key: 'sandboxes',
-    icon: 'layers',
-    label: t('pages.settingsOverview.stats.sandboxes'),
-    value: capacity.value?.used,
-    total: capacity.value?.limit,
-    tone: capacityRatio.value >= 1 ? 'warn' : 'neutral',
-  })
-  const memory = itemOf('sandbox_memory_mb')
-  stats.push({ key: 'sandbox-memory', icon: 'server', label: t('pages.settingsOverview.stats.sandboxMemory'), value: memory?.value === 0 ? t('pages.settings.followGateway') : memory?.value, unit: memory?.value === 0 ? undefined : settingUnit('sandbox_memory_mb') })
-  return stats
 })
 
 async function loadSettings() {
@@ -229,8 +211,6 @@ async function loadSettings() {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
     hydrate(res.items)
     hydrateBrand(res.brand)
-    executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
-    setExecutionMode(res.execution_mode)
   } catch (e: any) {
     if (!settingsSeq.isCurrentSeq(localSeq)) return
     if (items.value.length > 0) {
@@ -378,10 +358,6 @@ async function save() {
         if (epoch === formEpoch) {
           hydrate(res.items)
           hydrateBrand(res.brand)
-          if (res.execution_mode) {
-            executionMode.value = res.execution_mode === 'worktree' ? 'worktree' : 'sandbox'
-            setExecutionMode(res.execution_mode)
-          }
         }
       } catch (cause) {
         if (epoch === formEpoch) platformFailure = failureText(cause, t('pages.settings.saveFailed'))
@@ -568,14 +544,6 @@ onBeforeUnmount(() => {
             </SettingsSection>
 
             <SettingsSection v-for="group in groups" :key="group.id" :icon="group.icon" :title="group.title" :description="group.desc">
-              <SettingsRow
-                v-if="group.id === 'resources'"
-                :label="t('pages.settings.execution.label')"
-                :description="executionHelp"
-                data-testid="execution-mode"
-              >
-                <span class="chip border-accent/40 bg-accent-dim px-2.5 py-1 text-accent-2" data-testid="execution-mode-value">{{ executionLabel }}</span>
-              </SettingsRow>
               <SettingsRow v-if="group.id === 'capacity'" :label="t('pages.settings.capacity.activeSandboxes')" :description="t('pages.settings.capacity.autoRefresh')" data-testid="settings-capacity-usage">
                 <span class="text-xl font-semibold tabular-nums text-txt" data-testid="sandbox-capacity-total">{{ capacity ? `${capacity.used} / ${capacity.limit}` : '—' }}</span>
                 <template #details>
@@ -620,13 +588,6 @@ onBeforeUnmount(() => {
                 </SettingsRow>
               </template>
             </SettingsSection>
-            <div v-if="worktreeMode" data-testid="execution-mode-banner" class="mt-4 rounded-xl border border-line bg-surface px-3.5 py-3 text-[13px] leading-relaxed text-txt2">
-              <p class="m-0">{{ t('pages.settings.execution.banner') }}</p>
-              <ul class="mb-0 mt-2 list-disc pl-5">
-                <li>{{ t('pages.settings.execution.bannerNoSwitch') }}</li>
-                <li>{{ t('pages.settings.execution.bannerNoSave') }}</li>
-              </ul>
-            </div>
           </div>
           <p class="mb-0 mt-6 text-xs leading-5 text-txt3">{{ t('pages.settings.priorityNote') }}</p>
           <footer class="mt-7 flex flex-wrap items-center justify-end gap-2" data-testid="settings-save-actions">

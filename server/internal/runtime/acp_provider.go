@@ -185,7 +185,7 @@ func (c *acpProvider) streamChat(ctx context.Context, acp *sandbox.ACPClient, re
 		c.mu.Lock()
 		sb := c.live[reactKey(req)]
 		c.mu.Unlock()
-		if sb != nil && !sb.IsLocal() {
+		if sb != nil {
 			release, err := registry.AcquireRunSandbox(ctx, sb.Name)
 			if err != nil {
 				return nil, err

@@ -28,9 +28,6 @@ func archiveArgs(workspace string) []string {
 // returns the command's error at the end of a failed stream, so a store only
 // commits a complete archive.
 func (s *Sandbox) ArchiveWorkspace(ctx context.Context) (io.ReadCloser, error) {
-	if s.IsLocal() {
-		return nil, errors.New("local worktree sandboxes have no guest workspace to archive")
-	}
 	workspace := s.workspaceDir()
 	if strings.TrimSpace(workspace) == "" {
 		return nil, errors.New("sandbox workspace is unavailable")
@@ -77,9 +74,6 @@ func (s *Sandbox) ArchiveWorkspace(ctx context.Context) (io.ReadCloser, error) {
 // RestoreWorkspace extracts a gzip tar produced by ArchiveWorkspace into the
 // guest workspace.
 func (s *Sandbox) RestoreWorkspace(ctx context.Context, archive io.Reader) error {
-	if s.IsLocal() {
-		return errors.New("local worktree sandboxes have no guest workspace to restore")
-	}
 	workspace := s.workspaceDir()
 	if strings.TrimSpace(workspace) == "" {
 		return errors.New("sandbox workspace is unavailable")

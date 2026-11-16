@@ -5,16 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/execution"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -333,9 +329,6 @@ type Sandbox struct {
 	// hostKeys is used when mgr is nil (detached test handles) so TOFU state
 	// survives across dials on the same Sandbox.
 	hostKeys *hostKeyCache
-	// local is set when the worktree image runs the agent in this process.
-	// Data-plane calls use the filesystem, and Destroy does not talk to the gateway.
-	local *localExec
 }
 
 // NewManager builds a gateway-backed manager.
@@ -418,9 +411,6 @@ func (m *Manager) sandboxFromGW(sb *GWSandbox, workspaceDir string) *Sandbox {
 // resolved session endpoint, and returns the handle. The caller should
 // WaitForACPReady before connecting the ACP client.
 func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
-	if execution.Worktree() {
-		return m.createWorktree(ctx, spec)
-	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("sandbox manager has no gateway client configured")
 	}
@@ -728,9 +718,6 @@ func (m *Manager) AttachNoEnsure(ctx context.Context, id string) (*Sandbox, erro
 }
 
 func (m *Manager) attach(ctx context.Context, id, token string, ensure bool) (*Sandbox, error) {
-	if execution.Worktree() {
-		return nil, fmt.Errorf("local worktree handles belong to their live execution")
-	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -755,9 +742,6 @@ func (m *Manager) attach(ctx context.Context, id, token string, ensure bool) (*S
 
 // DestroyByName removes a sandbox by gateway id (best effort).
 func (m *Manager) DestroyByName(ctx context.Context, id string) error {
-	if execution.Worktree() {
-		return nil
-	}
 	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return nil
 	}
@@ -773,9 +757,6 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 // id is the gateway sandbox id (also stored as Sandbox.Name). Empty content
 // with a nil error means a successful read with no output yet.
 func (m *Manager) Logs(ctx context.Context, id string, tail int) (string, error) {
-	if execution.Worktree() {
-		return "", fmt.Errorf("local worktree logs are owned by its execution")
-	}
 	if m.gw == nil {
 		return "", fmt.Errorf("sandbox manager has no gateway client configured")
 	}
@@ -822,9 +803,6 @@ func (m *Manager) Status(ctx context.Context, id string) string {
 // ProbeStatus preserves observation errors. Lifecycle decisions must use this
 // instead of Status: an unavailable gateway is not proof that data is gone.
 func (m *Manager) ProbeStatus(ctx context.Context, id string) (string, error) {
-	if execution.Worktree() {
-		return "", fmt.Errorf("local worktree status is owned by its execution")
-	}
 	if m.gw == nil || strings.TrimSpace(id) == "" {
 		return "", fmt.Errorf("sandbox gateway or id is missing")
 	}
@@ -860,9 +838,6 @@ func (m *Manager) List(ctx context.Context) ([]string, error) {
 
 // ListManaged returns approving-managed gateway sandboxes (id/status/labels).
 func (m *Manager) ListManaged(ctx context.Context) ([]GWSandbox, error) {
-	if execution.Worktree() {
-		return nil, nil
-	}
 	if m.gw == nil {
 		return nil, nil
 	}
@@ -980,16 +955,6 @@ func (m *Manager) PublishPort(ctx context.Context, id string, port int) (string,
 // proxies so dial targets track gateway endpoints rather than hard-coded
 // 127.0.0.1:<persistedPort>.
 func (m *Manager) EndpointAddr(ctx context.Context, id, key string) (string, error) {
-	if execution.Worktree() {
-		switch strings.TrimSpace(key) {
-		case "cdp":
-			return "127.0.0.1:9222", nil
-		case "novnc":
-			return "127.0.0.1:6080", nil
-		default:
-			return "", fmt.Errorf("worktree has no %q endpoint", key)
-		}
-	}
 	if m.gw == nil {
 		return "", fmt.Errorf("no gateway client")
 	}
@@ -1011,29 +976,11 @@ func (m *Manager) EndpointAddr(ctx context.Context, id, key string) (string, err
 // Exec runs a command on a named sandbox over SSH and returns combined output.
 // Each argv fragment must pass validateShellArg (via newSafeCmd).
 func (m *Manager) Exec(ctx context.Context, id string, timeout time.Duration, cmd ...string) (string, error) {
-	if execution.Worktree() {
-		return execLocal(ctx, timeout, cmd...)
-	}
 	sb, err := m.Attach(ctx, id)
 	if err != nil {
 		return "", err
 	}
 	return sb.Exec(ctx, timeout, cmd...)
-}
-
-func execLocal(ctx context.Context, timeout time.Duration, argv ...string) (string, error) {
-	if _, err := newSafeCmd(argv...); err != nil {
-		return "", err
-	}
-	cctx := ctx
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		cctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
 }
 
 // ExecScript runs interpreter with script on stdin (argv is only the
@@ -1094,25 +1041,15 @@ func (s *Sandbox) creds() sshCreds {
 }
 
 func (s *Sandbox) resolvePath(path string) string {
-	if !strings.HasPrefix(path, "/") {
-		path = strings.TrimRight(s.workspaceDir(), "/") + "/" + path
+	if strings.HasPrefix(path, "/") {
+		return path
 	}
-	if s.local != nil {
-		return s.mapLocalPath(path)
-	}
-	return path
+	return strings.TrimRight(s.workspaceDir(), "/") + "/" + path
 }
 
 // ReadFile reads a file from inside the sandbox (relative paths resolve against
 // WORKSPACE_DIR).
 func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	if s.local != nil {
-		body, err := os.ReadFile(s.resolvePath(path))
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-		return body, nil
-	}
 	cmd, err := newSafeCmd("cat", "--", s.resolvePath(path))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -1126,16 +1063,6 @@ func (s *Sandbox) ReadFile(ctx context.Context, path string) ([]byte, error) {
 
 // WriteFile writes content to a path inside the sandbox, creating parent dirs.
 func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) error {
-	if s.local != nil {
-		resolved := s.resolvePath(path)
-		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
-		}
-		if err := os.WriteFile(resolved, content, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
-		}
-		return nil
-	}
 	resolved := s.resolvePath(path)
 	dir := resolved
 	if i := strings.LastIndex(resolved, "/"); i > 0 {
@@ -1165,9 +1092,6 @@ func (s *Sandbox) WriteFile(ctx context.Context, path string, content []byte) er
 // into errors.
 func (s *Sandbox) WriteFileAtomic(ctx context.Context, path string, content []byte) error {
 	resolved := s.resolvePath(path)
-	if s.local != nil {
-		return writeLocalAtomic(resolved, content)
-	}
 	if err := validateShellArg(resolved); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -1196,45 +1120,8 @@ func (s *Sandbox) WriteFileAtomic(ctx context.Context, path string, content []by
 	return nil
 }
 
-func writeLocalAtomic(path string, content []byte) (err error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if err = tmp.Chmod(0o600); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if _, err = tmp.Write(content); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err = os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
-}
-
 // FileExists reports whether a path exists inside the sandbox.
 func (s *Sandbox) FileExists(ctx context.Context, path string) bool {
-	if s.local != nil {
-		_, err := os.Stat(s.resolvePath(path))
-		return err == nil
-	}
 	cmd, err := newSafeCmd("test", "-e", s.resolvePath(path))
 	if err != nil {
 		return false
@@ -1250,9 +1137,6 @@ func (s *Sandbox) Exec(ctx context.Context, timeout time.Duration, cmd ...string
 	if err != nil {
 		return "", err
 	}
-	if s.local != nil {
-		return s.runLocal(ctx, timeout, sc.argv, nil)
-	}
 	out, err := s.creds().run(ctx, timeout, sc)
 	return strings.TrimSpace(string(out)), err
 }
@@ -1264,23 +1148,13 @@ func (s *Sandbox) ExecScript(ctx context.Context, timeout time.Duration, interpr
 	if err != nil {
 		return "", err
 	}
-	if s.local != nil {
-		return s.runLocal(ctx, timeout, sc.argv, strings.NewReader(script))
-	}
 	out, err := s.creds().runInput(ctx, timeout, sc, strings.NewReader(script))
 	return strings.TrimSpace(string(out)), err
 }
 
 // Destroy removes the sandbox via the gateway (best effort).
 func (s *Sandbox) Destroy(ctx context.Context) {
-	if s == nil {
-		return
-	}
-	if s.local != nil {
-		s.local.shutdown()
-		return
-	}
-	if s.mgr == nil {
+	if s == nil || s.mgr == nil {
 		return
 	}
 	if err := s.mgr.DestroyByName(ctx, s.ID); err != nil {

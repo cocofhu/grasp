@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -64,9 +63,6 @@ func (c *acpProvider) refreshParkedReact(ctx context.Context, req NodeReq, sess 
 // restoreReactEnvironment reconnects a saved environment before considering a
 // fresh one. A failed restore is retryable and cannot destroy its recovery point.
 func (c *acpProvider) restoreReactEnvironment(ctx context.Context, req NodeReq, history []models.ReactMessage) (*reactSession, bool, error) {
-	if execution.Worktree() {
-		return nil, false, nil
-	}
 	registry, ok := c.registry.(RunSandboxRecovery)
 	if !ok {
 		return nil, false, nil

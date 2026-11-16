@@ -11,30 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/cocofhu/grasp/internal/execution"
 )
-
-func TestLocalWorktreeLifecycleNeverUsesConfiguredRemoteGateway(t *testing.T) {
-	t.Setenv(execution.EnvMode, execution.ModeWorktree)
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls++; w.WriteHeader(401) }))
-	defer server.Close()
-	mgr := NewManager(NewGatewayClient(server.URL, ""), ManagerOptions{})
-	ctx := context.Background()
-	_, _ = mgr.AttachNoEnsure(ctx, "local")
-	_, _ = mgr.ProbeStatus(ctx, "local")
-	_, _ = mgr.Resume(ctx, "local")
-	_, _ = mgr.ResumePrepared(ctx, "local", Spec{})
-	_ = mgr.Stop(ctx, "local", 1)
-	_, _ = mgr.RecoveryKind(ctx, "local")
-	_, _ = mgr.Logs(ctx, "local", 10)
-	_, _ = mgr.ListManaged(ctx)
-	_ = mgr.DestroyByName(ctx, "local")
-	if calls != 0 {
-		t.Fatalf("local worktree sent %d remote lifecycle requests", calls)
-	}
-}
 
 func TestColdResumeRebuildsConfigurationGitAndRuntimeInputs(t *testing.T) {
 	store := NewBundleStore()

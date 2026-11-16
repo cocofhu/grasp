@@ -289,9 +289,9 @@ func TestArgsStrictMcpConfigAddsMcpConfigPath(t *testing.T) {
 	}
 }
 
-func TestArgsStrictMcpConfigUsesWorktreeConfigRoot(t *testing.T) {
+func TestArgsStrictMcpConfigUsesConfigRoot(t *testing.T) {
 	root := t.TempDir()
-	const managedMCP = `{"mcpServers":{"artifact-store":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/worktree"}}}`
+	const managedMCP = `{"mcpServers":{"artifact-store":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/run-1"}}}`
 	if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(managedMCP), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestArgsStrictMcpConfigUsesWorktreeConfigRoot(t *testing.T) {
 			}
 			data, err := os.ReadFile(args[i+1])
 			if err != nil || string(data) != managedMCP {
-				t.Fatal("native MCP argument does not load this worktree's managed servers")
+				t.Fatal("native MCP argument does not load the CONFIG_ROOT managed servers")
 			}
 			args = c.Args(provider.OpenOptions{CustomArgs: []string{"--mcp-config", "/custom/mcp.json"}}, "read history", "")
 			i = indexOfSlice(args, "--mcp-config")
@@ -318,7 +318,7 @@ func TestArgsStrictMcpConfigUsesWorktreeConfigRoot(t *testing.T) {
 	}
 }
 
-func TestCursorAuthEnvUsesManagedWorktreeConfigRoot(t *testing.T) {
+func TestCursorAuthEnvUsesManagedConfigRoot(t *testing.T) {
 	root := t.TempDir()
 	env := []string{"CONFIG_ROOT=" + root, "CURSOR_CONFIG_DIR=/old/account-home", "CURSOR_API_KEY=synthetic-key"}
 	c := &codec{c: Config{AgentName: provider.Cursor, AuthEnvFn: func(env []string) []string {
@@ -327,7 +327,7 @@ func TestCursorAuthEnvUsesManagedWorktreeConfigRoot(t *testing.T) {
 	next := c.AuthEnv(env)
 	want := "CURSOR_CONFIG_DIR=" + root
 	if !containsStr(next, want) || containsStr(next, "CURSOR_CONFIG_DIR=/old/account-home") || !containsStr(next, "CURSOR_API_KEY=synthetic-key") || !containsStr(next, "CURSOR_EXTRA=kept") {
-		t.Fatal("Cursor native home did not follow this worktree's managed MCP config")
+		t.Fatal("Cursor native home did not follow the CONFIG_ROOT managed MCP config")
 	}
 	plain := []string{"CURSOR_CONFIG_DIR=/explicit/cli-home"}
 	if got := c.AuthEnv(plain); !containsStr(got, plain[0]) {

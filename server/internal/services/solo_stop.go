@@ -47,9 +47,6 @@ func (s *SoloService) Stop(ctx context.Context, id, user string) (*SoloSessionVi
 	if s.sbx == nil || row.SandboxID == 0 {
 		return nil, soloErr(http.StatusServiceUnavailable, "backup_unavailable", "工作区备份不可用")
 	}
-	if s.sbx.SoloSandboxIsLocal(row.SandboxID) {
-		return nil, soloErr(http.StatusConflict, "stop_unsupported", "本地工作区会话不支持停止")
-	}
 	if c := s.lookup(id); c != nil {
 		if sn := c.sess.Snapshot(); sn.Busy || sn.Waiting > 0 {
 			return nil, soloErr(http.StatusConflict, "session_busy", "请等待当前回复结束后再停止")

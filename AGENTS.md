@@ -128,9 +128,10 @@ cd .. && ./scripts/cover-check.sh gateway 90
 
 ### Agent / model routing → `ci-agent-e2e`
 
-Go **1.26.11**, Node **24**, Python 3. The workflow builds the real server and
-runtime and uses localhost model endpoints, real configurable CLIs and real
-scoped MCP calls. It does not read `DEEPSEEK_API_KEY` or incur model API cost.
+Go **1.26.11**, Node **24**, Python 3, Docker. The workflow builds the real
+server, gateway, runtime and sandbox image, runs every agent in a Docker
+sandbox, and uses host model endpoints, real configurable CLIs and real scoped
+MCP calls. It does not read `DEEPSEEK_API_KEY` or incur model API cost.
 When this workflow runs, treat its `agent-switching` check as merge-required.
 It does not replace the module gates above or the browser checks.
 
@@ -138,20 +139,19 @@ It does not replace the module gates above or the browser checks.
 node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs sandbox-gateway/scripts/agent-platform-wire-fixture.test.mjs
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
 agent_e2e_dir="$(mktemp -d)"
-bash sandbox-gateway/scripts/install-agent-e2e-clis.sh "$agent_e2e_dir/clis"
-export PATH="$agent_e2e_dir/clis/node_modules/.bin:$PATH"
+docker build --build-arg BASE_IMAGE=ubuntu:22.04 --build-arg USE_CN_MIRROR=false -t universal-sandbox:agent-e2e sandbox-gateway/sandbox
+docker build --build-arg SANDBOX_IMAGE=universal-sandbox:agent-e2e -f sandbox-gateway/scripts/agent-e2e-sandbox.Dockerfile -t grasp-agent-e2e-sandbox:local sandbox-gateway/scripts
 (cd server && go build -o "$agent_e2e_dir/server" ./cmd/server)
+(cd sandbox-gateway/gateway && go build -o "$agent_e2e_dir/gateway" ./cmd/server)
 ./scripts/build-sandbox-runtime.sh "$agent_e2e_dir/runtime"
-mkdir "$agent_e2e_dir/runtime/current"
-tar -xzf "$agent_e2e_dir/runtime/sandbox-runtime.tgz" -C "$agent_e2e_dir/runtime/current"
-python3 sandbox-gateway/scripts/test-agent-switching.py --server "$agent_e2e_dir/server" --runtime "$agent_e2e_dir/runtime/current" --output "$agent_e2e_dir/results"
+python3 sandbox-gateway/scripts/test-agent-switching.py --server "$agent_e2e_dir/server" --gateway "$agent_e2e_dir/gateway" --runtime-bundle "$agent_e2e_dir/runtime/sandbox-runtime.tgz" --sandbox-image grasp-agent-e2e-sandbox:local --output "$agent_e2e_dir/results"
 ```
 
 **Adding or removing a product Agent / coding-tool backend must update this
 E2E coverage in the same change.** Keep
 `sandbox-gateway/scripts/agent-e2e-matrix.json` equal to the product
 `tool-capabilities` API; missing, duplicate and stale cases fail. Supply the
-native CLI installation, protocol adapter, model/MCP round trip and reasoning
+native CLI in the sandbox image (`AGENT_PROVIDERS`), protocol adapter, model/MCP round trip and reasoning
 coverage. Every ordered pair of different tools must switch in the same
 session/workspace. Supported reasoning levels must reach real model requests;
 unsupported levels must be rejected. Include primary/auxiliary model changes,

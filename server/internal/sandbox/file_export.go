@@ -5,16 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/pkg/sftp"
 )
 
-// OpenArtifactFile exports a regular file from this sandbox. Local worktree
-// mode uses os.Root, which prevents symlink and parent traversal onto the host.
+// OpenArtifactFile exports a regular file from this sandbox.
 func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadCloser, error) {
 	if strings.TrimSpace(name) == "" || strings.ContainsAny(name, "\x00\r\n") {
 		return nil, errors.New("invalid export path")
@@ -22,29 +19,6 @@ func (s *Sandbox) OpenArtifactFile(ctx context.Context, name string) (io.ReadClo
 	workspace := s.workspaceDir()
 	if workspace == "" {
 		return nil, errors.New("sandbox workspace is unavailable")
-	}
-	if s.local != nil {
-		root, err := os.OpenRoot(workspace)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = root.Close() }()
-		if filepath.IsAbs(name) {
-			name, err = filepath.Rel(workspace, name)
-			if err != nil {
-				return nil, err
-			}
-		}
-		f, err := root.Open(name)
-		if err != nil {
-			return nil, err
-		}
-		st, err := f.Stat()
-		if err != nil || !st.Mode().IsRegular() {
-			_ = f.Close()
-			return nil, errors.New("only regular workspace files can be exported")
-		}
-		return f, nil
 	}
 	// SFTP opens the path directly, so file names never pass through a remote
 	// shell or the shell argv allowlist.

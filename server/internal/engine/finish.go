@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
-	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
@@ -218,7 +217,6 @@ func (e *Engine) finish(runID, status string) bool {
 				cancelCleanup()
 			}
 		}
-		execution.End(runID)
 		e.host.ReleaseRun(runID, "run_"+status)
 
 		action := models.AuditActionRunCompleted

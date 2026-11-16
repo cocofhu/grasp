@@ -46,13 +46,11 @@ import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSandboxLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { SoloResources } from '@/lib/api/apiTypes'
 import type { MessageReference } from '@/lib/api/apiTypes'
-import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { formatBytes, relTime } from '@/lib/shared/format'
 
 const props = defineProps<{ sessionId: string; embedded?: ReturnType<typeof soloEmbedClient> }>()
 const emit = defineEmits<{ back: []; ready: [] }>()
 const { t, te, locale } = useI18n()
-const { worktreeMode } = useExecutionMode()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
@@ -507,7 +505,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
             <div v-if="!embedded" class="mt-3 flex flex-wrap gap-2">
               <AppButton size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.errorCard.retry') }}</AppButton>
-              <RouterLink v-if="sandboxId && !worktreeMode" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
+              <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
               <RouterLink
@@ -672,7 +670,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 @update:reasoning-effort="setCurrentReasoningEffort"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
-              <template v-if="!embedded && status === 'running' && !worktreeMode">
+              <template v-if="!embedded && status === 'running'">
                 <button
                   v-if="sandboxPaused"
                   type="button"

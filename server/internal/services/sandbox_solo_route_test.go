@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -376,70 +374,5 @@ func TestSoloRouteRefreshesConfiguredChoicesWithoutChangingPrimary(t *testing.T)
 	}
 	if !strings.Contains(ops.specs[0].Env[runtime.EnvConfiguredModels], "newly-added-model") {
 		t.Fatal("updated selector model was not applied to the sandbox")
-	}
-}
-
-type worktreeSoloRouteOps struct {
-	*fakeSoloRouteRuntime
-	manager *sandbox.Manager
-}
-
-func (o worktreeSoloRouteOps) SwitchTool(ctx context.Context, sb *sandbox.Sandbox, spec sandbox.Spec, keys []string) error {
-	return o.manager.SwitchTool(ctx, sb, spec, keys)
-}
-
-func TestSoloRouteSwitchUsesSameLocalWorktreeAndPersistsNewPort(t *testing.T) {
-	for _, rollback := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "rollback"}[rollback], func(t *testing.T) {
-			backendPath, err := filepath.Abs(filepath.Join("..", "..", "..", "sandbox-gateway", "sandbox", "bin", "backend"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("GRASP_WORKTREE_BACKEND", backendPath)
-			t.Setenv(execution.EnvMode, execution.ModeWorktree)
-			t.Setenv("GRASP_WORKTREE_ROOT", t.TempDir())
-			execution.ResetForTest()
-			t.Cleanup(execution.ResetForTest)
-			t.Cleanup(execution.SetLookPathForTest(func(string) error { return nil }))
-			started := 0
-			t.Cleanup(sandbox.SetWorktreeBackendForTest(func(context.Context, map[string]string, string) (int, func(), error) {
-				started++
-				return 16000 + started, func() {}, nil
-			}))
-			s, row, _, target, fake := soloRouteFixture(t)
-			local, err := s.mgr.Create(context.Background(), s.live[row.ID].prepared.spec)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.live[row.ID].sb = local
-			root := local.WorkspaceDir
-			if err := os.WriteFile(filepath.Join(root, "progress.txt"), []byte("continue this task"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.db.Model(row).Updates(map[string]any{"host": local.Host, "acp_port": local.Port}).Error; err != nil {
-				t.Fatal(err)
-			}
-			s.soloRouteRuntime = worktreeSoloRouteOps{fake, s.mgr}
-			if rollback {
-				fake.failReady = 1
-			}
-			changed, err := s.AlignSoloModelRoute(context.Background(), row.ID, target)
-			if rollback && (err == nil || changed) {
-				t.Fatalf("rollback: changed=%v err=%v", changed, err)
-			}
-			if !rollback && (err != nil || !changed) {
-				t.Fatalf("switch: changed=%v err=%v", changed, err)
-			}
-			var stored models.Sandbox
-			if err := s.db.First(&stored, row.ID).Error; err != nil {
-				t.Fatal(err)
-			}
-			if stored.ACPPort != local.Port || stored.Host != "127.0.0.1" || local.Port == 16001 || s.live[row.ID].sb != local || local.WorkspaceDir != root {
-				t.Fatalf("lost local endpoint/workspace: row=%+v handle=%+v", stored, local)
-			}
-			if body, err := os.ReadFile(filepath.Join(root, "progress.txt")); err != nil || string(body) != "continue this task" {
-				t.Fatalf("lost task work: %q %v", body, err)
-			}
-		})
 	}
 }

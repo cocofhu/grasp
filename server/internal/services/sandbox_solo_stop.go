@@ -27,15 +27,6 @@ func (s *SandboxService) soloHandle(ctx context.Context, id uint) (*sandbox.Sand
 	return s.mgr.AttachNoEnsure(ctx, row.Name)
 }
 
-// SoloSandboxIsLocal reports a worktree-mode Solo sandbox, which has no
-// gateway resource to stop.
-func (s *SandboxService) SoloSandboxIsLocal(id uint) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	live := s.live[id]
-	return live != nil && live.sb != nil && live.sb.IsLocal()
-}
-
 // ResumeSolo restores the common sandbox recovery point, then reconnects the
 // Solo resident. Process memory survives only with a snapshot provider.
 func (s *SandboxService) ResumeSolo(ctx context.Context, id uint) (bool, error) {

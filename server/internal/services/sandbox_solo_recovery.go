@@ -125,13 +125,6 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	if s.soloSessionStopped(row) {
 		return fmt.Errorf("Solo 会话已停止，请先恢复")
 	}
-	s.mu.Lock()
-	live := s.live[id]
-	local := live != nil && live.sb != nil && live.sb.IsLocal()
-	s.mu.Unlock()
-	if local {
-		return nil // worktree processes have no gateway resource to resume
-	}
 	sb, warm, err := s.ensureRunningLocked(ctx, id)
 	if err != nil {
 		s.recordSoloRecoveryFailure(id, err)
@@ -154,7 +147,7 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 }
 
 func (s *SandboxService) waitSoloBridge(ctx context.Context, row *models.Sandbox, sb *sandbox.Sandbox) error {
-	if sb == nil || sb.IsLocal() {
+	if sb == nil {
 		return nil
 	}
 	if sb.Password == "" {
@@ -242,13 +235,6 @@ func (s *SandboxService) ReleaseVanishedSoloSandboxes(ctx context.Context) {
 
 func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sandbox) {
 	if s.soloSessionClosed(row) || s.soloSessionStopped(row) {
-		return
-	}
-	s.mu.Lock()
-	live := s.live[row.ID]
-	local := live != nil && live.sb != nil && live.sb.IsLocal()
-	s.mu.Unlock()
-	if local {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, soloRecoveryTimeout)

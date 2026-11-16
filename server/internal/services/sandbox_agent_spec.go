@@ -128,11 +128,6 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	}
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID
-	kind := strings.TrimSpace(extra.LaunchKind)
-	if kind == "" {
-		kind = "test"
-	}
-	env["GRASP_LAUNCH_KIND"] = kind
 	sandbox.ApplyPasswords(env, sharedToken)
 	if extra.Restore != nil {
 		// The restored archive already holds the clones and their authors.

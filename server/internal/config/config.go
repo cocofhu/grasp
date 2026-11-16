@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/envauth"
-	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -726,11 +725,7 @@ func setDefaults(c *Config) {
 		c.Browser.ContainerIdleTTLSeconds = 600
 	}
 	if c.Server.MCPAdvertise == "" {
-		host := "host.docker.internal"
-		if execution.Worktree() {
-			host = "127.0.0.1"
-		}
-		c.Server.MCPAdvertise = fmt.Sprintf("http://%s:%d", host, c.Server.Port)
+		c.Server.MCPAdvertise = fmt.Sprintf("http://host.docker.internal:%d", c.Server.Port)
 	} else {
 		c.Server.MCPAdvertise = RewriteMisconfiguredMCPAdvertise(c.Server.MCPAdvertise)
 	}
