@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import Icon from '../ui/Icon.vue'
 
-export interface BootChecklistStep {
+interface BootChecklistStep {
   id: string
   label: string
   state: 'done' | 'running' | 'pending'

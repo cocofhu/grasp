@@ -16,10 +16,10 @@
 import { isContainerReady } from '@/lib/run/liveLogBootPhase'
 import type { SoloSession } from '@/lib/api/apiTypes'
 
-export type SoloBootStepId = 'sandbox' | 'workspace' | 'agent'
-export type SoloBootStepState = 'done' | 'running' | 'pending'
+type SoloBootStepId = 'sandbox' | 'workspace' | 'agent'
+type SoloBootStepState = 'done' | 'running' | 'pending'
 
-export const SOLO_BOOT_STEPS: SoloBootStepId[] = ['sandbox', 'workspace', 'agent']
+const SOLO_BOOT_STEPS: SoloBootStepId[] = ['sandbox', 'workspace', 'agent']
 
 /** Index of the step in progress; SOLO_BOOT_STEPS.length once the session runs. */
 export function soloBootPhase(session: Pick<SoloSession, 'status' | 'sandbox'> | null | undefined): number {
