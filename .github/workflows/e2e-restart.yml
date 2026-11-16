@@ -66,6 +66,17 @@ jobs:
           actual_level="$(docker run --rm --entrypoint cat universal-sandbox:e2e-restart /etc/grasp-image-level)"
           test "$actual_level" -ge "$expected_level"
           docker run --rm --entrypoint bash universal-sandbox:e2e-restart -lc 'command -v opencode && command -v dsh'
+      # The gateway owns the sandbox image (SBGW_DOCKER_IMAGE), so it must be
+      # built from this checkout rather than the last published release.
+      - name: Build sandbox-gateway image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./sandbox-gateway
+          file: ./sandbox-gateway/Dockerfile
+          load: true
+          tags: sandbox-gateway:e2e
+          cache-from: type=gha,scope=gateway-e2e
+          cache-to: type=gha,mode=max,scope=gateway-e2e
       - name: Build grasp image
         uses: docker/build-push-action@v7
         with:
@@ -79,8 +90,8 @@ jobs:
         working-directory: server
         env:
           GRASP_IMAGE: grasp:e2e
+          SANDBOX_GATEWAY_IMAGE: sandbox-gateway:e2e
           SANDBOX_IMAGE: universal-sandbox:e2e-restart
-          GRASP_SANDBOX_IMAGE: universal-sandbox:e2e-restart
           GRASP_RESTART_MODEL_URL: http://127.0.0.1:19117
         run: |
           mkdir -p ../e2e-artifacts

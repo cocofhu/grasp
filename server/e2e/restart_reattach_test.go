@@ -8,9 +8,10 @@
 // the runtime bundle shipped in the control plane image.
 //
 //	docker build -t universal-sandbox:e2e-restart sandbox-gateway/sandbox
+//	docker build -t sandbox-gateway:e2e sandbox-gateway
 //	docker build -f server/Dockerfile -t grasp:e2e .
 //	cd server
-//	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
+//	DEEPSEEK_API_KEY=... SANDBOX_GATEWAY_IMAGE=sandbox-gateway:e2e SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
 package e2e
 
 import (
