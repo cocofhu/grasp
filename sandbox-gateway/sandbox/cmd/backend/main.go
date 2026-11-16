@@ -10,7 +10,6 @@ import (
 	"backend/internal/auth"
 	"backend/internal/config"
 	"backend/internal/logging"
-	"backend/internal/qqbot"
 	"backend/internal/router"
 	"backend/internal/service"
 
@@ -29,7 +28,6 @@ func main() {
 	webDir := flag.String("web", "web", "前端静态目录：内含 index.html 与 static/（相对当前工作目录或绝对路径）")
 	password := flag.String("password", "", "访问口令；非空时必须先登录。也可设环境变量 ACP_BRIDGE_PASSWORD（优先级低于本参数）")
 	model := flag.String("model", "", "默认 Agent 模型（如 claude-sonnet），各会话可在页面另选。也可设环境变量 ACP_BRIDGE_MODEL（优先级低于本参数）")
-	qqConfigPath := flag.String("qq-config", "qq_bot.json", "QQ 机器人配置文件路径（JSON，可通过页面左上角 QQ 图标配置）")
 	flag.Parse()
 
 	authPassword := strings.TrimSpace(*password)
@@ -79,16 +77,10 @@ func main() {
 		zlog.Info().Str("model", initial).Msg("solo initial chat model")
 	}
 	chats.StartDefaultAgent()
-	qqService, err := qqbot.New(chats.Default(), qqbot.NewStore(*qqConfigPath))
-	if err != nil {
-		zlog.Fatal().Err(err).Str("qq_config", *qqConfigPath).Msg("qq bot init failed")
-	}
-	qqService.Start()
 
 	engine := router.New(&router.Dependencies{
 		WebRoot:       webRoot,
 		Chats:         chats,
-		QQBot:         qqService,
 		Auth:          auth.NewGuard(authPassword),
 		LoginHTMLPath: loginPath,
 	})

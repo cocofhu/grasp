@@ -65,8 +65,8 @@ func TestWatchdogIdleEndsTurnAndPumpsNext(t *testing.T) {
 	b.turnIdle, b.turnMax = 80*time.Millisecond, 0
 	c := dialBridge(t, b)
 
-	_ = b.ChatWithOpID("hangs", "op-A", "chat", nil)
-	_ = b.ChatWithOpID("next", "op-B", "chat", nil)
+	_ = b.ChatWithLimits("hangs", "op-A", "chat", nil, 0, 0)
+	_ = b.ChatWithLimits("next", "op-B", "chat", nil, 0, 0)
 
 	seg := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "turn_segment" })
 	if seg.OpID != "op-A" {
@@ -106,7 +106,7 @@ func TestWatchdogContinueDoesNotResetMaxDuration(t *testing.T) {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}()
-	_ = b.ChatWithOpID("hangs", "op-A", "chat", nil)
+	_ = b.ChatWithLimits("hangs", "op-A", "chat", nil, 0, 0)
 	et := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && errorText(f) != "" })
 	if !strings.Contains(errorText(et), "总时长") {
 		t.Fatalf("continuation must still honor the original max, got %q", errorText(et))
@@ -122,7 +122,7 @@ func TestWatchdogActivityKeepsTurnAlive(t *testing.T) {
 	b := newTestBridge(sess)
 	b.turnIdle, b.turnMax = 100*time.Millisecond, 0
 
-	_ = b.ChatWithOpID("busy", "op-A", "chat", nil)
+	_ = b.ChatWithLimits("busy", "op-A", "chat", nil, 0, 0)
 	stop := time.After(400 * time.Millisecond)
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
@@ -155,7 +155,7 @@ func TestWatchdogDoesNotErrorAfterEndTurn(t *testing.T) {
 	b.turnIdle, b.turnMax = 80*time.Millisecond, 0
 	c := dialBridge(t, b)
 
-	_ = b.ChatWithOpID("already done", "op-A", "chat", nil)
+	_ = b.ChatWithLimits("already done", "op-A", "chat", nil, 0, 0)
 	waitIdle(t, b)
 
 	_ = c.SetReadDeadline(time.Now().Add(200 * time.Millisecond))

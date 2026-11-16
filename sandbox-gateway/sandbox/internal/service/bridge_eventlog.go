@@ -134,37 +134,4 @@ func (b *Bridge) tryRecordBroadcast(payload []byte) {
 	}
 	// data 即前端 handleEvent 收到的原始 JSON
 	b.evLog.append(probe.Data)
-	b.notifyEventSubscribers(probe.Data)
-}
-
-// SubscribeEvents 订阅会话事件广播。callback 不应阻塞；返回值用于取消订阅。
-func (b *Bridge) SubscribeEvents(callback func(json.RawMessage)) func() {
-	if callback == nil {
-		return func() {}
-	}
-	b.eventSubMu.Lock()
-	b.eventSubNextID++
-	id := b.eventSubNextID
-	b.eventSubs[id] = callback
-	b.eventSubMu.Unlock()
-	return func() {
-		b.eventSubMu.Lock()
-		delete(b.eventSubs, id)
-		b.eventSubMu.Unlock()
-	}
-}
-
-func (b *Bridge) notifyEventSubscribers(data json.RawMessage) {
-	if len(data) == 0 {
-		return
-	}
-	b.eventSubMu.Lock()
-	subs := make([]func(json.RawMessage), 0, len(b.eventSubs))
-	for _, cb := range b.eventSubs {
-		subs = append(subs, cb)
-	}
-	b.eventSubMu.Unlock()
-	for _, cb := range subs {
-		cb(data)
-	}
 }

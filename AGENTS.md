@@ -293,21 +293,19 @@ not a substitute for these gates.
 1. **Pending gates UI after approve** — Optimistic remove + invalidate generation +
    drop stale peek, or ghost rows / badge bounce. (PR #20 · `usePendingGates` /
    `GatesInboxView`)
-2. **cron `NextScheduleTime` → UTC** — After IANA wall-clock math, persist with
-   `.UTC()`; SQLite compares `next_run_at` as UTC text. (PR #19 · `schedule.go`)
-3. **`submit_mr` list-first idempotency** — List open → create → parse
+2. **`submit_mr` list-first idempotency** — List open → create → parse
    already-exists / no-commits-between; non-zero create must not mean hard fail;
    idempotent success may leave empty `mr_url`. (PR #13 · git SKILL)
-4. **Path-filtered CI blind spot** — Docs-only / root-only / cross-module PRs may
+3. **Path-filtered CI blind spot** — Docs-only / root-only / cross-module PRs may
    skip module jobs. The always-on `ci` gate runs actionlint and shellcheck,
    and is still not module proof. Still run local suites for trees you actually touched.
-5. **Runtime hot update skips one-time startup** — Pushing a bundle restarts
+4. **Runtime hot update skips one-time startup** — Pushing a bundle restarts
    only `backend` / `preview-inject` (`services.sh`); one-time `startup.sh`
    steps (credentials, clone, dockerd, code-server config) apply to new sandboxes only.
-6. **Page script copies** — After editing `live-overlay.js` (and other page
+5. **Page script copies** — After editing `live-overlay.js` (and other page
    scripts) run `npm run build:live-overlay` in `web/`; it syncs the three copies
    and `assertCopiesInSync` checks them.
-7. **Clarify / review chat shows the wrong turn** — The chat draws only the
+6. **Clarify / review chat shows the wrong turn** — The chat draws only the
    server's dialogue state (`engine/dialogue_state.go` → `dialogueStore`). Fix a
    wrong row, phase or 「本轮没有输出」 in the server state; do not add frontend
    special cases. ESLint rejects ACP / review frame handling and empty-text

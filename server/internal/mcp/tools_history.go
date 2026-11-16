@@ -1,7 +1,5 @@
 package mcp
 
-import ()
-
 // toolListRunHistory returns the run's history overview.
 func (h *Host) toolListRunHistory(runID, token string, args map[string]any) (string, bool) {
 	if !h.authorize(runID, token) {

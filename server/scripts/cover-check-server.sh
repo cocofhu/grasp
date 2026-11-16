@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Server coverage gate: core unit-testable packages
 # (auth/apikey / config / crypto / textutil / logging / nodereg / models / shutdown / router / mcp / chatsession).
-# Excludes handlers/services/engine/sandbox/runtime/database/browser/channels/cmd
+# Excludes handlers/services/engine/sandbox/runtime/database/browser/cmd
 # (integration/IO surfaces covered via go test ./... and e2e subsets).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

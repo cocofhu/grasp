@@ -13,10 +13,9 @@ import (
 )
 
 type workspaceUpdateBody struct {
-	Name                    *string                       `json:"name"`
-	Description             *string                       `json:"description"`
-	NotifyPolicy            *models.WorkspaceNotifyPolicy `json:"notifyPolicy"`
-	UnknownModelDisplayName *string                       `json:"unknownModelDisplayName"`
+	Name                    *string `json:"name"`
+	Description             *string `json:"description"`
+	UnknownModelDisplayName *string `json:"unknownModelDisplayName"`
 }
 
 func (h *Handlers) GetWorkspace(c *gin.Context) {
@@ -50,7 +49,7 @@ func (h *Handlers) UpdateWorkspace(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := h.Workspace.Update(b.Name, b.Description, b.NotifyPolicy, b.UnknownModelDisplayName)
+	p, err := h.Workspace.Update(b.Name, b.Description, b.UnknownModelDisplayName)
 	if err != nil {
 		writeWorkspaceErr(c, err)
 		return
@@ -61,9 +60,6 @@ func (h *Handlers) UpdateWorkspace(c *gin.Context) {
 	}
 	if b.Description != nil {
 		changed = append(changed, "description")
-	}
-	if b.NotifyPolicy != nil {
-		changed = append(changed, "notifyPolicy")
 	}
 	if b.UnknownModelDisplayName != nil {
 		changed = append(changed, "unknownModelDisplayName")
@@ -100,22 +96,6 @@ func (h *Handlers) ListCredentials(c *gin.Context) {
 // masked prefix; it never copies plaintext into Credential storage.
 func (h *Handlers) credentialAdapters() []services.CredentialView {
 	out := make([]services.CredentialView, 0)
-	if h.Channels != nil {
-		if channels, err := h.Channels.List(); err == nil {
-			for _, ch := range channels {
-				masked := ""
-				if ch.AppSecretSet {
-					masked = "••••••••"
-				}
-				out = append(out, services.CredentialView{
-					ID: "channel:" + ch.ID, Type: "channel",
-					Provider: ch.Type, Name: ch.Name, Target: ch.ID, TargetType: "channel", TargetID: ch.ID,
-					Masked: masked, Source: "channel", Configured: ch.AppSecretSet, Enabled: ch.Enabled,
-					CreatedAt: ch.CreatedAt, UpdatedAt: ch.UpdatedAt,
-				})
-			}
-		}
-	}
 	if h.McpKeys != nil {
 		for _, key := range h.McpKeys.List() {
 			out = append(out, services.CredentialView{

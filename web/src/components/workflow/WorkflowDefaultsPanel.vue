@@ -7,19 +7,16 @@ import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import RepoChoiceList from '@/components/workspace/RepoChoiceList.vue'
 import { api } from '@/lib/api/api'
-import type { Agent, ChannelConfig } from '@/lib/api/api'
+import type { Agent } from '@/lib/api/api'
 import type { Project, RepoChoice } from '@/lib/api/apiTypes'
-import type { WorkspaceNotifyPolicy, WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
+import type { WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
 const props = defineProps<{ workflow: Workflow; agents: Agent[] }>()
 const { t } = useI18n()
-const channels = ref<ChannelConfig[]>([])
 const projects = ref<Project[]>([])
 const projectsLoading = ref(true)
 const error = ref('')
-const events = ['waiting_human', 'failed', 'completed']
 const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs']
 const defaults = computed(() => props.workflow.defaults)
-const selectedEvents = computed(() => defaults.value?.notifyPolicy?.defaultEvents ?? ['waiting_human', 'failed'])
 const selectedMcps = computed(() => defaults.value?.gateAuto?.enabledMcps ?? packs)
 const variableTypes = computed(() => ['string', 'paragraph', 'number', 'bool', 'select'].map((value) => ({ value, label: t(`common.varTypes.${value}`) })))
 const agentOptions = computed(() => {
@@ -48,10 +45,6 @@ function prefersReducedMotion() {
 function isSwitchEvent(event: MouseEvent) {
   const target = event.target
   return target instanceof Element && !!target.closest('[role="switch"]')
-}
-function toggleNotify(event: MouseEvent) {
-  if (isSwitchEvent(event)) return
-  overrideNotify(!defaults.value?.notifyPolicy)
 }
 function toggleGate(event: MouseEvent) {
   if (isSwitchEvent(event)) return
@@ -129,22 +122,8 @@ function onVariableTransitionEnd(variable: WorkspaceVariable, event: TransitionE
   if (event.propertyName && event.propertyName !== 'grid-template-rows') return
   commitRemoval(variable)
 }
-const notifyFallback: WorkspaceNotifyPolicy = {
-  enabled: true,
-  defaultEvents: ['waiting_human', 'failed'],
-  channelIds: [],
-  waitingHumanTemplate: '',
-  failedTemplate: '',
-  completedTemplate: '',
-}
 const gateFallback: NonNullable<WorkflowDefaults['gateAuto']> = { enabled: false, agentName: '', variable: '', prompt: '', enabledMcps: [] }
-const notifyForm = computed(() => defaults.value?.notifyPolicy ?? notifyFallback)
 const gateForm = computed(() => defaults.value?.gateAuto ?? gateFallback)
-function setNotifyField<K extends keyof WorkspaceNotifyPolicy>(key: K, value: WorkspaceNotifyPolicy[K]) {
-  const policy = props.workflow.defaults?.notifyPolicy
-  if (!policy) return
-  policy[key] = value
-}
 function setGateField<K extends keyof NonNullable<WorkflowDefaults['gateAuto']>>(key: K, value: NonNullable<WorkflowDefaults['gateAuto']>[K]) {
   const gate = props.workflow.defaults?.gateAuto
   if (!gate) return
@@ -170,26 +149,17 @@ function setVariableType(variable: WorkspaceVariable, type: string) {
     variable.value = value === '' ? '' : Number.isFinite(Number(value)) ? Number(value) : 0
   } else variable.value = variable.value == null ? '' : String(variable.value)
 }
-function overrideNotify(value: boolean) {
-  const config = ensureDefaults()
-  if (value) config.notifyPolicy = { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] }
-  else delete config.notifyPolicy
-}
 function overrideGate(value: boolean) {
   const config = ensureDefaults()
   if (value) config.gateAuto = { enabled: false, agentName: '', variable: '', prompt: '', enabledMcps: [] }
   else delete config.gateAuto
-}
-async function loadChannels() {
-  try { channels.value = (await api.listChannels()).items || [] }
-  catch (cause: any) { error.value = String(cause?.message || cause) }
 }
 async function loadProjects() {
   try { projects.value = await api.listProjects() }
   catch (cause: any) { error.value = String(cause?.message || cause) }
   finally { projectsLoading.value = false }
 }
-onMounted(() => { void loadChannels(); void loadProjects() })
+onMounted(() => { void loadProjects() })
 onBeforeUnmount(() => {
   alive = false
   for (const variable of [...pendingRemoval]) commitRemoval(variable)
@@ -206,6 +176,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="border-t border-line p-4">
+        <p v-if="error" role="alert" class="mb-2 text-xs text-err">{{ error }}</p>
         <RepoChoiceList :model-value="defaults?.repos || []" :projects="projects" :loading="projectsLoading" @update:model-value="setRepos" />
       </div>
     </section>
@@ -255,54 +226,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
         </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="defaults-section" data-testid="workflow-notification-settings">
-      <div class="defaults-heading defaults-toggle" data-testid="workflow-notify-row" @click="toggleNotify">
-        <span class="defaults-icon"><Icon name="bell" :size="18" /></span>
-        <div class="min-w-0 flex-1">
-          <h3 class="font-semibold text-txt">{{ t('pages.workspaceDefaults.notifyTitle') }}</h3>
-          <p class="defaults-hint">{{ t('pages.workspaceDefaults.notifyHint') }}</p>
-        </div>
-        <AppSwitch :model-value="!!defaults?.notifyPolicy" :aria-label="t('pages.workspaceDefaults.notifyOverride')" @update:model-value="overrideNotify" />
-      </div>
-      <div
-        class="defaults-expansion"
-        :class="{ 'is-open': !!defaults?.notifyPolicy }"
-        data-testid="workflow-notify-expansion"
-        :inert="defaults?.notifyPolicy ? undefined : true"
-      >
-        <div class="defaults-expansion-clip">
-          <div class="space-y-4 border-t border-line p-4">
-            <div class="defaults-row">
-              <span>{{ t('pages.workspaceDefaults.notifyEnabled') }}</span>
-              <AppSwitch :model-value="notifyForm.enabled !== false" :aria-label="t('pages.workspaceDefaults.notifyEnabled')" @update:model-value="setNotifyField('enabled', $event)" />
-            </div>
-            <div>
-              <p class="defaults-label">{{ t('pages.workspaceDefaults.eventsLabel') }}</p>
-              <div class="flex flex-wrap gap-2">
-                <AppButton v-for="event in events" :key="event" variant="outline" size="sm" :aria-pressed="selectedEvents.includes(event)" :class="{ 'defaults-choice-selected': selectedEvents.includes(event) }" @click="setNotifyField('defaultEvents', toggleSelection(selectedEvents, event))">
-                  {{ t(`pages.workspaceDefaults.events.${event}`) }}
-                </AppButton>
-              </div>
-            </div>
-            <div>
-              <p class="defaults-label">{{ t('pages.workspaceDefaults.channelsLabel') }}</p>
-              <p v-if="error" role="alert" class="text-xs text-err">{{ error }}</p>
-              <div v-else-if="channels.length" class="flex flex-wrap gap-2">
-                <AppButton v-for="channel in channels" :key="channel.id" variant="outline" size="sm" :aria-pressed="notifyForm.channelIds?.includes(channel.id) || false" :class="{ 'defaults-choice-selected': notifyForm.channelIds?.includes(channel.id) }" @click="setNotifyField('channelIds', toggleSelection(notifyForm.channelIds, channel.id))">
-                  {{ channel.name || channel.id }}
-                </AppButton>
-              </div>
-              <p v-else class="text-xs text-txt3">{{ t('pages.workspaceDefaults.noChannels') }}</p>
-            </div>
-            <label v-for="(field, index) in ['waitingHumanTemplate', 'failedTemplate', 'completedTemplate'] as const" :key="field" class="block text-xs text-txt2">
-              {{ t(`pages.workspaceDefaults.events.${events[index]}`) }}
-              <textarea :value="notifyForm[field] || ''" class="input mt-2 w-full text-xs" rows="2" :placeholder="t('pages.workspaceDefaults.templateHint')" @input="setNotifyField(field, ($event.target as HTMLTextAreaElement).value)" />
-            </label>
-          </div>
         </div>
       </div>
     </section>

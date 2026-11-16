@@ -6,7 +6,7 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-const mocks = vi.hoisted(() => ({ listWorkflows: vi.fn(), listAgents: vi.fn(), getWorkflow: vi.fn(), createWorkflowFromBaseline: vi.fn(), copyPreviewWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), error: vi.fn(), success: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listWorkflows: vi.fn(), listAgents: vi.fn(), getWorkflow: vi.fn(), createWorkflowFromBaseline: vi.fn(), copyPreviewWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), error: vi.fn(), success: vi.fn() }))
 const signedInWorkspace = { name: 'Workspace', description: '', variables: [] }
 const workspace = ref<typeof signedInWorkspace | null>(signedInWorkspace)
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
@@ -19,7 +19,7 @@ import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { onboardingOpen, resetFirstInstallProbe } from '@/lib/pm/firstInstall'
 import { useWorkflows } from './useWorkflows'
 const readyAgents = ['需求澄清', '实现', '测试评审', '交付'].map((name) => ({ name }))
-const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false, notifyPolicy: { mode: 'inherit' as const, events: ['failed'] } }
+const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false }
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/workflows')
@@ -81,16 +81,6 @@ describe('workspace workflow actions', () => {
     await logic.toggleWorkflowShowOnHome(item, true)
     expect(logic.workflows.value[0].showOnHome).toBe(true)
     expect(mocks.patchWorkflowHomeVisibility).toHaveBeenLastCalledWith('wf-one', true)
-    wrapper.unmount()
-  })
-  it('changes notify inheritance and events without sending cached graph data', async () => {
-    const { logic, wrapper } = await setup()
-    mocks.patchWorkflowNotifyPolicy.mockImplementation(async (_id, notifyPolicy) => ({ ...item, notifyPolicy }))
-    await logic.setWorkflowNotifyMode(item, 'custom')
-    expect(mocks.patchWorkflowNotifyPolicy).toHaveBeenCalledWith('wf-one', { mode: 'custom', events: ['failed'] })
-    await logic.toggleWorkflowNotifyEvent(logic.workflows.value[0], 'completed')
-    expect(mocks.patchWorkflowNotifyPolicy).toHaveBeenLastCalledWith('wf-one', { mode: 'custom', events: ['failed', 'completed'] })
-    expect(logic.workflows.value[0].notifyPolicy?.events).toEqual(['failed', 'completed'])
     wrapper.unmount()
   })
   it('does not open a run when fresh head loading fails', async () => {

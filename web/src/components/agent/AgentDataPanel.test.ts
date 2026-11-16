@@ -14,9 +14,6 @@ const apiMocks = vi.hoisted(() => ({
   listAgentThreads: vi.fn(),
   listAgentThreadMessages: vi.fn(),
   deleteAgentThread: vi.fn(),
-  listAgentCronJobs: vi.fn(),
-  patchAgentCronJob: vi.fn(),
-  deleteAgentCronJob: vi.fn(),
 }))
 
 const breakpointMocks = vi.hoisted(() => {
@@ -37,9 +34,6 @@ vi.mock('@/lib/api/api', async () => {
       listAgentThreads: apiMocks.listAgentThreads,
       listAgentThreadMessages: apiMocks.listAgentThreadMessages,
       deleteAgentThread: apiMocks.deleteAgentThread,
-      listAgentCronJobs: apiMocks.listAgentCronJobs,
-      patchAgentCronJob: apiMocks.patchAgentCronJob,
-      deleteAgentCronJob: apiMocks.deleteAgentCronJob,
     },
   }
 })
@@ -54,20 +48,6 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
   useBreakpoint: () => ({ isMobile: breakpointMocks.isMobile }),
 }))
 
-const SAMPLE_JOB = {
-  id: 'cron-1',
-  agentName: 'demo-agent',
-  threadId: 'th-1',
-  name: '每日汇报',
-  prompt: '汇报',
-  scheduleKind: 'cron',
-  scheduleExpr: '0 9 * * *',
-  enabled: true,
-  deliverToChannel: false,
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-}
-
 const SAMPLE_THREAD = {
   id: 'th-user-1',
   userId: 'other',
@@ -78,7 +58,7 @@ const SAMPLE_THREAD = {
   updatedAt: '2026-01-01T00:00:00Z',
 }
 
-function mountPanel(props?: { subTab?: 'memory' | 'context' | 'jobs' }) {
+function mountPanel(props?: { subTab?: 'memory' | 'context' }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -110,11 +90,10 @@ describe('AgentDataPanel', () => {
     apiMocks.listAgentMemories.mockResolvedValue({ items: [] })
     apiMocks.listAgentThreads.mockResolvedValue({ items: [], messageCounts: {} })
     apiMocks.listAgentThreadMessages.mockResolvedValue({ items: [], total: 0 })
-    apiMocks.listAgentCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
     useAuth().clearUser()
   })
 
-  it('non-admin: loads memories, threads, and can use job write controls', async () => {
+  it('non-admin: loads memories and threads', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
     apiMocks.listAgentMemories.mockResolvedValue({
       items: [
@@ -146,9 +125,6 @@ describe('AgentDataPanel', () => {
       ],
       total: 1,
     })
-    apiMocks.patchAgentCronJob.mockResolvedValue({ ...SAMPLE_JOB, enabled: false })
-    apiMocks.deleteAgentCronJob.mockResolvedValue({ status: 'deleted' })
-
     const w = mountPanel()
     await flushPromises()
 
@@ -171,36 +147,10 @@ describe('AgentDataPanel', () => {
     expect(apiMocks.listAgentThreadMessages).toHaveBeenCalledWith('demo-agent', 'th-user-1')
     expect(w.text()).toContain('你好')
 
-    await openTab(w, /定时任务/)
-    expect(apiMocks.listAgentCronJobs).toHaveBeenCalledWith('demo-agent')
-    expect(w.text()).toContain('每日汇报')
-    expect(w.text()).toContain('查看与管理')
-    expect(w.text()).not.toContain('需要平台管理员权限')
-
-    const enabled = w.get('[data-testid="agent-cron-enabled"]')
-    const deliver = w.get('[data-testid="agent-cron-deliver"]')
-    const del = w.get('[data-testid="agent-cron-delete"]')
-    expect((enabled.element as HTMLButtonElement).disabled).toBe(false)
-    expect((deliver.element as HTMLButtonElement).disabled).toBe(false)
-    expect((del.element as HTMLButtonElement).disabled).toBe(false)
-    expect(enabled.attributes('role')).toBe('switch')
-    expect(deliver.attributes('role')).toBe('switch')
-    expect(enabled.attributes('title')).toBeUndefined()
-    expect(deliver.attributes('title')).toBeUndefined()
-    expect(del.attributes('title')).toBeUndefined()
-
-    await enabled.trigger('click')
-    await flushPromises()
-    expect(apiMocks.patchAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1', { enabled: false })
-
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await del.trigger('click')
-    await flushPromises()
-    expect(apiMocks.deleteAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1')
     expect(toastError).not.toHaveBeenCalled()
   })
 
-  it('admin: loads memories and can use job write controls', async () => {
+  it('admin: loads memories', async () => {
     useAuth().setUser({ username: 'admin', expiresAt: 't', isAdmin: true })
     apiMocks.listAgentMemories.mockResolvedValue({
       items: [
@@ -216,7 +166,6 @@ describe('AgentDataPanel', () => {
         },
       ],
     })
-    apiMocks.patchAgentCronJob.mockResolvedValue({ ...SAMPLE_JOB, enabled: false })
 
     const w = mountPanel()
     await flushPromises()
@@ -224,15 +173,6 @@ describe('AgentDataPanel', () => {
     expect(w.find('[data-testid="agent-data-lock-banner"]').exists()).toBe(false)
     expect(w.text()).toContain('部署约定')
     expect(w.find('textarea').exists()).toBe(true)
-
-    await openTab(w, /定时任务/)
-    expect(apiMocks.listAgentCronJobs).toHaveBeenCalledWith('demo-agent')
-    expect(w.text()).toContain('查看与管理')
-    const enabled = w.get('[data-testid="agent-cron-enabled"]')
-    expect((enabled.element as HTMLButtonElement).disabled).toBe(false)
-    await enabled.trigger('click')
-    await flushPromises()
-    expect(apiMocks.patchAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1', { enabled: false })
   })
 
   it('first-load generic failure shows red card without toast', async () => {
@@ -275,60 +215,14 @@ describe('AgentDataPanel', () => {
 
   it('honors initial subTab prop', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    const w = mountPanel({ subTab: 'jobs' })
+    const w = mountPanel({ subTab: 'context' })
     await flushPromises()
-    expect(apiMocks.listAgentCronJobs).toHaveBeenCalledWith('demo-agent')
+    expect(apiMocks.listAgentThreads).toHaveBeenCalledWith('demo-agent')
     expect(apiMocks.listAgentMemories).not.toHaveBeenCalled()
+    w.unmount()
   })
 
-  it('desktop jobs keep table layout', async () => {
-    useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    const w = mountPanel({ subTab: 'jobs' })
-    await flushPromises()
-    expect(w.find('[data-testid="agent-cron-desktop-table"]').exists()).toBe(true)
-    expect(w.find('[data-testid="agent-cron-mobile-cards"]').exists()).toBe(false)
-  })
-
-  it('mobile jobs use card stack with enable/deliver/delete mapped to API', async () => {
-    useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    breakpointMocks.isMobile.value = true
-    apiMocks.patchAgentCronJob.mockResolvedValue({ ...SAMPLE_JOB, deliverToChannel: true })
-    apiMocks.deleteAgentCronJob.mockResolvedValue({ status: 'deleted' })
-
-    const w = mountPanel({ subTab: 'jobs' })
-    await flushPromises()
-
-    expect(w.find('[data-testid="agent-cron-mobile-cards"]').exists()).toBe(true)
-    expect(w.find('[data-testid="agent-cron-desktop-table"]').exists()).toBe(false)
-    expect(w.findAll('[data-testid="agent-cron-card"]').length).toBe(1)
-    expect(w.text()).toContain('每日汇报')
-    expect(w.text()).toContain('推送到渠道')
-    // No create-job control; hint may still mention creating via MCP
-    expect(w.find('[data-testid="agent-cron-create"]').exists()).toBe(false)
-    expect(w.findAll('button').some((b) => /^新建/.test(b.text()))).toBe(false)
-
-    const deliver = w.get('[data-testid="agent-cron-deliver"]')
-    await deliver.trigger('click')
-    await flushPromises()
-    expect(apiMocks.patchAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1', {
-      deliverToChannel: true,
-    })
-    expect(toastSuccess).toHaveBeenCalled()
-
-    const enabled = w.get('[data-testid="agent-cron-enabled"]')
-    apiMocks.patchAgentCronJob.mockResolvedValueOnce({ ...SAMPLE_JOB, enabled: false })
-    await enabled.trigger('click')
-    await flushPromises()
-    expect(apiMocks.patchAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1', { enabled: false })
-
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await w.get('[data-testid="agent-cron-delete"]').trigger('click')
-    await flushPromises()
-    expect(apiMocks.deleteAgentCronJob).toHaveBeenCalledWith('demo-agent', 'cron-1')
-    expect(toastError).not.toHaveBeenCalled()
-  })
-
-  it('memory/context/jobs keep old list while refreshing and disable delete', async () => {
+  it('memory/context keep old list while refreshing and disable delete', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
     apiMocks.listAgentMemories.mockResolvedValue({
       items: [
@@ -348,7 +242,6 @@ describe('AgentDataPanel', () => {
       items: [{ ...SAMPLE_THREAD }],
       messageCounts: { 'th-user-1': 1 },
     })
-    apiMocks.listAgentCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
 
     const w = mountPanel()
     await flushPromises()
@@ -367,19 +260,6 @@ describe('AgentDataPanel', () => {
     expect(w.text()).toContain('他人会话')
     const threadDel = w.get('[data-testid="agent-thread-delete"]')
     expect((threadDel.element as HTMLButtonElement).disabled).toBe(false)
-
-    await openTab(w, /定时任务/)
-    const jobDel = w.get('[data-testid="agent-cron-delete"]')
-    expect((jobDel.element as HTMLButtonElement).disabled).toBe(false)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    let releaseJob!: () => void
-    apiMocks.deleteAgentCronJob.mockReturnValue(new Promise<void>((resolve) => { releaseJob = resolve }))
-    await jobDel.trigger('click')
-    await flushPromises()
-    expect((w.get('[data-testid="agent-cron-delete"]').element as HTMLButtonElement).disabled).toBe(true)
-    expect(w.get('[data-testid="agent-cron-delete"]').text()).toBe('删除中…')
-    releaseJob!()
-    await flushPromises()
   })
 
   it('memory save button shows Saving… pending and is disabled', async () => {

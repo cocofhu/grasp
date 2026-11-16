@@ -82,15 +82,13 @@ func graphEdgesDTO(g models.Graph) []models.Edge {
 // wf.PublishedVersion, publishedSnapshot carries that version's name,
 // description, nodes, and edges for the home page.
 func workflowDTO(wf models.WorkflowDef, published ...*models.WorkflowVersion) gin.H {
-	policy := services.NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 	out := gin.H{
 		"id": wf.ID, "name": wf.Name, "description": wf.Description,
 		"status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion,
-		"defaults":     maskedWorkflowDefaults(wf.Defaults),
-		"needsRepo":    wf.NeedsRepo,
-		"showOnHome":   wf.ShowOnHome,
-		"notifyPolicy": policy,
-		"updatedAt":    wf.UpdatedAt, "lastRunAt": wf.LastRunAt,
+		"defaults":   maskedWorkflowDefaults(wf.Defaults),
+		"needsRepo":  wf.NeedsRepo,
+		"showOnHome": wf.ShowOnHome,
+		"updatedAt":  wf.UpdatedAt, "lastRunAt": wf.LastRunAt,
 		"nodes": graphNodesDTO(wf.Graph), "edges": wf.Graph.Edges, "variables": wf.Graph.Variables,
 	}
 	if snap := publishedSnapshotDTO(wf, published); snap != nil {
@@ -118,7 +116,6 @@ func publishedSnapshotDTO(wf models.WorkflowDef, published []*models.WorkflowVer
 // a non-nil 0 means usage was reported and sums to zero.
 // workflowTokens / pmTokens expose the source split for the workspace Token tip.
 func workspaceDTO(p models.Workspace, workflowCount int64, tokens services.WorkspaceTokenBreakdown) gin.H {
-	policy := services.NormalizeWorkspaceNotifyPolicy(p.NotifyPolicy)
 	return gin.H{
 		"name": p.Name, "description": p.Description,
 		"workflowCount":           workflowCount,
@@ -128,7 +125,6 @@ func workspaceDTO(p models.Workspace, workflowCount int64, tokens services.Works
 		"pmLeaderEnabled":         p.PmLeaderEnabled,
 		"pmLeaderAgent":           p.PmLeaderAgent,
 		"unknownModelDisplayName": p.UnknownModelDisplayName,
-		"notifyPolicy":            policy,
 		"createdAt":               p.CreatedAt, "updatedAt": p.UpdatedAt,
 	}
 }

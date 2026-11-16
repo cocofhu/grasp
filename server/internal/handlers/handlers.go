@@ -20,7 +20,6 @@ import (
 	"github.com/cocofhu/grasp/internal/pagebridge"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/cocofhu/grasp/internal/schedulermcp"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
 )
@@ -47,15 +46,12 @@ type Handlers struct {
 	PMMCP               *pmmcp.Host
 	MemoryMCP           *memorymcp.Host
 	ContextMCP          *contextmcp.Host
-	SchedulerMCP        *schedulermcp.Host
 	Preview             *services.PreviewService
 	Issues              *services.IssueService
 	Notifications       *services.NotificationService
 	Settings            *services.SettingsService
 	Shutdown            *shutdown.Coordinator
 	Auth                *auth.Service
-	Channels            *services.ChannelConfigService
-	RunNotify           *services.RunNotifyService
 	Browser             *browser.Service
 	Audit               *services.AuditService
 	ExternalMcp         *services.ExternalMcpService
@@ -75,11 +71,6 @@ type Handlers struct {
 	Embed *embed.Store
 	// PageBridge relays page_* tool commands to drawers that allow them.
 	PageBridge *pagebridge.Hub
-	// PublicAdvertise is the browser-facing base for QQ/preview deep links.
-	// Gate/review share URLs mint from Request.Host instead. Public CSRF
-	// compares Origin/Referer to this request's Host (never client
-	// X-Forwarded-Host; advertise host is not used for CSRF).
-	PublicAdvertise string
 	// FrameAncestors are the origins allowed to embed workspace pages.
 	FrameAncestors []string
 	Team           *services.TeamService

@@ -28,19 +28,3 @@ func TestOpenFreshSeedsWorkspaceAndReopens(t *testing.T) {
 		t.Fatalf("want 1 workspace, got %d", n)
 	}
 }
-
-func TestPrimaryChannelIndexIsGlobal(t *testing.T) {
-	db, err := OpenSQLite(filepath.Join(t.TempDir(), "idx.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('a', 'a', 'qq', 1)").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('b', 'b', 'qq', 1)").Error; err == nil {
-		t.Fatal("second primary channel must violate the unique index")
-	}
-	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('c', 'c', 'qq', 0)").Error; err != nil {
-		t.Fatalf("secondary channel: %v", err)
-	}
-}

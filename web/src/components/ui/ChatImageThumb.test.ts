@@ -95,7 +95,7 @@ describe('ChatImageThumb', () => {
     wrapper.unmount()
   })
 
-  it('retry adds cache-buster and restores thumb without QQ re-download (g3.2)', async () => {
+  it('retry adds cache-buster and restores thumb without re-download (g3.2)', async () => {
     const wrapper = mountThumb({
       mode: 'previewable',
       src: '/api/blobs/abc123',

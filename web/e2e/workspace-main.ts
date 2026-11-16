@@ -20,8 +20,8 @@ const settingsItems = [
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
 const names = ['产品研发', '代码审查', '自动化回归', '需求澄清', '数据分析', '发布检查', '文档维护', '安全扫描', '问题排查', 'API 集成', '体验优化', '周报汇总']
-const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager', notifyPolicy: { enabled: false, defaultEvents: ['waiting_human', 'failed'], channelIds: [] } }
-const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, notifyPolicy: { mode: 'inherit', events: [] }, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
+const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager' }
+const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
 for (const workflow of workflows) workflow.publishedSnapshot = { version: workflow.publishedVersion, name: workflow.name, description: workflow.description, nodes: workflow.nodes, edges: workflow.edges }
 const titles = ['优化工作流审批交互', '修复回归测试中的不稳定用例', '补充 API 接口说明', '检查发布前配置', '整理产品需求与验收条件', '更新周报与执行记录']
 const runs = titles.map((title, index) => ({ id: `run-${index + 1}`, workflowId: workflows[index].id, workflowName: workflows[index].name, title, status: index === 0 ? 'running' : index === 1 ? 'waiting_human' : 'completed', trigger: 'manual', startedAt: '2026-10-20T09:00:00Z', durationSec: 320, progress: index > 1 ? 100 : 45, currentNodeLabel: '执行', nodeRuns: {}, artifacts: [], currentNode: index === 0 ? { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } : index === 1 ? { id: 'gate', name: '门禁', iteration: 1, kind: 'gate', mode: 'gate', state: 'waiting_human' } : undefined }))
@@ -74,7 +74,6 @@ window.fetch = async (input, init) => {
   else if (/^\/workflows\/[^/]+$/.test(path)) data = workflows.find((item) => item.id === path.split('/')[2]) || workflows[0]
   else if (/^\/workflows\/[^/]+\/versions$/.test(path)) data = []
   else if (/^\/workflows\/[^/]+\/home-visibility$/.test(path)) { data = workflows.find((item) => item.id === path.split('/')[2]); Object.assign(data, body) }
-  else if (/^\/workflows\/[^/]+\/notify-policy$/.test(path)) { data = workflows.find((item) => item.id === path.split('/')[2]); data.notifyPolicy = body.notifyPolicy }
   else if (path === '/runs') { const items = url.searchParams.has('status') ? runs.filter((run) => url.searchParams.get('status')!.split(',').includes(run.status)) : runs; data = { items, total: items.length, page: 1, pageSize: 20 } }
   else if (/^\/runs\/[^/]+$/.test(path)) { const id = path.split('/')[2]; data = { ...(runs.find(run => run.id === id) || runs[0]), id, artifacts: visibleArtifactFiles().filter(file => file.runId === id) } }
   else if (path === '/artifacts/tree') {
@@ -120,7 +119,6 @@ window.fetch = async (input, init) => {
   else if (path === '/sandboxes/capacity') data = { used: 0, limit: settingsItems.find(item => item.key === 'max_sandboxes')?.value || 15 }
   else if (path === '/sandboxes') data = []
   else if (path === '/notifications') data = { items: [], total: 0, unreadCount: 0, page: 1, pageSize: 20 }
-  else if (path === '/workspace/channels') data = { items: [], freeAgents: ['manager'], secretsKeyConfigured: true }
   else if (path.startsWith('/workspace/')) data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/stats/dashboard') data = { total: runs.length, running: 1, waitingHuman: 1, completed: 4, failed: 0, totalWorkflows: workflows.length }
   else if (path === '/auth/me' && view === '/login') return new Response(null, { status: 401 })

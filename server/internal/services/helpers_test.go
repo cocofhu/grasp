@@ -1,12 +1,7 @@
 package services
 
 import (
-	"errors"
 	"strconv"
-	"strings"
-
-	"github.com/cocofhu/grasp/internal/models"
-	"gorm.io/gorm"
 )
 
 func (c *SandboxChats) Active(id uint) bool {
@@ -27,17 +22,6 @@ func (s *NotificationService) List(username string) ([]NotificationItemDTO, erro
 func (s *SoloService) contextPreamble(sessionID, exceptMsgID, header string) string {
 	text, _, _ := s.contextPreambleChecked(sessionID, exceptMsgID, header)
 	return text
-}
-
-func (s *ChannelConfigService) GetByID(id string) (ChannelConfigDTO, error) {
-	var row models.ChannelConfig
-	if err := s.db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ChannelConfigDTO{}, ErrChannelNotFound
-		}
-		return ChannelConfigDTO{}, err
-	}
-	return s.attachRuntime(s.toChannelDTO(row)), nil
 }
 
 func (s *SettingsService) setInt(key string, v int) error {

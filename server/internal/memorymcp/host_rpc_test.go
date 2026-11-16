@@ -2,16 +2,17 @@ package memorymcp
 
 import (
 	"encoding/json"
-	"github.com/cocofhu/grasp/internal/platformmcp"
 	"strings"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/platformmcp"
 )
 
 func TestMemoryMCPServeRPCMetaMethods(t *testing.T) {
 	_, pm, _ := setupMemoryDB(t)
 	h := NewHost(pm)
 	tok := platformmcp.NewToken()
-	h.Restore(tok, "agent-a", "thr", "u", true)
+	h.Restore(tok, "agent-a", "thr", "u")
 	st, _ := h.ServeRPC("bad", []byte(`{}`))
 	if st != 401 {
 		t.Fatalf("unauth: %d", st)

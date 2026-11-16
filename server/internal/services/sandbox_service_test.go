@@ -1043,52 +1043,6 @@ func TestSandboxFindReusable(t *testing.T) {
 	}
 }
 
-func TestBuildTestSandboxSpecsSchedulerInject(t *testing.T) {
-	config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "http://spa.example.com"}})
-	defer config.StoreConfig(nil)
-	db := newTestDB(t)
-	s := newSandboxService(t, db, &dockerState{})
-	s.mcpEndpoint = "http://spa.example.com"
-	registered := false
-	unregistered := false
-	s.SetTestSchedulerHooks(TestSchedulerHooks{
-		Register: func(profile, runID, token string) {
-			if profile != "agentA" || runID != "run1" || token != "tok" {
-				t.Fatalf("register mismatch: %q %q %q", profile, runID, token)
-			}
-			registered = true
-		},
-		Unregister: func(token string) {
-			if token != "tok" {
-				t.Fatalf("unregister token = %q", token)
-			}
-			unregistered = true
-		},
-	})
-	agent := Agent{
-		MCP: []MCPServer{{Name: "task-scheduler", URL: "${GRASP_SCHEDULER_URL}"}},
-	}
-	vars := s.testMcpVars("run1", "tok", "agentA")
-	specs := s.buildTestSandboxSpecs("agentA", "run1", "tok", agent, vars)
-	if !registered {
-		t.Fatal("expected scheduler register hook")
-	}
-	if len(specs) != 1 || specs[0].Name != TaskSchedulerMCP {
-		t.Fatalf("specs = %+v", specs)
-	}
-	if vars["GRASP_SCHEDULER_URL"] == "" || vars["GRASP_SCHEDULER_TOKEN"] != "tok" {
-		t.Fatalf("vars = %+v", vars)
-	}
-	s.unregisterTestScheduler("tok")
-	if !unregistered {
-		t.Fatal("expected scheduler unregister hook")
-	}
-	empty := s.buildTestSandboxSpecs("", "run1", "tok", agent, s.testMcpVars("run1", "tok", ""))
-	if len(empty) != 0 {
-		t.Fatalf("no profile should not inject scheduler, got %+v", empty)
-	}
-}
-
 func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}

@@ -19,7 +19,7 @@ func (h *Handlers) resolveAgentName(c *gin.Context) (name string, ok bool) {
 }
 
 // requireAgentMemoryAccess allows any authenticated user to manage Studio Agent data
-// (memories, threads, cron job writes).
+// (memories, threads).
 func (h *Handlers) requireAgentMemoryAccess(c *gin.Context) bool {
 	_, ok := h.sessionUser(c)
 	return ok
@@ -218,79 +218,6 @@ func (h *Handlers) DeleteAgentThread(c *gin.Context) {
 		return
 	}
 	if err := h.Pm.DeleteThreadForAgent(name, c.Param("tid")); err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
-}
-
-// ListAgentCronJobs handles GET /api/agents/:name/cron-jobs.
-// Any authenticated user may list (aligned with ListCronJobs).
-func (h *Handlers) ListAgentCronJobs(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if _, ok := h.sessionUser(c); !ok {
-		return
-	}
-	name, ok := h.resolveAgentName(c)
-	if !ok {
-		return
-	}
-	items, err := h.Pm.ListCronJobsForAgent(name)
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-func (h *Handlers) PatchAgentCronJob(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requireAgentMemoryAccess(c) {
-		return
-	}
-	name, ok := h.resolveAgentName(c)
-	if !ok {
-		return
-	}
-	var body struct {
-		Enabled          *bool `json:"enabled"`
-		DeliverToChannel *bool `json:"deliverToChannel"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if body.Enabled == nil && body.DeliverToChannel == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled or deliverToChannel required"})
-		return
-	}
-	job, err := h.Pm.PatchCronJobForAgent(name, c.Param("jobId"), body.Enabled, body.DeliverToChannel)
-	if err != nil {
-		writePmErr(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, job)
-}
-
-func (h *Handlers) DeleteAgentCronJob(c *gin.Context) {
-	if h.Pm == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
-		return
-	}
-	if !h.requireAgentMemoryAccess(c) {
-		return
-	}
-	name, ok := h.resolveAgentName(c)
-	if !ok {
-		return
-	}
-	if err := h.Pm.DeleteCronJobForAgent(name, c.Param("jobId")); err != nil {
 		writePmErr(c, err)
 		return
 	}

@@ -24,11 +24,6 @@ import { extractAgentMessageDelta } from '@/lib/run/acpUnpack'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import {
-  channelPeerId,
-  isChannelThreadUserId,
-  parseChannelUserId,
-} from '@/lib/pm/cronDeliverTargets'
 import type { ChatMessage, ChatThread, ClarifyImage, PmChatThread, PmLeaderBinding } from '@/lib/shared/types'
 
 interface UsePmLeaderChatProps {
@@ -199,7 +194,7 @@ const turnBusy = computed(
 )
 const busy = computed(() => turnBusy.value || messagesLoading.value)
 const canSend = computed(
-  () => canContinueThread.value && !activeIsChannel.value && !busy.value && (!!input.value.trim() || attachments.value.length > 0),
+  () => canContinueThread.value && !busy.value && (!!input.value.trim() || attachments.value.length > 0),
 )
 const showStreamBubble = computed(
   () => sending.value || streaming.value || finalizing.value || resuming.value,
@@ -247,101 +242,17 @@ async function copyAssistantText(ev: Event) {
 const showThreadsAside = computed(() => !isMobile.value || mobileView.value === 'threads')
 const showChatSection = computed(() => !isMobile.value || mobileView.value === 'chat')
 
-/** Channel synthetic user id, e.g. qq:guild:… / wecom:c2c:… / feishu:c2c:… / dingtalk:c2c:… */
-function channelTypeOf(th: ChatThread | undefined | null): string {
-  return parseChannelUserId(th?.userId || '')?.type || ''
-}
-
-function isChannelThread(th: ChatThread | undefined | null): boolean {
-  return isChannelThreadUserId(th?.userId)
-}
-
-function channelBadgeLabel(th: ChatThread | undefined | null): string {
-  switch (channelTypeOf(th)) {
-    case 'wecom':
-      return t('pages.workspace.pm.channelBadgeWecom')
-    case 'feishu':
-      return t('pages.workspace.pm.channelBadgeFeishu')
-    case 'dingtalk':
-      return t('pages.workspace.pm.channelBadgeDingTalk')
-    default:
-      return t('pages.workspace.pm.channelBadgeQQ')
-  }
-}
-
-function channelBadgeClass(th: ChatThread | undefined | null): string {
-  switch (channelTypeOf(th)) {
-    case 'wecom':
-      return 'border-accent/55 bg-accent-dim text-accent-2'
-    case 'feishu':
-      return 'border-cyan-400/40 bg-cyan-400/10 text-cyan-300'
-    case 'dingtalk':
-      return 'border-blue-400/40 bg-blue-400/10 text-blue-300'
-    default:
-      return 'border-accent-2/35 bg-accent/15 text-accent-2'
-  }
-}
-
-function channelReadonlyTitle(th: ChatThread | undefined | null): string {
-  switch (channelTypeOf(th)) {
-    case 'wecom':
-      return t('pages.workspace.pm.channelReadonlyTitleWecom')
-    case 'feishu':
-      return t('pages.workspace.pm.channelReadonlyTitleFeishu')
-    case 'dingtalk':
-      return t('pages.workspace.pm.channelReadonlyTitleDingTalk')
-    default:
-      return t('pages.workspace.pm.channelReadonlyTitle')
-  }
-}
-
-function channelReadonlyHint(th: ChatThread | undefined | null): string {
-  switch (channelTypeOf(th)) {
-    case 'wecom':
-      return t('pages.workspace.pm.channelReadonlyHintWecom')
-    case 'feishu':
-      return t('pages.workspace.pm.channelReadonlyHintFeishu')
-    case 'dingtalk':
-      return t('pages.workspace.pm.channelReadonlyHintDingTalk')
-    default:
-      return t('pages.workspace.pm.channelReadonlyHint')
-  }
-}
-
 function threadDisplayTitle(th: ChatThread | undefined | null): string {
-  if (isChannelThread(th) && th?.userId) {
-    // g3.2: channel thread primary title is the synthetic identity.
-    return th.userId
-  }
   const title = (th?.title || '').trim()
   if (title) return title
   return t('pages.workspace.pm.untitled')
 }
 
-function channelSourceLine(th: ChatThread | undefined | null): string {
-  const kind = channelTypeOf(th)
-  const src =
-    kind === 'wecom'
-      ? t('pages.workspace.pm.channelSourceWecom')
-      : kind === 'feishu'
-        ? t('pages.workspace.pm.channelSourceFeishu')
-        : kind === 'dingtalk'
-          ? t('pages.workspace.pm.channelSourceDingTalk')
-          : t('pages.workspace.pm.channelSourceQq')
-  const peer = channelPeerId(th?.userId || '')
-  if (th?.unspoken) {
-    return `${src} · ${t('pages.workspace.pm.unspoken')}${peer ? ` · ${peer}` : ''}`
-  }
-  return peer ? `${src} · ${peer}` : src
-}
-
 const activeThread = computed(() => threads.value.find((x) => x.id === activeId.value))
-const activeIsChannel = computed(() => isChannelThread(activeThread.value))
 const activeThreadTitle = computed(() => threadDisplayTitle(activeThread.value))
 const showEmptyHint = computed(
   () =>
     mainViewState.value === 'content' &&
-    !activeIsChannel.value &&
     !messages.value.length &&
     !showStreamBubble.value,
 )
@@ -364,45 +275,10 @@ const historyTipClass = computed(() => {
   return 'text-txt3'
 })
 const showIdleSuggestions = computed(() => {
-  if (activeIsChannel.value) return false
   const msgs = messages.value
   if (!msgs.length || busy.value || showStreamBubble.value) return false
   return msgs[msgs.length - 1]?.role === 'assistant'
 })
-
-type ChannelCtx = { open: true; x: number; y: number; threadId: string }
-const channelCtx = ref<ChannelCtx | null>(null)
-const channelDetailOpen = ref(false)
-const channelDetailTitle = ref('')
-const channelDetailSource = ref('')
-
-function closeChannelCtx() {
-  channelCtx.value = null
-}
-
-function openChannelCtx(e: MouseEvent, th: ChatThread) {
-  if (!isChannelThread(th)) return
-  e.preventDefault()
-  e.stopPropagation()
-  channelCtx.value = { open: true, x: e.clientX, y: e.clientY, threadId: th.id }
-}
-
-function openChannelDetail() {
-  if (!channelCtx.value) return
-  const th = threads.value.find((x) => x.id === channelCtx.value!.threadId)
-  channelDetailTitle.value = threadDisplayTitle(th)
-  channelDetailSource.value = channelSourceLine(th)
-  channelDetailOpen.value = true
-  closeChannelCtx()
-}
-
-function closeChannelDetail() {
-  channelDetailOpen.value = false
-}
-
-function onChannelCtxAction() {
-  openChannelDetail()
-}
 
 const FAIL_KIND_KEYS: Record<FailKind, { title: string; desc: string }> = {
   connection: { title: 'failConnectionTitle', desc: 'failConnectionDesc' },
@@ -432,11 +308,6 @@ function applyRestoreMobileChat() {
 
 function isFailedUser(m: ChatMessage) {
   return m.role === 'user' && m.status === 'failed'
-}
-
-/** QQ inbound download-failure notice only; other system rows stay hidden. */
-function isChannelHint(m: ChatMessage) {
-  return m.role === 'system' && m.source === 'channel'
 }
 
 async function loadThreads() {
@@ -647,8 +518,6 @@ async function newThread() {
 
 async function removeThread(id: string) {
   if (turnBusy.value) return
-  const th = threads.value.find((x) => x.id === id)
-  if (isChannelThread(th)) return
   try {
     await api.deletePmThread(id)
     threads.value = threads.value.filter((x) => x.id !== id)
@@ -692,7 +561,7 @@ function closeWs() {
  */
 function connectThreadWs(tid: string) {
   closeWs()
-  if (!tid || disposed || isChannelThread(threads.value.find((x) => x.id === tid))) return
+  if (!tid || disposed) return
   wsThreadId = tid
   openThreadWs()
 }
@@ -809,7 +678,7 @@ function beginServerTurn(userMsgId: string) {
   streaming.value = true
   finalizing.value = false
   resuming.value = false
-  // Turn started elsewhere (IM channel, cron, another tab): pull its user message.
+  // Turn started elsewhere (another tab): pull its user message.
   if (userMsgId && !messagesLoading.value && !messages.value.some((m) => m.id === userMsgId)) {
     void refreshMessages()
   }
@@ -963,7 +832,6 @@ async function send(text?: string, explicitImages?: ClarifyImage[]) {
       ? explicitImages.slice()
       : attachments.value.slice()
   if ((!content && imgs.length === 0) || busy.value) return
-  if (activeIsChannel.value) return
   if (!canContinueThread.value) {
     emit('openSettings')
     return
@@ -1000,7 +868,7 @@ async function stop() {
 
 /** Cover-this-turn retry: reuse userMessageId, do not append a new user bubble. */
 async function retryTurn(userMessageId: string) {
-  if (busy.value || !canContinueThread.value || activeIsChannel.value) return
+  if (busy.value || !canContinueThread.value) return
   const userMsg = messages.value.find((m) => m.id === userMessageId && m.role === 'user')
   if (!userMsg) return
   sending.value = true
@@ -1102,36 +970,18 @@ onBeforeUnmount(() => {
   copyAssistantText,
   showThreadsAside,
   showChatSection,
-  channelTypeOf,
-  isChannelThread,
-  channelBadgeLabel,
-  channelBadgeClass,
-  channelReadonlyTitle,
-  channelReadonlyHint,
   threadDisplayTitle,
-  channelSourceLine,
   activeThread,
-  activeIsChannel,
   activeThreadTitle,
   showEmptyHint,
   showHistoryTip,
   historyTipText,
   historyTipClass,
   showIdleSuggestions,
-  channelCtx,
-  channelDetailOpen,
-  channelDetailTitle,
-  channelDetailSource,
-  closeChannelCtx,
-  openChannelCtx,
-  openChannelDetail,
-  closeChannelDetail,
-  onChannelCtxAction,
   FAIL_KIND_KEYS,
   failMeta,
   applyRestoreMobileChat,
   isFailedUser,
-  isChannelHint,
   loadThreads,
   activateThread,
   selectThread,

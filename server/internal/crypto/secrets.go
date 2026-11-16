@@ -69,12 +69,6 @@ func loadKey() ([]byte, error) {
 	return k, nil
 }
 
-// Available reports whether a usable secrets key is configured.
-func Available() bool {
-	_, err := loadKey()
-	return err == nil
-}
-
 // Encrypt returns base64(nonce||ciphertext) using AES-256-GCM.
 func Encrypt(plaintext string) (string, error) {
 	k, err := loadKey()

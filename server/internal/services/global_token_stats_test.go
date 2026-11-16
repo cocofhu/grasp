@@ -116,7 +116,7 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
 	must(&models.WorkflowDef{ID: "wf-rb", Name: "main", Version: 1})
@@ -193,7 +193,7 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
 	must(&models.WorkflowDef{ID: "wf-rbf", Name: "main", Version: 1})

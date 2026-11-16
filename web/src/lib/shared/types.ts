@@ -59,7 +59,6 @@ export interface PublishedWorkflowSnapshot {
 
 export interface WorkflowDefaults {
   variables: WorkspaceVariable[]
-  notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
   /** Registered repositories every run clones by default, in order. */
   repos?: RepoChoice[]
@@ -85,31 +84,10 @@ export interface Workflow {
   needsRepo: boolean
   /** Home cards + Home search; missing/false = hidden (plan g1.1). */
   showOnHome?: boolean
-  notifyPolicy?: WorkflowNotifyPolicy
   defaults?: WorkflowDefaults
   nodes: WFNode[]
   edges: WFEdge[]
   variables?: WorkflowGraph['variables']
-}
-
-/** Workspace-level Run→IM notification defaults. */
-export interface WorkspaceNotifyPolicy {
-  enabled?: boolean
-  defaultEvents?: string[]
-  /** Explicit 0~N channel fan-out targets (may include primary). Empty = no deliver. */
-  channelIds?: string[]
-  /** Full QQ body for waiting_human; trim-empty → default FormatRunNotifyMessage. */
-  waitingHumanTemplate?: string
-  /** Full QQ body for failed; trim-empty → default FormatRunNotifyMessage. */
-  failedTemplate?: string
-  /** Full QQ body for completed; trim-empty → FormatRunNotifyMessage. Opt-in. */
-  completedTemplate?: string
-}
-
-/** Workflow-level notify override: off | inherit | custom. */
-export interface WorkflowNotifyPolicy {
-  mode?: 'off' | 'inherit' | 'custom' | string
-  events?: string[]
 }
 
 /** One sandbox OS environment variable (secret values masked as **** on read). */
@@ -152,7 +130,6 @@ export interface Workspace {
    * Empty/omitted → show the default label. Does not change persisted keys.
    */
   unknownModelDisplayName?: string
-  notifyPolicy?: WorkspaceNotifyPolicy
   createdAt?: string
   updatedAt?: string
 }
@@ -466,26 +443,6 @@ export interface MemoryItem {
   updatedAt: string
 }
 
-export interface AgentCronJob {
-  id: string
-  agentName: string
-  threadId: string
-  name: string
-  prompt: string
-  scheduleKind: string
-  scheduleExpr: string
-  timezone?: string
-  enabled: boolean
-  deliverToChannel: boolean
-  nextRunAt?: string
-  lastRunAt?: string
-  lastStatus?: string
-  lastError?: string
-  consecutiveErrors?: number
-  createdAt: string
-  updatedAt: string
-}
-
 export interface ProgressCitation {
   type: 'run' | 'gate' | 'artifact' | 'workflow' | 'plan' | string
   targetId: string
@@ -503,9 +460,7 @@ export interface ChatThread {
   id: string
   userId: string
   title: string
-  /** Channel thread with no source=channel inbound. */
-  unspoken?: boolean
-  /** user | cron | channel…; omitted on older rows */
+  /** user; omitted on older rows */
   kind?: string
   sandboxRef?: string
   createdAt: string
@@ -527,7 +482,7 @@ export interface ChatMessage {
   status?: 'ok' | 'failed' | string
   /** connection | sandbox | empty | unknown | stopped */
   failKind?: 'connection' | 'sandbox' | 'empty' | 'unknown' | 'stopped' | string
-  /** user | cron | channel | "" */
+  /** user | "" */
   source?: string
   images?: ClarifyImage[]
   citations?: ProgressCitation[]

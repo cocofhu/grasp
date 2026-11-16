@@ -2,12 +2,8 @@ import type { InboxItem } from '../../shared/types'
 import { req, rootWsUrl } from '../httpCore'
 import type {
   BrandSettings,
-  ChannelConfig,
-  ChannelConfigInput,
-  ChannelDeleteOpts,
   DashboardStats,
   HealthResponse,
-  NotifyDeliveryReceipt,
   PaginatedResponse,
   PlatformStatusMetrics,
   SettingItem,
@@ -58,31 +54,4 @@ export const settingsClient = {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
-  // multi-channel QQ APIs (primary + secondary)
-  listNotifyReceipts: () =>
-    req<{ items: NotifyDeliveryReceipt[] }>(
-      `/workspace/notify-receipts`,
-    ),
-  listChannels: () =>
-    req<{ items: ChannelConfig[]; secretsKeyConfigured?: boolean; freeAgents?: string[] }>(
-      `/workspace/channels`,
-    ),
-  createChannel: (body: ChannelConfigInput) =>
-    req<ChannelConfig>(`/workspace/channels`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  updateChannel: (channelId: string, body: ChannelConfigInput) =>
-    req<ChannelConfig>(
-      `/workspace/channels/${encodeURIComponent(channelId)}`,
-      { method: 'PUT', body: JSON.stringify(body) },
-    ),
-  deleteChannel: (channelId: string, body?: ChannelDeleteOpts) =>
-    req<{ status: string }>(
-      `/workspace/channels/${encodeURIComponent(channelId)}`,
-      {
-        method: 'DELETE',
-        body: body ? JSON.stringify(body) : undefined,
-      },
-    ),
 }

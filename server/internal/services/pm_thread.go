@@ -15,88 +15,13 @@ import (
 
 // --- chat threads / messages ------------------------------------------------
 
-// ListThreads returns threads for the given user.
-// For normal Web users this is their own threads ∪ channel threads
-// (registered type prefixes), excluding cron: threads, ordered by updated_at desc.
-// For synthetic identities (qq:/wecom:/feishu:/cron:) it stays owner-only so
-// ChannelBridge ensureThread continues to resolve a single conversation thread.
+// ListThreads returns the user's own threads, ordered by updated_at desc.
 func (s *PmService) ListThreads(userID string) ([]models.ChatThread, error) {
 	var threads []models.ChatThread
-	q := s.db
-	if IsSyntheticThreadUserID(userID) {
-		q = q.Where("user_id = ?", userID)
-	} else {
-		// Own Web sessions ∪ registered channel sessions; cron: never matches.
-		q = q.Where("user_id = ? OR "+channelUserIDLikeSQL(), append([]any{userID}, channelUserIDLikeArgs()...)...)
-	}
-	if err := q.Order("updated_at desc").Find(&threads).Error; err != nil {
+	if err := s.db.Where("user_id = ?", userID).Order("updated_at desc").Find(&threads).Error; err != nil {
 		return nil, err
 	}
-	s.annotateUnspoken(threads)
 	return threads, nil
-}
-
-func channelUserIDLikeSQL() string {
-	parts := make([]string, 0, len(models.RegisteredChannelTypes()))
-	for range models.RegisteredChannelTypes() {
-		parts = append(parts, "user_id LIKE ?")
-	}
-	return strings.Join(parts, " OR ")
-}
-
-func channelUserIDLikeArgs() []any {
-	args := make([]any, 0, len(models.RegisteredChannelTypes()))
-	for _, typ := range models.RegisteredChannelTypes() {
-		args = append(args, typ+":%")
-	}
-	return args
-}
-
-// HasChannelInbound reports whether a synthetic channel identity has at least
-// one persisted source=channel inbound message.
-func (s *PmService) HasChannelInbound(syntheticUserID string) bool {
-	syntheticUserID = strings.TrimSpace(syntheticUserID)
-	if syntheticUserID == "" || !IsChannelUserID(syntheticUserID) {
-		return false
-	}
-	var threadIDs []string
-	if err := s.db.Model(&models.ChatThread{}).
-		Where("user_id = ?", syntheticUserID).
-		Pluck("id", &threadIDs).Error; err != nil || len(threadIDs) == 0 {
-		return false
-	}
-	var n int64
-	if err := s.db.Model(&models.ChatMessage{}).
-		Where("thread_id IN ? AND source = ? AND role = ?", threadIDs, "channel", "user").
-		Count(&n).Error; err != nil {
-		return false
-	}
-	return n > 0
-}
-
-func (s *PmService) annotateUnspoken(threads []models.ChatThread) {
-	ids := make([]string, 0, len(threads))
-	for _, th := range threads {
-		if IsChannelUserID(th.UserID) {
-			ids = append(ids, th.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return
-	}
-	var spokenIDs []string
-	_ = s.db.Model(&models.ChatMessage{}).
-		Where("thread_id IN ? AND source = ? AND role = ?", ids, "channel", "user").
-		Distinct("thread_id").Pluck("thread_id", &spokenIDs).Error
-	spoken := map[string]bool{}
-	for _, id := range spokenIDs {
-		spoken[id] = true
-	}
-	for i := range threads {
-		if IsChannelUserID(threads[i].UserID) && !spoken[threads[i].ID] {
-			threads[i].Unspoken = true
-		}
-	}
 }
 
 // CreateThread inserts a new private thread for the user.
@@ -125,35 +50,16 @@ func (s *PmService) CreateThread(userID, title, agentName, kind string) (models.
 	return t, nil
 }
 
-// CreateCronThread creates an exclusive kind=cron thread for a scheduled job.
-func (s *PmService) CreateCronThread(agentName, title string) (models.ChatThread, error) {
-	return s.CreateThread("cron:"+agentName, title, agentName, models.ChatThreadKindCron)
-}
-
-// GetThread returns a thread the user may read: owned by userID, or a
-// registered channel thread (any workspace member).
+// GetThread returns a thread owned by userID.
 func (s *PmService) GetThread(threadID, userID string) (models.ChatThread, error) {
 	var t models.ChatThread
 	if err := s.db.Where("id = ?", threadID).First(&t).Error; err != nil {
 		return models.ChatThread{}, ErrPmThreadNotFound
 	}
-	if t.UserID == userID || IsChannelUserID(t.UserID) {
+	if t.UserID == userID {
 		return t, nil
 	}
 	return models.ChatThread{}, ErrPmThreadNotFound
-}
-
-// RequireWritableThread loads a readable thread and rejects channel threads
-// for Web write/delete/turn paths.
-func (s *PmService) RequireWritableThread(threadID, userID string) (models.ChatThread, error) {
-	t, err := s.GetThread(threadID, userID)
-	if err != nil {
-		return models.ChatThread{}, err
-	}
-	if IsChannelUserID(t.UserID) {
-		return models.ChatThread{}, ErrPmChannelReadOnly
-	}
-	return t, nil
 }
 
 // GetThreadByID loads a thread without user check (PM MCP internal).
@@ -178,19 +84,12 @@ func (s *PmService) ClearSandboxRef(threadID string) error {
 		Updates(map[string]any{"sandbox_ref": "", "updated_at": time.Now()}).Error
 }
 
-// ListConversationsForAgent returns threads visible to a context-store session.
-// Interactive users see their own user threads plus the agent's cron threads.
-// Cron sessions (userID == "cron") only see cron threads for the agent.
+// ListConversationsForAgent returns threads visible to a context-store session:
+// the caller's own user threads for the agent (all of them when userID is empty).
 func (s *PmService) ListConversationsForAgent(agentName, userID string) ([]models.ChatThread, error) {
 	q := s.db.Where("agent_name = ?", agentName)
-	switch {
-	case userID == "cron":
-		q = q.Where("kind = ?", models.ChatThreadKindCron)
-	case userID != "":
-		q = q.Where(
-			"(kind = ? OR ((kind = ? OR kind = '' OR kind IS NULL) AND user_id = ?))",
-			models.ChatThreadKindCron, models.ChatThreadKindUser, userID,
-		)
+	if userID != "" {
+		q = q.Where("(kind = ? OR kind = '' OR kind IS NULL) AND user_id = ?", models.ChatThreadKindUser, userID)
 	}
 	var threads []models.ChatThread
 	if err := q.Order("updated_at desc").Find(&threads).Error; err != nil {
@@ -199,16 +98,15 @@ func (s *PmService) ListConversationsForAgent(agentName, userID string) ([]model
 	return threads, nil
 }
 
-// DeleteThread removes a thread and its messages (owner only; channel threads rejected).
+// DeleteThread removes a thread and its messages (owner only).
 func (s *PmService) DeleteThread(threadID, userID string) error {
-	if _, err := s.RequireWritableThread(threadID, userID); err != nil {
+	if _, err := s.GetThread(threadID, userID); err != nil {
 		return err
 	}
 	return s.DeleteThreadByID(threadID)
 }
 
-// DeleteThreadByID removes a thread and its messages without an ownership check
-// (used for cron job cleanup / failed job create rollback).
+// DeleteThreadByID removes a thread and its messages without an ownership check.
 func (s *PmService) DeleteThreadByID(threadID string) error {
 	if strings.TrimSpace(threadID) == "" {
 		return nil
@@ -218,48 +116,6 @@ func (s *PmService) DeleteThreadByID(threadID string) error {
 		return err
 	}
 	return s.db.Where("id = ?", threadID).Delete(&models.ChatThread{}).Error
-}
-
-// ListCronJobs returns all AgentCronJob rows (any agent).
-func (s *PmService) ListCronJobs() ([]models.AgentCronJob, error) {
-	var jobs []models.AgentCronJob
-	if err := s.db.Order("updated_at desc").Find(&jobs).Error; err != nil {
-		return nil, err
-	}
-	if jobs == nil {
-		jobs = []models.AgentCronJob{}
-	}
-	return jobs, nil
-}
-
-// PatchCronJobDeliver updates deliverToChannel for one job.
-func (s *PmService) PatchCronJobDeliver(jobID string, deliver bool) (models.AgentCronJob, error) {
-	var job models.AgentCronJob
-	if err := s.db.Where("id = ?", jobID).First(&job).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.AgentCronJob{}, ErrPmCronJobNotFound
-		}
-		return models.AgentCronJob{}, err
-	}
-	job.DeliverToChannel = deliver
-	job.UpdatedAt = time.Now().UTC()
-	if err := s.db.Model(&job).Select("DeliverToChannel", "UpdatedAt").Updates(job).Error; err != nil {
-		return models.AgentCronJob{}, err
-	}
-	return job, nil
-}
-
-// DeleteCronJob removes a cron job with the same cleanup as
-// DeleteCronJobForAgent (runs, job, and exclusive cron thread/messages/drafts).
-func (s *PmService) DeleteCronJob(jobID string) error {
-	var job models.AgentCronJob
-	if err := s.db.Where("id = ?", jobID).First(&job).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrPmCronJobNotFound
-		}
-		return err
-	}
-	return s.DeleteCronJobForAgent(job.AgentName, jobID)
 }
 
 // GetThreadForAgent returns one thread when it belongs to agent.
@@ -304,77 +160,6 @@ func (s *PmService) DeleteThreadForAgent(agentName, threadID string) error {
 		return err
 	}
 	return s.DeleteThreadByID(threadID)
-}
-
-// ListCronJobsForAgent returns jobs scoped to one agent.
-func (s *PmService) ListCronJobsForAgent(agentName string) ([]models.AgentCronJob, error) {
-	agentName = strings.TrimSpace(agentName)
-	var jobs []models.AgentCronJob
-	if err := s.db.Where("agent_name = ?", agentName).
-		Order("updated_at desc").Find(&jobs).Error; err != nil {
-		return nil, err
-	}
-	if jobs == nil {
-		jobs = []models.AgentCronJob{}
-	}
-	return jobs, nil
-}
-
-// PatchCronJobForAgent toggles enabled and/or deliverToChannel for a job.
-func (s *PmService) PatchCronJobForAgent(agentName, jobID string, enabled, deliver *bool) (models.AgentCronJob, error) {
-	agentName = strings.TrimSpace(agentName)
-	var job models.AgentCronJob
-	if err := s.db.Where("id = ? AND agent_name = ?", jobID, agentName).
-		First(&job).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.AgentCronJob{}, ErrPmCronJobNotFound
-		}
-		return models.AgentCronJob{}, err
-	}
-	updates := map[string]any{"updated_at": time.Now().UTC()}
-	if enabled != nil {
-		updates["enabled"] = *enabled
-		job.Enabled = *enabled
-	}
-	if deliver != nil {
-		updates["deliver_to_channel"] = *deliver
-		job.DeliverToChannel = *deliver
-	}
-	if err := s.db.Model(&job).Updates(updates).Error; err != nil {
-		return models.AgentCronJob{}, err
-	}
-	return job, nil
-}
-
-// DeleteCronJobForAgent removes a job, its runs, and exclusive cron thread.
-func (s *PmService) DeleteCronJobForAgent(agentName, jobID string) error {
-	agentName = strings.TrimSpace(agentName)
-	var job models.AgentCronJob
-	if err := s.db.Where("id = ? AND agent_name = ?", jobID, agentName).
-		First(&job).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrPmCronJobNotFound
-		}
-		return err
-	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("job_id = ?", job.ID).Delete(&models.AgentCronRun{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("id = ?", job.ID).Delete(&models.AgentCronJob{}).Error; err != nil {
-			return err
-		}
-		if strings.TrimSpace(job.ThreadID) == "" {
-			return nil
-		}
-		if err := tx.Where("thread_id = ?", job.ThreadID).Delete(&models.ChatTurnDraft{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("thread_id = ?", job.ThreadID).Delete(&models.ChatMessage{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ?", job.ThreadID).Delete(&models.ChatThread{}).Error
-	})
 }
 
 // Draft status constants.

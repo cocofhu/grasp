@@ -725,8 +725,6 @@
 .app-icon[data-icon="inbox-reply"][data-icon-motion="once"] .p0{animation:iconMotion_inbox_reply_reply 1200ms ease 1}
 @keyframes iconMotion_inbox_reply_reply{0%,100%{opacity:1}50%{opacity:.25}}
 
-/* icon: qq */
-
 /* icon: info */
 .app-icon[data-icon="info"] .p1, .app-icon[data-icon="info"] .p2{transform-box:fill-box;transform-origin:center}
 .app-icon[data-icon="info"][data-icon-motion="once"] .p1, .app-icon[data-icon="info"][data-icon-motion="once"] .p2{animation:iconMotion_info_beat 650ms ease 1}

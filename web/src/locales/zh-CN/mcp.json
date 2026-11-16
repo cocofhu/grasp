@@ -221,37 +221,6 @@
         }
       }
     },
-    "taskScheduler": {
-      "desc": "Agent 级定时任务 · 定义面 MCP；平台调度执行",
-      "overview": "Agent 级定时任务。仅工作区助手咨询可写；到点新建沙箱 Chat。任务独占 cron 线程。",
-      "convention": "create_job 仅工作区助手咨询可用。执行由平台调度器完成，每次新沙箱。",
-      "tools": {
-        "list_jobs": {
-          "signature": "list_jobs()",
-          "desc": "列出本 Agent 任务"
-        },
-        "list_job_runs": {
-          "signature": "list_job_runs(jobId, limit?)",
-          "desc": "执行历史"
-        },
-        "create_job": {
-          "signature": "create_job(name, prompt, scheduleKind, scheduleExpr)",
-          "desc": "创建任务"
-        },
-        "update_job": {
-          "signature": "update_job(jobId, …)",
-          "desc": "更新任务"
-        },
-        "delete_job": {
-          "signature": "delete_job(jobId)",
-          "desc": "删除任务"
-        },
-        "run_job_now": {
-          "signature": "run_job_now(jobId)",
-          "desc": "立即入队"
-        }
-      }
-    },
     "pmProgress": {
       "desc": "工作区助手专用 · 工作区进度/阻塞/风险只读",
       "overview": "工作区进度 MCP。在工作区助手咨询沙箱中按已启用的能力注入。",

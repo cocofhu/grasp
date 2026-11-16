@@ -649,7 +649,7 @@ async function createStudioChatTest(
             :draft="draft"
           />
 
-          <!-- data: Agent-scoped memory / context / cron-job management (whitelist on mobile) -->
+          <!-- data: Agent-scoped memory / context management (whitelist on mobile) -->
           <div v-else-if="tab === 'data' && draft" key="data" class="min-h-0 flex-1 overflow-hidden">
           <div v-if="draftBindingDirty" class="border-b border-warn/30 bg-warn/10 px-4 py-2 text-[12px] text-warn">
             {{ t('pages.agentStudio.data.unsavedBinding') }}

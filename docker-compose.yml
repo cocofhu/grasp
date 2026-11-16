@@ -38,7 +38,7 @@ services:
       # start.sh 导出的演示账号。不传进容器时 auth.users 为空，登录一律失败。
       GRASP_DEPLOYMENT_MODE: ${GRASP_DEPLOYMENT_MODE:-local-demo}
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
-      # 渠道凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
+      # 工作区凭据 AES 主密钥(也可写在 server/config.yaml 的 security.secrets_key)。
       # .env 里设了就会覆盖 YAML;未设则走配置文件。
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}
       # 可选:GitHub OAuth App 的 Client ID(勾选 Enable Device Flow),开启「用 GitHub 登录」。

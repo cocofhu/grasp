@@ -28,7 +28,7 @@ type preparedAgentContainer struct {
 func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedToken, name string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) (*preparedAgentContainer, error) {
 	vars := map[string]string{}
 	if extra.LaunchKind == "test" {
-		vars = s.testMcpVars(runID, sharedToken, profile)
+		vars = s.mcpVars(runID, sharedToken)
 	}
 	for _, sp := range platformSpecs {
 		switch sp.Name {
@@ -38,9 +38,6 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 		case ContextStoreMCP:
 			vars["GRASP_CONTEXT_URL"] = sp.URL
 			vars["GRASP_CONTEXT_TOKEN"] = sharedToken
-		case TaskSchedulerMCP:
-			vars["GRASP_SCHEDULER_URL"] = sp.URL
-			vars["GRASP_SCHEDULER_TOKEN"] = sharedToken
 		case PmProgressMCP, PmWorkflowReadMCP, PmWorkflowWriteMCP:
 			vars["GRASP_PM_URL"] = sp.URL
 			vars["GRASP_PM_TOKEN"] = sharedToken

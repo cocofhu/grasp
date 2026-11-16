@@ -506,63 +506,6 @@ export interface BrandSettings {
   home_subtitle: string
 }
 
-export interface ChannelConfig {
-  id: string
-  type: string
-  name: string
-  enabled: boolean
-  agentName: string
-  isPrimary: boolean
-  enabledMcps: string[]
-  appId: string
-  appSecretSet: boolean
-  turnTimeoutSeconds: number
-  cronDeliver: boolean
-  cronDeliverTarget?: string
-  config?: Record<string, unknown>
-  /** Long-connection subscribe success (computed). */
-  online?: boolean
-  createdAt: string
-  updatedAt: string
-  connectionState?: string
-  connectionDetail?: string
-}
-
-// Channel create/update payload.
-export interface ChannelConfigInput {
-  type: 'qq' | 'wecom' | 'feishu' | 'dingtalk'
-  name: string
-  enabled: boolean
-  agentName: string
-  isPrimary: boolean
-  enabledMcps?: string[]
-  appId: string
-  appSecret?: string
-  turnTimeoutSeconds: number
-  cronDeliver: boolean
-  cronDeliverTarget?: string
-  config?: Record<string, unknown>
-  /** Confirm syncing Workspace.PmLeaderAgent when rebinding primary. */
-  syncPmLeader?: boolean
-}
-
-export interface NotifyDeliveryReceipt {
-  id?: number
-  runId: string
-  nodeId: string
-  iteration: number
-  kind: string
-  status?: string
-  error?: string
-  createdAt: string
-}
-
-export interface ChannelDeleteOpts {
-  newPrimaryId?: string
-  confirmNoPrimary?: boolean
-  syncPmLeader?: boolean
-}
-
 export type HealthResponse = {
   status: string
   ready: boolean

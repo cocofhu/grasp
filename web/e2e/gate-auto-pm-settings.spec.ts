@@ -27,7 +27,6 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
             name: '测试工作区',
             description: '',
             variables: [],
-            notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
           },
         })
         return
@@ -65,13 +64,6 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
       }
       if (url.pathname.startsWith('/api/agents')) {
         await route.fulfill({ status: 200, json: [{ name: 'agent-1' }] })
-        return
-      }
-      if (url.pathname === '/api/workspace/channels' && method === 'GET') {
-        await route.fulfill({
-          status: 200,
-          json: { items: [], freeAgents: ['agent-1'], secretsKeyConfigured: true },
-        })
         return
       }
       if (['/api/workspace/pm/threads', '/api/workspace/notify-receipts'].includes(url.pathname) && method === 'GET') {

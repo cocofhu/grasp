@@ -29,6 +29,6 @@ the same geometry and CSS, with delegated interaction handling. Its generated
 copies are refreshed by `npm run build:live-overlay`; edit the source and run
 that command instead of editing generated copies.
 
-Provider logos and QQ retain their source geometry. Their enclosing controls
+Provider logos retain their source geometry. Their enclosing controls
 may highlight; the marks do not morph. Mascots, charts and the explicit flow
 confirmation ceremony retain their own animation systems.

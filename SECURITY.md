@@ -54,8 +54,8 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   for minting or Public CSRF Origin/Referer checks. Reverse proxies must
   preserve the browser's original Host (for example nginx
   `proxy_set_header Host $host`); when TLS terminates upstream, forward
-  `X-Forwarded-Proto` correctly. `server.public_advertise` remains for QQ /
-  preview deep links and is **not** the gate-share mint source. Third-party
+  `X-Forwarded-Proto` correctly. `server.public_advertise` remains for
+  preview links and is **not** the gate-share mint source. Third-party
   Origin still fails. External preview only returns this `human_gate`'s
   primary products — it does not scan other nodes in the Run.
 - Preview nonces live in the GateShare database (same DB as share links), keyed

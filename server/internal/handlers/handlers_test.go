@@ -166,7 +166,6 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 		GateShareSessions: gateShareSessions,
 		GateShareLimiter:  gateshare.NewIPLimiter(),
 		Embed:             embedStore,
-		PublicAdvertise:   "http://example.test",
 	}
 	h.Onboarding.Projects = services.NewProjectService(db)
 	h.Onboarding.Projects.SetGitCredentialResolver(h.Onboarding.Credentials.ResolveGitValue)
@@ -1945,7 +1944,7 @@ func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
 	if name == "" {
 		name = p.Name
 	}
-	p, err = hn.h.Workspace.Update(&name, &in.Description, nil, nil)
+	p, err = hn.h.Workspace.Update(&name, &in.Description, nil)
 	if err != nil {
 		w.WriteHeader(400)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})

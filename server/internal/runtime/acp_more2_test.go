@@ -245,7 +245,6 @@ func TestIsWorkflowDroppedPlatformMCPMatchesRenamedEndpoints(t *testing.T) {
 	}{
 		{"mem", "http://grasp:8080/mcp/memory-store", true},
 		{"ctx", "http://grasp:8080/mcp/context-store", true},
-		{"sched", "http://grasp:8080/mcp/task-scheduler/agent-a", true},
 		{"Memory-Store", "", true},
 		{"git", "http://example.com/mcp/git", false},
 	}

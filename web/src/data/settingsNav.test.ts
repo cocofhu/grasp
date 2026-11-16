@@ -5,7 +5,7 @@ import { shellNavPaths } from './shellNavPaths'
 describe('workspace settings navigation', () => {
   it('keeps every workspace capability reachable in three clear groups', () => {
     const paths = settingsNavItems.map((item) => item.to)
-    expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/assistant', '/settings/notification-policy', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/agents', '/settings/credentials', '/settings/audit', '/settings']))
+    expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/assistant', '/settings/assistant', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/audit', '/settings']))
     expect(settingsNavItems.map((item) => item.labelKey)).not.toContain('nav.workspaceInfo')
     expect(settingsNavItems.filter((item) => item.groupKey).map((item) => item.groupKey)).toEqual(['nav.groupWorkspaceTools', 'nav.groupExecution', 'nav.groupPlatform'])
     expect(new Set(paths.filter((path) => path !== '/settings')).size).toBe(paths.filter((path) => path !== '/settings').length)
@@ -17,7 +17,6 @@ describe('workspace settings navigation', () => {
       '/assistant',
       '/artifacts',
       '/notifications',
-      '/settings/schedules',
       '/settings/audit',
       '/agents',
       '/sandboxes',
@@ -25,7 +24,6 @@ describe('workspace settings navigation', () => {
       '/settings/credentials',
      
       '/settings/assistant',
-      '/settings/notification-policy',
       '/settings/external-mcp',
       '/settings',
       '/settings?integrations=1',
@@ -39,13 +37,12 @@ describe('workspace settings navigation', () => {
     for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
     expect(isSettingsChrome('/sandboxes/1/console', true)).toBe(false)
   })
-  it('separates exact general settings, integrations, notification policy and messages', () => {
+  it('separates exact general settings, integrations and messages', () => {
     const find = (key: string) => settingsNavItems.find((item) => item.labelKey === `nav.${key}`)!
     expect(settingsItemActive(find('general'), '/settings', {})).toBe(true)
     expect(settingsItemActive(find('general'), '/settings/credentials', {})).toBe(false)
     expect(settingsItemActive(find('general'), '/settings', { integrations: '1' })).toBe(false)
     expect(settingsItemActive(find('integrations'), '/settings', { integrations: '1' })).toBe(true)
-    expect(settingsItemActive(find('notificationPolicy'), '/notifications', {})).toBe(false)
     expect(settingsItemActive(find('notifications'), '/notifications', {})).toBe(true)
     expect(shellNavPaths()).toEqual(expect.arrayContaining(['/dashboard', '/workflows', '/settings/credentials', '/stats']))
   })

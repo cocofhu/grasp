@@ -42,16 +42,15 @@ func (h *Handlers) GetWorkflow(c *gin.Context) {
 }
 
 type workflowBody struct {
-	Defaults     *models.WorkflowDefaults     `json:"defaults,omitempty"`
-	ID           string                       `json:"id"`
-	Name         string                       `json:"name"`
-	Description  string                       `json:"description"`
-	NeedsRepo    bool                         `json:"needsRepo"`
-	ShowOnHome   *bool                        `json:"showOnHome"`
-	NotifyPolicy *models.WorkflowNotifyPolicy `json:"notifyPolicy"`
-	Nodes        []models.Node                `json:"nodes"`
-	Edges        []models.Edge                `json:"edges"`
-	Variables    []models.Variable            `json:"variables"`
+	Defaults    *models.WorkflowDefaults `json:"defaults,omitempty"`
+	ID          string                   `json:"id"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"description"`
+	NeedsRepo   bool                     `json:"needsRepo"`
+	ShowOnHome  *bool                    `json:"showOnHome"`
+	Nodes       []models.Node            `json:"nodes"`
+	Edges       []models.Edge            `json:"edges"`
+	Variables   []models.Variable        `json:"variables"`
 }
 
 func (h *Handlers) SaveWorkflow(c *gin.Context) {
@@ -75,14 +74,6 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 	wf := models.WorkflowDef{
 		Defaults: b.Defaults, ID: b.ID, Name: b.Name, Description: b.Description, NeedsRepo: b.NeedsRepo,
 		Graph: graph,
-	}
-	if b.NotifyPolicy != nil {
-		wf.NotifyPolicy = *b.NotifyPolicy
-	} else if !isCreate {
-
-		if existing, ok := h.WF.Get(b.ID); ok {
-			wf.NotifyPolicy = existing.NotifyPolicy
-		}
 	}
 	// Create always false (handler + service). On update, omit → keep stored
 	// value so an editor save cannot silently turn Home visibility off (plan g1.3).
@@ -125,46 +116,6 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 			"status":  wf.Status(),
 			"version": wf.Version,
 			"nodes":   len(wf.Graph.Nodes),
-		},
-	})
-	c.JSON(http.StatusOK, workflowDTO(wf))
-}
-
-type workflowNotifyPolicyBody struct {
-	NotifyPolicy models.WorkflowNotifyPolicy `json:"notifyPolicy"`
-}
-
-// PatchWorkflowNotifyPolicy handles PATCH /api/workflows/:id/notify-policy.
-// Notify-only write path: does not accept or rewrite Graph (review v1).
-func (h *Handlers) PatchWorkflowNotifyPolicy(c *gin.Context) {
-	var b workflowNotifyPolicyBody
-	if err := c.ShouldBindJSON(&b); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	id := c.Param("id")
-	wf, err := h.WF.UpdateNotifyPolicy(id, b.NotifyPolicy)
-	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrWorkflowNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		default:
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-	h.recordAudit(services.AuditRecord{
-		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionWorkflowUpdate,
-		ResourceType: "workflow",
-		ResourceID:   wf.ID,
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "update workflow notify policy",
-		Payload: map[string]any{
-			"notifyPolicy": wf.NotifyPolicy,
-			"status":       wf.Status(),
-			"version":      wf.Version,
 		},
 	})
 	c.JSON(http.StatusOK, workflowDTO(wf))

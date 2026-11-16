@@ -203,34 +203,16 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
-  it('restores the stored thread and derives channel presentation', async () => {
-    localStorage.setItem(PM_ACTIVE_THREAD_STORAGE_KEY, 'ch')
+  it('restores the stored thread and titles untitled threads', async () => {
+    localStorage.setItem(PM_ACTIVE_THREAD_STORAGE_KEY, 'stored')
     mocks.listPmThreads.mockResolvedValue({
-      items: [
-        thread(),
-        thread({ id: 'ch', userId: 'feishu:c2c:peer-9', title: '', unspoken: true }),
-      ],
+      items: [thread(), thread({ id: 'stored', title: '' })],
     })
     const { chat, app } = withChat()
     await flushPromises()
 
-    expect(chat.activeId.value).toBe('ch')
-    expect(chat.activeIsChannel.value).toBe(true)
-    expect(chat.channelTypeOf(chat.activeThread.value)).toBe('feishu')
-    expect(chat.channelBadgeLabel(chat.activeThread.value)).toBeTruthy()
-    expect(chat.channelBadgeClass(chat.activeThread.value)).toContain('cyan')
-    expect(chat.channelReadonlyTitle(chat.activeThread.value)).toBeTruthy()
-    expect(chat.channelReadonlyHint(chat.activeThread.value)).toBeTruthy()
-    expect(chat.threadDisplayTitle(chat.activeThread.value)).toBe('feishu:c2c:peer-9')
-    expect(chat.channelSourceLine(chat.activeThread.value)).toContain('peer-9')
-    expect(chat.isChannelHint(message('h', 'system', { source: 'channel' }) as never)).toBe(true)
-
-    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 4, clientY: 8 }
-    chat.openChannelCtx(ev as unknown as MouseEvent, chat.activeThread.value!)
-    expect(chat.channelCtx.value?.threadId).toBe('ch')
-    chat.openChannelDetail()
-    expect(chat.channelDetailOpen.value).toBe(true)
-    chat.closeChannelDetail()
+    expect(chat.activeId.value).toBe('stored')
+    expect(chat.threadDisplayTitle(chat.activeThread.value)).toBe(chat.t('pages.workspace.pm.untitled'))
     app.unmount()
   })
 
@@ -512,20 +494,7 @@ describe('usePmLeaderChat actions', () => {
     expect(chat.mainViewState.value).toBe('errorEmpty')
     expect(chat.failMeta('not-real').kind).toBe('unknown')
 
-    for (const [kind, classPart] of [
-      ['wecom', 'accent'],
-      ['feishu', 'cyan'],
-      ['dingtalk', 'blue'],
-      ['qq', 'accent'],
-    ]) {
-      const th = thread({ userId: `${kind}:c2c:peer` }) as never
-      expect(chat.channelBadgeLabel(th)).toBeTruthy()
-      expect(chat.channelBadgeClass(th)).toContain(classPart)
-      expect(chat.channelReadonlyTitle(th)).toBeTruthy()
-      expect(chat.channelReadonlyHint(th)).toBeTruthy()
-    }
     expect(chat.threadDisplayTitle(thread({ title: '  ' }) as never)).toBeTruthy()
-    expect(chat.channelSourceLine(thread({ userId: 'qq:c2c:peer' }) as never)).toContain('peer')
     chat.messagesLoadFailed.value = false
     chat.messages.value = [message('u', 'user') as never, message('a', 'assistant') as never]
     expect(chat.showIdleSuggestions.value).toBe(true)
@@ -644,7 +613,7 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
-  it('blocks sends while busy, on channel threads and when PM is unavailable', async () => {
+  it('blocks sends while busy and when PM is unavailable', async () => {
     const { chat, app, emit, props } = withChat()
     await flushPromises()
     chat.sending.value = true
@@ -706,14 +675,6 @@ describe('usePmLeaderChat actions', () => {
     MockWebSocket.instances[2]!.onclose?.(new CloseEvent('close'))
     await vi.advanceTimersByTimeAsync(30_000)
     expect(MockWebSocket.instances).toHaveLength(3)
-  })
-
-  it('does not subscribe channel threads', async () => {
-    mocks.listPmThreads.mockResolvedValue({ items: [thread({ id: 'ch', userId: 'feishu:c2c:peer-9' })] })
-    const { app } = withChat()
-    await flushPromises()
-    expect(MockWebSocket.instances).toHaveLength(0)
-    app.unmount()
   })
 
   it('stop cancels on the server and retry re-queues the failed message', async () => {

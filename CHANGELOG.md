@@ -4,6 +4,12 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 移除定时任务、全部 IM 渠道和运行通知，产品聚焦工作流与云端 Agent（破坏性变更）：
+  - 定时任务：删除设置里的「定时任务」页、Agent Studio 数据页的「定时任务」子 Tab、`cron-jobs` 接口和 `task-scheduler` MCP。各 Agent 配置里的 `task-scheduler` MCP 会在启动时自动去掉。
+  - IM 渠道：删除 QQ、企业微信、飞书、钉钉接入，包括工作区助手设置里的渠道面板、`/api/workspace/channels` 接口和沙箱自带的 QQ 机器人（`/api/qq/config`）。
+  - 运行通知：删除「通知策略」设置页、工作流列表的通知列、`PATCH /api/workflows/:id/notify-policy` 和 `/api/workspace/notify-receipts`；`GET/PUT /api/workspace` 和工作流不再有 `notifyPolicy` 字段。
+  - 升级后首次启动会删除定时任务、渠道配置、通知回执和通知策略数据，以及定时任务和 IM 渠道产生的会话记录。
+
 - 修复首页输入框弹出位置：「+」菜单现在出现在「+」按钮正下方，@ 引用面板像 IDE 补全一样在输入的 @ 旁边弹出（下方放不下时改到上方），不再落到整个输入框下面（手机端之前会离按钮很远或被键盘挡住）；窄屏下引用面板的标签不再折行。
 
 - 修复产物、通知、Agent、沙箱、设置等设置式页面里，内层列表滚动区在 Chromium 121 及以上版本显示带箭头的原生宽滚动条的问题，恢复为 4px、悬停才显示的细滚动条。

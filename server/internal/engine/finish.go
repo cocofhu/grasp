@@ -187,10 +187,6 @@ func (e *Engine) finish(runID, status string) bool {
 	if res.Error != nil {
 		return false
 	}
-	if status == "completed" {
-
-		e.fireCompletedRunNotify(runID)
-	}
 	if status == "completed" || status == "failed" || status == "cancelled" {
 		e.forgetActivity(runID)
 		e.expireDialogues(runID)

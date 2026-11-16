@@ -127,7 +127,7 @@ func TestPromptBeginCarriesOpID(t *testing.T) {
 	b := newTestBridge(sess)
 	c := dialBridge(t, b)
 
-	if err := b.ChatWithOpID("hello", "op-A", "chat", nil); err != nil {
+	if err := b.ChatWithLimits("hello", "op-A", "chat", nil, 0, 0); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	f := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_begin" })
@@ -148,7 +148,7 @@ func TestRefusalErrorCarriesCompletedTurnOpID(t *testing.T) {
 		b.Broadcast(eventEnvelope(raw, b.touchActiveTurn(raw)))
 	}
 	c := dialBridge(t, b)
-	if err := b.ChatWithOpID("hello", "refused-op", "chat", nil); err != nil {
+	if err := b.ChatWithLimits("hello", "refused-op", "chat", nil, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	done := readUntil(t, c, func(f wsFrame) bool { return f.Op == "event" && dataType(f) == "prompt_done" })
@@ -168,7 +168,7 @@ func TestCancelPromptOpRemovesOnlyQueuedItem(t *testing.T) {
 	c := dialBridge(t, b)
 
 	for _, id := range []string{"op-A", "op-B", "op-C"} {
-		if err := b.ChatWithOpID("msg "+id, id, "chat", nil); err != nil {
+		if err := b.ChatWithLimits("msg "+id, id, "chat", nil, 0, 0); err != nil {
 			t.Fatalf("chat %s: %v", id, err)
 		}
 	}
@@ -195,8 +195,8 @@ func TestCancelPromptOpActiveKeepsQueue(t *testing.T) {
 	b := newTestBridge(sess)
 	c := dialBridge(t, b)
 
-	_ = b.ChatWithOpID("first", "op-A", "chat", nil)
-	_ = b.ChatWithOpID("second", "op-B", "chat", nil)
+	_ = b.ChatWithLimits("first", "op-A", "chat", nil, 0, 0)
+	_ = b.ChatWithLimits("second", "op-B", "chat", nil, 0, 0)
 	if got := b.CancelPromptOp("op-A"); got != CancelAckCancelling {
 		t.Fatalf("cancel active status=%q", got)
 	}

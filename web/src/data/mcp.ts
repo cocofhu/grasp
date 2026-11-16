@@ -99,23 +99,6 @@ export const BUILTIN_MCPS: McpServer[] = [
     conventionKey: 'mcp.contextStore.convention',
   },
   {
-    id: 'task-scheduler',
-    name: 'task-scheduler',
-    builtin: true,
-    scope: 'agent',
-    descKey: 'mcp.taskScheduler.desc',
-    overviewKey: 'mcp.taskScheduler.overview',
-    tools: [
-      { name: 'list_jobs', signatureKey: 'mcp.taskScheduler.tools.list_jobs.signature', descKey: 'mcp.taskScheduler.tools.list_jobs.desc', io: 'read' },
-      { name: 'list_job_runs', signatureKey: 'mcp.taskScheduler.tools.list_job_runs.signature', descKey: 'mcp.taskScheduler.tools.list_job_runs.desc', io: 'read' },
-      { name: 'create_job', signatureKey: 'mcp.taskScheduler.tools.create_job.signature', descKey: 'mcp.taskScheduler.tools.create_job.desc', io: 'write' },
-      { name: 'update_job', signatureKey: 'mcp.taskScheduler.tools.update_job.signature', descKey: 'mcp.taskScheduler.tools.update_job.desc', io: 'write' },
-      { name: 'delete_job', signatureKey: 'mcp.taskScheduler.tools.delete_job.signature', descKey: 'mcp.taskScheduler.tools.delete_job.desc', io: 'write' },
-      { name: 'run_job_now', signatureKey: 'mcp.taskScheduler.tools.run_job_now.signature', descKey: 'mcp.taskScheduler.tools.run_job_now.desc', io: 'write' },
-    ],
-    conventionKey: 'mcp.taskScheduler.convention',
-  },
-  {
     id: 'pm-progress',
     name: 'pm-progress',
     builtin: true,

@@ -139,7 +139,7 @@ func TestGateAutoEnqueuePreconditions(t *testing.T) {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
+	svc := NewGateAutoInvokeService(db, pm, nil, nil, GateAutoTokenHooks{})
 
 	base := GateAutoTask{
 		RunID: "run1", NodeID: "g", GateID: 1,
@@ -225,7 +225,7 @@ func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 
 	// ForceActive so waitThreadIdle would block if we reached it — but resolved skip is earlier.
 	turns := NewPmTurnRunner(pm, nil)
-	svc := NewGateAutoInvokeService(db, pm, nil, turns, CronTokenHooks{})
+	svc := NewGateAutoInvokeService(db, pm, nil, turns, GateAutoTokenHooks{})
 	svc.Enqueue(GateAutoTask{
 		RunID: "run-skip", NodeID: "gate", GateID: gate.ID,
 		Vars: map[string]any{"pm_auto_gate": true},
@@ -268,7 +268,7 @@ func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-workflow-write"}, &varName, nil); err != nil {
 		t.Fatal(err)
 	}
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
+	svc := NewGateAutoInvokeService(db, pm, nil, nil, GateAutoTokenHooks{})
 
 	ok, reason := svc.shouldEnqueue(GateAutoTask{
 		RunID: "r", NodeID: "g1", GateID: 1,

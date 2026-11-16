@@ -401,7 +401,6 @@ html[data-theme="dark"] .cc-model-logo img {
 
 /* 头部 28px 图标按钮 */
 .cc-icon-btn,
-.cc-qq-btn,
 .cc-toggle-detail-btn,
 .cc-stop-btn {
     flex-shrink: 0;
@@ -420,14 +419,12 @@ html[data-theme="dark"] .cc-model-logo img {
 }
 
 .cc-icon-btn svg,
-.cc-qq-btn svg,
 .cc-toggle-detail-btn svg {
     width: 16px;
     height: 16px;
 }
 
 .cc-icon-btn:hover,
-.cc-qq-btn:hover,
 .cc-toggle-detail-btn:hover {
     color: var(--text-primary);
     background: var(--bg-tertiary);
@@ -440,10 +437,6 @@ html[data-theme="dark"] .cc-model-logo img {
     cursor: pointer;
     user-select: none;
     color: var(--text-primary);
-}
-
-.cc-qq-svg {
-    display: block;
 }
 
 /* 连接状态：小圆点 + 文本，同 Grasp 状态 chip */
@@ -1815,228 +1808,6 @@ html[data-theme="dark"] .cc-model-logo img {
     justify-content: center;
 }
 
-.cc-qq-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 90;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(3px);
-}
-
-.cc-qq-modal-backdrop[hidden] {
-    display: none;
-}
-
-.cc-qq-modal {
-    position: fixed;
-    inset: 0;
-    z-index: 91;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-
-.cc-qq-modal[hidden] {
-    display: none;
-}
-
-.cc-qq-modal-panel {
-    width: min(520px, 94vw);
-    max-height: min(720px, 90vh);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-pop);
-    animation: cc-lightbox-in 0.18s ease-out;
-}
-
-.cc-qq-modal-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.cc-qq-modal-title {
-    font-weight: 700;
-    font-size: 0.98rem;
-}
-
-.cc-qq-modal-body {
-    padding: 18px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-/* Drawer（对齐 Sidebar 左栏 w-80） */
-.cc-drawer-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    background: rgba(0, 0, 0, 0.4);
-}
-
-.cc-drawer {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 320px;
-    max-width: 90vw;
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
-    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.2);
-}
-
-.cc-drawer-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.cc-drawer-title {
-    font-weight: 600;
-    font-size: 0.95rem;
-}
-
-.cc-drawer-close {
-    border: none;
-    background: transparent;
-    font-size: 1.5rem;
-    line-height: 1;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 0 4px;
-}
-
-.cc-drawer-body {
-    padding: 16px;
-    overflow-y: auto;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.cc-drawer-hint {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-}
-
-.cc-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.cc-field-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
-}
-
-.cc-field-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    line-height: 1.45;
-}
-
-.cc-field-hint a {
-    color: var(--accent);
-    text-decoration: none;
-}
-
-.cc-field-hint a:hover {
-    text-decoration: underline;
-}
-
-.cc-qq-config-status {
-    min-height: 1.2em;
-    font-size: 0.78rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-}
-
-.cc-qq-config-status.cc-qq-config-status--error {
-    color: var(--danger);
-}
-
-.cc-qq-config-status.cc-qq-config-status--ok {
-    color: var(--success);
-}
-
-.cc-qq-status {
-    margin-left: auto;
-    padding: 3px 8px;
-    border-radius: var(--radius-control);
-    border: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.cc-qq-status--ok {
-    color: var(--success);
-    border-color: color-mix(in srgb, var(--success) 45%, var(--border-color));
-}
-
-.cc-qq-status--error {
-    color: var(--danger);
-    border-color: color-mix(in srgb, var(--danger) 45%, var(--border-color));
-}
-
-.cc-field-input {
-    width: 100%;
-    padding: 10px 11px;
-    border-radius: var(--radius-control);
-    border: 1px solid var(--border-color);
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    font-family: inherit;
-}
-
-.cc-field-input:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-textarea.cc-field-input {
-    resize: vertical;
-    min-height: 72px;
-}
-
-.cc-mono {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8rem;
-}
-
-.cc-field-row {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.82rem;
-    color: var(--text-secondary);
-}
-
 .cc-btn {
     font-family: inherit;
     font-size: 0.875rem;
@@ -2049,15 +1820,6 @@ textarea.cc-field-input {
 
 .cc-btn-block {
     width: 100%;
-}
-
-.cc-btn-primary {
-    background: var(--accent);
-    color: #fff;
-}
-
-.cc-btn-primary:hover {
-    background: color-mix(in srgb, var(--accent) 88%, #000);
 }
 
 .cc-perm-approve {
@@ -2286,7 +2048,7 @@ body.cc-hide-detail .cc-thinking {
 /* Shared SVG glyph feedback; shell state selectors keep ownership of visibility. */
 .cc-queue-panel[data-busy="true"] .cc-queue-spin { animation: cc-queue-spin .7s linear infinite; }
 .cc-attach-file-icon { display: inline-flex; align-items: center; justify-content: center; }
-.cc-drawer-close,.cc-lightbox-close,.cc-mermaid-lightbox-close,.cc-model-modal-close { display: inline-flex; align-items: center; justify-content: center; }
+.cc-lightbox-close,.cc-mermaid-lightbox-close,.cc-model-modal-close { display: inline-flex; align-items: center; justify-content: center; }
 @media (prefers-reduced-motion: reduce) {
     *,*::before,*::after { animation: none !important; transition: none !important; }
 }

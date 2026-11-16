@@ -1,5 +1,4 @@
 import type {
-  AgentCronJob,
   ChatThread,
   ChatMessage,
   MemoryItem,
@@ -129,15 +128,6 @@ export const agentsClient = {
     ),
   deleteAgentThread: (name: string, tid: string) =>
     req<{ status: string }>(`/agents/${encodeURIComponent(name)}/threads/${tid}`, { method: 'DELETE' }),
-  listAgentCronJobs: (name: string) =>
-    req<{ items: AgentCronJob[] }>(`/agents/${encodeURIComponent(name)}/cron-jobs`),
-  patchAgentCronJob: (name: string, jobId: string, body: { enabled?: boolean; deliverToChannel?: boolean }) =>
-    req<AgentCronJob>(`/agents/${encodeURIComponent(name)}/cron-jobs/${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
-  deleteAgentCronJob: (name: string, jobId: string) =>
-    req<{ status: string }>(`/agents/${encodeURIComponent(name)}/cron-jobs/${jobId}`, { method: 'DELETE' }),
 
   exportAgent: async (name: string): Promise<Blob> => {
     const res = await fetch(`${BASE}/agents/${encodeURIComponent(name)}/export`, {

@@ -259,43 +259,22 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	if err := deleteRetiredSSHKnownHosts(db); err != nil {
 		return nil, err
 	}
-	createChannelIndexes(db)
+	if err := dropRetiredCronChannels(db); err != nil {
+		return nil, err
+	}
 	if err := ensureWorkspace(db); err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-// createChannelIndexes adds the multi-channel uniqueness constraints that GORM
-// tags cannot express portably: at most one primary channel and at most one
-// channel per non-empty agent_name.
-func createChannelIndexes(db *gorm.DB) {
-	switch db.Dialector.Name() {
-	case "mysql":
-		// MySQL 8 functional unique indexes: NULL expression values do not
-		// collide, so secondaries (is_primary=0) and empty agent_name are free.
-		// Errors (index already exists) are ignored; ChannelConfigService also
-		// enforces both rules inside its transactions.
-		_ = db.Exec(`CREATE UNIQUE INDEX udx_channel_configs_primary ON channel_configs
-			((CASE WHEN is_primary = 1 THEN 1 ELSE NULL END))`).Error
-		_ = db.Exec(`CREATE UNIQUE INDEX udx_channel_configs_agent_name ON channel_configs
-			((CASE WHEN agent_name IS NOT NULL AND agent_name != '' THEN agent_name ELSE NULL END))`).Error
-	default:
-		_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS udx_channel_configs_agent_name
-			ON channel_configs (agent_name) WHERE agent_name != '' AND agent_name IS NOT NULL`).Error
-		_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS udx_channel_configs_primary
-			ON channel_configs (is_primary) WHERE is_primary = 1`).Error
-	}
-}
-
 // ensureWorkspace seeds the singleton workspace row.
 func ensureWorkspace(db *gorm.DB) error {
 	now := time.Now()
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Workspace{
-		ID:           models.WorkspaceID,
-		Name:         models.DefaultWorkspaceName,
-		NotifyPolicy: models.DefaultWorkspaceNotifyPolicy(),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:        models.WorkspaceID,
+		Name:      models.DefaultWorkspaceName,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}).Error
 }

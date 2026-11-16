@@ -56,16 +56,22 @@ type GateAutoInvokeService struct {
 	pm    *PmService
 	sbx   *SandboxService
 	turns *PmTurnRunner
-	hooks CronTokenHooks
+	hooks GateAutoTokenHooks
 
 	mu          sync.Mutex
 	queue       gateAutoQueue
 	maintenance bool
 }
 
-// NewGateAutoInvokeService builds the gate-auto invoker. hooks may reuse cron
-// token registration (PM role MCPs when agent is the PM Leader).
-func NewGateAutoInvokeService(db *gorm.DB, pm *PmService, sbx *SandboxService, turns *PmTurnRunner, hooks CronTokenHooks) *GateAutoInvokeService {
+// GateAutoTokenHooks registers/unregisters the shared MCP token for one
+// gate-auto PM turn.
+type GateAutoTokenHooks struct {
+	Register   func(threadID, agent string, enabledMcps []string) (token string, specs []sandbox.MCPServerSpec)
+	Unregister func(token string)
+}
+
+// NewGateAutoInvokeService builds the gate-auto invoker.
+func NewGateAutoInvokeService(db *gorm.DB, pm *PmService, sbx *SandboxService, turns *PmTurnRunner, hooks GateAutoTokenHooks) *GateAutoInvokeService {
 	return &GateAutoInvokeService{
 		db: db, pm: pm, sbx: sbx, turns: turns, hooks: hooks,
 	}
@@ -254,20 +260,14 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 	}
 	prompt := BuildGateAutoPrompt(task, p.PmGateAutoPrompt)
 
-	if s.sbx == nil || s.turns == nil || (s.hooks.Register == nil && s.hooks.RegisterPM == nil) {
+	if s.sbx == nil || s.turns == nil || s.hooks.Register == nil {
 		log.Warn().
 			Msg("gate-auto: runtime unavailable; degrade to human")
 		return
 	}
 
 	ctx := context.Background()
-	var token string
-	var specs []sandbox.MCPServerSpec
-	if s.hooks.RegisterPM != nil {
-		token, specs = s.hooks.RegisterPM(thread.ID, p.PmLeaderAgent, p.PmEnabledMcps)
-	} else {
-		token, specs = s.hooks.Register(thread.ID, p.PmLeaderAgent)
-	}
+	token, specs := s.hooks.Register(thread.ID, p.PmLeaderAgent, p.PmEnabledMcps)
 	if token == "" || len(specs) == 0 {
 		log.Warn().Str("agent", p.PmLeaderAgent).
 			Msg("gate-auto: MCP register failed; degrade to human")
@@ -339,9 +339,6 @@ func (s *GateAutoInvokeService) resolveMainThreadAgent(agent string) (models.Cha
 	}
 	for _, t := range threads {
 		if t.Kind != "" && t.Kind != models.ChatThreadKindUser {
-			continue
-		}
-		if IsChannelUserID(t.UserID) || strings.HasPrefix(t.UserID, "cron:") {
 			continue
 		}
 		return t, nil // ListThreadsForAgent is updated_at desc

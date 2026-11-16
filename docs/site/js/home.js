@@ -17,14 +17,14 @@
         busyMeta: "Running",
         waitingGateMeta: "Waiting on gate",
         doneMeta: "Done",
-        capParStart: "IM confirmed — running in parallel…",
+        capParStart: "Chat confirmed — running in parallel…",
         capParBoot: "Confirmed — spinning up parallel runtimes",
         capParRun: "Three requirements running in parallel — research / plan",
         capParImpl: "Implement writing code in parallel — no interference",
         capParTest: "Tests keep running; billing waits at a gate — parallel, not blocked",
         capParShip: "Two MRs submitted; billing still awaiting approval",
         capParGate: "Gate cleared — billing submits its MR",
-        capParDone: "IM start → parallel run → closed out",
+        capParDone: "Chat start → parallel run → closed out",
         approveCaptions: [
           "Several workflows run in parallel; some nodes will need clarify or approval.",
           "Todos from different Runs ingest into Gates Inbox (clarify 2 + approve 2).",
@@ -100,14 +100,14 @@
         busyMeta: "执行中",
         waitingGateMeta: "等待门禁",
         doneMeta: "完成",
-        capParStart: "IM 确认启动，并行推进中…",
+        capParStart: "对话确认启动，并行推进中…",
         capParBoot: "已确认启动 — 拉起并行执行环境",
         capParRun: "三条需求并行开跑 — research / plan",
         capParImpl: "Implement 并行写代码 — 互不干扰",
         capParTest: "测试继续跑；计费停在门禁 — 并行不互相堵",
         capParShip: "两条已提交 MR；计费仍等批准",
         capParGate: "门禁通过 — 计费补交 MR",
-        capParDone: "IM 启动 → 并行执行 → 收口完成",
+        capParDone: "对话启动 → 并行执行 → 收口完成",
         approveCaptions: [
           "多条工作流并行运行；部分节点即将需要人工澄清或审批。",
           "待办从不同 Run 汇入统一 Gates Inbox（澄清 2 + 审批 2）。",
@@ -469,7 +469,7 @@
     el.classList.remove("is-caret");
   }
 
-  /* Parallel showcase — IM start → runtime containers → lanes */
+  /* Parallel showcase — chat start → runtime containers → lanes */
   const parallelNodes = {
     auth: ["auth-research", "auth-impl", "auth-test", "auth-ship"],
     billing: ["billing-plan", "billing-impl", "billing-gate", "billing-ship"],
@@ -1124,7 +1124,7 @@
     renderApproveStage(root, 6);
   }
 
-  /* PM showcase — typewriter IM, no bottom caption */
+  /* PM showcase — typewriter chat, no bottom caption */
   const PM_PLACEHOLDER = COPY.pmPlaceholder;
 
   function scrollPmThread(root, behavior = "smooth") {

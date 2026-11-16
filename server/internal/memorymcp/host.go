@@ -19,8 +19,6 @@ type Session struct {
 	AgentName string
 	ThreadID  string
 	UserID    string
-	// WriteAllowed gates upsert/delete for this session (PM consult / channel caps).
-	WriteAllowed bool
 }
 
 // Host manages memory-store MCP sessions.
@@ -44,7 +42,7 @@ func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 }
 
 // Restore rebinds an existing token.
-func (h *Host) Restore(tok, agentName, threadID, userID string, write bool) {
+func (h *Host) Restore(tok, agentName, threadID, userID string) {
 	if strings.TrimSpace(tok) == "" {
 		return
 	}
@@ -52,7 +50,7 @@ func (h *Host) Restore(tok, agentName, threadID, userID string, write bool) {
 	defer h.mu.Unlock()
 	h.sessions[tok] = &Session{
 		Token: tok, AgentName: agentName,
-		ThreadID: threadID, UserID: userID, WriteAllowed: write,
+		ThreadID: threadID, UserID: userID,
 	}
 }
 
@@ -157,9 +155,6 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 		}
 		return map[string]any{"hits": rows, "count": len(rows)}, false
 	case "upsert_memory":
-		if !sess.WriteAllowed {
-			return map[string]any{"error": "当前渠道未允许写入记忆"}, true
-		}
 		item, err := h.pm.UpsertMemory(agent,
 			platformmcp.StrArg(args, "title"), platformmcp.StrArg(args, "content"),
 			"agent", sess.UserID)
@@ -168,9 +163,6 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 		}
 		return item, false
 	case "delete_memory":
-		if !sess.WriteAllowed {
-			return map[string]any{"error": "当前渠道未允许写入记忆"}, true
-		}
 		id := platformmcp.StrArg(args, "id")
 		title := platformmcp.StrArg(args, "title")
 		if id != "" {

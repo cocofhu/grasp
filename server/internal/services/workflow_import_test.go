@@ -135,13 +135,13 @@ func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T
 	db := newTestDB(t)
 	svc := NewWorkflowService(db)
 	env := validEnvelope("Configured")
-	env.Defaults = &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.WorkspaceNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
+	env.Defaults = &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
 	wf, err := svc.Import(envelopeJSON(env))
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored, ok := svc.Get(wf.ID)
-	if !ok || stored.Defaults == nil || stored.Defaults.GateAuto.AgentName != "reviewer" || stored.Defaults.NotifyPolicy.ChannelIDs[0] != "channel" || stored.Defaults.Variables[0].Value != nil {
+	if !ok || stored.Defaults == nil || stored.Defaults.GateAuto.AgentName != "reviewer" || stored.Defaults.Variables[0].Value != nil {
 		t.Fatalf("defaults=%+v", stored.Defaults)
 	}
 	copy, err := svc.Copy(wf.ID, "Configured copy")

@@ -304,7 +304,7 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	}
 	beforeIllegal := eng.startCalls
 	if st, resp := call(MCPWorkflowWrite, "pm_start_run", map[string]any{
-		"workflowId": wfDef.ID, "trigger": "channel",
+		"workflowId": wfDef.ID, "trigger": "webhook",
 	}); st != 200 || !strings.Contains(string(resp), `"isError":true`) || !strings.Contains(string(resp), "manual|api|pm_mcp") {
 		t.Fatalf("illegal trigger should error: %d %s", st, resp)
 	}

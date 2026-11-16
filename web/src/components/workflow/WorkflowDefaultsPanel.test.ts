@@ -12,7 +12,7 @@ import type { Agent } from '@/lib/api/api'
 import type { Workflow } from '@/lib/shared/types'
 import WorkflowDefaultsPanel from './WorkflowDefaultsPanel.vue'
 const listProjects = vi.hoisted(() => vi.fn(async () => [] as Array<Record<string, unknown>>))
-vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }), listProjects } }))
+vi.mock('@/lib/api/api', () => ({ api: { listProjects } }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: { value: 'ws' }, ensureLoaded: async () => ({ id: 'ws' }) }) }))
 function setup(defaults?: Workflow['defaults'], agents: Agent[] = []) {
   const workflow = reactive({ id: 'w', name: 'Test', description: '', status: 'draft', version: 1, updatedAt: '', nodes: [], edges: [], defaults } as Workflow)
@@ -59,21 +59,16 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
   it('preserves independent variables and explicit disabled policies on ordinary edits', async () => {
-    const original = { variables: [{ name: 'LOCAL', type: 'string', value: 'before' }], notifyPolicy: { enabled: false, channelIds: ['unavailable-channel'], defaultEvents: ['failed'] }, gateAuto: { enabled: false, agentName: 'original', variable: 'gate', prompt: 'prompt', enabledMcps: ['pm-progress'] } }
+    const original = { variables: [{ name: 'LOCAL', type: 'string', value: 'before' }], gateAuto: { enabled: false, agentName: 'original', variable: 'gate', prompt: 'prompt', enabledMcps: ['pm-progress'] } }
     const { workflow, wrapper } = setup(original)
     await flushPromises()
     await wrapper.findAll('input').find((input) => input.attributes('aria-label') === pages.pages.workspaceDefaults.defaultValue)!.setValue('after')
     expect(workflow.defaults).toEqual({ ...original, variables: [{ name: 'LOCAL', type: 'string', value: 'after' }] })
     wrapper.unmount()
   })
-  it('creates ordinary overrides and restores policy inheritance by removing their fields', async () => {
+  it('creates an approval override and restores inheritance by removing its field', async () => {
     const { workflow, wrapper } = setup()
     await flushPromises()
-    const notify = wrapper.get('[role="switch"][aria-label="单独设置运行通知"]')
-    await notify.trigger('click')
-    expect(workflow.defaults!.notifyPolicy).toMatchObject({ enabled: true })
-    await notify.trigger('click')
-    expect(workflow.defaults).not.toHaveProperty('notifyPolicy')
     const gate = wrapper.get('[role="switch"][aria-label="单独设置自动审批"]')
     await gate.trigger('click')
     expect(workflow.defaults!.gateAuto!.enabled).toBe(false)
@@ -121,37 +116,26 @@ describe('Workflow defaults', () => {
     expect(wrapper.get(`input[aria-label="${pages.pages.workspaceDefaults.variableName}"]`).exists()).toBe(true)
     wrapper.unmount()
   })
-  it('shows effective notification and MCP defaults without writing them until the user changes them', async () => {
+  it('shows effective MCP defaults without writing them until the user changes them', async () => {
     const original = {
       variables: [],
-      notifyPolicy: { enabled: null, defaultEvents: null, channelIds: [] },
       gateAuto: { enabled: false, agentName: 'saved-agent', variable: '', prompt: '', enabledMcps: null },
     }
     const { workflow, wrapper } = setup(structuredClone(original) as unknown as Workflow['defaults'])
     await flushPromises()
-    expect(wrapper.get('[role="switch"][aria-label="发送运行通知"]').attributes('aria-checked')).toBe('true')
-    const notify = wrapper.get('[data-testid="workflow-notification-settings"]')
-    const failed = notify.findAll('[aria-pressed]').find((button) => button.text() === '运行失败')!
-    expect(failed.attributes('aria-pressed')).toBe('true')
     const gate = wrapper.get('[data-testid="workflow-gate-settings"]')
     expect(gate.findAll('[aria-pressed="true"]')).toHaveLength(4)
     expect(workflow.defaults).toEqual(original)
-    await failed.trigger('click')
-    expect(workflow.defaults!.notifyPolicy!.defaultEvents).toEqual(['waiting_human'])
     await gate.findAll('[aria-pressed]').find((button) => button.text() === 'pm-progress')!.trigger('click')
     expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs'])
-    await wrapper.get('[role="switch"][aria-label="发送运行通知"]').trigger('click')
-    expect(workflow.defaults!.notifyPolicy!.enabled).toBe(false)
     wrapper.unmount()
   })
   it('preserves explicit disabled settings and unknown selections while editing known options', async () => {
     const { workflow, wrapper } = setup({
       variables: [],
-      notifyPolicy: { enabled: false, defaultEvents: ['other-event'], channelIds: ['unavailable-channel'] },
       gateAuto: { enabled: false, agentName: 'unavailable-agent', variable: '', prompt: '', enabledMcps: ['other-pack'] },
     }, [{ name: 'review-agent' }, { name: 'delivery-agent' }] as Agent[])
     await flushPromises()
-    expect(wrapper.get('[role="switch"][aria-label="发送运行通知"]').attributes('aria-checked')).toBe('false')
     expect(wrapper.find('input[type="checkbox"], select').exists()).toBe(false)
     const agent = wrapper.get('[data-test="app-select-trigger"][aria-label="执行 Agent"]')
     expect(agent.text()).toBe('unavailable-agent')
@@ -160,9 +144,6 @@ describe('Workflow defaults', () => {
     expect(wrapper.find('[data-test="app-select-option-delivery-agent"]').exists()).toBe(false)
     await wrapper.get('[data-test="app-select-search"]').trigger('keydown', { key: 'Enter' })
     expect(workflow.defaults!.gateAuto!.agentName).toBe('review-agent')
-    const notification = wrapper.get('[data-testid="workflow-notification-settings"]')
-    await notification.findAll('[aria-pressed]').find((button) => button.text() === '运行完成')!.trigger('click')
-    expect(workflow.defaults!.notifyPolicy).toEqual({ enabled: false, defaultEvents: ['other-event', 'completed'], channelIds: ['unavailable-channel'] })
     const pack = wrapper.get('[data-testid="workflow-gate-settings"]').findAll('[aria-pressed]').find((button) => button.text() === 'pm-progress')!
     await pack.trigger('click')
     expect(workflow.defaults!.gateAuto!.enabledMcps).toEqual(['other-pack', 'pm-progress'])
@@ -171,22 +152,12 @@ describe('Workflow defaults', () => {
     wrapper.unmount()
   })
 
-  it('toggles each settings row once and keeps notification and approval sections mounted', async () => {
+  it('toggles the approval row once and keeps its section mounted', async () => {
     const { workflow, wrapper } = setup()
     await flushPromises()
-    const notify = wrapper.get('[data-testid="workflow-notify-expansion"]')
     const gate = wrapper.get('[data-testid="workflow-gate-expansion"]')
-    expect(notify.attributes('hidden')).toBeUndefined()
     expect(gate.attributes('hidden')).toBeUndefined()
-    expect(notify.classes()).not.toContain('is-open')
-    await wrapper.get('[data-testid="workflow-notify-row"]').get('h3').trigger('click')
-    expect(notify.classes()).toContain('is-open')
-    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').element.parentElement).toBeTruthy()
-    expect(workflow.defaults?.notifyPolicy).toMatchObject({ enabled: true })
-    await wrapper.get('[data-testid="workflow-notify-row"]').get('[role="switch"]').trigger('click')
-    expect(workflow.defaults?.notifyPolicy).toBeUndefined()
-    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').element.parentElement).toBeTruthy()
-    expect(wrapper.get('[data-testid="workflow-notify-expansion"]').classes()).not.toContain('is-open')
+    expect(gate.classes()).not.toContain('is-open')
     await wrapper.get('[data-testid="workflow-gate-row"]').get('h3').trigger('click')
     expect(wrapper.get('[data-testid="workflow-gate-expansion"]').classes()).toContain('is-open')
     expect(workflow.defaults?.gateAuto).toBeTruthy()
@@ -196,7 +167,6 @@ describe('Workflow defaults', () => {
     expect(wrapper.get('[data-testid="workflow-gate-expansion"]').classes()).not.toContain('is-open')
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'WorkflowDefaultsPanel.vue'), 'utf8')
     expect(source).toContain('grid-template-rows: 0fr')
-    expect(source).not.toContain('v-if="defaults?.notifyPolicy"')
     expect(source).not.toContain('v-if="defaults?.gateAuto"')
     wrapper.unmount()
   })

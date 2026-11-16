@@ -92,7 +92,6 @@ function onChip(id: McpHelpSection) {
       <div class="grid gap-2 font-mono text-[12px] text-txt3">
         <div><code class="text-accent-2">${GRASP_MEMORY_URL}</code> / <code class="text-accent-2">${GRASP_MEMORY_TOKEN}</code> — {{ t('pages.agentStudio.mcp.memoryVars') }}</div>
         <div><code class="text-accent-2">${GRASP_CONTEXT_URL}</code> / <code class="text-accent-2">${GRASP_CONTEXT_TOKEN}</code> — {{ t('pages.agentStudio.mcp.contextVars') }}</div>
-        <div><code class="text-accent-2">${GRASP_SCHEDULER_URL}</code> / <code class="text-accent-2">${GRASP_SCHEDULER_TOKEN}</code> — {{ t('pages.agentStudio.mcp.schedulerVars') }}</div>
       </div>
       <p class="mt-3 mb-0 text-[12px] leading-[1.7] text-txt3" data-test="mcp-help-agent-scope-note">
         {{ t('pages.agentStudio.mcp.agentScopeNote') }}

@@ -12,7 +12,7 @@ import { clearRunDraft, mergeRunDraft, saveRunDraft } from '@/lib/run/runDraft'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useWorkflowImport } from '@/lib/run/useWorkflowImport'
 import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
-import type { ClarifyImage, Workflow, WorkflowNotifyPolicy } from '@/lib/shared/types'
+import type { ClarifyImage, Workflow } from '@/lib/shared/types'
 import { openRetryOnboarding } from '@/lib/pm/firstInstall'
 import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/pm/onboardingWizard'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
@@ -67,55 +67,6 @@ const { fileInput, triggerImport, handleFileChange } = useWorkflowImport({
     workflows.value = [wf, ...workflows.value.filter((x) => x.id !== wf.id)]
   },
 })
-
-const savingNotifyWfId = ref<string | null>(null)
-
-function wfNotifyMode(w: Workflow): 'off' | 'inherit' | 'custom' {
-  const m = w.notifyPolicy?.mode
-  if (m === 'off' || m === 'custom') return m
-  return 'inherit'
-}
-
-function wfNotifyHas(w: Workflow, ev: string): boolean {
-  return (w.notifyPolicy?.events || []).includes(ev)
-}
-
-async function persistWorkflowNotify(w: Workflow, policy: WorkflowNotifyPolicy) {
-  const current = workspaceGeneration
-  savingNotifyWfId.value = w.id
-  try {
-    // Notify-only PATCH: never send cached nodes/edges (review v1).
-    const saved = await api.patchWorkflowNotifyPolicy(w.id, policy)
-    if (current !== workspaceGeneration) return
-    workflows.value = workflows.value.map((x) => (x.id === w.id ? { ...x, ...saved } : x))
-    toast.success(t('pages.workspace.notify.wfUpdated'))
-  } catch (e: any) {
-    if (current !== workspaceGeneration) return
-    toast.error(String(e?.message || e))
-  } finally {
-    if (current === workspaceGeneration) savingNotifyWfId.value = null
-  }
-}
-
-async function setWorkflowNotifyMode(w: Workflow, mode: 'off' | 'inherit' | 'custom') {
-  const events =
-    mode === 'custom'
-      ? w.notifyPolicy?.events?.length
-        ? [...(w.notifyPolicy.events || [])]
-        : ['waiting_human', 'failed']
-      : [...(w.notifyPolicy?.events || [])]
-  await persistWorkflowNotify(w, { mode, events })
-}
-
-async function toggleWorkflowNotifyEvent(w: Workflow, ev: 'waiting_human' | 'failed' | 'completed') {
-  const cur = new Set(w.notifyPolicy?.events || [])
-  if (cur.has(ev)) cur.delete(ev)
-  else cur.add(ev)
-  await persistWorkflowNotify(w, {
-    mode: 'custom',
-    events: (['waiting_human', 'failed', 'completed'] as const).filter((k) => cur.has(k)),
-  })
-}
 
 const savingHomeWfId = ref<string | null>(null)
 
@@ -457,7 +408,6 @@ watch(workspaceReady, () => {
     deleteWfTarget.value = null
     deleteWfError.value = ''
     deletingWf.value = false
-    savingNotifyWfId.value = null
     savingHomeWfId.value = null
   }
 }, { flush: 'sync' })
@@ -477,6 +427,6 @@ onUnmounted(() => {
   document.removeEventListener('scroll', onScrollClose, true)
 })
 return {
-router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, baselineProjects, baselineProjectsLoading, creatingBaseline, baselineCreateError, onboardingGateOpen, onboardingGateMissing, closeOnboardingGate, finishOnboardingFromGate, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingNotifyWfId, wfNotifyMode, wfNotifyHas, persistWorkflowNotify, setWorkflowNotifyMode, toggleWorkflowNotifyEvent, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
+router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, baselineProjects, baselineProjectsLoading, creatingBaseline, baselineCreateError, onboardingGateOpen, onboardingGateMissing, closeOnboardingGate, finishOnboardingFromGate, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
 }
 }

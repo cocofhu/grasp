@@ -45,7 +45,7 @@ func TestInternalStartRunTriggerDefaultsAndRejects(t *testing.T) {
 		t.Fatalf("explicit api = %q", run.Trigger)
 	}
 
-	illegal := []string{"channel", "qq:cron-timezone-bug", "手动触发", "Manual", "test"}
+	illegal := []string{"webhook", "custom:nightly-bug", "手动触发", "Manual", "test"}
 	for _, trig := range illegal {
 		w = hn.do("POST", "/api/workflows/wf-trig/runs", map[string]any{"trigger": trig})
 		if w.Code != http.StatusBadRequest {
@@ -99,7 +99,7 @@ func TestV1StartRunTriggerDefaultsExplicitAndRejects(t *testing.T) {
 		t.Fatalf("explicit manual = %q", run.Trigger)
 	}
 
-	w, _ = start(map[string]any{"trigger": "channel"})
+	w, _ = start(map[string]any{"trigger": "webhook"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("illegal: want 400 got %d %s", w.Code, w.Body.String())
 	}
@@ -107,8 +107,8 @@ func TestV1StartRunTriggerDefaultsExplicitAndRejects(t *testing.T) {
 		t.Fatalf("error missing allow-list: %s", w.Body.String())
 	}
 	var count int64
-	hn.db.Model(&models.Run{}).Where("trigger = ?", "channel").Count(&count)
+	hn.db.Model(&models.Run{}).Where("trigger = ?", "webhook").Count(&count)
 	if count != 0 {
-		t.Fatal("illegal channel must not be persisted via /v1")
+		t.Fatal("illegal trigger must not be persisted via /v1")
 	}
 }

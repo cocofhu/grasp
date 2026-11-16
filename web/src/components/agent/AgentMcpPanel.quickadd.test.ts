@@ -112,19 +112,18 @@ describe('AgentMcpPanel', () => {
 
     await w.get('[data-test="mcp-add-memory"]').trigger('click')
     await w.get('[data-test="mcp-add-context"]').trigger('click')
-    await w.get('[data-test="mcp-add-scheduler"]').trigger('click')
     await flushPromises()
-    expect(d.mcp.map((m) => m.name)).toEqual(['memory-store', 'context-store', 'task-scheduler'])
+    expect(d.mcp.map((m) => m.name)).toEqual(['memory-store', 'context-store'])
     expect(d.mcp[0].url).toBe('${GRASP_MEMORY_URL}')
 
     await w.get('[data-test="mcp-add-memory"]').trigger('click')
     await flushPromises()
-    expect(d.mcp).toHaveLength(3)
+    expect(d.mcp).toHaveLength(2)
     expect(w.emitted('toast')).toHaveLength(1)
 
     // Preset cards render their friendly name plus a scope note.
-    expect(w.findAll('[data-test="mcp-display-name"]')).toHaveLength(3)
-    expect(w.findAll('[data-test="mcp-scope-note"]')).toHaveLength(3)
+    expect(w.findAll('[data-test="mcp-display-name"]')).toHaveLength(2)
+    expect(w.findAll('[data-test="mcp-scope-note"]')).toHaveLength(2)
     expect(w.find('[data-test="mcp-custom-name"]').exists()).toBe(false)
     w.unmount()
   })

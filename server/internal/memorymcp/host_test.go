@@ -64,7 +64,7 @@ func TestMemoryMCPAuthAndTools(t *testing.T) {
 	_, pm, _ := setupMemoryDB(t)
 	h := NewHost(pm)
 	tok := platformmcp.NewToken()
-	h.Restore(tok, "agent-a", "thr-1", "alice", true)
+	h.Restore(tok, "agent-a", "thr-1", "alice")
 	if _, ok := h.Authorize(tok); !ok {
 		t.Fatal("authorize")
 	}
@@ -95,7 +95,7 @@ func TestMemoryMCPRestoreToken(t *testing.T) {
 	_, pm, _ := setupMemoryDB(t)
 	h := NewHost(pm)
 	const tok = "restored-token-abc"
-	h.Restore(tok, "agent-a", "thr", "u", true)
+	h.Restore(tok, "agent-a", "thr", "u")
 	if _, ok := h.Authorize(tok); !ok {
 		t.Fatal("restored token should authorize")
 	}
@@ -109,34 +109,9 @@ func TestMemoryMCPRestoreToken(t *testing.T) {
 	if isErr {
 		t.Fatalf("upsert via restore: %s", text)
 	}
-	h.Restore("", "agent-a", "thr", "u", true) // no-op
+	h.Restore("", "agent-a", "thr", "u") // no-op
 	if _, ok := h.Authorize(""); ok {
 		t.Fatal("empty token must not authorize")
-	}
-}
-
-func TestMemoryMCPWriteAllowedGate(t *testing.T) {
-	_, pm, _ := setupMemoryDB(t)
-	h := NewHost(pm)
-	tok := platformmcp.NewToken()
-	h.Restore(tok, "agent-a", "thr", "u", false)
-	st, resp := h.ServeRPC(tok, toolCallBody(1, "upsert_memory", map[string]any{
-		"title": "t", "content": "c",
-	}))
-	if st != 200 {
-		t.Fatalf("status=%d", st)
-	}
-	text, isErr := parseToolText(t, resp)
-	if !isErr || !strings.Contains(text, "当前渠道未允许写入记忆") {
-		t.Fatalf("want write gate, got isErr=%v text=%s", isErr, text)
-	}
-	st, resp = h.ServeRPC(tok, toolCallBody(2, "delete_memory", map[string]any{"id": "x"}))
-	if st != 200 {
-		t.Fatalf("status=%d", st)
-	}
-	text, isErr = parseToolText(t, resp)
-	if !isErr || !strings.Contains(text, "当前渠道未允许写入记忆") {
-		t.Fatalf("want write gate on delete, got isErr=%v text=%s", isErr, text)
 	}
 }
 
@@ -144,9 +119,9 @@ func TestMemoryMCPAgentIsolationAndCRUD(t *testing.T) {
 	_, pm, _ := setupMemoryDB(t)
 	h := NewHost(pm)
 	tokA := platformmcp.NewToken()
-	h.Restore(tokA, "agent-a", "thr-a", "alice", true)
+	h.Restore(tokA, "agent-a", "thr-a", "alice")
 	tokB := platformmcp.NewToken()
-	h.Restore(tokB, "agent-b", "thr-b", "bob", true)
+	h.Restore(tokB, "agent-b", "thr-b", "bob")
 	st, resp := h.ServeRPC(tokA, toolCallBody(1, "upsert_memory", map[string]any{
 		"title": "共享标题", "content": "secret-a",
 	}))

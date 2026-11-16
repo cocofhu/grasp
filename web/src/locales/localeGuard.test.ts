@@ -20,11 +20,9 @@ function merged(files: Record<string, Record<string, unknown>>): [string, string
 const en = merged(enFiles)
 const zh = merged(zhFiles)
 
-/** English values that intentionally contain Chinese: the bilingual language picker, a brand name, a literal agents must write. */
+/** English values that intentionally contain Chinese: the bilingual language picker and a literal agents must write. */
 const CJK_ALLOWED = new Set([
   'shell.langSelect',
-  'pages.workspace.pm.channel.badgeFeishu',
-  'pages.workspace.pm.channelBadgeFeishu',
   'mcp.artifactStore.tools.set_plan.desc',
 ])
 

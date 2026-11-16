@@ -21,16 +21,6 @@ const BOUND_AGENT = {
   layout: { configRoot: '/root/.codebuddy', workspaceDir: '/root/workspace' },
 }
 
-const SAMPLE_JOB = {
-  id: 'cron-1',
-  name: '每日汇报',
-  scheduleKind: 'cron',
-  scheduleExpr: '0 9 * * *',
-  enabled: true,
-  deliverToChannel: false,
-  nextRunAt: '2026-07-26T01:00:00Z',
-}
-
 async function mockStudioApi(page: Page) {
   const agent = BOUND_AGENT
   let memories = [
@@ -50,7 +40,6 @@ async function mockStudioApi(page: Page) {
       updatedAt: '2026-07-25T00:00:00Z',
     },
   ]
-  let jobs = [{ ...SAMPLE_JOB }]
 
   await page.route('**/api/**', async (route) => {
     // Skip Vite module URLs like /@fs/.../src/lib/api/api.ts (pathname is not /api/...)
@@ -137,25 +126,6 @@ async function mockStudioApi(page: Page) {
       return
     }
 
-    const cronList = path.match(/^\/agents\/[^/]+\/cron-jobs$/)
-    if (cronList && method === 'GET') {
-      await route.fulfill({ json: { items: jobs } })
-      return
-    }
-    const cronOne = path.match(/^\/agents\/[^/]+\/cron-jobs\/([^/]+)$/)
-    if (cronOne && method === 'PATCH') {
-      const id = cronOne[1]
-      const body = req.postDataJSON() as { enabled?: boolean; deliverToChannel?: boolean }
-      jobs = jobs.map((j) => (j.id === id ? { ...j, ...body } : j))
-      await route.fulfill({ json: jobs.find((j) => j.id === id) })
-      return
-    }
-    if (cronOne && method === 'DELETE') {
-      jobs = jobs.filter((j) => j.id !== cronOne[1])
-      await route.fulfill({ json: { status: 'deleted' } })
-      return
-    }
-
     await route.fulfill({ status: 404, json: { error: `not mocked: ${method} ${path}` } })
   })
 }
@@ -163,7 +133,7 @@ async function mockStudioApi(page: Page) {
 test.describe('Agent Studio 窄屏数据 Tab', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('已绑定：数据三子 Tab 可用，MCP 仍桌面完成', async ({ page }) => {
+  test('已绑定：数据子 Tab 可用，MCP 仍桌面完成', async ({ page }) => {
     await mockStudioApi(page)
     await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=memory')
     await expect(page.getByTestId('agent-studio-mobile-data-root')).toBeVisible({ timeout: 15_000 })
@@ -175,30 +145,16 @@ test.describe('Agent Studio 窄屏数据 Tab', () => {
     await page.getByRole('button', { name: '上下文', exact: true }).click()
     await expect(page.getByText('会话线程 A')).toBeVisible()
 
-    await page.getByRole('button', { name: '定时任务', exact: true }).click()
-    await expect(page.getByTestId('agent-cron-mobile-cards')).toBeVisible()
-    await expect(page.getByTestId('agent-cron-desktop-table')).toHaveCount(0)
-    await expect(page.getByText('每日汇报')).toBeVisible()
-    await expect(page.getByText('推送到渠道')).toBeVisible()
-    // No cron create control inside data/jobs (header「新建 Agent」is out of scope)
-    await expect(page.getByTestId('agent-cron-create')).toHaveCount(0)
-    await expect(page.getByTestId('agent-cron-mobile-cards').getByRole('button', { name: /新建/ })).toHaveCount(0)
-
-    const deliver = page.getByTestId('agent-cron-deliver')
-    await deliver.click()
-    await expect(deliver).toHaveAttribute('aria-checked', 'true')
-
     await page.getByRole('tab', { name: /^MCP/ }).click()
     await expect(page.getByText('建议在桌面使用')).toBeVisible()
     await expect(page.getByTestId('studio-mobile-back-files')).toBeVisible()
   })
 
-  test('深链 sub=jobs 直达卡片列表', async ({ page }) => {
+  test('深链 sub=context 直达会话列表', async ({ page }) => {
     await mockStudioApi(page)
-    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=jobs')
-    await expect(page.getByTestId('agent-cron-mobile-cards')).toBeVisible({ timeout: 15_000 })
+    await page.goto('/agent-studio-mobile-data.html?agent=GraspPM&studioTab=data&sub=context')
+    await expect(page.getByText('会话线程 A')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
-    await expect(page.getByText('每日汇报')).toBeVisible()
   })
 
   test('记忆增删在窄屏可用', async ({ page }) => {

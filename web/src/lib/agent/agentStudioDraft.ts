@@ -42,7 +42,6 @@ const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 export const ARTIFACT_STORE = 'artifact-store'
 const MEMORY_STORE = 'memory-store'
 const CONTEXT_STORE = 'context-store'
-const TASK_SCHEDULER = 'task-scheduler'
 
 export const AGENT_PLATFORM_MCPS = [
   {
@@ -54,11 +53,6 @@ export const AGENT_PLATFORM_MCPS = [
     name: CONTEXT_STORE,
     url: '${GRASP_CONTEXT_URL}',
     token: '${GRASP_CONTEXT_TOKEN}',
-  },
-  {
-    name: TASK_SCHEDULER,
-    url: '${GRASP_SCHEDULER_URL}',
-    token: '${GRASP_SCHEDULER_TOKEN}',
   },
 ] as const
 
@@ -172,14 +166,13 @@ export function hydrateStudioDraft(a: Agent): AgentStudioDraft {
   return loaded
 }
 
-type PlatformPresetKind = 'artifact' | 'memory' | 'context' | 'scheduler'
+type PlatformPresetKind = 'artifact' | 'memory' | 'context'
 
 export function platformPresetKind(name: string): PlatformPresetKind | null {
   const n = name.trim()
   if (n === ARTIFACT_STORE) return 'artifact'
   if (n === MEMORY_STORE) return 'memory'
   if (n === CONTEXT_STORE) return 'context'
-  if (n === TASK_SCHEDULER) return 'scheduler'
   return null
 }
 

@@ -707,7 +707,7 @@
   visibility: visible;
 }
 
-.launch-im {
+.launch-chat {
   width: min(480px, 100%);
   border: 1px solid #3a3a44;
   background: #f7f8fa;
@@ -718,7 +718,7 @@
   overflow: hidden;
 }
 
-.launch-im__head {
+.launch-chat__head {
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -727,7 +727,7 @@
   background: #fff;
 }
 
-.launch-im__avatar {
+.launch-chat__avatar {
   width: 34px;
   height: 34px;
   display: grid;
@@ -738,20 +738,20 @@
   font-weight: 700;
 }
 
-.launch-im__title {
+.launch-chat__title {
   margin: 0;
   font-size: 0.92rem;
   font-weight: 700;
   color: #18181b;
 }
 
-.launch-im__sub {
+.launch-chat__sub {
   margin: 0.1rem 0 0;
   font-size: 0.68rem;
   color: #71717a;
 }
 
-.launch-im__thread {
+.launch-chat__thread {
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -761,7 +761,7 @@
   background: #f7f8fa;
 }
 
-.launch-im__composer {
+.launch-chat__composer {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.45rem;
@@ -771,9 +771,9 @@
   background: #fff;
 }
 
-.launch-im .pm-msg { max-width: 100%; }
-.launch-im .pm-msg:not(.is-show) { display: none; }
-.launch-im .pm-msg.is-show { display: grid; }
+.launch-chat .pm-msg { max-width: 100%; }
+.launch-chat .pm-msg:not(.is-show) { display: none; }
+.launch-chat .pm-msg.is-show { display: grid; }
 
 .canvas-shell {
   display: grid;
@@ -2005,7 +2005,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   z-index: 6;
 }
 
-/* PM page — IM manage workflows via GraspPM */
+/* PM page — manage workflows by chatting with GraspPM */
 .panel__body--pm {
   position: relative;
   display: grid;
@@ -2014,7 +2014,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   background: #f4f5f7;
 }
 
-.pm-im {
+.pm-chat {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 560px;
@@ -2022,7 +2022,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   background: #f7f8fa;
 }
 
-.pm-im__head {
+.pm-chat__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2032,14 +2032,14 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   background: #fff;
 }
 
-.pm-im__identity {
+.pm-chat__identity {
   display: flex;
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
 }
 
-.pm-im__avatar {
+.pm-chat__avatar {
   width: 36px;
   height: 36px;
   display: grid;
@@ -2051,20 +2051,20 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   flex-shrink: 0;
 }
 
-.pm-im__channel {
+.pm-chat__name {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
   color: #18181b;
 }
 
-.pm-im__sub {
+.pm-chat__sub {
   margin: 0.1rem 0 0;
   font-size: 0.7rem;
   color: #71717a;
 }
 
-.pm-im__stats {
+.pm-chat__stats {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
@@ -2095,7 +2095,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   color: #b45309;
 }
 
-.pm-im__thread {
+.pm-chat__thread {
   padding: 1rem 0.75rem 1rem 1rem;
   display: flex;
   flex-direction: column;
@@ -2107,34 +2107,34 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   scroll-behavior: smooth;
 }
 
-.pm-im__thread::-webkit-scrollbar {
+.pm-chat__thread::-webkit-scrollbar {
   width: 10px;
 }
 
-.pm-im__thread::-webkit-scrollbar-track {
+.pm-chat__thread::-webkit-scrollbar-track {
   background: #eceef2;
   border-left: 1px solid #d8dbe2;
 }
 
-.pm-im__thread::-webkit-scrollbar-thumb {
+.pm-chat__thread::-webkit-scrollbar-thumb {
   background: #8b8f9a;
   border: 2px solid #eceef2;
   border-radius: 999px;
 }
 
-.pm-im__thread::-webkit-scrollbar-button:single-button:decrement {
+.pm-chat__thread::-webkit-scrollbar-button:single-button:decrement {
   height: 12px;
   background: #eceef2;
 }
 
-.pm-im__thread::-webkit-scrollbar-button:single-button:increment {
+.pm-chat__thread::-webkit-scrollbar-button:single-button:increment {
   height: 12px;
   background:
     linear-gradient(180deg, transparent 35%, #8b8f9a 35%, #8b8f9a 65%, transparent 65%) center / 8px 8px no-repeat,
     #eceef2;
 }
 
-.pm-im__thread {
+.pm-chat__thread {
   scrollbar-width: thin;
   scrollbar-color: #8b8f9a #eceef2;
 }
@@ -2275,7 +2275,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   color: #78350f;
 }
 
-.pm-im__composer {
+.pm-chat__composer {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.5rem;
@@ -2285,7 +2285,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   background: #fff;
 }
 
-.pm-im__input {
+.pm-chat__input {
   min-height: 2.35rem;
   padding: 0.5rem 0.65rem;
   border: 1px solid #d8dbe2;
@@ -2296,17 +2296,17 @@ html:lang(en) .demo-marquee:not([data-label])::after {
   overflow: hidden;
 }
 
-.pm-im__input:empty::before {
+.pm-chat__input:empty::before {
   content: attr(data-placeholder);
   color: #a1a1aa;
 }
 
-.pm-im__input.is-typing {
+.pm-chat__input.is-typing {
   background: #fff;
   border-color: #a78bfa;
 }
 
-.pm-im__input.is-typing::after,
+.pm-chat__input.is-typing::after,
 [data-pm-typeout].is-caret::after {
   content: "";
   display: inline-block;
@@ -2326,7 +2326,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
 
 .pm-progress[hidden] { display: none !important; }
 
-.pm-im__send {
+.pm-chat__send {
   padding: 0.5rem 0.75rem;
   border: 1px solid #7b61ff;
   background: #7b61ff;
@@ -2456,7 +2456,7 @@ html:lang(en) .demo-marquee:not([data-label])::after {
     border-bottom: 1px solid #d8dbe2;
   }
 
-  .pm-im__stats {
+  .pm-chat__stats {
     display: none;
   }
 
@@ -2482,10 +2482,10 @@ html:lang(en) .demo-marquee:not([data-label])::after {
 
   .canvas-shell { min-height: unset; }
 
-  .pm-im,
+  .pm-chat,
   .panel__body--pm { min-height: 420px; }
 
-  .pm-im__thread {
+  .pm-chat__thread {
     height: 280px;
     max-height: 280px;
   }

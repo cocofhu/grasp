@@ -22,7 +22,7 @@ func SniffSupportedImageMIME(data []byte) string {
 		return ""
 	}
 	// DetectContentType's WEBP signature is stricter in recent Go; RIFF....WEBP
-	// is enough to identify a WebP container (QQ often mislabels these as jpeg).
+	// is enough to identify a WebP container (some clients mislabel these as jpeg).
 	if len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
 		return "image/webp"
 	}
