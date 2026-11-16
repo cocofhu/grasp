@@ -28,6 +28,7 @@ import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
+import ClarifyFormCard from './ClarifyFormCard.vue'
 import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import Icon from '../ui/Icon.vue'
@@ -599,25 +600,12 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                       </div>
                     </div>
                   </div>
-                  <div
+                  <ClarifyFormCard
                     v-if="pt.forms?.length"
-                    class="clarify-request clarify-request--history mt-2 min-w-0"
+                    class="mt-2"
+                    :forms="pt.forms"
                     data-testid="clarify-prior-forms"
-                  >
-                    <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                      <Icon name="form" :size="16" />
-                      {{ translate('pages.clarify.formsThisRound', { n: pt.forms.length }) }}
-                      <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
-                    </div>
-                    <div v-for="(form, fi) in pt.forms" :key="fi" class="mb-2 last:mb-0">
-                      <div v-if="form.title" class="mb-1 break-words text-[13px] text-txt2 [overflow-wrap:anywhere]">{{ form.title }}</div>
-                      <div
-                        v-for="field in form.fields"
-                        :key="field.name"
-                        class="mb-1 break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
-                      >{{ field.label }}</div>
-                    </div>
-                  </div>
+                  />
                 </div>
               </div>
               <LlmSystemRow
@@ -815,12 +803,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
   margin-right: 8px;
   color: rgb(var(--c-txt2));
 }
-.clarify-request {
-  max-width: 100%;
-  border-left: 1px solid rgb(var(--c-line-strong) / .8);
-  padding: 2px 0 2px 14px;
-}
-.clarify-request--history { border-color: rgb(var(--c-line)); }
 .clarify-handoff-step { padding: 0 8px; margin-inline: -8px; width: calc(100% + 16px); }
 .clarify-status-row { margin-inline: -8px; padding: 0 8px; width: calc(100% + 16px); }
 .clarify-segment-divider { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgb(var(--c-line) / .7); border-radius: 0; }

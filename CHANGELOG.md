@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 会话里 Agent 提出的选择题和表单改为与工作流对话相同的卡片：一次一题、带进度和「上一题 / 下一个」、整行选项、「采用推荐」，不再把所有题目挤成一排小标签。与工作流一样，「其他」需要勾选后填写的内容才会随答案发送。
+
 - 移除「工作区助手」「助手设置」「外部 MCP」「通知策略」「Channel 接入」「定时任务」和 Agent 记忆，产品聚焦云端 Agent 与工作流（破坏性变更）：
   - 删除助手对话页、助手设置页、外部 MCP 页、通知策略页、Channel 接入页、定时任务页和 Agent Studio 的「数据」标签页，以及 `/api/workspace/pm-leader`、`/api/workspace/pm/*`、`/api/workspace/external-mcp*`、`/api/workspace/channels*`、`/api/workspace/cron-jobs*`、`/api/workspace/notify-receipts`、`/api/workflows/:id/notify-policy`、Agent 的 `memories`/`threads`/`cron-jobs` 接口，以及 `/mcp/pm/*`、`/mcp/workspace*`、`/mcp/memory-store`、`/mcp/context-store`、`/mcp/task-scheduler`。已签发的工作区 MCP Key 随之失效。
   - QQ / 企业微信 / 飞书 / 钉钉渠道不再收发消息，运行等待人工、失败或完成时不再外发通知。站内通知不受影响。

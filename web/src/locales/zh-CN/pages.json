@@ -1983,7 +1983,6 @@
       "myForm": "我的填写",
       "formsThisRound": "本轮表单 · {n}",
       "submitForm": "提交表单",
-      "formEmptyNotice": "请填写全部字段后再提交",
       "thinking": "Agent 正在思考下一轮…",
       "thinkingBusy": "思考中…",
       "thought": "思考过程",
