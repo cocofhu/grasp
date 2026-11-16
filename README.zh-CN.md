@@ -39,7 +39,7 @@
   <a href="media/grasp-readme-video.mp4"><img src="media/grasp-readme-video-poster.webp" alt="播放 Grasp 产品演示" width="100%" /></a>
 </p>
 
-<p align="center"><sub>80 秒产品演示（1080p，无声）：一句话需求、带页面原型的澄清、FSM 画布、人工门禁、Solo、产物和 Token 成本。</sub></p>
+<p align="center"><sub>产品演示（1:28，1080p 60fps，无声）：一句话需求、带可交互页面原型的澄清、FSM 画布、人工门禁、Solo、产物和 Token 成本。</sub></p>
 
 **Grasp** 是一个自托管的工作区，用 Coding Agent 交付软件。一句话描述任务，选择用**工作流**来跑（FSM 画布上编排好的多步流程：需求澄清、实现、测试和人工门禁），或者用 **Solo 会话**来跑（在独立沙箱里与单个 Agent 对话）。两种方式下，Agent 都用可点选的卡片提问，交回结构化产物和可交互的页面预览，而不是一大段文字。
 
