@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -7,6 +7,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
 import McpConfigHelpModal from '@/components/agent/McpConfigHelpModal.vue'
 import type { MCPServer } from '@/lib/api/api'
+import { MCP_PRESET_LABEL_KEYS, loadMcpPresets, presetDraft, type MCPPreset } from '@/lib/agent/mcpPresets'
 import {
   ARTIFACT_STORE,
   DEFAULT_CONFIG_ROOT,
@@ -27,7 +28,14 @@ const rawError = ref('')
 const mcpHelpOpen = ref(false)
 const transportOptions = computed(() => [{ value: 'url', label: 'HTTP (url)' }, { value: 'command', label: t('pages.agentStudio.mcp.transportCommand') }])
 
-const hasArtifactStore = computed(() => !!props.draft.mcp.some((m) => m.name.trim() === ARTIFACT_STORE))
+const presets = ref<MCPPreset[]>([])
+const presentNames = computed(() => new Set(props.draft.mcp.map((m) => m.name.trim())))
+const quickAdd = computed(() => presets.value.filter((p) => !presentNames.value.has(p.server.name)))
+const desktopOnlyNames = computed(() => new Set(presets.value.filter((p) => p.requiresDesktop).map((p) => p.server.name)))
+
+onMounted(async () => {
+  presets.value = await loadMcpPresets()
+})
 
 function addMcp() {
   props.draft.mcp.push({ name: '', transport: 'url', url: '', headers: [], command: '', args: '', env: [] })
@@ -37,17 +45,10 @@ function removeMcp(i: number) {
   props.draft.mcp.splice(i, 1)
 }
 
-function addArtifactStore() {
-  if (hasArtifactStore.value) return
-  props.draft.mcp.unshift({
-    name: ARTIFACT_STORE,
-    transport: 'url',
-    url: '${GRASP_ARTIFACT_URL}',
-    headers: [{ k: 'Authorization', v: 'Bearer ${GRASP_ARTIFACT_TOKEN}' }],
-    command: '',
-    args: '',
-    env: [],
-  })
+function addPreset(p: MCPPreset) {
+  if (presentNames.value.has(p.server.name)) return
+  if (p.server.name === ARTIFACT_STORE) props.draft.mcp.unshift(presetDraft(p))
+  else props.draft.mcp.push(presetDraft(p))
 }
 
 function toggleMcpRaw() {
@@ -104,12 +105,14 @@ watch(
       <div class="flex flex-wrap items-center gap-1.5 border-b border-line/60 pb-3" data-test="mcp-ops-bar">
         <span class="mr-1 text-[11px] text-txt3">{{ t('pages.agentStudio.mcp.quickAddLabel') }}</span>
         <button
-          v-if="!hasArtifactStore"
+          v-for="p in quickAdd"
+          :key="p.id"
           class="rounded border border-accent/40 px-2 py-1 text-[11px] text-accent-2 hover:bg-accent-dim"
           type="button"
-          data-test="mcp-add-artifact"
-          @click="addArtifactStore"
-        >{{ t('pages.agentStudio.mcp.addArtifactStore') }}</button>
+          :title="p.requiresDesktop ? t('pages.agentStudio.mcp.requiresDesktop') : undefined"
+          :data-test="`mcp-add-${p.id}`"
+          @click="addPreset(p)"
+        >{{ t(MCP_PRESET_LABEL_KEYS[p.id]) }}</button>
       </div>
       <div
         v-for="(m, i) in draft.mcp"
@@ -165,6 +168,13 @@ watch(
           data-test="mcp-scope-note"
         >
           {{ t('pages.agentStudio.mcp.scopeNote.artifact') }}
+        </div>
+        <div
+          v-else-if="desktopOnlyNames.has(m.name.trim())"
+          class="mt-3 border-l-2 border-line-strong pl-3 text-[11px] leading-5 text-txt2"
+          data-test="mcp-desktop-note"
+        >
+          {{ t('pages.agentStudio.mcp.scopeNote.desktopImage') }}
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="addMcp">{{ t('pages.agentStudio.mcp.addService') }}</AppButton>

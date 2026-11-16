@@ -58,10 +58,6 @@ type ConfigHomeSpec struct {
 	// DeepSeekHarness folds alwaysApply rules into the global AGENTS.md that dsh
 	// loads. The copied role files and complete skills tree remain intact.
 	DeepSeekHarness bool
-	// BrowserMCP registers the sandbox's headed Chromium as chrome-devtools.
-	// Putting it in the generated files keeps the later SSH seed from erasing
-	// the startup script's best-effort mcp.json registration.
-	BrowserMCP bool
 	// Settings, when non-nil, is written as settings.json under the config
 	// home (CodeBuddy staging needs envRouteMode+endpoint here; BASE_URL alone
 	// hits the wrong chat path).
@@ -146,16 +142,8 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		}
 	}
 
-	mcpSpecs := append([]MCPServerSpec(nil), spec.MCP...)
-	if spec.BrowserMCP {
-		mcpSpecs = append(mcpSpecs, MCPServerSpec{
-			Name:    "chrome-devtools",
-			Command: "chrome-devtools-mcp",
-			Args:    []string{"--browser-url=http://127.0.0.1:9222"},
-		})
-	}
 	servers := map[string]any{}
-	for _, m := range mcpSpecs {
+	for _, m := range spec.MCP {
 		if m.Name == "" {
 			continue
 		}
@@ -201,7 +189,7 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		if openCodeConfig == nil {
 			openCodeConfig = map[string]any{"$schema": "https://opencode.ai/config.json"}
 		}
-		if mcp := openCodeMCPServers(mcpSpecs); len(mcp) > 0 {
+		if mcp := openCodeMCPServers(spec.MCP); len(mcp) > 0 {
 			openCodeConfig["mcp"] = mcp
 		}
 		if err := writeMergedOpenCodeJSON(dir, openCodeConfig); err != nil {
@@ -209,7 +197,7 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		}
 	}
 	if spec.Codex {
-		if err := writeCodexMCPConfig(dir, mcpSpecs); err != nil {
+		if err := writeCodexMCPConfig(dir, spec.MCP); err != nil {
 			return "", err
 		}
 	}

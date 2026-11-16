@@ -310,8 +310,12 @@ func TestBuildConfigHomeWritesOpenCodeMCP(t *testing.T) {
 				Args:    []string{"server.js"},
 				Env:     map[string]string{"K": "V"},
 			},
+			{
+				Name:    "chrome-devtools",
+				Command: "chrome-devtools-mcp",
+				Args:    []string{"--browser-url=http://127.0.0.1:9222"},
+			},
 		},
-		BrowserMCP: true,
 	})
 	if err != nil {
 		t.Fatal(err)

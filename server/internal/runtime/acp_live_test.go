@@ -133,7 +133,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 		model = "cursor-grok-4.5-high-fast"
 	}
 	// Local MCP endpoint so artifact-store / node_complete are actually injected
-	// (previous live runs omitted this and only left BROWSER_MCP chrome-devtools).
+	// (previous live runs omitted this and only left the chrome-devtools MCP).
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatal(err)

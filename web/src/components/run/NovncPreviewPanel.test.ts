@@ -120,8 +120,11 @@ const resizeObserverMocks = vi.hoisted(() => {
   }
 })
 
+const browserStatus = { mode: 'browser', shellReady: false, agentActive: false, holder: 'agent', apps: [] }
 const apiMocks = vi.hoisted(() => ({
   sandboxVncWsUrl: vi.fn(() => 'ws://localhost/sandbox-vnc/1/ws'),
+  sandboxDesktop: vi.fn(),
+  setSandboxDesktopControl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -131,6 +134,8 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       sandboxVncWsUrl: apiMocks.sandboxVncWsUrl,
+      sandboxDesktop: apiMocks.sandboxDesktop,
+      setSandboxDesktopControl: apiMocks.setSandboxDesktopControl,
     },
   }
 })
@@ -228,6 +233,8 @@ describe('NovncPreviewPanel', () => {
     rfbMocks.reset()
     resizeObserverMocks.reset()
     apiMocks.sandboxVncWsUrl.mockClear()
+    apiMocks.sandboxDesktop.mockReset().mockResolvedValue(browserStatus)
+    apiMocks.setSandboxDesktopControl.mockReset().mockImplementation(async (_id: number, holder: string) => ({ ...browserStatus, mode: 'desktop', shellReady: true, holder }))
     vi.stubGlobal('WebSocket', MockWebSocket)
     vi.stubGlobal('ResizeObserver', resizeObserverMocks.MockResizeObserver)
   })
@@ -509,6 +516,75 @@ describe('NovncPreviewPanel', () => {
     expect(rfb.viewOnly).toBe(true)
     expect(controlButton(wrapper).text()).toBe('接管')
     wrapper.unmount()
+  })
+
+  it('browser image shows no desktop bar and reports no control', async () => {
+    const wrapper = mountNovnc()
+    await flushPromises()
+    await controlButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="desktop-status-bar"]').exists()).toBe(false)
+    expect(apiMocks.setSandboxDesktopControl).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('desktop image: status bar, take over reports holder=user with heartbeat, return and unmount hand back', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true })
+    apiMocks.setSandboxDesktopControl.mockImplementation(async (_id: number, holder: string) => ({ ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true, holder }))
+    const wrapper = mountNovnc()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="desktop-status-bar"]').text()).toContain('电脑')
+    expect(wrapper.get('[data-testid="desktop-holder"]').text()).toBe('Agent 控制中')
+    expect(wrapper.get('[data-testid="desktop-agent"]').text()).toBe('Agent 运行中')
+    expect(wrapper.find('[data-testid="desktop-takeover-hint"]').exists()).toBe(true)
+
+    await controlButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(apiMocks.setSandboxDesktopControl).toHaveBeenLastCalledWith(1, 'user', expect.any(String), undefined)
+    expect(wrapper.get('[data-testid="desktop-holder"]').text()).toBe('你正在控制')
+    expect(wrapper.find('[data-testid="desktop-takeover-tip"]').exists()).toBe(true)
+
+    vi.advanceTimersByTime(10_000)
+    await flushPromises()
+    expect(apiMocks.setSandboxDesktopControl).toHaveBeenCalledTimes(2)
+
+    await controlButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(apiMocks.setSandboxDesktopControl).toHaveBeenLastCalledWith(1, 'agent', expect.any(String), undefined)
+    vi.advanceTimersByTime(30_000)
+    await flushPromises()
+    expect(apiMocks.setSandboxDesktopControl.mock.calls.filter((c) => c[1] === 'user')).toHaveLength(2)
+
+    await controlButton(wrapper).trigger('click')
+    await flushPromises()
+    wrapper.unmount()
+    expect(apiMocks.setSandboxDesktopControl).toHaveBeenLastCalledWith(1, 'agent', expect.any(String), { keepalive: true })
+    vi.useRealTimers()
+  })
+
+  it('desktop image: hiding the page returns control; public share tickets never poll', async () => {
+    apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: false })
+    const wrapper = mountNovnc()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="desktop-starting"]').exists()).toBe(true)
+    await controlButton(wrapper).trigger('click')
+    await flushPromises()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    expect(controlButton(wrapper).text()).toBe('接管')
+    expect(apiMocks.setSandboxDesktopControl).toHaveBeenLastCalledWith(1, 'agent', expect.any(String), undefined)
+    window.dispatchEvent(new Event('pagehide'))
+    wrapper.unmount()
+
+    apiMocks.sandboxDesktop.mockClear()
+    const shared = mountNovnc({ sandboxId: undefined, wsUrl: 'wss://x/public/vnc' })
+    await flushPromises()
+    expect(apiMocks.sandboxDesktop).not.toHaveBeenCalled()
+    expect(shared.find('[data-testid="desktop-status-bar"]').exists()).toBe(false)
+    shared.unmount()
   })
 
   it('cancelling inspect keeps a take over that was already on', async () => {

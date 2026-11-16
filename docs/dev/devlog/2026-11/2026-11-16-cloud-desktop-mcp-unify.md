@@ -1,0 +1,29 @@
+# 2026-11-16（云桌面镜像、MCP 配置统一与软互锁）
+
+- 日期：2026-11-16
+- 范围：
+  - 统一：`sandbox-gateway/sandbox/scripts/startup.sh`、`sandbox-gateway/sandbox/internal/handler/capabilities.go`、`server/internal/{confighome,runtime,services,browser,sandbox}`、`docker-compose*.yml`、`scripts/test-agent-connect.sh`、`sandbox-gateway/gateway`（测试与 API.md）、`server/CONFIGURATION.md`。
+  - 桌面运行时：`sandbox-gateway/sandbox/{cmd/desktop,internal/desktop}`、`sandbox-gateway/sandbox/scripts/{desktop-session.sh,vnc-preview.sh}`、`sandbox-gateway/sandbox/share/desktop`、`scripts/build-sandbox-runtime.sh`、`server/internal/mcp/preview.go`、`server/internal/browser/rod.go`。
+  - 镜像与 CI：`sandbox-gateway/sandbox/{Dockerfile.desktop,desktop/}`、`scripts/check-desktop-image.sh`、`sandbox-gateway/scripts/{test-desktop-session.sh,test-desktop-e2e.sh}`、`.github/workflows/{publish-sandbox-desktop,ci-sandbox}.yml`。
+  - 接口与互锁：沙箱 `/api/desktop/{status,control}`，server `/api/sandboxes/:id/desktop`、`/api/sandboxes/:id/desktop/control`、`/api/mcp-presets`（`services/mcp_presets.go` 为内置 MCP 模板唯一定义）。
+  - Web：`lib/agent/mcpPresets.ts`、`lib/composables/useDesktopControl.ts`、`AgentMcpPanel`、`CreateAgentTeamWizard`、初始化向导、`NovncPreviewPanel`、`SandboxConsoleView`、中英文案。
+  - E2B：`sandbox-gateway/deploy/e2b/{prepare-template.py,test_prepare_template.py,gateway.example.yaml,README.md}`。
+- 做了什么：
+  - 删除 `VNC_PREVIEW` / `BROWSER_MCP`：预览栈始终启动；所有 MCP 只经共享 Agent + 单个 Agent 同名覆盖（`mergeMCP`）→ `BuildConfigHome` 注入，`startup.sh` 不再改写 `mcp.json`。新工作区初始化时共享 Agent 写入 `chrome-devtools`；不做存量迁移。
+  - 桌面镜像 `Dockerfile.desktop`（FROM 默认镜像，写 `/etc/grasp-desktop`，`IMAGE_LEVEL` 与 `min_image` 不变）：Openbox + Plank + fcitx5、中文 locale、GUI 应用（含 Blender 5.1.2、Godot、draw.io、3D Slicer）与 Blender 官方 MCP（插件绑 `127.0.0.1:6092`）。`vnc-preview.sh` 见标记调用 `desktop-session.sh`，失败回落浏览器模式。
+  - `grasp-desktop`（运行时包内）：`launcher`（`127.0.0.1:6091`，白名单 + Origin 校验）与 `mcp`（截图、窗口/应用列表、键鼠、启动应用）。桌面内部端口统一用保留段 6090–6099，`set_preview` 按段拒绝。
+  - 软互锁：Web 接管时经 server（登录态 + 沙箱归属，分享票据不可用）上报 `holder=user`，每 10 秒续期、30 秒未续回到 Agent；此期间 desktop MCP 键鼠类工具拒绝，截图与列表照常；Blender MCP 不受限。
+  - Web：MCP 页签快捷添加（浏览器 / 桌面控制 / Blender / 产物存储，数据来自 `/api/mcp-presets`）；桌面镜像上控制台入口名为「电脑」（tab key 仍为 `novnc`）；状态条、接管提示、心跳与离开页面自动归还。
+  - E2B：`prepare-template.py --desktop` 校验 4 CPU / 8 GiB / 30 GiB 与桌面依赖、标记和应用目录。
+- 为什么：浏览器 MCP 与预览栈此前靠两个环境变量和 `startup.sh` 的 jq 合并开启，与 MCP 配置页是两套入口；需要一个可让 Agent 操作 GUI 应用的桌面镜像，并在人接管时避免与 Agent 抢键鼠。
+- 如何验证：
+  - 单测与门禁：server 核心覆盖率 90.7%、sandbox 98.0%、gateway 90.4%、web lines 91.76%；golangci-lint v2.12（server / sandbox / gateway 0 issues）、go vet、`gen-configdoc -check`、actionlint、shellcheck（error 级）、vue-tsc、eslint、`npm run build`；`test:e2e:ci` 列表在 desktop project 290 项通过；`test_prepare_template.py` 16 项、`test_build_apps.py`、`test-desktop-session.sh`（假 openbox / wmctrl / launcher）。
+  - Blender MCP：本机用 Blender 5.1.2 复现镜像步骤（扩展构建、安装、偏好写入），GUI 启动约 8 秒插件监听 6092，`blender-mcp` 经 stdio 执行代码新建立方体并读回对象列表。
+  - Docker 集成：桌面镜像由 `publish-sandbox-desktop` 在 GitHub Actions 构建（本机 Docker 为 vfs 驱动，无法承载该镜像），推送前跑 `check-desktop-image.sh` 与 `test-desktop-e2e.sh`。用临时分支构建的 `universal-sandbox:sha-1188529-desktop` 加本分支运行时包，五项全部通过：桌面壳就绪、启动台白名单与 Origin、desktop MCP 在 Mousepad 输入中文并经「另存为」写文件、接管期间点击被拒而截图可用、Blender MCP 建模并读回对象；默认镜像浏览器模式基线通过。
+  - 联调中修掉的问题：Blender 扩展构建缺输出目录；`/usr/games` 不在 PATH（纸牌、围棋改绝对路径）；desktop MCP 在 Agent CLI 下运行、不在桌面会话里，启动的应用拿不到 D-Bus 与输入法——`desktop-session.sh` 写 `session.env`，grasp-desktop 与桌面模式的 Chromium 都套用；Ubuntu 基础镜像排除了 `*.mo`，桌面应用只有英文界面——`Dockerfile.desktop` 放开后再装应用。
+  - 已 rebase 到包含 Worktree 删除（#1275）的 main，rebase 后重跑上述门禁。全仓检索 `VNC_PREVIEW` / `BROWSER_MCP` 只剩 CHANGELOG / DEVLOG 历史。
+- 容量：GitHub Actions 上 `test-desktop-e2e.sh` 按进程名汇总 PSS（共享页只计一次），开机 20 秒后、未打开应用时：
+  - 默认镜像浏览器模式（现为每个沙箱固定开销）：合计 464 MiB——Chromium 360、Xvfb 61、websockify 30、x11vnc 13。原先未设 `VNC_PREVIEW` 的沙箱因此多出这部分内存，规划节点容量时按每沙箱约 0.5 GiB 计。
+  - 桌面镜像：合计 680 MiB——Chromium 461、Xvfb 69、plank 44、fcitx5 34、websockify 32、openbox 16、x11vnc 13、grasp-desktop 10、dbus 2。打开 Blender、KiCad 等应用另计，建议 4 vCPU / 8 GiB / 30 GiB。
+  - 桌面镜像外壳从容器启动到 `shellReady` 约 5 秒；Blender 启动后约 8 秒插件开始监听 6092。
+- 未做：真实 E2B 构建与验收由部署方按 `deploy/e2b/README.md` 清单完成。临时验证分支在 GHCR 留下 `sha-531cb6a-desktop`、`sha-1188529-desktop` 两个 tag，可删除。

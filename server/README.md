@@ -266,8 +266,8 @@ sandbox: { image, env, agent_chat_timeout_seconds, ... }
 
 ### VNC 预览（沙箱内置）
 
-应用预览 Tab 与沙箱控台 noVNC 走沙箱内置 VNC 栈（`VNC_PREVIEW=1` 时启动
-Xvfb+Chromium+x11vnc+websockify）。VNC 栈由 sandbox-gateway 的 `universal-sandbox`
+应用预览 Tab 与沙箱控台 noVNC 走沙箱内置 VNC 栈（每个沙箱始终启动
+Xvfb+Chromium+x11vnc+websockify；浏览器 MCP 只经 MCP 配置启用）。VNC 栈由 sandbox-gateway 的 `universal-sandbox`
 镜像提供；本仓不构建沙箱镜像。
 
 CDP `:9222` / noVNC `:6080` **不是**对外 data-plane（无应用层鉴权，不 publish

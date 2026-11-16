@@ -299,7 +299,6 @@ CPU 为正整数核数，内存为 MiB，`diskGi` 是构建探针验证的最低
 | `ACP_BRIDGE_PASSWORD` | 空 | Grasp 创建时注入会话鉴权口令 |
 | `SKIP_INNER_DOCKER` | 按 `0` 处理，启动内层 Docker | 设置 `1` 时跳过内层 dockerd |
 | `INNER_DOCKER_STORAGE_DRIVER` | `vfs` | 内层 Docker 存储驱动 |
-| `VNC_PREVIEW` / `BROWSER_MCP` | 关闭 | Grasp 可按 Agent 的预览能力启用浏览器与 MCP |
 | `PREVIEW_DIRECT` / `PREVIEW_PORT` | 空 | 直连预览注入开关与应用端口，由平台预览配置决定 |
 
 模型 API key、工具登录文件、Git Token 和 SSH 私钥在工作区「凭据」中管理。Git 凭据由仓库绑定，模型凭据由具名模型配置选择；它们不属于这份平台部署配置。

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的电脑</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; font-family: "Noto Sans CJK SC", "Noto Sans", system-ui, sans-serif; }
+  body { margin: 0; min-height: 100vh; background: linear-gradient(160deg, #e9f1ff 0%, #f7f9fc 55%, #eef5ef 100%); color: #1d2330; }
+  main { max-width: 980px; margin: 0 auto; padding: 64px 32px 48px; }
+  .clock { font-size: 64px; font-weight: 300; letter-spacing: -1px; }
+  .date { color: #5b6475; margin-top: 4px; }
+  h1 { font-size: 22px; font-weight: 500; margin: 36px 0 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; }
+  button.app { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 10px; border-radius: 16px; background: rgba(255,255,255,.72); box-shadow: 0 1px 2px rgba(20,30,60,.06); text-align: center; }
+  button.app:hover, button.app:focus-visible { background: #fff; box-shadow: 0 6px 18px rgba(20,30,60,.12); }
+  button.app img, button.app .ph { width: 48px; height: 48px; border-radius: 12px; }
+  button.app .ph { display: grid; place-items: center; background: #3b6cf6; color: #fff; font-size: 22px; font-weight: 600; }
+  button.app span { font-size: 13px; line-height: 1.3; }
+  .empty, .toast { color: #5b6475; font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: #1d2330; color: #fff; padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: .92; }
+</style>
+</head>
+<body>
+<main>
+  <div class="clock" id="clock"></div>
+  <div class="date" id="date"></div>
+  <h1 id="title"></h1>
+  <div class="grid" id="grid"></div>
+  <p class="empty" id="empty" hidden></p>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+  var zh = (navigator.language || 'zh').toLowerCase().indexOf('zh') === 0;
+  var T = zh
+    ? { title: '我的电脑', empty: '这台电脑还没有安装应用。', opening: '正在打开 ', failed: '打开失败：', morning: '早上好', afternoon: '下午好', evening: '晚上好' }
+    : { title: 'My computer', empty: 'No apps are installed on this computer.', opening: 'Opening ', failed: 'Could not open: ', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' };
+  document.title = T.title;
+  document.documentElement.lang = zh ? 'zh-CN' : 'en';
+  function tick() {
+    var d = new Date();
+    document.getElementById('clock').textContent = d.toLocaleTimeString(zh ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('date').textContent = d.toLocaleDateString(zh ? 'zh-CN' : 'en', { weekday: 'long', month: 'long', day: 'numeric' });
+    var h = d.getHours();
+    document.getElementById('title').textContent = (h < 12 ? T.morning : h < 18 ? T.afternoon : T.evening) + ' · ' + T.title;
+  }
+  tick();
+  setInterval(tick, 15000);
+  var toastTimer;
+  function toast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2500);
+  }
+  function launch(app, label) {
+    toast(T.opening + label);
+    fetch('/launch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: app.id }) })
+      .then(function (r) { if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || r.status); }); })
+      .catch(function (e) { toast(T.failed + label + ' (' + e.message + ')'); });
+  }
+  fetch('/apps').then(function (r) { return r.json(); }).then(function (apps) {
+    var grid = document.getElementById('grid');
+    if (!apps.length) {
+      var empty = document.getElementById('empty');
+      empty.textContent = T.empty;
+      empty.hidden = false;
+      return;
+    }
+    apps.forEach(function (app) {
+      var label = (zh && app.nameZh) || app.name;
+      var b = document.createElement('button');
+      b.className = 'app';
+      b.dataset.app = app.id;
+      if (app.icon) {
+        var img = document.createElement('img');
+        img.src = app.icon;
+        img.alt = '';
+        b.appendChild(img);
+      } else {
+        var ph = document.createElement('div');
+        ph.className = 'ph';
+        ph.textContent = label.slice(0, 1);
+        b.appendChild(ph);
+      }
+      var s = document.createElement('span');
+      s.textContent = label;
+      b.appendChild(s);
+      b.addEventListener('click', function () { launch(app, label); });
+      grid.appendChild(b);
+    });
+  });
+})();
+</script>
+</body>
+</html>

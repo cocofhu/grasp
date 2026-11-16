@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   getSandbox: vi.fn(),
   listSandboxes: vi.fn(),
   sandboxLog: vi.fn(),
+  sandboxDesktop: vi.fn(async () => ({ mode: 'browser', shellReady: false, agentActive: false, holder: 'agent', apps: [] })),
   sandboxIdeUrl: (_id: number) => 'about:blank#ide',
   sandboxBridgeUrl: (_id: number) => 'about:blank#acp',
   sandboxTerminalWsUrl: (id: number) => `wss://test.local/sandboxes/${id}/terminal`,
@@ -28,6 +29,7 @@ vi.mock('@/lib/api/api', async () => {
       getSandbox: apiMocks.getSandbox,
       listSandboxes: apiMocks.listSandboxes,
       sandboxLog: apiMocks.sandboxLog,
+      sandboxDesktop: apiMocks.sandboxDesktop,
       sandboxIdeUrl: apiMocks.sandboxIdeUrl,
       sandboxBridgeUrl: apiMocks.sandboxBridgeUrl,
       sandboxTerminalWsUrl: apiMocks.sandboxTerminalWsUrl,
@@ -248,6 +250,25 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     expect(wrapper.find('iframe[title="ACP bridge"]').exists()).toBe(false)
     expect(ideLayer(wrapper).exists()).toBe(false)
     expect(acpLayer(wrapper).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('labels the novnc tab 电脑 on the desktop image and 浏览器 otherwise', async () => {
+    let wrapper = await mountConsole()
+    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
+    wrapper.unmount()
+
+    apiMocks.sandboxDesktop.mockResolvedValueOnce({ mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] })
+    wrapper = await mountConsole()
+    await flushPromises()
+    expect(wrapper.findAll('button').some((b) => b.text().includes('电脑'))).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(false)
+    wrapper.unmount()
+
+    apiMocks.sandboxDesktop.mockRejectedValueOnce(new Error('409'))
+    wrapper = await mountConsole()
+    await flushPromises()
+    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
     wrapper.unmount()
   })
 

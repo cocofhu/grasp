@@ -61,11 +61,24 @@ const acpFrame = ref<HTMLIFrameElement | null>(null)
 const acpFrameTheme = ref(theme.value)
 const acpSrc = computed(() => `${api.sandboxBridgeUrl(id)}#theme=${acpFrameTheme.value}`)
 
+/** Desktop image: the novnc tab is the whole computer, not just a browser. */
+const desktopImage = ref(false)
+
+async function detectDesktopImage() {
+  try {
+    desktopImage.value = (await api.sandboxDesktop(id)).mode === 'desktop'
+  } catch {
+    /* stopped sandbox or old runtime: keep the browser label */
+  }
+}
+
 const tabItems = computed(() => [
   { k: 'terminal', l: t('pages.sandboxConsole.tabs.terminal'), i: 'terminal' },
   { k: 'ide', l: t('pages.sandboxConsole.tabs.ide'), i: 'stage-ide' },
   { k: 'acp', l: t('pages.sandboxConsole.tabs.acp'), i: 'robot' },
-  { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
+  desktopImage.value
+    ? { k: 'novnc', l: t('pages.sandboxConsole.tabs.computer'), i: 'monitor' }
+    : { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
   { k: 'log', l: t('pages.sandboxConsole.tabs.log'), i: 'stage-log' },
 ])
 
@@ -291,6 +304,7 @@ watch(tab, (t) => {
 onMounted(async () => {
   window.addEventListener('message', onAcpMessage)
   tab.value = initialConsoleTab()
+  void detectDesktopImage()
   if (isMobile.value) {
     await loadMeta()
     return

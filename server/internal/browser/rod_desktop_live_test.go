@@ -124,8 +124,8 @@ func assertContentCovers(t *testing.T, rp *rodPage, label string) {
 		t.Fatalf("%s read geometry: %v", label, err)
 	}
 	t.Logf("%s geom left=%d top=%d outer=%dx%d content=%dx%d", label, g.left, g.top, g.outerW, g.outerH, g.contentW, g.contentH)
-	if !desktopReady(g) {
-		t.Fatalf("%s: %v", label, desktopNotReadyError(g))
+	if wa := rp.workArea(); !desktopReady(g, wa) {
+		t.Fatalf("%s: %v", label, desktopNotReadyError(g, wa))
 	}
 }
 
@@ -204,8 +204,8 @@ func contentCoverError(rp *rodPage) error {
 	if err != nil {
 		return err
 	}
-	if !desktopReady(g) {
-		return desktopNotReadyError(g)
+	if wa := rp.workArea(); !desktopReady(g, wa) {
+		return desktopNotReadyError(g, wa)
 	}
 	return nil
 }

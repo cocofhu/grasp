@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   listCredentials: vi.fn(),
   listModelConnections: vi.fn(),
   listToolCapabilities: vi.fn(),
+  listMcpPresets: vi.fn(async () => ({
+    presets: [{ id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } }],
+  })),
 }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')

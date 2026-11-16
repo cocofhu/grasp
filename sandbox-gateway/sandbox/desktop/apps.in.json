@@ -1,0 +1,21 @@
+[
+  {"id": "browser", "name": "Browser", "nameZh": "浏览器", "exec": ["/usr/local/bin/desktop-session.sh", "browser", "about:blank"], "runtime": true, "category": "system", "icons": ["web-browser", "chromium"]},
+  {"id": "terminal", "name": "Terminal", "nameZh": "终端", "exec": ["lxterminal", "--working-directory=/root/workspace"], "category": "system", "icons": ["lxterminal", "utilities-terminal"]},
+  {"id": "files", "name": "Files", "nameZh": "文件", "exec": ["pcmanfm", "/root/workspace"], "category": "system", "icons": ["system-file-manager", "folder"]},
+  {"id": "mousepad", "name": "Mousepad", "nameZh": "文本编辑器", "exec": ["mousepad"], "category": "office", "icons": ["org.xfce.mousepad", "accessories-text-editor"]},
+  {"id": "evince", "name": "Document Viewer", "nameZh": "文档查看器", "exec": ["evince"], "category": "office", "icons": ["org.gnome.Evince", "evince"]},
+  {"id": "drawio", "name": "draw.io", "nameZh": "draw.io 绘图", "exec": ["drawio", "--no-sandbox"], "cli": "drawio --no-sandbox --export --format png <file.drawio>", "category": "graphics", "icons": ["drawio"]},
+  {"id": "gimp", "name": "GIMP", "nameZh": "GIMP 图像编辑", "exec": ["gimp"], "cli": "gimp -i -b '<script-fu>' -b '(gimp-quit 0)'", "category": "graphics", "icons": ["gimp"]},
+  {"id": "inkscape", "name": "Inkscape", "nameZh": "Inkscape 矢量图", "exec": ["inkscape"], "cli": "inkscape <in.svg> --export-type=png --export-filename=<out.png>", "category": "graphics", "icons": ["org.inkscape.Inkscape", "inkscape"]},
+  {"id": "blender", "name": "Blender", "nameZh": "Blender 三维", "exec": ["blender"], "cli": "blender -b <file.blend> --python <script.py>", "category": "3d", "icons": ["/opt/blender/blender.svg", "blender"]},
+  {"id": "freecad", "name": "FreeCAD", "nameZh": "FreeCAD 建模", "exec": ["freecad"], "cli": "freecadcmd <script.py>", "category": "3d", "icons": ["freecad", "org.freecadweb.FreeCAD"]},
+  {"id": "openscad", "name": "OpenSCAD", "nameZh": "OpenSCAD 建模", "exec": ["openscad"], "cli": "openscad -o <out.stl> <in.scad>", "category": "3d", "icons": ["openscad"]},
+  {"id": "kicad", "name": "KiCad", "nameZh": "KiCad 电路设计", "exec": ["kicad"], "category": "engineering", "icons": ["kicad"]},
+  {"id": "kdenlive", "name": "Kdenlive", "nameZh": "Kdenlive 视频剪辑", "exec": ["kdenlive"], "cli": "melt <project.kdenlive> -consumer avformat:<out.mp4>", "category": "media", "icons": ["kdenlive", "org.kde.kdenlive"]},
+  {"id": "godot", "name": "Godot", "nameZh": "Godot 游戏引擎", "exec": ["godot"], "cli": "godot --headless --path <project> --script <tool.gd>", "category": "dev", "icons": ["/opt/godot/icon.png"]},
+  {"id": "qgis", "name": "QGIS", "nameZh": "QGIS 地理信息", "exec": ["qgis"], "cli": "qgis_process run <algorithm> -- <args>", "category": "science", "icons": ["qgis", "org.qgis.qgis"]},
+  {"id": "paraview", "name": "ParaView", "nameZh": "ParaView 可视化", "exec": ["paraview"], "cli": "pvpython <script.py>", "category": "science", "icons": ["paraview"]},
+  {"id": "slicer", "name": "3D Slicer", "nameZh": "3D Slicer 医学影像", "exec": ["Slicer"], "cli": "Slicer --no-main-window --python-script <script.py>", "category": "science", "icons": ["/opt/slicer/share/icons/hicolor/scalable/apps/Slicer.svg", "/opt/slicer/slicer.png"]},
+  {"id": "solitaire", "name": "Solitaire", "nameZh": "纸牌", "exec": ["/usr/games/sol"], "category": "games", "icons": ["gnome-aisleriot", "sol"]},
+  {"id": "go", "name": "Go", "nameZh": "围棋", "exec": ["/usr/games/kigo"], "category": "games", "icons": ["kigo", "org.kde.kigo"]}
+]

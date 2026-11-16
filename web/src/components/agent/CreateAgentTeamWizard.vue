@@ -8,13 +8,13 @@ import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import { boundConfigurationIds } from '@/lib/agent/modelBindings'
+import { findPreset, loadMcpPresets, presetDraft, type MCPPreset } from '@/lib/agent/mcpPresets'
 import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { api, type ModelBinding, type ModelConfiguration, type TeamBootstrapSession } from '@/lib/api/api'
 import {
   TEAM_ENGINEER_COUNT,
   TEAM_WIZARD_STEPS,
   assembleTeamBootstrapPayload,
-  artifactStorePreset,
   freshTeamDraft,
   syncDerivedNames,
   teamHasAuth,
@@ -33,6 +33,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const draft = ref<TeamWizardDraft>(freshTeamDraft())
+const artifactPreset = ref<MCPPreset>()
 const fieldError = ref('')
 const submitError = ref('')
 const submitting = ref(false)
@@ -84,6 +85,7 @@ watch(
   (open) => {
     if (!open) return
     draft.value = freshTeamDraft()
+    void seedArtifact()
     fieldError.value = ''
     submitError.value = ''
     submitting.value = false
@@ -173,9 +175,14 @@ function addMcp() {
   })
 }
 
+async function seedArtifact() {
+  artifactPreset.value = findPreset(await loadMcpPresets(), 'artifact-store')
+  restoreArtifact()
+}
+
 function restoreArtifact() {
-  if (draft.value.mcp.some((m) => m.name.trim() === 'artifact-store')) return
-  draft.value.mcp.unshift(artifactStorePreset())
+  if (!artifactPreset.value || draft.value.mcp.some((m) => m.name.trim() === 'artifact-store')) return
+  draft.value.mcp.unshift(presetDraft(artifactPreset.value))
 }
 
 function removeMcp(i: number) {

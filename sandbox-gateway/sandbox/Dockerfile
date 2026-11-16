@@ -319,7 +319,7 @@ RUN mkdir /var/run/sshd && \
 # 8744 code-server / 22 SSH / 8765 backend(ACP 桥接) / 9222 Chromium CDP / 6080 noVNC(websockify)
 EXPOSE 8744 22 8765 9222 6080
 
-# 浏览器 MCP（可选，BROWSER_MCP=1 启用）：chrome-devtools-mcp 经 CDP attach 到沙箱内
+# 浏览器 MCP（在 MCP 配置中添加 chrome-devtools 条目启用）：chrome-devtools-mcp 经 CDP attach 到沙箱内
 # headed Chromium（vnc-preview 起的那个），把导航/点击/截图/读 DOM 暴露为 MCP 工具。
 # 预装以便离线用全局二进制（mcp.json 里直接 command: chrome-devtools-mcp，不走 npx 拉取）。
 RUN npm install -g chrome-devtools-mcp

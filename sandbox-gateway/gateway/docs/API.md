@@ -152,7 +152,7 @@ Body (all fields optional):
   `AGENT_PROVIDER` when not already set.
 - `env` is the injection channel to the image (see the sandbox README for the
   full variable reference: `WORKSPACE_DIR`, `GIT_REPOS`, `AGENT_PROVIDER`,
-  `VNC_PREVIEW`, `BROWSER_MCP`, `ROOT_PASSWORD`, `SSH_KEY`, etc.).
+  `PREVIEW_DIRECT`, `ROOT_PASSWORD`, `SSH_KEY`, etc.).
 - `ports` adds application ports on top of the gateway `ports` configuration.
 - `resources` sets per-sandbox limits (same knobs as remote-dev UI):
   - `cpuCores` — CPU limit in cores (maps to k8s `limits.cpu` / docker `--cpus`)

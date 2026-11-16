@@ -55,9 +55,6 @@ type OnboardingBootstrapRequest struct {
 	RepoCredentialID string `json:"repoCredentialId,omitempty"`
 	CommitName       string `json:"commitName,omitempty"`
 	CommitEmail      string `json:"commitEmail,omitempty"`
-	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
-	VncPreview *bool `json:"vncPreview"`
-	BrowserMcp *bool `json:"browserMcp"`
 	// Agents picks the built-in templates to create. Empty = all four templates
 	// with the canonical names for Language. Every template is required, and a
 	// non-empty name must equal that language's canonical name.
@@ -335,7 +332,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
-	if err := s.writeWorkspaceSettings(req); err != nil {
+	if err := s.seedSharedMCP(); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 
@@ -552,32 +549,21 @@ func dropOnboardingAgentNode(g *models.Graph, nodeID string) {
 	}
 }
 
-func (s *OnboardingService) writeWorkspaceSettings(req OnboardingBootstrapRequest) error {
+// seedSharedMCP gives a new workspace's shared Agent the browser MCP, so
+// every Agent inherits it. An entry with the same name is left as is.
+func (s *OnboardingService) seedSharedMCP() error {
 	if s.SharedAgent == nil {
 		return errors.New("shared agent service unavailable")
 	}
 	cfg := s.SharedAgent.Get()
-	if cfg.Env == nil {
-		cfg.Env = map[string]string{}
+	browser, _ := MCPPresetServer(MCPPresetBrowser)
+	for _, m := range cfg.MCP {
+		if strings.TrimSpace(m.Name) == browser.Name {
+			return nil
+		}
 	}
-	if boolOrDefault(req.VncPreview, true) {
-		cfg.Env["VNC_PREVIEW"] = "1"
-	} else {
-		cfg.Env["VNC_PREVIEW"] = "0"
-	}
-	if boolOrDefault(req.BrowserMcp, true) {
-		cfg.Env["BROWSER_MCP"] = "1"
-	} else {
-		cfg.Env["BROWSER_MCP"] = "0"
-	}
+	cfg.MCP = append(cfg.MCP, browser)
 	return s.SharedAgent.Save(cfg)
-}
-
-func boolOrDefault(p *bool, def bool) bool {
-	if p == nil {
-		return def
-	}
-	return *p
 }
 
 // upsertDefaultWorkflow saves the default workflow. A non-empty repo is bound

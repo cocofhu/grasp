@@ -37,6 +37,14 @@ REQUIRED_COMMANDS = NATIVE_CLIS + (
     "sshd", "code-server", "docker", "Xvfb", "x11vnc", "websockify",
     "chrome-devtools-mcp",
 )
+# Desktop image variant (Dockerfile.desktop): shell, X tools, Blender + MCP.
+DESKTOP_COMMANDS = ("openbox", "plank", "fcitx5", "xdotool", "wmctrl", "import", "blender", "blender-mcp")
+DESKTOP_MARKER = "/etc/grasp-desktop"
+DESKTOP_APPS = "/opt/grasp-desktop/apps.json"
+# Smallest profile the desktop image is supported on.
+DESKTOP_MIN_CPU = 4
+DESKTOP_MIN_MEMORY_MB = 8192
+DESKTOP_MIN_WORKSPACE_GIB = 30
 
 
 class PreparationError(Exception):
@@ -55,6 +63,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[3])
     result.add_argument("--request-timeout", type=int, default=240, help="SDK request timeout in seconds")
     result.add_argument("--output", type=Path, help="Optional credential-free result JSON, written with mode 0600")
+    result.add_argument("--desktop", action="store_true", help="The image is the desktop variant; also probe the desktop shell, apps and Blender MCP")
     result.add_argument("--dry-run", action="store_true", help="Validate and print the plan without SDK imports, builds or guests")
     return result
 
@@ -70,6 +79,9 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         raise PreparationError("CPU, memory, minimum workspace and request timeout must be positive integers")
     if args.min_free_disk_mb is not None and not 0 <= args.min_free_disk_mb <= 2147483647:
         raise PreparationError("--min-free-disk-mb must fit a nonnegative provider int32 value")
+    if args.desktop and (args.cpu_count < DESKTOP_MIN_CPU or args.memory_mb < DESKTOP_MIN_MEMORY_MB
+                         or args.minimum_workspace_gib < DESKTOP_MIN_WORKSPACE_GIB):
+        raise PreparationError("--desktop needs at least 4 CPUs, 8192 MiB memory and 30 GiB minimum workspace")
     root = args.repo_root.resolve()
     if not (root / BOOTSTRAP).is_file() or not (root / IMAGE_LEVEL).is_file():
         raise PreparationError("--repo-root must contain Grasp's original bootstrap and IMAGE_LEVEL files")
@@ -87,6 +99,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         "bootstrapSHA256": hashlib.sha256((root / BOOTSTRAP).read_bytes()).hexdigest(),
         "requiredNativeCLIs": list(NATIVE_CLIS),
         "runtimeBundleBakedIn": False,
+        "desktop": bool(args.desktop),
     }
     if args.min_free_disk_mb is not None:
         plan["requestedMinFreeDiskMB"] = args.min_free_disk_mb
@@ -101,6 +114,10 @@ def validation_command(plan: dict[str, Any], require_disk: bool) -> str:
         "level": plan["imageLevel"],
         "bootstrap": plan["bootstrapSHA256"],
         "minimum": plan["minimumInitialWorkspaceGiB"] * (1 << 30) if require_disk else 0,
+        "desktop": plan["desktop"],
+        "desktopCommands": DESKTOP_COMMANDS,
+        "desktopMarker": DESKTOP_MARKER,
+        "desktopApps": DESKTOP_APPS,
     }
     code = """import glob,hashlib,json,os,pathlib,shutil
 expected=json.loads(EXPECTED)
@@ -123,11 +140,19 @@ if pathlib.Path('/opt/grasp-runtime/current/MANIFEST').exists():
 chromes=glob.glob('/ms-playwright/chromium-*/chrome-linux*/chrome')
 if not any(os.access(path,os.X_OK) for path in chromes) and shutil.which('chromium') is None:
     raise SystemExit('headed Chromium executable is missing')
+if expected['desktop']:
+    missing=[name for name in expected['desktopCommands'] if shutil.which(name) is None]
+    if missing: raise SystemExit('missing desktop commands: '+','.join(missing))
+    if not pathlib.Path(expected['desktopMarker']).is_file():
+        raise SystemExit('desktop marker is missing; build the image from Dockerfile.desktop')
+    try: apps=json.loads(pathlib.Path(expected['desktopApps']).read_text())
+    except (OSError,ValueError): apps=None
+    if not isinstance(apps,list) or not apps: raise SystemExit('desktop app catalog is missing or empty')
 workspace=pathlib.Path('/root/workspace');workspace.mkdir(parents=True,exist_ok=True)
 stats=os.statvfs(workspace);available=stats.f_bavail*stats.f_frsize
 if available<expected['minimum']: raise SystemExit('initially available workspace capacity is below the requested profile')
 print(json.dumps({'status':'passed','imageLevel':expected['level'],'bootstrapSHA256':expected['bootstrap'],
-                 'nativeCLIs':expected['native'],'workspaceAvailableBytes':available}))
+                 'nativeCLIs':expected['native'],'workspaceAvailableBytes':available,'desktop':expected['desktop']}))
 """.replace("EXPECTED", repr(json.dumps(expected)))
     return "python3 - <<'GRASP_TEMPLATE_VALIDATE'\n" + code + "GRASP_TEMPLATE_VALIDATE\n"
 
@@ -205,6 +230,7 @@ def prepare(args: argparse.Namespace, template_class: Any, sandbox_class: Any) -
         if (probe.get("status") != "passed" or probe.get("imageLevel") != plan["imageLevel"]
                 or probe.get("bootstrapSHA256") != plan["bootstrapSHA256"]
                 or probe.get("nativeCLIs") != list(NATIVE_CLIS)
+                or probe.get("desktop") is not plan["desktop"]
                 or type(probe.get("workspaceAvailableBytes")) is not int
                 or probe["workspaceAvailableBytes"] < args.minimum_workspace_gib * (1 << 30)):
             raise PreparationError("the private guest did not confirm required environment and initial disk capacity")

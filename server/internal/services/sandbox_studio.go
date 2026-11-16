@@ -244,7 +244,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		OpenCode:             backend == runtime.BackendOpenCode,
 		Codex:                backend == runtime.BackendCodex,
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
-		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {

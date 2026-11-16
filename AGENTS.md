@@ -197,20 +197,24 @@ bash -n sandbox/scripts/startup.sh
 bash -n sandbox/scripts/install-agent.sh
 bash -n sandbox/scripts/claude-env.sh
 bash -n sandbox/scripts/vnc-preview.sh
+bash -n sandbox/scripts/desktop-session.sh
 bash -n sandbox/scripts/grasp-bootstrap.sh
 bash -n sandbox/scripts/services.sh
 bash -n scripts/test-runtime-bootstrap.sh
 bash -n scripts/test-runtime-e2e.sh
+bash -n scripts/test-desktop-e2e.sh
 bash -n scripts/test-inject.sh
 bash -n scripts/test-preview-inject-upstream.sh
 bash -n scripts/test-git-auth.sh
 bash -n scripts/test-agent-connect.sh
+bash -n scripts/test-desktop-session.sh
 bash -n scripts/cover-check-sandbox.sh
 node --check scripts/agent-ws-check.mjs
 node --check scripts/mock-chat-model.mjs
 ./scripts/test-inject.sh
 ./scripts/test-git-auth.sh
 ./scripts/test-runtime-bootstrap.sh
+./scripts/test-desktop-session.sh
 node --test scripts/mock-chat-model.test.mjs
 
 # Sandbox Go (golangci and go vet from sandbox/; cover from sandbox-gateway/)

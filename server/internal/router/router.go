@@ -117,6 +117,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/workspace/tool-capabilities", modelConnections.Capabilities)
 		api.GET("/workspace/agents/export", h.ExportWorkspaceAgents)
 		api.POST("/workspace/agents/import", h.ImportWorkspaceAgents)
+		api.GET("/mcp-presets", h.ListMCPPresets)
 		api.GET("/workspace/shared-agent-config", h.GetSharedAgent)
 		api.PUT("/workspace/shared-agent-config", h.PutSharedAgent)
 		api.POST("/workspace/shared-agent-config/test", h.CreateSharedAgentTest)
@@ -259,6 +260,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/sandboxes/:id/events", h.SandboxEvents)
 		api.GET("/sandboxes/:id/eventlog", h.SandboxEventLog)
 		api.GET("/sandboxes/:id/log", h.SandboxLog)
+		api.GET("/sandboxes/:id/desktop", h.SandboxDesktopStatus)
+		api.PUT("/sandboxes/:id/desktop/control", h.SandboxDesktopControl)
 	}
 
 	// Run-scoped artifact-store MCP (outside /api): the in-container

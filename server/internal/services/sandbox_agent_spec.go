@@ -105,7 +105,6 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 		OpenCode:             backend == runtime.BackendOpenCode,
 		Codex:                backend == runtime.BackendCodex,
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
-		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {

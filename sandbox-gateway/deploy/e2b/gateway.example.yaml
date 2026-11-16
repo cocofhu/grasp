@@ -33,6 +33,13 @@ e2b:
       cpuCores: 2
       memoryMB: 3072
       diskGi: 20 # minimum available workspace verified by the builder, not a quota
+    # Optional desktop image (Dockerfile.desktop), from prepare-template.py --desktop --name desktop.
+    # Grasp picks it per connection with profile: desktop; set defaultTemplate above.
+    # desktop:
+    #   templateID: replace-with-resolved-desktop-template-id
+    #   cpuCores: 4
+    #   memoryMB: 8192
+    #   diskGi: 30
 # Grasp leaves image unset and sandbox_memory_mb at 0 to follow this template.
 auth:
   apiKeys: [] # Compose injects SANDBOX_GATEWAY_API_KEY as SBGW_API_KEYS

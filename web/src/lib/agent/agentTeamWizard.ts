@@ -21,20 +21,8 @@ export type TeamWizardDraft = {
   env: WizardKV[]; mcp: WizardMCP[]; skipped: Partial<Record<TeamWizardStepId, boolean>>
 }
 
-export function artifactStorePreset(): WizardMCP {
-  return {
-    name: 'artifact-store',
-    transport: 'url',
-    url: '${GRASP_ARTIFACT_URL}',
-    headers: [{ k: 'Authorization', v: 'Bearer ${GRASP_ARTIFACT_TOKEN}' }],
-    command: '',
-    args: '',
-    env: [],
-  }
-}
-
 export function freshTeamDraft(): TeamWizardDraft {
-  return { step: 0, teamName: '', prefix: '', prefixTouched: false, modelConfigurationId: '', env: [], mcp: [artifactStorePreset()], skipped: {} }
+  return { step: 0, teamName: '', prefix: '', prefixTouched: false, modelConfigurationId: '', env: [], mcp: [], skipped: {} }
 }
 
 export function syncDerivedNames(d: TeamWizardDraft) {

@@ -115,6 +115,37 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
   -s sandbox-gateway/deploy/e2b -p 'test_*.py' -v
 ```
 
+### 桌面模板（可选）
+
+桌面镜像（`sandbox-gateway/sandbox/Dockerfile.desktop`，发布为 `ghcr.io/cocofhu/universal-sandbox:<版本>-desktop`）可另建一份模板，与标准模板并存。用该镜像的 `@sha256:` 摘要构建，并加 `--desktop`：
+
+```bash
+/tmp/grasp-e2b-builder/bin/python sandbox-gateway/deploy/e2b/prepare-template.py \
+  --image "${SANDBOX_DESKTOP_OCI_IMAGE:?Set the desktop image with sha256 digest}" \
+  --alias grasp-desktop-v1 \
+  --name desktop \
+  --desktop \
+  --cpu-count 4 \
+  --memory-mb 8192 \
+  --minimum-workspace-gib 30 \
+  --output /tmp/grasp-e2b-desktop-template.json
+```
+
+`--desktop` 要求至少 4 CPU、8192 MiB 内存、30 GiB 可用工作区，并在探针中额外确认 `openbox`、`plank`、`fcitx5`、`xdotool`、`wmctrl`、`import`、`blender`、`blender-mcp`，标记文件 `/etc/grasp-desktop` 与非空应用目录 `/opt/grasp-desktop/apps.json`。结果的 `gatewayTemplates.desktop` 填入 gateway YAML（见 [gateway.example.yaml](gateway.example.yaml) 中注释的 `desktop` 条目）。
+
+选用方式：只要桌面时把它设为唯一模板或 `defaultTemplate: desktop`；两份并存时，在 Grasp 的命名连接中写 `profile: desktop`，使用该连接的沙箱即为桌面镜像。桌面 MCP 与 Blender MCP 需在 Agent 的 MCP 页签「快捷添加」。
+
+#### 用户验收清单（桌面模板）
+
+本仓库不连接真实 E2B 测试，以下由部署方在自己的 E2B 上验收：
+
+1. `prepare-template.py --desktop` 成功，结果 `desktop` 为 `true`，`gatewayTemplates.desktop` 规格与命令行一致。
+2. 用 `profile: desktop` 的连接创建沙箱，沙箱控制台的「电脑」页签出现 Openbox 桌面、底部 Dock 与「我的电脑」启动台；中文输入可用（Ctrl+Space 切换拼音）。
+3. 启动台打开 Mousepad，输入一行文字保存到 `/root/workspace/desktop-check.txt`；终端中能读到该文件。
+4. 为 Agent 快捷添加「桌面控制」，让它截图并列出窗口；在控制台点「接管」后让它点击，返回「用户正在控制桌面」；点「交还」后再次点击成功。
+5. 快捷添加「Blender」，打开 Blender 后让 Agent 通过 Blender MCP 新建一个立方体并读回场景对象列表。
+6. 同一 gateway 的标准模板沙箱仍为浏览器模式（页签名为「浏览器」），浏览器 MCP 正常。
+
 ## 两份配置文件
 
 只使用本目录的 E2B 示例，不复制 Docker 或 Kubernetes 的配置：

@@ -31,11 +31,14 @@ type Capabilities struct {
 	// Preview declares the optional in-sandbox VNC desktop (CDP + websockify)
 	// used by set_preview. Missing / vnc=false → platform degrades noVNC.
 	Preview struct {
-		VNC            bool   `json:"vnc"`
-		CDPPort        int    `json:"cdpPort"`
-		WebsockifyPort int    `json:"websockifyPort"`
-		EnableEnv      string `json:"enableEnv"`
+		VNC            bool `json:"vnc"`
+		CDPPort        int  `json:"cdpPort"`
+		WebsockifyPort int  `json:"websockifyPort"`
 	} `json:"preview"`
+	// Desktop is present on desktop image variants (/etc/grasp-desktop).
+	Desktop struct {
+		Available bool `json:"available"`
+	} `json:"desktop"`
 	// Config declares where MCP / rules / skills / env are injected. Raw so the
 	// platform can read declared paths without coupling to a fixed layout.
 	Config map[string]json.RawMessage `json:"config"`

@@ -1,5 +1,5 @@
 import { origin, req, wsUrl } from '../httpCore'
-import type { SandboxCapacity, SandboxView } from '../apiTypes'
+import type { DesktopStatus, SandboxCapacity, SandboxView } from '../apiTypes'
 
 export const sandboxesClient = {
   sandboxCapacity: () => req<SandboxCapacity>('/sandboxes/capacity'),
@@ -30,6 +30,14 @@ export const sandboxesClient = {
     }
     return req<{ events: any[] }>(path)
   },
+  sandboxDesktop: (id: number) => req<DesktopStatus>(`/sandboxes/${id}/desktop`),
+  /** holder=user must be renewed (heartbeat); the sandbox hands control back to the Agent after 30s. */
+  setSandboxDesktopControl: (id: number, holder: 'user' | 'agent', client: string, opts?: { keepalive?: boolean }) =>
+    req<DesktopStatus>(`/sandboxes/${id}/desktop/control`, {
+      method: 'PUT',
+      body: JSON.stringify({ holder, client }),
+      ...(opts?.keepalive ? { keepalive: true } : {}),
+    }),
   sandboxLog: (id: number, opts?: { signal?: AbortSignal }) =>
     req<{ content: string; live: boolean; found: boolean }>(
       `/sandboxes/${id}/log`,

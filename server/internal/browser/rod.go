@@ -16,7 +16,8 @@ import (
 )
 
 // Fixed remote desktop. The Xvfb framebuffer is 1920x1080 and the outer
-// Chromium window covers it at 0,0, so the tab strip and address bar stay
+// Chromium window covers its work area (the whole screen, or the screen minus
+// the Dock on the desktop image), so the tab strip and address bar stay
 // visible at the top of the preview. The CSS viewport is the content area
 // below that toolbar, not the outer frame. Pinned via
 // Emulation.setDeviceMetricsOverride at DSF 1, so captured pixels equal CSS
@@ -143,6 +144,25 @@ func adoptablePageURL(u string) bool {
 	return true
 }
 
+// workArea is the part of the screen windows may cover (screen.avail*). On the
+// browser image there is no window manager and it is the whole framebuffer;
+// on the desktop image the window manager reserves the Dock strip.
+type workArea struct {
+	left, top, width, height int
+}
+
+var fullScreen = workArea{0, 0, ViewportWidth, ViewportHeight}
+
+// sanitizeWorkArea falls back to the whole screen for values that cannot be a
+// work area on this framebuffer, so a bad read never shrinks the window.
+func sanitizeWorkArea(left, top, width, height int) workArea {
+	if left < 0 || top < 0 || width < ViewportWidth/2 || height < ViewportHeight/2 ||
+		left+width > ViewportWidth || top+height > ViewportHeight {
+		return fullScreen
+	}
+	return workArea{left, top, width, height}
+}
+
 // desktopGeom is one read-back of the headed window: outer frame versus the
 // visible content area (window.innerWidth/innerHeight), plus the outer origin.
 type desktopGeom struct {
@@ -182,16 +202,16 @@ func frameMatches(g desktopGeom, left, top, width, height int) bool {
 		absInt(g.outerH-height) <= desktopFrameSlackPx
 }
 
-// desktopReady reports whether the outer frame covers the Xvfb screen at the
-// origin and the content area fills it below the toolbar. The toolbar stays
-// on screen, so the content area is shorter than the desktop by the toolbar
-// height (zero in fullscreen). An inset outside the toolbar bounds means the
-// content size is stale or short, and the window is not ready.
-func desktopReady(g desktopGeom) bool {
+// desktopReady reports whether the outer frame covers the work area and the
+// content area fills it below the toolbar. The toolbar stays on screen, so the
+// content area is shorter than the frame by the toolbar height (zero in
+// fullscreen). An inset outside the toolbar bounds means the content size is
+// stale or short, and the window is not ready.
+func desktopReady(g desktopGeom, wa workArea) bool {
 	if g.contentW <= 0 || g.contentH <= 0 {
 		return false
 	}
-	if !frameMatches(g, 0, 0, ViewportWidth, ViewportHeight) {
+	if !frameMatches(g, wa.left, wa.top, wa.width, wa.height) {
 		return false
 	}
 	insetX := g.outerW - g.contentW
@@ -218,9 +238,9 @@ func viewportForContent(contentW, contentH int) (width, height int, dpr float64)
 // desktopNotReadyError is the diagnosable failure when the content area still
 // does not cover the screen. Outer size is included so a large frame with a
 // short content area is obvious in logs and in the inspect not-ready path.
-func desktopNotReadyError(g desktopGeom) error {
-	return fmt.Errorf("%w: content %dx%d at %d,%d does not cover %dx%d (outer %dx%d)",
-		ErrDesktopNotReady, g.contentW, g.contentH, g.left, g.top, ViewportWidth, ViewportHeight, g.outerW, g.outerH)
+func desktopNotReadyError(g desktopGeom, wa workArea) error {
+	return fmt.Errorf("%w: content %dx%d at %d,%d does not cover %dx%d at %d,%d (outer %dx%d)",
+		ErrDesktopNotReady, g.contentW, g.contentH, g.left, g.top, wa.width, wa.height, wa.left, wa.top, g.outerW, g.outerH)
 }
 
 // readWindowBounds uses Browser.getWindowForTarget (includes Bounds).
@@ -235,13 +255,13 @@ func (rp *rodPage) readWindowBounds() (*proto.BrowserBounds, error) {
 	return res.Bounds, nil
 }
 
-// presentDesktop focuses the tab, then places the headed window over the Xvfb
-// framebuffer at 0,0 with the toolbar visible. Window state and the outer
+// presentDesktop focuses the tab, then places the headed window over the work
+// area with the toolbar visible. Window state and the outer
 // rectangle are separate CDP requests. The CSS viewport is pinned to the
 // content area once the window settles. Returns ErrDesktopNotReady (with
 // content and outer sizes) when it does not, so inspect must not enter Overlay
-// searchForNode. The window stays at 0,0 either way, so a failure never clips
-// the page.
+// searchForNode. The window stays on the work area either way, so a failure
+// never clips the page.
 func (rp *rodPage) presentDesktop() error {
 	if rp == nil || rp.page == nil {
 		return fmt.Errorf("%w: nil page", ErrDesktopNotReady)
@@ -266,6 +286,7 @@ func (rp *rodPage) presentDesktop() error {
 type desktopWindow interface {
 	setWindowBounds(bounds *proto.BrowserBounds) error
 	readDesktopGeom() (desktopGeom, error)
+	workArea() workArea
 }
 
 // waitDesktopGeom polls until the outer frame is the requested rectangle and
@@ -309,9 +330,10 @@ func waitDesktopGeom(w desktopWindow, left, top, width, height int) (desktopGeom
 	}
 }
 
-// presentNormal sets the normal state, then the 0,0 1920x1080 frame, and waits
+// presentNormal sets the normal state, then the work-area frame, and waits
 // for the content area to settle below the toolbar.
 func presentNormal(w desktopWindow) (desktopGeom, error) {
+	wa := w.workArea()
 	var lastErr error
 	for attempt := 0; attempt < desktopBoundsRetries; attempt++ {
 		if attempt > 0 {
@@ -322,21 +344,21 @@ func presentNormal(w desktopWindow) (desktopGeom, error) {
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop set window state")
 			continue
 		}
-		if err := w.setWindowBounds(windowSizeOnlyBounds(0, 0, ViewportWidth, ViewportHeight)); err != nil {
+		if err := w.setWindowBounds(windowSizeOnlyBounds(wa.left, wa.top, wa.width, wa.height)); err != nil {
 			lastErr = err
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop set window size")
 			continue
 		}
-		geom, err := waitDesktopGeom(w, 0, 0, ViewportWidth, ViewportHeight)
+		geom, err := waitDesktopGeom(w, wa.left, wa.top, wa.width, wa.height)
 		if err != nil {
 			lastErr = err
 			log.Debug().Err(err).Int("attempt", attempt).Msg("preview presentDesktop read geometry")
 			continue
 		}
-		if desktopReady(geom) {
+		if desktopReady(geom, wa) {
 			return geom, nil
 		}
-		lastErr = desktopNotReadyError(geom)
+		lastErr = desktopNotReadyError(geom, wa)
 		log.Debug().
 			Int("content_w", geom.contentW).Int("content_h", geom.contentH).
 			Int("outer_w", geom.outerW).Int("outer_h", geom.outerH).
@@ -357,7 +379,7 @@ func wrapNotReady(err error) error {
 	return err
 }
 
-// presentNormalLocked places the window at 0,0 1920x1080 and pins the CSS
+// presentNormalLocked places the window over the work area and pins the CSS
 // viewport to the content area under the toolbar.
 func (rp *rodPage) presentNormalLocked() error {
 	rp.clearDeviceMetrics()
@@ -386,7 +408,7 @@ func (rp *rodPage) presentFullscreenLocked() error {
 			time.Sleep(desktopBoundsRetry)
 		}
 		geom, err := waitDesktopGeom(rp, 0, 0, ViewportWidth, ViewportHeight)
-		if err == nil && desktopReady(geom) {
+		if err == nil && desktopReady(geom, fullScreen) {
 			return rp.finishDesktop(geom)
 		}
 		if err := rp.setWindowBounds(windowStateOnlyBounds()); err != nil {
@@ -406,10 +428,10 @@ func (rp *rodPage) presentFullscreenLocked() error {
 			lastErr = err
 			continue
 		}
-		if desktopReady(geom) {
+		if desktopReady(geom, fullScreen) {
 			return rp.finishDesktop(geom)
 		}
-		lastErr = desktopNotReadyError(geom)
+		lastErr = desktopNotReadyError(geom, fullScreen)
 	}
 	if b, berr := rp.readWindowBounds(); berr == nil {
 		rp.noteFromBounds(b)
@@ -490,7 +512,7 @@ func (rp *rodPage) maintainDesktop() {
 func (rp *rodPage) pinContentViewport(g desktopGeom) error {
 	w, h, dpr := viewportForContent(g.contentW, g.contentH)
 	if w < 1 || h < 1 {
-		return desktopNotReadyError(g)
+		return desktopNotReadyError(g, fullScreen)
 	}
 	if err := rp.SetViewport(w, h, dpr); err != nil {
 		return fmt.Errorf("%w: set content viewport %dx%d: %v", ErrDesktopNotReady, w, h, err)
@@ -519,6 +541,17 @@ func (rp *rodPage) readDesktopGeom() (desktopGeom, error) {
 		return desktopGeom{}, err
 	}
 	return geomFromBounds(bounds, contentW, contentH), nil
+}
+
+// workArea reads screen.avail*; Chromium takes it from the window manager's
+// _NET_WORKAREA, which excludes the desktop image's Dock.
+func (rp *rodPage) workArea() workArea {
+	res, err := rp.page.Eval(`() => ({l: screen.availLeft || 0, t: screen.availTop || 0, w: screen.availWidth, h: screen.availHeight})`)
+	if err != nil || res == nil {
+		return fullScreen
+	}
+	v := res.Value
+	return sanitizeWorkArea(v.Get("l").Int(), v.Get("t").Int(), v.Get("w").Int(), v.Get("h").Int())
 }
 
 func geomFromBounds(b *proto.BrowserBounds, contentW, contentH int) desktopGeom {

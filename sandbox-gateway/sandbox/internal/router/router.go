@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"backend/internal/auth"
+	"backend/internal/desktop"
 	"backend/internal/handler"
 	"backend/internal/service"
 
@@ -64,6 +65,10 @@ func New(deps *Dependencies) *gin.Engine {
 	r.GET("/api/capabilities", handler.Capabilities(deps.Chats.Default()))
 	r.GET("/api/models", handler.ModelsGET(deps.Chats))
 	r.POST("/api/model", handler.ModelPOST(deps.Chats))
+	desktopPaths := desktop.DefaultPaths()
+	desktopControl := desktop.NewControlStore(desktopPaths, nil)
+	r.GET("/api/desktop/status", handler.DesktopStatus(deps.Chats, desktopPaths, desktopControl))
+	r.PUT("/api/desktop/control", handler.DesktopControl(deps.Chats, desktopPaths, desktopControl))
 
 	// SPA 回退：未知 GET 仍回 index
 	r.NoRoute(func(c *gin.Context) {

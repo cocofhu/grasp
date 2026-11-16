@@ -395,17 +395,6 @@
         "chip": "提交署名",
         "default": "沙箱默认"
       },
-      "preview": {
-        "section": "预览",
-        "vncLabel": "页面预览",
-        "browserLabel": "浏览器工具",
-        "vncHint": "在页面里直接查看 Agent 打开的应用。",
-        "browserHint": "让 Agent 能操作浏览器来检查页面（会同时打开页面预览）。",
-        "vncOn": "页面预览已开",
-        "vncOff": "页面预览已关",
-        "browserOn": "浏览器工具已开",
-        "browserOff": "浏览器工具已关"
-      },
       "repo": {
         "urlLabel": "仓库地址",
         "branchLabel": "分支",
@@ -499,7 +488,7 @@
         "gitOk": "已保存 Git 凭据（内容已隐藏）。",
         "gitSkip": "仓库未配置访问凭据。私有仓库请到「设置 → 仓库」里为它选择凭据。",
         "gitUserOk": "提交署名：{name} <{email}>。",
-        "preview": "预览设置：{vnc}，{mcp}。",
+        "preview": "共享 Agent 已默认带浏览器工具，可在 MCP 页签调整。",
         "created": "已创建",
         "written": "已写入配置"
       },
@@ -1373,6 +1362,7 @@
         "ide": "IDE",
         "acp": "Agent",
         "novnc": "浏览器",
+        "computer": "电脑",
         "log": "日志"
       },
       "terminalStatus": {
@@ -1385,7 +1375,7 @@
       "acpNativeUnavailable": "该沙箱未提供 ACP 桥接服务(8765),无法内嵌 ACP 页面。",
       "acpLoading": "正在连接 ACP",
       "novncUnavailable": "未启动浏览器组件",
-      "novncUnavailableHint": "当前沙箱未启用 VNC 预览（未设置 VNC_PREVIEW），或浏览器桌面启动失败。可使用终端 / ACP 标签操作。",
+      "novncUnavailableHint": "当前沙箱的预览栈未启动或画面启动失败。可使用终端 / ACP 标签操作。",
       "novncConnecting": "正在检测浏览器组件…",
       "novncOpen": "打开",
       "novncAddressPlaceholder": "about:blank",
@@ -1504,12 +1494,17 @@
         "artifactToken": "绑定该 run 的访问令牌",
         "globalVar": "{'${vars.<全局变量名>}'} — 工作流全局变量,如 {'${vars.feature}'}",
         "addArtifactStore": "+ 添加产物存储",
+        "addBrowser": "+ 浏览器",
+        "addDesktop": "+ 桌面控制",
+        "addBlender": "+ Blender",
+        "requiresDesktop": "需要桌面镜像",
         "quickAddLabel": "快捷添加",
         "displayName": {
           "artifact": "产物存储"
         },
         "scopeNote": {
-          "artifact": "本次运行隔离的产物服务。"
+          "artifact": "本次运行隔离的产物服务。",
+          "desktopImage": "仅在桌面镜像的沙箱中可用；默认镜像里调用会返回明确提示。"
         },
         "serviceName": "服务名,如 context7",
         "transportCommand": "命令 (stdio)",
@@ -2216,6 +2211,17 @@
       "directOpenTab": "新标签打开",
       "directOpenTabShort": "新标签页直连打开",
       "externalUrlHint": "外部 URL 直连预览；跨域站点不支持取点标注。",
+      "desktop": {
+        "title": "电脑",
+        "holderYou": "你正在控制",
+        "holderAgent": "Agent 控制中",
+        "holderOther": "其他查看者正在控制",
+        "agentBusy": "Agent 运行中",
+        "agentIdle": "Agent 空闲",
+        "starting": "桌面启动中…",
+        "takeoverTip": "Agent 正在运行：你接管期间它的键鼠操作会被拒绝，归还后继续。",
+        "takeoverHint": "Agent 正在操作电脑；接管会暂停它的键鼠操作。"
+      },
       "novnc": {
         "back": "后退",
         "forward": "前进",

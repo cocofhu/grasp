@@ -1,0 +1,123 @@
+# 桌面镜像变体：在默认沙箱镜像之上叠加桌面壳（Openbox + Plank + fcitx5 拼音）、
+# 一组 GUI 应用与 Blender 官方 MCP，并写入标记 /etc/grasp-desktop。
+# 默认镜像、IMAGE_LEVEL 与 bootstrap 不变；同一运行时包按标记切换 desktop / browser 模式
+# （scripts/vnc-preview.sh → scripts/desktop-session.sh）。
+#
+#   docker build -f Dockerfile.desktop \
+#     --build-arg BASE_IMAGE=ghcr.io/cocofhu/universal-sandbox:<版本> \
+#     -t universal-sandbox:desktop sandbox-gateway/sandbox/
+#
+# 发布：.github/workflows/publish-sandbox-desktop.yml → ghcr.io/cocofhu/universal-sandbox:<版本>-desktop。
+# 镜像自检：scripts/check-desktop-image.sh <image>。
+ARG BASE_IMAGE=ghcr.io/cocofhu/universal-sandbox:latest
+# Blender 官方 MCP 源码（固定提交）。projects.blender.org 会拒绝部分构建网络，CI 在 runner 上
+# clone 后用 --build-context blender_mcp=<dir> 覆盖这一阶段；两种来源都在下面校验提交哈希。
+ARG BLENDER_MCP_REF=dbbf836ad4b1025f14a2b3b504c43903f39e0b04
+
+FROM ${BASE_IMAGE} AS blender_mcp_fetch
+ARG BLENDER_MCP_REF
+RUN git clone -q https://projects.blender.org/lab/blender_mcp.git /src && \
+    git -C /src checkout -q "${BLENDER_MCP_REF}"
+
+FROM scratch AS blender_mcp
+COPY --from=blender_mcp_fetch /src /
+
+FROM ${BASE_IMAGE}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 桌面壳、输入法、中文 locale 与翻译、X 工具（截图 import / xdotool / wmctrl）与 GUI 应用。
+# --no-install-recommends：不拉 KiCad 3D 模型等大包。Mesa llvmpipe 供 Blender / ParaView 软件渲染。
+# Ubuntu 基础镜像排除了 *.mo 翻译；桌面应用要中文界面，先放开再装，并重装已在默认镜像里的 GTK/GLib 数据包。
+RUN f=/etc/dpkg/dpkg.cfg.d/excludes && { [ ! -f "$f" ] || sed -i '\|^path-exclude=/usr/share/locale/|d' "$f"; } && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends --reinstall libgtk-3-common libglib2.0-data && \
+    apt-get install -y --no-install-recommends \
+      openbox plank dbus-x11 libglib2.0-bin dconf-gsettings-backend \
+      fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5 \
+      locales feh imagemagick xdotool wmctrl x11-utils x11-xserver-utils unzip xz-utils \
+      adwaita-icon-theme hicolor-icon-theme \
+      pcmanfm lxterminal mousepad evince \
+      gimp inkscape kdenlive melt \
+      kicad kicad-symbols kicad-footprints freecad openscad qgis paraview \
+      aisleriot kigo \
+      python3-venv \
+      libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxi6 libxxf86vm1 libxfixes3 libxrender1 \
+      libsm6 libxrandr2 libxinerama1 libxcursor1 libnss3 libasound2 libpulse-mainloop-glib0 \
+      libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+      libxcb-xinerama0 libxcb-xkb1 libxcb-shape0 && \
+    sed -i 's/^# *zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen && \
+    rm -rf /var/lib/apt/lists/*
+
+# Blender（官方 MCP 插件要求 ≥ 5.1）。download.blender.org 不可达时走镜像站，sha256 校验不变。
+ARG BLENDER_VERSION=5.1.2
+ARG BLENDER_SHA256=aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb
+RUN f="blender-${BLENDER_VERSION}-linux-x64.tar.xz" && \
+    p="release/Blender${BLENDER_VERSION%.*}/${f}" && \
+    { curl -fsSL --retry 3 -o "/tmp/${f}" "https://download.blender.org/${p}" || \
+      curl -fsSL --retry 3 -o "/tmp/${f}" "https://mirrors.ocf.berkeley.edu/blender/${p}"; } && \
+    echo "${BLENDER_SHA256}  /tmp/${f}" | sha256sum -c - && \
+    mkdir -p /opt/blender && tar -xJf "/tmp/${f}" -C /opt/blender --strip-components=1 && \
+    rm -f "/tmp/${f}" && ln -sfn /opt/blender/blender /usr/local/bin/blender
+ENV BLENDER_PATH=/opt/blender/blender
+
+# Godot 4（单文件编辑器）
+ARG GODOT_VERSION=4.7.2-stable
+ARG GODOT_SHA256=cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4
+ARG GODOT_ICON_SHA256=bc626acf7b04ab704d55911d955f83959ee5921c5f3914d89c5bc1d8332159f7
+RUN curl -fsSL --retry 3 -o /tmp/godot.zip \
+      "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip" && \
+    echo "${GODOT_SHA256}  /tmp/godot.zip" | sha256sum -c - && \
+    mkdir -p /opt/godot && unzip -q /tmp/godot.zip -d /opt/godot && \
+    mv "/opt/godot/Godot_v${GODOT_VERSION}_linux.x86_64" /opt/godot/godot && \
+    curl -fsSL --retry 3 -o /opt/godot/icon.png \
+      "https://raw.githubusercontent.com/godotengine/godot/${GODOT_VERSION}/main/app_icon.png" && \
+    echo "${GODOT_ICON_SHA256}  /opt/godot/icon.png" | sha256sum -c - && \
+    rm -f /tmp/godot.zip && ln -sfn /opt/godot/godot /usr/local/bin/godot
+
+# draw.io 桌面版
+ARG DRAWIO_VERSION=32.6.10
+ARG DRAWIO_SHA256=fc96faafe68cb4e06c0b7116779891592b20fce2cde7907adec504f23c5af83c
+RUN curl -fsSL --retry 3 -o /tmp/drawio.deb \
+      "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-amd64-${DRAWIO_VERSION}.deb" && \
+    echo "${DRAWIO_SHA256}  /tmp/drawio.deb" | sha256sum -c - && \
+    apt-get update && apt-get install -y --no-install-recommends /tmp/drawio.deb && \
+    rm -rf /tmp/drawio.deb /var/lib/apt/lists/*
+
+# 3D Slicer（Kitware 包服务器给出 sha512）
+ARG SLICER_VERSION=5.12.4
+ARG SLICER_ITEM=6aa1beb7ce9de556d3010204
+ARG SLICER_SHA512=ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76
+RUN curl -fsSL --retry 3 -o /tmp/slicer.tar.gz \
+      "https://slicer-packages.kitware.com/api/v1/item/${SLICER_ITEM}/download" && \
+    echo "${SLICER_SHA512}  /tmp/slicer.tar.gz" | sha512sum -c - && \
+    mkdir -p /opt/slicer && tar -xzf /tmp/slicer.tar.gz -C /opt/slicer --strip-components=1 && \
+    rm -f /tmp/slicer.tar.gz && ln -sfn /opt/slicer/Slicer /usr/local/bin/Slicer
+
+# Blender 官方 MCP（固定提交）：MCP 服务端装进独立 venv；插件装进 Blender 用户扩展仓库并
+# 绑定 127.0.0.1:6092（桌面保留端口段 6090–6099）、开机自启、允许联网访问。
+ARG BLENDER_MCP_REF
+COPY desktop/ /tmp/desktop/
+COPY --from=blender_mcp / /tmp/blender_mcp/
+RUN test "$(git -C /tmp/blender_mcp rev-parse HEAD)" = "${BLENDER_MCP_REF}" && \
+    git -C /tmp/blender_mcp diff --quiet HEAD && \
+    python3 -m venv /opt/blender-mcp && \
+    /opt/blender-mcp/bin/pip install --no-cache-dir /tmp/blender_mcp/mcp && \
+    ln -sfn /opt/blender-mcp/bin/blender-mcp /usr/local/bin/blender-mcp && \
+    mkdir -p /tmp/blender_mcp/dist && \
+    blender -b --factory-startup --command extension build \
+      --source-dir /tmp/blender_mcp/addon/blender_mcp_addon --output-dir /tmp/blender_mcp/dist && \
+    blender -b --command extension install-file -r user_default -e /tmp/blender_mcp/dist/mcp-*.zip && \
+    blender -b --online-mode --python /tmp/desktop/blender-mcp-setup.py && \
+    rm -rf /tmp/blender_mcp
+
+# 应用目录与图标；桌面运行时入口指向运行时包 current（与默认镜像其余入口一致）；标记文件。
+RUN mkdir -p /opt/grasp-desktop && \
+    python3 /tmp/desktop/build-apps.py /tmp/desktop/apps.in.json /opt/grasp-desktop && \
+    rm -rf /tmp/desktop && \
+    cur=/opt/grasp-runtime/current && \
+    ln -sfn "$cur/scripts/desktop-session.sh" /usr/local/bin/desktop-session.sh && \
+    ln -sfn "$cur/bin/grasp-desktop" /usr/local/bin/grasp-desktop && \
+    printf 'desktop\n' >/etc/grasp-desktop

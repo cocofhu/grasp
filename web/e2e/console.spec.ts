@@ -55,7 +55,7 @@ test.describe('SandboxConsole Tab / noVNC', () => {
   test('连接失败展示 empty-state', async ({ page }) => {
     await page.goto('/console.html?tab=novnc&vncFail=1')
     await expect(page.getByText('未启动浏览器组件')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText(/未启用 VNC 预览|浏览器桌面启动失败/)).toBeVisible()
+    await expect(page.getByText(/预览栈未启动|画面启动失败/)).toBeVisible()
     // Auto-reconnect hides the button until retries finish. Either state is the empty state.
     const reconnecting = page.getByText(/正在重新连接/)
     const reconnect = page.getByRole('button', { name: '重新连接' })

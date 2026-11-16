@@ -106,7 +106,7 @@ class PrepareTemplateTest(unittest.TestCase):
         FakeSandbox.probe = {
             "status": "passed", "imageLevel": plan["imageLevel"],
             "bootstrapSHA256": plan["bootstrapSHA256"], "nativeCLIs": list(tool.NATIVE_CLIS),
-            "workspaceAvailableBytes": 25 * (1 << 30),
+            "workspaceAvailableBytes": 25 * (1 << 30), "desktop": False,
         }
 
     def test_validate_requires_pinned_oci_and_explicit_profile(self):
@@ -276,6 +276,77 @@ class PrepareTemplateTest(unittest.TestCase):
             self.assertFalse(result["providerContacted"])
             self.assertNotIn("DO_NOT_PRINT", output.read_text())
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+
+    def desktop_args(self, **changes):
+        return self.args(**{"desktop": True, "cpu_count": 4, "memory_mb": 8192, "minimum_workspace_gib": 30, **changes})
+
+    def test_desktop_requires_its_minimum_profile(self):
+        self.assertTrue(tool.validate(self.desktop_args())["desktop"])
+        self.assertFalse(tool.validate(self.args())["desktop"])
+        for changes in ({"cpu_count": 2}, {"memory_mb": 4096}, {"minimum_workspace_gib": 20}):
+            with self.subTest(changes=changes), self.assertRaises(tool.PreparationError):
+                tool.validate(self.desktop_args(**changes))
+
+    def test_desktop_probe_checks_shell_marker_and_catalog(self):
+        plan = tool.validate(self.desktop_args())
+        args = self.desktop_args()
+        source_bootstrap = (args.repo_root / tool.BOOTSTRAP).read_bytes()
+        script = tool.validation_command(plan, require_disk=False)
+        for name in tool.DESKTOP_COMMANDS:
+            self.assertIn(name, script)
+        code = script.split("\n", 1)[1].rsplit("GRASP_TEMPLATE_VALIDATE", 1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "etc").mkdir()
+            (root / "grasp-bootstrap.sh").write_bytes(source_bootstrap)
+            (root / "grasp-bootstrap.sh").chmod(0o755)
+            (root / "etc/grasp-image-level").write_text(str(plan["imageLevel"]) + "\n")
+            executable = root / "chrome"
+            executable.write_text("#!/bin/sh\n")
+            executable.chmod(0o755)
+            apps = root / tool.DESKTOP_APPS.lstrip("/")
+            apps.parent.mkdir(parents=True)
+            marker = root / tool.DESKTOP_MARKER.lstrip("/")
+
+            def run(which=lambda name: "/usr/bin/" + name):
+                stdout = io.StringIO()
+                with patch("pathlib.Path", side_effect=lambda path: root / str(path).lstrip("/")), \
+                        patch("shutil.which", side_effect=which), \
+                        patch("glob.glob", return_value=[str(executable)]), contextlib.redirect_stdout(stdout):
+                    exec(compile(code, "<template-validation>", "exec"), {})
+                return json.loads(stdout.getvalue())
+
+            native = (root / "native")
+            native.write_text("#!/bin/sh\n")
+            which_native = lambda name: "/native" if name in tool.NATIVE_CLIS else "/usr/bin/" + name
+            cases = (
+                (lambda name: None if name == "blender-mcp" else which_native(name), "missing desktop commands: blender-mcp"),
+                (which_native, "desktop marker is missing; build the image from Dockerfile.desktop"),
+            )
+            for which, error in cases:
+                with self.subTest(error=error), self.assertRaises(SystemExit) as caught:
+                    run(which)
+                self.assertEqual(str(caught.exception), error)
+            marker.write_text("desktop\n")
+            for content in ("", "[]", "{}"):
+                apps.write_text(content)
+                with self.subTest(apps=content), self.assertRaises(SystemExit) as caught:
+                    run(which_native)
+                self.assertEqual(str(caught.exception), "desktop app catalog is missing or empty")
+            apps.write_text('[{"id":"blender"}]')
+            self.assertTrue(run(which_native)["desktop"])
+
+    def test_desktop_prepare_requires_desktop_probe(self):
+        FakeSandbox.cpu_count, FakeSandbox.memory_mb = 4, 8192
+        FakeSandbox.probe["workspaceAvailableBytes"] = 31 * (1 << 30)
+        report = tool.prepare(self.desktop_args(), FakeTemplate, FakeSandbox)
+        self.assertEqual(report["status"], "failed")
+        self.assertNotIn("gatewayTemplates", report)
+        FakeSandbox.probe["desktop"] = True
+        report = tool.prepare(self.desktop_args(name="desktop"), FakeTemplate, FakeSandbox)
+        self.assertEqual(report["status"], "passed")
+        self.assertEqual(report["gatewayTemplates"]["desktop"], {"templateID": "template-123", "cpuCores": 4, "memoryMB": 8192, "diskGi": 30})
+        self.assertIn("openbox", FakeTemplate.last.actions[-1][1][0])
 
     def test_sdk_version_must_match_pin_without_importing_sdk(self):
         with patch.object(tool.importlib.metadata, "version", return_value="0.0.0"):

@@ -113,6 +113,25 @@ export interface MCPServer {
   env?: Record<string, string>
 }
 
+/** GET /api/sandboxes/:id/desktop — desktop image shell and control state. */
+export interface DesktopStatus {
+  mode: 'desktop' | 'browser'
+  shellReady: boolean
+  agentActive: boolean
+  holder: 'agent' | 'user'
+  expiresAt?: string
+  fallbackReason?: string
+  apps: string[]
+}
+
+/** Built-in MCP template (GET /api/mcp-presets); the server is the only definition. */
+export interface MCPPreset {
+  id: 'artifact-store' | 'browser' | 'desktop' | 'blender'
+  /** Works only on the desktop sandbox image. */
+  requiresDesktop: boolean
+  server: MCPServer
+}
+
 export interface AgentFile {
   path: string
   content: string

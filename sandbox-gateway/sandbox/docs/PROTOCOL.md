@@ -50,8 +50,12 @@
   "preview": {
     "vnc": true,
     "cdpPort": 9222,
-    "websockifyPort": 6080,
-    "enableEnv": "VNC_PREVIEW"
+    "websockifyPort": 6080
+  },
+  "desktop": {
+    "available": true,
+    "statusPath": "/api/desktop/status",
+    "controlPath": "/api/desktop/control"
   },
   "config": {
     "mcp":    { "path": "<configRoot>/mcp.json", "schema": "mcpServers" },
@@ -68,6 +72,7 @@
   并置 `true`。
 - `preview` 缺省 / `preview.vnc=false` → 沙箱不提供预览桌面,平台对应用预览
   的 noVNC Tab 应降级(不可用或提示镜像不支持)。见 §5。
+- `desktop.available`:镜像是否为桌面变体(存在 `/etc/grasp-desktop`)。见 §5.6。
 - `config.*`:**配置注入契约**,见 §4。
 
 ---
@@ -250,15 +255,14 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 
 ### 5.1 启用
 
-- 平台按 Agent 的沙箱环境配置注入环境变量 `VNC_PREVIEW=1`(或 `true`)。
-- 参考实现:`startup.sh` 检测到该变量后后台执行 `/usr/local/bin/vnc-preview.sh`;
-  若沙箱已启动后才需要预览,平台可 `docker exec … /usr/local/bin/vnc-preview.sh`
-  幂等拉起(脚本探测 CDP 已就绪则直接退出 0)。
-- 不需要应用预览的 Agent **不应**开启,以免每个沙箱都吃 headed Chromium 内存。
+- 预览栈**始终启动**,没有开关变量:参考实现 `startup.sh` 无条件后台执行
+  `/usr/local/bin/vnc-preview.sh`;若沙箱已启动后预览栈退出,平台可
+  `docker exec … /usr/local/bin/vnc-preview.sh` 幂等拉起(脚本探测 CDP 已就绪则直接退出 0)。
+- 镜像缺少预览组件时脚本记录原因并退出,backend 照常启动。
 
-> **经 MCP 暴露(可选)**:CDP(`:9222`)不仅供平台侧 Pick/导航,也可作为 **agent 的浏览器工具**。
-> 参考实现设 `BROWSER_MCP=1` 时:隐含开启预览栈,并把 `chrome-devtools-mcp`(以 `--browser-url`
-> attach 到该 Chromium)按 §4 的配置注入契约合并进 `configRoot/mcp.json`——agent 与人看到的是同一个浏览器。
+> **经 MCP 暴露**:CDP(`:9222`)不仅供平台侧 Pick/导航,也可作为 **agent 的浏览器工具**。
+> 平台在 MCP 配置中写入 `chrome-devtools` 条目(`chrome-devtools-mcp --browser-url=http://127.0.0.1:9222`),
+> 按 §4 的配置注入契约生成 `configRoot/mcp.json`;沙箱脚本不改写该文件。agent 与人看到的是同一个浏览器。
 
 ### 5.2 端口与可达性契约
 
@@ -373,6 +377,24 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
 - 同一沙箱默认**一个 X 桌面**;多 viewer 共享同一显示(约定单人审批,或自行串行)。
 - `capabilities.preview` 声明本镜像是否具备该能力及端口号;缺省视为不支持。
 
+### 5.6 桌面变体(可选)
+
+桌面镜像存在标记 `/etc/grasp-desktop`。预览脚本在同一 `DISPLAY` 上起桌面壳;失败时回落
+browser 模式,并把原因写进 `/run/grasp-desktop/state`。
+
+- 端口:`6090`–`6099` 为桌面内部服务保留段,**仅监听回环**(启动台 launcher `6091`、
+  Blender MCP 插件 `6092`)。平台拒绝把该段登记为应用预览。
+- `GET /api/desktop/status` → `{"mode":"desktop|browser","shellReady":bool,"agentActive":bool,
+  "holder":"agent|user","expiresAt":"RFC3339|空","fallbackReason":"…","apps":["blender",…]}`。
+  `agentActive` 表示 agent 回合是否在运行。
+- `PUT /api/desktop/control`,body `{"holder":"user|agent","client":"<可选查看者 id>"}`:
+  `user` 需每 10 秒续期,30 秒未续期自动回到 `agent`;多个查看者任一持有即 `user`,全部归还或
+  过期才回到 `agent`。其它取值 → `400`。状态落在内存盘 `/run/grasp-desktop/control`。
+- desktop MCP 在 `holder=user` 时拒绝点击、拖拽、输入、按键、滚动、聚焦窗口、启动应用,返回
+  「用户正在控制」;截图与列表类工具照常可用。该检查只在每次工具调用开始时进行,已在执行中的
+  调用(如长文本输入)不会被接管中断。平台只允许登录用户对自己可访问的沙箱调用
+  control,公开分享票据不可调用。
+
 ---
 
 ## 6. 参考实现(reference-only)
@@ -381,7 +403,7 @@ iframe 内嵌它。跨源页面无法由 Grasp 注入脚本,参考实现在**沙
 | --- | --- |
 | 会话 | ACP agent 经 backend 桥接(ACP/JSON-RPC) |
 | IDE | `code-server`(8744) |
-| 预览桌面 | `vnc-preview.sh`(Xvfb + Chromium + x11vnc + websockify);`VNC_PREVIEW=1` |
+| 预览桌面 | `vnc-preview.sh`(Xvfb + Chromium + x11vnc + websockify),始终启动;桌面镜像另起 `desktop-session.sh` |
 | 直连预览注入 | `preview-inject` + `preview-inject.sh`;`PREVIEW_DIRECT=1` |
 | 运行时包 | `grasp-bootstrap.sh`(镜像)+ `scripts/build-sandbox-runtime.sh` 产物(平台下发);`services.sh` 管理常驻服务 |
 | 鉴权密钥 | `CURSOR_API_KEY`、`GITLAB_TOKEN` 等仅参考实现需要 |
