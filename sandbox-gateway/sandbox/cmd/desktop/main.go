@@ -27,7 +27,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: grasp-desktop launcher|mcp")
+		_, _ = fmt.Fprintln(stderr, "usage: grasp-desktop launcher|mcp")
 		return 2
 	}
 	paths := desktop.DefaultPaths()
@@ -43,7 +43,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 		if err := serveLauncher(ctx, *addr, paths, runner); err != nil {
-			fmt.Fprintln(stderr, "grasp-desktop launcher:", err)
+			_, _ = fmt.Fprintln(stderr, "grasp-desktop launcher:", err)
 			return 1
 		}
 		return 0
@@ -55,12 +55,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			LookPath: exec.LookPath,
 		}
 		if err := srv.Serve(ctx, stdin, stdout); err != nil {
-			fmt.Fprintln(stderr, "grasp-desktop mcp:", err)
+			_, _ = fmt.Fprintln(stderr, "grasp-desktop mcp:", err)
 			return 1
 		}
 		return 0
 	default:
-		fmt.Fprintln(stderr, "unknown subcommand:", args[0])
+		_, _ = fmt.Fprintln(stderr, "unknown subcommand:", args[0])
 		return 2
 	}
 }

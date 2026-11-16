@@ -54,7 +54,7 @@ func (r ExecRunner) Start(name string, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer logf.Close()
+	defer func() { _ = logf.Close() }()
 	cmd := exec.Command(name, args...)
 	cmd.Env = r.env()
 	cmd.Stdout, cmd.Stderr = logf, logf
