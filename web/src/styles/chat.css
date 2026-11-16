@@ -279,6 +279,16 @@ nav.chat-message-rail + .scroll-area {
 .chat-choice-option[aria-pressed="true"]:hover { border-color: rgb(var(--c-accent) / .65); }
 .chat-choice-recommendation { background: rgb(var(--c-elevated) / .8); color: rgb(var(--c-txt2)); }
 .chat-request-back { min-height: 36px; }
+.clarify-request {
+  max-width: 100%;
+  border-left: 1px solid rgb(var(--c-line-strong) / .8);
+  padding: 2px 0 2px 14px;
+}
+.clarify-request--history { border-color: rgb(var(--c-line)); }
+.clarify-request button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
+@media (max-width: 767px) {
+  .clarify-request { padding-left: 12px; }
+}
 
 .chat-typing { display: inline-flex; min-height: 20px; align-items: center; gap: 4px; color: rgb(var(--c-accent-2)); }
 .chat-typing i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: chat-breathe 1.6s ease-in-out infinite; }

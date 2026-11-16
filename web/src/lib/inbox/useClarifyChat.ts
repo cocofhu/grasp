@@ -16,6 +16,7 @@ import {
   takeClarifyOutbox,
 } from '@/lib/inbox/clarifyDraftStash'
 import { emptyFailDisplayText, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
+import { useFormDraft, useQuestionDeck } from '@/lib/inbox/clarifyAnswers'
 import { createReplyText, latestFormTurnIndex, latestQuestionTurnIndex, type ChoiceRow } from '@/lib/inbox/clarifyReplyText'
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
@@ -28,9 +29,7 @@ import type {
   ClarifyTurn,
   ClarifyImage,
   ReactQuestion,
-  ReactOption,
   ReactForm,
-  ReactFormField,
   ReactAnnotation,
 } from '@/lib/shared/types'
 import { isImageAttachment } from '@/lib/shared/attachments'
@@ -831,12 +830,8 @@ function prepareComposerSend(
   let outText = text
   if (pendingInteractiveOpen.value) {
     outText = formatSkipReply(text)
-    sel.value = {}
-    other.value = {}
-    otherChecked.value = {}
-    step.value = 0
-    formValues.value = {}
-    formNotice.value = null
+    deck.reset()
+    formDraft.reset()
   }
   return { text: outText, images: imgs, annotations: anns }
 }
@@ -906,15 +901,9 @@ function removeAnnotation(i: number) {
   annotations.value.splice(i, 1)
 }
 
-// --- structured questions (ask_question) ---------------------------------
-// Selected option ids per question, plus optional "其他" free text.
-const sel = ref<Record<string, string[]>>({})
-const other = ref<Record<string, string>>({})
-/** Per-question "其他" checkbox — free text only counts when checked. */
-const otherChecked = ref<Record<string, boolean>>({})
-
-// The interactive choice card is only shown for the latest unanswered agent
-// question turn while the dialogue is live (not done / not mid-send).
+// --- structured questions (ask_question) / forms (ask_form) ---------------
+// The interactive cards are only shown for the latest unanswered agent turn
+// while the dialogue is live (not done / not mid-send).
 const activeQuestions = computed<ReactQuestion[]>(() => {
   if (props.done || !props.active || thinking.value) return []
   if (latestQuestionAnswered.value) return []
@@ -927,87 +916,19 @@ const activeForms = computed<ReactForm[]>(() => {
   return latestForms.value
 })
 
-/** Keyed by `${formIndex}:${fieldName}` — plaintext values (never masked). */
-const formValues = ref<Record<string, string>>({})
-const formNotice = ref<string | null>(null)
-
-function formFieldKey(formIndex: number, name: string): string {
-  return `${formIndex}:${name}`
-}
-
-function fieldWhy(f: ReactFormField): string {
-  return (f.why || f.reason || '').trim()
-}
-
-/** Input type for ask_form: text|url only — never password. */
-function formInputType(f: ReactFormField): 'text' | 'url' {
-  return String(f.type || '').toLowerCase() === 'url' ? 'url' : 'text'
-}
-
-function seedFormValues(forms: ReactForm[]) {
-  const next: Record<string, string> = {}
-  forms.forEach((form, fi) => {
-    for (const f of form.fields || []) {
-      const k = formFieldKey(fi, f.name)
-      next[k] = formValues.value[k] ?? (f.value || '')
-    }
-  })
-  formValues.value = next
-}
-
-watch(
-  () =>
-    activeForms.value
-      .map((f, i) => `${i}:${(f.fields || []).map((x) => x.name).join(',')}`)
-      .join('|'),
-  (key) => {
-    formNotice.value = null
-    if (!key) {
-      formValues.value = {}
-      return
-    }
-    seedFormValues(activeForms.value)
-  },
-)
-
-function formFieldsFilled(forms: ReactForm[]): boolean {
-  for (let fi = 0; fi < forms.length; fi++) {
-    for (const f of forms[fi].fields || []) {
-      if (!(formValues.value[formFieldKey(fi, f.name)] || '').trim()) return false
-    }
-  }
-  return forms.some((f) => (f.fields || []).length > 0)
-}
-
-const formCanSubmit = computed(
-  () => activeForms.value.length > 0 && formFieldsFilled(activeForms.value) && !thinking.value,
-)
+const deck = useQuestionDeck(activeQuestions)
+const formDraft = useFormDraft(activeForms)
 
 function submitForms() {
-  const forms = activeForms.value
-  if (!forms.length || thinking.value) return
-  if (!formFieldsFilled(forms)) {
-    formNotice.value = translate('pages.clarify.formEmptyNotice')
-    return
-  }
-  formNotice.value = null
+  if (!activeForms.value.length || !formDraft.filled.value || thinking.value) return
   if (guardSend(commitForms)) return
   commitForms()
 }
 
 function commitForms() {
-  const forms = activeForms.value
-  if (!forms.length) return
-  const lines: string[] = []
-  forms.forEach((form, fi) => {
-    for (const f of form.fields || []) {
-      const label = (f.label || f.name || '').trim() || f.name
-      const val = (formValues.value[formFieldKey(fi, f.name)] || '').trim()
-      lines.push(`- ${label} → ${val}`)
-    }
-  })
-  const text = formPrefix.value + '\n' + lines.join('\n')
-  formValues.value = {}
+  if (!activeForms.value.length) return
+  const text = formDraft.summary(formPrefix.value)
+  formDraft.reset()
   sendMessage(text)
 }
 
@@ -1017,128 +938,17 @@ function isActiveTurn(i: number): boolean {
 function isActiveFormTurn(i: number): boolean {
   return activeForms.value.length > 0 && i === latestFormIdx.value
 }
-function isSelected(qidStr: string, oid: string): boolean {
-  return (sel.value[qidStr] || []).includes(oid)
-}
-function toggle(q: ReactQuestion, oid: string) {
-  const cur = sel.value[q.id] || []
-  if (q.allowMultiple) {
-    sel.value[q.id] = cur.includes(oid) ? cur.filter((x) => x !== oid) : [...cur, oid]
-    return
-  }
-  // Single-select domain includes preset options and 「其他」. Replacing or
-  // clearing a preset must drop the other checkbox and must not restore it.
-  sel.value[q.id] = cur.includes(oid) ? [] : [oid]
-  otherChecked.value[q.id] = false
-}
-function isOtherSelected(qid: string): boolean {
-  return !!otherChecked.value[qid]
-}
-
-function toggleOther(q: ReactQuestion) {
-  const next = !otherChecked.value[q.id]
-  otherChecked.value[q.id] = next
-  // Checking 「其他」 on a single-select question clears presets. Unchecking
-  // leaves sel empty so the previous preset does not come back. Typing in the
-  // input never checks this box; residual text stays in `other` either way.
-  if (next && !q.allowMultiple) sel.value[q.id] = []
-}
-
-function otherAnswered(q: ReactQuestion): boolean {
-  return !!otherChecked.value[q.id] && !!other.value[q.id]?.trim()
-}
-
-function answered(q: ReactQuestion): boolean {
-  return (sel.value[q.id]?.length ?? 0) > 0 || otherAnswered(q)
-}
-const someAnswered = computed(() => activeQuestions.value.some(answered))
-
-// --- recommended options -------------------------------------------------
-// Auto-pick id for a question: the recommended option, or the first as a
-// fallback (mirrors the backend auto_var / SelectRecommendedOption rule).
-function autoPickId(q: ReactQuestion): string {
-  const rec = q.options.find((o) => o.recommended)
-  return rec ? rec.id : (q.options[0]?.id ?? '')
-}
-// Whether any active question carries an explicit recommendation — gates the
-// "采用推荐" button and auto-recommend affordances.
-const hasRecommended = computed(() => activeQuestions.value.some((q) => q.options.some((o) => o.recommended)))
-
-// Fill sel with the recommended (or first) option for every active question.
-function applyRecommended() {
-  for (const q of activeQuestions.value) {
-    const id = autoPickId(q)
-    sel.value[q.id] = id ? [id] : []
-    // Multi-select still fills only the one recommended (or first) preset and
-    // leaves an already-checked 「其他」 alone. Single-select drops that check.
-    if (!q.allowMultiple) otherChecked.value[q.id] = false
-  }
-}
-function submitRecommended() {
-  if (!activeQuestions.value.length || thinking.value) return
-  applyRecommended()
-  submitChoices()
-}
-
-// --- card deck (one question per card, 上一题 / 下一张) ---------------------
-const step = ref(0)
-// Only a genuinely new question set (different question ids) resets the deck to
-// the first card. Keyed by ids — not array identity — so that background run
-// polling (which rebuilds `turns` into fresh objects each tick) does NOT snap
-// the user back to the first question mid-answer.
-watch(
-  () => activeQuestions.value.map((q) => q.id).join('|'),
-  (key) => {
-    step.value = 0
-    if (!key) return
-    // Preselect the recommended option (if any) so the user only
-    // confirms; never auto-pick the first when nothing was recommended.
-    // immediate: run detail and the gate mount this chat only after the
-    // current question is already in props, so the id key never "changes".
-    for (const q of activeQuestions.value) {
-      const rec = q.options.find((o) => o.recommended)
-      if (rec && !(sel.value[q.id]?.length ?? 0)) sel.value[q.id] = [rec.id]
-    }
-  },
-  { immediate: true },
-)
-const curQuestion = computed<ReactQuestion | null>(() => activeQuestions.value[step.value] || null)
-const isFirstCard = computed(() => step.value <= 0)
-const isLastCard = computed(() => step.value >= activeQuestions.value.length - 1)
-
-function prevCard() {
-  if (step.value > 0) step.value--
-}
-function nextCard() {
-  if (step.value < activeQuestions.value.length - 1) step.value++
-}
-// Pick an option. Never auto-advances — the user moves on with 下一个.
-function pick(q: ReactQuestion, oid: string) {
-  toggle(q, oid)
-}
 
 function submitChoices() {
-  const qs = activeQuestions.value
-  if (!qs.length || !someAnswered.value || thinking.value) return
+  if (!activeQuestions.value.length || !deck.someAnswered.value || thinking.value) return
   if (guardSend(commitChoices)) return
   commitChoices()
 }
 
 function commitChoices() {
-  const qs = activeQuestions.value
-  if (!qs.length || !someAnswered.value) return
-  // Skipped questions are omitted; only answered ones are summarized.
-  const lines = qs.filter(answered).map((q) => {
-    const picked = q.options.filter((o) => (sel.value[q.id] || []).includes(o.id)).map((o) => o.label)
-    const extra = otherChecked.value[q.id] ? other.value[q.id]?.trim() : ''
-    if (extra) picked.push(extra)
-    return `- ${q.prompt} → ${picked.join('、')}`
-  })
-  const text = choicePrefix.value + '\n' + lines.join('\n')
-  sel.value = {}
-  other.value = {}
-  otherChecked.value = {}
-  step.value = 0
+  if (!activeQuestions.value.length || !deck.someAnswered.value) return
+  const text = deck.summary(choicePrefix.value)
+  deck.reset()
   sendMessage(text)
 }
 
@@ -1160,10 +970,6 @@ function selectedLabelsForQuestion(q: ReactQuestion, rows: ChoiceRow[] | null): 
   if (!row) return []
   // Saved text still splits on every dunhao. Restore whole labels before highlighting.
   return restoreChoiceAnswers(row.answers, q.options.map((option) => option.label))
-}
-
-function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
-  return q.options.find((o) => isSelected(q.id, o.id) && !!o.demoHtml?.trim()) ?? null
 }
 
 const sendGuardOpen = ref(false)
@@ -1831,25 +1637,12 @@ onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
     removeAnnotation,
     isActiveTurn,
     isActiveFormTurn,
-    isSelected,
-    toggle,
-    answered,
-    autoPickId,
-    applyRecommended,
-    submitRecommended,
-    prevCard,
-    nextCard,
-    pick,
     submitChoices,
     parseChoiceSummary,
     submitForms,
     parseFormSummary,
-    formFieldKey,
-    fieldWhy,
-    formInputType,
     choiceRowsForAgentTurn,
     selectedLabelsForQuestion,
-    selectedDemoForInteractive,
     send,
     finishEarly,
     finishAbort,
@@ -1926,23 +1719,10 @@ onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
     cancelQueuedItem,
     reorderQueuedItems,
     editQueuedItem,
-    sel,
-    other,
-    otherChecked,
-    isOtherSelected,
-    toggleOther,
-    otherAnswered,
     activeQuestions,
-    someAnswered,
-    hasRecommended,
     activeForms,
-    formValues,
-    formNotice,
-    formCanSubmit,
-    step,
-    curQuestion,
-    isFirstCard,
-    isLastCard,
+    deck,
+    formDraft,
     confirmDisabled,
     translate,
     locale,

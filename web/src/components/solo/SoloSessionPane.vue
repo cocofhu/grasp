@@ -14,6 +14,8 @@ import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ComposerPrimaryAction from '@/components/run/ComposerPrimaryAction.vue'
+import ClarifyQuestionDeck from '@/components/run/ClarifyQuestionDeck.vue'
+import ClarifyFormCard from '@/components/run/ClarifyFormCard.vue'
 import type { soloEmbedClient } from '@/lib/solo/soloEmbedClient'
 import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import ReviewShell from '@/components/run/ReviewShell.vue'
@@ -25,7 +27,6 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
-import SoloAskCard from './SoloAskCard.vue'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
@@ -36,6 +37,7 @@ import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
+import { useFormDraft, useQuestionDeck } from '@/lib/inbox/clarifyAnswers'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
 import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
@@ -276,15 +278,32 @@ async function send() {
 
 // --- ask_question / ask_form ------------------------------------------------
 /** The latest reply, when it ended with questions and nothing was sent after it. */
-const askTurnId = computed(() => {
+const askTurn = computed(() => {
   const last = turns.value[turns.value.length - 1]
-  return last?.role === 'agent' && !last.streaming && (last.questions?.length || last.forms?.length) && !queued.value.length ? last.id : ''
+  return last?.role === 'agent' && !last.streaming && (last.questions?.length || last.forms?.length) && !queued.value.length ? last : null
 })
+const askQuestions = computed(() => askTurn.value?.questions ?? [])
+const askForms = computed(() => askTurn.value?.forms ?? [])
+const askDeck = useQuestionDeck(askQuestions)
+const askDraft = useFormDraft(askForms)
+const askBusy = computed(() => !canSend.value || selectionInvalid.value)
 async function answerAsk(text: string) {
-  if (!canSend.value || selectionInvalid.value) return
+  if (askBusy.value) return
   followBottom.value = true
   await chat.send(text)
   scrollDown(true)
+}
+function submitAskChoices() {
+  if (askBusy.value || !askDeck.someAnswered.value) return
+  const text = askDeck.summary(t('pages.clarify.choicePrefix'))
+  askDeck.reset()
+  void answerAsk(text)
+}
+function submitAskForms() {
+  if (askBusy.value || !askDraft.filled.value) return
+  const text = askDraft.summary(t('pages.clarify.formPrefix'))
+  askDraft.reset()
+  void answerAsk(text)
 }
 
 // --- queue ------------------------------------------------------------------
@@ -546,13 +565,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 message-test-id="solo-agent-message"
               />
               <ArtifactFileAttachments :files="turn.files" />
-              <SoloAskCard
-                v-if="turn.id === askTurnId"
-                :questions="turn.questions"
-                :forms="turn.forms"
-                :disabled="!canSend || selectionInvalid"
-                @answer="answerAsk"
-              />
+              <div v-if="turn.id === askTurn?.id" class="space-y-3" data-testid="solo-ask-card">
+                <ClarifyQuestionDeck v-if="askQuestions.length" :deck="askDeck" :busy="askBusy" @submit="submitAskChoices" />
+                <ClarifyFormCard v-if="askForms.length" :forms="askForms" :draft="askDraft" :busy="askBusy" @submit="submitAskForms" />
+              </div>
               <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
                 <div class="chat-meta mb-1">{{ t('pages.solo.chat.plan') }}</div>
                 <div v-for="(p, pi) in turn.plan" :key="pi" class="flex items-center gap-2 text-txt2">

@@ -168,8 +168,8 @@ describe('SoloSessionPane', () => {
     try {
       await flushPromises()
       expect(wrapper.findAll('[data-testid="solo-ask-card"]')).toHaveLength(1)
-      expect(wrapper.get('[data-testid="solo-ask-submit"]').attributes('disabled')).toBeUndefined()
-      await wrapper.get('[data-testid="solo-ask-submit"]').trigger('click')
+      expect(wrapper.get('[data-testid="clarify-submit-choices"]').attributes('disabled')).toBeUndefined()
+      await wrapper.get('[data-testid="clarify-submit-choices"]').trigger('click')
       expect(box.send).toHaveBeenCalledWith('我的选择:\n- 用哪个? → A')
       turns.value = [...turns.value, turn('u:u2', 'user', '我的选择:\n- 用哪个? → A')]
       await flushPromises()

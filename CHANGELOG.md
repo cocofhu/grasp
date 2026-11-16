@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 会话里 Agent 提出的选择题和表单改为与工作流对话相同的卡片：一次一题、带进度和「上一题 / 下一个」、整行选项、「采用推荐」，不再把所有题目挤成一排小标签。与工作流一样，「其他」需要勾选后填写的内容才会随答案发送。
+
 - 移除定时任务、全部 IM 渠道和运行通知，产品聚焦工作流与云端 Agent（破坏性变更）：
   - 定时任务：删除设置里的「定时任务」页、Agent Studio 数据页的「定时任务」子 Tab、`cron-jobs` 接口和 `task-scheduler` MCP。各 Agent 配置里的 `task-scheduler` MCP 会在启动时自动去掉。
   - IM 渠道：删除 QQ、企业微信、飞书、钉钉接入，包括工作区助手设置里的渠道面板、`/api/workspace/channels` 接口和沙箱自带的 QQ 机器人（`/api/qq/config`）。

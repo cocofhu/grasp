@@ -159,11 +159,12 @@ describe('useClarifyChat unsaved artifact guard', () => {
     await dirtyPlan()
     const { chat, emit, app } = withChat({ turns: questionTurns })
     await nextTick()
-    chat.submitRecommended()
+    chat.deck.applyRecommended()
+    chat.submitChoices()
     expect(chat.sendGuardOpen.value).toBe(true)
     chat.sendGuardCancel()
     expect(sends(emit)).toHaveLength(0)
-    expect(chat.isSelected('q1', 'a')).toBe(true)
+    expect(chat.deck.isSelected('q1', 'a')).toBe(true)
     chat.sendGuardSendAnyway()
     expect(sends(emit)).toHaveLength(0)
     app.unmount()
@@ -173,7 +174,7 @@ describe('useClarifyChat unsaved artifact guard', () => {
     await dirtyPlan()
     const { chat, emit, app } = withChat({ turns: formTurns })
     await nextTick()
-    chat.formValues.value = { [chat.formFieldKey(0, 'repo')]: 'grasp' }
+    chat.formDraft.values.value = { [chat.formDraft.fieldKey(0, 'repo')]: 'grasp' }
     chat.submitForms()
     expect(chat.sendGuardOpen.value).toBe(true)
     expect(sends(emit)).toHaveLength(0)

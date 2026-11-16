@@ -63,6 +63,8 @@ import ChatImageThumb from '../ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
+import ClarifyQuestionDeck from './ClarifyQuestionDeck.vue'
+import ClarifyFormCard from './ClarifyFormCard.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import { readSidebarHandoff, sidebarHandoffEpoch } from '@/lib/inbox/sidebarHandoff'
@@ -378,22 +380,10 @@ const {
   removeAnnotation,
   isActiveTurn,
   isActiveFormTurn,
-  isSelected,
-  toggle,
-  answered,
-  autoPickId,
-  applyRecommended,
-  submitRecommended,
-  prevCard,
-  nextCard,
-  pick,
   submitChoices,
   parseChoiceSummary,
   submitForms,
   parseFormSummary,
-  formFieldKey,
-  fieldWhy,
-  formInputType,
   choiceRowsForAgentTurn,
   selectedLabelsForQuestion,
   send,
@@ -459,22 +449,10 @@ const {
   attachNotice,
   sendNotice,
   stashNotice,
-  sel,
-  other,
-  otherChecked,
-  isOtherSelected,
-  toggleOther,
   activeQuestions,
-  someAnswered,
-  hasRecommended,
   activeForms,
-  formValues,
-  formNotice,
-  formCanSubmit,
-  step,
-  curQuestion,
-  isFirstCard,
-  isLastCard,
+  deck,
+  formDraft,
   confirmDisabled,
   translate,
   locale,
@@ -483,7 +461,6 @@ const {
   closeImagePreview,
   relTime,
   demoOptionsOf,
-  selectedDemoForInteractive,
   selectedDemoOption,
   queueNotice,
   queueToast,
@@ -778,7 +755,7 @@ const focusedHighlighted = computed(() => {
   if (focus.readonly) {
     return selectedLabelsForQuestion(focus.question, choiceRowsForAgentTurn(focus.turnIndex)).includes(option.label)
   }
-  return isSelected(focus.question.id, option.id)
+  return deck.isSelected(focus.question.id, option.id)
 })
 
 const focusedTitle = computed(() => {
@@ -965,7 +942,7 @@ function closePreviewFocus() {
 
 /** Leave the window when the deck moves, the round is submitted, or the live card goes away. */
 watch(
-  () => `${activeQuestions.value.map((q) => q.id).join('|')}@${step.value}@${thinking.value ? 1 : 0}`,
+  () => `${activeQuestions.value.map((q) => q.id).join('|')}@${deck.step.value}@${thinking.value ? 1 : 0}`,
   () => {
     if (previewFocus.value) closePreviewFocus()
   },
@@ -1380,144 +1357,14 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                shows an interactive card deck (one question per card); earlier
                turns render read-only for context. -->
           <template v-if="t.role === 'agent' && t.questions && t.questions.length">
-            <!-- interactive card deck -->
-            <div v-if="isActiveTurn(i) && curQuestion" class="mt-2">
-              <div>
-                <div class="clarify-request relative min-w-0">
-                  <!-- progress -->
-                  <div v-if="activeQuestions.length > 1" class="mb-2.5 flex items-center justify-between">
-                    <div class="flex items-center gap-1">
-                      <span
-                        v-for="(q, qi) in activeQuestions"
-                        :key="qi"
-                        class="h-1.5 rounded-full transition-all"
-                        :class="qi === step ? 'w-4 bg-accent' : answered(q) ? 'w-1.5 bg-accent/40' : 'w-1.5 bg-line-strong'"
-                      />
-                    </div>
-                    <span class="text-[11px] text-txt2">{{ step + 1 }} / {{ activeQuestions.length }}</span>
-                  </div>
-
-                  <Transition name="deck" mode="out-in">
-                    <div :key="step">
-                      <div class="clarify-question-heading mb-3 text-[13px] font-medium text-txt">
-                        <Icon name="chat" :size="16" class="shrink-0 text-txt2" />
-                        <span
-                          class="min-w-0 break-words leading-relaxed [overflow-wrap:anywhere]"
-                          data-testid="clarify-question-prompt"
-                        >{{ curQuestion.prompt }}</span>
-                        <span class="clarify-question-kind text-[11px] font-normal leading-5 text-txt2">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
-                      </div>
-                      <div class="space-y-1.5">
-                        <button
-                          v-for="o in curQuestion.options"
-                          :key="o.id"
-                          type="button"
-                          class="chat-choice-option flex w-full min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
-                          :aria-pressed="isSelected(curQuestion.id, o.id)"
-                          data-testid="clarify-option-btn"
-                          @click="pick(curQuestion, o.id)"
-                        >
-                          <span
-                            class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
-                            :class="[
-                              curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
-                              isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
-                            ]"
-                          >
-                            <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
-                          </span>
-                          <span
-                            class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
-                            data-testid="clarify-option-label"
-                          >{{ o.label }}</span>
-                          <span
-                            v-if="o.recommended"
-                            class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                          >{{ translate('pages.clarify.recommended') }}</span>
-                        </button>
-                      </div>
-                      <div
-                        class="chat-choice-other mt-1.5 flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
-                        :class="{ 'is-selected': isOtherSelected(curQuestion.id) }"
-                        data-testid="clarify-other-row"
-                      >
-                        <button
-                          type="button"
-                          class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
-                          :class="[
-                            curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
-                            isOtherSelected(curQuestion.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
-                          ]"
-                          data-testid="clarify-other-checkbox"
-                          :aria-pressed="isOtherSelected(curQuestion.id)"
-                          :aria-label="translate('pages.clarify.otherPlaceholder')"
-                          @click="toggleOther(curQuestion)"
-                        >
-                          <Icon v-if="isOtherSelected(curQuestion.id)" name="check" :size="10" />
-                        </button>
-                        <input
-                          v-model="other[curQuestion.id]"
-                          type="text"
-                          class="input min-h-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] shadow-none focus:border-transparent focus:ring-0 [overflow-wrap:anywhere]"
-                          :placeholder="translate('pages.clarify.otherPlaceholder')"
-                          data-testid="clarify-other-input"
-                        />
-                      </div>
-                      <div
-                        v-if="selectedDemoForInteractive(curQuestion)"
-                        class="mt-2.5"
-                        data-testid="clarify-inline-demos"
-                      >
-                        <ClarifyDemoFrame
-                          :label="selectedDemoForInteractive(curQuestion)!.label"
-                          :html="selectedDemoForInteractive(curQuestion)!.demoHtml!"
-                          highlighted
-                          @enlarge="openPreviewFocus(curQuestion, selectedDemoForInteractive(curQuestion)!.id, false, i)"
-                        />
-                      </div>
-                    </div>
-                  </Transition>
-
-                  <!-- actions -->
-                  <div class="mt-3 flex items-center justify-between">
-                    <button
-                      v-if="!isFirstCard"
-                      class="chat-request-back inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-[12px] text-txt2 hover:text-txt"
-                      @click="prevCard"
-                    >
-                      <Icon name="arrow-left" :size="13" /> {{ translate('pages.clarify.prev') }}
-                    </button>
-                    <span v-else />
-
-                    <button
-                      v-if="!isLastCard"
-                      class="chat-action-secondary"
-                      @click="nextCard"
-                    >
-                      {{ translate('pages.clarify.next') }} <Icon name="chevron-right" :size="13" />
-                    </button>
-                    <div v-else class="flex flex-wrap items-center gap-2">
-                      <button
-                        v-if="hasRecommended"
-                        class="chat-action-secondary"
-                        :disabled="thinking"
-                        :title="translate('pages.clarify.applyRecommendedTitle')"
-                        @click="submitRecommended"
-                      >
-                        <Icon name="check" :size="14" /> {{ translate('pages.clarify.applyRecommended') }}
-                      </button>
-                      <button
-                        class="chat-action-confirm"
-                        :disabled="!someAnswered || thinking"
-                        @click="submitChoices"
-                      >
-                        <Icon name="chat-send" :size="16" /> {{ translate('pages.clarify.submitChoices') }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ClarifyQuestionDeck
+              v-if="isActiveTurn(i)"
+              class="mt-2"
+              :deck="deck"
+              :busy="thinking"
+              @submit="submitChoices"
+              @enlarge="(q, optionId) => openPreviewFocus(q, optionId, false, i)"
+            />
 
             <!-- read-only history: prompt, chosen labels, inline previews, and per-frame enlarge -->
             <div v-else class="clarify-request clarify-request--history mt-2 min-w-0">
@@ -1593,79 +1440,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Structured forms (ask_form / preflight). Latest unanswered turn is interactive;
                earlier turns render read-only. Label only (no internal name); hover shows why. -->
           <template v-if="t.role === 'agent' && t.forms && t.forms.length">
-            <div v-if="isActiveFormTurn(i)" class="mt-2" data-testid="clarify-form-card">
-              <div class="clarify-request relative min-w-0">
-                <div
-                  v-for="(form, fi) in activeForms"
-                  :key="fi"
-                  class="mb-3 last:mb-0"
-                >
-                  <div v-if="form.title" class="mb-2 flex min-w-0 items-center gap-2 text-[13px] font-medium text-txt">
-                    <Icon name="form" :size="16" class="shrink-0 text-txt2" />
-                    <span class="min-w-0 break-words [overflow-wrap:anywhere]">{{ form.title }}</span>
-                  </div>
-                  <div class="space-y-2.5">
-                    <label
-                      v-for="f in form.fields"
-                      :key="f.name"
-                      class="block min-w-0"
-                      data-testid="clarify-form-field"
-                    >
-                      <span
-                        class="mb-1 block break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
-                        :title="fieldWhy(f) || undefined"
-                      >{{ f.label }}</span>
-                      <input
-                        v-model="formValues[formFieldKey(fi, f.name)]"
-                        :type="formInputType(f)"
-                        class="input h-[34px] min-w-0 w-full rounded-lg border border-line bg-surface px-2.5 text-[13px] text-txt placeholder:text-txt3 focus:border-accent/50 focus:ring-0"
-                        :placeholder="f.placeholder || ''"
-                        autocomplete="off"
-                        data-testid="clarify-form-input"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div v-if="formNotice" class="mt-2 text-[11px] text-warn" data-testid="clarify-form-notice">
-                  {{ formNotice }}
-                </div>
-                <div class="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    class="chat-action-confirm"
-                    :disabled="!formCanSubmit"
-                    data-testid="clarify-form-submit"
-                    @click="submitForms"
-                  >
-                    <Icon name="chat-send" :size="16" /> {{ translate('pages.clarify.submitForm') }}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div
-              v-else
-              class="clarify-request clarify-request--history mt-2 min-w-0"
-              data-testid="clarify-form-readonly"
-            >
-              <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                <Icon name="form" :size="16" />
-                {{ translate('pages.clarify.formsThisRound', { n: t.forms.length }) }}
-                <span class="ml-auto text-[11px] font-normal text-txt2">
-                  {{ translate('pages.clarify.readonly') }}
-                </span>
-              </div>
-              <div v-for="(form, fi) in t.forms" :key="fi" class="mb-2 last:mb-0">
-                <div v-if="form.title" class="mb-1 break-words text-[13px] text-txt2 [overflow-wrap:anywhere]">{{ form.title }}</div>
-                <div
-                  v-for="f in form.fields"
-                  :key="f.name"
-                  class="mb-1 break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
-                  :title="fieldWhy(f) || undefined"
-                >
-                  {{ f.label }}
-                </div>
-              </div>
-            </div>
+            <ClarifyFormCard
+              class="mt-2"
+              :forms="isActiveFormTurn(i) ? activeForms : t.forms"
+              :draft="isActiveFormTurn(i) ? formDraft : undefined"
+              :busy="thinking"
+              @submit="submitForms"
+            />
           </template>
 
           <div
@@ -2184,12 +1965,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   margin-right: 8px;
   color: rgb(var(--c-txt2));
 }
-.clarify-request {
-  max-width: 100%;
-  border-left: 1px solid rgb(var(--c-line-strong) / .8);
-  padding: 2px 0 2px 14px;
-}
-.clarify-request--history { border-color: rgb(var(--c-line)); }
 .clarify-history-preview {
   display: flex;
   align-items: center;
@@ -2268,16 +2043,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   color: rgb(var(--c-txt2));
   transition: color var(--dur-ui), background var(--dur-ui);
 }
-.clarify-question-heading {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: start;
-  column-gap: 8px;
-  row-gap: 6px;
-}
-.clarify-question-heading > .app-icon { margin-top: 3px; }
-.clarify-question-kind { grid-column: 2; }
-.clarify-request button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
 [data-testid="clarify-turn-bottom-time"] { margin-top: 6px; }
 /* Keep the line's height. Only the glyphs appear on hover, so the bubble does not shift. */
 @media (hover: hover) and (pointer: fine) {
@@ -2303,10 +2068,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 [data-testid="clarify-attach-btn"] { border-color: transparent; background: transparent; }
 @media (max-width: 767px) {
   [data-testid="clarify-scroller"] { padding: 18px 16px 56px 36px; }
-  .clarify-request { padding-left: 12px; }
-  [data-testid="clarify-option-btn"],
-  [data-testid="clarify-other-row"],
-  [data-testid="clarify-form-input"] { min-height: 44px; }
 }
 @media (max-width: 767px), (pointer: coarse) {
   .clarify-history-preview { min-height: 44px; }
@@ -2333,20 +2094,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   word-break: break-word;
   overflow: visible;
   opacity: 1;
-}
-
-/* Card-deck step transition: subtle slide + fade as one card advances. */
-.deck-enter-active,
-.deck-leave-active {
-  transition: opacity 0.16s ease, transform 0.16s ease;
-}
-.deck-enter-from {
-  opacity: 0;
-  transform: translateX(8px);
-}
-.deck-leave-to {
-  opacity: 0;
-  transform: translateX(-8px);
 }
 
 /* A quiet phase label; the message and caret carry the streaming activity. */
@@ -2384,14 +2131,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   .clarify-history-preview-go { transition: none; }
   .clarify-row-enter-active, .clarify-row-leave-active { transition: none; }
   .clarify-row-enter-from { transform: none; }
-  .deck-enter-active, .deck-leave-active { transition: none; }
-  .deck-enter-from, .deck-leave-to { transform: none; }
   .clarify-stream-caret {
     animation: none !important;
   }
-  .deck-enter-active,
-  .deck-leave-active { transition: none; }
-  .deck-enter-from,
-  .deck-leave-to { transform: none; }
 }
 </style>

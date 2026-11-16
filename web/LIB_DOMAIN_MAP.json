@@ -74,6 +74,7 @@
     ],
     "inbox": [
       "appPreviewShare.ts",
+      "clarifyAnswers.ts",
       "clarifyDemo.ts",
       "clarifyDemoWindow.ts",
       "clarifyDraftStash.ts",
@@ -283,7 +284,7 @@
     "chat": 12,
     "composables": 19,
     "icons": 2,
-    "inbox": 46,
+    "inbox": 47,
     "pm": 5,
     "run": 74,
     "shared": 40,
