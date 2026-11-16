@@ -6,21 +6,16 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestApplyPreviewEnvTurnsOnAgentDesktop(t *testing.T) {
+func TestApplyPreviewEnvMapsDirectPreview(t *testing.T) {
 	caps := &models.AgentCapabilities{Tools: []string{models.ToolSetPreview}}
 
 	env := map[string]string{}
 	ApplyPreviewEnv(env, caps)
-	for _, k := range []string{"PREVIEW_DIRECT", "VNC_PREVIEW", "BROWSER_MCP"} {
-		if env[k] != "1" {
-			t.Fatalf("%s = %q, want 1 (env %v)", k, env[k], env)
-		}
+	if env["PREVIEW_DIRECT"] != "1" || env["PREVIEW_AUTO_INJECT"] != "1" {
+		t.Fatalf("preview env not set: %v", env)
 	}
-
-	env = map[string]string{"BROWSER_MCP": "0"}
-	ApplyPreviewEnv(env, caps)
-	if env["BROWSER_MCP"] != "0" || env["VNC_PREVIEW"] != "1" {
-		t.Fatalf("explicit opt-out must win: %v", env)
+	if len(env) != 3 {
+		t.Fatalf("only the direct-preview keys may be set, got %v", env)
 	}
 
 	env = map[string]string{}

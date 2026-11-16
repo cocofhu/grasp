@@ -405,7 +405,6 @@ func (s *stack) onboard(model restartModel) {
 	body := map[string]any{
 		"modelConfigurationId": configuration.ID,
 		"language":             "en",
-		"vncPreview":           false, "browserMcp": false,
 		"agents": []map[string]any{
 			{"templateId": "clarify", "name": "Clarify"},
 			{"templateId": "implement", "name": "Implement"},

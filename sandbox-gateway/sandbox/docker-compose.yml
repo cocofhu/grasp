@@ -21,7 +21,6 @@ services:
       WORKSPACE_DIR: "/root/workspace"
       CODE_SERVER_PORT: "8744"
       AGENT_PROVIDER: "cursor"         # cursor | claude_code | codebuddy | trae | opencode
-      # VNC_PREVIEW: "1"               # 启动 headed Chromium + noVNC 预览栈
       # PREVIEW_DIRECT: "1"            # 直连预览 HTML 注入（须 PREVIEW_PORT + PREVIEW_PICK_SCRIPT_URL）
       # SKIP_INNER_DOCKER: "1"
       # 仓库（逗号分隔，name|url|branch，branch/name 可省）：

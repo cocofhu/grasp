@@ -200,7 +200,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	}
 
 	env := fg.LastCreateEnv()
-	if env["PREVIEW_DIRECT"] != "1" || env["PREVIEW_AUTO_INJECT"] != "1" || env["VNC_PREVIEW"] != "1" || env["BROWSER_MCP"] != "1" {
+	if env["PREVIEW_DIRECT"] != "1" || env["PREVIEW_AUTO_INJECT"] != "1" {
 		t.Fatal("preview-capable Solo sandbox was created without preview configuration")
 	}
 	if env["GIT_REPOS"] != "app|https://github.com/acme/app.git|main" {

@@ -650,7 +650,7 @@ func (s *Service) EnsureSandboxVNC(ctx context.Context, sandboxName, sandboxIP s
 		time.Sleep(500 * time.Millisecond)
 	}
 	log.Warn().Str("sandbox", sandboxName).Msg("vnc-preview health check failed")
-	return fmt.Errorf("未启动浏览器组件: sandbox %s VNC/CDP not ready (need VNC_PREVIEW=1)", sandboxName)
+	return fmt.Errorf("未启动浏览器组件: sandbox %s VNC/CDP not ready (preview stack did not start; check /tmp/sandbox-vnc-*.log)", sandboxName)
 }
 
 func (s *Service) probeVNCReady(ctx context.Context, ip string) bool {

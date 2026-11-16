@@ -131,7 +131,7 @@ check_provider() {
   local provider="$1"
   name="grasp-agent-e2e-${provider}-$$"
   log "provider=$provider: 启动容器"
-  local env=(-e AGENT_PROVIDER="$provider" -e ROOT_PASSWORD=ci-e2e -e VNC_PREVIEW=1 -e PREVIEW_DIRECT=1)
+  local env=(-e AGENT_PROVIDER="$provider" -e ROOT_PASSWORD=ci-e2e -e PREVIEW_DIRECT=1)
   if [ "$provider" = opencode ]; then
     [ -n "$mock_port" ] || die "provider=opencode: mock chat model 未启动"
     env+=(

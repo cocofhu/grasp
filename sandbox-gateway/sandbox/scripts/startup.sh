@@ -532,34 +532,6 @@ else
     echo "Using workspace directory: ${WORKSPACE_DIR}"
 fi
 
-# --- 浏览器 MCP（可选，BROWSER_MCP=1）----------------------------------------
-# 把沙箱内 headed Chromium 经 CDP 暴露成 MCP 工具给 agent：注册 chrome-devtools-mcp 到
-# $CONFIG_ROOT/mcp.json（jq 非破坏合并，保留业务已注入的其它 MCP），并强制拉起预览栈
-# （MCP 经 --browser-url attach 到该 Chromium；容器内自起 Chrome 有 sandbox 权限问题）。
-# 在 backend 启动前完成，agent connect 时即可见该 MCP。
-if [ "${BROWSER_MCP:-}" = "1" ] || [ "${BROWSER_MCP:-}" = "true" ]; then
-    export VNC_PREVIEW=1   # MCP 需要沙箱内 Chromium/CDP，复用预览栈把它拉起
-    _cdp_port="${CDP_PORT:-9222}"
-    _mcp_file="$CONFIG_ROOT/mcp.json"
-    mkdir -p "$CONFIG_ROOT"
-    [ -s "$_mcp_file" ] || echo '{}' > "$_mcp_file"
-    if command -v jq >/dev/null 2>&1; then
-        _tmp_mcp="$(mktemp)"
-        if jq --arg url "http://127.0.0.1:${_cdp_port}" \
-              '.mcpServers //= {} | .mcpServers["chrome-devtools"] = {command:"chrome-devtools-mcp", args:["--browser-url=\($url)"]}' \
-              "$_mcp_file" > "$_tmp_mcp" 2>/dev/null; then
-            mv "$_tmp_mcp" "$_mcp_file"
-            echo "浏览器 MCP：已注册 chrome-devtools → CDP http://127.0.0.1:${_cdp_port}（${_mcp_file}）"
-        else
-            rm -f "$_tmp_mcp"
-            echo "浏览器 MCP：写入 ${_mcp_file} 失败，跳过" >&2
-        fi
-    else
-        echo "浏览器 MCP：未找到 jq，无法安全合并 mcp.json，跳过" >&2
-    fi
-    unset _cdp_port _mcp_file _tmp_mcp
-fi
-
 # 配置 code-server：密码登录（默认 ROOT_PASSWORD）
 mkdir -p /root/.config/code-server
 cat > /root/.config/code-server/config.yaml <<EOF
@@ -652,16 +624,13 @@ else
     service ssh start
 fi
 
-# noVNC 预览栈（headed Chromium + CDP:9222 + websockify:6080）：仅当显式开启时启动，
-# 避免普通场景吃 headed Chromium 资源。
-_vnc_flag="${VNC_PREVIEW:-}"
-if [ "$_vnc_flag" = "1" ] || [ "$_vnc_flag" = "true" ]; then
-  if [ -x /usr/local/bin/vnc-preview.sh ]; then
-    echo "启动沙箱内 noVNC 预览栈（VNC_PREVIEW=1）…"
-    /usr/local/bin/vnc-preview.sh &
-  else
-    echo "未找到 vnc-preview.sh，跳过 noVNC 预览" >&2
-  fi
+# 预览栈（headed Chromium + CDP:9222 + websockify:6080；桌面镜像另起桌面壳）始终启动。
+# 浏览器 MCP 等全部 MCP 由平台写入的 $CONFIG_ROOT/mcp.json 决定，这里不改写。
+if [ -x /usr/local/bin/vnc-preview.sh ]; then
+  echo "启动沙箱内预览栈…"
+  /usr/local/bin/vnc-preview.sh &
+else
+  echo "未找到 vnc-preview.sh，跳过画面预览（backend 照常启动）" >&2
 fi
 
 # backend 与直连预览注入由 services.sh 管理：Grasp 热更新运行时包后经 SSH 调
@@ -681,8 +650,7 @@ chmod 700 "$GRASP_RUNTIME_RUN_DIR"
 )
 unset _v
 
-# 直连预览 HTML 注入：应用仍听 PREVIEW_PORT；入站经 iptables REDIRECT 到 17980。
-# 与 noVNC 互斥由 Approving 保证（direct_preview 不设 VNC_PREVIEW）。
+# 直连预览 HTML 注入：应用仍听 PREVIEW_PORT；入站经 iptables REDIRECT 到 17980，与预览栈共存。
 if [ "${PREVIEW_DIRECT:-}" = "1" ] || [ "${PREVIEW_DIRECT:-}" = "true" ]; then
   echo "启动直连预览 HTML 注入（PREVIEW_DIRECT=1）…"
   "$_services" start preview-inject || echo "直连预览注入启动失败" >&2

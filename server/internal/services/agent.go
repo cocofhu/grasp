@@ -212,11 +212,8 @@ type agentConfig struct {
 // run (see runtime.mcpVars), so no secret is persisted. New agents get this by
 // default so they can read/write artifacts and use plan/ask tools out of the box.
 func DefaultPlatformMCP() []MCPServer {
-	return []MCPServer{{
-		Name:    ArtifactStoreMCP,
-		URL:     "${GRASP_ARTIFACT_URL}",
-		Headers: map[string]string{"Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"},
-	}}
+	m, _ := MCPPresetServer(MCPPresetArtifactStore)
+	return []MCPServer{m}
 }
 
 // List returns all agents, sorted by name.

@@ -43,7 +43,7 @@ services:
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}
       # 可选:GitHub OAuth App 的 Client ID(勾选 Enable Device Flow),开启「用 GitHub 登录」。
       GRASP_GITHUB_OAUTH_CLIENT_ID: ${GRASP_GITHUB_OAUTH_CLIENT_ID:-}
-      # 应用预览 noVNC 使用沙箱内置 VNC 栈(VNC_PREVIEW=1)，无需独立 browser 镜像。
+      # 应用预览 noVNC 使用沙箱内置预览栈(始终启动)，无需独立 browser 镜像。
       GRASP_BROWSER_ENABLED: ${GRASP_BROWSER_ENABLED:-}
       # 国内网络默认走 goproxy.cn(Dockerfile.dev 里也设了同样的默认值作为镜像
       # 内置兜底);在 .env 里设 GOPROXY/GOSUMDB 可覆盖。

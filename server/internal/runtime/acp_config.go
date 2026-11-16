@@ -45,7 +45,6 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 		OpenCode:             backend == BackendOpenCode,
 		Codex:                backend == BackendCodex,
 		DeepSeekHarness:      backend == BackendDeepSeekHarness,
-		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {

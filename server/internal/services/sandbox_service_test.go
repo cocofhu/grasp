@@ -1349,7 +1349,6 @@ func TestSandboxOpenWithEffectiveUsesOnlySelectedModelConfiguration(t *testing.T
 		Env: map[string]string{
 			"GRASP_OPENCODE_PROVIDER": "tencent-tokenhub",
 			"ACP_BRIDGE_MODEL":        "deepseek/deepseek-flash",
-			"BROWSER_MCP":             "1",
 		},
 		Layout: AgentLayout{
 			ConfigRoot:   "/root/.config/opencode",

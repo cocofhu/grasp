@@ -50,8 +50,8 @@ func TestOnboardingBootstrapCreatesTeamAndDefaultWorkflow(t *testing.T) {
 	}
 
 	shared := svc.SharedAgent.Get()
-	if shared.Env["VNC_PREVIEW"] != "1" || shared.Env["BROWSER_MCP"] != "1" {
-		t.Fatalf("preview flags default on: %+v", shared.Env)
+	if len(shared.MCP) != 1 || shared.MCP[0].Name != "chrome-devtools" || shared.MCP[0].Command != "chrome-devtools-mcp" {
+		t.Fatalf("shared Agent must default to the browser MCP: %+v", shared.MCP)
 	}
 
 	for _, name := range services.OnboardingAgentNames {
@@ -181,23 +181,21 @@ func TestOnboardingBootstrapBindsWizardRepoWithItsGitSettings(t *testing.T) {
 	}
 }
 
-func TestOnboardingBootstrapWritesPreviewFlags(t *testing.T) {
+func TestOnboardingBootstrapSeedsSharedBrowserMCPOnce(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	off := false
-	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
-		ModelConfigurationID: "model-onboarding",
-		VncPreview:           &off,
-		BrowserMcp:           &off,
-	})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
+	cfg := svc.SharedAgent.Get()
+	cfg.MCP = []services.MCPServer{{Name: "chrome-devtools", Command: "custom-browser"}}
+	if err := svc.SharedAgent.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := svc.Bootstrap(services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding"}); err != nil {
+			t.Fatalf("bootstrap: %v", err)
+		}
 	}
 	shared := svc.SharedAgent.Get()
-	if shared.Env["VNC_PREVIEW"] != "0" {
-		t.Errorf("VNC_PREVIEW = %q, want 0 so approve nodes do not force the stack on", shared.Env["VNC_PREVIEW"])
-	}
-	if shared.Env["BROWSER_MCP"] != "0" {
-		t.Errorf("BROWSER_MCP = %q, want 0", shared.Env["BROWSER_MCP"])
+	if len(shared.MCP) != 1 || shared.MCP[0].Command != "custom-browser" {
+		t.Fatalf("an existing chrome-devtools entry must be kept as is: %+v", shared.MCP)
 	}
 }
 

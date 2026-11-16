@@ -9,7 +9,7 @@ import (
 )
 
 // TestCompatLiveGatewayCreate verifies create against the deployed gateway:
-// one universal-sandbox image, ACP_BRIDGE_PASSWORD, VNC_PREVIEW, BROWSER_MCP.
+// one universal-sandbox image, ACP_BRIDGE_PASSWORD and the always-on preview stack.
 //
 //	GRASP_LIVE_GATEWAY=http://sandbox-gateway.example.com \
 //	GRASP_CURSOR_API_KEY=crsr_… \
@@ -41,8 +41,6 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 		"SKIP_INNER_DOCKER": "1",
 		"AGENT_PROVIDER":    "cursor",
 		"ACP_BRIDGE_MODEL":  model,
-		"BROWSER_MCP":       "1",
-		"VNC_PREVIEW":       "1",
 		"CURSOR_API_KEY":    apiKey,
 	}
 	ApplyPasswords(env, "compat-live-token")
@@ -74,7 +72,7 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 		t.Fatalf("missing endpoints: %+v", got.Endpoints)
 	}
 	if got.Endpoint("cdp") == "" || got.Endpoint("novnc") == "" {
-		t.Fatalf("missing cdp/novnc (VNC_PREVIEW): %+v", got.Endpoints)
+		t.Fatalf("missing cdp/novnc (preview stack): %+v", got.Endpoints)
 	}
 
 	if err := WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 3*time.Minute); err != nil {

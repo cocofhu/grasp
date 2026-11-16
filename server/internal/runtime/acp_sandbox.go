@@ -581,9 +581,8 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 
 // ApplyPreviewEnv asks the gateway to 1:1-map a PREVIEW_PORT for Agents
 // granted set_preview: previews are IP-direct, with the pick script injected
-// by the in-sandbox proxy at a same-origin path. Those Agents also get the
-// headed desktop browser and chrome-devtools MCP on it, so the VNC preview
-// shows the Agent's own screen; an explicit VNC_PREVIEW / BROWSER_MCP wins.
+// by the in-sandbox proxy at a same-origin path. The headed browser and its
+// screen always run; browser tools come only from the Agent's MCP config.
 func ApplyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 	if env == nil || !caps.CanPreview() {
 		return
@@ -591,9 +590,4 @@ func ApplyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 	env["PREVIEW_DIRECT"] = "1"
 	env["PREVIEW_AUTO_INJECT"] = "1"
 	env["PREVIEW_PICK_SCRIPT_URL"] = "/__grasp/preview-pick.js"
-	for _, k := range []string{"VNC_PREVIEW", "BROWSER_MCP"} {
-		if _, set := env[k]; !set {
-			env[k] = "1"
-		}
-	}
 }

@@ -885,7 +885,7 @@ func TestCreatePreviewDirectOffKeepsEphemeralPublish(t *testing.T) {
 	d.run = m.run
 	_, err := d.Create(context.Background(), driver.Spec{
 		ID: "p4", Image: "img", Ports: []int{8765},
-		Env: map[string]string{"VNC_PREVIEW": "1"},
+		Env: map[string]string{"AGENT_PROVIDER": "cursor"},
 	})
 	if err != nil {
 		t.Fatal(err)
