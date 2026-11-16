@@ -144,7 +144,7 @@ out="$({
 grep -q '"isError": true' <<<"$out" && die "桌面 MCP 操作失败：$out"
 dialog=""
 for _ in $(seq 1 20); do
-  dialog="$(in_box wmctrl -l | awk '/保存|Save/ {print $1; exit}')"
+  dialog="$(in_box wmctrl -l | awk '/另存为|保存|Save/ {print $1; exit}')"
   [ -n "$dialog" ] && break
   sleep 1
 done
