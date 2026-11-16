@@ -176,7 +176,24 @@ template is selected automatically, while multiple templates require
 `e2b.defaultTemplate`. A Grasp named connection can select one with `profile`.
 This selects an environment, not an Agent/coding tool.
 
-Grasp leaves its image unset and memory override at `0` by default. The gateway
+Grasp has no image setting and never sends an image on create; it sends only
+the named connection's `profile`, if any. The gateway is the single owner of
+its default image and profiles and publishes them for discovery:
+
+```text
+GET /api/v1/capabilities      (v1 auth; also works for anonymous local gateways)
+{"version":2,"driver":"docker","defaultImage":"universal-sandbox:local",
+ "profiles":{"universal":{"image":"universal-sandbox:local"}},
+ "ports":{...},"capabilities":{"stopMode":"cold","diskMode":"unlimited"}}
+```
+
+`GET /api/v2/info` returns the same fields plus `transport`. Grasp logs the
+reported environment at startup and `doctor` prints it. Grasp falls back to
+`/api/v2/info` against gateways that predate `/api/v1/capabilities`. The retired
+`sandbox.image`, `sandbox.images.*` and `GRASP_SANDBOX_IMAGE*` settings are
+ignored with a startup warning.
+
+Grasp leaves its memory override at `0` by default. The gateway
 fills resources from the **selected** template or its Docker/Kubernetes defaults.
 An explicit E2B resource override must match that template exactly. Docker/K8s
 requests must stay within the backend's `resources.max`. Unknown profiles and

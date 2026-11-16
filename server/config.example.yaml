@@ -39,11 +39,8 @@ engine:
   profiles_root: "data/profiles"
 
 sandbox:
-  # 默认跟随网关的镜像或 E2B 模板，无需在 Grasp 重复登记。
-  # 只有需要覆盖时才填：Docker/K8s 填 OCI 镜像；E2B 填 templates 中的名称。
-  image: ""
-  # 可选：只覆盖某一个 acpBackend 的镜像。
-  images: {}
+  # 沙箱镜像只在 sandbox-gateway 配置（docker/kubernetes 的 image / profiles，
+  # E2B 的 defaultTemplate / templates）；Grasp 通过 GET /api/v1/capabilities 读取。
   # 默认控制面地址；直接运行 gateway 默认听 8080，需在两端显式对齐端口。
   gateway_url: http://127.0.0.1:8899
   # 通过 GRASP_SANDBOX_GATEWAY_API_KEY 注入与网关 auth.apiKeys 匹配的 key。

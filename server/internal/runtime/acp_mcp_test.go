@@ -29,8 +29,6 @@ func TestCursorLiveMCP(t *testing.T) {
 	if apiKey == "" {
 		t.Fatal("GRASP_CURSOR_API_KEY required")
 	}
-	// Empty → the gateway default.
-	image := os.Getenv("GRASP_SANDBOX_IMAGE")
 	model := getenvOr("GRASP_ACP_BRIDGE_MODEL", "cursor-grok-4.5-high-fast")
 
 	store := newMemStore()
@@ -65,9 +63,8 @@ func TestCursorLiveMCP(t *testing.T) {
 	envJSON, _ := json.Marshal(agentEnv)
 	agentJSON := `{"acpBackend":"cursor","mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":` + string(envJSON) + `}`
 	profilesRoot := writeAgent(t, "go-backend", agentJSON)
-	t.Logf("model=%s image=%q mcp=http://host.docker.internal:%d gateway=%s", model, image, port, gatewayURL)
+	t.Logf("model=%s mcp=http://host.docker.internal:%d gateway=%s", model, port, gatewayURL)
 	provider := newACPProvider(host, Options{
-		SandboxImage: image,
 		GatewayURL:   gatewayURL,
 		NodeHardCap:  10 * time.Minute,
 		MCPEndpoint:  fmt.Sprintf("http://host.docker.internal:%d", port),

@@ -53,7 +53,6 @@ func tarNames(t *testing.T, payload []byte) map[string]bool {
 func TestManagerCreateSSHFallbackWhenNoInject(t *testing.T) {
 	gw, _ := newInlineGW(t)
 	m := NewManager(gw, ManagerOptions{
-		Image:          "img:test",
 		WorkspaceDir:   "/root/workspace",
 		InstallHelpers: true,
 		// no InjectStore → Create falls back to SSH EnsureConfigHome

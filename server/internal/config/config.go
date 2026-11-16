@@ -290,13 +290,9 @@ type EngineConfig struct {
 	NodeAutoRetryMax int `yaml:"node_auto_retry_max"`
 }
 
+// SandboxConfig has no image setting: the gateway owns its default image and
+// environment profiles (GET /api/v1/capabilities).
 type SandboxConfig struct {
-	// Image, when non-empty, is the sandbox image for every acpBackend.
-	// Empty falls through to Images[backend] then the gateway default.
-	Image string `yaml:"image"`
-	// Images optionally overrides the image for one acpBackend. Empty entries
-	// fall back to the gateway default.
-	Images map[string]string `yaml:"images"`
 	// GatewayURL is the sandbox-gateway control-plane base URL. approving calls
 	// it to create/manage sandboxes instead of driving Docker directly. Empty
 	// defaults to http://127.0.0.1:8899 (the start.sh-managed local gateway).
@@ -323,6 +319,10 @@ type SandboxConfig struct {
 	// AcpEnv is the vendor-neutral map of ACP backend options merged into
 	// every sandbox container's environment (after Env).
 	AcpEnv map[string]string `yaml:"acp_env"`
+	// Deprecated: the gateway owns the sandbox image (gateway image/profiles,
+	// E2B defaultTemplate/templates). Ignored with a startup warning when set.
+	RetiredImage  string            `yaml:"image"`
+	RetiredImages map[string]string `yaml:"images"`
 	// Deprecated: Agent turns no longer have a per-turn wall-clock limit; a
 	// node's total limit is its canvas `timeout` and a stuck Agent is caught by
 	// ChatIdleTimeoutSeconds. Ignored with a startup warning when set.
@@ -530,10 +530,6 @@ func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_NODE_AUTO_RETRY"); v != 0 {
 		c.Engine.NodeAutoRetryMax = v
 	}
-	if v := env("GRASP_SANDBOX_IMAGE"); v != "" {
-		c.Sandbox.Image = v
-	}
-	applySandboxImageEnv(c)
 	if v := env("GRASP_SANDBOX_GATEWAY_URL"); v != "" {
 		c.Sandbox.GatewayURL = v
 	}
@@ -669,12 +665,6 @@ func setDefaults(c *Config) {
 	if c.Engine.NodeAutoRetryMax == 0 {
 		c.Engine.NodeAutoRetryMax = 3
 	}
-	// Image intentionally has no compiled-in default: empty means
-	// Images[backend] / the gateway default.
-	// Release compose configures the image in the Docker gateway.
-	if c.Sandbox.Images == nil {
-		c.Sandbox.Images = map[string]string{}
-	}
 	if c.Sandbox.GatewayURL == "" {
 		c.Sandbox.GatewayURL = "http://127.0.0.1:8899"
 	}
@@ -744,6 +734,10 @@ func warnDeprecated(c *Config) {
 		log.Warn().Int("agent_chat_timeout_seconds", c.Sandbox.AgentChatTimeoutSeconds).
 			Msg("GRASP_AGENT_TIMEOUT_SEC / sandbox.agent_chat_timeout_seconds is deprecated and ignored: Agent turns have no per-turn limit; set the node time limit on the canvas and the no-activity limit on the settings page")
 	}
+	if keys := retiredSandboxImageKeys(c); len(keys) > 0 {
+		log.Warn().Strs("keys", keys).
+			Msg("sandbox image settings are retired and ignored: configure the image in sandbox-gateway (docker/kubernetes image or profiles, e2b defaultTemplate or templates); Grasp reads it from GET /api/v1/capabilities")
+	}
 }
 
 func warnUnsafeAuth(c *Config) {
@@ -791,19 +785,6 @@ func ResolveMCPAdvertise(fallback string) string {
 		return base
 	}
 	return strings.TrimRight(RewriteMisconfiguredMCPAdvertise(fallback), "/")
-}
-
-// applySandboxImageEnv merges GRASP_SANDBOX_IMAGE_<BACKEND> into Images.
-func applySandboxImageEnv(c *Config) {
-	if c.Sandbox.Images == nil {
-		c.Sandbox.Images = map[string]string{}
-	}
-	for _, b := range knownSandboxBackends {
-		envKey := "GRASP_SANDBOX_IMAGE_" + strings.ToUpper(strings.ReplaceAll(b, "-", "_"))
-		if v := env(envKey); v != "" {
-			c.Sandbox.Images[b] = v
-		}
-	}
 }
 
 func parseDuration(s string, fallback time.Duration) time.Duration {

@@ -122,7 +122,6 @@ func TestCursorLiveRunAgent(t *testing.T) {
 	token := mcptest.Grant(host, runID)
 	defer mcptest.End(host, runID)
 
-	image := os.Getenv("GRASP_SANDBOX_IMAGE")
 	gatewayURL := os.Getenv("GRASP_SANDBOX_GATEWAY_URL")
 	if gatewayURL == "" {
 		gatewayURL = "http://127.0.0.1:8899"
@@ -157,7 +156,6 @@ func TestCursorLiveRunAgent(t *testing.T) {
 	envJSON, _ := json.Marshal(agentEnv)
 	profiles := writeAgent(t, "backend-dev", `{"acpBackend":"cursor","mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":`+string(envJSON)+`}`)
 	provider := newACPProvider(host, Options{
-		SandboxImage: image, // empty → gateway default
 		GatewayURL:   gatewayURL,
 		ProfilesRoot: profiles,
 		NodeHardCap:  8 * time.Minute,

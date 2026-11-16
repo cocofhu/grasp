@@ -110,8 +110,6 @@ docker:
 | `sandbox.private_endpoints` | `GRASP_SANDBOX_PRIVATE_ENDPOINTS` | `false`；配置 gateway transport 时自动启用 | 端点仅服务端使用，浏览器预览走 Grasp 路径代理 |
 | `sandbox.gateways` | — | 空列表 | 命名网关连接列表，适用于多个部署 |
 | `sandbox.default_gateway` | `GRASP_SANDBOX_DEFAULT_GATEWAY` | 空，使用单网关连接 | 新建沙箱使用哪个命名连接；已有沙箱保留原绑定 |
-| `sandbox.image` | `GRASP_SANDBOX_IMAGE` | 空 | 所有 Agent 后端的镜像 / 逻辑环境覆盖值；空时继续下面的解析顺序 |
-| `sandbox.images[backend]` | `GRASP_SANDBOX_IMAGE_<BACKEND>` | 空 | 单独为某个 Agent 后端指定镜像，例如 `_CLAUDE_CODE`、`_CODEX`、`_KIMI_CODE` |
 | `sandbox.env` | `GRASP_SANDBOX_ENV` | 空 map | 传给沙箱的非敏感环境选项；环境变量入口使用 `K=V,K2=V2` 格式 |
 | `sandbox.acp_env` | — | 空 map | Agent 的非敏感环境选项；配置加载末尾合并到 `sandbox.env`，同名时 `acp_env` 覆盖已有值，建议避免重复键 |
 | `sandbox.work_dir` | `GRASP_SANDBOX_WORK_DIR` | 空，使用系统临时目录 | Grasp 宿主侧暂存配置包的目录，不是沙箱内工作目录 |
@@ -129,7 +127,7 @@ docker:
 
 连接列表和默认连接修改后重启 Grasp。完整迁移示例见 [GATEWAY.md](GATEWAY.md#gateway-transport-and-multiple-deployments)。
 
-**镜像解析顺序**：非空 `sandbox.image` > `sandbox.images[backend]` > 网关默认镜像或模板。命名连接指定 `profile` 时，由网关选择该环境。普通部署保持 `image` 为空即可，不需要把模板名称再写到 Grasp。
+**沙箱镜像只在 gateway 配置**：Docker/K8s 用 `image` 与可选 `profiles`，E2B 用 `defaultTemplate` 与 `templates`。Grasp 创建时不传镜像，只在命名连接指定 `profile` 时传环境名；所有 Agent 后端共用同一环境。网关通过 `GET /api/v1/capabilities` 公布 `defaultImage` 和 `profiles`，Grasp 启动日志与 `doctor` 会显示该值。`sandbox.image`、`sandbox.images.*` 和 `GRASP_SANDBOX_IMAGE*` 已废弃：仍存在时启动打印 warning 并忽略，请迁移到网关配置后删除。
 
 ### 资源、并发与超时
 

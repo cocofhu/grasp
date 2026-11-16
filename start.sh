@@ -82,7 +82,6 @@ fi
 export GRASP_PORT GRASP_GATEWAY_PORT GRASP_SANDBOX_GATEWAY_URL
 export GRASP_DEPLOYMENT_MODE GRASP_IMAGE SANDBOX_GATEWAY_IMAGE
 export SANDBOX_IMAGE SANDBOX_GATEWAY_API_KEY GRASP_AUTH_USERS GRASP_DOCTOR_TOKEN GRASP_SECRETS_KEY
-export GRASP_SANDBOX_IMAGE
 # Grasp client uses the dedicated env name; keep it in sync with the gateway.
 export GRASP_SANDBOX_GATEWAY_API_KEY="${GRASP_SANDBOX_GATEWAY_API_KEY:-$SANDBOX_GATEWAY_API_KEY}"
 export SBGW_API_KEYS="${SBGW_API_KEYS:-$SANDBOX_GATEWAY_API_KEY}"
@@ -131,14 +130,14 @@ print_release_endpoints() {
   echo "—— gateway token  ${SANDBOX_GATEWAY_API_KEY}"
   echo "—— images  ${GRASP_IMAGE}"
   echo "           ${SANDBOX_GATEWAY_IMAGE}"
-  echo "—— sandbox ${GRASP_SANDBOX_IMAGE:-$SANDBOX_IMAGE}"
+  echo "—— sandbox ${SANDBOX_IMAGE} (gateway default)"
 }
 
 # Sandbox runtime images are NOT compose services — compose pull never fetches them.
 # Used only by `./start.sh pull`; default up/-d/restart leave the runtime to
 # on-demand gateway pull.
 ensure_sandbox_runtime_image() {
-  local img="${GRASP_SANDBOX_IMAGE:-$SANDBOX_IMAGE}"
+  local img="${SANDBOX_IMAGE}"
   [[ -n "$img" ]] || return 0
   echo "pulling sandbox runtime image ${img} (GHCR, several GB)..."
   docker pull "$img"

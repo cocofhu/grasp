@@ -26,9 +26,8 @@ import (
 
 // sharedRunSandbox is the one sandbox of a shared-mode run.
 type sharedRunSandbox struct {
-	sb    *sandbox.Sandbox
-	home  string // config home of the node that created it; removed with it
-	image string
+	sb   *sandbox.Sandbox
+	home string // config home of the node that created it; removed with it
 	// fingerprint / envKeys describe what the sandbox is primed with now.
 	// An empty fingerprint (adopted after a restart) always re-primes.
 	fingerprint string
@@ -119,9 +118,6 @@ func (s *sharedSandboxes) notePrimed(runID string, sb *sandbox.Sandbox, spec san
 	}
 	cur.fingerprint = sandbox.SpecFingerprint(spec)
 	cur.envKeys = sandbox.ReprimeEnvKeys(spec)
-	if spec.Image != "" {
-		cur.image = spec.Image
-	}
 }
 
 func (s *sharedSandboxes) put(runID string, ss *sharedRunSandbox) {
@@ -186,22 +182,16 @@ func (s *sharedSandboxes) update(ss *sharedRunSandbox, fn func(*sharedRunSandbox
 
 // openSharedSandbox opens the node's session in the run's shared sandbox,
 // creating it on the first node. handled=false sends the caller to the
-// per-node path (the sandbox is held by another node or runs another image).
+// per-node path (the sandbox is held by another node).
 func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, handled bool, err error) {
 	lock := c.shared.runLock(req.RunID)
 	lock.Lock()
 	defer lock.Unlock()
 	key := reactKey(req)
-	image := resolveProviderImage(c.opts, c.backend)
 	if ss := c.shared.get(req.RunID); ss != nil {
 		if ss.owner != "" && ss.owner != key {
 			log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("holder", ss.owner).
 				Msg("shared sandbox held by a parked session; node uses its own sandbox")
-			return nil, nil, "", false, nil
-		}
-		if ss.image != image {
-			log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("image", image).
-				Msg("node needs another sandbox image; node uses its own sandbox")
 			return nil, nil, "", false, nil
 		}
 		sb, acp, err := c.reuseSharedSandbox(ctx, req, ss)
@@ -225,7 +215,7 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (sb *s
 		return nil, nil, "", true, err
 	}
 	c.shared.put(req.RunID, &sharedRunSandbox{
-		sb: sb, home: home, image: image,
+		sb: sb, home: home,
 		fingerprint: sandbox.SpecFingerprint(spec), envKeys: sandbox.ReprimeEnvKeys(spec), owner: key,
 	})
 	c.registerSharedRunSandbox(req, sb, home)
@@ -331,7 +321,7 @@ func (c *acpProvider) adoptSharedSandbox(req NodeReq, sb *sandbox.Sandbox) {
 		return
 	}
 	c.shared.put(req.RunID, &sharedRunSandbox{
-		sb: sb, image: resolveProviderImage(c.opts, c.backend), owner: reactKey(req),
+		sb: sb, owner: reactKey(req),
 	})
 }
 

@@ -26,7 +26,6 @@ import (
 // don't slow the suite, short idle window for the stall test.
 func testOpts() Options {
 	return Options{
-		SandboxImage:        "fake",
 		SandboxMaxAttempts:  3,
 		SandboxRetryBackoff: time.Millisecond,
 		ChatIdleTimeout:     80 * time.Millisecond,

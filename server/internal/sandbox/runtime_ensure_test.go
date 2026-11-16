@@ -247,7 +247,7 @@ func TestAttachTriggersRuntimeUpdate(t *testing.T) {
 	writeRuntime(t, path, v, 1)
 	gw, fg := newInlineGW(t)
 	fg.seed("sb-attach", "running")
-	m := NewManager(gw, ManagerOptions{Image: "img:test", Runtime: NewRuntimeBundle(path)})
+	m := NewManager(gw, ManagerOptions{Runtime: NewRuntimeBundle(path)})
 
 	done := make(chan struct{})
 	var once sync.Once

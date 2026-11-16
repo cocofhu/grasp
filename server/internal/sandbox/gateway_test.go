@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const gatewayFakeImage = "gateway-default:test"
+
 // gatewayFake is a fuller fake of the sandbox-gateway REST API for GatewayClient
 // unit tests (create/get/list/destroy/stop/start/status + auth).
 type gatewayFake struct {
@@ -38,25 +40,37 @@ func (fg *gatewayFake) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	p := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/sandboxes"), "/")
-	parts := strings.Split(p, "/")
 	enc := func(v any) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(v)
 	}
+	if r.URL.Path == "/api/v1/capabilities" {
+		enc(map[string]any{"version": 2, "driver": "docker", "defaultImage": gatewayFakeImage})
+		return
+	}
+	p := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/sandboxes"), "/")
+	parts := strings.Split(p, "/")
 	switch {
 	case p == "" && r.Method == http.MethodPost:
-		fg.seq++
-		id := "gw-" + itoa(fg.seq)
+		var raw map[string]json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		if _, ok := raw["image"]; ok {
+			http.Error(w, "image is owned by the gateway", http.StatusBadRequest)
+			return
+		}
 		var body struct {
-			Image     string            `json:"image"`
 			Labels    map[string]string `json:"labels"`
 			Resources *GWResources      `json:"resources"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.Unmarshal(raw["labels"], &body.Labels)
+		if len(raw["resources"]) > 0 {
+			_ = json.Unmarshal(raw["resources"], &body.Resources)
+		}
+		fg.seq++
+		id := "gw-" + itoa(fg.seq)
 		rec := map[string]any{
 			"id": id, "name": id, "status": "creating",
-			"image": body.Image, "labels": body.Labels,
+			"image": gatewayFakeImage, "labels": body.Labels,
 			"endpoints": map[string]string{},
 		}
 		if body.Resources != nil {
@@ -160,7 +174,6 @@ func TestGatewayClientCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	sb, err := cli.Create(ctx, GWCreateRequest{
-		Image:     "img:test",
 		Labels:    map[string]string{"grasp.managed": "1"},
 		Resources: &GWResources{CPUCores: 2, MemoryMB: 8192, DiskGi: 40},
 	})
@@ -173,8 +186,12 @@ func TestGatewayClientCRUD(t *testing.T) {
 	if fg.seenKey != "secret-key" {
 		t.Errorf("auth key = %q", fg.seenKey)
 	}
-	if sb.Image != "img:test" {
-		t.Errorf("image = %q", sb.Image)
+	if sb.Image != gatewayFakeImage {
+		t.Errorf("image = %q, want gateway default", sb.Image)
+	}
+	caps, err := cli.Capabilities(ctx)
+	if err != nil || caps.DefaultImage != gatewayFakeImage {
+		t.Fatalf("capabilities = %+v, %v", caps, err)
 	}
 	if sb.Resources == nil || sb.Resources.MemoryMB != 8192 {
 		t.Errorf("resources = %+v", sb.Resources)

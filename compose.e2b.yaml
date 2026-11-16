@@ -46,8 +46,7 @@ services:
       GRASP_SANDBOX_PRIVATE_ENDPOINTS: "true"
       GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY}
-      # Optional overrides; empty means use the gateway/template defaults.
-      GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-}
+      # Optional override; empty means use the gateway/template default.
       GRASP_SANDBOX_MEMORY_MB: ${GRASP_SANDBOX_MEMORY_MB:-}
       GRASP_SANDBOX_RUNTIME_BUNDLE: /app/sandbox-runtime/sandbox-runtime.tgz
       GRASP_SANDBOX_WORK_DIR: /data/sandbox-home

@@ -221,7 +221,7 @@ GRASP_MCP_ADVERTISE=https://grasp.example.com
 
 在 gateway YAML 填好实际 `apiURL`、`sandboxURL` 和模板。Compose 可通过 `E2B_API_URL` / `E2B_SANDBOX_URL` 覆盖文件地址；不设时保留 YAML。上述两个 key 用途不同：`E2B_API_KEY` 用于 gateway 调用 provider，`SANDBOX_GATEWAY_API_KEY` 是 Grasp 和 gateway 共享的鉴权 key。密码散列与加密密钥的生成见 [Grasp 配置示例](../../../server/config.example.yaml)。不要提交部署文件或密钥。
 
-Compose 固定使用 host network，网关监听 `127.0.0.1:8899`，Grasp 使用 `direct` transport 和 private endpoints。`GRASP_PORT` 默认 `8080`，`GRASP_GATEWAY_PORT` 默认 `8899`，`GRASP_DATA_DIR` 默认 `./data`。`/data/e2b` 与两个服务的数据库由命名卷持久化。`GRASP_SANDBOX_IMAGE` 和 `GRASP_SANDBOX_MEMORY_MB` 仅作为可选显式覆盖，不再注入模板名或内存默认值。
+Compose 固定使用 host network，网关监听 `127.0.0.1:8899`，Grasp 使用 `direct` transport 和 private endpoints。`GRASP_PORT` 默认 `8080`，`GRASP_GATEWAY_PORT` 默认 `8899`，`GRASP_DATA_DIR` 默认 `./data`。`/data/e2b` 与两个服务的数据库由命名卷持久化。沙箱模板只由网关的 `e2b.defaultTemplate` / `e2b.templates` 决定，Grasp 不再读取 `GRASP_SANDBOX_IMAGE`；`GRASP_SANDBOX_MEMORY_MB` 仅作为可选显式覆盖。
 
 ```bash
 docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml config --quiet
