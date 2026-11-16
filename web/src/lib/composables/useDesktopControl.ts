@@ -6,6 +6,8 @@ import type { DesktopStatus } from '@/lib/api/apiTypes'
 export const DESKTOP_POLL_MS = 3_000
 /** Control renewal; the sandbox returns control to the Agent 30s after the last one. */
 export const DESKTOP_HEARTBEAT_MS = 10_000
+/** Consecutive status failures before polling stops. */
+export const DESKTOP_POLL_MAX_FAILURES = 3
 
 function newClientId(): string {
   const c = globalThis.crypto
@@ -27,6 +29,7 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let beatTimer: ReturnType<typeof setInterval> | null = null
   let holding = false
+  let failures = 0
 
   async function refresh() {
     const id = sandboxId()
@@ -34,8 +37,11 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
     try {
       status.value = await api.sandboxDesktop(id)
     } catch {
+      // Older runtimes have no desktop status endpoint; stop asking.
+      if (++failures >= DESKTOP_POLL_MAX_FAILURES) stopPolling()
       return
     }
+    failures = 0
     if (status.value.mode !== 'desktop') stopPolling()
   }
 
@@ -87,7 +93,7 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
   }
 
   function onVisibility() {
-    if (document.visibilityState === 'hidden' && control.value) control.value = false
+    if (document.visibilityState === 'hidden' && control.value && isDesktop.value) control.value = false
   }
 
   onMounted(() => {

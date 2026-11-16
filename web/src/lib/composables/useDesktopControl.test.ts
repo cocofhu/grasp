@@ -12,7 +12,7 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
-import { DESKTOP_HEARTBEAT_MS, DESKTOP_POLL_MS, useDesktopControl } from './useDesktopControl'
+import { DESKTOP_HEARTBEAT_MS, DESKTOP_POLL_MAX_FAILURES, DESKTOP_POLL_MS, useDesktopControl } from './useDesktopControl'
 
 const desktop = { mode: 'desktop', shellReady: true, agentActive: true, holder: 'agent', apps: [] }
 
@@ -103,6 +103,35 @@ describe('useDesktopControl', () => {
     sandboxDesktop.mockRejectedValueOnce(new Error('down'))
     await api().refresh()
     expect(api().isDesktop.value).toBe(false)
+  })
+
+  it('keeps noVNC control on the browser image when the tab is hidden', async () => {
+    sandboxDesktop.mockResolvedValueOnce({ mode: 'browser', shellReady: false, agentActive: false, holder: 'agent', apps: [] })
+    const { w, control } = harness(8, true)
+    await flushPromises()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await nextTick()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    expect(control.value).toBe(true)
+    w.unmount()
+    expect(setSandboxDesktopControl).not.toHaveBeenCalled()
+  })
+
+  it('stops polling after repeated status failures', async () => {
+    sandboxDesktop.mockReset().mockRejectedValue(new Error('502'))
+    harness(9)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(DESKTOP_POLL_MS * (DESKTOP_POLL_MAX_FAILURES + 3))
+    expect(sandboxDesktop).toHaveBeenCalledTimes(DESKTOP_POLL_MAX_FAILURES)
+  })
+
+  it('keeps polling when a failure is followed by success', async () => {
+    sandboxDesktop.mockRejectedValueOnce(new Error('blip')).mockRejectedValueOnce(new Error('blip'))
+    harness(10)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(DESKTOP_POLL_MS * (DESKTOP_POLL_MAX_FAILURES + 2))
+    expect(sandboxDesktop.mock.calls.length).toBeGreaterThan(DESKTOP_POLL_MAX_FAILURES + 2)
   })
 
   it('swallows control errors and does nothing without a sandbox', async () => {
