@@ -91,7 +91,16 @@ jobs:
           docker buildx build -f server/Dockerfile --target sandbox-runtime-export \
             --output type=local,dest="$RUNNER_TEMP/runtime" .
       - name: Desktop E2E (shell, launcher, desktop MCP, interlock, Blender MCP)
+        env:
+          E2E_ARTIFACT_DIR: ${{ runner.temp }}/desktop-e2e
         run: ./sandbox-gateway/scripts/test-desktop-e2e.sh universal-sandbox:desktop-smoke "$RUNNER_TEMP/runtime/sandbox-runtime.tgz"
+      - name: Desktop E2E screenshot
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-e2e
+          path: ${{ runner.temp }}/desktop-e2e
+          if-no-files-found: ignore
       - name: Browser-mode baseline (default image)
         env:
           BASE: ${{ steps.base.outputs.image }}

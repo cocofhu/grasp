@@ -5,7 +5,7 @@
 #
 # 用法：scripts/test-desktop-e2e.sh <image> <sandbox-runtime.tgz> [desktop|browser]
 #   browser：默认镜像应回落浏览器模式，只验证模式并打印内存（容量对比基线）。
-#   READY_TIMEOUT（默认 300s）
+#   READY_TIMEOUT（默认 300s）；E2E_ARTIFACT_DIR 设了则失败时存一张桌面截图
 set -euo pipefail
 
 image="${1:?usage: test-desktop-e2e.sh <image> <bundle.tgz>}"
@@ -30,7 +30,11 @@ die() {
   docker logs "$name" 2>&1 | tail -150 || true
   echo "::endgroup::"
   echo "::group::desktop logs"
-  docker exec "$name" bash -c 'cat /run/grasp-desktop/state /run/grasp-desktop/session.env; wmctrl -l
+  if [ -n "${E2E_ARTIFACT_DIR:-}" ]; then
+    mkdir -p "$E2E_ARTIFACT_DIR"
+    docker exec -e DISPLAY=:99 "$name" import -silent -window root png:- >"$E2E_ARTIFACT_DIR/desktop.png" 2>/dev/null || true
+  fi
+  docker exec -e DISPLAY=:99 "$name" bash -c 'cat /run/grasp-desktop/state /run/grasp-desktop/session.env; wmctrl -l
     tail -n 60 /tmp/grasp-desktop-*.log 2>/dev/null' || true
   echo "::endgroup::"
   exit 1
@@ -138,16 +142,25 @@ out="$({
   tool key '{"keys":"ctrl+s"}'
 } | mcp "$desk" mcp)"
 grep -q '"isError": true' <<<"$out" && die "桌面 MCP 操作失败：$out"
-sleep 2
+dialog=""
+for _ in $(seq 1 20); do
+  dialog="$(in_box wmctrl -l | awk '/保存|Save/ {print $1; exit}')"
+  [ -n "$dialog" ] && break
+  sleep 1
+done
+[ -n "$dialog" ] || die "没有出现保存对话框；窗口：$(in_box wmctrl -l | tr '\n' ';')"
 out="$({
+  tool focus_window "{\"window_id\":\"$dialog\"}"
+  tool key '{"keys":"ctrl+a"}'
   tool type_text "{\"text\":\"$target\"}"
   tool key '{"keys":"Return"}'
 } | mcp "$desk" mcp)"
+grep -q '"isError": true' <<<"$out" && die "保存对话框操作失败：$out"
 for _ in $(seq 1 15); do
   in_box test -s "$target" && break
   sleep 1
 done
-in_box grep -q '桌面 E2E hello' "$target" || die "Mousepad 没有保存 $target"
+in_box grep -q '桌面 E2E hello' "$target" || die "Mousepad 没有保存 $target；窗口：$(in_box wmctrl -l | tr '\n' ';')"
 log "3. 桌面 MCP 写文件：通过"
 
 # --- 4. 软互锁 ---
