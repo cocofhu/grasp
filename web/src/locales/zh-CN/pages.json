@@ -2881,27 +2881,15 @@
       }
     },
     "clarifyBootLoader": {
-      "pending": "节点尚未执行,等待进入澄清…",
-      "pendingHint": "上游节点完成后会自动开启本轮需求澄清。",
       "stepPulling": {
         "title": "正在拉取镜像…",
         "hint": "首次使用该 Agent 后端时需下载沙箱运行时，可能较久，请稍候。"
       },
       "stepSandbox": {
-        "title": "正在准备工作环境…",
-        "hint": "第一次启动可能需要一会儿，请稍候。"
-      },
-      "stepRuntime": {
-        "title": "正在启动 Agent…",
-        "hint": "正在准备运行环境，请稍候。"
+        "title": "正在准备工作环境…"
       },
       "stepAcp": {
-        "title": "正在连接 Agent…",
-        "hint": "马上就好，请稍候。"
-      },
-      "stepQuestions": {
-        "title": "正在整理第一轮问题…",
-        "hint": "正在整理需要向你确认的事项。"
+        "title": "正在连接 Agent…"
       },
       "checklist": {
         "title": "正在启动 Agent",

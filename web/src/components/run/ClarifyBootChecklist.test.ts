@@ -22,7 +22,7 @@ const T0 = '2026-10-21T00:00:00Z'
 const at = (sec: number) => new Date(Date.parse(T0) + sec * 1000).toISOString()
 
 function mountLoader(phase: 'starting' | 'done', key: string | null = KEY) {
-  return mount(ClarifyBootLoader, { props: { phase, variant: 'inline', bootKey: key }, global: { plugins: [i18n()] } })
+  return mount(ClarifyBootLoader, { props: { phase, bootKey: key }, global: { plugins: [i18n()] } })
 }
 const states = (w: ReturnType<typeof mountLoader>) =>
   w.findAll('[data-testid="clarify-boot-step"]').map((s) => s.attributes('data-state'))

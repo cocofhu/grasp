@@ -1156,7 +1156,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         as its first User Message.
       -->
       <ClarifyHandoffBubble v-if="showAskAbove && currentAsk" class="clarify-turn" :ask="currentAsk" />
-      <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
+      <ClarifyBootLoader v-if="bootStarting" phase="starting" :boot-key="bootRecordKey" />
       <LlmSystemRow
         v-for="note in notesBesideTurn(systemNotes, -1, displayTurns.length)"
         :key="note.key"
@@ -1169,7 +1169,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && i === bootSummaryAt"
         phase="done"
-        variant="inline"
         :boot-key="bootRecordKey"
       />
       <ClarifyHandoffBubble
@@ -1716,7 +1715,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && bootSummaryAt < 0"
         phase="done"
-        variant="inline"
         :boot-key="bootRecordKey"
       />
       <ClarifyHandoffBubble
