@@ -110,10 +110,29 @@ func (f *stopFixture) waitStatus(t *testing.T, status string) models.SoloSession
 
 func (f *stopFixture) stop(t *testing.T) models.SoloSession {
 	t.Helper()
+	stopMessages := func() int {
+		var messages []models.SoloMessage
+		if err := f.db.Where("session_id = ? AND role = ?", f.id, "system").Find(&messages).Error; err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, msg := range messages {
+			if msg.Content == "环境已停止，恢复点已保存" || strings.HasPrefix(msg.Content, "停止未完成，可重试：") {
+				count++
+			}
+		}
+		return count
+	}
+	previous := stopMessages()
 	if _, err := f.solo.Stop(context.Background(), f.id, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	return f.waitStatus(t, models.SoloStatusStopped)
+	f.waitStatus(t, models.SoloStatusStopped)
+	// Reclaim marks the session stopped before finishStop's final update and
+	// notification. Wait for that update to finish before tests mutate GORM's
+	// callback registry or start another recovery operation.
+	waitFor(t, "stop confirmation", func() bool { return stopMessages() > previous })
+	return f.row(t)
 }
 
 func wantSoloCode(t *testing.T, err error, code string) {

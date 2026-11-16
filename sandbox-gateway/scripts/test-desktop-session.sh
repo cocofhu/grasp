@@ -15,10 +15,19 @@ cleanup() {
 trap cleanup EXIT
 
 FAKE="$WORK/bin"
-mkdir -p "$FAKE" "$WORK/home" "$WORK/real"
-# pgrep -x matches the executable name, so the fake WM is a renamed sleep.
-cp "$(command -v sleep)" "$WORK/real/openbox"
-printf '#!/bin/bash\nexec %q 600\n' "$WORK/real/openbox" >"$FAKE/openbox"
+mkdir -p "$FAKE" "$WORK/home"
+# pgrep -x reads the process name. Renaming sleep is not portable: Ubuntu's
+# multi-call coreutils dispatches by argv[0] and cannot run as "openbox".
+cat >"$FAKE/openbox" <<'EOF'
+#!/usr/bin/env python3
+import ctypes
+import time
+
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(15, b"openbox", 0, 0, 0) != 0:  # PR_SET_NAME
+    raise OSError(ctypes.get_errno(), "cannot set fake window-manager name")
+time.sleep(600)
+EOF
 cat >"$FAKE/wmctrl" <<'EOF'
 #!/bin/bash
 [ "$1" = -m ] && pgrep -x openbox >/dev/null
@@ -44,6 +53,9 @@ run() {
 state() { cat "$WORK/run/state"; }
 fail() {
   echo "FAIL: $*" >&2
+  for log in "$WORK"/grasp-desktop-*.log; do
+    [ ! -f "$log" ] || cat "$log" >&2
+  done
   exit 1
 }
 
