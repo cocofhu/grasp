@@ -153,12 +153,16 @@ out="$({
   tool focus_window "{\"window_id\":\"$dialog\"}"
   tool key '{"keys":"ctrl+a"}'
   tool type_text "{\"text\":\"$target\"}"
-  tool key '{"keys":"Return"}'
 } | mcp "$desk" mcp)"
 grep -q '"isError": true' <<<"$out" && die "保存对话框操作失败：$out"
-for _ in $(seq 1 15); do
-  in_box test -s "$target" && break
+# The file chooser's path completion can swallow the first Return.
+for _ in 1 2 3; do
   sleep 1
+  tool key '{"keys":"Return"}' | mcp "$desk" mcp >/dev/null
+  for _ in $(seq 1 5); do
+    in_box test -s "$target" && break 2
+    sleep 1
+  done
 done
 in_box grep -q '桌面 E2E hello' "$target" || die "Mousepad 没有保存 $target；窗口：$(in_box wmctrl -l | tr '\n' ';')"
 log "3. 桌面 MCP 写文件：通过"
