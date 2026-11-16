@@ -90,13 +90,6 @@ func (p PortsConfig) Internal() []int {
 	return collectPorts(p.CDP, p.NoVNC)
 }
 
-// All returns the external publish set. Historically this included CDP/noVNC;
-// those are now Internal-only. Callers that publish to untrusted networks
-// MUST use Public()/All(), not Internal().
-func (p PortsConfig) All() []int {
-	return p.Public()
-}
-
 // Listen returns Public ∪ Internal — every port the sandbox process listens on
 // (ClusterIP / container ports). Not the external publish set.
 func (p PortsConfig) Listen() []int {

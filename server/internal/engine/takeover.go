@@ -410,16 +410,6 @@ func (e *Engine) applyManualVisits(c *execCtx, states []models.StateRun) {
 	}
 }
 
-// IsTakeoverVisit reports whether the node's latest visit is a manual takeover.
-func (e *Engine) IsTakeoverVisit(runID, nodeID string) bool {
-	var sr models.StateRun
-	if e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
-		Order("iteration desc, id desc").First(&sr).Error != nil {
-		return false
-	}
-	return sr.IsManual()
-}
-
 // reconcileManualVisit finishes a takeover the process died in the middle of:
 // the visit row is manual but still running. It is never re-adopted or re-run
 // in auto; it becomes a paused manual session in a cold sandbox (the first

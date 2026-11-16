@@ -118,18 +118,6 @@ func (info RunFailureInfo) DisplayReason() string {
 	return reason
 }
 
-// ShortDisplayReason truncates DisplayReason for list rows.
-func (info RunFailureInfo) ShortDisplayReason(max int) string {
-	return truncateStr(info.DisplayReason(), max)
-}
-
-func truncateStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
-
 // MarshalRunErrorJSON serializes RunFailureInfo for ArtifactService.Save.
 // The reason field uses DisplayReason so empty-product consumers see the same
 // human text as the Web banner.
