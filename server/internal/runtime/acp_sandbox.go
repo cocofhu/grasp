@@ -570,7 +570,6 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	spec := sandbox.Spec{
 		GitCredentials: gitCredentials,
-		Image:          resolveProviderImage(c.opts, backend),
 		Env:            env,
 		ConfigHome:     home,
 		ConfigRoot:     layout.ConfigRoot,

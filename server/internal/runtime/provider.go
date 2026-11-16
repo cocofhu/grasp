@@ -23,10 +23,6 @@ type Options struct {
 	// Implementations must use the operation id to make replay idempotent.
 	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)
 	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
-	// SandboxImage, when non-empty, forces one image for every acpBackend.
-	SandboxImage string
-	// SandboxImages maps acpBackend → image; used when SandboxImage is empty.
-	SandboxImages map[string]string
 	// GatewayURL is the sandbox-gateway control-plane base URL (e.g.
 	// http://127.0.0.1:8899) approving calls to create/manage sandboxes.
 	GatewayURL string

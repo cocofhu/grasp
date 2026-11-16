@@ -211,7 +211,7 @@ Default tags used by `./start.sh` (overridable in `.env`):
 - `ghcr.io/cocofhu/grasp:3.3.0`
 - `ghcr.io/cocofhu/sandbox-gateway:3.3.0`
 - `ghcr.io/cocofhu/universal-sandbox:3.3.0`
-  (one image for every `acpBackend`; `SANDBOX_IMAGE` / `GRASP_SANDBOX_IMAGE` pin or override it — used by release-smoke).
+  (one image for every `acpBackend`; `SANDBOX_IMAGE` configures it on the gateway as `SBGW_DOCKER_IMAGE` — used by release-smoke).
 
 ### release-smoke (manual; not a PR required check)
 
@@ -235,7 +235,7 @@ Local equivalent after images are available:
 export GRASP_IMAGE='ghcr.io/cocofhu/grasp@sha256:...'
 export SANDBOX_GATEWAY_IMAGE='ghcr.io/cocofhu/sandbox-gateway@sha256:...'
 export SANDBOX_IMAGE='ghcr.io/cocofhu/universal-sandbox@sha256:...'
-# release-smoke.sh exports GRASP_SANDBOX_IMAGE=$SANDBOX_IMAGE.
+# compose.release.yaml hands SANDBOX_IMAGE to the gateway (SBGW_DOCKER_IMAGE).
 ./release-smoke.sh
 ```
 

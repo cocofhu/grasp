@@ -276,7 +276,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	spec := sandbox.Spec{
 		GitCredentials: gitCredentials,
 		Name:           name,
-		Image:          resolveSandboxImage(string(backend)),
 		Env:            env,
 		ConfigHome:     home,
 		ConfigRoot:     configRoot,

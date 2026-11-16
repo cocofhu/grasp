@@ -27,9 +27,8 @@ services:
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
       GRASP_PROFILES_ROOT: /app/data/profiles
-      # 沙箱镜像:留空则由网关(SBGW_DOCKER_IMAGE / config.local.yaml)选默认镜像;设了值则
-      # 作为“每次创建”的镜像覆盖随请求发给网关。团队内网镜像等场景可在 .env 里填。
-      GRASP_SANDBOX_IMAGE: ${GRASP_SANDBOX_IMAGE:-}
+      # 沙箱镜像只由网关决定(下方 SBGW_DOCKER_IMAGE / config.local.yaml),团队内网镜像
+      # 在 .env 里设 GRASP_GATEWAY_SANDBOX_IMAGE。
       GRASP_SANDBOX_WORK_DIR: ${HOST_REPO_DIR}/.devdata/sandbox-home
       # 沙箱网关地址:后端通过它创建/管理沙箱(替代直连 docker)。可在 .env 里改成
       # 任意已有网关的 URL;GRASP_GATEWAY_MANAGED=1 时 start.sh 会在本地托管一个。

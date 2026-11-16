@@ -28,10 +28,8 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 		model = "cursor-grok-4.5-high-fast"
 	}
 
-	wantImage := "universal-sandbox:local"
 	gw := NewGatewayClient(base, os.Getenv("GRASP_SANDBOX_GATEWAY_API_KEY"))
 	m := NewManager(gw, ManagerOptions{
-		Image:          wantImage,
 		WorkspaceDir:   "/root/workspace",
 		InstallHelpers: true,
 		CreateTimeout:  20 * time.Minute,
@@ -47,10 +45,13 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
+	caps, err := gw.Capabilities(ctx)
+	if err != nil || caps.DefaultImage == "" {
+		t.Fatalf("capabilities: %+v %v", caps, err)
+	}
 
 	sb, err := m.Create(ctx, Spec{
 		Name:      "compat-live-" + time.Now().Format("150405"),
-		Image:     wantImage,
 		Env:       env,
 		Resources: &GWResources{CPUCores: 2, MemoryMB: 4096, DiskGi: 25},
 	})
@@ -65,8 +66,8 @@ func TestCompatLiveGatewayCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if !strings.Contains(got.Image, "universal-sandbox") {
-		t.Fatalf("image = %q, want universal-sandbox", got.Image)
+	if got.Image != caps.DefaultImage {
+		t.Fatalf("image = %q, want gateway default %q", got.Image, caps.DefaultImage)
 	}
 	if got.Endpoint("session") == "" || got.Endpoint("ssh") == "" {
 		t.Fatalf("missing endpoints: %+v", got.Endpoints)

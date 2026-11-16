@@ -25,6 +25,7 @@ func NewRouter(h *Handler, cfg *config.Config) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.Use(APIKeyAuth(cfg.Auth.APIKeys))
 	{
+		v1.GET("/capabilities", gatewayCapabilities(cfg))
 		v1.POST("/sandboxes", h.Create)
 		v1.GET("/sandboxes", h.List)
 		v1.GET("/sandboxes/:id", h.Get)

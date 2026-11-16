@@ -22,8 +22,8 @@ require_digest GRASP_IMAGE
 require_digest SANDBOX_GATEWAY_IMAGE
 require_digest SANDBOX_IMAGE
 
-# Smoke keeps digest-pinned global force (doctor demo uses a single sandbox image).
-export GRASP_SANDBOX_IMAGE="${GRASP_SANDBOX_IMAGE:-$SANDBOX_IMAGE}"
+# The gateway owns the sandbox image: compose.release.yaml passes SANDBOX_IMAGE
+# to it as SBGW_DOCKER_IMAGE, and doctor reports it from /api/v1/capabilities.
 
 # Internal, short-lived authentication for the loopback doctor control plane.
 # It is generated automatically and deliberately omitted from smoke evidence.

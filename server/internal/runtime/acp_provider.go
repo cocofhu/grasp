@@ -320,13 +320,11 @@ type reactSession struct {
 
 func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecProvider {
 	backend = NormalizeBackend(string(backend))
-	image := resolveProviderImage(opts, backend)
 	gw := opts.Gateway
 	if gw == nil {
 		gw = sandbox.NewGatewayClient(opts.GatewayURL, opts.GatewayAPIKey)
 	}
 	mgr := sandbox.NewManager(gw, sandbox.ManagerOptions{
-		Image:             image,
 		WorkspaceDir:      "/root/workspace",
 		InstallHelpers:    true,
 		InjectStore:       opts.InjectStore,
@@ -337,26 +335,12 @@ func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecPr
 		SSHKeyFile:        opts.SSHKeyFile,
 		DataPlanePassword: opts.DataPlanePassword,
 	})
-	log.Info().Str("image", mgr.Image).Str("gateway", opts.GatewayURL).Str("acpBackend", string(backend)).
+	log.Info().Str("gateway", opts.GatewayURL).Str("acpBackend", string(backend)).
 		Str("bridge", AgentRuntimeLabel(backend)).Msg("sandbox exec provider ready")
 	return &acpProvider{host: host, opts: opts, mgr: mgr, backend: backend,
 		sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{},
 		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore(),
 		inflight: map[string]InflightPrompt{}, shared: processSharedSandboxes}
-}
-
-// resolveProviderImage picks the sandbox image for one acpBackend.
-func resolveProviderImage(opts Options, backend AcpBackend) string {
-	if img := strings.TrimSpace(opts.SandboxImage); img != "" {
-		return img
-	}
-	b := string(NormalizeBackend(string(backend)))
-	if opts.SandboxImages != nil {
-		if img := strings.TrimSpace(opts.SandboxImages[b]); img != "" {
-			return img
-		}
-	}
-	return ""
 }
 
 func (c *acpProvider) Name() string {

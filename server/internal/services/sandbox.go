@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -88,11 +87,6 @@ type liveSandbox struct {
 	soloRouteAgent *Agent
 	switching      bool
 	busy           bool
-}
-
-// resolveSandboxImage picks the per-acpBackend image from live config (nil-safe).
-func resolveSandboxImage(backend string) string {
-	return config.GetConfig().ResolveSandboxImage(backend)
 }
 
 // SandboxOptions configures the service.

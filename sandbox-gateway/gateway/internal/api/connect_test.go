@@ -211,6 +211,60 @@ func TestGatewayInfoReportsBackendSemantics(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesReportGatewayOwnedDefaultImage(t *testing.T) {
+	for _, backend := range []string{"docker", "kubernetes", "e2b"} {
+		cfg, _ := config.DefaultForDriver(backend)
+		switch backend {
+		case "docker":
+			cfg.Docker.Image = "registry.test/universal-sandbox:docker"
+			cfg.Docker.Profiles = map[string]config.ProfileConfig{"gpu": {Image: "registry.test/gpu:1"}}
+		case "kubernetes":
+			cfg.Kubernetes.Image = "registry.test/universal-sandbox:k8s"
+		case "e2b":
+			cfg.E2B.DefaultTemplate = "universal-sandbox:e2b"
+		}
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		gatewayCapabilities(cfg)(ctx)
+		var caps struct {
+			Driver       string                          `json:"driver"`
+			DefaultImage string                          `json:"defaultImage"`
+			Profiles     map[string]config.ProfileConfig `json:"profiles"`
+			Transport    *string                         `json:"transport"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &caps); err != nil {
+			t.Fatal(err)
+		}
+		if caps.Driver != backend || caps.DefaultImage != cfg.DefaultImage() || caps.DefaultImage == "" || caps.Profiles == nil || caps.Transport != nil {
+			t.Fatalf("%s capabilities: %s", backend, recorder.Body.String())
+		}
+		if backend == "docker" && caps.Profiles["gpu"].Image != "registry.test/gpu:1" {
+			t.Fatalf("docker profiles: %+v", caps.Profiles)
+		}
+	}
+}
+
+func TestCapabilitiesUseV1Authentication(t *testing.T) {
+	anonymous, _, _ := testRouter(t, nil)
+	w := httptest.NewRecorder()
+	anonymous.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("anonymous capabilities=%d body=%s", w.Code, w.Body.String())
+	}
+	keyed, _, _ := testRouter(t, []string{"synthetic-key"})
+	for key, status := range map[string]int{"": 401, "wrong": 401, "synthetic-key": 200} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities", nil)
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		keyed.ServeHTTP(w, req)
+		if w.Code != status {
+			t.Errorf("key %q: status %d want %d", key, w.Code, status)
+		}
+	}
+}
+
 func TestEnvironmentProfileResolvesImageAndRejectsUnknownOrConflictingInput(t *testing.T) {
 	target := tcpResponseAfterEOF(t)
 	server, svc, _ := connectFixture(t, "docker", map[int]string{8765: target})

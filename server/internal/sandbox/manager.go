@@ -40,7 +40,6 @@ func NewContainerName() string {
 // container/pod lifecycle and image.
 type Manager struct {
 	gw           *GatewayClient
-	Image        string // optional image override; empty = gateway default
 	WorkspaceDir string // default WORKSPACE_DIR inside the sandbox
 	SSHUser      string // ssh login user (default root)
 	// dataPlanePassword returns one sandbox's saved token, used only as that
@@ -77,7 +76,6 @@ type Manager struct {
 
 // ManagerOptions configures a gateway-backed Manager.
 type ManagerOptions struct {
-	Image        string
 	WorkspaceDir string
 	SSHUser      string
 	// SSHKeyFile is the persistent data-plane private key. Empty keeps an
@@ -113,8 +111,6 @@ type Spec struct {
 	// Name is an optional caller-allocated correlation id (see NewContainerName)
 	// recorded as a gateway label; the authoritative handle is the gateway id.
 	Name string
-	// Image overrides Manager.Image for this create (per-acpBackend images).
-	Image string
 	// Env vars injected into the sandbox. The repo clone list rides here as
 	// GIT_REPOS (comma-separated name|url|branch). See EncodeRepos / RepoSpec.
 	Env    map[string]string
@@ -349,7 +345,6 @@ func NewManager(gw *GatewayClient, opts ManagerOptions) *Manager {
 	}
 	return &Manager{
 		gw:                      gw,
-		Image:                   strings.TrimSpace(opts.Image),
 		WorkspaceDir:            ws,
 		SSHUser:                 opts.SSHUser,
 		dataPlanePassword:       opts.DataPlanePassword,
@@ -458,12 +453,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		labels[k] = v
 	}
 
-	image := strings.TrimSpace(spec.Image)
-	if image == "" {
-		image = m.Image
-	}
 	req := GWCreateRequest{
-		Image:        image,
 		Env:          env,
 		Labels:       labels,
 		WorkspaceDir: workspaceDir,

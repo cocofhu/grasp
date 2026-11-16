@@ -1,51 +1,34 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
 
-func TestResolveSandboxImage(t *testing.T) {
-	if got := (*Config)(nil).ResolveSandboxImage("trae"); got != "" {
-		t.Fatalf("nil config: %q", got)
-	}
-	c := &Config{Sandbox: SandboxConfig{
-		Images: map[string]string{"cursor": "reg/cursor:pin"},
-	}}
-	if got := c.ResolveSandboxImage("cursor"); got != "reg/cursor:pin" {
-		t.Fatalf("per-backend: %q", got)
-	}
-	if got := c.ResolveSandboxImage("claude_code"); got != "" {
-		t.Fatalf("fallback default: %q", got)
-	}
-	c.Sandbox.Image = "reg/force:1"
-	if got := c.ResolveSandboxImage("claude_code"); got != "reg/force:1" {
-		t.Fatalf("global force: %q", got)
-	}
-}
-
-func TestApplySandboxImageEnv(t *testing.T) {
-	t.Setenv("GRASP_SANDBOX_IMAGE_CURSOR", "env/cursor:1")
-	t.Setenv("GRASP_SANDBOX_IMAGE_CLAUDE_CODE", "env/claude:1")
-	t.Setenv("GRASP_SANDBOX_IMAGE_DEEPSEEK_HARNESS", "env/dsh:1")
-	c := &Config{}
-	applySandboxImageEnv(c)
-	if c.Sandbox.Images["cursor"] != "env/cursor:1" {
-		t.Fatalf("cursor env: %v", c.Sandbox.Images)
-	}
-	if c.Sandbox.Images["claude_code"] != "env/claude:1" {
-		t.Fatalf("claude_code env: %v", c.Sandbox.Images)
-	}
-	if got := c.ResolveSandboxImage("deepseek_harness"); got != "env/dsh:1" {
-		t.Fatalf("DeepSeek Harness image = %q", got)
-	}
-}
-
-func TestApplySandboxImageEnvSkipsEmptyOpenCode(t *testing.T) {
+func TestRetiredSandboxImageSettingsAreReportedAndIgnored(t *testing.T) {
+	t.Setenv("GRASP_SANDBOX_IMAGE", "env/img:1")
+	t.Setenv("GRASP_SANDBOX_IMAGE_CODEX", "env/codex:1")
 	t.Setenv("GRASP_SANDBOX_IMAGE_OPENCODE", "")
-	c := &Config{}
-	applySandboxImageEnv(c)
-	if _, ok := c.Sandbox.Images["opencode"]; ok {
-		t.Fatalf("empty OPENCODE env must not pin a missing GHCR tag: %v", c.Sandbox.Images)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	yaml := "sandbox:\n  image: reg/force:1\n  images:\n    cursor: reg/cursor:pin\n    trae: \"\"\n"
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if got := c.ResolveSandboxImage("opencode"); got != "" {
-		t.Fatalf("opencode fallback = %q", got)
+	c, err := parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"GRASP_SANDBOX_IMAGE", "GRASP_SANDBOX_IMAGE_CODEX", "sandbox.image", "sandbox.images.cursor"}
+	if got := retiredSandboxImageKeys(c); !reflect.DeepEqual(got, want) {
+		t.Fatalf("retired keys = %v, want %v", got, want)
+	}
+}
+
+func TestNoRetiredSandboxImageSettings(t *testing.T) {
+	t.Setenv("GRASP_SANDBOX_IMAGE", "")
+	if got := retiredSandboxImageKeys(&Config{}); len(got) != 0 {
+		t.Fatalf("retired keys = %v", got)
 	}
 }

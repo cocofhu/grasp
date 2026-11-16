@@ -10,7 +10,7 @@
 //	docker build -t universal-sandbox:e2e-restart sandbox-gateway/sandbox
 //	docker build -f server/Dockerfile -t grasp:e2e .
 //	cd server
-//	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart GRASP_SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
+//	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
 package e2e
 
 import (

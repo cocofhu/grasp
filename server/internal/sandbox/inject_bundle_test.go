@@ -93,7 +93,6 @@ func TestManagerCreateUsesSANDBOXInject(t *testing.T) {
 	gw, fg := newInlineGW(t)
 	store := NewBundleStore()
 	m := NewManager(gw, ManagerOptions{
-		Image:           "img:test",
 		WorkspaceDir:    "/root/workspace",
 		InstallHelpers:  false, // no SSH; inject only
 		InjectStore:     store,
@@ -162,7 +161,6 @@ func TestManagerCreateGitCatalogAndConfigMultiInject(t *testing.T) {
 	gw, fg := newInlineGW(t)
 	store := NewBundleStore()
 	m := NewManager(gw, ManagerOptions{
-		Image:           "img:test",
 		WorkspaceDir:    "/root/workspace",
 		InstallHelpers:  false,
 		InjectStore:     store,

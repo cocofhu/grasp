@@ -77,14 +77,6 @@ func (s *SandboxService) appliedSoloAgent(row *models.Sandbox, ls *liveSandbox, 
 	return selectSoloConfiguration(s.db, agent, configurationID)
 }
 
-func (s *SandboxService) routeImage(backend string) string {
-	image := resolveSandboxImage(backend)
-	if image == "" && s.mgr != nil {
-		image = s.mgr.Image
-	}
-	return image
-}
-
 // AlignSoloModelRoute replaces only the running coding tool and its config.
 // It retains the sandbox, repository files, pending filesystem changes and MCP
 // namespace. It is deliberately separate from Solo.Restart, which reclones.
@@ -163,17 +155,6 @@ func (s *SandboxService) AlignSoloModelRoute(ctx context.Context, id uint, agent
 		s.mu.Lock()
 		ls.sb = attached
 		s.mu.Unlock()
-	}
-	runningImage := ls.sb.Image
-	if runningImage == "" && ls.prepared != nil {
-		runningImage = ls.prepared.spec.Image
-	}
-	if runningImage == "" && previousKnown {
-		runningImage = s.routeImage(previousAgent.AcpBackend)
-	}
-	// An empty target image follows the gateway default the sandbox already runs.
-	if want := s.routeImage(agent.AcpBackend); runningImage != "" && want != "" && runningImage != want {
-		return false, fmt.Errorf("目标编码工具使用不同的沙箱镜像，当前工作区无法原地切换")
 	}
 	if agent.Layout.WorkspaceDir != "" && agent.Layout.WorkspaceDir != ls.sb.WorkspaceDir {
 		return false, fmt.Errorf("目标工具的工作目录与当前会话不一致")

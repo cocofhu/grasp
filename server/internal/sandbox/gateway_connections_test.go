@@ -38,7 +38,7 @@ func newRouteGateway(t *testing.T, name string) *routeGateway {
 					http.Error(w, "body", 400)
 					return
 				}
-				sb := GWSandbox{ID: "same-id", Status: "running", Image: req.Image, Labels: req.Labels, Endpoints: map[string]string{"session": "192.0.2.1:8765"}}
+				sb := GWSandbox{ID: "same-id", Status: "running", Labels: req.Labels, Endpoints: map[string]string{"session": "192.0.2.1:8765"}}
 				f.records[sb.ID] = sb
 				_ = json.NewEncoder(w).Encode(sb)
 				return
@@ -87,7 +87,7 @@ func TestNamedGatewayBindingSurvivesDefaultSwitchAndRestart(t *testing.T) {
 	t.Cleanup(func() { _ = g.Close() })
 	ctx := context.Background()
 	labels := map[string]string{"run": "same-run"}
-	old, err := g.Create(ctx, GWCreateRequest{Image: "image", Labels: labels})
+	old, err := g.Create(ctx, GWCreateRequest{Labels: labels})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,5 +226,59 @@ func TestGatewayListMigrationDeduplicatesAndRejectsIncompleteResults(t *testing.
 	t.Setenv("GRASP_TEST_MISSING_GATEWAY_KEY", "")
 	if _, err := NewConfiguredGatewayClient(cfg); err == nil || strings.Contains(fmt.Sprint(err), "Bearer") {
 		t.Fatalf("missing env key: %v", err)
+	}
+}
+
+func TestCapabilitiesFallBackToV2InfoOnOlderGateways(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/api/v2/info" {
+			_, _ = w.Write([]byte(`{"version":2,"driver":"e2b","profiles":{"universal":{"image":"universal"}}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	info, err := NewGatewayClient(server.URL, "key").Capabilities(context.Background())
+	if err != nil || info.Driver != "e2b" || info.DefaultImage != "" || info.Profiles["universal"].Image != "universal" {
+		t.Fatalf("fallback info = %+v, %v", info, err)
+	}
+	if strings.Join(paths, ",") != "/api/v1/capabilities,/api/v2/info" {
+		t.Fatalf("paths = %v", paths)
+	}
+}
+
+func TestCapabilitiesDoNotMaskAuthenticationFailures(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+	if _, err := NewGatewayClient(server.URL, "wrong").Capabilities(context.Background()); err == nil || calls != 1 {
+		t.Fatalf("auth failure masked: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestCapabilitiesFollowDefaultGatewayForCreates(t *testing.T) {
+	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"version":2,"driver":"docker","defaultImage":"legacy:1"}`))
+	}))
+	t.Cleanup(legacy.Close)
+	named := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"version":2,"driver":"e2b","defaultImage":"universal-sandbox:e2b"}`))
+	}))
+	t.Cleanup(named.Close)
+	g, err := NewConfiguredGatewayClient(config.SandboxConfig{
+		GatewayURL: legacy.URL, GatewayTransport: "direct", DefaultGateway: "e2b",
+		Gateways: []config.GatewayConnectionConfig{{ID: "e2b", URL: named.URL, APIKey: "key", Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := g.Capabilities(context.Background())
+	if err != nil || info.DefaultImage != "universal-sandbox:e2b" {
+		t.Fatalf("capabilities = %+v, %v", info, err)
 	}
 }

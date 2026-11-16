@@ -151,7 +151,6 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 	spec := sandbox.Spec{
 		GitCredentials: gitCredentials,
 		Name:           name,
-		Image:          resolveSandboxImage(string(backend)),
 		Env:            env,
 		ConfigHome:     home,
 		ConfigRoot:     configRoot,

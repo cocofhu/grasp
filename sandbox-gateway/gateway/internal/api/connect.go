@@ -35,21 +35,42 @@ func requireTransportAuth(keys []string) gin.HandlerFunc {
 	}
 }
 
+// gatewayDescription is the environment the gateway owns. Clients create with
+// an empty image (or a declared profile) and never configure images themselves.
+func gatewayDescription(cfg *config.Config) gin.H {
+	stopMode, diskMode := "cold", "unlimited"
+	switch cfg.Driver {
+	case "kubernetes":
+		diskMode = "pvc"
+	case "e2b":
+		stopMode, diskMode = "pause", "template-minimum-free"
+	}
+	profiles := cfg.EnvironmentProfiles()
+	if profiles == nil {
+		profiles = map[string]config.ProfileConfig{}
+	}
+	return gin.H{
+		"version": 2, "driver": cfg.Driver,
+		"defaultImage": cfg.DefaultImage(),
+		"profiles":     profiles,
+		"ports":        map[string]int{"session": cfg.Ports.Session, "ide": cfg.Ports.CodeServer, "ssh": cfg.Ports.SSH, "cdp": cfg.Ports.CDP, "novnc": cfg.Ports.NoVNC},
+		"capabilities": gin.H{"stopMode": stopMode, "diskMode": diskMode},
+	}
+}
+
+// gatewayCapabilities serves GET /api/v1/capabilities under v1 auth, so
+// anonymous local gateways can be discovered without enabling the v2 channel.
+func gatewayCapabilities(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gatewayDescription(cfg))
+	}
+}
+
 func gatewayInfo(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		stopMode, diskMode := "cold", "unlimited"
-		switch cfg.Driver {
-		case "kubernetes":
-			diskMode = "pvc"
-		case "e2b":
-			stopMode, diskMode = "pause", "template-minimum-free"
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"version": 2, "driver": cfg.Driver, "transport": tunnelProtocol,
-			"profiles":     cfg.EnvironmentProfiles(),
-			"ports":        map[string]int{"session": cfg.Ports.Session, "ide": cfg.Ports.CodeServer, "ssh": cfg.Ports.SSH, "cdp": cfg.Ports.CDP, "novnc": cfg.Ports.NoVNC},
-			"capabilities": gin.H{"stopMode": stopMode, "diskMode": diskMode},
-		})
+		info := gatewayDescription(cfg)
+		info["transport"] = tunnelProtocol
+		c.JSON(http.StatusOK, info)
 	}
 }
 

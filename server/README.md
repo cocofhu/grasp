@@ -210,7 +210,6 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 | `GRASP_SANDBOX_GATEWAY_URL` | `http://127.0.0.1:8899` | sandbox-gateway 控制面地址(创建/销毁/管理沙箱) |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | — | 网关可选 Bearer 令牌(网关关鉴权时留空) |
 | `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `direct` | 数据面直连；`gateway` 通过带鉴权的网关通道，预览使用 Grasp 路径代理 |
-| `GRASP_SANDBOX_IMAGE` | 空，跟随网关 | 全局镜像覆盖 > 后端镜像覆盖 > 网关默认；指定命名网关 profile 时由网关解析环境 |
 | `GRASP_SANDBOX_MEMORY_MB` | `0`（跟随网关） | 新沙箱内存覆盖；环境变量 > 设置页保存值 > YAML > 默认。E2B 须匹配模板内存 |
 | `GRASP_SANDBOX_ENV` | — | 通用 `K=V,K2=V2` 环境变量,注入每个沙箱(厂商无关;含密钥键时启动失败) |
 | `GRASP_AGENT_TIMEOUT_SEC` | 已废弃并忽略 | 使用画布节点总时限与 Agent 无动作时限 |
@@ -248,7 +247,7 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 server: { port, mcp_advertise }
 database: { path }
 engine: { max_concurrent_runs, profiles_root }
-sandbox: { image, env, agent_chat_timeout_seconds, ... }
+sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 ```
 
 > GitLab/代码托管**不在**这份服务端配置里：仓库地址和凭据选择走「设置 → 仓库」，凭据本身只走
@@ -256,7 +255,7 @@ sandbox: { image, env, agent_chat_timeout_seconds, ... }
 
 环境变量覆盖(env 优先级最高,上表对应字段):`GRASP_PORT`、`GRASP_DB`、
 `GRASP_MAX_RUNS`、`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
-`GRASP_SANDBOX_IMAGE`、`GRASP_AGENT_TIMEOUT_SEC` 等。
+`GRASP_SANDBOX_GATEWAY_URL`、`GRASP_CHAT_IDLE_SEC` 等。沙箱镜像不在本服务配置，由 sandbox-gateway 决定。
 
 > **ACP 与 Git 鉴权只来自工作区凭据**:各后端 API Key 与 Git Token / SSH 从工作区凭据解析后按 run
 > 注入沙箱，不进平台配置或镜像。Agent Studio 不继承工作区 env。
@@ -288,11 +287,11 @@ CDP/noVNC。K8s 存量 LB 在 gateway 启动调和完成前仍可能对外暴露
 
 ## 运行(真实沙箱)
 
-需要本机有 Docker 守护进程与可联网拉取镜像。
+需要本机有 Docker 守护进程与可联网拉取镜像，以及一个运行中的 sandbox-gateway；沙箱镜像在网关配置
+（如 `SBGW_DOCKER_IMAGE=universal-sandbox:local`）。
 
 ```bash
 cd server
-GRASP_SANDBOX_IMAGE=universal-sandbox:local \
 GRASP_PORT=8090 \
 go run ./cmd/server
 ```

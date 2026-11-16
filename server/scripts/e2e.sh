@@ -10,7 +10,7 @@
 #
 # Usage:
 #   GRASP_CURSOR_API_KEY=crsr_xxx server/scripts/e2e.sh
-#   GRASP_CURSOR_API_KEY=crsr_xxx GRASP_SANDBOX_IMAGE=approving-sandbox:dev \
+#   GRASP_CURSOR_API_KEY=crsr_xxx SANDBOX_IMAGE=approving-sandbox:dev \
 #     server/scripts/e2e.sh -run TestCursorLiveRunAgent
 #
 # Any extra args are passed straight through to `go test`.
@@ -28,14 +28,14 @@ docker info >/dev/null 2>&1 || fail "docker daemon is not reachable (is Docker r
 
 [ -n "${GRASP_CURSOR_API_KEY:-}" ] || fail "GRASP_CURSOR_API_KEY is required (a crsr_... Cursor API key)"
 
-# Default to the locally built dev sandbox image (see ./start.sh sandbox). Set
-# GRASP_SANDBOX_IMAGE to override (e.g. the published :stable image).
-export GRASP_SANDBOX_IMAGE="${GRASP_SANDBOX_IMAGE:-approving-sandbox:dev}"
+# The gateway at GRASP_SANDBOX_GATEWAY_URL owns the image (SBGW_DOCKER_IMAGE).
+# SANDBOX_IMAGE only pre-pulls the image that gateway is configured with.
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-approving-sandbox:dev}"
 export GRASP_LIVE=1
 
-if ! docker image inspect "$GRASP_SANDBOX_IMAGE" >/dev/null 2>&1; then
-  echo "sandbox image '$GRASP_SANDBOX_IMAGE' not present locally; attempting docker pull..."
-  docker pull "$GRASP_SANDBOX_IMAGE" || fail "could not find or pull sandbox image '$GRASP_SANDBOX_IMAGE' (build it with: ./start.sh sandbox)"
+if ! docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
+  echo "sandbox image '$SANDBOX_IMAGE' not present locally; attempting docker pull..."
+  docker pull "$SANDBOX_IMAGE" || fail "could not find or pull sandbox image '$SANDBOX_IMAGE' (build it with: ./start.sh sandbox)"
 fi
 
 # Default test selection: the sandbox run-agent e2e. Callers can override the
@@ -44,6 +44,6 @@ if [ "$#" -eq 0 ]; then
   set -- -run TestCursorLiveRunAgent -v -count=1 -timeout 30m
 fi
 
-echo "running live e2e (image=$GRASP_SANDBOX_IMAGE) ..."
+echo "running live e2e (gateway image=$SANDBOX_IMAGE) ..."
 cd "$SERVER_DIR"
 exec go test ./internal/runtime/ "$@"

@@ -20,11 +20,14 @@ const gatewayIDPrefix = "gw1_"
 const gatewayBindingLabel = "grasp.gateway.id"
 
 type GatewayInfo struct {
-	Version   int            `json:"version"`
-	Driver    string         `json:"driver"`
-	Transport string         `json:"transport"`
-	Ports     map[string]int `json:"ports"`
-	Profiles  map[string]struct {
+	Version   int    `json:"version"`
+	Driver    string `json:"driver"`
+	Transport string `json:"transport"`
+	// DefaultImage is what the gateway creates without a profile. Empty from
+	// gateways that predate capabilities discovery.
+	DefaultImage string         `json:"defaultImage"`
+	Ports        map[string]int `json:"ports"`
+	Profiles     map[string]struct {
 		Image string `json:"image"`
 	} `json:"profiles"`
 	Capabilities struct {
@@ -151,8 +154,8 @@ func (g *GatewayClient) prepareCreate(ctx context.Context, req *GWCreateRequest)
 			return fmt.Errorf("gateway does not declare environment profile %q", g.profile)
 		}
 	} else if g.profile != "" {
-		var info GatewayInfo
-		if err := g.doDirect(ctx, http.MethodGet, "/api/v2/info", nil, &info); err != nil {
+		info, err := g.capabilities(ctx)
+		if err != nil {
 			return err
 		}
 		if info.Version != 2 || info.Profiles[g.profile].Image == "" {
@@ -160,10 +163,8 @@ func (g *GatewayClient) prepareCreate(ctx context.Context, req *GWCreateRequest)
 		}
 	}
 	if g.profile != "" {
+		// Agent backend selection remains in env, independent of the profile.
 		req.Profile = g.profile
-		// The profile resolves its provider image in the gateway. Agent backend
-		// selection remains in env and is independent of the sandbox provider.
-		req.Image = ""
 	}
 	if g.id != "" {
 		labels := make(map[string]string, len(req.Labels)+1)
@@ -174,6 +175,31 @@ func (g *GatewayClient) prepareCreate(ctx context.Context, req *GWCreateRequest)
 		req.Labels = labels
 	}
 	return nil
+}
+
+// Capabilities describes the environment new sandboxes get from the gateway
+// that receives creates. The image is owned and resolved by that gateway.
+func (g *GatewayClient) Capabilities(ctx context.Context) (*GatewayInfo, error) {
+	client := g
+	if g.defaultGateway != "" {
+		client = g.gateways[g.defaultGateway]
+	}
+	return client.capabilities(ctx)
+}
+
+func (g *GatewayClient) capabilities(ctx context.Context) (*GatewayInfo, error) {
+	var info GatewayInfo
+	err := g.doDirect(ctx, http.MethodGet, "/api/v1/capabilities", nil, &info)
+	var httpErr *GatewayHTTPError
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		// Gateways before capabilities discovery only describe themselves on v2.
+		info = GatewayInfo{}
+		err = g.doDirect(ctx, http.MethodGet, "/api/v2/info", nil, &info)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
 }
 
 func (g *GatewayClient) adaptSandbox(ctx context.Context, sb *GWSandbox) (*GWSandbox, error) {

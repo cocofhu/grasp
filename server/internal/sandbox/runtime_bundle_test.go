@@ -177,8 +177,8 @@ func TestManagerCreateRuntimeURL(t *testing.T) {
 	gw, fg := newInlineGW(t)
 	store := NewBundleStore()
 	m := NewManager(gw, ManagerOptions{
-		Image: "img:test", WorkspaceDir: "/root/workspace",
-		InjectStore: store, InjectAdvertise: "http://api.example.com", Runtime: rt,
+		WorkspaceDir: "/root/workspace",
+		InjectStore:  store, InjectAdvertise: "http://api.example.com", Runtime: rt,
 	})
 	if m.Runtime() != rt {
 		t.Fatal("Runtime() accessor")
@@ -229,14 +229,14 @@ func TestManagerCreateRuntimeErrors(t *testing.T) {
 	config.StoreConfig(&config.Config{})
 
 	gw, _ := newInlineGW(t)
-	missing := NewManager(gw, ManagerOptions{Image: "img:test", Runtime: NewRuntimeBundle(filepath.Join(t.TempDir(), "none.tgz"))})
+	missing := NewManager(gw, ManagerOptions{Runtime: NewRuntimeBundle(filepath.Join(t.TempDir(), "none.tgz"))})
 	if _, err := missing.Create(context.Background(), Spec{Name: "a", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err == nil || !strings.Contains(err.Error(), "runtime bundle") {
 		t.Fatalf("missing bundle err=%v", err)
 	}
 
 	path := filepath.Join(t.TempDir(), "rt.tgz")
 	writeRuntime(t, path, testVersion('d'), 1)
-	noStore := NewManager(gw, ManagerOptions{Image: "img:test", Runtime: NewRuntimeBundle(path)})
+	noStore := NewManager(gw, ManagerOptions{Runtime: NewRuntimeBundle(path)})
 	if _, err := noStore.Create(context.Background(), Spec{Name: "b", Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err == nil || !strings.Contains(err.Error(), "inject store") {
 		t.Fatalf("no store err=%v", err)
 	}

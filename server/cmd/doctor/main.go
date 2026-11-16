@@ -59,6 +59,11 @@ func run(args []string, out io.Writer) error {
 	_, _ = fmt.Fprintln(out, "Sandbox gateway .......... healthy")
 
 	client := sandbox.NewGatewayClient(opts.gatewayURL, opts.gatewayAPIKey)
+	caps, err := client.Capabilities(ctx)
+	if err != nil {
+		return fmt.Errorf("sandbox gateway capabilities: %w", err)
+	}
+	_, _ = fmt.Fprintf(out, "Sandbox image ............ %s (%s)\n", caps.DefaultImage, caps.Driver)
 	created, err := client.Create(ctx, sandbox.GWCreateRequest{
 		Labels: map[string]string{
 			"approving.doctor": "true",

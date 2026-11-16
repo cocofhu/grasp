@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,6 +100,7 @@ func main() {
 			log.Fatal().Err(err).Msg("private sandbox gateway not ready; startup reconciliation skipped")
 		}
 	}
+	go logSandboxGatewayEnvironment(sbxGateway)
 
 	// At-rest secret encryption reads its key from the live config (security.
 	// secrets_key, with GRASP_SECRETS_KEY env override) so workspace credentials
@@ -232,8 +234,6 @@ func main() {
 				Usage: result.Usage, ByModel: result.UsageByModel,
 			})
 		},
-		SandboxImage:         cfg.Sandbox.Image,
-		SandboxImages:        cfg.Sandbox.Images,
 		GatewayURL:           cfg.Sandbox.GatewayURL,
 		GatewayAPIKey:        cfg.Sandbox.GatewayAPIKey,
 		Gateway:              sbxGateway,
@@ -374,7 +374,6 @@ func main() {
 	})
 	eng.SetAgents(agentSvc)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
-		Image:             cfg.Sandbox.Image,
 		WorkspaceDir:      "/root/workspace",
 		InstallHelpers:    true,
 		InjectStore:       injectStore,
@@ -653,4 +652,23 @@ func secretsKeyFallback(cfg *config.Config) string {
 	}
 	log.Warn().Str("path", path).Msg("no secrets key configured; using the generated key file (back it up with the database)")
 	return key
+}
+
+// logSandboxGatewayEnvironment reports the image the gateway owns, since it is
+// no longer part of the Grasp configuration. Failure is informational only.
+func logSandboxGatewayEnvironment(gw *sandbox.GatewayClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	info, err := gw.Capabilities(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("sandbox gateway capabilities unavailable")
+		return
+	}
+	profiles := make([]string, 0, len(info.Profiles))
+	for name := range info.Profiles {
+		profiles = append(profiles, name)
+	}
+	sort.Strings(profiles)
+	log.Info().Str("driver", info.Driver).Str("default_image", info.DefaultImage).
+		Strs("profiles", profiles).Msg("sandbox gateway environment")
 }

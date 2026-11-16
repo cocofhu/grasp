@@ -20,6 +20,9 @@ import (
 
 const managedLabel = "grasp.managed"
 
+// DefaultImage is the image the fake gateway owns and reports.
+const DefaultImage = "fake-gateway-default:test"
+
 // record is one sandbox the fake gateway knows about.
 type record struct {
 	id        string
@@ -202,6 +205,8 @@ func (fg *FakeGateway) handle(w http.ResponseWriter, r *http.Request) {
 			driver = "docker"
 		}
 		writeJSON(w, map[string]string{"status": "ok", "driver": driver})
+	case r.URL.Path == "/api/v1/capabilities" && r.Method == http.MethodGet:
+		writeJSON(w, map[string]any{"version": 2, "driver": "docker", "defaultImage": DefaultImage})
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodPost:
 		fg.create(w, r)
 	case r.URL.Path == "/api/v1/sandboxes" && r.Method == http.MethodGet:
@@ -228,13 +233,19 @@ func (fg *FakeGateway) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create failed", http.StatusInternalServerError)
 		return
 	}
+	var raw map[string]json.RawMessage
+	_ = json.NewDecoder(r.Body).Decode(&raw)
+	if _, ok := raw["image"]; ok {
+		http.Error(w, "image is owned by the gateway", http.StatusBadRequest)
+		return
+	}
 	var req struct {
-		Image        string            `json:"image"`
 		Labels       map[string]string `json:"labels"`
 		Env          map[string]string `json:"env"`
 		WorkspaceDir string            `json:"workspaceDir"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	body, _ := json.Marshal(raw)
+	_ = json.Unmarshal(body, &req)
 	fg.mu.Lock()
 	fg.seq++
 	id := fmt.Sprintf("gw-sb-%03d", fg.seq)
@@ -243,7 +254,7 @@ func (fg *FakeGateway) create(w http.ResponseWriter, r *http.Request) {
 		labels[k] = v
 	}
 	rec := &record{
-		id: id, status: "running", image: req.Image, labels: labels,
+		id: id, status: "running", image: DefaultImage, labels: labels,
 		env: req.Env, endpoints: fg.endpointsFor(), workspace: req.WorkspaceDir,
 	}
 	fg.recs[id] = rec

@@ -112,10 +112,10 @@ func hostPortOf(addr string) (string, int) {
 	return host, port
 }
 
-// GWCreateRequest is the POST /api/v1/sandboxes body.
+// GWCreateRequest is the POST /api/v1/sandboxes body. It has no image: the
+// gateway resolves its default image or the named Profile.
 type GWCreateRequest struct {
 	Profile      string            `json:"profile,omitempty"`
-	Image        string            `json:"image,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
 	WorkspaceDir string            `json:"workspaceDir,omitempty"`

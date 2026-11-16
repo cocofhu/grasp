@@ -111,8 +111,8 @@ func TestApplyEnvOverrides(t *testing.T) {
 	if c.Server.Port != 7000 {
 		t.Errorf("GRASP_PORT not applied: %d", c.Server.Port)
 	}
-	if c.Sandbox.Image != "env/img:1" {
-		t.Errorf("GRASP_SANDBOX_IMAGE not applied: %q", c.Sandbox.Image)
+	if c.Sandbox.RetiredImage != "" {
+		t.Errorf("retired GRASP_SANDBOX_IMAGE applied: %q", c.Sandbox.RetiredImage)
 	}
 }
 
@@ -319,7 +319,7 @@ func TestSandboxFollowsGatewayAndExplicitZeroClearsYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := parse(path)
-	if err != nil || c.Sandbox.MemoryMB != 0 || c.ResolveSandboxImage("codex") != "" {
+	if err != nil || c.Sandbox.MemoryMB != 0 {
 		t.Fatalf("gateway defaults overridden: %v", err)
 	}
 	if err := os.WriteFile(path, []byte("sandbox: {sandbox_memory_mb: 8192}"), 0600); err != nil {

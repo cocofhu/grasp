@@ -147,7 +147,7 @@ func TestNewContainerNameAndShellQuote(t *testing.T) {
 
 func TestManagerCreateInjectsEnvAndLabels(t *testing.T) {
 	gw, fg := newInlineGW(t)
-	m := NewManager(gw, ManagerOptions{Image: "img:test", WorkspaceDir: "/root/workspace"})
+	m := NewManager(gw, ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sb, err := m.Create(context.Background(), Spec{
 		Name: "grasp-sb-abc",
 		Env:  map[string]string{"GIT_REPOS": "web|https://x/y.git", "K": "V", BridgePasswordEnv: testBridgePassword},
@@ -190,7 +190,7 @@ func TestManagerCreateAppliesDefaultMemory(t *testing.T) {
 	SetDefaultMemoryMB(8192)
 
 	gw, fg := newInlineGW(t)
-	m := NewManager(gw, ManagerOptions{Image: "img:test"})
+	m := NewManager(gw, ManagerOptions{})
 	if _, err := m.Create(context.Background(), Spec{Env: map[string]string{BridgePasswordEnv: testBridgePassword}}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}

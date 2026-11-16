@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -163,7 +162,7 @@ func TestSoloRouteSwitchFailureRestoresPreviousRuntime(t *testing.T) {
 	}
 }
 
-func TestSoloRouteSwitchRejectsBusyGitAndImageChanges(t *testing.T) {
+func TestSoloRouteSwitchRejectsBusyAndGitChanges(t *testing.T) {
 	s, row, _, target, ops := soloRouteFixture(t)
 	s.live[row.ID].busy = true
 	if _, err := s.AlignSoloModelRoute(context.Background(), row.ID, target); err == nil {
@@ -176,25 +175,13 @@ func TestSoloRouteSwitchRejectsBusyGitAndImageChanges(t *testing.T) {
 	if _, err := s.AlignSoloModelRoute(context.Background(), row.ID, target); err == nil || !strings.Contains(err.Error(), "仓库凭据") {
 		t.Fatalf("must preserve Git permission guard: %v", err)
 	}
-	if err := s.db.Model(row).Update("git_bindings_fingerprint", s.live[row.ID].gitBindingsFingerprint).Error; err != nil {
-		t.Fatal(err)
-	}
-	previous := config.GetConfig()
-	t.Cleanup(func() { config.StoreConfig(previous) })
-	config.StoreConfig(&config.Config{Sandbox: config.SandboxConfig{Images: map[string]string{"cursor": "cursor-only", "codex": "codex-only"}}})
-	if _, err := s.AlignSoloModelRoute(context.Background(), row.ID, target); err == nil || !strings.Contains(err.Error(), "不同的沙箱镜像") {
-		t.Fatalf("image mismatch must be explicit: %v", err)
-	}
 	if len(ops.specs) != 0 {
 		t.Fatal("validation failure touched running workspace")
 	}
 }
 
-func TestSoloRouteSwitchFollowsGatewayImageWithoutOverride(t *testing.T) {
+func TestSoloRouteSwitchKeepsGatewaySelectedImage(t *testing.T) {
 	s, row, _, target, ops := soloRouteFixture(t)
-	previous := config.GetConfig()
-	t.Cleanup(func() { config.StoreConfig(previous) })
-	config.StoreConfig(&config.Config{})
 	s.live[row.ID].sb.Image = "ghcr.io/cocofhu/universal-sandbox:3.3.0"
 	changed, err := s.AlignSoloModelRoute(context.Background(), row.ID, target)
 	if err != nil || !changed || len(ops.specs) != 1 {
@@ -243,7 +230,6 @@ func TestSoloRouteSwitchRecoversAfterOldGroupDisappears(t *testing.T) {
 	_ = os.RemoveAll(old.home)
 	// A platform restart retained the container but forgot its config snapshot.
 	old.home, old.prepared, old.soloRouteAgent = "", nil, nil
-	old.sb.Image = s.routeImage(target.AcpBackend)
 	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ThreadID).Updates(map[string]any{"applied_configuration_id": "deleted-group", "applied_model_set": true}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +274,6 @@ func forgetSoloRouteRollback(t *testing.T, s *SandboxService, row *models.Sandbo
 	old := s.live[row.ID]
 	_ = os.RemoveAll(old.home)
 	old.home, old.prepared, old.soloRouteAgent = "", nil, nil
-	old.sb.Image = s.routeImage(target.AcpBackend)
 	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ThreadID).Updates(map[string]any{"applied_configuration_id": "deleted-group", "applied_model_set": true}).Error; err != nil {
 		t.Fatal(err)
 	}

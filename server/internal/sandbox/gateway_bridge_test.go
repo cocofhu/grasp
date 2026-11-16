@@ -295,8 +295,8 @@ func TestGatewayTransportDiscoveryAndProfileFailClosed(t *testing.T) {
 		t.Fatal("missing profile accepted")
 	}
 	g.profile = "universal"
-	req := GWCreateRequest{Image: "old-OCI-image"}
-	if err := g.prepareCreate(context.Background(), &req); err != nil || req.Profile != "universal" || req.Image != "" {
+	req := GWCreateRequest{}
+	if err := g.prepareCreate(context.Background(), &req); err != nil || req.Profile != "universal" {
 		t.Fatalf("provider-independent profile: %+v %v", req, err)
 	}
 }
