@@ -133,15 +133,6 @@ Codex 的 ChatGPT 登录由平台统一维护。在「凭据」新建 Codex 凭�
 
 按 run token 隔离，留下可检查的纸面轨迹。
 
-## PM：`pm-agent-fs`（工作区成员 + Agent 工作目录）
-
-工作区绑定的 PM Leader 可启用独立 MCP `pm-agent-fs`（默认启用；已有部署若已显式保存过 EnabledMcps 需在 PM 设置中手动勾选）：
-
-- `pm_list_workspace_agents`：列出工作区的全部 Agent，并标注相对 Leader 的 self / other
-- `pm_fs_*`：对工作区 Agent 的 **host 侧** `workspace/` 做 list/read/write/delete/mkdir/rename（**不是** Run 沙箱 FS）
-
-写入结果与 Agent Studio「工作目录」同一磁盘树；**刷新或重新打开该 Agent 后可见**（不做热更新）。若 Studio 仍打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——使用/Demo 时请刷新并避免并行脏写。
-
 ## 单仓自托管
 
 `sandbox-gateway` 与通用沙箱镜像源码在本仓库。一次克隆即可自托管。

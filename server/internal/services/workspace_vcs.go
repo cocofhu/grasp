@@ -24,11 +24,9 @@ const (
 	workspaceVcsDirName = ".workspace-vcs"
 	vcsCommitPrefix     = "grasp-vcs:"
 
-	VcsSourceSystem      = "system"
-	VcsSourceStudio      = "studio"
-	VcsSourcePmMCP       = "pm-mcp"
-	VcsSourceExternalMCP = "external-mcp"
-	VcsSourceRestore     = "restore"
+	VcsSourceSystem  = "system"
+	VcsSourceStudio  = "studio"
+	VcsSourceRestore = "restore"
 )
 
 var (

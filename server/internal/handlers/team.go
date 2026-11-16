@@ -20,7 +20,7 @@ func (h *Handlers) BootstrapAgentTeam(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	sess, err := h.Team.Bootstrap(c.Request.Context(), req)
+	sess, err := h.Team.Bootstrap(req)
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
@@ -62,7 +62,7 @@ func (h *Handlers) RetryAgentTeamBootstrap(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "team service unavailable"})
 		return
 	}
-	sess, err := h.Team.Retry(c.Request.Context(), c.Param("id"))
+	sess, err := h.Team.Retry(c.Param("id"))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, services.ErrTeamSessionNotFound) {
@@ -75,7 +75,7 @@ func (h *Handlers) RetryAgentTeamBootstrap(c *gin.Context) {
 }
 
 // ListAgentTeamTemplates handles GET /api/agent-teams/templates.
-// Includes solo extras (preflight); bootstrap roster stays 1 PM + 9.
+// Includes solo extras (preflight).
 func (h *Handlers) ListAgentTeamTemplates(c *gin.Context) {
 	if h.Team == nil {
 		c.JSON(http.StatusOK, gin.H{"items": services.AllCreateTemplates()})

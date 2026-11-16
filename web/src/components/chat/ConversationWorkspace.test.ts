@@ -443,7 +443,7 @@ describe('ConversationWorkspace panel sash', () => {
       slots: {
         masthead: () => h('button', {
           type: 'button',
-          'data-testid': 'pm-chat-artifacts',
+          'data-testid': 'chat-artifacts',
           onClick: () => (wrapper?.vm as { toggleFromArtifactIcon: () => void }).toggleFromArtifactIcon(),
         }, '产物'),
         default: '<textarea aria-label="消息">未发送的问题</textarea>',
@@ -453,7 +453,7 @@ describe('ConversationWorkspace panel sash', () => {
     })
     const w = wrapper
     await setCanvas(1200)
-    const button = () => w.get('[data-testid="pm-chat-artifacts"]')
+    const button = () => w.get('[data-testid="chat-artifacts"]')
     const main = () => w.get('[data-testid="conversation-main"]')
     expect(main().element.contains(button().element)).toBe(false)
     expect(w.get('[data-testid="conversation-masthead"]').element.contains(button().element)).toBe(true)

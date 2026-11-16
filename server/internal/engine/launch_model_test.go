@@ -22,7 +22,7 @@ func launchModelGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "predev", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm"}},
+			{ID: "predev", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "planner"}},
 			{ID: "next", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "dev"}},
 			{ID: "output", Type: "output"},
 		},
@@ -56,8 +56,8 @@ func seedLaunchModels(t *testing.T, db *gorm.DB) {
 func launchAgents() mapSkills {
 	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "group"}
 	return mapSkills{
-		"pm":  {Name: "pm", AcpBackend: "codex", Capabilities: capsClarify, ModelBinding: binding},
-		"dev": {Name: "dev", AcpBackend: "codex", Capabilities: capsClarify, ModelBinding: binding},
+		"planner": {Name: "planner", AcpBackend: "codex", Capabilities: capsClarify, ModelBinding: binding},
+		"dev":     {Name: "dev", AcpBackend: "codex", Capabilities: capsClarify, ModelBinding: binding},
 	}
 }
 

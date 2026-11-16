@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -16,132 +15,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// SandboxPurposeAgent marks thread-bound agent session sandboxes.
-const SandboxPurposeAgent = "agent"
-
-// AgentSandboxDestroyHook is invoked when a thread-bound agent sandbox is
-// destroyed so MCP session tokens (and thread sandbox refs) can be revoked.
-type AgentSandboxDestroyHook func(threadID, token string)
-
-// SetAgentSandboxDestroyHook registers cleanup for purpose=agent|pm sandboxes.
-// The hook is read from the container-start goroutine, so the pointer is
-// published under s.mu and copied out before the callback runs.
-func (s *SandboxService) SetAgentSandboxDestroyHook(fn AgentSandboxDestroyHook) {
-	s.mu.Lock()
-	s.agentOnDestroy = fn
-	s.mu.Unlock()
-}
-
-func (s *SandboxService) invokeAgentDestroyHook(threadID, token string) {
-	s.mu.Lock()
-	fn := s.agentOnDestroy
-	s.mu.Unlock()
-	if fn != nil {
-		fn(threadID, token)
-	}
-}
-
-// AgentSandboxOpenOpts configures a thread-bound agent sandbox open.
-// Role-specific MCP servers (e.g. pm-progress) are passed in PlatformSpecs by
-// the caller; this API itself is role-agnostic.
-type AgentSandboxOpenOpts struct {
-	Profile       string
-	ThreadID      string
-	SharedToken   string
-	PlatformSpecs []sandbox.MCPServerSpec
-	// Reuse, when true, reuses a running/creating sandbox for the same thread.
-	// One-shot turns (gate-auto) should leave this false.
-	Reuse bool
-	// RunIDPrefix labels the synthetic run id (e.g. "agent", "agentoneshot").
-	RunIDPrefix string
-}
-
-// OpenAgentSandbox opens a thread-bound agent sandbox. When opts.Reuse is true
-// and a live sandbox exists for the thread, it is returned instead of creating
-// a new one.
-func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandboxOpenOpts) (*models.Sandbox, bool, error) {
-	profile := strings.TrimSpace(opts.Profile)
-	threadID := strings.TrimSpace(opts.ThreadID)
-	if profile == "" || threadID == "" {
-		return nil, false, fmt.Errorf("profile and threadID are required")
-	}
-	agent, ok := s.skills.Get(profile)
-	if !ok {
-		return nil, false, fmt.Errorf("agent %q not found", profile)
-	}
-	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
-	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, nil)
-	if err != nil {
-		return nil, false, err
-	}
-
-	if opts.Reuse {
-		var existing models.Sandbox
-		if err := s.db.Where("purpose = ? AND thread_id = ? AND cleanup_pending = ? AND status IN ?",
-			SandboxPurposeAgent, threadID, false, []string{"running", "creating", "pulling", "stopped", "saving", "resuming", "error"}).
-			Order("created_at desc").First(&existing).Error; err == nil {
-			if existing.Profile != profile {
-				return nil, false, fmt.Errorf("此会话的沙箱属于其他 Agent，请重新打开沙箱")
-			}
-			s.mu.Lock()
-			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, &existing, s.live[existing.ID])
-			s.mu.Unlock()
-			if bindingErr != nil && !(existing.RecoveryKind == "files" && existing.Status == "stopped") {
-				return nil, false, bindingErr
-			}
-			if existing.Status == "creating" || existing.Status == "pulling" {
-				return &existing, true, nil
-			}
-			if _, _, err := s.EnsureRunning(ctx, existing.ID); err != nil {
-				return nil, false, err
-			}
-			row, err := s.Get(existing.ID)
-			return row, true, err
-		}
-	}
-
-	prefix := strings.TrimSpace(opts.RunIDPrefix)
-	if prefix == "" {
-		if opts.Reuse {
-			prefix = "agent"
-		} else {
-			prefix = "agentoneshot"
-		}
-	}
-	runID := prefix + "-" + sanitizeID(threadID)
-	if !opts.Reuse {
-		runID += "-" + fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
-	}
-	name := sandbox.NewContainerName()
-	row := &models.Sandbox{
-		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
-		Name: name, Profile: profile, Purpose: SandboxPurposeAgent, Status: "creating",
-		RunID: runID, Token: opts.SharedToken, ThreadID: threadID,
-	}
-	row.RecoveryMCPNames = make([]string, 0, len(opts.PlatformSpecs))
-	for _, spec := range opts.PlatformSpecs {
-		row.RecoveryMCPNames = append(row.RecoveryMCPNames, spec.Name)
-	}
-	if err := s.createSandboxRow(row); err != nil {
-		return nil, false, err
-	}
-	s.mu.Lock()
-	s.live[row.ID] = &liveSandbox{modelBindingFingerprint: modelFingerprint, gitBindingsFingerprint: gitFingerprint}
-	s.mu.Unlock()
-	log.Info().Str("name", name).Str("profile", profile).Str("thread", threadID).
-		Bool("reuse", opts.Reuse).Uint("id", row.ID).Msg("agent sandbox creating")
-	go s.startAgentContainer(row.ID, name, profile, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent, agentContainerExtra{})
-	return row, false, nil
-}
-
-// agentContainerExtra carries the Solo-only knobs of startAgentContainer.
-// The zero value keeps the PM consult behavior.
+// agentContainerExtra carries the launch knobs of agent containers (Solo and
+// Agent Studio tests).
 type agentContainerExtra struct {
 	Repos []models.SessionRepo
 	// Resident selects Solo ownership callbacks; its idle policy is shared.
 	Resident bool
-	// LaunchKind is solo, test, or assistant. Empty means assistant.
+	// LaunchKind is solo or test.
 	LaunchKind string
 	// OnEnv receives the env key provenance once the env is final.
 	OnEnv func(sources map[string]string)
@@ -195,20 +75,6 @@ func (t *envTracker) mark(env map[string]string, label string) {
 	}
 }
 
-// OpenAgentSandboxFresh always creates a new agent sandbox (no thread reuse).
-// Used by one-shot agent turns such as gate-auto.
-func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, threadID, sharedToken string, platformSpecs []sandbox.MCPServerSpec) (*models.Sandbox, error) {
-	row, _, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
-		Profile:       profile,
-		ThreadID:      threadID,
-		SharedToken:   sharedToken,
-		PlatformSpecs: platformSpecs,
-		Reuse:         false,
-		RunIDPrefix:   "agentoneshot",
-	})
-	return row, err
-}
-
 func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
@@ -216,9 +82,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
-		if !extra.Resident {
-			s.invokeAgentDestroyHook(threadID, sharedToken)
-		}
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "cleanup_pending": true, "updated_at": time.Now(),
 		})
@@ -292,8 +155,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 			if extra.OnFail != nil {
 				extra.OnFail(fmt.Errorf("sandbox record removed during start"))
 			}
-		} else {
-			s.invokeAgentDestroyHook(threadID, sharedToken)
 		}
 		return
 	}
@@ -313,29 +174,17 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 }
 
-func isAgentSandboxPurpose(p string) bool {
-	return p == SandboxPurposeAgent
-}
-
-// filterAgentPlatformMCP drops artifact-store and platform MCP names so they
-// are not double-injected from Agent mcp[] (platform appends real endpoints).
+// filterAgentPlatformMCP drops artifact-store entries so they are not
+// double-injected from Agent mcp[] (platform appends real endpoints), and
+// entries of retired platform MCPs.
 func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec {
 	if len(in) == 0 {
 		return nil
 	}
-	deny := map[string]bool{
-		ArtifactStoreMCP: true, MemoryStoreMCP: true, ContextStoreMCP: true,
-		PmProgressMCP:     true,
-		PmWorkflowReadMCP: true, PmWorkflowWriteMCP: true, PmAgentFSMCP: true,
-	}
 	out := make([]sandbox.MCPServerSpec, 0, len(in))
 	for _, sp := range in {
 		name := strings.ToLower(strings.TrimSpace(sp.Name))
-		if deny[name] {
-			continue
-		}
-		if strings.Contains(sp.URL, "/mcp/runs/") || strings.Contains(sp.URL, "/mcp/pm/") ||
-			strings.Contains(sp.URL, "/mcp/memory-store") || strings.Contains(sp.URL, "/mcp/context-store") {
+		if name == ArtifactStoreMCP || strings.Contains(sp.URL, "/mcp/runs/") || runtime.IsRetiredPlatformMCP(sp.Name, sp.URL) {
 			continue
 		}
 		out = append(out, sp)
@@ -364,37 +213,4 @@ func sanitizeID(s string) string {
 		s = s[:24]
 	}
 	return s
-}
-
-// BuildAgentPlatformMCPSpecs builds role-agnostic platform MCP inject specs
-// (memory-store / context-store) for any Agent session.
-func BuildAgentPlatformMCPSpecs(agentName, sharedToken string) []sandbox.MCPServerSpec {
-	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
-	if base == "" || sharedToken == "" || strings.TrimSpace(agentName) == "" {
-		return nil
-	}
-	auth := map[string]string{"Authorization": "Bearer " + sharedToken}
-	return []sandbox.MCPServerSpec{
-		{Name: MemoryStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/memory-store"), Headers: auth},
-		{Name: ContextStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/context-store"), Headers: auth},
-	}
-}
-
-// BuildPmRoleMCPSpecs builds PM-only role MCP specs (pm-progress / pm-workflow-read /
-// pm-workflow-write / pm-agent-fs).
-// nil enabledMcps means defaults; an explicit empty list injects none.
-func BuildPmRoleMCPSpecs(sharedToken string, enabledMcps []string) []sandbox.MCPServerSpec {
-	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
-	if base == "" || sharedToken == "" {
-		return nil
-	}
-	enabledMcps = EffectivePmEnabledMcps(enabledMcps)
-	auth := map[string]string{"Authorization": "Bearer " + sharedToken}
-	out := make([]sandbox.MCPServerSpec, 0, len(enabledMcps))
-	for _, id := range enabledMcps {
-		out = append(out, sandbox.MCPServerSpec{
-			Name: id, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/pm/" + id), Headers: auth,
-		})
-	}
-	return out
 }

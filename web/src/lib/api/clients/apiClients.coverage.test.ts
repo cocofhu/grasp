@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { workspaceClient } from './workspaceClient'
 import { agentsClient } from './agentsClient'
-import { pmClient } from './pmClient'
 
 describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
   beforeEach(() => {
@@ -72,15 +71,10 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       value: 'rotated',
     })
     await workspaceClient.removeCredential('cred-1')
-    await workspaceClient.getExternalMcp()
-    await workspaceClient.updateExternalMcp({ enabled: true, enabledPacks: [] })
-    await workspaceClient.listMcpKeys()
-    await workspaceClient.createMcpKey('k')
-    await workspaceClient.revokeMcpKey('k1')
     await workspaceClient.listAudit({
       time: '7d',
-      actor: 'pm',
-      callerKind: 'pm',
+      actor: 'alice',
+      callerKind: 'member',
       action: 'x',
       resource: 'r',
       runId: 'r',
@@ -95,8 +89,8 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     const url = workspaceClient.exportAuditUrl({
       format: 'text',
       time: '7d',
-      actor: 'pm',
-      callerKind: 'pm',
+      actor: 'alice',
+      callerKind: 'member',
       action: 'x',
       resource: 'r',
       runId: 'r',
@@ -104,18 +98,6 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       search: 'q',
     })
     expect(url).toContain('/audit/export')
-  })
-
-  it('pmClient issues PM requests', async () => {
-    await pmClient.getPmLeader()
-    await pmClient.updatePmLeader({ enabled: true })
-    await pmClient.listPmThreads()
-    await pmClient.createPmThread({ title: 't' })
-    await pmClient.deletePmThread('t1')
-    await pmClient.listPmMessages('t1', { limit: 10, before: 'm0' })
-    await pmClient.startPmTurn('t1', { content: 'hi' })
-    await pmClient.cancelPmTurn('t1')
-    expect(pmClient.pmThreadChatWsUrl('t1')).toContain('/chat')
   })
 
   it('agentsClient list/get plus import error path', async () => {

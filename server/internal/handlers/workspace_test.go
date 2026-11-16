@@ -29,7 +29,7 @@ func TestWorkspaceMaintenanceReportsPendingDrain(t *testing.T) {
 	h.h.Maintenance = func(_ context.Context, begin bool) (map[string]any, error) {
 		called = true
 		if begin {
-			return map[string]any{"safeToStop": false, "pmThreads": 1}, errors.New("draining")
+			return map[string]any{"safeToStop": false, "chatThreads": 1}, errors.New("draining")
 		}
 		return map[string]any{"safeToStop": false}, nil
 	}
@@ -39,7 +39,7 @@ func TestWorkspaceMaintenanceReportsPendingDrain(t *testing.T) {
 	}
 	enableAdmin(t)
 	w = h.do("POST", "/api/workspace/maintenance", nil)
-	if !called || w.Code != 409 || !strings.Contains(w.Body.String(), `"pmThreads":1`) || !strings.Contains(w.Body.String(), `"safeToStop":false`) {
+	if !called || w.Code != 409 || !strings.Contains(w.Body.String(), `"chatThreads":1`) || !strings.Contains(w.Body.String(), `"safeToStop":false`) {
 		t.Fatalf("drain=%d %s", w.Code, w.Body)
 	}
 	w = h.do("GET", "/api/workspace/maintenance", nil)

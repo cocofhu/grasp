@@ -40,8 +40,7 @@
     },
     "runTrigger": {
       "manual": "手动",
-      "api": "API",
-      "pmMcp": "工作区助手 MCP"
+      "api": "API"
     },
     "statusFilter": {
       "selectedCount": "已选 {n} 项"

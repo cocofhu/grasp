@@ -27,7 +27,7 @@ describe('tokenAnalyticsShared', () => {
   })
 
   it('narrows filters along a drill path; later steps win on the same dimension', () => {
-    const base = { ...defaultTokenStatsFilters(), window: '30d' as const, source: 'pm' as const }
+    const base = { ...defaultTokenStatsFilters(), window: '30d' as const, source: 'solo' as const }
     const out = applyDrill(base, [
       { dim: 'workflow', key: 'w1', name: 'W1' },
       { dim: 'bucket', key: '2026-07-02', name: '07-02', bucketWidth: 'day' },

@@ -110,7 +110,7 @@ describe('buildLlmTranscript', () => {
           usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
           usageByModel: { 'claude-x': { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 } },
           events: [
-            ev({ kind: 'prompt', text: 'You are a PM', at: '2026-10-01T00:00:01Z' }),
+            ev({ kind: 'prompt', text: 'You are a planner', at: '2026-10-01T00:00:01Z' }),
             ev({ kind: 'message', text: 'What platform?' }),
             ev({ kind: 'turn_end', at: '2026-10-01T00:00:05Z' }),
             ev({ kind: 'prompt', text: 'Web only', at: '2026-10-01T00:00:20Z' }),

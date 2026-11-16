@@ -67,7 +67,7 @@ func testClarifyGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "clarify", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "pm-agent", "max_rounds": 3, "prompt": "澄清:{{vars.idea}}"}},
+			{ID: "clarify", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "planner-agent", "max_rounds": 3, "prompt": "澄清:{{vars.idea}}"}},
 			{ID: "design", Type: "agent", Caps: capsPlain, Label: "设计", Checkpoint: true, Config: map[string]any{"agent_profile": "design-agent", "prompt": "设计", "produces": "design.md"}},
 			{ID: "review_design", Type: "agent", Caps: capsCodeReview, Label: "设计复核", Config: map[string]any{"agent_profile": "analyst-agent", "prompt": "复核"}},
 			{ID: "approve", Type: "human_gate", Label: "设计评审", Config: map[string]any{"title": "设计评审", "actions": []any{map[string]any{"id": "approve", "label": "批准"}, map[string]any{"id": "revise", "label": "退回"}}}},

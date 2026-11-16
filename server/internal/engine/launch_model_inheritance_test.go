@@ -22,7 +22,7 @@ func TestLaunchModelUsesLiveInheritedConfigurations(t *testing.T) {
 	agents := services.NewAgentService(t.TempDir())
 	agents.SetSharedAgent(shared)
 	// The local binding is absent: the launch must resolve shared defaults.
-	if err := agents.Save(services.Agent{Name: "pm", AcpBackend: "codex", InheritModel: true}); err != nil {
+	if err := agents.Save(services.Agent{Name: "planner", AcpBackend: "codex", InheritModel: true}); err != nil {
 		t.Fatal(err)
 	}
 	eng.SetAgents(agents)
@@ -41,7 +41,7 @@ func TestLaunchModelUsesLiveInheritedConfigurations(t *testing.T) {
 	if err != nil || choice.ConfigurationID != "group" {
 		t.Fatalf("all groups changed the explicit default: %+v %v", choice, err)
 	}
-	stored, ok := agents.Get("pm")
+	stored, ok := agents.Get("planner")
 	if !ok || stored.ModelBinding != nil || !stored.InheritModel {
 		t.Fatal("launch changed the saved Agent's inheritance")
 	}
@@ -54,7 +54,7 @@ func TestLaunchModelUsesLiveInheritedConfigurations(t *testing.T) {
 		}
 	}
 	// Turning off model inheritance keeps this Agent's local allow-list.
-	if err := agents.Save(services.Agent{Name: "pm", AcpBackend: "codex", ModelBinding: modelrouting.ConfigurationReference("group")}); err != nil {
+	if err := agents.Save(services.Agent{Name: "planner", AcpBackend: "codex", ModelBinding: modelrouting.ConfigurationReference("group")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&models.ModelConfiguration{}).Where("id = ?", "later").Update("state", "active").Error; err != nil {

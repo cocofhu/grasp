@@ -401,14 +401,9 @@ export interface TeamBootstrapResource {
 
 export interface TeamBootstrapSession {
   id: string
-  status: 'starting' | 'running' | 'pulling' | 'ready' | 'failed' | string
+  status: 'starting' | 'running' | 'ready' | 'failed' | string
   error?: string
-  pmAgent?: string
-  sandboxId?: string
-  /** Gateway/local sandbox lifecycle while bootstrap waits (pulling|creating|running|…). */
-  sandboxStatus?: string
   prefix?: string
-  background?: string
   agentNames?: string[]
   events: TeamBootstrapEvent[]
   resources: TeamBootstrapResource[]
@@ -418,12 +413,8 @@ export interface TeamBootstrapSession {
 
 export interface TeamBootstrapRequest {
   prefix: string
-  pmName: string
-  background: string
   modelConfigurationId: string
   modelConfigurationIds?: string[]
-  /** Registered repository the PM sandbox clones; empty starts an empty workspace. */
-  repoId?: string
   mcp?: MCPServer[]
   env?: Record<string, string>
 }
@@ -471,7 +462,6 @@ export interface DashboardStats {
   /** Platform-wide cumulative tokens; null = never reported (UI "—"). */
   totalTokens?: number | null
   workflowTokens?: number | null
-  pmTokens?: number | null
 }
 
 /** GET /stats/platform-status — StatusMetrics snapshot (shell chrome). */

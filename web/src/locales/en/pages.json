@@ -241,7 +241,7 @@
         "colTime": "Time",
         "colSource": "Source / phase",
         "colScope": "Run / node",
-        "thread": "PM thread",
+        "thread": "Thread",
         "empty": "No calls"
       },
       "pricing": {
@@ -287,8 +287,7 @@
           "90d": "Last 90 days",
           "all": "All time"
         },
-        "workflow": "Workflow",
-        "pm": "Workspace assistant"
+        "workflow": "Workflow"
       },
       "segments": {
         "label": "Filter by status",
@@ -585,10 +584,10 @@
         "time7d": "Last 7 days",
         "time30d": "Last 30 days",
         "noRun": "No runs",
-        "callerPmSub": "Workspace manager",
+        "callerMemberSub": "Signed-in user",
         "callerApiKeySub": "External trigger",
         "callerSystemSub": "Automation",
-        "callerPm": "Workspace assistant",
+        "callerMember": "Member",
         "callerApiKey": "User API Key",
         "callerSystem": "System",
         "callerExternal": "External",
@@ -621,159 +620,7 @@
         "outcomeOk": "OK",
         "outcomeFail": "Failed"
       },
-      "pm": {
-        "settingsTitle": "Workspace assistant settings",
-        "defaultAssistantSection": "Default assistant",
-        "automaticApprovalSection": "Automatic approval",
-        "enable": "Enable Workspace assistant",
-        "enablePermissionHint": "Any signed-in user may enable, rebind, or disable",
-        "aclMemoryNote": "Manage memories in Agent Studio under Data → Memory; any signed-in user may edit.",
-        "enabledMcps": "Workspace assistant MCPs",
-        "enabledMcpsHint": "Injected into the consult sandbox when checked. Shared memory/context always inject and are not controlled here.",
-        "mcpProgress": "Workspace progress, blockers, risks (read-only)",
-        "mcpWorkflowRead": "Same-workspace workflow read queries (list / graph / versions / runs / pending gates)",
-        "mcpWorkflowWrite": "Same-workspace workflow writes (create / update / publish / start / approve / cancel)",
-        "mcpAgentFs": "List workspace agents + edit same-workspace Agent workspaces (host-side, not Run sandbox; visible after Studio refresh)",
-        "gateAutoVar": "Auto-invoke Workspace assistant on gates · switch variable",
-        "gateAutoVarPlaceholder": "Workspace boolean variable name, e.g. pm_auto_gate",
-        "gateAutoVarHint": "Name of a run variable that must exist and be truthy. Leave empty to disable. Saving does not require the variable to exist yet.",
-        "gateAutoPrompt": "Handling prompt (optional)",
-        "gateAutoPromptPlaceholder": "Optional: appended after the system default context and tool guidance",
-        "gateAutoPromptHint": "Empty = system default guidance only; non-empty text is appended after the defaults.",
-        "badgeEnabled": "Enabled",
-        "badgeDisabled": "Disabled",
-        "badgeUnavailable": "Agent unavailable",
-        "badgeError": "Agent error",
-        "badgePending": "Pending bind",
-        "agentStaleSuffix": " (stale)",
-        "bindAgent": "Bind Agent",
-        "selectAgent": "Select an existing Agent…",
-        "noAgents": "No Agents available. Create one in the Agent studio first.",
-        "goAgents": "Open Agent studio",
-        "needAgent": "Select an Agent before enabling",
-        "saveLeaderButton": "Save Workspace assistant Settings",
-        "adminRequired": "Platform admin required",
-        "disabledTitle": "Workspace assistant is disabled",
-        "disabledHint": "Choose an existing Agent and enable the assistant to follow progress, blockers, and risks.",
-        "unavailableTitle": "Choose an available Agent to get started",
-        "scopeLabel": "Workspace insights",
-        "threadsLoadFailed": "Could not load conversations",
-        "threadsLoadFailedDesc": "Retry to view your existing conversations.",
-        "welcomeTitle": "What would you like to know?",
-        "pausedHistoryHint": "The assistant is paused. Past conversations remain readable; enable it to continue.",
-        "defaultUnavailableHint": "The default Agent is unavailable, so new chats are paused. Existing chats use their own Agents.",
-        "pausedComposerHint": "This conversation is read-only. Enable the assistant in settings to continue.",
-        "threadUnavailableHint": "This conversation's Agent is unavailable. Past messages remain readable.",
-        "features": {
-          "progress": {
-            "title": "Follow progress",
-            "desc": "Get an overview of workflows and runs."
-          },
-          "blockers": {
-            "title": "Find blockers",
-            "desc": "Identify work that needs attention."
-          },
-          "risk": {
-            "title": "Spot risks",
-            "desc": "Review issues and emerging trends."
-          }
-        },
-        "goSettings": "Open settings",
-        "settings": "Settings",
-        "backToChat": "Back to chat",
-        "threads": "Threads",
-        "newThread": "New",
-        "untitled": "New chat",
-        "noThreads": "No threads yet. Create one to start.",
-        "emptyHint": "Ask about overall progress, blockers, or risk trends; you can also attach files.",
-        "suggestProgress": "How is overall progress?",
-        "suggestBlockers": "Where are we blocked?",
-        "suggestRisk": "Any recent risk trends?",
-        "inputPh": "Ask a question, Enter to send; paste or pick files (≤50 MiB)",
-        "send": "Send",
-        "stop": "Stop",
-        "regenerate": "Regenerate",
-        "retry": "Retry",
-        "images": "Attach",
-        "imagesOnly": "Attachments",
-        "generating": "Generating…",
-        "copyFull": "Copy full text",
-        "copySuccess": "Plain text copied to clipboard",
-        "copyFailed": "Copy failed — select text manually",
-        "me": "Me",
-        "loadingHistory": "Loading conversation history…",
-        "historyScrollUp": "Scroll up to load earlier messages",
-        "historyLoading": "Loading earlier messages…",
-        "historyLoadFailed": "Failed to load · scroll to top again to retry",
-        "historyReachedStart": "Reached the earliest message",
-        "finalizing": "Saving reply…",
-        "resuming": "Resuming reply…",
-        "loadFailed": "Failed to load messages",
-        "loadFailedDesc": "Could not load thread messages. Check your network and retry.",
-        "busyFinalizing": "Saving this reply. Wait for completion before sending another.",
-        "busyResuming": "Resuming an in-progress reply. Wait for a terminal state before sending.",
-        "busyWaiting": "Processing this turn (ready / generate). Wait for a terminal state before sending another.",
-        "busyPulling": "Pulling image…",
-        "busyStreaming": "Streaming a reply. Wait for completion, failure, or stop before sending.",
-        "failConnectionTitle": "Connection interrupted",
-        "failConnectionDesc": "This turn stopped because the page refreshed or the connection dropped. You can retry; any partial reply is kept when available.",
-        "failPartialKeptMeta": "Stopped · partial kept",
-        "failSandboxTitle": "Sandbox timeout",
-        "failSandboxDesc": "Ready-wait or generation exceeded ~90s. Please try again later.",
-        "failEmptyTitle": "Empty reply",
-        "failEmptyDesc": "This turn produced no valid reply. Please retry or rephrase.",
-        "failUnknownTitle": "Unknown error",
-        "failUnknownDesc": "Processing was interrupted. Please retry. If it persists, check your connection.",
-        "failStoppedTitle": "Stopped",
-        "failStoppedDesc": "You stopped this turn. Partial stream text was discarded; you can retry.",
-        "failInterruptedTitle": "Interrupted by restart",
-        "failInterruptedDesc": "The server restarted while this reply was generating. Retry to run it again.",
-        "openSource": "Open source",
-        "citationMissing": "Citation target missing or inaccessible",
-        "citationInvalid": "Invalid citation or target does not exist",
-        "setupBadgeDisabled": "Disabled",
-        "setupBadgeUnavailable": "Needs setup",
-        "setupStepsLabel": "Setup steps",
-        "setupStep1": "Choose an existing Agent in settings",
-        "setupStep2": "Turn on “Enable assistant” and save",
-        "setupStep3": "Come back here to ask",
-        "setupPreviewQ1": "Which runs are stuck this week?",
-        "setupPreviewA1": "Two runs are waiting for approval, and one test node failed once.",
-        "setupPreviewQ2": "Which one first?",
-        "setupPreviewA2": "Start with the one that has waited longest; it blocks three downstream tasks."
-      },
-      "externalMcp": {
-        "connectionTitle": "Connection",
-        "subtitle": "Let external AI tools (Cursor, Claude, etc.) call this workspace's PM MCP surface over HTTP — separate from internal PM Leader consult.",
-        "distinctHint": "These switches and keys apply only to external MCP. They do not change the Web/gate PM Leader.",
-        "enable": "Enable external MCP",
-        "enableHint": "Off by default. When on, callers still need a valid workspace API key and enabled packs.",
-        "packsTitle": "External capability packs",
-        "packsHint": "Only checked packs appear in tools/list and may be called. Independent from internal PM Leader pack toggles.",
-        "urlTitle": "MCP base URL",
-        "urlHint": "Append a pack id to the base, e.g. …/pm-progress or …/pm-workflow-write.",
-        "urlPending": "Shown after saving settings",
-        "urlPackSuffix": "Full URL example: {base}/pm-progress",
-        "keysTitle": "Workspace API keys",
-        "keysHint": "Bearer auth for external MCP. Plaintext is shown once at creation; revoke takes effect immediately.",
-        "createKey": "Create key",
-        "createKeyTitle": "New workspace MCP key",
-        "keyCreatedTitle": "Key created",
-        "keyName": "Name",
-        "keyNamePlaceholder": "e.g. cursor-local",
-        "keyOnceHint": "Copy now — plaintext cannot be shown again after closing.",
-        "noKeys": "No keys yet",
-        "revoke": "Revoke",
-        "keyRevoked": "Key revoked",
-        "save": "Save external MCP settings",
-        "saved": "External MCP settings saved",
-        "exampleTitle": "Cursor / Claude config example",
-        "exampleHint": "Replace YOUR_WORKSPACE_MCP_KEY with a key created above; adjust the pack path suffix as needed.",
-        "copy": "Copy",
-        "copied": "Copied",
-        "copySuccess": "Copied to clipboard",
-        "copyFailed": "Copy failed"
-      },
+      "adminRequired": "Platform admin required",
       "metaTitle": "Workspace information",
       "metaHint": "Use Save at the bottom of the page after editing the name, description, or unknown-model display name. The header and usage views update after a successful save.",
       "nameRequired": "Workspace name cannot be empty",
@@ -1414,7 +1261,7 @@
         "worktree": "Worktree",
         "sandbox": "Sandbox",
         "sectionDesc": "Execution mode comes from the image that is running. This page only shows it.",
-        "worktreeHelp": "This environment runs the Worktree image. Solo, workflows, chat tests, and the assistant all start in this image, with no extra container boundary. Git repositories use a worktree for this launch; other folders get their own directory. Commands come from the seven coding tools, git, gh, glab, and Chromium in the image. The value comes from the current image. Switch to sandbox by deploying the slim service image plus the sandbox image.",
+        "worktreeHelp": "This environment runs the Worktree image. Solo, workflows, and chat tests all start in this image, with no extra container boundary. Git repositories use a worktree for this launch; other folders get their own directory. Commands come from the seven coding tools, git, gh, glab, and Chromium in the image. The value comes from the current image. Switch to sandbox by deploying the slim service image plus the sandbox image.",
         "sandboxHelp": "This environment runs the slim service image plus the sandbox image. Agents start in a sandbox container. The value comes from the current image and cannot be edited here. Switch to worktree by deploying the Worktree image.",
         "banner": "This image includes the seven CLIs, the browser preview, and the build toolchain. It does not include dockerd, sshd, or code-server. The agent and the service share one container. Sandbox memory, recycle, and capacity belong to the sandbox deployment and are not offered here.",
         "bannerNoSwitch": "Home, new session, and start run have no mode switch.",
@@ -1475,8 +1322,7 @@
       },
       "purpose": {
         "run": "Run",
-        "test": "Test",
-        "agent": "Workspace assistant"
+        "test": "Test"
       },
       "status": {
         "busy": "In chat",
@@ -1489,8 +1335,7 @@
       },
       "source": {
         "workflow": "Workflow",
-        "chatTest": "Chat test",
-        "pmConsult": "Workspace assistant consult"
+        "chatTest": "Chat test"
       },
       "ttl": {
         "busy": "Running (recycle paused)",
@@ -1587,7 +1432,7 @@
       },
       "errorPrefix": "Error:",
       "emptyTeamTitle": "Launch a full team from one entry",
-      "emptyTeamDesc": "After you fill workspace background and runtime config, a sandbox creates the workspace, PM, and 4 engineers.",
+      "emptyTeamDesc": "Fill in a team name and runtime config to create 4 engineer agents from the reference roster.",
       "emptyTeamCta": "Create Agent team",
       "emptyTeamOrSingle": "or create a single Agent",
       "emptyWorkspaceTitle": "No agents in this workspace yet",
@@ -1600,7 +1445,6 @@
         "env": "Env vars",
         "test": "Chat test",
         "meta": "Metadata",
-        "data": "Data",
         "capabilities": "Capabilities"
       },
       "switcher": {
@@ -1662,13 +1506,11 @@
         "source": {
           "system": "baseline",
           "studio": "Studio",
-          "pm-mcp": "PM MCP",
-          "external-mcp": "External MCP",
           "restore": "restore"
         }
       },
       "mcp": {
-        "hint": "Full mcp.json written to {configRoot}/mcp.json and injected in ACP. New agents include artifact-store by default. Workspace assistant MCP must be added manually and stays separate from artifact-store — do not merge them.",
+        "hint": "Full mcp.json written to {configRoot}/mcp.json and injected in ACP. New agents include artifact-store by default.",
         "formEdit": "Form editor",
         "rawJson": "Raw JSON",
         "runVarsTitle": "Run-scoped variables (substituted in url/headers/args/env)",
@@ -1677,25 +1519,13 @@
         "artifactToken": "run-bound access token",
         "globalVar": "{'${vars.NAME}'} — workflow global, e.g. {'${vars.feature}'}",
         "addArtifactStore": "+ Add artifact store",
-        "agentVarsTitle": "Agent platform MCPs",
-        "agentScopeTag": "agent",
-        "memoryVars": "Long-term memory (Agent home workspace)",
-        "contextVars": "Conversation context (persisted chat recall)",
-        "agentScopeNote": "Declare in any agent mcp[]. Workspace assistant consult sandboxes also inject these three; enable pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs in workspace Workspace assistant settings, not here.",
-        "addMemoryStore": "+ Add long-term memory",
-        "addContextStore": "+ Add conversation context",
         "quickAddLabel": "Quick add",
         "displayName": {
-          "artifact": "Artifact store",
-          "memory": "Long-term memory",
-          "context": "Conversation context"
+          "artifact": "Artifact store"
         },
         "scopeNote": {
-          "artifact": "Run-isolated artifact service for this run.",
-          "memory": "Long-term memory, owned by the home workspace.",
-          "context": "Conversation context for persisted chat recall."
+          "artifact": "Run-isolated artifact service for this run."
         },
-        "agentMcpAlreadyExists": "{name} already exists; no duplicate entry added",
         "serviceName": "Service name e.g. context7",
         "transportCommand": "Command (stdio)",
         "remove": "Remove",
@@ -1719,11 +1549,7 @@
       "mcpHelp": {
         "link": "Help",
         "title": "MCP config help",
-        "gotIt": "Got it",
-        "chip": {
-          "run": "Run-scoped vars",
-          "agent": "Agent platform MCP"
-        }
+        "gotIt": "Got it"
       },
       "envHelp": {
         "link": "Help",
@@ -1787,7 +1613,7 @@
         "createPlaceholder": "Letters / digits / - / _",
         "renameTitle": "Rename agent",
         "renameLabel": "New name",
-        "renameCascadeHint": "Directory, Workspace assistant, and workflow Agent profile references will be updated together",
+        "renameCascadeHint": "Directory and workflow Agent profile references will be updated together",
         "renameSuccess": "Renamed successfully",
         "renameSuccessWithWorkflows": "Renamed successfully, updated {n} workflow(s)",
         "deleteAgentTitle": "Delete agent",
@@ -1870,28 +1696,23 @@
       },
       "teamWizard": {
         "title": "Create Agent team",
-        "headSub": "Team context and runtime configuration → start a sandbox to create the team",
-        "confirmStart": "Confirm & start sandbox",
+        "headSub": "Team name + runtime config → create engineer agents from the reference roster",
+        "confirmStart": "Confirm and create",
         "submitting": "Submitting",
-        "previewLine": "Team: {team} · PM: {pm} · {n} engineers",
+        "previewLine": "Team: {team} · {n} engineers",
         "steps": {
           "team": "Team info",
-          "repo": "Repository",
           "mcp": "MCP",
           "env": "Env vars",
           "review": "Confirm"
         },
         "team": {
-          "meta": "Choose the team name and naming prefix. Engineers are generated in the sandbox from the reference roster.",
+          "meta": "Set the team name and naming prefix; engineers are created from the reference roster.",
           "teamName": "Team name",
-          "prefix": "Name prefix",
-          "pmName": "PM Agent name",
-          "background": "Team context",
-          "backgroundPlaceholder": "Describe the team goals, stack, repositories and workflow needs. This becomes the sandbox team creation prompt.",
-          "backgroundHint": "Like a prompt: injected into the sandbox to generate the engineer team."
+          "prefix": "Name prefix"
         },
         "mcp": {
-          "meta": "Default mcp[] for the team; applied when creating the PM and engineers. artifact-store is prefilled.",
+          "meta": "Default mcp[] for the team; applied when creating engineers. artifact-store is prefilled.",
           "namePh": "Name",
           "headers": "Headers",
           "addHeader": "Add header",
@@ -1900,45 +1721,31 @@
           "runVars": "Run vars: {'${GRASP_ARTIFACT_URL}'} / {'${GRASP_ARTIFACT_TOKEN}'}"
         },
         "env": {
-          "meta": "Written to the PM; engineers inherit by default."
+          "meta": "Written to every engineer on creation."
         },
         "review": {
-          "meta": "Create the PM in this workspace, then start a sandbox to generate four engineers from the reference roster.",
+          "meta": "Create four engineers from the reference roster in this workspace.",
           "team": "Team",
           "none": "None",
-          "roster": "Roster: 1 PM + 4 engineers · 5 total",
-          "background": "Team context (creation prompt)",
+          "roster": "Roster: 4 engineers",
           "noArtifactWarn": "Workflow roles usually need artifact-store; it is missing from the MCP list."
         },
         "errors": {
           "teamNameRequired": "Enter a team name",
-          "prefixRequired": "Name prefix is required",
-          "backgroundRequired": "Enter the team context",
-          "pmRequired": "PM Agent name is required",
-          "pmInvalid": "Invalid PM name (letters/digits/_/- only)",
-          "pmExists": "That PM name already exists"
+          "prefixRequired": "Name prefix is required"
         },
         "progress": {
-          "title": "Sandbox · {name}",
-          "sub": "Auto-provision: workspace / PM / engineer agents",
-          "starting": "sandbox starting…",
-          "running": "sandbox running",
-          "pulling": "Pulling image…",
-          "pullingHint": "Pulling the runtime image. Ready is withheld until the pull finishes.",
+          "title": "Team setup · {name}",
+          "sub": "Auto-provision: workspace / engineer agents",
+          "starting": "starting…",
+          "running": "running",
           "ready": "team ready · {n} agents",
           "failed": "failed",
           "waiting": "Waiting for progress…",
           "resources": "Created resources",
-          "openPm": "Open workspace manager",
           "done": "Done",
           "retry": "Retry",
           "keepCreated": "Keep created resources"
-        },
-        "repo": {
-          "meta": "Optional. The PM sandbox clones the selected repository using its credential and commit author.",
-          "label": "Repository",
-          "none": "No repository",
-          "manage": "Manage repositories"
         }
       },
       "wizard": {
@@ -2005,30 +1812,6 @@
           "blue": "Blue",
           "purple": "Purple",
           "pink": "Pink"
-        }
-      },
-      "data": {
-        "title": "Agent data",
-        "hint": "Workspace data: memories and context.",
-        "unsavedBinding": "Home workspace change is unsaved; the data panel still uses the saved workspace.",
-        "tabs": {
-          "memory": "Memory",
-          "context": "Context"
-        },
-        "memory": {
-          "titlePh": "Title",
-          "contentPh": "Content",
-          "add": "Add memory",
-          "clear": "Clear all",
-          "clearConfirm": "Clear all memories for this Agent?",
-          "titleRequired": "Title is required",
-          "empty": "No memories yet",
-          "updatedBy": "Updated by {user}"
-        },
-        "context": {
-          "hint": "View/delete threads here; start new consults in Workspace assistant.",
-          "empty": "No threads yet",
-          "deleteConfirm": "Delete this thread and its messages?"
         }
       },
       "capabilities": {
@@ -3376,9 +3159,6 @@
     "workspaceDefaults": {
       "title": "Workflow defaults",
       "variablesHint": "Variables on the canvas take precedence.",
-      "gateTitle": "Automatic approval",
-      "gateHint": "Enable to customize; disable to inherit workspace settings.",
-      "mcpPacks": "Available MCPs",
       "hint": "Override shared defaults. Variables declared on the graph still take precedence. Saved settings apply to subsequent execution.",
       "variables": "Default variables",
       "variableName": "Variable name",
@@ -3391,11 +3171,6 @@
       "editable": "Editable",
       "secret": "Secret",
       "addVariable": "Add variable",
-      "gateOverride": "Override automatic review",
-      "gateEnabled": "Enable automatic review",
-      "agent": "Agent",
-      "selectAgent": "Select an Agent",
-      "prompt": "Additional prompt",
       "credentialTitle": "Credential bindings",
       "credentialHint": "Select a credential for each environment key, or explicitly omit it. Unavailable selections never fall back to another credential.",
       "inherit": "Inherit default credential",
@@ -3744,7 +3519,6 @@
     },
     "settingsOverview": {
       "desc": {
-        "assistantSettings": "Choose the Agent behind the assistant and set automatic approval rules.",
         "audit": "Review tool calls and MCP access made by Agents in this workspace."
       },
       "stats": {
@@ -3760,11 +3534,6 @@
         "executionMode": "Execution mode",
         "runningRuns": "Running / limit",
         "sandboxMemory": "Sandbox memory limit",
-        "mcpConnection": "External access",
-        "mcpEnabled": "On",
-        "mcpDisabled": "Off",
-        "mcpPacks": "Open packs",
-        "mcpKeys": "Access keys",
         "projectsTotal": "Repositories",
         "projectsUsed": "Used",
         "projectsHosts": "Repository hosts",

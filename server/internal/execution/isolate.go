@@ -30,7 +30,7 @@ type Prepared struct {
 	GitDir string // main git dir when Kind is worktree; used to detach the worktree
 }
 
-// Launch is the directory shared by every node of one run, session, test, or assistant.
+// Launch is the directory shared by every node of one run, session, or test.
 type Launch struct {
 	ID    string
 	Root  string
@@ -156,7 +156,7 @@ func AddStop(id string, stop func()) {
 
 // Release drops one holder. The directory stays until End when the launch is a
 // workflow run that outlives a single node. endNow deletes as soon as no holder
-// remains (solo, test, assistant, or a failed start).
+// remains (solo, test, or a failed start).
 func Release(id string, endNow bool) {
 	id, err := safeID(id)
 	if err != nil {

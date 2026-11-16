@@ -15,7 +15,7 @@ export type GlobalTokenStatsParams = {
   granularity?: 'hour' | 'day' | 'week' | string
   timezone?: string
   utcOffsetMinutes?: number
-  source?: 'all' | 'workflow' | 'pm' | 'studio' | string
+  source?: 'all' | 'workflow' | 'studio' | 'solo' | string
   status?: 'ok' | 'failed' | 'cancelled' | string
   phase?: 'production' | 'interactive' | 'chat' | string
   modelKey?: string

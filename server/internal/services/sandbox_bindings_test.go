@@ -42,7 +42,7 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxServic
 	if purpose == "test" {
 		s.startContainer(row.ID, row.Name, agent.Name, "bound-run", row.Token, repos, agent, "")
 	} else {
-		s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{Resident: purpose == SandboxPurposeSolo, Repos: repos})
+		s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "bound-run", row.Token, nil, agent, agentContainerExtra{Resident: true, Repos: repos})
 	}
 	if err := s.db.First(row, row.ID).Error; err != nil || row.Status != "running" {
 		t.Fatalf("start failed: %v status=%s error=%s", err, row.Status, row.Error)
@@ -59,7 +59,7 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxServic
 }
 
 func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
-	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
+	for _, purpose := range []string{"test", SandboxPurposeSolo} {
 		for _, change := range []string{"cleared key", "revoked key", "rotated key", "disabled configuration", "deleted configuration", "disabled connection", "changed model", "removed binding"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
 				s, row, connections, configurations, key, connection, configuration := boundSandboxFixture(t, purpose, false)
@@ -95,11 +95,6 @@ func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
 				}
 				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must not reach the old model", nil, 0, nil); err == nil {
 					t.Fatal("a new turn used stale model authorization")
-				}
-				if purpose == SandboxPurposeAgent {
-					if _, _, err := s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: row.Profile, ThreadID: row.ThreadID, Reuse: true}); err == nil {
-						t.Fatal("thread reused stale model authorization")
-					}
 				}
 			})
 		}
@@ -153,7 +148,7 @@ func TestTestSandboxDoesNotReusePreviouslyBoundCredentials(t *testing.T) {
 }
 
 func TestSandboxCreationRequiresSelectedModelConfiguration(t *testing.T) {
-	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
+	for _, purpose := range []string{"test", SandboxPurposeSolo} {
 		t.Run(purpose, func(t *testing.T) {
 			db := newTestDB(t)
 			ds := &dockerState{}
@@ -165,8 +160,6 @@ func TestSandboxCreationRequiresSelectedModelConfiguration(t *testing.T) {
 			switch purpose {
 			case "test":
 				_, err = s.Open(context.Background(), "agentA", nil)
-			case SandboxPurposeAgent:
-				_, _, err = s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: "agentA", ThreadID: "missing-model"})
 			case SandboxPurposeSolo:
 				_, err = s.OpenSoloSandbox(context.Background(), SoloSandboxOpts{Profile: "agentA", SessionID: "missing-model"})
 			}

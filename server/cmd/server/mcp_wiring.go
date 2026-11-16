@@ -4,16 +4,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/mcp"
-	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/platformmcp"
-	"github.com/cocofhu/grasp/internal/pmmcp"
-	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 
-	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -49,67 +43,4 @@ func wireArtifactMCPPersistence(host *mcp.Host, db *gorm.DB, runs *services.RunS
 		}
 		return nodeID, caps, true
 	})
-}
-
-// platformMCPWire owns the shared register/unregister paths for the platform
-// MCP hosts so gate-auto and sandbox-destroy hooks stay in sync without
-// duplicating the same Unregister calls in main.
-type platformMCPWire struct {
-	pm      *pmmcp.Host
-	memory  *memorymcp.Host
-	context *contextmcp.Host
-	pmSvc   *services.PmService
-	skills  *services.AgentService
-}
-
-// agentExists gates platform MCP tokens on a live Agent.
-func (w *platformMCPWire) agentExists(agent string) bool {
-	agent = strings.TrimSpace(agent)
-	if agent == "" || w.skills == nil {
-		return false
-	}
-	return w.skills.Exists(agent)
-}
-
-func (w *platformMCPWire) unregister(token string) {
-	if token == "" {
-		return
-	}
-	if w.pm != nil {
-		w.pm.Unregister(token)
-	}
-	if w.memory != nil {
-		w.memory.Unregister(token)
-	}
-	if w.context != nil {
-		w.context.Unregister(token)
-	}
-}
-
-func (w *platformMCPWire) clearSandboxRef(threadID string) {
-	if w.pmSvc == nil || threadID == "" {
-		return
-	}
-	if err := w.pmSvc.ClearSandboxRef(threadID); err != nil {
-		log.Warn().Err(err).Str("thread", threadID).Msg("clear sandbox ref failed")
-	}
-}
-
-// registerPMPolicy authorizes an ordinary per-workflow PM policy explicitly.
-func (w *platformMCPWire) registerPMPolicy(threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec) {
-	if !w.agentExists(agent) {
-		return "", nil
-	}
-	token := platformmcp.NewToken()
-	if w.memory != nil {
-		w.memory.Restore(token, agent, threadID, "system")
-	}
-	if w.context != nil {
-		w.context.Restore(token, agent, threadID, "system")
-	}
-	if w.pm != nil {
-		w.pm.RestoreWithMcps(threadID, "system", agent, token, services.EffectivePmEnabledMcps(enabledMcps))
-	}
-	specs := services.BuildAgentPlatformMCPSpecs(agent, token)
-	return token, append(specs, services.BuildPmRoleMCPSpecs(token, enabledMcps)...)
 }

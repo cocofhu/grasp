@@ -10,7 +10,7 @@ import {
   applyDefaultTeamNames,
   buildOnboardingWorkflowPreview,
   freshOnboardingTeam,
-} from '@/lib/pm/onboardingWizard'
+} from '@/lib/onboarding/onboardingWizard'
 
 beforeAll(async () => {
   const [zh, en] = await Promise.all([loadLocaleMessages('zh-CN'), loadLocaleMessages('en')])

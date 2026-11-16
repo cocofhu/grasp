@@ -10,16 +10,12 @@ import (
 
 func TestProtectedOnboardingAgentRejectsDeleteAndRename(t *testing.T) {
 	hn := newHarness(t)
-	pm := attachPm(t, hn)
 	names := append(append([]string{}, services.OnboardingAgentNames...), services.OnboardingAgentNamesEN...)
 	for _, name := range names {
 		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "acpBackend": "cursor", "name": name})
 		if w.Code != http.StatusCreated {
 			t.Fatalf("create %s: %d %s", name, w.Code, w.Body.String())
 		}
-	}
-	if _, err := pm.UpsertMemory("需求澄清", "M", "kept", "admin", "u"); err != nil {
-		t.Fatal(err)
 	}
 	for _, name := range names {
 		del := hn.do(http.MethodDelete, "/api/agents/"+url.PathEscape(name), nil)
@@ -36,13 +32,6 @@ func TestProtectedOnboardingAgentRejectsDeleteAndRename(t *testing.T) {
 		if !hn.h.Agents.Exists(name) {
 			t.Fatalf("%s was renamed", name)
 		}
-	}
-	mem, err := pm.ListMemories("需求澄清")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(mem) != 1 || mem[0].Content != "kept" {
-		t.Fatalf("workspace data was purged: %+v", mem)
 	}
 
 	created := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "acpBackend": "cursor", "name": "scratch"})

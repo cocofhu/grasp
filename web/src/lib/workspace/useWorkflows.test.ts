@@ -16,7 +16,7 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMo
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: vi.fn(), handleFileChange: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
 import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
-import { onboardingOpen, resetFirstInstallProbe } from '@/lib/pm/firstInstall'
+import { onboardingOpen, resetFirstInstallProbe } from '@/lib/onboarding/firstInstall'
 import { useWorkflows } from './useWorkflows'
 const readyAgents = ['需求澄清', '实现', '测试评审', '交付'].map((name) => ({ name }))
 const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false }

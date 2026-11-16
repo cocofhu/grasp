@@ -25,9 +25,8 @@ function stubRun(partial: {
 const MIXED_RUNS = [
   stubRun({ id: 'run-manual-code', trigger: 'manual', title: '标准 manual' }),
   stubRun({ id: 'run-api-code', trigger: 'api', title: '标准 api' }),
-  stubRun({ id: 'run-pm-code', trigger: 'pm_mcp', title: '标准 pm_mcp' }),
   stubRun({ id: 'run-channel', trigger: 'channel', title: '未映射-channel' }),
-  stubRun({ id: 'run-free', trigger: 'custom:nightly-bug', title: '未映射-自由串' }),
+  stubRun({ id: 'run-free', trigger: 'qq:cron-timezone-bug', title: '未映射-自由串' }),
 ]
 
 async function mockApis(page: import('@playwright/test').Page) {
@@ -78,17 +77,16 @@ function triggerLabel(page: import('@playwright/test').Page, title: string) {
 }
 
 test.describe('RunListView 触发方式展示', () => {
-  test('中文：三码映射，自由串原样，手动（默认）不显示', async ({ page }) => {
+  test('中文：API 映射，其他串原样，手动（默认）不显示', async ({ page }) => {
     await gotoRunList(page, 'zh')
     await expect(page.locator('tr', { hasText: '标准 manual' })).toBeVisible()
     await expect(triggerLabel(page, '标准 manual')).toHaveCount(0)
     await expect(triggerLabel(page, '标准 api')).toHaveText('API')
-    await expect(triggerLabel(page, '标准 pm_mcp')).toHaveText('工作区助手 MCP')
     await expect(triggerLabel(page, '未映射-channel')).toHaveText('channel')
-    await expect(triggerLabel(page, '未映射-自由串')).toHaveText('custom:nightly-bug')
+    await expect(triggerLabel(page, '未映射-自由串')).toHaveText('qq:cron-timezone-bug')
     const triggerTexts = await page.getByTestId('run-trigger').allTextContents()
     expect(triggerTexts).toEqual(
-      expect.arrayContaining(['API', '工作区助手 MCP', 'channel', 'custom:nightly-bug']),
+      expect.arrayContaining(['API', 'channel', 'qq:cron-timezone-bug']),
     )
     expect(triggerTexts).not.toContain('手动')
   })
@@ -98,7 +96,6 @@ test.describe('RunListView 触发方式展示', () => {
     await expect(page.locator('tr', { hasText: '标准 manual' })).toBeVisible()
     await expect(triggerLabel(page, '标准 manual')).toHaveCount(0)
     await expect(triggerLabel(page, '标准 api')).toHaveText('API')
-    await expect(triggerLabel(page, '标准 pm_mcp')).toHaveText('Workspace assistant MCP')
     await expect(triggerLabel(page, '未映射-channel')).toHaveText('channel')
   })
 })

@@ -41,13 +41,9 @@
     "backWorkspace": "返回工作区",
     "groupWorkspaceTools": "工作区工具",
     "groupExecution": "执行配置",
-    "assistant": "工作区助手",
     "audit": "审计",
     "sharedAgent": "默认配置",
     "credentials": "凭据",
-    "assistantSettings": "助手设置",
-    "openAssistant": "返回助手",
-    "externalMcp": "外部 MCP",
     "searchWorkflows": "搜索工作流",
     "noMatchingWorkflows": "没有匹配的工作流",
     "projects": "仓库"

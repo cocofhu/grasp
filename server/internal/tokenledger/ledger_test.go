@@ -95,10 +95,7 @@ func TestRecordThreadEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.ChatThread{ID: "th1", UserID: "u", Title: "t"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	tokenledger.Record(db, tokenledger.Entry{Source: models.TokenLedgerSourcePM, ThreadID: "th1",
+	tokenledger.Record(db, tokenledger.Entry{Source: models.TokenLedgerSourceStudio, ThreadID: "th1",
 		Status: models.TokenLedgerStatusCancelled, Usage: &models.TokenUsage{OutputTokens: 9}})
 	var r models.TokenUsageEvent
 	if err := db.First(&r).Error; err != nil {

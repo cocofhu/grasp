@@ -692,17 +692,20 @@ func TestSandboxReconcileRetainsStoppedRecoveryAndRemovesFailedCreates(t *testin
 	// error / stopped rows still have a control-plane record protecting resources.
 	db.Create(&models.Sandbox{Name: "gw-error", Purpose: "test", Status: "error"})
 	ds.setStatus("gw-error", "error")
-	db.Create(&models.Sandbox{Name: "gw-stopped", Purpose: "agent", Status: "stopped"})
+	db.Create(&models.Sandbox{Name: "gw-stopped", Purpose: "test", Status: "stopped"})
 	ds.setStatus("gw-stopped", "stopped")
-	db.Create(&models.Sandbox{Name: "gw-pm-dead", Purpose: "agent", Status: "error"})
-	ds.setStatus("gw-pm-dead", "error")
+	// Retired assistant / channel / scheduled-task sandboxes are destroyed even when stopped.
+	db.Create(&models.Sandbox{Name: "gw-agent-retired", Purpose: "agent", Status: "stopped"})
+	ds.setStatus("gw-agent-retired", "stopped")
+	db.Create(&models.Sandbox{Name: "gw-pm-retired", Purpose: "pm", Status: "stopped"})
+	ds.setStatus("gw-pm-retired", "stopped")
 
 	s.ReconcileOnStartup(ctx, nil)
 
 	if err := db.Where("name = ?", "gw-stopped").First(&models.Sandbox{}).Error; err != nil || !ds.fg.Has("gw-stopped") {
 		t.Fatal("stopped recovery point was deleted on restart")
 	}
-	for _, name := range []string{"gw-error", "gw-pm-dead"} {
+	for _, name := range []string{"gw-error", "gw-agent-retired", "gw-pm-retired"} {
 		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
 			t.Fatalf("%s local row should be gone", name)
 		}
@@ -1468,6 +1471,19 @@ func TestSandboxHelpers(t *testing.T) {
 
 	if randID() == "" {
 		t.Fatal("randID empty")
+	}
+}
+
+func TestFilterAgentPlatformMCPDropsRetiredEntries(t *testing.T) {
+	specs := filterAgentPlatformMCP(resolveAgentMCP([]MCPServer{
+		{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}"},
+		{Name: "memory-store", URL: "${GRASP_MEMORY_URL}"},
+		{Name: "sched", URL: "http://grasp/mcp/task-scheduler/a"},
+		{Name: "pm-workflow-read", URL: "http://grasp/mcp/pm/pm-workflow-read"},
+		{Name: "git", URL: "https://example.com/mcp/git"},
+	}, map[string]string{"GRASP_ARTIFACT_URL": "http://art"}))
+	if len(specs) != 1 || specs[0].Name != "git" {
+		t.Fatalf("specs=%+v", specs)
 	}
 }
 

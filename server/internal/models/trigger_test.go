@@ -15,7 +15,7 @@ func TestParseTrigger(t *testing.T) {
 		{"   ", "", false},
 		{"manual", TriggerManual, false},
 		{"api", TriggerAPI, false},
-		{"pm_mcp", TriggerPMMCP, false},
+		{"pm_mcp", "", true},
 		{"Manual", "", true},
 		{"API", "", true},
 		{"手动触发", "", true},
@@ -32,7 +32,7 @@ func TestParseTrigger(t *testing.T) {
 				t.Errorf("ParseTrigger(%q): want error", tc.in)
 				continue
 			}
-			if !strings.Contains(err.Error(), "manual|api|pm_mcp") {
+			if !strings.Contains(err.Error(), "manual|api") {
 				t.Errorf("ParseTrigger(%q): error %q missing allow-list", tc.in, err.Error())
 			}
 			continue
@@ -62,7 +62,7 @@ func TestResolveTrigger(t *testing.T) {
 }
 
 func TestValidTrigger(t *testing.T) {
-	if !validTrigger(TriggerManual) || !validTrigger(TriggerAPI) || !validTrigger(TriggerPMMCP) {
+	if !validTrigger(TriggerManual) || !validTrigger(TriggerAPI) {
 		t.Fatal("whitelist codes should be valid")
 	}
 	if validTrigger("手动触发") || validTrigger("Manual") || validTrigger("") {
@@ -71,8 +71,8 @@ func TestValidTrigger(t *testing.T) {
 }
 
 func TestAllowedTriggers(t *testing.T) {
-	if len(AllowedTriggers) != 3 {
-		t.Fatalf("len=%d want 3", len(AllowedTriggers))
+	if len(AllowedTriggers) != 2 {
+		t.Fatalf("len=%d want 2", len(AllowedTriggers))
 	}
 	for _, code := range AllowedTriggers {
 		if !validTrigger(code) {

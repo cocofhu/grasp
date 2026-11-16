@@ -132,7 +132,6 @@ async function mountStudio(query: Record<string, string> = {}) {
           AgentGitGuide: true,
           AgentCreateWizard: true,
           AgentSidebar: true,
-          AgentDataPanel: true,
         },
       },
     }),
@@ -254,33 +253,31 @@ describe('AgentStudio region UI', () => {
   })
 })
 
-describe('AgentStudio MCP PM leader prefills', () => {
+describe('AgentStudio MCP tab', () => {
   async function openMcpTab(wrapper: Awaited<ReturnType<typeof mountStudio>>) {
     await wrapper.findAll('button').find((item) => item.text().startsWith('MCP'))!.trigger('click')
     await flushPromises()
   }
 
-  it('keeps mcp quick-add buttons at text-[11px] including artifact store', async () => {
+  it('keeps the artifact store quick-add button at text-[11px]', async () => {
     mocks.listAgents.mockResolvedValue([agent()])
     const wrapper = await mountStudio()
     await flushPromises()
     await openMcpTab(wrapper)
 
-    const selectors = ['mcp-add-artifact', 'mcp-add-memory', 'mcp-add-context'] as const
-    for (const testId of selectors) {
-      const btn = wrapper.get(`[data-test="${testId}"]`)
-      expect(btn.classes()).toContain('text-[11px]')
-      expect(btn.classes()).toContain('px-2')
-      expect(btn.classes()).toContain('py-1')
-      expect(btn.classes()).not.toContain('text-xs')
-      expect(btn.classes()).not.toContain('py-0.5')
+    const btn = wrapper.get('[data-test="mcp-add-artifact"]')
+    expect(btn.classes()).toContain('text-[11px]')
+    expect(btn.classes()).toContain('px-2')
+    expect(btn.classes()).toContain('py-1')
+    expect(btn.classes()).not.toContain('text-xs')
+    expect(btn.classes()).not.toContain('py-0.5')
+    expect(btn.text()).toBe('+ 添加产物存储')
+    for (const retired of ['mcp-add-memory', 'mcp-add-context', 'mcp-add-scheduler']) {
+      expect(wrapper.find(`[data-test="${retired}"]`).exists()).toBe(false)
     }
-    expect(wrapper.get('[data-test="mcp-add-artifact"]').text()).toBe('+ 添加产物存储')
-    expect(wrapper.get('[data-test="mcp-add-memory"]').text()).toBe('+ 添加长期记忆')
-    expect(wrapper.get('[data-test="mcp-add-context"]').text()).toBe('+ 添加对话上下文')
   })
 
-  it('adds memory-store from the agent platform card without changing artifact-store', async () => {
+  it('renders artifact-store as a platform card', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
@@ -299,41 +296,25 @@ describe('AgentStudio MCP PM leader prefills', () => {
 
     expect(wrapper.text()).not.toContain('Agent 通用平台 MCP')
     expect(wrapper.text()).not.toContain('GRASP_MEMORY_URL')
-    expect(wrapper.text()).not.toContain('pm-progress')
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('运行级变量(运行时替换')
     expect(wrapper.get('[data-test="mcp-help-link"]').text()).toBe('帮助')
-    expect(wrapper.get('[data-test="mcp-add-memory"]').text()).toContain('添加长期记忆')
-    expect(wrapper.get('[data-test="mcp-add-memory"]').classes()).toContain('text-[11px]')
-    expect(wrapper.get('[data-test="mcp-add-context"]').classes()).toContain('text-[11px]')
     expect(wrapper.find('[data-test="mcp-add-artifact"]').exists()).toBe(false)
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-preset-key"]').text()).toBe('artifact-store')
     expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-scope-note"]').text()).toContain('本次运行隔离的产物服务')
-
-    await wrapper.get('[data-test="mcp-add-memory"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-mcp-name="memory-store"]').exists()).toBe(true)
-    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-display-name"]').text()).toBe('长期记忆')
-    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-preset-key"]').text()).toBe('memory-store')
-    expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === '${GRASP_MEMORY_URL}')).toHaveLength(1)
-    expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'Bearer ${GRASP_MEMORY_TOKEN}')).toHaveLength(1)
-    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-scope-note"]').text()).toContain('长期记忆，归属主工作区')
-    expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(true)
-    expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'memory-store')).toHaveLength(0)
     expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'artifact-store')).toHaveLength(0)
   })
 
-  it('toasts and keeps a single memory-store when adding again', async () => {
+  it('drops platform display after renaming artifact-store in raw JSON', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
         mcp: [
           {
-            name: 'memory-store',
-            url: '${GRASP_MEMORY_URL}',
-            headers: { Authorization: 'Bearer ${GRASP_MEMORY_TOKEN}' },
+            name: 'artifact-store',
+            url: '${GRASP_ARTIFACT_URL}',
+            headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },
         ],
       },
@@ -342,55 +323,29 @@ describe('AgentStudio MCP PM leader prefills', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    const addBtn = wrapper.get('[data-test="mcp-add-memory"]')
-    expect(addBtn.text()).toContain('添加长期记忆')
-    await addBtn.trigger('click')
-    await flushPromises()
-
-    expect(document.body.textContent || '').toContain('已存在约定名 memory-store')
-    expect(wrapper.findAll('[data-mcp-name="memory-store"]')).toHaveLength(1)
-  })
-
-  it('drops platform display after renaming memory-store in raw JSON', async () => {
-    mocks.listAgents.mockResolvedValue([
-      {
-        ...agent(),
-        mcp: [
-          {
-            name: 'memory-store',
-            url: '${GRASP_MEMORY_URL}',
-            headers: { Authorization: 'Bearer ${GRASP_MEMORY_TOKEN}' },
-          },
-        ],
-      },
-    ])
-    const wrapper = await mountStudio()
-    await flushPromises()
-    await openMcpTab(wrapper)
-
-    expect(wrapper.find('[data-mcp-name="memory-store"] [data-test="mcp-scope-note"]').exists()).toBe(true)
-    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-display-name"]').text()).toBe('长期记忆')
+    expect(wrapper.find('[data-mcp-name="artifact-store"] [data-test="mcp-scope-note"]').exists()).toBe(true)
+    expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
     await wrapper.findAll('button').find((item) => item.text() === '原始 JSON')!.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="mcp-help-link"]').exists()).toBe(false)
     await wrapper.get('[data-test="code-editor"]').setValue(
       JSON.stringify([
         {
-          name: 'memory_store',
-          url: '${GRASP_MEMORY_URL}',
-          headers: { Authorization: 'Bearer ${GRASP_MEMORY_TOKEN}' },
+          name: 'artifact_store',
+          url: '${GRASP_ARTIFACT_URL}',
+          headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
         },
       ]),
     )
     await wrapper.findAll('button').find((item) => item.text() === '表单编辑')!.trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-mcp-name="memory-store"]').exists()).toBe(false)
+    expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="mcp-scope-note"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="mcp-custom-name"]').element).toMatchObject({ value: 'memory_store' })
+    expect(wrapper.get('[data-test="mcp-custom-name"]').element).toMatchObject({ value: 'artifact_store' })
     expect(wrapper.find('[data-test="mcp-help-link"]').exists()).toBe(true)
   })
 
-  it('removing memory-store keeps artifact-store intact', async () => {
+  it('removing a custom MCP keeps artifact-store intact', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
@@ -401,9 +356,8 @@ describe('AgentStudio MCP PM leader prefills', () => {
             headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },
           {
-            name: 'memory-store',
-            url: '${GRASP_MEMORY_URL}',
-            headers: { Authorization: 'Bearer ${GRASP_MEMORY_TOKEN}' },
+            name: 'docs',
+            url: 'https://docs.example.test/mcp',
           },
         ],
       },
@@ -412,10 +366,10 @@ describe('AgentStudio MCP PM leader prefills', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    await wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-remove"]').trigger('click')
+    await wrapper.get('[data-mcp-name="docs"] [data-test="mcp-remove"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-mcp-name="memory-store"]').exists()).toBe(false)
+    expect(wrapper.find('[data-mcp-name="docs"]').exists()).toBe(false)
     expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(true)
   })
 })
@@ -452,7 +406,6 @@ describe('AgentStudio MCP config help', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -464,7 +417,7 @@ describe('AgentStudio MCP config help', () => {
     await flushPromises()
   }
 
-  it('hides variable docs until help opens on run, then agent chip shows platform copy', async () => {
+  it('hides variable docs until help opens on run', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
@@ -485,7 +438,6 @@ describe('AgentStudio MCP config help', () => {
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('Agent 通用平台 MCP')
     expect(wrapper.text()).not.toContain('GRASP_MEMORY_URL')
-    expect(wrapper.text()).not.toContain('pm-progress')
 
     await wrapper.get('[data-test="mcp-help-link"]').trigger('click')
     await flushPromises()
@@ -496,16 +448,8 @@ describe('AgentStudio MCP config help', () => {
     expect(modal.text()).toContain('/root/.codebuddy/mcp.json')
     expect(modal.text()).toContain('GRASP_ARTIFACT_URL')
     expect(wrapper.find('[data-test="mcp-help-run"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="mcp-help-agent"]').exists()).toBe(false)
-    expect(wrapper.get('[data-help-chip="run"]').classes().join(' ')).toContain('border-accent')
-
-    await wrapper.get('[data-test="mcp-help-chip-agent"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="mcp-help-agent"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="mcp-help-run"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="help-modal"]').text()).toContain('GRASP_MEMORY_URL')
-    expect(wrapper.get('[data-test="help-modal"]').text()).toContain('pm-progress')
-    expect(wrapper.get('[data-test="help-modal"]').text()).not.toContain('+ 添加长期记忆')
+    expect(modal.text()).not.toContain('GRASP_MEMORY_URL')
+    expect(wrapper.find('[data-help-chip]').exists()).toBe(false)
   })
 
   it('hides help in raw JSON and keeps mcp draft after closing help', async () => {
@@ -575,7 +519,6 @@ describe('AgentStudio list context actions', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -638,7 +581,7 @@ describe('AgentStudio list context actions', () => {
     await openRowAction(wrapper, 'legacy', 'rename')
     expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
     expect(wrapper.text()).not.toContain('工作流引用不会自动更新')
-    expect(wrapper.text()).toContain('将同步更新目录、工作区助手，以及工作流中的 Agent 配置引用')
+    expect(wrapper.text()).toContain('将同步更新目录，以及工作流中的 Agent 配置引用')
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
     expect(mocks.renameAgent).not.toHaveBeenCalled()
@@ -776,7 +719,6 @@ describe('AgentStudio mobile core path', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -919,19 +861,7 @@ describe('AgentStudio mobile core path', () => {
     expect(wrapper.text()).not.toContain('建议在桌面使用')
   })
 
-  it('mounts data panel on mobile instead of desktop-only tip', async () => {
-    mocks.listAgents.mockResolvedValue([agentWithFiles()])
-    const wrapper = await mountMobileStudio()
-    await flushPromises()
-
-    await wrapper.findAll('button').find((b) => b.text() === '数据')!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('建议在桌面使用')
-    expect(wrapper.find('agent-data-panel-stub').exists()).toBe(true)
-  })
-
-  it('keeps mcp/env/capabilities desktop-only while data is allowed', async () => {
+  it('keeps mcp/env/capabilities desktop-only', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
@@ -942,7 +872,6 @@ describe('AgentStudio mobile core path', () => {
       await btn!.trigger('click')
       await flushPromises()
       expect(wrapper.text()).toContain('建议在桌面使用')
-      expect(wrapper.find('agent-data-panel-stub').exists()).toBe(false)
     }
   })
 
@@ -989,7 +918,6 @@ describe('AgentStudio mobile core path', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -1003,43 +931,6 @@ describe('AgentStudio mobile core path', () => {
     // Switching left Agent remounts tester via :key="activeName" (s3).
     const viewSrc = readFileSync(fileURLToPath(import.meta.url).replace(/\.test\.ts$/, '.vue'), 'utf8')
     expect(viewSrc).toMatch(/<AgentChatTester[\s\S]*?:key="activeName"/)
-  })
-
-  it('deep-links to data sub-tab on mobile without desktop-only tip', async () => {
-    mocks.listAgents.mockResolvedValue([{ ...agentWithFiles(), name: 'alpha' }])
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages } },
-    })
-    const router = await createStudioRouter({ agent: 'alpha', studioTab: 'data', sub: 'context' })
-    const wrapper = trackMount(
-      mount(AgentStudioView, {
-        global: {
-          plugins: [i18n, router],
-          stubs: {
-            AppButton: ButtonStub,
-            Icon: true,
-            AppModal: ModalStub,
-            CodeEditor: CodeEditorStub,
-            MarkdownSplitEditor: MdStub,
-            ExplorerContextMenu: true,
-            AgentChatTester: true,
-            AgentGitGuide: true,
-            AgentCreateWizard: true,
-            AgentSidebar: true,
-            AgentDataPanel: true,
-          },
-        },
-      }),
-    )
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('建议在桌面使用')
-    const panel = wrapper.find('agent-data-panel-stub')
-    expect(panel.exists()).toBe(true)
-    expect(panel.attributes('sub-tab') || panel.attributes('subtab')).toBeTruthy()
-    wrapper.unmount()
   })
 
   it('deep-links to capabilities on mobile with desktop-only empty state and back to Files', async () => {
@@ -1065,7 +956,6 @@ describe('AgentStudio mobile core path', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -1367,7 +1257,6 @@ describe('AgentStudio mobile chrome', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -1563,7 +1452,6 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
               '<button data-testid="agent-tree-create-agent" aria-label="New agent">New agent</button>' +
               '</div>',
           },
-          AgentDataPanel: true,
         },
       },
     })
@@ -1596,7 +1484,6 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
               '<button data-testid="agent-tree-create-agent" aria-label="新建 Agent">新建 Agent</button>' +
               '</div>',
           },
-          AgentDataPanel: true,
         },
       },
     })
@@ -1667,7 +1554,6 @@ describe('AgentStudio remaining hints', () => {
           AgentGitGuide: true,
           AgentCreateWizard: true,
           AgentSidebar: SidebarStub,
-          AgentDataPanel: true,
         },
       },
     })
@@ -1677,11 +1563,11 @@ describe('AgentStudio remaining hints', () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
   })
 
-  it('keeps MCP hint and data/meta tabs without the management dialog', async () => {
+  it('keeps MCP hint and meta tab without the management dialog', async () => {
     const wrapper = await mountHintStudio()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('数据')
+    expect(wrapper.findAll('button').some((b) => b.text() === '数据')).toBe(false)
     expect(wrapper.text()).toContain('元信息')
     expect(wrapper.text()).not.toContain('可复用 Agent 配置 · 组织与 Agent 配置引用')
     expect(wrapper.text()).not.toMatch(/改前|改后/)
@@ -1726,7 +1612,6 @@ describe('AgentStudio env credential help', () => {
           AgentChatTester: true,
           AgentCreateWizard: true,
           AgentSidebar: true,
-          AgentDataPanel: true,
         },
       },
     })
@@ -1853,7 +1738,6 @@ describe('AgentStudio sidebar actions', () => {
             AgentGitGuide: true,
             AgentCreateWizard: WizardStub,
             AgentSidebar: SidebarStub,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -1969,7 +1853,6 @@ describe('AgentStudioView loading / four-state', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: true,
-            AgentDataPanel: true,
           },
         },
       }),
@@ -1998,7 +1881,6 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
       'AgentMcpPanel',
       'AgentEnvPanel',
       'AgentCapabilitiesPanel',
-      'AgentDataPanel',
       'AgentMetaPanel',
     ]) {
       expect(viewSrc).toContain(panel)
@@ -2020,7 +1902,8 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     expect(viewSrc).toContain('AgentChatTester')
     expect(viewSrc).toMatch(/data-testid="studio-chat-test"/)
     expect(viewSrc).toMatch(/createStudioChatTest|createSharedAgentTest/)
-    expect(viewSrc).toMatch(/tab !== 'data' && tab !== 'test'/)
+    expect(viewSrc).toMatch(/tab !== 'files' && isMobile && tab !== 'test'/)
+    expect(viewSrc).not.toContain('AgentDataPanel')
   })
 
   it('switches Demo main-path tabs via tab strip without changing labels', async () => {
@@ -2072,7 +1955,6 @@ describe('AgentStudio pinned Agent 默认配置', () => {
             AgentGitGuide: true,
             AgentCreateWizard: true,
             AgentSidebar: SidebarStub,
-            AgentDataPanel: true,
             WorkspaceSharedAgentPanel: { template: '<div data-testid="shared-panel-stub" />' },
           },
         },
@@ -2129,11 +2011,11 @@ describe('AgentStudio pinned Agent 默认配置', () => {
     expect(router.currentRoute.value.query.studioTab).toBe('mcp')
   })
 
-  it('keeps the tab and data sub-tab when switching directly between Agents', async () => {
+  it('keeps the tab when switching directly between Agents', async () => {
     mocks.listAgents.mockResolvedValue(agents())
-    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'data', sub: 'context' })
+    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'env' })
     await pick(wrapper, 'beta')
-    expect(router.currentRoute.value.query).toEqual({ agent: 'beta', studioTab: 'data', sub: 'context' })
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta', studioTab: 'env' })
   })
 
   it('narrow screens reach the defaults from the switch sheet and can switch back', async () => {
@@ -2210,7 +2092,6 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
             AgentCreateWizard: true,
             CreateAgentTeamWizard: true,
             AgentSidebar: SidebarStub,
-            AgentDataPanel: true,
             WorkspaceSharedAgentPanel: SharedPanelStub,
           },
         },

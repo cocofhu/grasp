@@ -11,7 +11,7 @@ afterEach(() => { mounted.splice(0).forEach((wrapper) => wrapper.unmount()) })
 async function setup(path = '/settings') {
   useAuth().setUser({ username: 'navigation-user', expiresAt: '2099-01-01T00:00:00Z' })
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    ...['/settings', '/settings/credentials', '/settings/audit', '/board', '/workflows', '/assistant', '/dashboard', '/runs', '/stats'].map((path) => ({ path, component: { render: () => null } })),
+    ...['/settings', '/settings/credentials', '/settings/audit', '/board', '/workflows', '/dashboard', '/runs', '/stats'].map((path) => ({ path, component: { render: () => null } })),
     { path: '/workflows/:id/edit', component: { render: () => null }, meta: { full: true } },
   ] })
   await router.push(path)
@@ -28,7 +28,7 @@ describe('sidebar navigation context', () => {
   it('keeps settings across shared tools, drawer remounts and full editor round trips', async () => {
     const { router, navigation, wrapper, showChild } = await setup()
     expect(navigation.settingsToggleTo.value).toBe('/dashboard')
-    for (const path of ['/board', '/workflows', '/assistant', '/settings/credentials']) {
+    for (const path of ['/board', '/workflows', '/settings/credentials']) {
       await router.push(path)
       expect(navigation.settingsChrome.value).toBe(true)
     }

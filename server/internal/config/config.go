@@ -141,7 +141,7 @@ type StorageConfig struct {
 // committing it to git.
 type SecurityConfig struct {
 	// SecretsKey is a base64-encoded 32-byte AES-256 key. Empty disables
-	// credential encryption (secret credentials cannot be saved).
+	// credential encryption (secrets cannot be saved).
 	SecretsKey string `yaml:"secrets_key"`
 }
 

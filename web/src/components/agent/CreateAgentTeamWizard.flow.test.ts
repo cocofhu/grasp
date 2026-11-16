@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   listCredentials: vi.fn(),
   listModelConnections: vi.fn(),
   listToolCapabilities: vi.fn(),
-  listProjects: vi.fn(),
 }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
@@ -27,7 +26,7 @@ const ModelPicker = {
 function mountWizard(props: Record<string, unknown> = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(CreateAgentTeamWizard, {
-    props: { open: true, existingNames: [], ...props },
+    props: { open: true, ...props },
     global: {
       plugins: [i18n],
       stubs: {
@@ -36,7 +35,6 @@ function mountWizard(props: Record<string, unknown> = {}) {
         AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
         ModelBindingEditor: ModelPicker,
         WorkspaceCredentialsPanel: true,
-        RouterLink: true,
       },
     },
   })
@@ -44,7 +42,6 @@ function mountWizard(props: Record<string, unknown> = {}) {
 function fillBasics(vm: any) {
   vm.draft.teamName = '登月'
   vm.onTeamNameInput()
-  vm.draft.background = '把火箭送上天'
 }
 async function advance(w: ReturnType<typeof mountWizard>, count: number) {
   const vm = w.vm as any
@@ -95,7 +92,6 @@ beforeEach(() => {
     ],
   })
   mocks.bootstrapAgentTeam.mockResolvedValue({ sessionId: 's1' })
-  mocks.listProjects.mockResolvedValue([{ id: 'p1', name: 'web', repoUrl: 'https://git.example/team/web.git' }])
 })
 describe('CreateAgentTeamWizard flow', () => {
   it('requires team basics and preserves edited derived names', async () => {
@@ -106,25 +102,15 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(vm.draft.step).toBe(0)
     expect(vm.fieldError).toBeTruthy()
     fillBasics(vm)
-    expect(vm.draft.pmName).toBe('登月项目经理')
+    expect(vm.draft.prefix).toBe('登月')
     vm.draft.prefixTouched = true
     vm.draft.prefix = 'Luna'
     vm.onTeamNameInput()
-    expect(vm.draft.pmName).toBe('Luna项目经理')
+    expect(vm.draft.prefix).toBe('Luna')
     vm.goNext()
     await flushPromises()
     expect(vm.currentStep.id).toBe('model')
     expect(vm.fieldError).toBe('')
-    w.unmount()
-  })
-  it('rejects an existing PM name', async () => {
-    const w = mountWizard({ existingNames: ['登月项目经理'] })
-    await flushPromises()
-    const vm = w.vm as any
-    fillBasics(vm)
-    vm.goNext()
-    expect(vm.draft.step).toBe(0)
-    expect(vm.fieldError).toContain('已存在')
     w.unmount()
   })
   it('requires a valid model configuration and has no inline key or backend source', async () => {
@@ -142,28 +128,8 @@ describe('CreateAgentTeamWizard flow', () => {
     w.findComponent(ModelPicker).vm.$emit('validity', true)
     vm.goNext()
     await flushPromises()
-    expect(vm.currentStep.id).toBe('repo')
-    for (const field of ['apiKeyInput', 'acpBackend', 'gitCredentialType']) expect(vm.draft).not.toHaveProperty(field)
-    w.unmount()
-  })
-  it('picks a saved repository and clears it when skipped', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-    fillBasics(vm)
-    await advance(w, 2)
-    expect(vm.currentStep.id).toBe('repo')
-    expect(w.find('[data-testid="team-wizard-repo"]').exists()).toBe(true)
-    vm.draft.repoId = 'p1'
-    vm.goSkip()
-    await flushPromises()
     expect(vm.currentStep.id).toBe('mcp')
-    expect(vm.draft.repoId).toBe('')
-    await advance(w, 2)
-    vm.goNext()
-    await flushPromises()
-    for (const field of ['repoId', 'gitBindings', 'gitUrl'])
-      expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty(field)
+    for (const field of ['apiKeyInput', 'acpBackend', 'gitCredentialType']) expect(vm.draft).not.toHaveProperty(field)
     w.unmount()
   })
   it.each(['configuration', 'credential', 'connection'])(
@@ -193,25 +159,23 @@ describe('CreateAgentTeamWizard flow', () => {
       w.unmount()
     },
   )
-  it('preserves the repository step and selected model after a healthy resource refresh', async () => {
+  it('preserves the current step and selected model after a healthy resource refresh', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
     await advance(w, 2)
     expect(mocks.listCredentials).not.toHaveBeenCalled()
-    vm.draft.repoId = 'p1'
     vm.resourceManagerOpen = true
     await vm.refreshResources()
     await flushPromises()
-    expect(vm.currentStep.id).toBe('repo')
+    expect(vm.currentStep.id).toBe('mcp')
     expect(vm.modelValid).toBe(true)
     expect(vm.draft.modelConfigurationId).toBe('model-team')
-    expect(vm.draft.repoId).toBe('p1')
     expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
     expect(mocks.listModelConnections).toHaveBeenCalledTimes(1)
     expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(1)
-    await advance(w, 3)
+    await advance(w, 2)
     await vm.submit()
     expect(mocks.bootstrapAgentTeam.mock.calls[0][0].modelConfigurationId).toBe('model-team')
     w.unmount()
@@ -236,7 +200,7 @@ describe('CreateAgentTeamWizard flow', () => {
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
-    await advance(w, 3)
+    await advance(w, 2)
     expect(vm.currentStep.id).toBe('mcp')
     const original = vm.draft.mcp.length
     vm.restoreArtifact()
@@ -245,9 +209,6 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(vm.hasArtifact).toBe(false)
     vm.restoreArtifact()
     expect(vm.hasArtifact).toBe(true)
-    vm.addNamedMcp('memory-store')
-    vm.addNamedMcp('memory-store')
-    expect(vm.draft.mcp.filter((row: any) => row.name === 'memory-store')).toHaveLength(1)
     vm.addMcp()
     const index = vm.draft.mcp.length - 1
     const service = vm.draft.mcp[index]
@@ -268,27 +229,23 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(service.headers).toEqual([{ k: 'X-Test', v: 'value' }])
     w.unmount()
   })
-  it('submits only the selected configuration and repository references with workspace settings', async () => {
+  it('submits only the selected configuration reference with workspace settings', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
-    await advance(w, 2)
-    vm.draft.repoId = 'p1'
-    await advance(w, 3)
+    await advance(w, 4)
     expect(vm.currentStep.id).toBe('review')
     expect(w.text()).toContain('Team model')
-    expect(w.text()).toContain('web')
     vm.goNext()
     await flushPromises()
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
     expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).toMatchObject({
-      pmName: '登月项目经理',
+      prefix: '登月',
       modelConfigurationId: 'model-team',
-      repoId: 'p1',
       env: {},
     })
-    for (const field of ['teamName', 'apiKey', 'acpBackend', 'gitCredentialType', 'gitBindings'])
+    for (const field of ['teamName', 'repoId', 'apiKey', 'acpBackend', 'gitCredentialType', 'gitBindings'])
       expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty(field)
     expect(w.emitted('started')?.[0]).toEqual([{ sessionId: 's1' }])
     expect(w.emitted('close')).toHaveLength(1)
@@ -299,13 +256,13 @@ describe('CreateAgentTeamWizard flow', () => {
     await flushPromises()
     const vm = w.vm as any
     fillBasics(vm)
-    await advance(w, 5)
+    await advance(w, 4)
     mocks.bootstrapAgentTeam.mockRejectedValueOnce(new Error('quota exhausted'))
     vm.goNext()
     await flushPromises()
     expect(vm.submitError).toBe('quota exhausted')
     expect(w.emitted('started')).toBeFalsy()
-    vm.draft.background = ''
+    vm.draft.prefix = ''
     await vm.submit()
     expect(vm.draft.step).toBe(0)
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)

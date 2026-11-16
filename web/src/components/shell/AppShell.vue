@@ -246,12 +246,10 @@ onUnmounted(() => stopShutdownPolling())
 .settings-shell-content {
   padding: 24px 40px 32px;
 }
-.settings-shell-content:has(.settings-document),
 .settings-shell-content:has([data-testid="settings-panel"]) {
   padding-top: 0;
   padding-bottom: 0;
 }
-.settings-shell-content :deep(.route-view-wrap:has(.settings-document)),
 .settings-shell-content :deep(.route-view-wrap:has([data-testid="settings-panel"])) {
   height: auto;
   min-height: 100%;
@@ -281,7 +279,6 @@ onUnmounted(() => stopShutdownPolling())
 .settings-main-scroll::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-txt2) / .75); }
 @media (max-width: 767px) {
   .settings-shell-content { padding: 20px; }
-  .settings-shell-content:has(.settings-document),
   .settings-shell-content:has([data-testid="settings-panel"]) { padding-top: 0; padding-bottom: 0; }
 }
 .drawer-fade-enter-active,

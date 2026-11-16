@@ -125,38 +125,3 @@ func TestTruncateLogSummary(t *testing.T) {
 		t.Fatalf("too many lines: %d", strings.Count(out, "\n")+1)
 	}
 }
-
-func TestArtifactSummaryFailedEmptyStillReturnsError(t *testing.T) {
-	p, db, _, wfID := setupPmProgressFixtures(t)
-	db.Create(&models.Run{
-		ID: "run-empty-fail", WorkflowID: wfID, WorkflowName: "Pipeline",
-		Status: "failed", Progress: 0.05, Title: "Early fail", StartedAt: time.Now(),
-	})
-	db.Create(&models.StateRun{
-		RunID: "run-empty-fail", NodeID: "research", Status: "failed",
-		Error: "sandbox setup failed: create timeout",
-	})
-
-	got := p.ArtifactSummary("run-empty-fail", 5)
-	if got["empty"] != true {
-		t.Fatalf("expected empty artifacts: %+v", got)
-	}
-	errMsg, _ := got["error"].(string)
-	if errMsg == "" {
-		t.Fatalf("expected non-empty error on empty failed run: %+v", got)
-	}
-	if !strings.Contains(errMsg, "sandbox setup failed") {
-		t.Fatalf("error=%q", errMsg)
-	}
-}
-
-func TestArtifactSummarySuccessOmitsFailureFields(t *testing.T) {
-	p, _, _, _ := setupPmProgressFixtures(t)
-	got := p.ArtifactSummary("run-a", 5)
-	if got["empty"] != false {
-		t.Fatalf("artifacts: %+v", got)
-	}
-	if _, ok := got["error"]; ok {
-		t.Fatalf("success run must not expose error: %+v", got)
-	}
-}

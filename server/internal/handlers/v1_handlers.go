@@ -76,7 +76,7 @@ func (h *Handlers) RevokeAPIKey(c *gin.Context) {
 
 type v1StartRunBody struct {
 	Inputs  map[string]any    `json:"inputs"`
-	Trigger string            `json:"trigger"` // optional; empty → api; must be manual|api|pm_mcp
+	Trigger string            `json:"trigger"` // optional; empty → api; must be manual|api
 	Tags    []string          `json:"tags"`
 	Env     []models.EnvEntry `json:"env"` // optional run-scoped sandbox env snapshot
 }

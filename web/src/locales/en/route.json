@@ -20,11 +20,8 @@
     "embedImage": "Image preview",
     "embedDemo": "Enlarged preview",
     "board": "Board",
-    "assistant": "Workspace assistant",
     "audit": "Audit",
     "credentials": "Credentials",
-    "assistantSettings": "Assistant settings",
-    "externalMcp": "External MCP",
     "runLive": "Live run",
     "solo": "Solo chats",
     "projects": "Repositories"

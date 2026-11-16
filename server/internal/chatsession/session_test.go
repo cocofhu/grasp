@@ -362,7 +362,7 @@ func TestSessionCancelPersistsDroppedItemsBeforeInterruptingActiveTurn(t *testin
 		Execute: func(ctx context.Context, _ string) (bool, error) {
 			activeCtx <- ctx
 			<-ctx.Done()
-			// PM persists its active turn's failure immediately after cancellation.
+			// The owner persists its active turn's failure immediately after cancellation.
 			// Pending-item persistence must finish before releasing that writer.
 			if !droppedPersisted.Load() {
 				interruptedBeforeDrop <- struct{}{}

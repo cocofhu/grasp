@@ -23,7 +23,7 @@ const emit = defineEmits<{
   (e: 'restore', version: number): void
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const versions = ref<WorkflowVersion[]>([])
 const loading = ref(false)
 const failed = ref(false)
@@ -53,7 +53,8 @@ onBeforeUnmount(() => abort?.abort())
 
 function sourceLabel(v: WorkflowVersion): string {
   if (v.source === 'restore' && v.restoredFrom) return t('canvas.versions.source.restoredFrom', { n: v.restoredFrom })
-  return t(`canvas.versions.source.${v.source}`)
+  const key = `canvas.versions.source.${v.source}`
+  return te(key) ? t(key) : v.source
 }
 
 defineExpose({ reload: load })

@@ -34,8 +34,8 @@ type AuditActor struct {
 
 // ActorFromUsername returns a real user when username is non-empty; otherwise
 // system + unattributable. Never fabricates a person name.
-// Call sites that intend PM attribution leave CallerKind empty so Record maps
-// attributable users to CallerKindPM.
+// Call sites attributing a signed-in member leave CallerKind empty so Record
+// maps attributable users to CallerKindMember.
 func ActorFromUsername(username string) AuditActor {
 	u := strings.TrimSpace(username)
 	if u == "" {
@@ -52,7 +52,7 @@ func SystemActor() AuditActor {
 // AuditRecord is the input for a single append-only event.
 type AuditRecord struct {
 	Actor        AuditActor
-	CallerKind   string // pm | apikey | system | external; empty → inferred from Actor
+	CallerKind   string // member | apikey | system | external; empty → inferred from Actor
 	Action       string
 	ResourceType string
 	ResourceID   string
@@ -108,13 +108,13 @@ func (s *AuditService) Record(rec AuditRecord) {
 
 func resolveCallerKind(explicit string, actor AuditActor) string {
 	switch strings.TrimSpace(explicit) {
-	case models.CallerKindPM, models.CallerKindAPIKey, models.CallerKindSystem, models.CallerKindExternal:
+	case models.CallerKindMember, models.CallerKindAPIKey, models.CallerKindSystem, models.CallerKindExternal:
 		return strings.TrimSpace(explicit)
 	}
 	if actor.Unattributable || actor.Username == "" || actor.Username == "system" {
 		return models.CallerKindSystem
 	}
-	return models.CallerKindPM
+	return models.CallerKindMember
 }
 
 func elevateRunNode(runID, nodeID, resourceType, resourceID string, payload map[string]any) (string, string) {
@@ -154,7 +154,7 @@ type AuditListFilter struct {
 	From       *time.Time
 	To         *time.Time
 	Actor      string // exact actor username
-	CallerKind string // pm | apikey | system | external
+	CallerKind string // member | apikey | system | external
 	Action     string // exact or prefix (e.g. "workflow" matches workflow.*)
 	Resource   string // substring match on resource_type, resource_id, or summary
 	RunID      string // first-class run association

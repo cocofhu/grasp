@@ -9,7 +9,7 @@ type AuditEvent struct {
 	OccurredAt     time.Time `gorm:"index" json:"occurredAt"`
 	Actor          string    `gorm:"index" json:"actor"`
 	Unattributable bool      `json:"unattributable"`
-	// CallerKind is the product-facing attribution class: pm | apikey | system | external.
+	// CallerKind is the product-facing attribution class: member | apikey | system | external.
 	CallerKind   string `gorm:"index" json:"callerKind"`
 	Action       string `gorm:"index" json:"action"`
 	ResourceType string `gorm:"index" json:"resourceType"`
@@ -26,7 +26,7 @@ type AuditEvent struct {
 
 // CallerKind values for audit attribution filters.
 const (
-	CallerKindPM       = "pm"
+	CallerKindMember   = "member"
 	CallerKindAPIKey   = "apikey"
 	CallerKindSystem   = "system"
 	CallerKindExternal = "external"

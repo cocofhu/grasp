@@ -12,9 +12,10 @@ function mountStructure(tree: GlobalTokenStatsTreeNode[], total = tree.reduce((s
     messages: {
       en: {
         pages: {
-          board: { tokenStats: { workflow: 'Workflow', pm: 'Assistant' } },
+          board: { tokenStats: { workflow: 'Workflow' } },
           tokenAnalytics: {
             sourceStudio: 'Studio',
+            sourceSolo: 'Solo',
             structure: { shareLabel: 'Share', showMore: 'Show all ({count})', showLess: 'Show less' },
           },
         },
@@ -28,18 +29,18 @@ describe('TokenUsageStructure', () => {
   it('keeps tiny categories readable beside a dominant workflow and sorts by usage', () => {
     const wrapper = mountStructure([
       { kind: 'studio', key: 'studio', name: 'studio', value: 9 },
-      { kind: 'pm', key: 'pm', name: 'pm', value: 1 },
+      { kind: 'solo', key: 'solo', name: 'solo', value: 1 },
       { kind: 'workflow', key: 'w1', name: 'Main workflow', value: 999_990 },
       { kind: 'workflow', key: 'empty', name: 'Empty', value: 0 },
       { kind: 'workflow', key: 'negative', name: 'Negative', value: -2 },
     ], 1_000_000)
     const rows = wrapper.findAll('[data-testid="token-structure-row"]')
-    expect(rows.map((row) => row.attributes('data-key'))).toEqual(['w1', 'studio', 'pm'])
+    expect(rows.map((row) => row.attributes('data-key'))).toEqual(['w1', 'studio', 'solo'])
     expect(rows[0].find('[data-testid="token-structure-total"]').attributes('title')).toBe('999,990')
     expect(rows[1].text()).toContain('Studio')
     expect(rows[1].find('[data-testid="token-structure-total"]').text()).toBe('9')
     expect(rows[1].find('[data-testid="token-structure-share"]').text()).toBe('<0.1%')
-    expect(rows[2].text()).toContain('Assistant')
+    expect(rows[2].text()).toContain('Solo')
     expect(rows[2].find('[data-testid="token-structure-total"]').text()).toBe('1')
     wrapper.unmount()
   })
@@ -60,14 +61,14 @@ describe('TokenUsageStructure', () => {
     wrapper.unmount()
   })
 
-  it('retains the source scope for assistant and studio node types', async () => {
-    const wrapper = mountStructure(['pm', 'studio'].map((kind) => ({
+  it('retains the source scope for solo and studio node types', async () => {
+    const wrapper = mountStructure(['solo', 'studio'].map((kind) => ({
       kind, key: kind, name: kind, value: 100,
       children: [{ kind: 'nodeType', key: 'llm', name: 'LLM', value: 100 }],
     })))
     for (const button of wrapper.findAll('[data-testid="token-structure-node"]')) await button.trigger('click')
     expect(wrapper.emitted('drill')).toEqual([
-      [[{ dim: 'source', key: 'pm', name: 'Assistant' }, { dim: 'nodeType', key: 'llm', name: 'LLM' }]],
+      [[{ dim: 'source', key: 'solo', name: 'Solo' }, { dim: 'nodeType', key: 'llm', name: 'LLM' }]],
       [[{ dim: 'source', key: 'studio', name: 'Studio' }, { dim: 'nodeType', key: 'llm', name: 'LLM' }]],
     ])
     wrapper.unmount()

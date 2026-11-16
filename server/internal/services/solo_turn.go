@@ -58,7 +58,7 @@ func (c *soloChat) setPhase(phase string) {
 }
 
 func (c *soloChat) onAcp(raw json.RawMessage) {
-	delta := extractPmAgentText(raw)
+	delta := extractAgentText(raw)
 	c.mu.Lock()
 	c.text.WriteString(delta)
 	if len(c.events) < soloMaxEvents {

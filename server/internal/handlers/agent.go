@@ -147,13 +147,6 @@ func (h *Handlers) DeleteAgent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
 		return
 	}
-	if h.Pm != nil {
-		if err := h.Pm.PurgeAgentEverywhere(name); err != nil {
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "agent_data_clear_failed", "error": "清除 Agent 工作区数据失败：" + err.Error()})
-			return
-		}
-	}
 	if err := h.Agents.Delete(name); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -205,21 +198,6 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if h.Pm != nil && name != old {
-		if err := h.Pm.RenameAgentScopedData(old, name); err != nil {
-			if rbErr := h.Agents.Rename(name, old); rbErr != nil {
-				_ = c.Error(err)
-				_ = c.Error(rbErr)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": err.Error() + "; rename rollback failed: " + rbErr.Error(),
-				})
-				return
-			}
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "agent_data_rename_failed", "error": "重命名 Agent 数据失败：" + err.Error()})
-			return
-		}
-	}
 	updatedWorkflowCount := 0
 	if h.WF != nil && name != old {
 		n, err := h.WF.RenameAgentProfileRefs(old, name)
@@ -232,11 +210,6 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 					"error": err.Error() + "; rename rollback failed: " + rbErr.Error(),
 				})
 				return
-			}
-			if h.Pm != nil {
-				if rbData := h.Pm.RenameAgentScopedData(name, old); rbData != nil {
-					_ = c.Error(rbData)
-				}
 			}
 			_ = c.Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": "workflow_reference_rename_failed", "error": "重命名工作流引用失败：" + err.Error()})

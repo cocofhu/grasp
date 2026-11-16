@@ -65,9 +65,6 @@ type SandboxService struct {
 	runActive           map[string]bool
 	runTasks            map[string]int
 	runRecoveryPreparer runtime.SandboxRecoveryPreparer
-	// agentOnDestroy revokes thread-bound agent MCP sessions when a
-	// purpose=agent|pm sandbox is torn down (optional; SetAgentSandboxDestroyHook).
-	agentOnDestroy AgentSandboxDestroyHook
 	// codexLogins pushes the platform's Codex login to interactive sandboxes
 	// (optional; SetCodexLogins). Sandboxes never write a login back.
 	codexLogins *runtime.CodexLoginHub

@@ -232,7 +232,7 @@ describe('NodeOutputPanel', () => {
       type: 'agent',
       label: '需求澄清',
       position: { x: 0, y: 0 },
-      config: { agent_profile: 'pm' },
+      config: { agent_profile: 'planner' },
       caps: CLARIFY_CAPS,
     }
     const nodeRun: NodeRun = {
@@ -250,7 +250,7 @@ describe('NodeOutputPanel', () => {
     } as unknown as Run
     const wrapper = mountPanel(node, nodeRun, run)
     await flushPromises()
-    expect(wrapper.text()).toContain('pm')
+    expect(wrapper.text()).toContain('planner')
     expect(wrapper.text()).toContain('结论正文')
     wrapper.unmount()
   })

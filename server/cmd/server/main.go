@@ -22,7 +22,6 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/config"
-	"github.com/cocofhu/grasp/internal/contextmcp"
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/embed"
@@ -31,12 +30,10 @@ import (
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/logging"
 	"github.com/cocofhu/grasp/internal/mcp"
-	"github.com/cocofhu/grasp/internal/memorymcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
-	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -104,7 +101,7 @@ func main() {
 	}
 
 	// At-rest secret encryption reads its key from the live config (security.
-	// secrets_key, with GRASP_SECRETS_KEY env override) so stored credentials
+	// secrets_key, with GRASP_SECRETS_KEY env override) so workspace credentials
 	// stay encrypted in the DB and the key is managed like any other config value.
 	// Without one, non-production servers fall back to a key file beside the DB.
 	fallbackKey := secretsKeyFallback(cfg)
@@ -174,8 +171,6 @@ func main() {
 
 	workspaceSvc := services.NewWorkspaceService(db)
 	auditSvc := services.NewAuditService(db)
-	externalMcpSvc := services.NewExternalMcpService(db)
-	mcpKeySvc := services.NewWorkspaceMcpApiKeyService(db)
 	credentialSvc := services.NewCredentialService(db)
 	projectSvc := services.NewProjectService(db)
 	projectSvc.SetGitCredentialResolver(credentialSvc.ResolveGitValue)
@@ -371,9 +366,6 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
-	if err := agentSvc.StripRetiredSchedulerMCP(); err != nil {
-		log.Fatal().Err(err).Msg("strip retired task-scheduler MCP from agents")
-	}
 	agentSvc.SetSharedAgent(sharedAgentSvc)
 	agentSvc.SetModelConfigurationResolver(resolveModelConfiguration)
 	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
@@ -484,34 +476,8 @@ func main() {
 	coord := shutdown.New(shutdownHTTPTimeout)
 	authSvc := auth.NewService(db, config.GetConfig)
 
-	pmSvc := services.NewPmService(db, agentSvc)
-	pmSvc.SetBlobStore(blobStore)
-	pmProgress := services.NewPmProgress(pmSvc, runSvc, artifactSvc)
 	wfSvc := services.NewWorkflowService(db)
 	wfSvc.SetAgents(agentSvc)
-	pmMCP := pmmcp.NewHost(pmSvc, pmProgress, wfSvc, runSvc, artifactSvc, eng)
-	pmMCP.SetAgents(agentSvc)
-	memoryMCP := memorymcp.NewHost(pmSvc)
-	contextMCP := contextmcp.NewHost(pmSvc)
-	recordMCPAudit := func(rec services.AuditRecord) { auditSvc.Record(rec) }
-	pmMCP.SetAuditRecorder(recordMCPAudit)
-	memoryMCP.SetAuditRecorder(recordMCPAudit)
-	contextMCP.SetAuditRecorder(recordMCPAudit)
-	mcpWire := &platformMCPWire{
-		pm: pmMCP, memory: memoryMCP, context: contextMCP,
-		pmSvc: pmSvc, skills: agentSvc,
-	}
-	pmTurns := services.NewPmTurnRunner(pmSvc, sbxSvc)
-	pmTurns.SetCitationDeps(runSvc, artifactSvc, wfSvc)
-	sbxSvc.SetAgentSandboxDestroyHook(func(threadID, token string) {
-		mcpWire.unregister(token)
-		mcpWire.clearSandboxRef(threadID)
-	})
-	gateAutoSvc := services.NewGateAutoInvokeService(db, pmSvc, sbxSvc, pmTurns, services.GateAutoTokenHooks{
-		Register:   mcpWire.registerPMPolicy,
-		Unregister: mcpWire.unregister,
-	})
-	eng.SetGateAutoInvoker(gateAutoEngineAdapter{svc: gateAutoSvc})
 
 	fileDelivery := services.NewArtifactDeliveryService(db, artifactSvc, previewSvc)
 	fileDelivery.CurrentTurn = func(runID, nodeID string) (services.ArtifactTurn, error) {
@@ -552,20 +518,12 @@ func main() {
 		Notifications:       notificationSvc,
 		Eng:                 eng,
 		MCP:                 host,
-		Pm:                  pmSvc,
-		PmProgress:          pmProgress,
-		PmTurns:             pmTurns,
 		Solo:                soloSvc,
-		PMMCP:               pmMCP,
-		MemoryMCP:           memoryMCP,
-		ContextMCP:          contextMCP,
 		Settings:            settingsSvc,
 		Shutdown:            coord,
 		Auth:                authSvc,
 		Browser:             browserSvc,
 		Audit:               auditSvc,
-		ExternalMcp:         externalMcpSvc,
-		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
 		GitHubDevice:        githubDevice,
 		CodexDevice:         services.NewCodexDeviceFlowService(credentialSvc, cfg.CodexAuthBaseURL()),
@@ -579,11 +537,12 @@ func main() {
 		PageBridge:          pageHub,
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
+		PublicAdvertise:     cfg.Server.PublicAdvertise,
 		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,
 		Onboarding:          services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
-		Team:                services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
+		Team:                services.NewTeamService(workspaceSvc, agentSvc),
 	}
 	var maintenancePrepared atomic.Bool
 	var maintenanceMu sync.Mutex
@@ -593,10 +552,9 @@ func main() {
 		if begin {
 			coord.BeginDraining()
 			eng.Halt()
-			gateAutoSvc.BeginMaintenance()
 		}
-		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount()}
-		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && gateAutoSvc.PendingMaintenance() == 0
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "soloTurns": soloSvc.ActiveCount()}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && soloSvc.ActiveCount() == 0
 		state["safeToStop"] = safe && maintenancePrepared.Load()
 		if begin && safe {
 			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {
@@ -612,11 +570,7 @@ func main() {
 		return state, nil
 	}
 	h.Team.Credentials = credentialSvc
-	h.Team.Projects = projectSvc
 	h.Onboarding.Projects = projectSvc
-	if h.Team != nil && h.PMMCP != nil {
-		h.PMMCP.SetTeam(h.Team)
-	}
 
 	r := router.New(h)
 	port := strconv.Itoa(cfg.Server.Port)

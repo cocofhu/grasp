@@ -96,16 +96,6 @@ func (h *Handlers) ListCredentials(c *gin.Context) {
 // masked prefix; it never copies plaintext into Credential storage.
 func (h *Handlers) credentialAdapters() []services.CredentialView {
 	out := make([]services.CredentialView, 0)
-	if h.McpKeys != nil {
-		for _, key := range h.McpKeys.List() {
-			out = append(out, services.CredentialView{
-				ID: "external_mcp:" + key.ID, Type: "external_mcp",
-				Name: key.Name, Target: key.ID, TargetType: "external_mcp", TargetID: key.ID,
-				Masked: key.KeyPrefix, Source: "external_mcp", Configured: true, Enabled: key.RevokedAt == nil,
-				RevokedAt: key.RevokedAt, CreatedAt: key.CreatedAt,
-			})
-		}
-	}
 	if h.APIKeys != nil && h.WF != nil {
 		for _, wf := range h.WF.List() {
 			for _, key := range h.APIKeys.List(wf.ID) {

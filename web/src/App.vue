@@ -12,7 +12,7 @@ import {
   onboardingMode,
   onboardingOpen,
   probeFirstInstall,
-} from '@/lib/pm/firstInstall'
+} from '@/lib/onboarding/firstInstall'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useDelayedBusy } from '@/lib/composables/useDelayedBusy'
 import { routeViewTransition, useRoutePending } from '@/lib/shared/routePending'

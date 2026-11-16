@@ -19,7 +19,7 @@ const sampleRevisions = [
   {
     sha: '722d7da1111111',
     author: 'Test',
-    source: 'external-mcp',
+    source: 'system',
     reason: 'write AGENTS.md',
     createdAt: new Date().toISOString(),
     changes: [{ path: 'AGENTS.md', op: 'write' }],

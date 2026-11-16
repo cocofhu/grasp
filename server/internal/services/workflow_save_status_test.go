@@ -112,17 +112,17 @@ func TestSaveAsRecordsSource(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-pm", Name: "P", Graph: validGraph()}
-	if err := s.SaveAs(wf, models.VersionSourcePM); err != nil {
+	wf := &models.WorkflowDef{ID: "wf-src", Name: "P", Graph: validGraph()}
+	if err := s.SaveAs(wf, models.VersionSourceImport); err != nil {
 		t.Fatal(err)
 	}
 	g := validGraph()
-	g.Nodes[0].Label = "by pm"
-	if err := s.SaveAs(&models.WorkflowDef{ID: "wf-pm", Name: "P", Graph: g}, models.VersionSourcePM); err != nil {
+	g.Nodes[0].Label = "by import"
+	if err := s.SaveAs(&models.WorkflowDef{ID: "wf-src", Name: "P", Graph: g}, models.VersionSourceImport); err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range s.Versions("wf-pm") {
-		if v.Source != models.VersionSourcePM {
+	for _, v := range s.Versions("wf-src") {
+		if v.Source != models.VersionSourceImport {
 			t.Fatalf("v%d source = %q", v.Version, v.Source)
 		}
 	}

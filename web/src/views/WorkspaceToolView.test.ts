@@ -8,104 +8,41 @@ import nav from '@/locales/zh-CN/nav.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspace: ref<any>({ name: 'Studio' }), getPmLeader: vi.fn(), reload: vi.fn() }
+  return { workspace: ref<any>({ name: 'Studio' }) }
 })
-vi.mock('@/lib/api/api', () => ({ api: { getPmLeader: mocks.getPmLeader } }))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, reload: mocks.reload }) }))
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace }) }))
 import WorkspaceToolView from './WorkspaceToolView.vue'
-const panel = (name: string) => defineComponent({ name, props: ['workspace', 'binding'], emits: ['open-settings', 'changed'], setup(props, { emit }) {
-  return () => h('div', { 'data-panel': name, 'data-workspace-name': props.workspace?.name, 'data-binding': props.binding?.agentConfigRef }, [
-    h('button', { onClick: () => emit('open-settings') }, 'settings'),
-    h('button', { 'data-emit': 'changed', onClick: () => emit('changed') }, 'changed'),
-  ])
+const panel = (name: string) => defineComponent({ name, props: ['workspace'], setup(props) {
+  return () => h('div', { 'data-panel': name, 'data-workspace-name': props.workspace?.name })
 } })
 async function setup(path: string) {
-  const specs = [['/board', 'board'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp']] as const
+  const specs = [['/board', 'board'], ['/settings/credentials', 'credentials'], ['/settings/audit', 'audit']] as const
   const router = createRouter({ history: createMemoryHistory(), routes: specs.map(([route, tool]) => ({ path: route, component: WorkspaceToolView, meta: { workspaceTool: tool, workspaceTitle: `nav.${tool}` } })) })
   await router.push(path)
   const stubs: Record<string, any> = { WorkspacePage: { template: '<section class="h-full min-h-0 flex flex-col"><slot name="actions"/><slot/></section>' } }
-  for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'WorkspaceExternalMcpPanel', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
+  for (const name of ['BoardView', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': nav } })
   const wrapper = mount({ render: () => h(RouterView) }, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs } })
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.workspace.value = { name: 'Studio' }; mocks.getPmLeader.mockResolvedValue({ enabled: true, agentConfigRef: 'manager' }) })
+beforeEach(() => { mocks.workspace.value = { name: 'Studio' } })
 describe('every workspace tool page', () => {
   it.each([
-    ['/board', 'BoardView', 'workspace'], ['/assistant', 'PmLeaderChat', 'workspace'],
-    ['/settings/assistant', 'PmSettingsPanel', 'settings'], ['/settings/external-mcp', 'WorkspaceExternalMcpPanel', 'settings'],
-    ['/settings/credentials', 'WorkspaceCredentialsPanel', 'workspace'],
-    ['/settings/audit', 'WorkspaceAuditPanel', 'workspace'],
-  ])('%s renders only %s in the %s layout', async (path, component, layout) => {
+    ['/board', 'BoardView'],
+    ['/settings/credentials', 'WorkspaceCredentialsPanel'],
+    ['/settings/audit', 'WorkspaceAuditPanel'],
+  ])('%s mounts only %s without workspace props', async (path, component) => {
     const { wrapper } = await setup(path)
     expect(wrapper.findAll('[data-panel]').map((node) => node.attributes('data-panel'))).toEqual([component])
-    const root = wrapper.get('[data-testid^="workspace-tool-"]')
-    expect(root.classes().includes('gap-6')).toBe(layout === 'settings')
-    expect(mocks.getPmLeader).toHaveBeenCalledTimes(path === '/assistant' ? 1 : 0)
-    wrapper.unmount()
-  })
-  it('passes the assistant binding to the chat panel', async () => {
-    const { wrapper } = await setup('/assistant')
-    expect(wrapper.get('[data-panel="PmLeaderChat"]').attributes('data-binding')).toBe('manager')
+    expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace-name')).toBeUndefined()
+    expect(wrapper.get('[data-testid^="workspace-tool-"]').classes()).toEqual(expect.arrayContaining(['min-h-0', 'flex-1']))
     wrapper.unmount()
   })
   it('renders nothing until the workspace is loaded', async () => {
     mocks.workspace.value = null
     const { wrapper } = await setup('/board')
     expect(wrapper.find('[data-testid^="workspace-tool-"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('shows the assistant loading state while the binding request is pending', async () => {
-    let resolve!: (value: unknown) => void
-    mocks.getPmLeader.mockReturnValueOnce(new Promise((done) => { resolve = done }))
-    const { wrapper } = await setup('/assistant')
-    expect(wrapper.get('[role="status"]').text()).toBe('正在加载…')
-    expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(false)
-    resolve({ enabled: true, agentConfigRef: 'manager' })
-    await flushPromises()
-    expect(wrapper.find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-  it('shows the assistant error and recovers on retry', async () => {
-    mocks.getPmLeader.mockRejectedValueOnce(new Error('binding unavailable'))
-    const { wrapper } = await setup('/assistant')
-    const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('binding unavailable')
-    await alert.get('button').trigger('click')
-    await flushPromises()
-    expect(mocks.getPmLeader).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-  it('reloads the workspace when the assistant settings report changes', async () => {
-    const settings = await setup('/settings/assistant')
-    await settings.wrapper.get('[data-panel="PmSettingsPanel"] [data-emit="changed"]').trigger('click')
-    expect(mocks.reload).toHaveBeenCalledTimes(1)
-    settings.wrapper.unmount()
-  })
-})
-describe('independent workspace tools', () => {
-  it.each([['/board', 'BoardView'], ['/settings/credentials', 'WorkspaceCredentialsPanel'], ['/settings/audit', 'WorkspaceAuditPanel']])('mounts %s directly without workspace props', async (path, component) => {
-    const { wrapper } = await setup(path)
-    expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace-name')).toBeUndefined()
-    expect(wrapper.get('[data-testid^="workspace-tool-"]').classes()).toEqual(expect.arrayContaining(['min-h-0', 'flex-1']))
-    wrapper.unmount()
-  })
-  it('keeps PM conversation and its configuration reachable as separate pages', async () => {
-    const { wrapper, router } = await setup('/assistant')
-    expect(mocks.getPmLeader).toHaveBeenCalledWith()
-    expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(true)
-    await wrapper.get('[data-panel="PmLeaderChat"] button').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/settings/assistant')
-    expect(wrapper.find('[data-panel="PmSettingsPanel"]').exists()).toBe(true)
-    await wrapper.findAll('button').find((button) => button.text() === '返回助手')!.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/assistant')
-    expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

@@ -1,0 +1,27 @@
+# 2026-11-15（移除通知策略、Channel 接入、定时任务与 Agent 记忆）
+
+- 日期：2026-11-15
+- 范围：`server/internal/{handlers,services,engine,models,router,database,runtime,envauth,crypto,execution,tokenledger}/`、`server/cmd/server/`、`web/src/{views,components,lib,data,router,locales}/`、`web/e2e/`、`AGENTS.md`、`README*.md`、`server/README.md`。紧接 [移除工作区助手](2026-11-15-remove-workspace-assistant.md)，同一批变更。与先合入的 [移除定时任务、IM 渠道与运行通知](2026-11-15-remove-cron-channels.md)（#1269）范围重叠，rebase 时合并为一套启动清理：删除其 `retired_cron_channels.go` 与 `AgentService.StripRetiredSchedulerMCP`，由 `retireRemovedFeatures` 整表删除会话表、删除 `recovery_mcp_names` 列，Agent 配置里的 `task-scheduler` 改由运行时过滤，不再改写 `agent.json`。
+- 做了什么：
+  - **通知策略**：删除 `/settings/notification-policy` 页、工作区与工作流的 `notifyPolicy`（含 `PATCH /api/workflows/:id/notify-policy`、`/api/workspace/notify-receipts`），以及引擎在运行等待人工、失败、完成时的外发通知（`runNotify`）。工作流列表去掉「通知策略」列，工作流默认设置去掉通知一节，`WorkflowDefaults` 只剩 `variables` 和 `repos`。
+  - **Channel 接入**：删除 `/settings/channels` 页、`/api/workspace/channels*` 接口和 QQ / 企业微信 / 飞书 / 钉钉四种渠道实现，凭据页去掉渠道类型。
+  - **定时任务与 Agent 会话**：删除 `/settings/schedules` 页、`/api/workspace/cron-jobs*`、Agent 的 `memories`/`threads`/`cron-jobs` 接口，以及 cron 调度器和 Agent 会话回合服务。Agent Studio 去掉「数据」标签页。维护模式只等待工作流与 Solo 回合。
+  - **平台 MCP**：删除 `memory-store`、`context-store`、`task-scheduler` 三个 MCP 主机（含 Agent Studio 对话测试里只读的 `task-scheduler`），环境变量保留前缀只剩 `GRASP_ARTIFACT_`。Agent Studio 的 MCP 面板、配置帮助和团队创建向导去掉这三个快捷添加；集成页只列 `artifact-store`。Agent 配置里仍列着这些条目（或 `pm-*`、`/mcp/workspace`）的，由 `runtime.IsRetiredPlatformMCP` 按名称、地址和 `${GRASP_MEMORY_*}` 等模板识别，工作流运行（`resolvedMCPSpecs`）与 Studio / Solo（`filterAgentPlatformMCP`）都不再注入；未知模板变量不会被替换为空，所以必须按名称过滤。
+  - **沙箱用途 `agent`**：随 Agent 会话一起删除。`ReconcileOnStartup` 遇到旧的 `agent` 沙箱以及更早版本的 `pm` 沙箱，直接走 `destroyLocalSandbox` 完整清理。Solo 与对话测试共用的 `startAgentContainer` 保留；未指定启动类型时默认 `test`（原为 `assistant`，常量 `execution.LaunchAssistant` 已删除）。
+  - **启动清理**：`database/retired_assistant.go` 合并改名为 `retired_features.go`（`retireRemovedFeatures`），在原有改写与删除之外新增：
+    - 删除旧列：`workspaces.notify_policy`、`workflow_defs.notify_policy`、`sandboxes.recovery_mcp_names`。
+    - 删除旧表：`channel_configs`、`chat_threads`、`chat_messages`、`chat_turn_drafts`、`memory_items`、`agent_cron_jobs`、`agent_cron_runs`、`notify_delivery_receipts`。
+    - 删除 Token 账本（`token_usage_events`、`token_usage_reports`）里来源为 `pm`、`chat` 的记录。这些功能没有用户使用，不保留历史用量。
+    - 去掉 `createChannelIndexes`；缺表、缺列都算成功，重复执行无副作用。
+  - **Agent 工作目录历史**：助手与外部 MCP 写入的旧版本不做特殊处理，来源按原值显示。
+  - **孤立代码**：删除只供上述功能使用的 `crypto.Available`、`web/src/lib/run/runNotifyTemplate.ts`、`lib/workspace/{cronDeliverTargets,useChannels}.ts`、`cronClient`，以及 `WorkspacePage` 不再使用的 `layout: 'settings'` 和 `.settings-document` 样式（`AppShell` 只保留 `settings-panel` 选择器）。`AGENTS.md` 去掉 cron UTC 的已知坑。
+  - **Token 来源**：`chat` 来源随 Agent 会话删除（`TokenLedgerSourceChat`、`TokenStatsKindChat`、`chatTokens`、`chatTotal`、`_chat`、「历史对话」筛选与标签；`buildConsumptionRank` 不再有会话槽位）。存量记录在启动时删除，不新增替代来源。
+- 为什么：产品聚焦云端 Agent 与工作流。外发通知、IM 渠道、定时任务和长期记忆都围绕 Agent 会话这条已不再维护的线，留着会持续增加维护面，所以前后端整体删除，不保留兼容入口。
+- 保持不变：
+  - 站内通知（`/notifications`、`NotificationService`、已读与基线）不变。
+  - 运行、门禁、Solo、对话测试、凭据、审计和 Agent Studio 其他标签页行为不变。Token 阶段 `chat`（Studio 与 Solo 的对话回合）保留。
+  - 旧地址 `/settings/channels`、`/settings/schedules`、`/settings/notification-policy` 经通配路由回到首页。
+- 如何验证：
+  - `server/`：golangci-lint（0 issues）、`go vet ./...`、gen-configdoc 检查、`go test ./...`、`cover-check-server.sh 90`（90.7%）、`deadcode ./...` 无新增孤立函数。`TestRetireRemovedFeaturesRewritesValuesAndDropsStorage` 预置所有旧列、旧表和旧取值，执行两次后检查改写与删除（含 `pm`、`chat` 用量被删、工作流用量保留）；`sandbox_service_test` 检查启动时销毁旧 `agent` 沙箱。
+  - `web/`：lint、`vue-tsc`、`npm test -- --coverage`（564 个文件、6061 个用例通过，行覆盖 91.75%）、`npm run build`。Playwright：`workspace`、`workflow-catalog-align`（改为只测状态列对齐和窄屏布局）、`token-analytics`、`agent-defaults-pinned`、`sandbox-list-isolation`、`run-sandbox-env-harness`（desktop）、`unknown-model-display-name`（desktop 共 42 个用例），以及 `mobile-browser-contract`（mobile-chromium、mobile-chromium-critical，44 个用例），全部通过。
+  - `docs/`：`npm run build` 通过；`js/home.js` 通过 `node --check`。

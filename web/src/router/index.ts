@@ -56,12 +56,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/stats', name: 'stats', component: () => import('@/views/TokenAnalyticsView.vue'), meta: { titleKey: 'route.stats' } },
   { path: '/workflows', name: 'workflows', component: () => import('@/views/WorkflowsView.vue'), meta: { titleKey: 'route.workflows' } },
   { path: '/board', name: 'board', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.board', workspaceTool: 'board', workspaceTitle: 'nav.board' } },
-  { path: '/assistant', name: 'assistant', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.assistant', workspaceTool: 'assistant', workspaceTitle: 'nav.assistant' } },
   { path: '/solo', name: 'solo', component: () => import('@/views/SoloView.vue'), meta: { titleKey: 'route.solo' } },
   { path: '/solo/:id', name: 'solo-session', component: () => import('@/views/SoloView.vue'), meta: { titleKey: 'route.solo' } },
   { path: '/settings/projects', name: 'projects', component: () => import('@/views/ProjectsView.vue'), meta: { titleKey: 'route.projects' } },
-  { path: '/settings/assistant', name: 'assistantSettings', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.assistantSettings', workspaceTool: 'assistantSettings', workspaceTitle: 'nav.assistantSettings' } },
-  { path: '/settings/external-mcp', name: 'externalMcp', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.externalMcp', workspaceTool: 'externalMcp', workspaceTitle: 'nav.externalMcp' } },
   // Defaults now live inside Agent Studio (pinned first item); keep old links working.
   { path: '/settings/shared-agent', name: 'sharedAgent', redirect: { path: '/agents', query: { view: 'defaults' } } },
   { path: '/settings/credentials', name: 'credentials', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.credentials', workspaceTool: 'credentials', workspaceTitle: 'nav.credentials' } },

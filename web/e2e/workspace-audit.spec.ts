@@ -78,7 +78,7 @@ const MOCK_EVENTS = [
     actor: 'alice',
     actorDisplay: 'alice',
     unattributable: false,
-    callerKind: 'pm',
+    callerKind: 'member',
     action: 'gate.decide',
     resourceType: 'gate',
     resourceId: 'visual',
@@ -359,13 +359,6 @@ async function stubWorkspaceApis(page: Page) {
       body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 100, hasMore: false }),
     })
   })
-  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ enabled: false }),
-    })
-  })
 
   await routeApi(page, '**/api/workspace/audit/facets**', async (route) => {
     const url = new URL(route.request().url())
@@ -497,7 +490,7 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     await page.getByTestId('workspace-audit-caller').locator('button.audit-dd-trig').click()
     const callerPanel = page.locator('.audit-dd-panel').filter({ visible: true })
     await expect(callerPanel).toBeVisible()
-    await expect(callerPanel.locator('.audit-dd-opt', { hasText: '工作区助手' })).toBeVisible()
+    await expect(callerPanel.locator('.audit-dd-opt', { hasText: '成员' })).toBeVisible()
     await expect(callerPanel.locator('.audit-dd-opt', { hasText: '用户 API Key' })).toBeVisible()
     await expect(callerPanel.locator('.audit-dd-opt', { hasText: '系统' })).toBeVisible()
     await callerPanel.locator('.audit-dd-opt', { hasText: '系统' }).click()

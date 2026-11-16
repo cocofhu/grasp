@@ -26,9 +26,6 @@ type TeamRoleTemplate struct {
 	Capabilities *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
-// TeamPMEmbedName is the embedded PM Leader package under team_embed/.
-const TeamPMEmbedName = "PMAgent"
-
 // TeamEngineerTemplates are the built-in workflow Agents, in workflow order.
 var TeamEngineerTemplates = []TeamRoleTemplate{
 	{ID: "clarify", EmbedName: "ClarifyAgent", RoleLabelZH: "需求澄清", Summary: "多轮对话澄清需求、写出计划;缺陷时查清根因,可启动应用演示"},
@@ -63,11 +60,6 @@ func TeamRoleByID(id string) (TeamRoleTemplate, bool) {
 // EngineerDisplayName builds "{prefix}{roleLabel}".
 func EngineerDisplayName(prefix, roleLabelZH string) string {
 	return strings.TrimSpace(prefix) + strings.TrimSpace(roleLabelZH)
-}
-
-// PMDisplayName builds "{prefix}项目经理".
-func PMDisplayName(prefix string) string {
-	return strings.TrimSpace(prefix) + "项目经理"
 }
 
 func loadTeamAgentTemplate(embedName string) (Agent, error) {

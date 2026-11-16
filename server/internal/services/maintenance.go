@@ -3,37 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/cocofhu/grasp/internal/models"
 	"os"
 	"path/filepath"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
-
-func (r *PmTurnRunner) ActiveThreads() int {
-	r.mu.Lock()
-	threads := make([]*pmThread, 0, len(r.threads))
-	for _, t := range r.threads {
-		threads = append(threads, t)
-	}
-	r.mu.Unlock()
-	n := 0
-	for _, t := range threads {
-		if !t.sess.Ready() {
-			n++
-		}
-	}
-	return n
-}
-func (s *GateAutoInvokeService) BeginMaintenance() { s.mu.Lock(); s.maintenance = true; s.mu.Unlock() }
-func (s *GateAutoInvokeService) PendingMaintenance() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := len(s.queue.tasks)
-	if s.queue.busy {
-		n++
-	}
-	return n
-}
 
 // PrepareWorkspaceMaintenance archives configuration homes before retiring idle
 // interactive sandboxes. It runs in the old process before the offline backup.

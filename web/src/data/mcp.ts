@@ -1,5 +1,4 @@
-// 平台内置 MCP 发现目录（集成页）。运行级条目在每次运行开始时由编排器注入；
-// 通用 / PM 会话级条目见于 Agent mcp[] 与 PM Leader 咨询沙箱，此处仅作发现与说明。
+// 平台内置 MCP 发现目录（集成页）。条目在每次运行开始时由编排器注入，此处仅作发现与说明。
 
 export interface McpTool {
   name: string
@@ -12,8 +11,6 @@ export interface McpServer {
   id: string
   name: string
   builtin: boolean
-  /** run = 运行级；workspace = 工作区助手会话级；agent = 任意 Agent 可声明的通用平台 MCP */
-  scope: 'run' | 'workspace' | 'agent'
   descKey: string
   overviewKey?: string
   tools: McpTool[]
@@ -25,7 +22,6 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'artifact-store',
     name: 'artifact-store',
     builtin: true,
-    scope: 'run',
     descKey: 'mcp.artifactStore.desc',
     overviewKey: 'mcp.artifactStore.overview',
     tools: [
@@ -65,115 +61,5 @@ export const BUILTIN_MCPS: McpServer[] = [
       { name: 'get_history_detail', signatureKey: 'mcp.artifactStore.tools.get_history_detail.signature', descKey: 'mcp.artifactStore.tools.get_history_detail.desc', io: 'read' },
     ],
     conventionKey: 'mcp.artifactStore.convention',
-  },
-  {
-    id: 'memory-store',
-    name: 'memory-store',
-    builtin: true,
-    scope: 'agent',
-    descKey: 'mcp.memoryStore.desc',
-    overviewKey: 'mcp.memoryStore.overview',
-    tools: [
-      { name: 'list_memories', signatureKey: 'mcp.memoryStore.tools.list_memories.signature', descKey: 'mcp.memoryStore.tools.list_memories.desc', io: 'read' },
-      { name: 'get_memory', signatureKey: 'mcp.memoryStore.tools.get_memory.signature', descKey: 'mcp.memoryStore.tools.get_memory.desc', io: 'read' },
-      { name: 'search_memories', signatureKey: 'mcp.memoryStore.tools.search_memories.signature', descKey: 'mcp.memoryStore.tools.search_memories.desc', io: 'read' },
-      { name: 'upsert_memory', signatureKey: 'mcp.memoryStore.tools.upsert_memory.signature', descKey: 'mcp.memoryStore.tools.upsert_memory.desc', io: 'write' },
-      { name: 'delete_memory', signatureKey: 'mcp.memoryStore.tools.delete_memory.signature', descKey: 'mcp.memoryStore.tools.delete_memory.desc', io: 'write' },
-    ],
-    conventionKey: 'mcp.memoryStore.convention',
-  },
-  {
-    id: 'context-store',
-    name: 'context-store',
-    builtin: true,
-    scope: 'agent',
-    descKey: 'mcp.contextStore.desc',
-    overviewKey: 'mcp.contextStore.overview',
-    tools: [
-      { name: 'list_conversations', signatureKey: 'mcp.contextStore.tools.list_conversations.signature', descKey: 'mcp.contextStore.tools.list_conversations.desc', io: 'read' },
-      { name: 'get_messages', signatureKey: 'mcp.contextStore.tools.get_messages.signature', descKey: 'mcp.contextStore.tools.get_messages.desc', io: 'read' },
-      { name: 'search_messages', signatureKey: 'mcp.contextStore.tools.search_messages.signature', descKey: 'mcp.contextStore.tools.search_messages.desc', io: 'read' },
-      { name: 'get_current_conversation', signatureKey: 'mcp.contextStore.tools.get_current_conversation.signature', descKey: 'mcp.contextStore.tools.get_current_conversation.desc', io: 'read' },
-      { name: 'get_attached_context', signatureKey: 'mcp.contextStore.tools.get_attached_context.signature', descKey: 'mcp.contextStore.tools.get_attached_context.desc', io: 'read' },
-    ],
-    conventionKey: 'mcp.contextStore.convention',
-  },
-  {
-    id: 'pm-progress',
-    name: 'pm-progress',
-    builtin: true,
-    scope: 'workspace',
-    descKey: 'mcp.pmProgress.desc',
-    overviewKey: 'mcp.pmProgress.overview',
-    tools: [
-      { name: 'pm_get_progress', signatureKey: 'mcp.pmProgress.tools.pm_get_progress.signature', descKey: 'mcp.pmProgress.tools.pm_get_progress.desc', io: 'read' },
-      { name: 'pm_list_blockers', signatureKey: 'mcp.pmProgress.tools.pm_list_blockers.signature', descKey: 'mcp.pmProgress.tools.pm_list_blockers.desc', io: 'read' },
-      { name: 'pm_get_plan_summary', signatureKey: 'mcp.pmProgress.tools.pm_get_plan_summary.signature', descKey: 'mcp.pmProgress.tools.pm_get_plan_summary.desc', io: 'read' },
-      { name: 'pm_get_artifact_summary', signatureKey: 'mcp.pmProgress.tools.pm_get_artifact_summary.signature', descKey: 'mcp.pmProgress.tools.pm_get_artifact_summary.desc', io: 'read' },
-      { name: 'pm_get_risk_trends', signatureKey: 'mcp.pmProgress.tools.pm_get_risk_trends.signature', descKey: 'mcp.pmProgress.tools.pm_get_risk_trends.desc', io: 'read' },
-      { name: 'pm_compare_runs', signatureKey: 'mcp.pmProgress.tools.pm_compare_runs.signature', descKey: 'mcp.pmProgress.tools.pm_compare_runs.desc', io: 'read' },
-    ],
-    conventionKey: 'mcp.pmProgress.convention',
-  },
-  {
-    id: 'pm-workflow-read',
-    name: 'pm-workflow-read',
-    builtin: true,
-    scope: 'workspace',
-    descKey: 'mcp.pmWorkflowRead.desc',
-    overviewKey: 'mcp.pmWorkflowRead.overview',
-    tools: [
-      { name: 'pm_list_workflows', signatureKey: 'mcp.pmWorkflowRead.tools.pm_list_workflows.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_list_workflows.desc', io: 'read' },
-      { name: 'pm_get_workflow', signatureKey: 'mcp.pmWorkflowRead.tools.pm_get_workflow.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_get_workflow.desc', io: 'read' },
-      { name: 'pm_get_workflow_graph', signatureKey: 'mcp.pmWorkflowRead.tools.pm_get_workflow_graph.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_get_workflow_graph.desc', io: 'read' },
-      { name: 'pm_list_versions', signatureKey: 'mcp.pmWorkflowRead.tools.pm_list_versions.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_list_versions.desc', io: 'read' },
-      { name: 'pm_list_runs', signatureKey: 'mcp.pmWorkflowRead.tools.pm_list_runs.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_list_runs.desc', io: 'read' },
-      { name: 'pm_list_pending_nodes', signatureKey: 'mcp.pmWorkflowRead.tools.pm_list_pending_nodes.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_list_pending_nodes.desc', io: 'read' },
-      { name: 'pm_get_artifact', signatureKey: 'mcp.pmWorkflowRead.tools.pm_get_artifact.signature', descKey: 'mcp.pmWorkflowRead.tools.pm_get_artifact.desc', io: 'read' },
-    ],
-    conventionKey: 'mcp.pmWorkflowRead.convention',
-  },
-  {
-    id: 'pm-workflow-write',
-    name: 'pm-workflow-write',
-    builtin: true,
-    scope: 'workspace',
-    descKey: 'mcp.pmWorkflowWrite.desc',
-    overviewKey: 'mcp.pmWorkflowWrite.overview',
-    tools: [
-      { name: 'pm_create_workflow', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_create_workflow.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_create_workflow.desc', io: 'write' },
-      { name: 'pm_update_workflow', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_update_workflow.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_update_workflow.desc', io: 'write' },
-      { name: 'pm_copy_workflow', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_copy_workflow.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_copy_workflow.desc', io: 'write' },
-      { name: 'pm_delete_workflow', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_delete_workflow.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_delete_workflow.desc', io: 'write' },
-      { name: 'pm_publish_workflow', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_publish_workflow.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_publish_workflow.desc', io: 'write' },
-      { name: 'pm_start_run', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_start_run.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_start_run.desc', io: 'write' },
-      { name: 'pm_decide_node', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_decide_node.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_decide_node.desc', io: 'write' },
-      { name: 'pm_react_reply', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_react_reply.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_react_reply.desc', io: 'write' },
-      { name: 'pm_cancel_run', signatureKey: 'mcp.pmWorkflowWrite.tools.pm_cancel_run.signature', descKey: 'mcp.pmWorkflowWrite.tools.pm_cancel_run.desc', io: 'write' },
-    ],
-    conventionKey: 'mcp.pmWorkflowWrite.convention',
-  },
-  {
-    id: 'pm-agent-fs',
-    name: 'pm-agent-fs',
-    builtin: true,
-    scope: 'workspace',
-    descKey: 'mcp.pmAgentFs.desc',
-    overviewKey: 'mcp.pmAgentFs.overview',
-    tools: [
-      { name: 'pm_list_workspace_agents', signatureKey: 'mcp.pmAgentFs.tools.pm_list_workspace_agents.signature', descKey: 'mcp.pmAgentFs.tools.pm_list_workspace_agents.desc', io: 'read' },
-      { name: 'pm_list_agent_templates', signatureKey: 'mcp.pmAgentFs.tools.pm_list_agent_templates.signature', descKey: 'mcp.pmAgentFs.tools.pm_list_agent_templates.desc', io: 'read' },
-      { name: 'pm_create_agent_from_template', signatureKey: 'mcp.pmAgentFs.tools.pm_create_agent_from_template.signature', descKey: 'mcp.pmAgentFs.tools.pm_create_agent_from_template.desc', io: 'write' },
-      { name: 'pm_fs_list', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_list.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_list.desc', io: 'read' },
-      { name: 'pm_fs_read', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_read.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_read.desc', io: 'read' },
-      { name: 'pm_fs_write', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_write.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_write.desc', io: 'write' },
-      { name: 'pm_fs_delete', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_delete.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_delete.desc', io: 'write' },
-      { name: 'pm_fs_mkdir', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_mkdir.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_mkdir.desc', io: 'write' },
-      { name: 'pm_fs_rename', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_rename.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_rename.desc', io: 'write' },
-      { name: 'pm_fs_history', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_history.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_history.desc', io: 'read' },
-      { name: 'pm_fs_diff', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_diff.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_diff.desc', io: 'read' },
-      { name: 'pm_fs_restore', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_restore.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_restore.desc', io: 'write' },
-    ],
-    conventionKey: 'mcp.pmAgentFs.convention',
   },
 ]

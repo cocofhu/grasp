@@ -44,7 +44,6 @@ type TokenStatsBucket struct {
 	Bucket           string `json:"bucket"`
 	Total            int64  `json:"total"`
 	WorkflowTotal    int64  `json:"workflowTotal"`
-	PmTotal          int64  `json:"pmTotal"`
 	InputTokens      int64  `json:"inputTokens"`
 	OutputTokens     int64  `json:"outputTokens"`
 	CacheReadTokens  int64  `json:"cacheReadTokens"`
@@ -68,11 +67,10 @@ type TokenStatsComposition struct {
 // Token-stats rank kinds.
 const (
 	TokenStatsKindWorkflow = "workflow"
-	TokenStatsKindPM       = "pm"
 	TokenStatsKindOther    = "other"
 )
 
-// TokenStatsWorkflow is one consumption-rank row (workflow Top-N, PM, or other).
+// TokenStatsWorkflow is one consumption-rank row (workflow Top-N or other).
 type TokenStatsWorkflow struct {
 	WorkflowID       string `json:"workflowId,omitempty"`
 	Name             string `json:"name"`
@@ -82,7 +80,7 @@ type TokenStatsWorkflow struct {
 	CacheReadTokens  int64  `json:"cacheReadTokens,omitempty"`
 	CacheWriteTokens int64  `json:"cacheWriteTokens,omitempty"`
 	Other            bool   `json:"other,omitempty"`
-	Kind             string `json:"kind,omitempty"` // workflow | pm | other
+	Kind             string `json:"kind,omitempty"` // workflow | other
 	// Cost is the estimated spend (global stats only).
 	Cost float64 `json:"cost,omitempty"`
 }
@@ -379,7 +377,7 @@ func buildModelStats(totals map[string]*tokenModelAgg, unknownAlias string) (com
 	return composition, ranking
 }
 
-func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTotal int64, hasPM bool) []TokenStatsWorkflow {
+func buildConsumptionRank(totals map[string]int64, names map[string]string) []TokenStatsWorkflow {
 	type item struct {
 		id    string
 		name  string
@@ -401,7 +399,7 @@ func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTo
 	})
 
 	const topN = 10
-	out := make([]TokenStatsWorkflow, 0, topN+2)
+	out := make([]TokenStatsWorkflow, 0, topN+1)
 	var other int64
 	for i, it := range list {
 		if i < topN {
@@ -419,13 +417,6 @@ func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTo
 		}
 		other += it.total
 	}
-	if hasPM {
-		out = append(out, TokenStatsWorkflow{
-			Name:  "PM",
-			Total: pmTotal,
-			Kind:  TokenStatsKindPM,
-		})
-	}
 	if other > 0 {
 		out = append(out, TokenStatsWorkflow{
 			Name:  "other",
@@ -434,7 +425,6 @@ func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTo
 			Kind:  TokenStatsKindOther,
 		})
 	}
-	// Fixed slot order: Top workflows (already desc) → PM (if any) → other (if any).
-	// Do not re-sort by Total — that would insert PM between workflow rows (12PM34).
+	// Fixed slot order: Top workflows (already desc) → other (if any).
 	return out
 }

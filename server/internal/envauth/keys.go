@@ -68,7 +68,7 @@ func IsPlatformReservedEnvKey(k string) bool {
 		"ROOT_PASSWORD", "ACP_BRIDGE_PASSWORD":
 		return true
 	}
-	for _, prefix := range []string{"GRASP_ARTIFACT_", "GRASP_MEMORY_", "GRASP_CONTEXT_", "GRASP_PM_"} {
+	for _, prefix := range []string{"GRASP_ARTIFACT_"} {
 		if strings.HasPrefix(k, prefix) {
 			return true
 		}

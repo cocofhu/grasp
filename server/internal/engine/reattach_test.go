@@ -18,7 +18,7 @@ func reattachGraph() models.Graph {
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
 			{ID: "work", Type: "agent", Caps: capsPlain, Config: map[string]any{"agent_profile": "dev-agent", "prompt": "work"}},
-			{ID: "ask", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm-agent", "prompt": "ask"}},
+			{ID: "ask", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "planner-agent", "prompt": "ask"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{
@@ -260,7 +260,7 @@ func TestExecuteRequeuesWhenHalted(t *testing.T) {
 func resumeHandoffGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
-			{ID: "ask", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "ask"}},
+			{ID: "ask", Type: "agent", Caps: capsClarify, Label: "需求澄清", Config: map[string]any{"agent_profile": "planner-agent", "prompt": "ask"}},
 			{ID: "impl", Type: "agent", Caps: capsPlain, Label: "实现", Config: map[string]any{"agent_profile": "dev-agent", "prompt": "impl"}},
 			{ID: "output", Type: "output"},
 		},

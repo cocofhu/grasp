@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
 
-/** ONBOARDING_AGENT_NAMES in src/lib/pm/onboardingWizard.ts (that module needs a DOM). */
+/** ONBOARDING_AGENT_NAMES in src/lib/onboarding/onboardingWizard.ts (that module needs a DOM). */
 const ONBOARDING_AGENT_NAMES = ['需求澄清', '实现', '测试评审', '交付']
 
 const SHOT = '/tmp/home-workflow-select-create-shots'

@@ -197,15 +197,9 @@
     },
     {
       "symbol": "clearOnboardingDismiss",
-      "file": "pm/onboardingWizard.ts",
+      "file": "onboarding/onboardingWizard.ts",
       "decision": "converge",
       "reason": "onboarding-internal helper"
-    },
-    {
-      "symbol": "PM_FAIL_KINDS",
-      "file": "pm/pmTurnState.ts",
-      "decision": "converge",
-      "reason": "pm-internal constant"
     },
     {
       "symbol": "MANAGED_REGION_KEYS",

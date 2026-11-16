@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
@@ -68,25 +66,6 @@ func TestMaintenanceArchiveIsPrivateAndRejectsSymlinks(t *testing.T) {
 	}
 	if err = copyPrivateTree(src, dst); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatal("unsafe archive accepted symlink")
-	}
-}
-
-func TestWorkflowGatePolicyUsesOrdinaryOverrideAndStopsAdmission(t *testing.T) {
-	db := newTestDB(t)
-	pm := NewPmService(db, NewAgentService(t.TempDir()))
-	svc := NewGateAutoInvokeService(db, pm, nil, nil, GateAutoTokenHooks{})
-	wf := models.WorkflowDef{ID: "override", Name: "override", Defaults: &models.WorkflowDefaults{GateAuto: &models.WorkflowGateAutoPolicy{Enabled: true, AgentName: "reviewer", Variable: "approve", Prompt: "inspect", EnabledMcps: []string{"pm-workflow-write"}}}}
-	if err := db.Create(&wf).Error; err != nil {
-		t.Fatal(err)
-	}
-	p, ok := svc.effectiveWorkspace(GateAutoTask{WorkflowID: wf.ID})
-	if !ok || p.PmLeaderAgent != "reviewer" || p.PmGateAutoVar != "approve" || !p.PmLeaderEnabled {
-		t.Fatalf("override=%+v %v", p, ok)
-	}
-	svc.BeginMaintenance()
-	svc.Enqueue(GateAutoTask{WorkflowID: wf.ID, Vars: map[string]any{"approve": true}})
-	if svc.PendingMaintenance() != 0 {
-		t.Fatal("maintenance accepted new gate task")
 	}
 }
 

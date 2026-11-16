@@ -84,13 +84,6 @@ async function gotoSharedAgentEnv(page: import('@playwright/test').Page) {
     }
     await route.continue()
   })
-  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ enabled: false }),
-    })
-  })
   // Agent 默认配置 is the pinned first item of the Agent switcher in Agent Studio.
   await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents')}`)
   await dismissOnboardingIfOpen(page)
