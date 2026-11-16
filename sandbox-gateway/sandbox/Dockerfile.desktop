@@ -10,6 +10,18 @@
 # 发布：.github/workflows/publish-sandbox-desktop.yml → ghcr.io/cocofhu/universal-sandbox:<版本>-desktop。
 # 镜像自检：scripts/check-desktop-image.sh <image>。
 ARG BASE_IMAGE=ghcr.io/cocofhu/universal-sandbox:latest
+# Blender 官方 MCP 源码（固定提交）。projects.blender.org 会拒绝部分构建网络，CI 在 runner 上
+# clone 后用 --build-context blender_mcp=<dir> 覆盖这一阶段；两种来源都在下面校验提交哈希。
+ARG BLENDER_MCP_REF=dbbf836ad4b1025f14a2b3b504c43903f39e0b04
+
+FROM ${BASE_IMAGE} AS blender_mcp_fetch
+ARG BLENDER_MCP_REF
+RUN git clone -q https://projects.blender.org/lab/blender_mcp.git /src && \
+    git -C /src checkout -q "${BLENDER_MCP_REF}"
+
+FROM scratch AS blender_mcp
+COPY --from=blender_mcp_fetch /src /
+
 FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -83,10 +95,11 @@ RUN curl -fsSL --retry 3 -o /tmp/slicer.tar.gz \
 
 # Blender 官方 MCP（固定提交）：MCP 服务端装进独立 venv；插件装进 Blender 用户扩展仓库并
 # 绑定 127.0.0.1:6092（桌面保留端口段 6090–6099）、开机自启、允许联网访问。
-ARG BLENDER_MCP_REF=dbbf836ad4b1025f14a2b3b504c43903f39e0b04
+ARG BLENDER_MCP_REF
 COPY desktop/ /tmp/desktop/
-RUN git clone -q https://projects.blender.org/lab/blender_mcp.git /tmp/blender_mcp && \
-    git -C /tmp/blender_mcp checkout -q "${BLENDER_MCP_REF}" && \
+COPY --from=blender_mcp / /tmp/blender_mcp/
+RUN test "$(git -C /tmp/blender_mcp rev-parse HEAD)" = "${BLENDER_MCP_REF}" && \
+    git -C /tmp/blender_mcp diff --quiet HEAD && \
     python3 -m venv /opt/blender-mcp && \
     /opt/blender-mcp/bin/pip install --no-cache-dir /tmp/blender_mcp/mcp && \
     ln -sfn /opt/blender-mcp/bin/blender-mcp /usr/local/bin/blender-mcp && \

@@ -53,6 +53,13 @@ jobs:
             docker manifest inspect "$base" >/dev/null
           fi
           echo "image=$base" >>"$GITHUB_OUTPUT"
+      - name: Blender MCP source
+        id: blmcp
+        run: |
+          ref="$(sed -n 's/^ARG BLENDER_MCP_REF=//p' sandbox-gateway/sandbox/Dockerfile.desktop)"
+          git clone -q https://projects.blender.org/lab/blender_mcp.git "$RUNNER_TEMP/blender_mcp"
+          git -C "$RUNNER_TEMP/blender_mcp" checkout -q "$ref"
+          echo "dir=$RUNNER_TEMP/blender_mcp" >>"$GITHUB_OUTPUT"
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -73,6 +80,8 @@ jobs:
           file: ./sandbox-gateway/sandbox/Dockerfile.desktop
           load: true
           tags: universal-sandbox:desktop-smoke
+          build-contexts: |
+            blender_mcp=${{ steps.blmcp.outputs.dir }}
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.image }}
       - name: Smoke
