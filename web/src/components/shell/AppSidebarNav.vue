@@ -366,6 +366,10 @@ function isSoloRowActive(session: SoloSession): boolean {
 }
 
 function onSoloRow(session: SoloSession) {
+  if (suppressPendingClick.value) {
+    suppressPendingClick.value = false
+    return
+  }
   void router.push(`/solo/${encodeURIComponent(session.id)}`)
   onNavigate()
 }
@@ -495,10 +499,9 @@ function onRowPressEnd() {
   clearRowPress()
 }
 
-function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
+function startRowPress(event: PointerEvent, key: string, open: (x: number, y: number) => void) {
   if (event.pointerType === 'mouse' || editingKey.value) return
   clearRowPress()
-  const key = it.runId
   const timer = window.setTimeout(() => {
     if (!rowPress || rowPress.key !== key) return
     const x = rowPress.x
@@ -508,14 +511,29 @@ function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
       suppressPendingClick.value = false
     }, 400)
     clearRowPress()
-    const row = pendingRows.value.find((item) => item.runId === key)
-    if (!row || editingKey.value) return
-    openMenu(row, x, y)
+    if (editingKey.value) return
+    open(x, y)
   }, LONG_PRESS_MS)
   rowPress = { key, x: event.clientX, y: event.clientY, timer }
   window.addEventListener('pointermove', onRowPressMove)
   window.addEventListener('pointerup', onRowPressEnd)
   window.addEventListener('pointercancel', onRowPressEnd)
+}
+
+function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
+  const key = it.runId
+  startRowPress(event, key, (x, y) => {
+    const row = pendingRows.value.find((item) => item.runId === key)
+    if (row) openMenu(row, x, y)
+  })
+}
+
+function onSoloPointerDown(event: PointerEvent, session: SoloSession) {
+  const key = soloRowKey(session)
+  startRowPress(event, key, (x, y) => {
+    const row = soloStore.active.value.find((item) => soloRowKey(item) === key)
+    if (row) openSoloMenu(row, x, y)
+  })
 }
 
 function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
@@ -1501,6 +1519,7 @@ const settingsItems = computed(() => (
         :aria-current="isSoloRowActive(entry.session) ? 'page' : undefined"
         @click="onSoloRow(entry.session)"
         @contextmenu="onSoloContextMenu($event, entry.session)"
+        @pointerdown="onSoloPointerDown($event, entry.session)"
       >
         <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(entry.session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
         <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(entry.session) }}</span>
@@ -1678,6 +1697,12 @@ const settingsItems = computed(() => (
 /* :where keeps specificity equal to the .settings-directory rules below so they still win */
 .sidebar-workspace-nav .nav-item:where(:hover, :focus-visible, .active) {
   color: rgb(var(--c-txt));
+}
+/* iOS text selection fires pointercancel and would kill the long-press menu timer */
+.nav-item[data-testid="nav-pending-row"]:not([data-editing]) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .sidebar-workspace-nav .sidebar-tree-item > .nav-item {
   padding-left: 6px;

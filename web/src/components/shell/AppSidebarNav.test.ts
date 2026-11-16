@@ -403,6 +403,15 @@ describe('AppSidebarNav', () => {
       'nav-pending-menu-rename',
       'nav-pending-menu-cancel',
     ])
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    routerMocks.push.mockClear()
+    await row.trigger('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 12 })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
+    await row.trigger('click')
+    expect(routerMocks.push).not.toHaveBeenCalled()
     wrapper.unmount()
     vi.useRealTimers()
   })
