@@ -39,7 +39,7 @@
   <a href="media/grasp-readme-video.mp4"><img src="media/grasp-readme-video-poster.webp" alt="Play the Grasp product tour" width="100%" /></a>
 </p>
 
-<p align="center"><sub>Product tour (1:28, 1080p 60 fps, no sound): a one-line request, clarification with a live page mock, the FSM canvas, a human gate, Solo, artifacts and token cost.</sub></p>
+<p align="center"><sub>Product tour (1:27, 1080p 60 fps, no sound): a one-line request, clarification with a live page mock, the FSM canvas, a human gate, Solo, artifacts and token cost.</sub></p>
 
 **Grasp** is a self-hosted workspace for shipping software with coding agents. Describe a task in one sentence and run it as a **workflow** (a multi-step pipeline on a finite-state-machine canvas, with clarification, implementation, tests and human gates) or as a **Solo session** (one agent in its own sandbox). Either way, agents ask questions as clickable cards and hand back structured artifacts and live page previews instead of walls of text.
 
