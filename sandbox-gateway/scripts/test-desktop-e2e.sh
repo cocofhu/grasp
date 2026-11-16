@@ -35,7 +35,7 @@ die() {
   echo "::endgroup::"
   exit 1
 }
-in_box() { docker exec "$name" "$@"; }
+in_box() { docker exec -e DISPLAY=:99 "$name" "$@"; }
 api() { in_box curl -fsS -H 'Content-Type: application/json' "$@"; }
 status_field() { api http://127.0.0.1:8765/api/desktop/status | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1'))"; }
 
