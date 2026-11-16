@@ -1,4 +1,4 @@
-import type { ClarifyTurn, Run } from '../shared/types'
+import type { ChatMessageMetadata, ClarifyTurn, Run } from '../shared/types'
 import { bootKey, seedBoot } from '../run/bootRecord'
 
 /**
@@ -29,6 +29,8 @@ export interface ChainSegment {
   handoffSource?: 'agent' | 'platform'
   /** Sandbox start-up of this visit: pulling / creating while booting, ready once the Agent is connected. */
   boot?: ChainBoot
+  /** Ended auto segments: run info of their single reply. */
+  reply?: ChatMessageMetadata
 }
 
 export interface ChainBoot {
@@ -61,7 +63,10 @@ export interface RunChain {
  * segments carry eventCount only. endedAt only once ended. name may be "".
  * task only on Agent-node agent/clarify/review/takeover segments.
  */
-export interface RunChainWireSegment {
+/** Run info of one reply (server models.ReplyMetadata). */
+type WireReplyMetadata = Pick<ChatMessageMetadata, 'execution' | 'usage' | 'usageByModel' | 'durationMs'>
+
+export interface RunChainWireSegment extends WireReplyMetadata {
   nodeId: string
   iteration?: number
   name?: string
@@ -70,7 +75,7 @@ export interface RunChainWireSegment {
   status?: string
   startedAt?: string
   endedAt?: string
-  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at' | 'questions' | 'tools' | 'parts' | 'forms'>>
+  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at' | 'questions' | 'tools' | 'parts' | 'forms'> & WireReplyMetadata>
   eventCount?: number
   task?: string
   handoff?: string
@@ -137,6 +142,11 @@ function handoffOf(text: unknown, source: unknown): Pick<ChainSegment, 'handoff'
   return { handoff, handoffSource: source === 'platform' ? 'platform' : 'agent' }
 }
 
+function replyOf(s: RunChainWireSegment): Pick<ChainSegment, 'reply'> {
+  if (!s.usage && !s.usageByModel && !s.execution && s.durationMs == null) return {}
+  return { reply: { usage: s.usage, usageByModel: s.usageByModel, execution: s.execution, durationMs: s.durationMs } }
+}
+
 export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta): RunChain {
   const meta = new Map((nodes ?? []).map((n) => [n.id, n]))
   const label = (id: string, name?: string) => name || (meta.get(id)?.label as string | undefined) || id
@@ -164,6 +174,7 @@ export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta):
           task: s.task || undefined,
           ...handoffOf(s.handoff, s.handoffSource),
           ...(s.boot?.status ? { boot: { status: s.boot.status, readyAt: s.boot.readyAt || undefined } } : {}),
+          ...replyOf(s),
         }
       }),
   }

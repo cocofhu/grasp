@@ -199,6 +199,9 @@ func (e *Engine) stepJudge(c *execCtx, node *models.Node, oc nodeOutcome, held b
 		if oc.usageByModel == nil {
 			oc.usageByModel = res.UsageByModel
 		}
+		if oc.execution == nil {
+			oc.execution = res.Execution
+		}
 	}
 	// Accepting a revised result settles the issues raised on its preview:
 	// they must not leak into downstream prompts.

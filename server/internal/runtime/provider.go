@@ -226,6 +226,9 @@ type NodeResult struct {
 	// UsageByModel is the per-model breakdown paired with Usage (after ingest
 	// weak-key merge / ACP_BRIDGE_MODEL backfill).
 	UsageByModel models.TokenUsageByModel
+	// Execution is the route of the attempt that produced this result; nil
+	// when no sandbox connection was established.
+	Execution *models.ChatExecution
 }
 
 // ReactTurn is the outcome of one react dialogue turn (open or reply). The

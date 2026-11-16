@@ -34,10 +34,27 @@ func finishChatTurn(out *ReactTurn, acp *sandbox.ACPClient, started time.Time) {
 		out.UsageByModel = models.CloneTokenUsageByModel(out.Result.UsageByModel)
 	}
 	out.DurationMs = time.Since(started).Milliseconds()
-	if acp != nil {
-		out.Execution = acp.Execution()
-		if out.Execution != nil {
-			out.Execution.StartedAt = started.UTC()
-		}
+	out.Execution = stampedExecution(acp, started)
+}
+
+// ReplyMetadata is this provider call as one reply.
+func (t ReactTurn) ReplyMetadata() models.ReplyMetadata {
+	return models.NewReplyMetadata(t.Execution, t.Usage, t.UsageByModel, t.DurationMs)
+}
+
+// ReplyMetadata is the automatic run as one reply. Its duration comes from
+// the reply's own start/end times.
+func (r NodeResult) ReplyMetadata() models.ReplyMetadata {
+	return models.NewReplyMetadata(r.Execution, r.Usage, r.UsageByModel, 0)
+}
+
+func stampedExecution(acp *sandbox.ACPClient, started time.Time) *models.ChatExecution {
+	if acp == nil {
+		return nil
 	}
+	execution := acp.Execution()
+	if execution != nil {
+		execution.StartedAt = started.UTC()
+	}
+	return execution
 }

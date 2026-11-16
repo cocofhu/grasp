@@ -44,7 +44,7 @@ func (e *Engine) consumeNodeOutcome(c *execCtx, node *models.Node, res *runtime.
 			outputMd: "节点失败:" + errMsg,
 			outputs:  res.Outputs,
 			events:   res.Events,
-			usage:    res.Usage, usageByModel: res.UsageByModel,
+			usage:    res.Usage, usageByModel: res.UsageByModel, execution: res.Execution,
 			retryable: retryable,
 		}, false
 	}
@@ -73,7 +73,7 @@ func applyNodeOutcome(res *runtime.NodeResult, o mcp.NodeOutcome) (nodeOutcome, 
 			outputMd: md,
 			outputs:  res.Outputs,
 			events:   res.Events,
-			usage:    res.Usage, usageByModel: res.UsageByModel,
+			usage:    res.Usage, usageByModel: res.UsageByModel, execution: res.Execution,
 			verdict: true,
 		}, false
 	}

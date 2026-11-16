@@ -25,11 +25,13 @@ export type ClarifyPriorSegment = {
   /** The note this node left for the next one (outputs.handoff). */
   handoff?: string
   handoffSource?: 'agent' | 'platform'
+  /** Ended auto segments: run info of their single reply. */
+  reply?: ChatMessageMetadata
   open: boolean
   /** Consecutive auto nodes folded into one row (Linear-style grouping): their labels. */
   group?: string[]
   /** Folded auto nodes, each still addressable for its own execution record. */
-  members?: { nodeId: string; iteration: number; label: string; at?: string; endedAt?: string }[]
+  members?: { nodeId: string; iteration: number; label: string; at?: string; endedAt?: string; reply?: ChatMessageMetadata }[]
   /** LLM process rows that belong with this visit (流转 / 等人 / 退回 / 结束). */
   notes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
 }
@@ -98,6 +100,7 @@ import { EMBED_PAGE_PICK_KEY } from '@/lib/inbox/embedChat'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
   AgentPart,
+  ChatMessageMetadata,
   ClarifyTurn,
   ClarifyImage,
   ReactAnnotation,

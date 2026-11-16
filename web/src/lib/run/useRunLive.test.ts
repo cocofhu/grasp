@@ -657,6 +657,29 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
+  it('labels every completed reply with the run route but keeps each reply its own time', async () => {
+    const { live, wrapper } = await setup()
+    const events = [
+      { kind: 'prompt', t: 0, text: '实现功能', at: '2026-10-28T01:00:00Z' },
+      { kind: 'message', t: 1, text: '第一轮' },
+      { kind: 'turn_end', t: 2, at: '2026-10-28T01:00:04Z' },
+      { kind: 'prompt', t: 3, text: '补交结论', at: '2026-10-28T01:00:05Z' },
+      { kind: 'message', t: 4, text: '第二轮' },
+      { kind: 'turn_end', t: 5, at: '2026-10-28T01:00:09Z' },
+    ]
+    const execution = { agentName: 'dev', backend: 'codex', modelId: 'gpt-x', startedAt: '2026-10-28T00:59:00Z' }
+    mocks.nodeEvents.mockResolvedValue({ events, live: false })
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'succeeded', nodeExecutions: { impl: [{ nodeId: 'impl', iteration: 1, status: 'succeeded', events, execution }] } })
+    await live().reload()
+    await flushPromises()
+    const route = { agentName: 'dev', backend: 'codex', modelId: 'gpt-x', startedAt: undefined }
+    expect(live().turns.value).toEqual([
+      expect.objectContaining({ text: '第一轮', execution: route, startedAt: '2026-10-28T01:00:00Z' }),
+      expect.objectContaining({ text: '第二轮', execution: route, startedAt: '2026-10-28T01:00:05Z' }),
+    ])
+    wrapper.unmount()
+  })
+
   it('pending 确认并流转 does not lock the composer; success still locks while following', async () => {
     const { live, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'waiting_human'), clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns: [], done: false } } })

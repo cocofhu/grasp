@@ -133,7 +133,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatal(err)
 				}
 				conv.Messages = append(conv.Messages,
-					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), DurationMs: 2000, Execution: execution, Usage: usage},
+					models.ReactMessage{Role: "agent", Text: "Preview timeline reply", Parts: parts, At: time.Now().Format(time.RFC3339Nano), ReplyMetadata: models.ReplyMetadata{DurationMs: 2000, Execution: execution, Usage: usage}},
 					models.ReactMessage{Role: "human", Text: "Owner attachment", Annotations: picks, Images: []models.PromptImage{ownerFile}},
 					models.ReactMessage{Role: "human", Text: "Visitor upload", PreviewShared: true, Images: []models.PromptImage{guestFile}},
 				)

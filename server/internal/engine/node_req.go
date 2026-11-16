@@ -225,6 +225,9 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 	if o.usageByModel != nil {
 		sr.UsageByModel = models.AddTokenUsageByModel(sr.UsageByModel, o.usageByModel)
 	}
+	if o.execution != nil {
+		sr.Execution = o.execution
+	}
 	sr.Error = o.err
 	sr.Attempt = c.run.Attempt
 	if sr.StartedAt != nil {

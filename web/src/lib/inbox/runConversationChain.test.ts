@@ -61,6 +61,21 @@ describe('runConversationChain', () => {
     expect(runChainFromRun(r).segments.find((s) => s.nodeId === first)).toMatchObject({ handoff: '上游说明', handoffSource: 'agent' })
   })
 
+  it('carries the run info of an ended auto visit as its reply metadata', () => {
+    const usage = { inputTokens: 900, outputTokens: 40, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    const execution = { agentName: 'dev', backend: 'codex', modelId: 'gpt-x' }
+    const c = normalizeRunChain({
+      runId: 'r1',
+      status: 'running',
+      segments: [
+        { nodeId: 'a', kind: 'agent', usage, execution, durationMs: 60000 },
+        { nodeId: 'b', kind: 'agent' },
+      ],
+    })
+    expect(c.segments[0]!.reply).toEqual({ usage, usageByModel: undefined, execution, durationMs: 60000 })
+    expect(c.segments[1]!.reply).toBeUndefined()
+  })
+
   it('keeps each visit\'s boot and seeds the boot records from it', () => {
     clearBootRecords()
     const c = normalizeRunChain({

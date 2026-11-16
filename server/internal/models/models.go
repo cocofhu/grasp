@@ -342,10 +342,13 @@ type StateRun struct {
 	// ACP_BRIDGE_MODEL fill. nil = not reported by model; the token ledger
 	// attributes Usage not covered by a bucket to「未知/未分桶」.
 	UsageByModel TokenUsageByModel `gorm:"serializer:json" json:"usageByModel,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	Attempt      int               `json:"attempt"`
-	StartedAt    *time.Time        `json:"startedAt,omitempty"`
-	DurationSec  int               `json:"durationSec"`
+	// Execution is the CLI route an automatic run used, frozen from its ACP
+	// connection. nil for non-Agent nodes and rows written before it existed.
+	Execution   *ChatExecution `gorm:"serializer:json" json:"execution,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	Attempt     int            `json:"attempt"`
+	StartedAt   *time.Time     `json:"startedAt,omitempty"`
+	DurationSec int            `json:"durationSec"`
 	// Mode is auto (default) or manual. A user takeover flips this visit to
 	// manual for good: the same (run, node, iteration) never returns to auto.
 	// Empty is treated as auto for rows that predate the column.
@@ -539,12 +542,9 @@ type ReactMessage struct {
 	Outcome string `json:"outcome,omitempty"`
 	// Error is the failure detail when Outcome is failed.
 	Error string `json:"error,omitempty"`
-	// Metadata belongs to this reply only; visit-wide StateRun totals must
-	// never be copied onto every historical assistant message.
-	Execution    *ChatExecution    `json:"execution,omitempty"`
-	Usage        *TokenUsage       `json:"usage,omitempty"`
-	UsageByModel TokenUsageByModel `json:"usageByModel,omitempty"`
-	DurationMs   int64             `json:"durationMs,omitempty"`
+	// ReplyMetadata belongs to this reply only; visit-wide StateRun totals
+	// must never be copied onto every historical assistant message.
+	ReplyMetadata
 	// Images are optional base64 attachments the human sent with this turn.
 	// Persisted so the run detail can re-render thumbnails after a refresh.
 	Images []PromptImage `json:"images,omitempty"`

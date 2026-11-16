@@ -304,6 +304,9 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 		if s.Usage != nil {
 			nr["usage"] = s.Usage
 		}
+		if s.Execution != nil {
+			nr["execution"] = s.Execution
+		}
 		if s.Error != "" {
 			nr["error"] = s.Error
 		}

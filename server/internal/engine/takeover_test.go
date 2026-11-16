@@ -172,6 +172,8 @@ func takeoverFrames(frames []map[string]any) []map[string]any {
 // advance finishes the node through the review path.
 func TestTakeoverRunningAutoNodeBecomesManual(t *testing.T) {
 	env := setupTakeoverEngine(t, takeoverPlainGraph(capsPlain))
+	env.provider.agentUsage = &models.TokenUsage{InputTokens: 70, OutputTokens: 9}
+	env.provider.agentExecution = &models.ChatExecution{AgentName: "dev", Backend: "codex", ModelID: "gpt-x"}
 	run, err := env.eng.StartRun("wf", nil, "test")
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -209,6 +211,12 @@ func TestTakeoverRunningAutoNodeBecomesManual(t *testing.T) {
 	// The opening turn continues the auto phase's timeline.
 	if evs := conv.Messages[0].Events; len(evs) != 3 || evs[0].Kind != "thought" || evs[1].Kind != "tool_call" {
 		t.Fatalf("opening turn must carry the auto-phase events: %+v", evs)
+	}
+	if m := conv.Messages[0].ReplyMetadata; m.Usage == nil || m.Usage.InputTokens != 70 || m.Execution == nil || m.Execution.ModelID != "gpt-x" {
+		t.Fatalf("opening turn must report the auto phase's run info: %+v", m)
+	}
+	if sr.Execution == nil || sr.Execution.AgentName != "dev" {
+		t.Fatalf("taken-over visit must keep its execution: %+v", sr.Execution)
 	}
 	env.provider.mu.Lock()
 	parks, calls := env.provider.takeoverParks, env.provider.runAgentCalls["impl"]

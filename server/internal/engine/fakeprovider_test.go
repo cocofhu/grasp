@@ -168,6 +168,8 @@ type fakeProvider struct {
 	agentUsage *models.TokenUsage
 	// agentUsageByModel (test-only): per-model breakdown paired with agentUsage.
 	agentUsageByModel models.TokenUsageByModel
+	// agentExecution (test-only): the route RunAgent reports for its run.
+	agentExecution *models.ChatExecution
 	// reviseUsage (test-only): when set, ReviseInPlace returns this Usage delta
 	// so flushTokenUsage on review/gate-react revise turns can be asserted.
 	reviseUsage *models.TokenUsage
@@ -362,11 +364,12 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 			if errors.Is(context.Cause(ctx), runtime.ErrNodeTakenOver) {
 				f.mu.Lock()
 				f.takeoverParks++
+				usage, execution := models.CloneTokenUsage(f.agentUsage), f.agentExecution
 				f.mu.Unlock()
 				return runtime.NodeResult{OutputMd: "partial narration", Events: []models.AcpEvent{
 					{Kind: "thought", Text: "auto thinking"},
 					{Kind: "tool_call", Title: "edit main.go"},
-					{Kind: "message", Text: "partial narration"}}}, runtime.ErrNodeTakenOver
+					{Kind: "message", Text: "partial narration"}}, Usage: usage, Execution: execution}, runtime.ErrNodeTakenOver
 			}
 			return runtime.NodeResult{}, ctx.Err()
 		}
@@ -414,8 +417,9 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 	f.mu.Lock()
 	usage := models.CloneTokenUsage(f.agentUsage)
 	byModel := models.CloneTokenUsageByModel(f.agentUsageByModel)
+	execution := f.agentExecution
 	f.mu.Unlock()
-	return runtime.NodeResult{OutputMd: content, Outputs: out, Usage: usage, UsageByModel: byModel}, nil
+	return runtime.NodeResult{OutputMd: content, Outputs: out, Usage: usage, UsageByModel: byModel, Execution: execution}, nil
 }
 
 // fakeStructured returns the artifact name and a minimal valid body for a
