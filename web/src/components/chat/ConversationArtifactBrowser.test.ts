@@ -58,7 +58,7 @@ describe('ConversationArtifactBrowser', () => {
     expect(w.find('[data-testid="preview"]').exists()).toBe(false)
     expect(w.find('[data-artifact-id="art-a"]').exists()).toBe(true)
   })
-  it('matches the filename case accepted by PM citation validation', async () => {
+  it('matches filenames case-insensitively', async () => {
     const w = mountBrowser({ name: 'PLAN.JSON' })
     await flushPromises()
     expect(w.findAll('[data-artifact-id]')).toHaveLength(2)

@@ -72,7 +72,7 @@ const { user } = useAuth()
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
 const WINDOWS: TokenStatsWindow[] = ['24h', '7d', '30d', '90d', 'all']
-const SOURCES: TokenSourceFilter[] = ['all', 'workflow', 'pm', 'studio', 'solo']
+const SOURCES: TokenSourceFilter[] = ['all', 'workflow', 'studio', 'solo']
 
 const filters = ref<TokenStatsFilters>(defaultTokenStatsFilters())
 const lineMode = ref<TrendMode>('total')
@@ -207,7 +207,6 @@ const pieSlices = computed(() => {
     ? d.sources
     : [
         { key: 'workflow', name: 'workflow', total: d.kpi.workflowTotal },
-        { key: 'pm', name: 'pm', total: d.kpi.pmTotal },
         { key: 'studio', name: 'studio', total: d.kpi.studioTotal || 0 },
         { key: 'solo', name: 'solo', total: d.kpi.soloTotal || 0 },
       ]
@@ -276,7 +275,6 @@ function partsOf(row: { inputTokens?: number; outputTokens?: number; cacheReadTo
 
 function workflowDrill(w: TokenStatsWorkflow): DrillTarget | undefined {
   if (w.other) return undefined
-  if (w.kind === 'pm') return { dim: 'source', key: 'pm', name: sourceLabel(t, 'pm') }
   return w.workflowId ? { dim: 'workflow', key: w.workflowId, name: w.name } : undefined
 }
 
@@ -1213,7 +1211,7 @@ const fxCount = computed(() => fxChips.value.length)
                           <td class="border-b border-line/60 py-1.5">
                             <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
                               <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: w.other ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
-                              <span class="min-w-0 truncate" :class="w.other ? 'text-txt3' : ''" :title="w.name">{{ w.kind === 'pm' ? sourceName('pm') : w.name }}</span>
+                              <span class="min-w-0 truncate" :class="w.other ? 'text-txt3' : ''" :title="w.name">{{ w.name }}</span>
                             </div>
                           </td>
                           <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(w.total)">{{ fmtCompactTokenCount(w.total) }}</td>

@@ -142,7 +142,7 @@ func TestPlatformStatus_allLedgerSources(t *testing.T) {
 		{name: "solo_only", sources: []string{models.TokenLedgerSourceSolo}, units: 1},
 		{name: "studio_only", sources: []string{models.TokenLedgerSourceStudio}, units: 1},
 		{name: "all_sources", sources: []string{
-			models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM,
+			models.TokenLedgerSourceWorkflow,
 			models.TokenLedgerSourceSolo, models.TokenLedgerSourceStudio,
 		}, units: 1},
 		{name: "solo_reported_zero", sources: []string{models.TokenLedgerSourceSolo}},
@@ -188,8 +188,8 @@ func TestPlatformStatus_allLedgerSources(t *testing.T) {
 			}
 			if len(tc.sources) == 1 {
 				breakdown := workspace.TokenBreakdown()
-				if breakdown.Workflow != nil || breakdown.PM != nil {
-					t.Fatalf("Solo/Studio usage must not enter workflow or PM subtotals: %+v", breakdown)
+				if breakdown.Workflow != nil {
+					t.Fatalf("Solo/Studio usage must not enter the workflow subtotal: %+v", breakdown)
 				}
 			}
 			global, err := workspace.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{

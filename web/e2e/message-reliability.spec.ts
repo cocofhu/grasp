@@ -8,7 +8,6 @@ type HarnessSocket = {
 type HarnessWindow = Window & {
   __reliabilitySockets: HarnessSocket[]
   __studioEvents: Record<string, unknown>[]
-  __pmExternal: boolean
 }
 
 async function openHarness(page: Page) {
@@ -139,18 +138,4 @@ test('Studio 断线期间完成后由事件历史与 idle 重连恢复且不重�
   await expect(studio.getByText('partial more final', { exact: true })).toHaveCount(1)
   await expect(studio.locator('[data-chat-anchor="question:srv-1"]')).toHaveCount(1)
   await expect(studio.getByText('正在生成…', { exact: true })).toHaveCount(0)
-})
-
-test('PM 冷启动收到 idle 后有界重读持久历史并恢复外部最终消息', async ({ page }) => {
-  await openHarness(page)
-  const pm = page.getByTestId('pm-race')
-  await expect(pm.getByTestId('pm-reconciled-message')).toHaveCount(2)
-  await expect.poll(() => socketCount(page, '/workspace/pm/threads/thr-race/chat')).toBe(1)
-  await page.evaluate(() => { (window as HarnessWindow).__pmExternal = true })
-  await emitSocket(page, '/workspace/pm/threads/thr-race/chat', 0, {
-    type: 'session', event: 'queue_state', busy: false, items: [],
-  })
-  await expect(pm.getByTestId('pm-reconciled-message')).toHaveCount(4)
-  await expect(pm.locator('[data-message-id="a-new"]')).toHaveText('断线期间的最终回答')
-  await expect(pm.locator('[data-message-id="u-new"]')).toHaveCount(1)
 })

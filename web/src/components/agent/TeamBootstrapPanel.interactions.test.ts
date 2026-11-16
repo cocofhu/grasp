@@ -72,12 +72,12 @@ describe('TeamBootstrapPanel interactions', () => {
           { kind: 'mcp', message: 'mcp setup' },
           { kind: 'plain', message: 'plain' },
         ],
-        resources: [{ name: 'PM', kind: 'agent', detail: 'lead' }],
+        resources: [{ name: 'Clarify', kind: 'agent', detail: 'lead' }],
       }))
       .mockResolvedValueOnce(session('ready', {
-        pmAgent: 'PM',
-        agentNames: ['PM', 'Dev'],
-        resources: [{ name: 'PM', kind: 'agent' }],
+        prefix: 'Luna',
+        agentNames: ['Clarify', 'Dev'],
+        resources: [{ name: 'Clarify', kind: 'agent' }],
       }))
     const w = mountPanel()
     await flushPromises()
@@ -88,12 +88,10 @@ describe('TeamBootstrapPanel interactions', () => {
 
     await vi.advanceTimersByTimeAsync(800)
     await flushPromises()
-    expect(w.emitted('selectPm')?.[0]).toEqual(['PM'])
-    const buttons = w.findAll('button')
-    await buttons.find((b) => b.text().includes('打开'))!.trigger('click')
-    await buttons.find((b) => b.text().includes('完成'))!.trigger('click')
-    expect(w.emitted('openPm')?.[0]).toEqual(['PM'])
-    expect(w.emitted('done')).toBeTruthy()
+    expect(w.text()).toContain('Luna')
+    expect(w.findAll('button').some((b) => b.text().includes('打开'))).toBe(false)
+    await w.findAll('button').find((b) => b.text().includes('完成'))!.trigger('click')
+    expect(w.emitted('done')?.[0]).toEqual(['Clarify'])
 
     await vi.advanceTimersByTimeAsync(1600)
     expect(mocks.get).toHaveBeenCalledTimes(2)
@@ -149,31 +147,6 @@ describe('TeamBootstrapPanel interactions', () => {
     expect((w.vm as any).lineClass('err')).toBe('text-err')
     expect((w.vm as any).lineClass('warn')).toBe('text-warn')
     expect((w.vm as any).lineClass('mcp')).toBe('mcp-block')
-    w.unmount()
-  })
-
-  it('shows pulling loading copy while sandboxStatus is pulling (g3.3)', async () => {
-    mocks.get.mockResolvedValueOnce(session('running', {
-      sandboxStatus: 'pulling',
-      events: [{ kind: 'sys', message: 'pulling runtime image…' }],
-      resources: [],
-    }))
-    const w = mountPanel()
-    await flushPromises()
-    expect(w.text()).toContain('正在拉取镜像')
-    expect(w.find('[data-testid="team-bootstrap-pulling"]').exists()).toBe(true)
-    expect(w.find('[data-testid="team-bootstrap-pulling"]').text()).toContain('运行时镜像')
-    w.unmount()
-  })
-
-  it('shows pulling badge when session status is pulling', async () => {
-    mocks.get.mockResolvedValueOnce(session('pulling', {
-      events: [{ kind: 'sys', message: 'pulling runtime image…' }],
-    }))
-    const w = mountPanel()
-    await flushPromises()
-    expect(w.text()).toContain('正在拉取镜像…')
-    expect(w.find('[data-testid="team-bootstrap-pulling"]').exists()).toBe(true)
     w.unmount()
   })
 })

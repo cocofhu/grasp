@@ -130,7 +130,7 @@ func clarifyImplementGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "clarify", Type: "agent", Label: "需求澄清", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm", "prompt": "澄清"}},
+			{ID: "clarify", Type: "agent", Label: "需求澄清", Caps: capsClarify, Config: map[string]any{"agent_profile": "planner", "prompt": "澄清"}},
 			{ID: "impl", Type: "agent", Label: "实现", Caps: capsImplement, Config: map[string]any{"agent_profile": "dev", "prompt": "实现"}},
 			{ID: "output", Type: "output"},
 		},

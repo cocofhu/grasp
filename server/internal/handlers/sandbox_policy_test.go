@@ -12,7 +12,7 @@ import (
 func TestCapacityEndpointCountsAllPurposesAndUncertainCleanup(t *testing.T) {
 	h := newHarness(t)
 	for i, status := range []string{"creating", "running", "saving", "error", "stopped"} {
-		row := models.Sandbox{Name: status, Status: status, Purpose: []string{"test", "solo", "run", "agent", "solo"}[i]}
+		row := models.Sandbox{Name: status, Status: status, Purpose: []string{"test", "solo", "run", "test", "solo"}[i]}
 		if err := h.db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}

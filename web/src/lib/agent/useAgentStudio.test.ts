@@ -157,7 +157,6 @@ describe('useAgentStudio', () => {
     expect(studio.showSidebarSheet.value).toBe(true)
     studio.closeSidebarSheet()
     expect(studio.showSidebarSheet.value).toBe(false)
-    studio.onDataSubTab('memory')
     studio.requestStudioTab('mcp')
     studio.leaveConfirmCancel()
     studio.openSettingsInFiles()
@@ -174,9 +173,8 @@ describe('useAgentStudio', () => {
       resources: [],
       createdAt: '2026-01-01T00:00:00Z',
     })
-    studio.onTeamBootstrapSelectPm('agent-a')
-    studio.onTeamBootstrapOpenPm('agent-a')
     await studio.onTeamBootstrapRefresh()
+    studio.onTeamBootstrapDone('agent-a')
     studio.onTeamBootstrapDone()
     await studio.load()
     await studio.save()

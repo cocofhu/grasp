@@ -1,14 +1,12 @@
 import type { MCPServer } from '@/lib/api/api'
-import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
 import { kvToRec, type WizardKV, type WizardMCP } from '@/lib/agent/agentCreateWizard'
 import { stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 
-export type TeamWizardStepId = 'team' | 'model' | 'repo' | 'mcp' | 'env' | 'review'
+export type TeamWizardStepId = 'team' | 'model' | 'mcp' | 'env' | 'review'
 type TeamWizardStepDef = { id: TeamWizardStepId; labelKey: string; skip: boolean }
 export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
   { id: 'team', labelKey: 'pages.agentStudio.teamWizard.steps.team', skip: false },
   { id: 'model', labelKey: 'pages.agentStudio.wizard.steps.apiKey', skip: false },
-  { id: 'repo', labelKey: 'pages.agentStudio.teamWizard.steps.repo', skip: true },
   { id: 'mcp', labelKey: 'pages.agentStudio.teamWizard.steps.mcp', skip: true },
   { id: 'env', labelKey: 'pages.agentStudio.teamWizard.steps.env', skip: true },
   { id: 'review', labelKey: 'pages.agentStudio.teamWizard.steps.review', skip: false },
@@ -18,11 +16,8 @@ export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
 export const TEAM_ENGINEER_COUNT = 4
 
 export type TeamWizardDraft = {
-  step: number; teamName: string; prefix: string; pmName: string; background: string
-  prefixTouched: boolean; pmTouched: boolean
+  step: number; teamName: string; prefix: string; prefixTouched: boolean
   modelConfigurationId: string; modelConfigurationIds?: string[]
-  /** Registered repository the PM sandbox clones; empty starts an empty workspace. */
-  repoId: string
   env: WizardKV[]; mcp: WizardMCP[]; skipped: Partial<Record<TeamWizardStepId, boolean>>
 }
 
@@ -39,24 +34,16 @@ export function artifactStorePreset(): WizardMCP {
 }
 
 export function freshTeamDraft(): TeamWizardDraft {
-  return { step: 0, teamName: '', prefix: '', pmName: '', background: '', prefixTouched: false, pmTouched: false, modelConfigurationId: '', repoId: '', env: [], mcp: [artifactStorePreset()], skipped: {} }
+  return { step: 0, teamName: '', prefix: '', prefixTouched: false, modelConfigurationId: '', env: [], mcp: [artifactStorePreset()], skipped: {} }
 }
 
 export function syncDerivedNames(d: TeamWizardDraft) {
-  const base = (d.prefixTouched ? d.prefix : d.teamName).trim() || d.teamName.trim()
   if (!d.prefixTouched) d.prefix = d.teamName.trim()
-  if (!d.pmTouched) d.pmName = base ? `${base}项目经理` : ''
 }
 
-export function validateTeamBasics(d: TeamWizardDraft, existingNames: string[]): string {
+export function validateTeamBasics(d: TeamWizardDraft): string {
   if (!d.teamName.trim()) return 'teamNameRequired'
   if (!d.prefix.trim()) return 'prefixRequired'
-  if (!d.background.trim()) return 'backgroundRequired'
-  const code = validateAgentName(d.pmName)
-  if (code === 'required') return 'pmRequired'
-  if (code === 'invalid') return 'pmInvalid'
-  const normalized = normalizeAgentName(d.pmName)
-  if (existingNames.some((n) => normalizeAgentName(n) === normalized)) return 'pmExists'
   return ''
 }
 
@@ -80,10 +67,10 @@ function mcpToApi(m: WizardMCP): MCPServer {
 }
 
 type TeamBootstrapPayload = {
-  prefix: string; pmName: string; background: string; modelConfigurationId: string; modelConfigurationIds?: string[]
-  repoId?: string; mcp: MCPServer[]; env: Record<string, string>
+  prefix: string; modelConfigurationId: string; modelConfigurationIds?: string[]
+  mcp: MCPServer[]; env: Record<string, string>
 }
 export function assembleTeamBootstrapPayload(draft: TeamWizardDraft): TeamBootstrapPayload {
-  return { prefix: draft.prefix.trim(), pmName: normalizeAgentName(draft.pmName), background: draft.background.trim(), modelConfigurationId: draft.modelConfigurationId, ...(draft.modelConfigurationIds ? { modelConfigurationIds: [...draft.modelConfigurationIds] } : {}), ...(draft.repoId ? { repoId: draft.repoId } : {}), mcp: draft.mcp.filter((row) => row.name.trim()).map(mcpToApi), env: stripSecretKeysFromRecord(kvToRec(draft.env)) }
+  return { prefix: draft.prefix.trim(), modelConfigurationId: draft.modelConfigurationId, ...(draft.modelConfigurationIds ? { modelConfigurationIds: [...draft.modelConfigurationIds] } : {}), mcp: draft.mcp.filter((row) => row.name.trim()).map(mcpToApi), env: stripSecretKeysFromRecord(kvToRec(draft.env)) }
 }
 export function teamHasAuth(draft: TeamWizardDraft): boolean { return !!draft.modelConfigurationId }

@@ -5,7 +5,6 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toValue, ty
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
-import type { DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import { api, type Agent, type WorkspaceAgentsImportResult, type TeamBootstrapSession } from '@/lib/api/api'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
@@ -19,19 +18,15 @@ import {
   type AgentStudioDraft as Draft,
 } from '@/lib/agent/agentStudioDraft'
 import { capabilityIssueKey, validateCapabilities } from '@/lib/workflow/agentCapabilities'
-import { isProtectedOnboardingAgentName } from '@/lib/pm/onboardingWizard'
+import { isProtectedOnboardingAgentName } from '@/lib/onboarding/onboardingWizard'
 
-type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'data' | 'test'
-const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'capabilities', 'meta', 'data', 'test']
+type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'test'
+const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'capabilities', 'meta', 'test']
 
 function isStudioTab(q: unknown): q is StudioTab {
   return typeof q === 'string' && (STUDIO_TABS as readonly string[]).includes(q)
 }
 
-function parseDataSub(q: unknown): DataSubTab {
-  if (q === 'context' || q === 'memory') return q
-  return 'memory'
-}
 
 
 export function useAgentStudio(opts?: {
@@ -96,7 +91,6 @@ const activeName = ref('')
 const draft = ref<Draft | null>(null)
 const originalJson = ref('')
 const tab = ref<StudioTab>('files')
-const dataSubTab = ref<DataSubTab>('memory')
 /** Skip one URL write while applying deep-link query on load. */
 let applyingStudioQuery = false
 
@@ -111,24 +105,19 @@ function syncStudioQuery() {
   if (tab.value !== 'files') next.studioTab = tab.value
   else delete next.studioTab
 
-  if (tab.value === 'data') next.sub = dataSubTab.value
-  else if (useStudioTabKey) delete next.sub
 
   const curAgent = typeof route.query.agent === 'string' ? route.query.agent : ''
   const curTab = typeof route.query.studioTab === 'string' ? route.query.studioTab : ''
-  const curSub = typeof route.query.sub === 'string' ? route.query.sub : ''
   const nextTab = typeof next.studioTab === 'string' ? next.studioTab : ''
   if (
     curAgent === (typeof next.agent === 'string' ? next.agent : '') &&
-    curTab === nextTab &&
-    curSub === (typeof next.sub === 'string' ? next.sub : '')
+    curTab === nextTab
   ) {
     return
   }
   void router.replace({ query: next as typeof route.query })
 }
 
-const draftBindingDirty = computed(() => false)
 const loading = ref(true)
 const hasInitialLoaded = ref(false)
 const loadFailed = ref(false)
@@ -309,7 +298,6 @@ const studioTabs = computed(() => {
     { k: 'mcp' as const, l: t('pages.agentStudio.tabs.mcp'), n: d.mcp.length },
     { k: 'env' as const, l: t('pages.agentStudio.tabs.env'), n: d.env.filter((e) => !isManagedRegionKey(e.k)).length },
     { k: 'capabilities' as const, l: t('pages.agentStudio.tabs.capabilities') },
-    { k: 'data' as const, l: t('pages.agentStudio.tabs.data') },
     { k: 'meta' as const, l: t('pages.agentStudio.tabs.meta') },
     { k: 'test' as const, l: t('pages.agentStudio.tabs.test') },
   ]
@@ -383,11 +371,6 @@ function requestStudioTab(next: StudioTab) {
   syncStudioQuery()
 }
 
-function onDataSubTab(next: DataSubTab) {
-  dataSubTab.value = next
-  syncStudioQuery()
-}
-
 async function leaveConfirmSave() {
   const c = leaveConfirmCfg.value
   if (!c) return
@@ -427,9 +410,8 @@ async function load() {
     try {
       const qAgent = typeof route.query.agent === 'string' ? route.query.agent.trim() : ''
       const qTab = isStudioTab(route.query.studioTab) ? route.query.studioTab : null
-      const qSub = parseDataSub(route.query.sub)
       if (qAgent && agents.value.some((a) => a.name === qAgent)) {
-        select(qAgent, { tab: qTab || 'files', dataSub: qSub, skipQuerySync: true })
+        select(qAgent, { tab: qTab || 'files', skipQuerySync: true })
       } else if (!activeName.value) {
         selectFirstAgent({ skipQuerySync: true })
       }
@@ -454,7 +436,7 @@ async function load() {
 
 function select(
   name: string,
-  opts?: { tab?: StudioTab; dataSub?: DataSubTab; skipQuerySync?: boolean },
+  opts?: { tab?: StudioTab; skipQuerySync?: boolean },
 ) {
   const a = agents.value.find((x) => x.name === name)
   if (!a) return
@@ -463,8 +445,6 @@ function select(
   originalJson.value = draftPayloadJson(loaded)
   draft.value = loaded
   tab.value = opts?.tab || 'files'
-  if (opts?.dataSub) dataSubTab.value = opts.dataSub
-  else if (!opts?.tab || opts.tab !== 'data') dataSubTab.value = 'memory'
   filesStep.value = 'list'
   justSaved.value = false
   leaveConfirmCfg.value = null
@@ -472,9 +452,9 @@ function select(
   if (!opts?.skipQuerySync) syncStudioQuery()
 }
 
-/** User-initiated switch: the next Agent opens on the same tab (and data sub-tab). */
+/** User-initiated switch: the next Agent opens on the same tab. */
 function selectKeepingTab(name: string) {
-  select(name, { tab: tab.value, dataSub: dataSubTab.value })
+  select(name, { tab: tab.value })
 }
 
 // guard agent switches when there are unsaved changes
@@ -722,20 +702,11 @@ async function onTeamBootstrapRefresh() {
   await Promise.all([refreshWorkspace(), refreshAgentsList()])
 }
 
-function onTeamBootstrapSelectPm(name: string) {
-  void select(name)
-}
-
-function onTeamBootstrapOpenPm(name: string) {
-  teamBootstrapSessionId.value = ''
-  void select(name)
-}
-
-function onTeamBootstrapDone() {
-  const pm = agents.value.find((a) => a.name.includes('项目经理'))?.name || agents.value[0]?.name
+function onTeamBootstrapDone(name?: string) {
   teamBootstrapSessionId.value = ''
   void onTeamBootstrapRefresh().then(() => {
-    if (pm) void select(pm)
+    const target = name || agents.value[0]?.name
+    if (target) void select(target)
   })
 }
 
@@ -958,9 +929,7 @@ onBeforeUnmount(() => {
   draft,
   originalJson,
   tab,
-  dataSubTab,
   syncStudioQuery,
-  draftBindingDirty,
   loading,
   hasInitialLoaded,
   loadFailed,
@@ -1011,7 +980,6 @@ onBeforeUnmount(() => {
   openSettingsInFiles,
   discardUnsavedChanges,
   requestStudioTab,
-  onDataSubTab,
   leaveConfirmSave,
   leaveConfirmDiscard,
   leaveConfirmCancel,
@@ -1042,8 +1010,6 @@ onBeforeUnmount(() => {
   onTeamBootstrapStarted,
   refreshAgentsList,
   onTeamBootstrapRefresh,
-  onTeamBootstrapSelectPm,
-  onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
   openRenameAgent,
   confirmDeleteAgent,

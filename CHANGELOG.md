@@ -6,11 +6,14 @@ All notable public-release changes are documented here.
 
 - Solo 会话里 Agent 提出的选择题和表单改为与工作流对话相同的卡片：一次一题、带进度和「上一题 / 下一个」、整行选项、「采用推荐」，不再把所有题目挤成一排小标签。与工作流一样，「其他」需要勾选后填写的内容才会随答案发送。
 
-- 移除定时任务、全部 IM 渠道和运行通知，产品聚焦工作流与云端 Agent（破坏性变更）：
-  - 定时任务：删除设置里的「定时任务」页、Agent Studio 数据页的「定时任务」子 Tab、`cron-jobs` 接口和 `task-scheduler` MCP。各 Agent 配置里的 `task-scheduler` MCP 会在启动时自动去掉。
-  - IM 渠道：删除 QQ、企业微信、飞书、钉钉接入，包括工作区助手设置里的渠道面板、`/api/workspace/channels` 接口和沙箱自带的 QQ 机器人（`/api/qq/config`）。
-  - 运行通知：删除「通知策略」设置页、工作流列表的通知列、`PATCH /api/workflows/:id/notify-policy` 和 `/api/workspace/notify-receipts`；`GET/PUT /api/workspace` 和工作流不再有 `notifyPolicy` 字段。
-  - 升级后首次启动会删除定时任务、渠道配置、通知回执和通知策略数据，以及定时任务和 IM 渠道产生的会话记录。
+- 移除「工作区助手」「助手设置」「外部 MCP」「通知策略」「Channel 接入」「定时任务」和 Agent 记忆，产品聚焦云端 Agent 与工作流（破坏性变更）：
+  - 删除助手对话页、助手设置页、外部 MCP 页、通知策略页、Channel 接入页、定时任务页和 Agent Studio 的「数据」标签页，以及 `/api/workspace/pm-leader`、`/api/workspace/pm/*`、`/api/workspace/external-mcp*`、`/api/workspace/channels*`、`/api/workspace/cron-jobs*`、`/api/workspace/notify-receipts`、`/api/workflows/:id/notify-policy`、Agent 的 `memories`/`threads`/`cron-jobs` 接口，以及 `/mcp/pm/*`、`/mcp/workspace*`、`/mcp/memory-store`、`/mcp/context-store`、`/mcp/task-scheduler`。已签发的工作区 MCP Key 随之失效。
+  - QQ / 企业微信 / 飞书 / 钉钉渠道不再收发消息，运行等待人工、失败或完成时不再外发通知。站内通知不受影响。
+  - 工作区和工作流去掉 `notifyPolicy`，工作流默认设置去掉通知与「门禁自动调用助手」（`gateAuto`），运行触发方式去掉 `pm_mcp`。Agent 配置里已删除的平台 MCP（`memory-store`、`context-store`、`task-scheduler`、`pm-*`）不再注入。
+  - 「创建团队」只创建工程师，不再创建 PM，也不再选择仓库或填写背景。内置角色包去掉 `PMAgent`。
+  - 旧地址 `/assistant`、`/settings/assistant`、`/settings/external-mcp`、`/settings/channels`、`/settings/schedules`、`/settings/notification-policy` 会回到首页。
+  - 升级后首次启动会清理数据库：删除上述功能的旧列与旧表（含渠道、Agent 会话、记忆、定时任务和通知回执），销毁遗留的 Agent 会话沙箱，并把旧取值改为新名字——审计调用者 `pm` 改为 `member`，历史运行的触发方式 `pm_mcp` 改为 `api`。
+  - 工作区助手和 Agent 会话产生的 Token 用量记录（来源 `pm`、`chat`）随之删除。接口去掉 `pmTokens`、`pmTotal` 和 `source=pm`。
 
 - 修复首页输入框弹出位置：「+」菜单现在出现在「+」按钮正下方，@ 引用面板像 IDE 补全一样在输入的 @ 旁边弹出（下方放不下时改到上方），不再落到整个输入框下面（手机端之前会离按钮很远或被键盘挡住）；窄屏下引用面板的标签不再折行。
 
@@ -71,7 +74,6 @@ All notable public-release changes are documented here.
 - 平台产物 MCP 的 token 改为跟随所属对象：工作流运行处于排队、运行或等待人工时有效，结束后失效，续跑后自动恢复；Solo 会话在启动、运行和停止中有效；测试沙箱在沙箱存在且未出错时有效。回收同一运行里的任何沙箱、重试和服务重启都不再让正在执行的节点断开 MCP；服务重启或请求落到其他副本时，`node_complete` 仍要求填写交接说明。运行结束后保留调试的沙箱仍可打开终端和 IDE，但不能再调用平台 MCP（#797）。
 
 - Cursor 模型列表与 Cursor CLI 2026.11.11 对齐：新增 Gemini 4 Carbon、Gemini 4 Hydrogen、Claude Fable 5.2（含 Fast 版）和 DeepSeek V4.1 Flash 1017 各档位；移除 CLI 已下线的 Gemini 3.6 Flash 与 Gemini 3.7 Flash。已选用这些旧模型的 Agent 仍会把原 ID 交给 CLI。
-
 
 - E2B 沙箱到达最长时长后改为暂停并保留内存快照，不再被直接销毁（网关 `e2b.autoPause`，默认开启）；续期被 E2B 时长上限截断时网关记录警告。Solo 终端和 IDE 打开时会自动恢复已暂停的沙箱，后台会清理已在 E2B 侧消失的沙箱；网关状态探测失败显示为「未知」，不再当作沙箱不存在（#1217）。
 

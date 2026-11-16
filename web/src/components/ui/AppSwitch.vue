@@ -2,7 +2,7 @@
 /**
  * Capsule accent switch (role=switch) — shared boolean control.
  * On: bg-accent track + white thumb on the right.
- * Off: border-line-strong / bg-base + thumb on the left (Pm enable semantics).
+ * Off: border-line-strong / bg-base + thumb on the left.
  * Callers pass aria-label / class / data-testid via attribute fallthrough.
  */
 const props = withDefaults(

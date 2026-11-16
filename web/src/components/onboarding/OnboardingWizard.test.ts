@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import OnboardingWizard from './OnboardingWizard.vue'
-import { isOnboardingSuppressed, shouldAutoOpenOnboarding } from '@/lib/pm/onboardingWizard'
+import { isOnboardingSuppressed, shouldAutoOpenOnboarding } from '@/lib/onboarding/onboardingWizard'
 
 const mocks = vi.hoisted(() => ({
   listModelConfigurations: vi.fn(),

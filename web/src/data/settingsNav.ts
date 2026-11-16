@@ -5,7 +5,6 @@ export type SettingsNavItem = SidebarNavItem & { exact?: boolean; query?: Record
 export const settingsNavItems: SettingsNavItem[] = [
   { to: '/board', icon: 'board', labelKey: 'nav.board', groupKey: 'nav.groupWorkspaceTools' },
   { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
-  { to: '/assistant', icon: 'chat', labelKey: 'nav.assistant' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
   { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
@@ -13,8 +12,6 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
   { to: '/settings/projects', icon: 'git', labelKey: 'nav.projects' },
   { to: '/settings/credentials', icon: 'key', labelKey: 'nav.credentials' },
-  { to: '/settings/assistant', icon: 'chat', labelKey: 'nav.assistantSettings' },
-  { to: '/settings/external-mcp', icon: 'connector', labelKey: 'nav.externalMcp' },
   { to: '/settings', icon: 'settings', labelKey: 'nav.general', exact: true, groupKey: 'nav.groupPlatform' },
   { to: '/settings', icon: 'integration', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
 ]

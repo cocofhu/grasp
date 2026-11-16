@@ -17,7 +17,7 @@ func clarifyOnlyGraph() models.Graph {
 	return models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
-			{ID: "predev", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "pm"}},
+			{ID: "predev", Type: "agent", Caps: capsClarify, Config: map[string]any{"agent_profile": "planner"}},
 			{ID: "output", Type: "output"},
 		},
 		Edges: []models.Edge{

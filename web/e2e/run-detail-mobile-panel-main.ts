@@ -53,8 +53,8 @@ function mkExec(
 
 const completedRun: Run = {
   id: 'run-62b03a1c',
-  workflowId: 'wf-pm',
-  workflowName: 'PM MCP',
+  workflowId: 'wf-mobile',
+  workflowName: 'Mobile panel',
   workflowVersion: 8,
   status: 'completed',
   trigger: 'manual',
@@ -122,7 +122,7 @@ const gateNodes: WFNode[] = [
 const gateRun: Run = {
   id: 'run-gate-panel',
   workflowId: 'wf-1',
-  workflowName: 'PM MCP',
+  workflowName: 'Mobile panel',
   workflowVersion: 8,
   status: 'waiting_human',
   trigger: 'manual',
@@ -174,7 +174,7 @@ const reviewNodes: WFNode[] = [
 const reviewRun: Run = {
   id: 'run-review-panel',
   workflowId: 'wf-1',
-  workflowName: 'PM MCP',
+  workflowName: 'Mobile panel',
   status: 'waiting_human',
   trigger: 'manual',
   startedAt: '2026-07-27T03:38:00Z',

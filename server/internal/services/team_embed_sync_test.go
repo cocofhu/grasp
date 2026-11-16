@@ -10,7 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-// TestTeamEmbedMatchesAgentsSource guards agents/ ↔ team_embed/ drift (PM + every engineer template).
+// TestTeamEmbedMatchesAgentsSource guards agents/ ↔ team_embed/ drift (every engineer template).
 func TestTeamEmbedMatchesAgentsSource(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -20,7 +20,7 @@ func TestTeamEmbedMatchesAgentsSource(t *testing.T) {
 	agentsRoot := filepath.Join(repoRoot, "agents")
 	embedRoot := filepath.Join(repoRoot, "server/internal/services/team_embed")
 
-	names := []string{services.TeamPMEmbedName}
+	var names []string
 	for _, r := range services.TeamEngineerTemplates {
 		names = append(names, r.EmbedName)
 	}

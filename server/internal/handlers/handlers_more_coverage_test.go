@@ -160,12 +160,3 @@ func TestListSandboxesAndEventLog(t *testing.T) {
 		t.Fatalf("bad id: %d %s", w.Code, w.Body.String())
 	}
 }
-
-func TestPmNilServicePaths(t *testing.T) {
-	hn := newHarness(t)
-	hn.h.Pm = nil
-	w := hn.do(http.MethodGet, "/api/workspace/pm/threads", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("nil pm list threads: %d", w.Code)
-	}
-}

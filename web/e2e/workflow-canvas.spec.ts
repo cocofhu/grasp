@@ -261,21 +261,16 @@ for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
     await page.getByRole('option', { name: '数字', exact: true }).click()
     await dialog.getByRole('spinbutton', { name: '默认值', exact: true }).fill('12')
 
-    const gate = page.getByTestId('workflow-gate-settings')
-    await gate.getByRole('switch').first().click()
-    await gate.getByRole('button', { name: '执行 Agent', exact: true }).click()
-    await page.getByRole('combobox', { name: '搜索…', exact: true }).fill('测试')
-    await page.getByRole('option', { name: '测试评审', exact: true }).click()
+    await expect(page.getByTestId('workflow-gate-settings')).toHaveCount(0)
     await expect(dialog.locator('select, input[type="checkbox"]')).toHaveCount(0)
-    await expect(gate.getByRole('button', { name: '执行 Agent', exact: true })).toContainText('测试评审')
     expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
     await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-expanded-${width}-${theme}.png` })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(() => store.wf.defaults).toMatchObject({
       repos: [{ projectId: 'p-web', branch: 'release' }],
       variables: [{ name: 'COUNT', type: 'number', value: 12 }],
-      gateAuto: { agentName: '测试评审', enabled: false },
     })
+    expect(store.wf.defaults).not.toHaveProperty('gateAuto')
   })
 }
 

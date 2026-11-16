@@ -4,7 +4,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 
 /**
  * Bounding-box acceptance for the workflow directory:
- * the status dot shares the column-title left edge.
+ * the status dot shares the column-title left edge in every row.
  */
 
 const MOCK_WORKSPACE = {
@@ -16,28 +16,9 @@ const MOCK_WORKSPACE = {
 }
 
 const MOCK_WORKFLOWS = [
-  {
-    id: 'wf-self',
-    name: 'Self Iter',
-    description: 'heavy description under the name',
-    status: 'published',
-    version: 2,
-    updatedAt: '2026-01-01T00:00:00Z',
-    needsRepo: false,
-    nodes: [],
-    edges: [],
-  },
-  {
-    id: 'wf-light',
-    name: 'Light',
-    description: 'draft with a description',
-    status: 'draft',
-    version: 1,
-    updatedAt: '2026-01-03T00:00:00Z',
-    needsRepo: false,
-    nodes: [],
-    edges: [],
-  },
+  { id: 'wf-self', name: 'Self Iter', description: 'heavy description under the name', status: 'published', version: 2, updatedAt: '2026-01-01T00:00:00Z', needsRepo: false, nodes: [], edges: [] },
+  { id: 'wf-light', name: 'Light', description: 'draft with a description', status: 'draft', version: 1, updatedAt: '2026-01-03T00:00:00Z', needsRepo: false, nodes: [], edges: [] },
+  { id: 'wf-plain', name: 'Plain', description: '', status: 'published', version: 1, updatedAt: '2026-01-04T00:00:00Z', needsRepo: false, nodes: [], edges: [] },
 ]
 
 async function setupHarness(page: Page) {
@@ -61,9 +42,6 @@ async function setupHarness(page: Page) {
       return
     }
     await route.continue()
-  })
-  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
-    await route.fulfill({ json: { enabled: false } })
   })
 }
 
@@ -103,35 +81,34 @@ async function openWorkflows(page: Page, query: string) {
 test.describe('workflow catalog column alignment', () => {
   test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 
-  test('zh desktop: status dots share the column title and distinguish draft from published', async ({ page }) => {
+  test('zh desktop: status dots share the title edge and draft differs from published', async ({ page }) => {
     await setupHarness(page)
     await openWorkflows(page, 'view=/workflows')
 
-    const statusHeader = page.locator('.workflow-directory thead th').nth(1)
-    await expect(statusHeader).toHaveText('状态')
-    const statusX = await textOriginX(statusHeader)
-
+    const headers = page.locator('.workflow-directory thead th')
+    await expect(headers.nth(1)).toHaveText('状态')
+    const statusX = await textOriginX(headers.nth(1))
     for (const rowSpec of [
       { id: 'wf-light', status: '草稿', published: false },
+      { id: 'wf-plain', status: '已发布', published: true },
       { id: 'wf-self', status: '已发布', published: true },
     ]) {
       const row = page.locator(`[data-workflow-id="${rowSpec.id}"]`)
-      const statusLabel = row.locator('.workflow-status-label')
-      await expect(statusLabel).toHaveText(rowSpec.status)
+      await expect(row.locator('.workflow-status-label')).toHaveText(rowSpec.status)
       within((await row.locator('.workflow-status-dot').boundingBox())!.x, statusX, `${rowSpec.status} dot left`)
       await expect(row.locator('.workflow-status')).toHaveAttribute('data-status', rowSpec.published ? 'published' : 'draft')
     }
+    await expect(page.locator('.workflow-notify-select')).toHaveCount(0)
     const draftDot = await page.locator('[data-workflow-id="wf-light"] .workflow-status-dot').evaluate((el) => getComputedStyle(el).backgroundColor)
-    const publishedDot = await page.locator('[data-workflow-id="wf-self"] .workflow-status-dot').evaluate((el) => getComputedStyle(el).backgroundColor)
+    const publishedDot = await page.locator('[data-workflow-id="wf-plain"] .workflow-status-dot').evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(draftDot).not.toBe(publishedDot)
-    await expect(page.locator('[data-workflow-id="wf-self"] .workflow-description')).toBeVisible()
   })
 
-  test('narrow grid keeps the name and status split', async ({ page }) => {
+  test('narrow grid keeps status beside the name and home visibility below', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 900, height: 800 })
     await page.goto('/workspace-config.html?view=/workflows')
-    const row = page.locator('[data-workflow-id="wf-self"]')
+    const row = page.locator('[data-workflow-id="wf-plain"]')
     await expect(row).toBeVisible({ timeout: 10_000 })
     await expect.poll(() => page.locator('.workflow-directory thead').evaluate((el) => getComputedStyle(el).display)).toBe('none')
 

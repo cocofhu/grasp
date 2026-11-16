@@ -107,6 +107,11 @@ type SoloEnvEntry struct {
 	Source string `json:"source"`
 }
 
+type soloChatter interface {
+	ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error)
+	Cancel(id uint)
+}
+
 // SoloService runs Solo sessions: one Agent, an optional project, a resident
 // sandbox and a FIFO of chat turns per session.
 type SoloService struct {
@@ -116,7 +121,7 @@ type SoloService struct {
 	sbx      *SandboxService
 	agents   *AgentService
 	projects *ProjectService
-	chat     pmChatter
+	chat     soloChatter
 	// modelAlign overrides the sandbox when tests need to record or fail a
 	// switch without calling the bridge. Nil uses the sandbox service.
 	modelAlign soloModelAligner
@@ -216,7 +221,7 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 func (s *SoloService) SetBlobStore(store blob.Store) { s.blobs = store }
 
 // SetChatterForTest replaces the sandbox chat backend.
-func (s *SoloService) SetChatterForTest(c pmChatter) { s.chat = c }
+func (s *SoloService) SetChatterForTest(c soloChatter) { s.chat = c }
 
 // SetModelAlignerForTest replaces the sandbox model switch.
 func (s *SoloService) SetModelAlignerForTest(a soloModelAligner) { s.modelAlign = a }

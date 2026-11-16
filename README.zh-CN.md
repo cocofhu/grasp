@@ -106,7 +106,7 @@ cd grasp
 
 ### 导入角色包
 
-`agents/` 目录提供了 5 个预置角色：PMAgent、ClarifyAgent、ImplementAgent、TestReviewAgent、DeliverAgent。
+`agents/` 目录提供了 4 个预置角色：ClarifyAgent、ImplementAgent、TestReviewAgent、DeliverAgent。
 
 ```bash
 ./agents/pack.sh               # 全部打包至 agents/dist/
@@ -136,7 +136,7 @@ flowchart LR
 仓库目录结构：
 
 - `web/`：Vue 3 + Vue Flow 前端（工作流画布、首页澄清、运行详情、收件箱、Agent Studio）
-- `server/`：Go 后端（FSM 引擎、HTTP API、SQLite、Artifact MCP、定时调度与审计）
+- `server/`：Go 后端（FSM 引擎、HTTP API、SQLite、Artifact MCP 与审计）
 - `sandbox-gateway/`：沙箱生命周期控制面（`gateway/`）与通用沙箱镜像及运行时（`sandbox/`）
 - `agents/`：可打包导入的预置角色工作区
 - `docs/`：项目主页与中英文帮助文档

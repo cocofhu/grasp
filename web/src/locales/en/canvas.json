@@ -297,8 +297,7 @@
         "save": "Save",
         "restore": "Restore",
         "restoredFrom": "Restored from v{n}",
-        "import": "Import",
-        "pm": "PM edit"
+        "import": "Import"
       },
       "previewing": "Previewing v{n} (read-only)",
       "restoreThis": "Restore this version",

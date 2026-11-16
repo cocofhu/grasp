@@ -41,13 +41,9 @@
     "backWorkspace": "Back to workspace",
     "groupWorkspaceTools": "Workspace tools",
     "groupExecution": "Execution",
-    "assistant": "Workspace assistant",
     "audit": "Audit",
     "sharedAgent": "Agent defaults",
     "credentials": "Credentials",
-    "assistantSettings": "Assistant settings",
-    "openAssistant": "Back to assistant",
-    "externalMcp": "External MCP",
     "searchWorkflows": "Search workflows",
     "noMatchingWorkflows": "No matching workflows",
     "projects": "Repositories"

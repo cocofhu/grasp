@@ -45,11 +45,6 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if err := hn.db.First(&stored, "id = ?", old.ID).Error; err != nil || stored.ValueEnc != ciphertext || stored.Purpose != "" {
 		t.Fatal("old encrypted data was changed")
 	}
-	hn.h.McpKeys = services.NewWorkspaceMcpApiKeyService(hn.db)
-	mcp, err := hn.h.McpKeys.Create("MCP service")
-	if err != nil {
-		t.Fatal(err)
-	}
 	workflow := models.WorkflowDef{ID: "credential-workflow", Name: "Workflow service"}
 	if err := hn.db.Create(&workflow).Error; err != nil {
 		t.Fatal(err)
@@ -62,7 +57,7 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if response.Code != http.StatusOK {
 		t.Fatalf("list=%d", response.Code)
 	}
-	if strings.Contains(response.Body.String(), old.ID) || strings.Contains(response.Body.String(), mcp.Plaintext) || strings.Contains(response.Body.String(), key.Plaintext) {
+	if strings.Contains(response.Body.String(), old.ID) || strings.Contains(response.Body.String(), key.Plaintext) {
 		t.Fatal("list exposed an old row or a service secret")
 	}
 	var listed struct {
@@ -71,7 +66,7 @@ func TestCredentialHTTPRequiresCurrentDomainAndPreservesServiceAdapters(t *testi
 	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"external_mcp:" + mcp.Key.ID: false, "workflow:" + key.Key.ID: false}
+	want := map[string]bool{"workflow:" + key.Key.ID: false}
 	for _, item := range listed.Items {
 		if _, ok := want[item.ID]; ok && item.Source != "workspace" && item.Configured {
 			want[item.ID] = true

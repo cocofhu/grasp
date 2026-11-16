@@ -29,7 +29,6 @@ type Stats struct {
 	Artifacts      int64  `json:"artifacts"`
 	TotalTokens    *int64 `json:"totalTokens"`
 	WorkflowTokens *int64 `json:"workflowTokens"`
-	PMTokens       *int64 `json:"pmTokens"`
 }
 
 // Compute returns the current stats (Run status counts + platform Token totals).
@@ -51,7 +50,6 @@ func (s *DashboardService) Compute() Stats {
 		bd := s.workspace.TokenBreakdown()
 		st.TotalTokens = bd.Total
 		st.WorkflowTokens = bd.Workflow
-		st.PMTokens = bd.PM
 	}
 	return st
 }

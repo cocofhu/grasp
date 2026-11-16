@@ -110,7 +110,7 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	s := NewCredentialService(db)
 	for _, in := range []CredentialInput{
 		{Purpose: "custom", Type: "custom", Name: "artifact", EnvKey: "GRASP_ARTIFACT_TOKEN", Value: "v"},
-		{Purpose: "custom", Type: "custom", Name: "pm", EnvKey: "GRASP_PM_TOKEN", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "artifact-url", EnvKey: "GRASP_ARTIFACT_URL", Value: "v"},
 		{Purpose: "custom", Type: "custom", Name: "root", EnvKey: "CONFIG_ROOT", Value: "v"},
 		{Purpose: "custom", Type: "custom", Name: "bad", EnvKey: "vars.repo_url", Value: "v"},
 		{Purpose: "custom", Type: "custom", Name: "bad-chars", EnvKey: "A-B", Value: "v"},
@@ -119,7 +119,7 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 			t.Fatalf("%s: want ErrCredentialEnvKey, got %v", in.Name, err)
 		}
 	}
-	for _, typ := range []string{"external_mcp", "workflow"} {
+	for _, typ := range []string{"workflow"} {
 		if _, err := s.Create(CredentialInput{Purpose: typ, Type: typ, Name: typ, EnvKey: "X", Value: "v"}); !errors.Is(err, ErrCredentialPurpose) {
 			t.Fatalf("%s: adapter type must not be creatable, got %v", typ, err)
 		}
@@ -128,7 +128,7 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(created.ID, CredentialInput{EnvKey: "GRASP_MEMORY_TOKEN"}); !errors.Is(err, ErrCredentialEnvKey) {
+	if _, err := s.Update(created.ID, CredentialInput{EnvKey: "GRASP_ARTIFACT_TOKEN"}); !errors.Is(err, ErrCredentialEnvKey) {
 		t.Fatalf("update to reserved key: got %v", err)
 	}
 }

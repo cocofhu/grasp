@@ -7,7 +7,6 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AgentSwitcher from '@/components/agent/AgentSwitcher.vue'
 import StudioTabStrip from '@/components/agent/StudioTabStrip.vue'
 import ResourceList from '@/components/ui/ResourceList.vue'
-import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
@@ -55,8 +54,6 @@ const {
   activeName,
   draft,
   tab,
-  dataSubTab,
-  draftBindingDirty,
   loading,
   loadFailed,
   loadDenied,
@@ -103,7 +100,6 @@ const {
   openSettingsInFiles,
   discardUnsavedChanges,
   requestStudioTab,
-  onDataSubTab,
   leaveConfirmSave,
   leaveConfirmDiscard,
   leaveConfirmCancel,
@@ -134,8 +130,6 @@ const {
   onWizardCreated,
   onTeamBootstrapStarted,
   onTeamBootstrapRefresh,
-  onTeamBootstrapSelectPm,
-  onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
   openRenameAgent,
   confirmDeleteAgent,
@@ -169,7 +163,6 @@ function agentQuery(): Record<string, string> {
   const q: Record<string, string> = {}
   if (activeName.value) q.agent = activeName.value
   if (tab.value !== 'files') q.studioTab = tab.value
-  if (tab.value === 'data') q.sub = dataSubTab.value
   return q
 }
 /** Defaults → Agent. The URL only changes once every confirm has passed. */
@@ -400,8 +393,6 @@ async function createStudioChatTest(
         <TeamBootstrapPanel
           class="min-h-0 min-w-0"
           :session-id="teamBootstrapSessionId"
-          @open-pm="onTeamBootstrapOpenPm"
-          @select-pm="onTeamBootstrapSelectPm"
           @done="onTeamBootstrapDone"
           @refresh="onTeamBootstrapRefresh"
         />
@@ -602,10 +593,10 @@ async function createStudioChatTest(
           @restored="reloadAgentFromServer(activeName)"
         />
 
-        <!-- narrow-screen: non-whitelist tabs show desktop-only tip (files+data+test allowed) -->
+        <!-- narrow-screen: non-whitelist tabs show desktop-only tip (files+test allowed) -->
         <Transition name="ui-fade" mode="out-in">
           <div
-            v-if="tab !== 'files' && isMobile && tab !== 'data' && tab !== 'test'"
+            v-if="tab !== 'files' && isMobile && tab !== 'test'"
             key="mobile-desktop-only"
             class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-5 py-8 text-center"
           >
@@ -648,18 +639,6 @@ async function createStudioChatTest(
             key="capabilities"
             :draft="draft"
           />
-
-          <!-- data: Agent-scoped memory / context management (whitelist on mobile) -->
-          <div v-else-if="tab === 'data' && draft" key="data" class="min-h-0 flex-1 overflow-hidden">
-          <div v-if="draftBindingDirty" class="border-b border-warn/30 bg-warn/10 px-4 py-2 text-[12px] text-warn">
-            {{ t('pages.agentStudio.data.unsavedBinding') }}
-          </div>
-          <AgentDataPanel
-            :agent-name="activeName"
-            :sub-tab="dataSubTab"
-            @update:sub-tab="onDataSubTab"
-          />
-          </div>
 
           <AgentMetaPanel
             v-else-if="tab === 'meta' && draft && !isMobile"
@@ -1003,7 +982,6 @@ async function createStudioChatTest(
     <CreateAgentTeamWizard
       v-if="!embedded"
       :open="showTeamWizard"
-      :existing-names="agents.map((a) => a.name)"
       @close="showTeamWizard = false"
       @started="onTeamBootstrapStarted"
     />

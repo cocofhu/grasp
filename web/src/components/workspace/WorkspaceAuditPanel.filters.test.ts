@@ -42,9 +42,9 @@ function ev(over: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: 'e1',
     occurredAt: '2026-01-01T00:00:00Z',
-    actor: 'pm',
+    actor: 'alice',
     unattributable: false,
-    callerKind: 'pm',
+    callerKind: 'member',
     action: 'mcp.call',
     resourceType: 'mcp',
     resourceId: 'tool',
@@ -400,7 +400,7 @@ describe('WorkspaceAuditPanel filters and grouping', () => {
     await flushPromises()
     expect(vm.nodeId).toBe('')
 
-    vm.callerKind = 'pm'
+    vm.callerKind = 'member'
     vm.clearChip('caller')
     expect(vm.callerKind).toBe('')
 
@@ -424,7 +424,7 @@ describe('WorkspaceAuditPanel filters and grouping', () => {
     const vm = w.vm as any
 
     vm.nodeId = 'n1'
-    vm.callerKind = 'pm'
+    vm.callerKind = 'member'
     vm.resource = 'mcp/tool'
     vm.search = 'x'
     vm.timeWindow = '30d'

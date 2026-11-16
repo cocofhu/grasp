@@ -21,7 +21,7 @@ func reviewGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "agent", Caps: capsResearch, Label: "调研", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "做调研"}},
+			{ID: "prop", Type: "agent", Caps: capsResearch, Label: "调研", Config: map[string]any{"agent_profile": "planner-agent", "prompt": "做调研"}},
 			{ID: "output", Type: "output", Label: "输出"},
 		},
 		Edges: []models.Edge{
@@ -319,7 +319,7 @@ func gateReactGraph() models.Graph {
 		},
 		Nodes: []models.Node{
 			{ID: "input", Type: "input", Label: "输入"},
-			{ID: "prop", Type: "agent", Caps: capsResearchAuto, Label: "调研", Config: map[string]any{"agent_profile": "pm-agent", "prompt": "做调研"}},
+			{ID: "prop", Type: "agent", Caps: capsResearchAuto, Label: "调研", Config: map[string]any{"agent_profile": "planner-agent", "prompt": "做调研"}},
 			{ID: "select", Type: "human_gate", Label: "确认", Config: map[string]any{
 				"title":         "确认调研",
 				"body_template": "{{nodes.prop.outputs.research}}",

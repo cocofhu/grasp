@@ -98,43 +98,13 @@ describe('AgentMcpPanel', () => {
     expect(d.mcp[0].name).toBe(ARTIFACT_STORE)
     expect(d.mcp[0].headers[0].k).toBe('Authorization')
     expect(w.find('[data-test="mcp-add-artifact"]').exists()).toBe(false)
+    expect(w.get('[data-test="mcp-display-name"]').text()).toBe('产物存储')
+    expect(w.find('[data-test="mcp-scope-note"]').exists()).toBe(true)
+    expect(w.find('[data-test="mcp-custom-name"]').exists()).toBe(false)
 
     // A direct second call is still a no-op.
     ;(w.vm as any).addArtifactStore()
     expect(d.mcp).toHaveLength(1)
-    w.unmount()
-  })
-
-  it('adds each platform MCP at most once', async () => {
-    const d = draft()
-    const w = mountPanel(d)
-    await flushPromises()
-
-    await w.get('[data-test="mcp-add-memory"]').trigger('click')
-    await w.get('[data-test="mcp-add-context"]').trigger('click')
-    await flushPromises()
-    expect(d.mcp.map((m) => m.name)).toEqual(['memory-store', 'context-store'])
-    expect(d.mcp[0].url).toBe('${GRASP_MEMORY_URL}')
-
-    await w.get('[data-test="mcp-add-memory"]').trigger('click')
-    await flushPromises()
-    expect(d.mcp).toHaveLength(2)
-    expect(w.emitted('toast')).toHaveLength(1)
-
-    // Preset cards render their friendly name plus a scope note.
-    expect(w.findAll('[data-test="mcp-display-name"]')).toHaveLength(2)
-    expect(w.findAll('[data-test="mcp-scope-note"]')).toHaveLength(2)
-    expect(w.find('[data-test="mcp-custom-name"]').exists()).toBe(false)
-    w.unmount()
-  })
-
-  it('ignores an unknown platform preset name', async () => {
-    const d = draft()
-    const w = mountPanel(d)
-    await flushPromises()
-    ;(w.vm as any).addAgentPlatformMcp('nope' as never)
-    expect(d.mcp).toHaveLength(0)
-    expect(w.emitted('toast')).toBeFalsy()
     w.unmount()
   })
 

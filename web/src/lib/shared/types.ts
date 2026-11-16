@@ -59,7 +59,6 @@ export interface PublishedWorkflowSnapshot {
 
 export interface WorkflowDefaults {
   variables: WorkspaceVariable[]
-  gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
   /** Registered repositories every run clones by default, in order. */
   repos?: RepoChoice[]
 }
@@ -115,16 +114,12 @@ export interface Workspace {
   description: string
   workflowCount?: number
   /**
-   * Sum of workflow StateRun.Usage + post-feature PM ChatMessage.Usage.
+   * Sum of all token ledger usage (workflows, Agent Studio, Solo and usage of retired features).
    * null/undefined = no reported usage (UI "—"); 0 = reported usage totaling zero.
    */
   totalTokens?: number | null
   /** Workflow-only portion of totalTokens (null = no reported workflow usage). */
   workflowTokens?: number | null
-  /** PM-only portion of totalTokens (null = no reported PM usage). */
-  pmTokens?: number | null
-  pmLeaderEnabled?: boolean
-  pmLeaderAgent?: string
   /**
    * Optional display alias for the 「未知/未分桶」token bucket.
    * Empty/omitted → show the default label. Does not change persisted keys.
@@ -140,7 +135,7 @@ export interface AuditEvent {
   occurredAt: string
   actor: string
   unattributable: boolean
-  /** Product attribution class: pm | apikey | system */
+  /** Product attribution class: member | apikey | system | external */
   callerKind?: string
   action: string
   resourceType: string
@@ -190,8 +185,6 @@ export interface TokenStatsBucket {
   total: number
   /** Workflow portion of the bucket (for stacked trend). */
   workflowTotal?: number
-  /** PM portion of the bucket (for stacked trend). */
-  pmTotal?: number
   /** Agent Studio chat-test portion (global stats only). */
   studioTotal?: number
   soloTotal?: number
@@ -213,7 +206,7 @@ export interface TokenStatsComposition {
   total: number
 }
 
-export type TokenStatsRankKind = 'workflow' | 'pm' | 'other'
+export type TokenStatsRankKind = 'workflow' | 'other'
 
 export interface TokenStatsWorkflow {
   workflowId?: string
@@ -224,7 +217,7 @@ export interface TokenStatsWorkflow {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   other?: boolean
-  /** Rank row kind: workflow | pm | other (other = non-top workflows only). */
+  /** Rank row kind: workflow | chat | other (other = non-top workflows only). */
   kind?: TokenStatsRankKind
   cost?: number
 }
@@ -259,7 +252,6 @@ export interface GlobalTokenStatsKPI {
   cacheReadTokens: number
   cacheWriteTokens: number
   workflowTotal: number
-  pmTotal: number
   studioTotal?: number
   soloTotal?: number
   /** Usage from failed/cancelled calls. */
@@ -310,11 +302,11 @@ export interface GlobalTokenStatsNamedBucket {
   other?: boolean
 }
 
-/** Workflow/PM/Studio → node type usage tree. */
+/** Workflow/chat/Studio → node type usage tree. */
 export interface GlobalTokenStatsTreeNode {
   key: string
   name: string
-  kind: 'workflow' | 'pm' | 'studio' | 'nodeType' | string
+  kind: 'workflow' | 'studio' | 'solo' | 'nodeType' | string
   value: number
   cost?: number
   children?: GlobalTokenStatsTreeNode[]
@@ -331,7 +323,7 @@ export interface GlobalTokenStatsFilterOption {
   name: string
 }
 
-export type TokenLedgerSource = 'workflow' | 'pm' | 'studio' | 'solo'
+export type TokenLedgerSource = 'workflow' | 'studio' | 'solo'
 
 export interface TokenAccountingStatus {
   incomplete: boolean
@@ -419,83 +411,8 @@ export interface TokenPricing {
   updatedAt?: string
 }
 
-export interface PmLeaderBinding {
-  enabled: boolean
-  agentConfigRef: string
-  agentAvailable: boolean
-  agentError?: string
-  enabledMcps?: string[]
-  /** Run variable name that enables gate-auto PM invoke when present+truthy. Empty = off. */
-  gateAutoVar?: string
-  /** Optional prompt appended after system default gate-auto guidance. */
-  gateAutoPrompt?: string
-  aclNote: string
-}
-
-export interface MemoryItem {
-  id: string
-  agentName?: string
-  title: string
-  content: string
-  source: string
-  updatedBy: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ProgressCitation {
-  type: 'run' | 'gate' | 'artifact' | 'workflow' | 'plan' | string
-  targetId: string
-  summarySnippet?: string
-  detail?: Record<string, unknown>
-}
-
-export interface AttachedContext {
-  kind: 'run' | 'workflow'
-  id: string
-  label?: string
-}
-
-export interface ChatThread {
-  id: string
-  userId: string
-  title: string
-  /** user; omitted on older rows */
-  kind?: string
-  sandboxRef?: string
-  createdAt: string
-  updatedAt: string
-}
-
-/** PM response adds current Agent availability without persisting it in history. */
-export interface PmChatThread extends ChatThread {
-  agentAvailable: boolean
-  agentError?: string
-}
-
-export interface ChatMessage {
-  id: string
-  threadId: string
-  role: 'user' | 'assistant' | 'system' | string
-  content: string
-  /** ok | failed; empty treated as ok */
-  status?: 'ok' | 'failed' | string
-  /** connection | sandbox | empty | unknown | stopped */
-  failKind?: 'connection' | 'sandbox' | 'empty' | 'unknown' | 'stopped' | string
-  /** user | "" */
-  source?: string
-  images?: ClarifyImage[]
-  citations?: ProgressCitation[]
-  attachedContext?: AttachedContext
-  /** Assistant turn token total (nil = not reported). */
-  usage?: TokenUsage | null
-  /** Per-model breakdown after ingest merge / bridge backfill. */
-  usageByModel?: TokenUsageByModel | null
-  createdAt: string
-}
-
 // A published, immutable snapshot of a workflow's graph.
-export type WorkflowVersionSource = 'save' | 'restore' | 'import' | 'pm'
+export type WorkflowVersionSource = 'save' | 'restore' | 'import'
 
 export interface WorkflowVersion {
   workflowId: string

@@ -66,7 +66,7 @@ vi.mock('@/lib/composables/useToast', () => ({
 import { HOME_COMPOSER_DRAFT_KEY } from '@/lib/run/homeComposerDraft'
 import { HOME_LAUNCH_MODEL_MEMORY_KEY, HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
 import { setBrandSettings } from '@/lib/composables/useBrandSettings'
-import { onboardingOpen } from '@/lib/pm/firstInstall'
+import { onboardingOpen } from '@/lib/onboarding/firstInstall'
 import DashboardView from './DashboardView.vue'
 import dashboardSource from './DashboardView.vue?raw'
 

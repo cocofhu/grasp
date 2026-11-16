@@ -21,7 +21,7 @@ describe('agentsClient request coverage', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('builds agent, team, workspace bundle, revision, memory, and thread requests', async () => {
+  it('builds agent, team, workspace bundle, and revision requests', async () => {
     const agent = { name: 'agent / one', description: 'reviewer' } as never
 
     await agentsClient.listAgents()
@@ -30,7 +30,7 @@ describe('agentsClient request coverage', () => {
       modelConfigurationId: 'model-team',
       gitBindings: { items: [{ credentialId: 'git-team' }] },
     })
-    const teamBody = { prefix: 'Pay', pmName: 'PM', background: 'payments', modelConfigurationId: 'model-team' } as const
+    const teamBody = { prefix: 'Pay', modelConfigurationId: 'model-team' } as const
     await agentsClient.bootstrapAgentTeam(teamBody)
     await agentsClient.getAgentTeamBootstrap('team / 1')
     await agentsClient.retryAgentTeamBootstrap('team / 1')
@@ -42,14 +42,6 @@ describe('agentsClient request coverage', () => {
     await agentsClient.listAgentWorkspaceRevisions('agent / one')
     await agentsClient.getAgentWorkspaceRevisionDiff('agent / one', 'sha / 1')
     await agentsClient.restoreAgentWorkspaceRevision('agent / one', 'sha / 1')
-    await agentsClient.listAgentMemories('agent / one')
-    await agentsClient.upsertAgentMemory('agent / one', { title: 't', content: 'c' })
-    await agentsClient.updateAgentMemory('agent / one', 'm1', { content: 'new' })
-    await agentsClient.deleteAgentMemory('agent / one', 'm1')
-    await agentsClient.clearAgentMemories('agent / one')
-    await agentsClient.listAgentThreads('agent / one')
-    await agentsClient.listAgentThreadMessages('agent / one', 't1')
-    await agentsClient.deleteAgentThread('agent / one', 't1')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/agents/agent%20%2F%20one/rename', expect.objectContaining({
       method: 'POST',

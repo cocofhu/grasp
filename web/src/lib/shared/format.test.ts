@@ -122,14 +122,12 @@ describe('formatTrigger', () => {
     i18n.global.locale.value = 'zh-CN'
     expect(formatTrigger('manual')).toBe('手动')
     expect(formatTrigger('api')).toBe('API')
-    expect(formatTrigger('pm_mcp')).toBe('工作区助手 MCP')
   })
 
   it('maps whitelist codes to Demo-aligned labels (en)', () => {
     i18n.global.locale.value = 'en'
     expect(formatTrigger('manual')).toBe('Manual')
     expect(formatTrigger('api')).toBe('API')
-    expect(formatTrigger('pm_mcp')).toBe('Workspace assistant MCP')
   })
 
   it('returns unmapped free-form values unchanged', () => {

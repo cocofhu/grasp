@@ -222,33 +222,19 @@ func TestCancellationSeparatesProviderComputeStatusFromBackupCleanup(t *testing.
 }
 
 func TestOpeningSavedInteractiveEnvironmentRestoresSameWorkspace(t *testing.T) {
-	for _, purpose := range []string{"test", SandboxPurposeAgent} {
-		t.Run(purpose, func(t *testing.T) {
-			f := newStopFixture(t)
-			row := f.recovery(t)
-			if err := f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("purpose", purpose).Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := f.sbx.Reclaim(context.Background(), row.ID); err != nil {
-				t.Fatal(err)
-			}
-			var reopened *models.Sandbox
-			var err error
-			if purpose == "test" {
-				reopened, err = f.sbx.Open(context.Background(), row.Profile, nil)
-			} else {
-				var reused bool
-				reopened, reused, err = f.sbx.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: row.Profile, ThreadID: row.ThreadID, Reuse: true})
-				if err == nil && !reused {
-					t.Fatal("saved thread received a new empty environment")
-				}
-			}
-			if err != nil || reopened == nil || reopened.ID != row.ID || reopened.Status != "running" {
-				t.Fatalf("reopen=%+v err=%v", reopened, err)
-			}
-			if len(f.exec.restoredArchives()) != 1 {
-				t.Fatal("reopened before restoring saved workspace")
-			}
-		})
+	f := newStopFixture(t)
+	row := f.recovery(t)
+	if err := f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("purpose", "test").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.sbx.Reclaim(context.Background(), row.ID); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := f.sbx.Open(context.Background(), row.Profile, nil)
+	if err != nil || reopened == nil || reopened.ID != row.ID || reopened.Status != "running" {
+		t.Fatalf("reopen=%+v err=%v", reopened, err)
+	}
+	if len(f.exec.restoredArchives()) != 1 {
+		t.Fatal("reopened before restoring saved workspace")
 	}
 }

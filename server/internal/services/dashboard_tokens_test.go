@@ -3,7 +3,6 @@ package services
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
@@ -26,9 +25,9 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 
 	// No usage anywhere → null (not 0).
 	st := dash.Compute()
-	if st.TotalTokens != nil || st.WorkflowTokens != nil || st.PMTokens != nil {
-		t.Fatalf("no usage: want null tokens, got total=%v wf=%v pm=%v",
-			st.TotalTokens, st.WorkflowTokens, st.PMTokens)
+	if st.TotalTokens != nil || st.WorkflowTokens != nil {
+		t.Fatalf("no usage: want null tokens, got total=%v wf=%v",
+			st.TotalTokens, st.WorkflowTokens)
 	}
 
 	mustCreate(&models.WorkflowDef{ID: "wf-partial", Name: "w", Version: 1})
@@ -45,35 +44,22 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 		Usage: &models.TokenUsage{},
 	})
 
-	mustCreate(&models.ChatThread{ID: "th-pm", UserID: "u1", Title: "t"})
-	mustCreate(&models.ChatMessage{
-		ID: "msg-pm", ThreadID: "th-pm", Role: "assistant", Content: "hi",
-		Status: "ok", CreatedAt: time.Now(),
-		Usage: &models.TokenUsage{InputTokens: 10, OutputTokens: 5},
-	})
-
 	syncTokenLedger(t, db)
 	platform := s.TokenBreakdown()
-	// partial=128 wf, zero=0 wf, pm=15 → wf=128, pm=15, total=143
+	// partial=128 wf, zero=0 wf → wf=128, total=128
 	if platform.Workflow == nil || *platform.Workflow != 128 {
 		t.Fatalf("platform workflow=%v want 128", platform.Workflow)
 	}
-	if platform.PM == nil || *platform.PM != 15 {
-		t.Fatalf("platform pm=%v want 15", platform.PM)
-	}
-	if platform.Total == nil || *platform.Total != 143 {
-		t.Fatalf("platform total=%v want 143", platform.Total)
+	if platform.Total == nil || *platform.Total != 128 {
+		t.Fatalf("platform total=%v want 128", platform.Total)
 	}
 
 	st = dash.Compute()
-	if st.TotalTokens == nil || *st.TotalTokens != 143 {
-		t.Fatalf("dashboard totalTokens=%v want 143", st.TotalTokens)
+	if st.TotalTokens == nil || *st.TotalTokens != 128 {
+		t.Fatalf("dashboard totalTokens=%v want 128", st.TotalTokens)
 	}
 	if st.WorkflowTokens == nil || *st.WorkflowTokens != 128 {
 		t.Fatalf("dashboard workflowTokens=%v want 128", st.WorkflowTokens)
-	}
-	if st.PMTokens == nil || *st.PMTokens != 15 {
-		t.Fatalf("dashboard pmTokens=%v want 15", st.PMTokens)
 	}
 
 	seedLedger(t, db,
@@ -82,12 +68,12 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 		models.TokenUsageEvent{Source: models.TokenLedgerSourceStudio, InputTokens: 2000},
 	)
 	platform = s.TokenBreakdown()
-	if platform.Total == nil || *platform.Total != 2243 || platform.Workflow == nil || *platform.Workflow != 128 || platform.PM == nil || *platform.PM != 15 {
-		t.Fatalf("all-source breakdown=%+v want total=2243 workflow=128 pm=15", platform)
+	if platform.Total == nil || *platform.Total != 2228 || platform.Workflow == nil || *platform.Workflow != 128 {
+		t.Fatalf("all-source breakdown=%+v want total=2228 workflow=128", platform)
 	}
 	st = dash.Compute()
-	if st.TotalTokens == nil || *st.TotalTokens != 2243 || st.WorkflowTokens == nil || *st.WorkflowTokens != 128 || st.PMTokens == nil || *st.PMTokens != 15 {
-		t.Fatalf("all-source dashboard=%+v want total=2243 workflow=128 pm=15", st)
+	if st.TotalTokens == nil || *st.TotalTokens != 2228 || st.WorkflowTokens == nil || *st.WorkflowTokens != 128 {
+		t.Fatalf("all-source dashboard=%+v want total=2228 workflow=128", st)
 	}
 
 	// All reported zeros → 0 (not null).

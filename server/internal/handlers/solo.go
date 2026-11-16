@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/auth"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -33,6 +34,20 @@ func writeSoloErr(c *gin.Context, err error) {
 	}
 	_ = c.Error(err)
 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+}
+
+// sessionUser returns the signed-in username, or writes 401. Without auth the
+// caller is "anonymous".
+func (h *Handlers) sessionUser(c *gin.Context) (string, bool) {
+	if h.Auth == nil {
+		return "anonymous", true
+	}
+	sess, ok := auth.GetSession(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return "", false
+	}
+	return sess.Username, true
 }
 
 func (h *Handlers) soloReady(c *gin.Context) (string, bool) {

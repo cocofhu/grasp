@@ -46,9 +46,9 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
 const SAMPLE: AuditEvent = {
   id: 'e1',
   occurredAt: '2026-01-01T00:00:00Z',
-  actor: 'pm',
+  actor: 'alice',
   unattributable: false,
-  callerKind: 'pm',
+  callerKind: 'member',
   action: 'mcp.call',
   resourceType: 'mcp',
   resourceId: 'tool',

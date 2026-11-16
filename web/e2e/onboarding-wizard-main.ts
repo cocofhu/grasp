@@ -5,7 +5,7 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import OnboardingWizard from '../src/components/onboarding/OnboardingWizard.vue'
-import type { OnboardingMode } from '../src/lib/pm/onboardingWizard'
+import type { OnboardingMode } from '../src/lib/onboarding/onboardingWizard'
 import { useAuth } from '../src/lib/composables/useAuth'
 
 async function boot() {

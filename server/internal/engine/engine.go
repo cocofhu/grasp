@@ -107,10 +107,6 @@ type Engine struct {
 	// (nil falls back to a short-lived RunService on e.db).
 	failures RunFailureAggregator
 
-	// gateAuto is an optional async observer for human_gate
-	// pauses (PM auto-invoke). Engine never blocks on it.
-	gateAuto GateAutoInvoker
-
 	// shareRevoker invalidates unused GateShareLinks when a gate/run ends.
 	shareRevoker ShareLinkRevoker
 

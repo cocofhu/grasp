@@ -109,8 +109,8 @@ test.describe('ClarifyChat arbitrary file attachments', () => {
     await expect(page.getByTestId('attachment-download')).toHaveAttribute('download', 'broken.mp4')
   })
 
-  test('uses the same drop intake in PM, tester, paragraph and home composers', async ({ page }) => {
-    for (const tab of ['pm', 'tester', 'para']) {
+  test('uses the same drop intake in tester, paragraph and home composers', async ({ page }) => {
+    for (const tab of ['tester', 'para']) {
       await page.goto('/chat-image-surfaces.html')
       await page.getByTestId(`surf-tab-${tab}`).click()
       const panel = page.getByTestId(`surf-panel-${tab}`)

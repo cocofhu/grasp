@@ -85,11 +85,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/workspace", h.UpdateWorkspace)
 		api.PATCH("/workspace", h.UpdateWorkspace)
 		api.POST("/workspace/bootstrap-onboarding", h.BootstrapOnboarding)
-		api.GET("/workspace/external-mcp", h.GetExternalMcp)
-		api.PUT("/workspace/external-mcp", h.UpdateExternalMcp)
-		api.GET("/workspace/external-mcp/keys", h.ListMcpKeys)
-		api.POST("/workspace/external-mcp/keys", h.CreateMcpKey)
-		api.DELETE("/workspace/external-mcp/keys/:keyId", h.RevokeMcpKey)
 		api.GET("/workspace/credentials", h.ListCredentials)
 		api.POST("/workspace/credentials", h.CreateCredential)
 		api.GET("/workspace/credentials/github/device", h.GitHubDeviceStatus)
@@ -130,21 +125,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/agent-teams/bootstrap", h.BootstrapAgentTeam)
 		api.GET("/agent-teams/bootstrap/:id", h.GetAgentTeamBootstrap)
 		api.POST("/agent-teams/bootstrap/:id/retry", h.RetryAgentTeamBootstrap)
-
-		api.GET("/workspace/pm-leader", h.GetPmLeader)
-		api.PUT("/workspace/pm-leader", h.UpdatePmLeader)
-		api.GET("/workspace/pm/memories", h.ListPmMemories)
-		api.GET("/workspace/pm/threads", h.ListPmThreads)
-		api.POST("/workspace/pm/threads", h.CreatePmThread)
-		api.GET("/workspace/pm/threads/:tid", h.GetPmThread)
-		api.DELETE("/workspace/pm/threads/:tid", h.DeletePmThread)
-		api.GET("/workspace/pm/threads/:tid/messages", h.ListPmMessages)
-		api.POST("/workspace/pm/threads/:tid/messages", h.AppendPmMessage)
-		api.PATCH("/workspace/pm/threads/:tid/messages/:mid", h.PatchPmMessage)
-		api.POST("/workspace/pm/threads/:tid/sandbox", h.EnsurePmSandbox)
-		api.POST("/workspace/pm/threads/:tid/turns", h.StartPmTurn)
-		api.POST("/workspace/pm/threads/:tid/turns/cancel", h.CancelPmTurn)
-		api.GET("/workspace/pm/threads/:tid/chat", h.PmThreadChat)
 
 		api.GET("/projects", h.ListProjects)
 		api.POST("/projects", h.CreateProject)
@@ -267,15 +247,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/agents/:name", h.SaveAgent)
 		api.POST("/agents/:name/rename", h.RenameAgent)
 		api.DELETE("/agents/:name", h.DeleteAgent)
-		// Agent-scoped data (Studio).
-		api.GET("/agents/:name/memories", h.ListAgentMemories)
-		api.POST("/agents/:name/memories", h.UpsertAgentMemory)
-		api.DELETE("/agents/:name/memories", h.ClearAgentMemories)
-		api.PUT("/agents/:name/memories/:mid", h.UpdateAgentMemory)
-		api.DELETE("/agents/:name/memories/:mid", h.DeleteAgentMemory)
-		api.GET("/agents/:name/threads", h.ListAgentThreads)
-		api.GET("/agents/:name/threads/:tid/messages", h.GetAgentThreadMessages)
-		api.DELETE("/agents/:name/threads/:tid", h.DeleteAgentThread)
 
 		api.GET("/sandboxes", h.ListSandboxes)
 		api.GET("/sandboxes/capacity", h.SandboxCapacity)
@@ -326,26 +297,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 	embedVisit.GET("/model", h.GetVisitModel)
 	embedVisit.POST("/model", h.SetVisitModel)
 	embedVisit.GET("/references/search", h.SearchRunNodeReferences)
-
-	// PM MCP hosts (outside /api).
-	r.POST("/mcp/pm/:mcpId", h.PMMCPRPC)
-	r.GET("/mcp/pm/:mcpId", h.PMMCPRPC)
-	r.DELETE("/mcp/pm/:mcpId", h.PMMCPRPC)
-
-	r.POST("/mcp/workspace", h.ExternalMCPRPC)
-	r.GET("/mcp/workspace", h.ExternalMCPRPC)
-	r.DELETE("/mcp/workspace", h.ExternalMCPRPC)
-	r.POST("/mcp/workspace/:mcpId", h.ExternalMCPRPC)
-	r.GET("/mcp/workspace/:mcpId", h.ExternalMCPRPC)
-	r.DELETE("/mcp/workspace/:mcpId", h.ExternalMCPRPC)
-
-	r.POST("/mcp/memory-store", h.MemoryMCPRPC)
-	r.GET("/mcp/memory-store", h.MemoryMCPRPC)
-	r.DELETE("/mcp/memory-store", h.MemoryMCPRPC)
-
-	r.POST("/mcp/context-store", h.ContextMCPRPC)
-	r.GET("/mcp/context-store", h.ContextMCPRPC)
-	r.DELETE("/mcp/context-store", h.ContextMCPRPC)
 
 	// Loopback-only, token-protected sessions used by `approving doctor
 	// --run-demo` to exercise the live MCP HTTP control plane.
@@ -460,7 +411,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/embed/") ||
 			strings.HasPrefix(p, "/embed-api/") ||
 			isPublicApprovalPath(p) || isRetiredPublicGatePath(p) {
-			// /mcp/ covers both /mcp/runs/ and /mcp/pm/
+			// /mcp/ covers every platform MCP host
 			c.String(http.StatusNotFound, "not found: %s", p)
 			return
 		}

@@ -2,14 +2,9 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -56,12 +51,6 @@ func (s *SandboxService) prepareRecoveryInputs(row *models.Sandbox) (sandbox.Spe
 	case "test":
 		specs = s.buildTestSandboxSpecs(agent, s.mcpVars(row.RunID, row.Token))
 		extra.LaunchKind = "test"
-	case SandboxPurposeAgent, "pm":
-		var err error
-		specs, err = s.recoveryRoleMCPs(row)
-		if err != nil {
-			return sandbox.Spec{}, err
-		}
 	default:
 		return sandbox.Spec{}, fmt.Errorf("unknown sandbox purpose %q", row.Purpose)
 	}
@@ -129,55 +118,4 @@ func (s *SandboxService) prepareRunRecoveryInputs(row *models.Sandbox) (sandbox.
 		req.AppliedRoute = req.ChatRoute
 	}
 	return s.runRecoveryPreparer.PrepareSandboxRecovery(req)
-}
-
-// Role identities are stable permissions; endpoints and token headers are
-// rebuilt. Legacy rows are read from their retained config before releasing it.
-func (s *SandboxService) recoveryRoleMCPs(row *models.Sandbox) ([]sandbox.MCPServerSpec, error) {
-	names := row.RecoveryMCPNames
-	if names == nil {
-		data, err := os.ReadFile(filepath.Join(row.HomeDir, "mcp.json"))
-		if err != nil {
-			return nil, fmt.Errorf("recover legacy role MCP configuration: %w", err)
-		}
-		var saved struct {
-			Servers map[string]json.RawMessage `json:"mcpServers"`
-		}
-		if err := json.Unmarshal(data, &saved); err != nil {
-			return nil, err
-		}
-		names = []string{}
-		for name := range saved.Servers {
-			if isRecoveryRoleMCP(name) {
-				names = append(names, name)
-			}
-		}
-	}
-	base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/")
-	if len(names) > 0 && (base == "" || row.Token == "") {
-		return nil, errors.New("role MCP endpoint or authorization is unavailable")
-	}
-	specs := make([]sandbox.MCPServerSpec, 0, len(names))
-	for _, name := range names {
-		path := ""
-		switch name {
-		case MemoryStoreMCP, ContextStoreMCP:
-			path = "/mcp/" + name
-		default:
-			if !isRecoveryRoleMCP(name) {
-				return nil, fmt.Errorf("cannot reconstruct role MCP %q", name)
-			}
-			path = "/mcp/pm/" + name
-		}
-		specs = append(specs, sandbox.MCPServerSpec{Name: name, URL: config.RewriteMisconfiguredMCPAdvertise(base + path),
-			Headers: map[string]string{"Authorization": "Bearer " + row.Token}})
-	}
-	return specs, nil
-}
-
-func isRecoveryRoleMCP(name string) bool {
-	if name == MemoryStoreMCP || name == ContextStoreMCP {
-		return true
-	}
-	return len(FilterPmEnabledMcps([]string{name})) == 1
 }

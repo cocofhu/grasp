@@ -14,7 +14,6 @@ export async function installWorkspaceApiDefaults(page: Page) {
     else if (path === '/api/health') body = { status: 'ok', accepting: true }
     else if (path === '/api/settings/brand') body = { productName: 'Grasp' }
     else if (path === '/api/workflows' || path === '/api/workflows/catalog' || path === '/api/agents') body = []
-    else if (path === '/api/workspace/pm-leader') body = { enabled: false, agentAvailable: false }
     else if (path === '/api/workspace/shared-agent-config') body = { env: {}, mcp: [], files: [], layout: {} }
     else if (path === '/api/workspace/run-tags') body = { tags: [] }
     else if (path === '/api/stats/dashboard') body = { totalRuns: 0, runningRuns: 0, pendingGates: 0, totalWorkflows: 0 }

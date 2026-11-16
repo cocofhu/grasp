@@ -40,7 +40,7 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 			RunID: "r1", NodeID: "n2", NodeType: "clarify", ModelKey: "m-free", InputTokens: 100},
 		models.TokenUsageEvent{CreatedAt: at, Source: "studio", Phase: "chat", Status: "ok",
 			SandboxID: 3, ModelKey: "m-priced", CacheReadTokens: 1_000_000},
-		models.TokenUsageEvent{CreatedAt: at, Source: "pm", Phase: "chat", Status: "cancelled",
+		models.TokenUsageEvent{CreatedAt: at, Source: "solo", Phase: "chat", Status: "cancelled",
 			ThreadID: "th1", ModelKey: "m-priced", OutputTokens: 10},
 	)
 	if _, err := s.SaveTokenPricing(TokenPricing{Currency: "usd", Models: map[string]TokenModelPrice{
@@ -54,7 +54,7 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := res.KPI
-	if k.Total != 2_500_110 || k.StudioTotal != 1_000_000 || k.PmTotal != 10 || k.FailedTotal != 110 {
+	if k.Total != 2_500_110 || k.StudioTotal != 1_000_000 || k.SoloTotal != 10 || k.FailedTotal != 110 {
 		t.Fatalf("kpi=%+v", k)
 	}
 	// 1M in*2 + 0.5M out*10 + 1M cacheRead*0.5 + 10 out*10/1e6
@@ -79,7 +79,7 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 		}
 		return m
 	}
-	if src := byKey(res.Sources); src["studio"] != 1_000_000 || src["pm"] != 10 || src["workflow"] != 1_500_100 {
+	if src := byKey(res.Sources); src["studio"] != 1_000_000 || src["solo"] != 10 || src["workflow"] != 1_500_100 {
 		t.Fatalf("sources=%v", src)
 	}
 	if st := byKey(res.Statuses); st["failed"] != 100 || st["cancelled"] != 10 {
@@ -123,7 +123,7 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Studio cache-read 1_000_000 + PM output 10. Production and interactive stay out.
+	// Studio cache-read 1_000_000 + Solo output 10. Production and interactive stay out.
 	if chat.KPI.Total != 1_000_010 || chat.KPI.StudioTotal != 1_000_000 {
 		t.Fatalf("phase=chat total=%d studio=%d", chat.KPI.Total, chat.KPI.StudioTotal)
 	}
@@ -230,7 +230,7 @@ func TestTokenUsageEventsPagingAndFilters(t *testing.T) {
 			RunID: "r1", ModelKey: "m", InputTokens: int64(10 * (i + 1)),
 		})
 	}
-	rows = append(rows, models.TokenUsageEvent{CreatedAt: now, Source: "pm", Status: "ok", ModelKey: "m", InputTokens: 999})
+	rows = append(rows, models.TokenUsageEvent{CreatedAt: now, Source: "chat", Status: "ok", ModelKey: "m", InputTokens: 999})
 	seedLedger(t, db, rows...)
 
 	page, err := s.TokenUsageEvents(context.Background(), TokenUsageEventsQuery{

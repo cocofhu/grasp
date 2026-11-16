@@ -53,7 +53,6 @@ export function partLabel(t: Translate, key: TokenPartKey): string {
 
 export function sourceLabel(t: Translate, key: string): string {
   if (key === 'workflow') return t('pages.board.tokenStats.workflow')
-  if (key === 'pm') return t('pages.board.tokenStats.pm')
   if (key === 'studio') return t('pages.tokenAnalytics.sourceStudio')
   if (key === 'solo') return t('pages.tokenAnalytics.sourceSolo')
   return key
@@ -261,7 +260,6 @@ export function areaChartOption(data: GlobalTokenStats | null, mode: AreaMode, t
   if (mode === 'source') {
     const parts: Array<[string, (b: TokenStatsBucket) => number]> = [
       ['workflow', (b) => b.workflowTotal || 0],
-      ['pm', (b) => b.pmTotal || 0],
       ['studio', (b) => b.studioTotal || 0],
       ['solo', (b) => b.soloTotal || 0],
     ]
@@ -492,11 +490,9 @@ export function listDrillBreakdowns(
         name: w.name,
         ...breakdownParts(w),
         other: !!w.other,
-        drill: w.kind === 'pm'
-          ? { dim: 'source' as const, key: 'pm', name: sourceLabel(t, 'pm') }
-          : w.workflowId && !w.other
-            ? { dim: 'workflow' as const, key: w.workflowId, name: w.name }
-            : undefined,
+        drill: w.workflowId && !w.other
+          ? { dim: 'workflow' as const, key: w.workflowId, name: w.name }
+          : undefined,
       })),
     )
   }

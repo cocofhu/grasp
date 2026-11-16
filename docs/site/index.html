@@ -206,95 +206,12 @@
       </div>
     </section>
 
-    <!-- Big page 2: PM — manage workflows by chatting with GraspPM -->
-    <section class="showcase" id="showcase-pm" data-showcase="pm" aria-label="PM 演示">
-      <div class="showcase__inner showcase__inner--wide">
-        <header class="showcase__intro">
-          <h2 class="showcase__title">项目管理正在被重新定义</h2>
-          <p class="showcase__lead">我们为每一个项目定义了一位 PM，你可以直接和它对话来管理项目、下发任务。<br>未来，我们将支持总监、总经理等更复杂的组织架构——OPC 这一次是真的。</p>
-        </header>
-        <div class="showcase__stage" data-stage="pm">
-          <div class="panel panel--light">
-            <div class="panel__chrome panel__chrome--light">
-              <span class="panel__dot"></span><span class="panel__dot"></span><span class="panel__dot"></span>
-              <span class="panel__title">对话 · GraspPM</span>
-            </div>
-            <div class="panel__body panel__body--pm">
-              <div class="pm-chat">
-                <header class="pm-chat__head">
-                  <div class="pm-chat__identity">
-                    <span class="pm-chat__avatar">PM</span>
-                    <div>
-                      <p class="pm-chat__name">GraspPM</p>
-                      <p class="pm-chat__sub">工作流项目经理 · 对话即编排</p>
-                    </div>
-                  </div>
-                  <div class="pm-chat__stats">
-                    <span class="pm-stat is-run">running <b data-pm-running>0</b></span>
-                    <span class="pm-stat is-wait">waiting <b data-pm-waiting>0</b></span>
-                  </div>
-                </header>
-                <div class="pm-chat__thread" data-pm-thread>
-                  <div class="pm-msg pm-msg--you" data-pm-msg="1">
-                    <span class="pm-msg__who">你</span>
-                    <div class="pm-msg__bubble" data-pm-text="有什么办法可以保证质量？调研一下业界的 harness 和软件工程经验，看看怎么保证这个开源项目的质量。"><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="2">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="收到。我先调研 agent harness 实践，再对照经典软件工程质量门禁，整理成可落地的方案给你确认。"><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="3">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="调研结论 → 建议方案：">
-                      <span data-pm-typeout></span>
-                      <ul class="pm-progress" data-pm-extra hidden>
-                        <li data-pm-step="1"><span class="pm-dot"></span>Harness：评测集 + 回归门槛 <b data-pm-step-tag="1">proposed</b></li>
-                        <li data-pm-step="2"><span class="pm-dot"></span>工程：覆盖率 / lint / 安全扫描入 CI <b data-pm-step-tag="2">proposed</b></li>
-                        <li data-pm-step="3"><span class="pm-dot"></span>门禁：关键路径人工 Approve <b data-pm-step-tag="3">proposed</b></li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="pm-msg is-gate" data-pm-msg="4">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="方案已就绪。确认后我启动「质量保障」工作流：调研落地 → CI 加固 → 门禁接线。"><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg pm-msg--you" data-pm-msg="5">
-                    <span class="pm-msg__who">你</span>
-                    <div class="pm-msg__bubble" data-pm-text="确认，按这个方案启动工作流。"><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="6">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="已启动。预计今晚 22:30 前给出第一轮 PR，我会持续跟进执行进度。">
-                      <span data-pm-typeout></span>
-                      <ul class="pm-progress" data-pm-extra hidden>
-                        <li data-pm-step="4"><span class="pm-dot"></span>Harness 评测脚手架 <b data-pm-step-tag="4">queued</b></li>
-                        <li data-pm-step="5"><span class="pm-dot"></span>CI 质量门禁 <b data-pm-step-tag="5">queued</b></li>
-                        <li data-pm-step="6"><span class="pm-dot"></span>人工 Approve 接线 <b data-pm-step-tag="6">queued</b></li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="7">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="执行中：Harness 脚手架已开 PR；CI 扫描跑到 60%；Approve 门禁待合入。有阻塞我再找你。"><span data-pm-typeout></span></div>
-                  </div>
-                </div>
-                <div class="pm-chat__composer">
-                  <span class="pm-chat__input" data-pm-composer data-placeholder="跟 GraspPM 说下一句…"></span>
-                  <span class="pm-chat__send" aria-hidden="true">发送</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Big page 3: Parallel (stacked) -->
+    <!-- Big page 2: Parallel (stacked) -->
     <section class="showcase" id="showcase-parallel" data-showcase="parallel" aria-label="并行演示">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
           <h2 class="showcase__title">并行调度，加速迭代</h2>
-          <p class="showcase__lead">所有 Agent 在沙箱执行，由 PM 统一管理，迭代速度更进一步。</p>
+          <p class="showcase__lead">所有 Agent 在独立沙箱执行，互不干扰，迭代速度更进一步。</p>
         </header>
         <div class="showcase__stage" data-stage="parallel">
           <div class="panel">
@@ -311,27 +228,27 @@
             </div>
             <div class="panel__body panel__body--lanes">
               <div class="launch-sheet is-open" data-launch-sheet>
-                <div class="launch-chat">
-                  <header class="launch-chat__head">
-                    <span class="launch-chat__avatar">PM</span>
+                <div class="launch-im" data-launch-im>
+                  <header class="launch-im__head">
+                    <span class="launch-im__avatar">G</span>
                     <div>
-                      <p class="launch-chat__title">GraspPM</p>
-                      <p class="launch-chat__sub">对话启动工作流</p>
+                      <p class="launch-im__title">Grasp</p>
+                      <p class="launch-im__sub">并行启动工作流</p>
                     </div>
                   </header>
-                  <div class="launch-chat__thread" data-par-thread>
-                    <div class="pm-msg pm-msg--you" data-par-msg="1">
-                      <span class="pm-msg__who">你</span>
-                      <div class="pm-msg__bubble" data-par-text="并行推进登录鉴权、计费结算、消息通知这三个需求，现在启动。"><span data-par-typeout></span></div>
+                  <div class="launch-im__thread" data-par-thread>
+                    <div class="chat-msg chat-msg--you" data-par-msg="1">
+                      <span class="chat-msg__who">你</span>
+                      <div class="chat-msg__bubble" data-par-text="并行推进登录鉴权、计费结算、消息通知这三个需求，现在启动。"><span data-par-typeout></span></div>
                     </div>
-                    <div class="pm-msg" data-par-msg="2">
-                      <span class="pm-msg__who">GraspPM</span>
-                      <div class="pm-msg__bubble" data-par-text="收到。已按三条需求拉起并行工作流，开始执行。"><span data-par-typeout></span></div>
+                    <div class="chat-msg" data-par-msg="2">
+                      <span class="chat-msg__who">Grasp</span>
+                      <div class="chat-msg__bubble" data-par-text="收到。已按三条需求拉起并行工作流，开始执行。"><span data-par-typeout></span></div>
                     </div>
                   </div>
-                  <div class="launch-chat__composer">
-                    <span class="pm-chat__input" data-par-composer data-placeholder="跟 GraspPM 说下一句…"></span>
-                    <span class="pm-chat__send" aria-hidden="true">发送</span>
+                  <div class="launch-im__composer">
+                    <span class="chat-input" data-par-composer data-placeholder="描述要启动的需求…"></span>
+                    <span class="chat-send" aria-hidden="true">发送</span>
                   </div>
                 </div>
               </div>
@@ -580,7 +497,7 @@
                 </aside>
               </div>
             </div>
-            <p class="panel__caption" data-caption="parallel">对话确认启动，并行推进中…</p>
+            <p class="panel__caption" data-caption="parallel">IM 确认启动，并行推进中…</p>
           </div>
         </div>
       </div>

@@ -40,7 +40,7 @@ func (m *Manager) EnsureConfigHome(ctx context.Context, sb *Sandbox, hostDir, co
 func (m *Manager) seedConfigHome(ctx context.Context, sb *Sandbox, hostDir, configRoot string) {
 	creds := sb.creds()
 	// Gateway marks running before sshd is up; 25s was losing the boot race
-	// on cold images and left PM/agent MCP mcp.json missing.
+	// on cold images and left agent MCP mcp.json missing.
 	rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if err := creds.waitReady(rctx, 90*time.Second); err != nil {

@@ -206,95 +206,12 @@
       </div>
     </section>
 
-    <!-- Big page 2: PM — manage workflows by chatting with GraspPM -->
-    <section class="showcase" id="showcase-pm" data-showcase="pm" aria-label="PM demo">
-      <div class="showcase__inner showcase__inner--wide">
-        <header class="showcase__intro">
-          <h2 class="showcase__title">Project management, redefined</h2>
-          <p class="showcase__lead">Every project gets a PM. Chat with it to manage the project and dispatch work.<br>Next: richer org roles — director, GM, and beyond. OPC, for real.</p>
-        </header>
-        <div class="showcase__stage" data-stage="pm">
-          <div class="panel panel--light">
-            <div class="panel__chrome panel__chrome--light">
-              <span class="panel__dot"></span><span class="panel__dot"></span><span class="panel__dot"></span>
-              <span class="panel__title">Chat · GraspPM</span>
-            </div>
-            <div class="panel__body panel__body--pm">
-              <div class="pm-chat">
-                <header class="pm-chat__head">
-                  <div class="pm-chat__identity">
-                    <span class="pm-chat__avatar">PM</span>
-                    <div>
-                      <p class="pm-chat__name">GraspPM</p>
-                      <p class="pm-chat__sub">Workflow PM · chat is orchestration</p>
-                    </div>
-                  </div>
-                  <div class="pm-chat__stats">
-                    <span class="pm-stat is-run">running <b data-pm-running>0</b></span>
-                    <span class="pm-stat is-wait">waiting <b data-pm-waiting>0</b></span>
-                  </div>
-                </header>
-                <div class="pm-chat__thread" data-pm-thread>
-                  <div class="pm-msg pm-msg--you" data-pm-msg="1">
-                    <span class="pm-msg__who">You</span>
-                    <div class="pm-msg__bubble" data-pm-text="How do we guarantee quality? Research industry harness practices and software engineering experience for this open-source project."><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="2">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="Got it. I will research agent harness practices, map them to classic software quality gates, and propose a concrete plan for your confirmation."><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="3">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="Research takeaways → proposed plan:">
-                      <span data-pm-typeout></span>
-                      <ul class="pm-progress" data-pm-extra hidden>
-                        <li data-pm-step="1"><span class="pm-dot"></span>Harness: eval suite + regression bar <b data-pm-step-tag="1">proposed</b></li>
-                        <li data-pm-step="2"><span class="pm-dot"></span>Engineering: coverage / lint / security in CI <b data-pm-step-tag="2">proposed</b></li>
-                        <li data-pm-step="3"><span class="pm-dot"></span>Gates: human Approve on critical paths <b data-pm-step-tag="3">proposed</b></li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="pm-msg is-gate" data-pm-msg="4">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="Plan ready. On confirm I will start the Quality Assurance workflow: land research → harden CI → wire gates."><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg pm-msg--you" data-pm-msg="5">
-                    <span class="pm-msg__who">You</span>
-                    <div class="pm-msg__bubble" data-pm-text="Confirmed — start the workflow with this plan."><span data-pm-typeout></span></div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="6">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="Started. Expect the first PR wave before 22:30 tonight; I will keep tracking progress.">
-                      <span data-pm-typeout></span>
-                      <ul class="pm-progress" data-pm-extra hidden>
-                        <li data-pm-step="4"><span class="pm-dot"></span>Harness eval scaffolding <b data-pm-step-tag="4">queued</b></li>
-                        <li data-pm-step="5"><span class="pm-dot"></span>CI quality gates <b data-pm-step-tag="5">queued</b></li>
-                        <li data-pm-step="6"><span class="pm-dot"></span>Wire human Approve <b data-pm-step-tag="6">queued</b></li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="pm-msg" data-pm-msg="7">
-                    <span class="pm-msg__who">GraspPM</span>
-                    <div class="pm-msg__bubble" data-pm-text="In progress: harness scaffold PR opened; CI scans at 60%; Approve gate pending merge. I will ping you on blockers."><span data-pm-typeout></span></div>
-                  </div>
-                </div>
-                <div class="pm-chat__composer">
-                  <span class="pm-chat__input" data-pm-composer data-placeholder="Say the next thing to GraspPM…"></span>
-                  <span class="pm-chat__send" aria-hidden="true">Send</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Big page 3: Parallel (stacked) -->
+    <!-- Big page 2: Parallel (stacked) -->
     <section class="showcase" id="showcase-parallel" data-showcase="parallel" aria-label="Parallel demo">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
           <h2 class="showcase__title">Parallel scheduling, faster iteration</h2>
-          <p class="showcase__lead">Agents run in sandboxes, coordinated by the PM — iteration gets another gear.</p>
+          <p class="showcase__lead">Agents run in isolated sandboxes without stepping on each other — iteration gets another gear.</p>
         </header>
         <div class="showcase__stage" data-stage="parallel">
           <div class="panel">
@@ -311,27 +228,27 @@
             </div>
             <div class="panel__body panel__body--lanes">
               <div class="launch-sheet is-open" data-launch-sheet>
-                <div class="launch-chat">
-                  <header class="launch-chat__head">
-                    <span class="launch-chat__avatar">PM</span>
+                <div class="launch-im" data-launch-im>
+                  <header class="launch-im__head">
+                    <span class="launch-im__avatar">G</span>
                     <div>
-                      <p class="launch-chat__title">GraspPM</p>
-                      <p class="launch-chat__sub">Start workflows by chat</p>
+                      <p class="launch-im__title">Grasp</p>
+                      <p class="launch-im__sub">Start workflows in parallel</p>
                     </div>
                   </header>
-                  <div class="launch-chat__thread" data-par-thread>
-                    <div class="pm-msg pm-msg--you" data-par-msg="1">
-                      <span class="pm-msg__who">You</span>
-                      <div class="pm-msg__bubble" data-par-text="Run sign-in, billing, and notifications in parallel — start now."><span data-par-typeout></span></div>
+                  <div class="launch-im__thread" data-par-thread>
+                    <div class="chat-msg chat-msg--you" data-par-msg="1">
+                      <span class="chat-msg__who">You</span>
+                      <div class="chat-msg__bubble" data-par-text="Run sign-in, billing, and notifications in parallel — start now."><span data-par-typeout></span></div>
                     </div>
-                    <div class="pm-msg" data-par-msg="2">
-                      <span class="pm-msg__who">GraspPM</span>
-                      <div class="pm-msg__bubble" data-par-text="Got it. Parallel workflows for the three requirements are up and running."><span data-par-typeout></span></div>
+                    <div class="chat-msg" data-par-msg="2">
+                      <span class="chat-msg__who">Grasp</span>
+                      <div class="chat-msg__bubble" data-par-text="Got it. Parallel workflows for the three requirements are up and running."><span data-par-typeout></span></div>
                     </div>
                   </div>
-                  <div class="launch-chat__composer">
-                    <span class="pm-chat__input" data-par-composer data-placeholder="Say the next thing to GraspPM…"></span>
-                    <span class="pm-chat__send" aria-hidden="true">Send</span>
+                  <div class="launch-im__composer">
+                    <span class="chat-input" data-par-composer data-placeholder="Describe what to start…"></span>
+                    <span class="chat-send" aria-hidden="true">Send</span>
                   </div>
                 </div>
               </div>
@@ -580,7 +497,7 @@
                 </aside>
               </div>
             </div>
-            <p class="panel__caption" data-caption="parallel">Chat confirmed — running in parallel…</p>
+            <p class="panel__caption" data-caption="parallel">IM confirmed — running in parallel…</p>
           </div>
         </div>
       </div>

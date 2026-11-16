@@ -154,7 +154,7 @@ func TestBaselineReadinessResolvesInheritedModel(t *testing.T) {
 }
 
 func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
-	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
+	for _, purpose := range []string{"test", SandboxPurposeSolo} {
 		for _, change := range []string{"model", "missing model"} {
 			t.Run(purpose+"/"+change, func(t *testing.T) {
 				s, row, connections, configurations, _, connection, configuration := boundSandboxFixture(t, purpose, true)

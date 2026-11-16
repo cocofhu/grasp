@@ -79,77 +79,6 @@ for (const theme of ['light', 'dark']) test(`long settings pages scroll by wheel
   await expect(page.getByTestId('settings-save-actions')).toBeInViewport()
 })
 
-test('workspace settings documents share the page scroll container', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 720 })
-  await page.goto('/workspace.html?view=/settings/external-mcp')
-  await expect(page.getByTestId('external-mcp-save')).toBeEnabled()
-  const scroll = page.getByTestId('shell-page-scroll')
-  expect(await scroll.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
-  await page.mouse.move(1340, 500)
-  await page.mouse.wheel(0, 8000)
-  await expect(page.getByTestId('external-mcp-copy-example')).toBeInViewport()
-})
-
-test('assistant setup has one action and no empty conversation UI', async ({ page }) => {
-  await page.goto('/workspace.html?view=/assistant&assistant=disabled')
-  await expect(page.getByTestId('pm-setup-state')).toBeVisible()
-  await expect(page.getByTestId('pm-setup-settings')).toBeVisible()
-  await expect(page.getByTestId('workspace-page').getByRole('button', { name: /设置/ })).toHaveCount(1)
-  await expect(page.getByTestId('pm-threads-aside')).toHaveCount(0)
-  await expect(page.locator('textarea')).toHaveCount(0)
-  await page.getByTestId('pm-setup-settings').click()
-  await expect(page.getByTestId('workspace-tool-assistantSettings')).toBeVisible()
-})
-
-test('assistant welcome works on mobile without an empty thread list', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/workspace.html?view=/assistant')
-  await expect(page.getByTestId('pm-welcome-state')).toBeVisible()
-  await expect(page.locator('textarea')).toBeVisible()
-  await expect(page.getByTestId('pm-threads-aside')).toHaveCount(0)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-})
-
-test('paused assistant preserves readable history and one settings entry', async ({ page }) => {
-  await page.routeWebSocket('**/workspace/pm/threads/*/chat', () => {})
-  await page.goto('/workspace.html?view=/assistant&assistant=history')
-  await expect(page.getByTestId('pm-message-scroller')).toContainText('本周已完成 API 文档')
-  await expect(page.getByTestId('pm-threads-aside')).toBeVisible()
-  await expect(page.getByTestId('pm-history-readonly')).toBeVisible()
-  await expect(page.locator('textarea')).toHaveCount(0)
-  await expect(page.getByTestId('workspace-page').getByRole('button', { name: /设置/ })).toHaveCount(1)
-})
-
-test('first mobile assistant message stays in the conversation after creating a thread', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.routeWebSocket('**/workspace/pm/threads/*/chat', () => {})
-  await page.goto('/workspace.html?view=/assistant')
-  await page.locator('textarea').fill('今天有什么阻塞？')
-  await page.getByTestId('pm-chat-send').click()
-  await expect(page.getByTestId('pm-stream-bubble')).toBeVisible()
-  await expect(page.getByTestId('pm-chat-section')).toContainText('今天有什么阻塞？')
-  await expect(page.getByTestId('pm-threads-aside')).toHaveCount(0)
-  const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
-  expect(calls.some((call: any) => call.method === 'POST' && call.path.endsWith('/new-conversation/turns'))).toBe(true)
-})
-
-test('an unavailable default Agent does not block a valid historical conversation', async ({ page }) => {
-  await page.routeWebSocket('**/workspace/pm/threads/*/chat', () => {})
-  await page.goto('/workspace.html?view=/assistant&assistant=orphan')
-  await expect(page.getByTestId('pm-message-scroller')).toContainText('本周已完成 API 文档')
-  await expect(page.locator('textarea')).toBeEnabled()
-  await expect(page.getByTestId('pm-availability-notice')).toContainText('默认 Agent 暂不可用')
-  await expect(page.getByTestId('pm-history-readonly')).toHaveCount(0)
-})
-
-test('an unavailable historical Agent keeps the conversation readable without a composer', async ({ page }) => {
-  await page.routeWebSocket('**/workspace/pm/threads/*/chat', () => {})
-  await page.goto('/workspace.html?view=/assistant&assistant=unavailable-thread')
-  await expect(page.getByTestId('pm-message-scroller')).toContainText('本周已完成 API 文档')
-  await expect(page.getByTestId('pm-history-readonly')).toContainText('此会话的 Agent 暂不可用')
-  await expect(page.locator('textarea')).toHaveCount(0)
-})
-
 test('workspace sidebar keeps recent runs without a workflow directory', async ({ page }) => {
   await page.goto('/workspace.html')
   const lists = page.getByTestId('app-desktop-sidebar').getByTestId('sidebar-workspace-lists')
@@ -179,8 +108,9 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/assistant', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/agents', '/settings/credentials', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/workspace"]')).toHaveCount(0)
+  for (const path of ['/assistant', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/settings/notification-policy', '/settings/channels']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toHaveCount(0)
   await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/shared-agent"]')).toHaveCount(0)
@@ -210,7 +140,7 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
 
 test('settings tool links keep the settings directory until explicitly leaving it', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
-  for (const path of ['/board', '/workflows', '/assistant']) {
+  for (const path of ['/board', '/workflows', '/settings/audit']) {
     const settings = page.getByTestId('nav-settings-chrome')
     await settings.locator(`a[href="${path}"]`).click()
     await expect(settings).toBeVisible()
@@ -317,9 +247,9 @@ test('settings and workspace retain the same app rail while changing directory',
   await expect.poll(railAppearance).toEqual(before)
 })
 
-test('workflow directory search filters and clears', async ({ page }) => {
+test('workflow list search clears back to the full catalog', async ({ page }) => {
   await page.goto('/workspace.html')
-  await expect(page.getByTestId('workflows-desktop-table').locator('tbody tr')).toHaveCount(12)
+  await expect(page.getByTestId('workflows-desktop-table').locator('[data-testid="wf-notify-mode"]')).toHaveCount(0)
   await page.getByRole('searchbox').last().fill('no-such-workflow')
   await expect(page.getByTestId('workflows-empty')).toHaveAttribute('data-empty-kind', 'search')
   await page.getByRole('button', { name: '清空搜索', exact: true }).click()
@@ -331,21 +261,4 @@ test('an empty workflow directory offers creation without a table shell', async 
   await expect(page.getByTestId('workflows-empty')).toHaveAttribute('data-empty-kind', 'workspace')
   await expect(page.getByTestId('workflows-desktop-table')).toHaveCount(0)
   await expect(page.getByTestId('workflows-empty').getByRole('button', { name: '新建工作流', exact: true })).toBeVisible()
-})
-
-test('mobile historical chat leaves attachment controls clear of floating navigation', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.routeWebSocket('**/workspace/pm/threads/*/chat', () => {})
-  await page.goto('/workspace.html?view=/assistant&assistant=active-history')
-  await page.getByTestId('pm-threads-aside').getByRole('button', { name: /本周研发进展/ }).click()
-  await expect(page.locator('textarea')).toBeInViewport()
-  const attach = page.getByTestId('pm-chat-attach')
-  await expect(attach).toBeInViewport()
-  expect(await attach.evaluate(el => {
-    const box = el.getBoundingClientRect()
-    return el.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
-  })).toBe(true)
-  const picked = page.waitForEvent('filechooser')
-  await attach.click()
-  await picked
 })

@@ -26,7 +26,7 @@ describe('CreateAgentTeamWizard', () => {
       messages: { 'zh-CN': { ...common, ...pages } },
     })
     const w = mount(CreateAgentTeamWizard, {
-      props: { open: true, existingNames: [] },
+      props: { open: true },
       global: {
         plugins: [i18n],
         stubs: {

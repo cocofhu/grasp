@@ -26,7 +26,7 @@ const MOCK_STATS = {
     cacheReadTokens: 800,
     cacheWriteTokens: 200,
     workflowTotal: 7000,
-    pmTotal: 2000,
+    soloTotal: 2000,
     runCount: 3,
     modelCount: 1,
     studioTotal: 0,
@@ -40,7 +40,7 @@ const MOCK_STATS = {
   currency: 'USD',
   sources: [
     { key: 'workflow', name: 'workflow', total: 7000 },
-    { key: 'pm', name: 'pm', total: 2000 },
+    { key: 'solo', name: 'solo', total: 2000 },
   ],
   statuses: [
     { key: 'ok', name: 'ok', total: 8700 },
@@ -55,7 +55,7 @@ const MOCK_STATS = {
   tree: [
     { key: 'w1', name: 'wf', kind: 'workflow', value: 5000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 5000 }] },
     { key: 'w2', name: 'review', kind: 'workflow', value: 2000 },
-    { key: '_pm', name: 'PM', kind: 'pm', value: 2000 },
+    { key: '_solo', name: 'Solo', kind: 'solo', value: 2000 },
   ],
   unpricedModels: ['m2'],
   trend: [
@@ -63,7 +63,7 @@ const MOCK_STATS = {
       bucket: '2026-07-01',
       total: 9000,
       workflowTotal: 7000,
-      pmTotal: 2000,
+      soloTotal: 2000,
       inputTokens: 5000,
       outputTokens: 3000,
       cacheReadTokens: 800,

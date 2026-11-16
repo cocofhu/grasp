@@ -36,7 +36,7 @@ type WorkspaceVariable struct {
 
 // Credential is a workspace secret managed from the settings UI.
 // ValueEnc is AES-GCM ciphertext and is never serialized to API responses.
-// Hash-based credentials (external MCP/workflow keys) keep their existing
+// Hash-based credentials (workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
 type Credential struct {
 	ID             string         `gorm:"primaryKey" json:"id"`
@@ -46,7 +46,7 @@ type Credential struct {
 	SecretKind     string         `json:"secretKind,omitempty"`
 	Host           string         `json:"host,omitempty"`
 	SecretRevision uint64         `json:"secretRevision"`
-	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | external_mcp | workflow
+	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | workflow
 	Provider       string         `json:"provider,omitempty"`
 	Name           string         `json:"name"`
 	Target         string         `json:"target,omitempty"`
@@ -68,23 +68,6 @@ type Workspace struct {
 	ID          string `gorm:"primaryKey" json:"-"`
 	Name        string `gorm:"size:191" json:"name"`
 	Description string `json:"description"`
-	// PmLeaderEnabled toggles the workspace-level PM Leader consult entry.
-	PmLeaderEnabled bool `json:"pmLeaderEnabled"`
-	// PmLeaderAgent is the bound Agent config name (agent_profile). Empty when
-	// unbound. Enabling requires a non-empty, existing agent name.
-	PmLeaderAgent string `json:"pmLeaderAgent,omitempty"`
-	// PmEnabledMcps lists enabled PM-only MCP ids (pm-progress, pm-workflow-read, pm-workflow-write, pm-agent-fs).
-	// nil/omitted → defaults; explicit empty slice → none.
-	// nil/unset means both enabled by default; explicit empty disables all.
-	PmEnabledMcps []string `gorm:"serializer:json" json:"pmEnabledMcps,omitempty"`
-	// PmGateAutoVar is the workspace variable name that gates "auto-invoke PM on
-	// human gates". Empty disables the capability. Runtime requires the named
-	// var to exist in the run and be truthy; save-time existence/type checks
-	// are intentionally not enforced.
-	PmGateAutoVar string `json:"gateAutoVar,omitempty"`
-	// PmGateAutoPrompt is an optional prompt appended after the system default
-	// gate-auto guidance when invoking the PM Leader.
-	PmGateAutoPrompt string `json:"gateAutoPrompt,omitempty"`
 	// UnknownModelDisplayName is an optional workspace-level display alias for the
 	// 「未知/未分桶」token bucket. Empty means use the default label. Does not
 	// change persisted UsageByModel keys or merge with real model buckets.
@@ -99,16 +82,7 @@ type WorkflowDefaults struct {
 	Variables []WorkspaceVariable `json:"variables"`
 	// Repos are the repositories bound to the workflow, in clone order. A run
 	// takes all of them unless the launcher picks a subset.
-	Repos    []RepoChoice            `json:"repos,omitempty"`
-	GateAuto *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
-}
-
-type WorkflowGateAutoPolicy struct {
-	Enabled     bool     `json:"enabled"`
-	AgentName   string   `json:"agentName"`
-	Variable    string   `json:"variable"`
-	Prompt      string   `json:"prompt"`
-	EnabledMcps []string `json:"enabledMcps"`
+	Repos []RepoChoice `json:"repos,omitempty"`
 }
 
 type WorkflowDef struct {
@@ -148,7 +122,6 @@ const (
 	VersionSourceSave    = "save"
 	VersionSourceRestore = "restore"
 	VersionSourceImport  = "import"
-	VersionSourcePM      = "pm"
 )
 
 // WorkflowVersion is one immutable saved revision of a workflow. Every save
@@ -161,7 +134,7 @@ type WorkflowVersion struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	NodeCount   int    `gorm:"default:0" json:"nodeCount"`
-	// Source is save | restore | import | pm.
+	// Source is save | restore | import.
 	Source       string     `json:"source"`
 	RestoredFrom *int       `json:"restoredFrom,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
@@ -899,7 +872,6 @@ type PromptImage struct {
 //   - "test":  long-lived interactive sandbox for Agent chat-testing.
 //   - "run":   per-run workflow node sandbox, recorded for its (short) lifetime
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
-//   - "agent": thread-bound agent session sandbox (consult / gate-auto / future roles).
 type Sandbox struct {
 	// Binding fingerprints retain only hashes, so reconnect can validate the
 	// exact applied authorization even after a control-plane restart.
@@ -937,9 +909,7 @@ type Sandbox struct {
 	// sandboxes only). Retained while the container lives so it can be cleaned
 	// up when the sandbox is finally destroyed.
 	HomeDir string `json:"-"`
-	// RecoveryMCPNames stores role MCP identities, never old URLs or secrets.
-	// nil marks an older row whose retained configuration must be inspected.
-	RecoveryMCPNames []string `gorm:"serializer:json" json:"-"`
+
 	// Error carries the startup failure reason when Status == "error".
 	Error string `json:"error,omitempty"`
 	// LastActiveAt advances on real work, not list/health polling. Every sandbox
@@ -1073,7 +1043,6 @@ func AllModels() []any {
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &ArtifactDelivery{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{},
-		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AuditEvent{},
 		&Credential{},
 		&ModelConnection{},
@@ -1086,8 +1055,6 @@ func AllModels() []any {
 		&EmbedSession{},
 		&NotificationRead{},
 		&NotificationBaseline{},
-		&ExternalMcpSettings{},
-		&WorkspaceMcpApiKey{},
 		&LiveSession{},
 		&TokenUsageEvent{},
 		&TokenUsageReport{},

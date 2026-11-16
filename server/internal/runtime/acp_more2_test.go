@@ -78,7 +78,9 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 		{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}},
 		{"name":"cmd","command":"run","args":["a"],"env":{"K":"v"}},
 		{"name":"","url":"x"},
-		{"name":"empty"}
+		{"name":"empty"},
+		{"name":"memory-store","url":"${GRASP_MEMORY_URL}"},
+		{"name":"scheduler","url":"http://mcp.local/mcp/task-scheduler/a"}
 	]}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
@@ -238,19 +240,25 @@ func eventWSServer(t *testing.T) (*httptest.Server, string, int) {
 	return srv, "127.0.0.1", port
 }
 
-func TestIsWorkflowDroppedPlatformMCPMatchesRenamedEndpoints(t *testing.T) {
+func TestIsRetiredPlatformMCPMatchesNamesAndEndpoints(t *testing.T) {
 	cases := []struct {
 		name, url string
 		want      bool
 	}{
 		{"mem", "http://grasp:8080/mcp/memory-store", true},
 		{"ctx", "http://grasp:8080/mcp/context-store", true},
+		{"sched", "http://grasp:8080/mcp/task-scheduler/agent-a", true},
+		{"pm", "http://grasp:8080/mcp/pm/pm-progress", true},
+		{"ws", "http://grasp:8080/mcp/workspace", true},
+		{"tpl", "${GRASP_MEMORY_URL}", true},
 		{"Memory-Store", "", true},
+		{"pm-workflow-write", "", true},
+		{"artifact-store", "${GRASP_ARTIFACT_URL}", false},
 		{"git", "http://example.com/mcp/git", false},
 	}
 	for _, c := range cases {
-		if got := isWorkflowDroppedPlatformMCP(c.name, c.url); got != c.want {
-			t.Errorf("isWorkflowDroppedPlatformMCP(%q, %q) = %v, want %v", c.name, c.url, got, c.want)
+		if got := IsRetiredPlatformMCP(c.name, c.url); got != c.want {
+			t.Errorf("IsRetiredPlatformMCP(%q, %q) = %v, want %v", c.name, c.url, got, c.want)
 		}
 	}
 }

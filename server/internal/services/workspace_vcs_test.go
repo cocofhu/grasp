@@ -7,9 +7,37 @@ import (
 	"testing"
 )
 
+// commitWorkspaceFile writes rel under the agent workspace and records it as one revision.
+func commitWorkspaceFile(t *testing.T, s *AgentService, agent, rel, content, reason string) string {
+	t.Helper()
+	if err := s.Vcs.EnsureBaseline(agent); err != nil {
+		t.Fatal(err)
+	}
+	root, err := s.ensureWorkspaceRoot(agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := s.Vcs.CommitChange(agent, VcsCommitMeta{
+		Author: "u", Source: VcsSourceStudio, Reason: reason,
+		Changes: []VcsPathChange{{Op: "write", Path: rel}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sha
+}
+
+func readWorkspaceFile(s *AgentService, agent, rel string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(s.root, agent, WorkDirName, rel))
+	return string(b), err
+}
+
 func TestParseVcsMessageReasonSpaces(t *testing.T) {
 	subject := formatVcsMessage(VcsCommitMeta{
-		Source: VcsSourcePmMCP, Author: "tester", Reason: "init agents md",
+		Source: VcsSourceStudio, Author: "tester", Reason: "init agents md",
 		Changes: []VcsPathChange{{Op: "write", Path: "AGENTS.md"}},
 	})
 	meta := parseVcsMessage("abc", subject)
@@ -24,13 +52,7 @@ func TestWorkspaceVcsBaselineAndWrite(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "coder"}); err != nil {
 		t.Fatal(err)
 	}
-	sha, err := s.WriteWorkspaceFileVcs("coder", "AGENTS.md", "# hi", WorkspaceWriteOpts{
-		Author: "tester", Source: VcsSourcePmMCP, Reason: "init agents md",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sha == "" {
+	if sha := commitWorkspaceFile(t, s, "coder", "AGENTS.md", "# hi", "init agents md"); sha == "" {
 		t.Fatal("expected commit sha")
 	}
 	revs, err := s.Vcs.ListRevisions("coder", 10)
@@ -79,13 +101,13 @@ func TestWorkspaceVcsReasonRequired(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.WriteWorkspaceFileVcs("a", "x.md", "x", WorkspaceWriteOpts{Author: "u", Source: VcsSourcePmMCP})
-	if err != ErrVcsReasonRequired {
+	sha := commitWorkspaceFile(t, s, "a", "x.md", "v1", "seed")
+	commitWorkspaceFile(t, s, "a", "x.md", "v2", "change")
+	if _, err := s.RestoreWorkspaceVcs("a", sha, "u", "  "); err != ErrVcsReasonRequired {
 		t.Fatalf("got %v", err)
 	}
-	content, _ := s.ReadWorkspaceFile("a", "x.md")
-	if content != "" {
-		t.Fatal("write without reason must not persist")
+	if got, _ := readWorkspaceFile(s, "a", "x.md"); got != "v2" {
+		t.Fatalf("restore without reason must not apply, got %q", got)
 	}
 }
 
@@ -94,21 +116,12 @@ func TestWorkspaceVcsRestore(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	sha1, err := s.WriteWorkspaceFileVcs("a", "a.md", "v1", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "seed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.WriteWorkspaceFileVcs("a", "a.md", "v2", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "change",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	sha1 := commitWorkspaceFile(t, s, "a", "a.md", "v1", "seed")
+	commitWorkspaceFile(t, s, "a", "a.md", "v2", "change")
 	if _, err := s.RestoreWorkspaceVcs("a", sha1, "u", "rollback"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.ReadWorkspaceFile("a", "a.md")
+	got, err := readWorkspaceFile(s, "a", "a.md")
 	if err != nil || got != "v1" {
 		t.Fatalf("after restore got=%q err=%v", got, err)
 	}
@@ -119,11 +132,7 @@ func TestWorkspaceVcsRenameAgent(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "old"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.WriteWorkspaceFileVcs("old", "f.md", "x", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourceStudio, Reason: "seed",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	commitWorkspaceFile(t, s, "old", "f.md", "x", "seed")
 	if err := s.Rename("old", "new"); err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +147,7 @@ func TestWorkspaceVcsDiffRevision(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	sha, err := s.WriteWorkspaceFileVcs("a", "a.md", "hello", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "seed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	sha := commitWorkspaceFile(t, s, "a", "a.md", "hello", "seed")
 	diff, err := s.Vcs.DiffRevision("a", sha)
 	if err != nil {
 		t.Fatal(err)
@@ -161,24 +165,15 @@ func TestWorkspaceVcsDeleteAndRestoreDropsExtra(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	sha, err := s.WriteWorkspaceFileVcs("a", "keep.md", "keep", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "seed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.WriteWorkspaceFileVcs("a", "extra.md", "gone", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "add extra",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	sha := commitWorkspaceFile(t, s, "a", "keep.md", "keep", "seed")
+	commitWorkspaceFile(t, s, "a", "extra.md", "gone", "add extra")
 	if _, err := s.RestoreWorkspaceVcs("a", sha, "u", "rollback extra"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.ReadWorkspaceFile("a", "keep.md"); err != nil || got != "keep" {
+	if got, err := readWorkspaceFile(s, "a", "keep.md"); err != nil || got != "keep" {
 		t.Fatalf("keep.md=%q err=%v", got, err)
 	}
-	if _, err := s.ReadWorkspaceFile("a", "extra.md"); err == nil {
+	if _, err := readWorkspaceFile(s, "a", "extra.md"); err == nil {
 		t.Fatal("extra.md should be gone after restore")
 	}
 }
@@ -189,17 +184,8 @@ func TestWorkspaceVcsWorksWithoutGitOnPATH(t *testing.T) {
 	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	sha, err := s.WriteWorkspaceFileVcs("a", "a.md", "v1", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "seed",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.WriteWorkspaceFileVcs("a", "a.md", "v2", WorkspaceWriteOpts{
-		Author: "u", Source: VcsSourcePmMCP, Reason: "change",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	sha := commitWorkspaceFile(t, s, "a", "a.md", "v1", "seed")
+	commitWorkspaceFile(t, s, "a", "a.md", "v2", "change")
 	revs, err := s.Vcs.ListRevisions("a", 10)
 	if err != nil || len(revs) < 2 {
 		t.Fatalf("history=%v err=%v", revs, err)
@@ -211,7 +197,7 @@ func TestWorkspaceVcsWorksWithoutGitOnPATH(t *testing.T) {
 	if _, err := s.RestoreWorkspaceVcs("a", sha, "u", "rollback"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.ReadWorkspaceFile("a", "a.md")
+	got, err := readWorkspaceFile(s, "a", "a.md")
 	if err != nil || got != "v1" {
 		t.Fatalf("after restore got=%q err=%v", got, err)
 	}

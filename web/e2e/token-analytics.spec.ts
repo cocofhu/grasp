@@ -14,7 +14,7 @@ const MOCK_STATS = {
     cacheReadTokens: 800,
     cacheWriteTokens: 200,
     workflowTotal: 7000,
-    pmTotal: 2000,
+    soloTotal: 2000,
     runCount: 3,
     modelCount: 1,
   },
@@ -23,14 +23,14 @@ const MOCK_STATS = {
       bucket: '2026-07-01',
       total: 9000,
       workflowTotal: 7000,
-      pmTotal: 2000,
+      soloTotal: 2000,
       inputTokens: 5000,
       outputTokens: 3000,
       cacheReadTokens: 800,
       cacheWriteTokens: 200,
     },
   ],
-  prevTrend: [{ bucket: '2026-06-01', total: 8000, workflowTotal: 6000, pmTotal: 2000, inputTokens: 4000, outputTokens: 2500, cacheReadTokens: 700, cacheWriteTokens: 180 }],
+  prevTrend: [{ bucket: '2026-06-01', total: 8000, workflowTotal: 6000, soloTotal: 2000, inputTokens: 4000, outputTokens: 2500, cacheReadTokens: 700, cacheWriteTokens: 180 }],
   composition: {
     total: 9000,
     inputTokens: 5000,
@@ -90,7 +90,7 @@ async function openStatsPage(page: import('@playwright/test').Page, overrides: R
 }
 
 const SKEWED_STATS = {
-  kpi: { ...MOCK_STATS.kpi, total: 1_000_000, workflowTotal: 981_000, studioTotal: 10_000, pmTotal: 9_000 },
+  kpi: { ...MOCK_STATS.kpi, total: 1_000_000, workflowTotal: 981_000, studioTotal: 10_000, soloTotal: 9_000 },
   filterOptions: {
     ...MOCK_STATS.filterOptions,
     workflows: [{ key: 'w-dominant', name: '默认工作流' }],
@@ -99,7 +99,7 @@ const SKEWED_STATS = {
   tree: [
     { key: 'w-dominant', name: '默认工作流', kind: 'workflow', value: 981_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 981_000 }] },
     { key: '_studio', name: 'Studio', kind: 'studio', value: 10_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 10_000 }] },
-    { key: '_pm', name: 'PM', kind: 'pm', value: 9_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 9_000 }] },
+    { key: '_solo', name: 'Solo', kind: 'solo', value: 9_000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 9_000 }] },
   ],
 }
 
@@ -208,7 +208,7 @@ test.describe('Global token analytics', () => {
       for (const [key, name, total, share] of [
         ['w-dominant', '默认工作流', '981K', '98.1%'],
         ['_studio', 'Agent Studio', '10K', '1.0%'],
-        ['_pm', '工作区助手', '9K', '0.9%'],
+        ['_solo', 'Solo', '9K', '0.9%'],
       ]) {
         const row = structure.locator(`[data-testid="token-structure-row"][data-key="${key}"]`)
         await expect(row.getByTestId('token-structure-source').getByText(name, { exact: true })).toBeVisible()

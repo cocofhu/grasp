@@ -57,7 +57,6 @@ function pagesText(path: string): string {
   return path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], (pages as unknown as { pages: { tokenAnalytics: unknown } }).pages.tokenAnalytics) as string
 }
 const zh = (pages as unknown as { pages: { tokenAnalytics: Record<string, string> } }).pages.tokenAnalytics
-const zhBoardPm = (pages as unknown as { pages: { board: { tokenStats: { pm: string } } } }).pages.board.tokenStats.pm
 
 async function openFilterPopover(wrapper: ReturnType<typeof mount>) {
   if (!wrapper.find('[data-testid="token-analytics-filter-pop"]').exists()) {
@@ -79,12 +78,11 @@ const sampleData = {
     cacheReadTokens: 400,
     cacheWriteTokens: 100,
     workflowTotal: 4200,
-    pmTotal: 800,
     runCount: 5,
     modelCount: 2,
   },
-  trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }],
-  prevTrend: [{ bucket: '2026-06-01', total: 80, workflowTotal: 60, pmTotal: 20, inputTokens: 30, outputTokens: 25, cacheReadTokens: 15, cacheWriteTokens: 10 }],
+  trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }],
+  prevTrend: [{ bucket: '2026-06-01', total: 80, workflowTotal: 60, inputTokens: 30, outputTokens: 25, cacheReadTokens: 15, cacheWriteTokens: 10 }],
   composition: { inputTokens: 3000, outputTokens: 1500, cacheReadTokens: 400, cacheWriteTokens: 100, total: 5000 },
   modelRanking: [
     { modelKey: 'sonnet', name: 'Sonnet', total: 4000, inputTokens: 2400, outputTokens: 1200, cacheReadTokens: 300, cacheWriteTokens: 100 },
@@ -96,7 +94,7 @@ const sampleData = {
     { workflowId: 'w2', name: 'review', total: 2000, inputTokens: 1200, outputTokens: 600, cacheReadTokens: 200, cacheWriteTokens: 0, kind: 'workflow' as const },
   ],
   topRuns: [{ runId: 'r1', title: 'Run 1', workflowName: 'main', modelKey: 'sonnet', modelName: 'Sonnet', total: 500 }],
-  modelTrends: [{ key: 'sonnet', name: 'Sonnet', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
+  modelTrends: [{ key: 'sonnet', name: 'Sonnet', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
   filterOptions: { workflows: [{ key: 'w1', name: 'main' }], models: [{ key: 'sonnet', name: 'Sonnet' }] },
 }
 
@@ -907,7 +905,6 @@ describe('TokenAnalyticsView', () => {
           bucket: '2026-07-24T20',
           total: 40,
           workflowTotal: 30,
-          pmTotal: 10,
           inputTokens: 20,
           outputTokens: 10,
           cacheReadTokens: 5,
@@ -1046,7 +1043,7 @@ describe('TokenAnalyticsView', () => {
       const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
       await flushPromises()
       expect(wrapper.get('[data-testid="token-analytics-controls"]').text()).not.toContain('来源：')
-      expect(wrapper.get('[data-testid="token-analytics-source-pm"]').text()).toBe(zhBoardPm)
+      expect(wrapper.find('[data-testid="token-analytics-source-chat"]').exists()).toBe(false)
       vi.mocked(api.getGlobalTokenStats).mockClear()
       await wrapper.get('[data-testid="token-analytics-source-workflow"]').trigger('click')
       await flushPromises()
@@ -1071,7 +1068,6 @@ describe('TokenAnalyticsView', () => {
       ...sampleData,
       workflows: [
         ...sampleData.workflows.map((w, i) => ({ ...w, cost: i === 0 ? 1.5 : 0 })),
-        { workflowId: '', name: '工作区助手', total: 400, inputTokens: 200, outputTokens: 100, cacheReadTokens: 100, cacheWriteTokens: 0, kind: 'pm' as const },
         { workflowId: '', name: '其他', total: 100, kind: 'workflow' as const, other: true },
         { workflowId: 'w9', name: 'idle', total: 0, kind: 'workflow' as const },
       ],
@@ -1087,12 +1083,10 @@ describe('TokenAnalyticsView', () => {
       expect(heads[0]).toBe(zh.colWorkflow)
       const rows = table.findAll('[data-testid="token-analytics-workflow-row"]')
       // zero-total workflows are hidden
-      expect(rows).toHaveLength(4)
+      expect(rows).toHaveLength(3)
       expect(rows[0]!.text()).toContain('main')
       expect(rows[0]!.text()).toContain('60.0%')
       expect(rows[1]!.text()).toContain('—')
-      // PM bucket is labelled with the source name
-      expect(rows[2]!.text()).toContain(zhBoardPm)
       wrapper.unmount()
     })
 
@@ -1108,16 +1102,16 @@ describe('TokenAnalyticsView', () => {
       const lines = csv.trim().split(/\r?\n/)
       expect(lines[0]).toBe('workflow,workflow_id,kind,total,input,output,cache_read,cache_write,cost')
       expect(lines[1]).toBe('main,w1,workflow,3000,1800,900,200,100,1.5')
-      expect(lines).toHaveLength(5)
+      expect(lines).toHaveLength(4)
       wrapper.unmount()
     })
 
-    it('drills into a workflow or the PM source from 详情, and hides 详情 for the 其他 bucket', async () => {
+    it('drills into a workflow from 详情, and hides 详情 for the 其他 bucket', async () => {
       vi.mocked(api.getGlobalTokenStats).mockResolvedValue(wfData)
       const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n], stubs: { teleport: true } } })
       await flushPromises()
       const rows = wrapper.findAll('[data-testid="token-analytics-workflow-row"]')
-      expect(rows[3]!.find('[data-testid="token-analytics-workflow-detail"]').exists()).toBe(false)
+      expect(rows[2]!.find('[data-testid="token-analytics-workflow-detail"]').exists()).toBe(false)
 
       vi.mocked(api.getGlobalTokenStats).mockClear()
       await rows[0]!.get('[data-testid="token-analytics-workflow-detail"]').trigger('click')
@@ -1126,14 +1120,6 @@ describe('TokenAnalyticsView', () => {
       expect(wrapper.get('[data-testid="token-drill-breadcrumb"]').text()).toContain('工作流：main')
       expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(expect.objectContaining({ workflowId: 'w1' }), expect.anything())
       wrapper.unmount()
-
-      const again = mount(TokenAnalyticsView, { global: { plugins: [i18n], stubs: { teleport: true } } })
-      await flushPromises()
-      vi.mocked(api.getGlobalTokenStats).mockClear()
-      await again.findAll('[data-testid="token-analytics-workflow-row"]')[2]!.get('[data-testid="token-analytics-workflow-detail"]').trigger('click')
-      await flushPromises()
-      expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'pm' }), expect.anything())
-      again.unmount()
     })
   })
 

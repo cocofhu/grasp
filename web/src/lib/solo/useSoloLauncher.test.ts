@@ -25,7 +25,7 @@ vi.mock('@/lib/api/api', () => ({ api: mocks }))
 
 import { useSoloLauncher } from './useSoloLauncher'
 import { soloPrefs } from './soloPrefs'
-import { firstInstallCompletedAt } from '@/lib/pm/firstInstall'
+import { firstInstallCompletedAt } from '@/lib/onboarding/firstInstall'
 
 const mountedApps: ReturnType<typeof createApp>[] = []
 function mountLauncher() {

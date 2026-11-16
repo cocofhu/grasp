@@ -40,8 +40,7 @@
     },
     "runTrigger": {
       "manual": "Manual",
-      "api": "API",
-      "pmMcp": "Workspace assistant MCP"
+      "api": "API"
     },
     "statusFilter": {
       "selectedCount": "{n} selected"
