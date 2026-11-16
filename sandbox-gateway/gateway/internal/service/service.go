@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"strings"
 	"sync"
@@ -825,13 +826,11 @@ func configInjectEnv(cfg *driver.ConfigInject) map[string]string {
 
 // mergeEnv overlays extra onto a copy of base (extra wins). Nil-safe.
 func mergeEnv(base, extra map[string]string) map[string]string {
-	out := make(map[string]string, len(base)+len(extra))
-	for k, v := range base {
-		out[k] = v
+	out := maps.Clone(base)
+	if out == nil {
+		out = make(map[string]string, len(extra))
 	}
-	for k, v := range extra {
-		out[k] = v
-	}
+	maps.Copy(out, extra)
 	return out
 }
 
