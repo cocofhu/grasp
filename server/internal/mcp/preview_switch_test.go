@@ -282,7 +282,7 @@ func TestSetPreviewRejectsSandboxServicePorts(t *testing.T) {
 	h := NewHost(&memStore{})
 	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
 	h.SetPreviewSandboxOps(ops)
-	for _, p := range []int{22, 5900, 6080, 8744, 8765, 9222, 17980} {
+	for _, p := range []int{22, 5900, 6080, 6090, 6091, 6092, 6099, 8744, 8765, 9222, 17980} {
 		_, err := h.setPreviewPort("r", "n", p, "")
 		if err == nil || !strings.Contains(err.Error(), "沙箱自带的服务") {
 			t.Fatalf("port %d: err=%v", p, err)
@@ -290,6 +290,14 @@ func TestSetPreviewRejectsSandboxServicePorts(t *testing.T) {
 	}
 	if len(ops.switches) != 0 || ops.keepalives != 0 {
 		t.Fatalf("reserved ports must be refused before touching the sandbox: switches=%v keepalives=%d", ops.switches, ops.keepalives)
+	}
+}
+
+func TestPreviewPortReservedDesktopRangeBounds(t *testing.T) {
+	for p, want := range map[int]bool{6089: false, 6090: true, 6095: true, 6099: true, 6100: false, 5173: false} {
+		if got := previewPortReserved(p); got != want {
+			t.Fatalf("port %d reserved=%v want %v", p, got, want)
+		}
 	}
 }
 

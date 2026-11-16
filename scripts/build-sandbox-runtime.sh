@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the sandbox runtime bundle Grasp serves to every sandbox: the Go
-# programs (backend / ACP bridge, preview-inject), the bridge web assets and the
-# startup / service scripts. The sandbox image only ships the environment plus
+# programs (backend / ACP bridge, preview-inject, grasp-desktop), the bridge web
+# assets, the desktop shell assets and the startup / service scripts. The
+# sandbox image only ships the environment plus
 # /grasp-bootstrap.sh, which fetches and installs this bundle.
 #
 # Usage: scripts/build-sandbox-runtime.sh [OUT_DIR]
@@ -16,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/.devdata/sandbox-runtime}"
 SRC="${SANDBOX_SRC:-$ROOT/sandbox-gateway/sandbox}"
 ARCH="${GOARCH:-amd64}"
-SCRIPTS=(grasp-bootstrap.sh startup.sh preview-inject.sh vnc-preview.sh services.sh claude-env.sh reprime.sh git-credentials.py)
+SCRIPTS=(grasp-bootstrap.sh startup.sh preview-inject.sh vnc-preview.sh services.sh desktop-session.sh claude-env.sh reprime.sh git-credentials.py)
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -27,8 +28,10 @@ mkdir -p "$STAGE/bin" "$STAGE/share/backend" "$STAGE/scripts"
   export CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH"
   go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$STAGE/bin/backend" ./cmd/backend
   go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$STAGE/bin/preview-inject" ./cmd/preview-inject
+  go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$STAGE/bin/grasp-desktop" ./cmd/desktop
 )
 cp -R "$SRC/web" "$STAGE/share/backend/web"
+cp -R "$SRC/share/desktop" "$STAGE/share/desktop"
 for s in "${SCRIPTS[@]}"; do
   install -m 0755 "$SRC/scripts/$s" "$STAGE/scripts/$s"
 done

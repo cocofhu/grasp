@@ -54,6 +54,7 @@ jobs:
           bash -n sandbox/scripts/install-agent.sh
           bash -n sandbox/scripts/claude-env.sh
           bash -n sandbox/scripts/vnc-preview.sh
+          bash -n sandbox/scripts/desktop-session.sh
           bash -n sandbox/scripts/preview-inject.sh
           bash -n sandbox/scripts/grasp-bootstrap.sh
           bash -n sandbox/scripts/services.sh
@@ -66,6 +67,7 @@ jobs:
           bash -n scripts/test-preview-inject-upstream.sh
           bash -n scripts/test-git-auth.sh
           bash -n scripts/test-agent-connect.sh
+          bash -n scripts/test-desktop-session.sh
           node --check scripts/agent-ws-check.mjs
           node --check scripts/mock-chat-model.mjs
           bash -n scripts/cover-check-sandbox.sh
@@ -77,6 +79,8 @@ jobs:
         run: ./scripts/test-git-auth.sh
       - name: Runtime bootstrap + services smoke
         run: ./scripts/test-runtime-bootstrap.sh
+      - name: Desktop session smoke
+        run: ./scripts/test-desktop-session.sh
       # Fixture replay only. Does not build universal-sandbox. Fails the job
       # when the one-shot or SSE reply drops GRASP_AGENT_E2E_OK or finish_reason stop.
       - name: Mock chat model contract

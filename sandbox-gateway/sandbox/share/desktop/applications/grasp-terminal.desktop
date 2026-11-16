@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Name[zh_CN]=终端
+Exec=lxterminal --working-directory=/root/workspace
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;

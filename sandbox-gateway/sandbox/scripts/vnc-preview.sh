@@ -1,5 +1,8 @@
 #!/bin/bash
 # In-sandbox VNC preview stack (Xvfb + headed Chromium + x11vnc + websockify).
+# On the desktop image (/etc/grasp-desktop) desktop-session.sh first brings up
+# the desktop shell on the same display; if it fails the stack falls back to
+# browser mode (fallbackReason in /run/grasp-desktop/state).
 # Idempotent and mutually exclusive: concurrent callers (startup.sh background +
 # any exec-triggered warmup) serialize on a flock so only one process brings the
 # stack up; others wait then exit 0 once CDP :9222 is ready.
@@ -72,7 +75,19 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
     sleep 1
   fi
 
-  # No window manager on Xvfb. Explicit position and size are the bootstrap
+  DESKTOP_ARGS=()
+  START_URL=about:blank
+  if [ -e "${GRASP_DESKTOP_MARKER:-/etc/grasp-desktop}" ]; then
+    if [ -x /usr/local/bin/desktop-session.sh ] && /usr/local/bin/desktop-session.sh start 9>&-; then
+      SHARE_DIR="$(cd "$(dirname "$(readlink -f /usr/local/bin/desktop-session.sh)")/.." && pwd)/share/desktop"
+      DESKTOP_ARGS=(--load-extension="$SHARE_DIR/newtab" --disable-extensions-except="$SHARE_DIR/newtab")
+      START_URL=http://127.0.0.1:6091/
+    else
+      echo "vnc-preview: desktop shell unavailable, falling back to browser mode" >&2
+    fi
+  fi
+
+  # Browser mode has no window manager on Xvfb. Explicit position and size are the bootstrap
   # window fallback; Approving NewTab windows are resized via CDP
   # (presentDesktop: normal state, then a 0,0 1920x1080 frame, so the tab strip
   # and address bar stay visible above the content area). Do not pass
@@ -97,7 +112,8 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
     --force-device-scale-factor=1 \
     --no-first-run \
     --no-default-browser-check \
-    about:blank \
+    "${DESKTOP_ARGS[@]}" \
+    "$START_URL" \
     9>&- >/tmp/sandbox-vnc-chrome.log 2>&1 &
   echo $! >"$PID_DIR/chrome.pid"
 

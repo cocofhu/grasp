@@ -54,16 +54,16 @@ func TestPlan_g1_3_toolbarOnScreenIsReady(t *testing.T) {
 		outerW: ViewportWidth, outerH: ViewportHeight,
 		contentW: ViewportWidth, contentH: ViewportHeight - 88,
 	}
-	if !desktopReady(g) {
+	if !desktopReady(g, fullScreen) {
 		t.Fatal("toolbar on screen with content filling the rest should be ready")
 	}
 	// Fullscreen: no toolbar, content equals the frame.
 	g.contentH = ViewportHeight
-	if !desktopReady(g) {
+	if !desktopReady(g, fullScreen) {
 		t.Fatal("fullscreen content covering the frame should be ready")
 	}
 	// Chromium reports a couple of pixels of border on Xvfb.
-	if !desktopReady(desktopGeom{left: -2, outerW: ViewportWidth + 2, outerH: ViewportHeight, contentW: ViewportWidth - 1, contentH: 992}) {
+	if !desktopReady(desktopGeom{left: -2, outerW: ViewportWidth + 2, outerH: ViewportHeight, contentW: ViewportWidth - 1, contentH: 992}, fullScreen) {
 		t.Fatal("border slack should still be ready")
 	}
 }
@@ -79,7 +79,7 @@ func TestPlan_g1_3_shiftedOrStaleIsNotReady(t *testing.T) {
 		"narrow":        {outerW: ViewportWidth, outerH: ViewportHeight, contentW: 1280, contentH: 992},
 	}
 	for name, g := range cases {
-		if desktopReady(g) {
+		if desktopReady(g, fullScreen) {
 			t.Errorf("%s: %+v must not be ready", name, g)
 		}
 	}
@@ -88,6 +88,7 @@ func TestPlan_g1_3_shiftedOrStaleIsNotReady(t *testing.T) {
 // fakeDesktop models Chromium on Xvfb: the outer frame changes as soon as
 // setWindowBounds returns, but innerHeight lags for a few reads.
 type fakeDesktop struct {
+	area       *workArea
 	toolbar    int
 	lagReads   int
 	staleH     int
@@ -107,6 +108,13 @@ func (f *fakeDesktop) setWindowBounds(b *proto.BrowserBounds) error {
 	f.geom.outerW, f.geom.outerH = *b.Width, *b.Height
 	f.pending = f.lagReads
 	return nil
+}
+
+func (f *fakeDesktop) workArea() workArea {
+	if f.area == nil {
+		return fullScreen
+	}
+	return *f.area
 }
 
 func (f *fakeDesktop) readDesktopGeom() (desktopGeom, error) {
@@ -178,14 +186,45 @@ func TestPlan_g1_3_notReadyErrorNamesContentAndOuter(t *testing.T) {
 		left: 0, top: 0,
 		outerW: ViewportWidth, outerH: ViewportHeight,
 		contentW: ViewportWidth, contentH: 960,
-	})
+	}, fullScreen)
 	if !errors.Is(err, ErrDesktopNotReady) {
 		t.Fatal("wrapped ErrDesktopNotReady must match errors.Is")
 	}
 	msg := err.Error()
-	for _, want := range []string{"content 1920x960", "does not cover 1920x1080", "outer 1920x1080"} {
+	for _, want := range []string{"content 1920x960", "does not cover 1920x1080 at 0,0", "outer 1920x1080"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("diagnostic %q missing %q", msg, want)
+		}
+	}
+}
+
+func TestDesktopImageFitsWorkAreaAboveDock(t *testing.T) {
+	fastSettle(t)
+	dock := workArea{0, 0, ViewportWidth, ViewportHeight - 64}
+	f := &fakeDesktop{area: &dock, toolbar: 88, fit: true}
+	g, err := presentNormal(f)
+	if err != nil {
+		t.Fatalf("presentNormal: %v", err)
+	}
+	b := f.lastBounds
+	if *b.Left != 0 || *b.Top != 0 || *b.Width != ViewportWidth || *b.Height != ViewportHeight-64 {
+		t.Fatalf("window must stop above the Dock, got %d,%d %dx%d", *b.Left, *b.Top, *b.Width, *b.Height)
+	}
+	if g.contentH != ViewportHeight-64-88 {
+		t.Fatalf("content=%dx%d", g.contentW, g.contentH)
+	}
+	if desktopReady(desktopGeom{outerW: ViewportWidth, outerH: ViewportHeight, contentW: ViewportWidth, contentH: 992}, dock) {
+		t.Fatal("a window covering the Dock is not the desktop-mode fit")
+	}
+}
+
+func TestSanitizeWorkArea(t *testing.T) {
+	if got := sanitizeWorkArea(0, 0, 1920, 1016); got != (workArea{0, 0, 1920, 1016}) {
+		t.Fatalf("dock work area = %+v", got)
+	}
+	for _, c := range [][4]int{{0, 0, 0, 0}, {-1, 0, 1920, 1080}, {0, 0, 2560, 1440}, {100, 0, 1920, 1080}, {0, 0, 200, 100}} {
+		if got := sanitizeWorkArea(c[0], c[1], c[2], c[3]); got != fullScreen {
+			t.Fatalf("%v must fall back to the full screen, got %+v", c, got)
 		}
 	}
 }

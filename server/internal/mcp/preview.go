@@ -182,8 +182,19 @@ func probeInjectUpstream(ctx context.Context, sw previewInjectSwitcher, sandboxN
 // public without auth, and keepalive would restart them.
 var reservedPreviewPorts = map[int]bool{22: true, 5900: true, 6080: true, 8744: true, 8765: true, 9222: true, 17980: true}
 
+// Desktop-image services (launcher 6091, Blender MCP add-on 6092, …) only
+// take ports from this loopback range, so the whole range is refused.
+const (
+	reservedDesktopPortMin = 6090
+	reservedDesktopPortMax = 6099
+)
+
+func previewPortReserved(port int) bool {
+	return reservedPreviewPorts[port] || (port >= reservedDesktopPortMin && port <= reservedDesktopPortMax)
+}
+
 func reservedPreviewPortError(port int) error {
-	return fmt.Errorf("端口 %d 是沙箱自带的服务（SSH、远程桌面、IDE、浏览器调试或沙箱后端），不能登记为预览；请登记你启动的前端页面端口", port)
+	return fmt.Errorf("端口 %d 是沙箱自带的服务（SSH、远程桌面、IDE、浏览器调试、沙箱后端或桌面内部服务 6090–6099），不能登记为预览；请登记你启动的前端页面端口", port)
 }
 
 // previewPortPublisher is optionally implemented to PATCH k8s Services for unpublished ports.
@@ -415,7 +426,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	if port <= 0 || port > 65535 {
 		return PreviewRegistration{}, fmt.Errorf("port must be 1-65535")
 	}
-	if reservedPreviewPorts[port] {
+	if previewPortReserved(port) {
 		return PreviewRegistration{}, reservedPreviewPortError(port)
 	}
 	h.mu.RLock()
