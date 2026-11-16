@@ -79,10 +79,10 @@ func TestReviewSessionQueueAndCancel(t *testing.T) {
 	waitReactPause(t, db, run.ID, "prop")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "第一条", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "第一条", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue1: %v", err)
 	}
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "第二条", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "第二条", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue2: %v", err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -216,7 +216,7 @@ func TestReviewEnqueueCapacity(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
 	// Start one held active turn, then fill pending up to MaxReviewQueueItems.
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "active", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "active", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue active: %v", err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -227,11 +227,11 @@ func TestReviewEnqueueCapacity(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	for i := 0; i < MaxReviewQueueItems; i++ {
-		if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "m", nil, nil, "node", ""); err != nil {
+		if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "m", nil, nil, "node", ""); err != nil {
 			t.Fatalf("enqueue pending %d: %v", i, err)
 		}
 	}
-	_, err = eng.EnqueueReviewTurn(run.ID, "prop", "overflow", nil, nil, "node", "")
+	_, err = eng.EnqueueReviewTurnAs("", run.ID, "prop", "overflow", nil, nil, "node", "")
 	if err == nil || !strings.Contains(err.Error(), "已满") {
 		t.Fatalf("expected capacity error on overflow, got %v", err)
 	}
@@ -253,13 +253,13 @@ func TestReviewQueueRemoveAndReorder(t *testing.T) {
 	waitReactPause(t, db, run.ID, "prop")
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "第一条", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "第一条", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue1: %v", err)
 	}
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "第二条", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "第二条", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue2: %v", err)
 	}
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "第三条", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "第三条", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue3: %v", err)
 	}
 
@@ -335,14 +335,14 @@ func TestQueueSnapshotIncludesAnnotationsAndImages(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
 	// Occupy active slot so the next enqueue stays waiting.
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "active-hold", nil, nil, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "active-hold", nil, nil, "node", ""); err != nil {
 		t.Fatalf("enqueue active: %v", err)
 	}
 	anns := []models.ReactAnnotation{
 		{JSONPath: "summary", Label: "摘要", Selector: "#hero", Quote: "摘录"},
 	}
 	// Images need blob store in this harness; assert empty images key + annotations.
-	if _, err := eng.EnqueueReviewTurn(run.ID, "prop", "带标注排队", nil, anns, "node", ""); err != nil {
+	if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "带标注排队", nil, anns, "node", ""); err != nil {
 		t.Fatalf("enqueue annotated: %v", err)
 	}
 

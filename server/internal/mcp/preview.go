@@ -282,13 +282,8 @@ func (h *Host) previewProxyURL(runID, nodeID string, port int) string {
 	return fmt.Sprintf("/preview/%s/%s/%d/", runID, nodeID, port)
 }
 
-// HasPreviewPorts reports whether at least one healthy preview port is registered.
-// Unreachable registrations do not count (set_preview fails closed on probe).
-func (h *Host) HasPreviewPorts(runID, nodeID string) bool {
-	return h.HasHealthyPreviewPorts(runID, nodeID)
-}
-
 // HasHealthyPreviewPorts reports whether at least one registered port is Healthy.
+// Unreachable registrations do not count (set_preview fails closed on probe).
 func (h *Host) HasHealthyPreviewPorts(runID, nodeID string) bool {
 	for _, p := range h.ListPreviewPorts(runID, nodeID) {
 		if p.Healthy {
@@ -311,32 +306,6 @@ func (h *Host) ListPreviewKeepalivePIDs(runID, nodeID string) []int {
 		}
 	}
 	return out
-}
-
-// IsPreviewKeepalivePID reports whether pid is a registered preview keepalive
-// pid for this run (any node). Used to skip killing preview processes when
-// ending an Agent/ACP session without destroying the sandbox.
-func (h *Host) IsPreviewKeepalivePID(runID string, pid int) bool {
-	if h == nil || pid <= 0 || runID == "" {
-		return false
-	}
-	h.mu.RLock()
-	mem := h.previewMem
-	h.mu.RUnlock()
-	for key, ports := range mem {
-		if !strings.HasPrefix(key, runID+"|") {
-			continue
-		}
-		for _, p := range ports {
-			if p.KeepalivePID == pid {
-				return true
-			}
-		}
-	}
-	// Also check DB-backed ports for this run (best-effort via store list is
-	// per-node; callers with nodeID should use ListPreviewKeepalivePIDs).
-	_ = mem
-	return false
 }
 
 // ListPreviewPorts returns all preview ports for a run/node (memory + DB).

@@ -168,7 +168,7 @@ func TestAttachWithTokenSetsDataPlanePassword(t *testing.T) {
 	fg.seed("gw-a", "running")
 	m := NewManager(gw, ManagerOptions{WorkspaceDir: "/ws", SSHUser: "root"})
 	const token = "persisted-sandbox-token"
-	sb, err := m.AttachWithToken(context.Background(), "gw-a", token)
+	sb, err := m.attach(context.Background(), "gw-a", token, true)
 	if err != nil {
 		t.Fatal(err)
 	}

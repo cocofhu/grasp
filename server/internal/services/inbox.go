@@ -151,14 +151,8 @@ type inboxEntry struct {
 	item   any
 }
 
-// AllPendingInboxItems merges unresolved gates and pending (non-auto) react
-// clarifications on alive runs, sorted newest-first by sortAt.
-func (s *RunService) AllPendingInboxItems() []any {
-	items, _ := s.PendingInboxItems("", nil, 0, 0)
-	return items
-}
-
-// PendingInboxItems returns merged inbox items sorted newest-first. When limit > 0
+// PendingInboxItems merges unresolved gates and pending (non-auto) react
+// clarifications on alive runs, sorted newest-first by sortAt. When limit > 0
 // the result is sliced to [offset:offset+limit]; total is always the full count.
 func (s *RunService) PendingInboxItems(wf string, tags []string, offset, limit int) ([]any, int) {
 	entries := s.pendingInboxEntries(wf, tags)

@@ -106,7 +106,7 @@ func TestSaveRunArtifactRejectsBusySession(t *testing.T) {
 		t.Fatalf("idle session should be editable: %+v", got)
 	}
 
-	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "第一条", nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", run.ID, "clarify", "第一条", nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	waitAdmissionUntil(t, func() bool {

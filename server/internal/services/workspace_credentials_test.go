@@ -51,21 +51,22 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("list: n=%d err=%v", len(rows), err)
 	}
-	resolved := s.ResolveEnv()
-	if resolved["MCP_TOKEN"] != "secret-value" {
+	ref := "credential:" + created.ID
+	resolved := s.ResolveReferences()
+	if resolved[ref] != "secret-value" {
 		t.Fatalf("resolved=%v", resolved)
 	}
 	updated, err := s.Update(created.ID, CredentialInput{Value: "rotated"})
 	if err != nil || !updated.Configured {
 		t.Fatalf("update: %+v %v", updated, err)
 	}
-	if s.ResolveEnv()["MCP_TOKEN"] != "rotated" {
+	if s.ResolveReferences()[ref] != "rotated" {
 		t.Fatal("rotation not resolved")
 	}
 	if err := s.Clear(created.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := s.ResolveEnv()["MCP_TOKEN"]; ok {
+	if _, ok := s.ResolveReferences()[ref]; ok {
 		t.Fatal("cleared credential still resolved")
 	}
 	if _, err := s.Update(created.ID, CredentialInput{Value: "again"}); err != nil {
@@ -74,7 +75,7 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 	if err := s.Revoke(created.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := s.ResolveEnv()["MCP_TOKEN"]; ok {
+	if _, ok := s.ResolveReferences()[ref]; ok {
 		t.Fatal("revoked credential still resolved")
 	}
 }
@@ -92,8 +93,8 @@ func TestWorkspaceCredentialEmptyStoreDoesNotCreateSlots(t *testing.T) {
 	}
 	logged := captureLog(t)
 
-	if env := s.ResolveEnv(); len(env) != 0 {
-		t.Fatalf("empty slots resolved: %v", env)
+	if refs := s.ResolveReferences(); len(refs) != 0 {
+		t.Fatalf("empty slots resolved: %v", refs)
 	}
 	if out := logged(); strings.Contains(out, "undecryptable") {
 		t.Fatalf("empty slots logged as undecryptable:\n%s", out)
@@ -255,9 +256,6 @@ func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	if _, err := s.Create(CredentialInput{Purpose: "git", Type: "git", Provider: "github", Name: "工作号", EnvKey: envauth.EnvGitHubToken, Value: "gh"}); err != nil {
 		t.Fatalf("same alias on another kind: %v", err)
 	}
-	if _, ok := s.ResolveEnv()[envauth.EnvCursorAPIKey]; ok {
-		t.Fatal("two cursor secrets were merged")
-	}
 	key, value, ok := s.ResolveSelectedValue(work.ID)
 	if !ok || key != envauth.EnvCursorAPIKey || value != "work-key" {
 		t.Fatalf("selected=%s %s %v", key, value, ok)
@@ -266,10 +264,6 @@ func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	if err := s.Clear(work.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := s.ResolveEnv()[envauth.EnvCursorAPIKey]; ok {
-		t.Fatal("clearing the extra cursor restored the builtin secret")
-	}
-
 }
 
 func TestCredentialAliasLookupFailureIsNotAvailable(t *testing.T) {

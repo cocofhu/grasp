@@ -130,7 +130,7 @@ func TestChatIdentityRetryKeepsOriginalHumanGroupWithoutBackfillingLegacy(t *tes
 			if err := db.Save(&conv).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := eng.ReactReplyRetryLast(run.ID, "clarify"); err != nil {
+			if err := eng.ReactReplyRetryLastAs("", run.ID, "clarify"); err != nil {
 				t.Fatal(err)
 			}
 			if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {

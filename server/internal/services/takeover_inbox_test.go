@@ -20,7 +20,7 @@ func TestPendingInboxTakeoverAsReview(t *testing.T) {
 	db.Create(&models.ReactConversation{RunID: "run-to", NodeID: "impl", Iteration: 1, Takeover: true,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "已中断", At: now.Format(time.RFC3339)}}})
 
-	items := s.AllPendingInboxItems()
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	if len(items) != 1 {
 		t.Fatalf("want 1 inbox item, got %d", len(items))
 	}

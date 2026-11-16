@@ -158,7 +158,7 @@ func randomDialogueRun(t *testing.T, seed int64, steps int) []string {
 		before := activeTurnID(eng, runID, "clarify")
 		switch rng.Intn(11) {
 		case 0, 1:
-			_, _ = eng.EnqueueClarifyTurn(runID, "clarify", fmt.Sprintf("消息%d", step), nil, nil)
+			_, _ = eng.EnqueueClarifyTurnAs("", runID, "clarify", fmt.Sprintf("消息%d", step), nil, nil)
 		case 2, 3:
 			if before != "" {
 				text[before] += "字"
@@ -174,7 +174,7 @@ func randomDialogueRun(t *testing.T, seed int64, steps int) []string {
 		case 6:
 			_ = eng.CancelClarifyTurn(runID, "clarify")
 		case 7:
-			_ = eng.ReactReplyRetryLast(runID, "clarify")
+			_ = eng.ReactReplyRetryLastAs("", runID, "clarify")
 		case 8:
 			provider.mu.Lock()
 			provider.reactScript = append(provider.reactScript, runtime.ReactTurn{Msg: ""})

@@ -704,12 +704,6 @@ func (m *Manager) Attach(ctx context.Context, id string) (*Sandbox, error) {
 	return m.attach(ctx, id, "", true)
 }
 
-// AttachWithToken is Attach with the sandbox token supplied by the caller.
-// The token is this sandbox's SSH password; it is not shared with other sandboxes.
-func (m *Manager) AttachWithToken(ctx context.Context, id, token string) (*Sandbox, error) {
-	return m.attach(ctx, id, token, true)
-}
-
 // AttachNoEnsure is Attach without the runtime bundle update. Use it for a
 // sandbox whose agent turn may still be running or awaiting collection: the
 // update restarts an idle bridge and drops its session and event log.
@@ -1093,16 +1087,6 @@ func (s *Sandbox) WriteFileAtomic(ctx context.Context, path string, content []by
 		return fmt.Errorf("write %s: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// FileExists reports whether a path exists inside the sandbox.
-func (s *Sandbox) FileExists(ctx context.Context, path string) bool {
-	cmd, err := newSafeCmd("test", "-e", s.resolvePath(path))
-	if err != nil {
-		return false
-	}
-	_, err = s.creds().run(ctx, 10*time.Second, cmd)
-	return err == nil
 }
 
 // Exec runs an arbitrary command inside the sandbox over SSH.

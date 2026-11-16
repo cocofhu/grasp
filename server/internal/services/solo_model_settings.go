@@ -36,16 +36,11 @@ func (s *SoloService) modelAligner() soloModelAligner {
 	return nil
 }
 
-// SetCurrentModel stores the model later turns will use. Empty means the
-// primary model. The Agent configuration is not written. A turn that is
+// SetCurrentModelSettings stores the model later turns will use. Empty means
+// the primary model. The Agent configuration is not written. A turn that is
 // already generating keeps its model; the sandbox is updated before the next
-// turn starts.
-func (s *SoloService) SetCurrentModel(ctx context.Context, id, user, requested string) (*SoloSessionView, error) {
-	return s.SetCurrentModelSettings(ctx, id, user, &requested, nil)
-}
-
-// SetCurrentModelSettings preserves omitted settings and validates before any
-// write. An effort-only request never changes the selected model.
+// turn starts. Omitted settings are preserved and validated before any write;
+// an effort-only request never changes the selected model.
 func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user string, requested, requestedEffort *string) (*SoloSessionView, error) {
 	return s.SetCurrentModelRouteSettings(ctx, id, user, nil, requested, requestedEffort)
 }

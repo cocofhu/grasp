@@ -55,7 +55,7 @@ func writeEventHeartbeat(conn *websocket.Conn, write func([]byte) error) error {
 //	{"type":"review_cancel","nodeId":"<producer>"}
 //
 // review_chat with gateNodeId set enqueues via GateReactRevise semantics;
-// otherwise via node-inline EnqueueReviewTurn.
+// otherwise via node-inline EnqueueReviewTurnAs.
 func (h *Handlers) RunEvents(c *gin.Context) {
 	owner := ""
 	if h.Auth != nil {

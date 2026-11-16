@@ -18,7 +18,7 @@ func TestSetPreviewGateAndUpsert(t *testing.T) {
 	if text == "" || previewTextIsError(text) {
 		t.Fatalf("set_preview failed: %s", text)
 	}
-	if !h.HasPreviewPorts("r1", "preview1") {
+	if !h.HasHealthyPreviewPorts("r1", "preview1") {
 		t.Fatal("expected preview port registered")
 	}
 	ports := h.ListPreviewPorts("r1", "preview1")
@@ -78,7 +78,7 @@ func TestSetPreviewURLGateAndUpsert(t *testing.T) {
 	if text == "" || previewTextIsError(text) {
 		t.Fatalf("set_preview url failed: %s", text)
 	}
-	if !h.HasPreviewPorts("r1", "preview1") {
+	if !h.HasHealthyPreviewPorts("r1", "preview1") {
 		t.Fatal("expected url preview registered")
 	}
 	ports := h.ListPreviewPorts("r1", "preview1")

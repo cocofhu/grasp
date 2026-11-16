@@ -56,7 +56,10 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 		t.Fatal("save did not start")
 	}
 	sent := make(chan error, 1)
-	go func() { _, err := f.solo.Send(f.id, "alice", "continue saved work", nil); sent <- err }()
+	go func() {
+		_, err := f.solo.SendWithReferences(f.id, "alice", "continue saved work", nil, nil)
+		sent <- err
+	}()
 	select {
 	case err := <-sent:
 		t.Fatalf("message bypassed recovery lock: %v", err)

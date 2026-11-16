@@ -111,7 +111,7 @@ func sandboxFlipScenario(t *testing.T) []string {
 	}
 	rec := recordDialogues(eng, run.ID)
 
-	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "做登录", nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", run.ID, "clarify", "做登录", nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	turnID := waitRunningTurn(t, eng, run.ID, "clarify")
@@ -213,7 +213,7 @@ func startClarifyDialogue(t *testing.T) (*Engine, *fakeProvider, string) {
 func sendAndSettle(t *testing.T, eng *Engine, runID, text string) (DialogueState, string) {
 	t.Helper()
 	before, _ := eng.DialogueSnapshot(runID, "clarify")
-	if _, err := eng.EnqueueClarifyTurn(runID, "clarify", text, nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", runID, "clarify", text, nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -280,7 +280,7 @@ func TestDialogueCancelInterrupts(t *testing.T) {
 	provider.mu.Lock()
 	provider.reactHold = hold
 	provider.mu.Unlock()
-	if _, err := eng.EnqueueClarifyTurn(runID, "clarify", "做登录", nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", runID, "clarify", "做登录", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	turnID := waitRunningTurn(t, eng, runID, "clarify")
@@ -313,7 +313,7 @@ func TestDialogueRetryLastCoversEmptyReply(t *testing.T) {
 	provider.mu.Lock()
 	provider.reactHold = hold
 	provider.mu.Unlock()
-	if err := eng.ReactReplyRetryLast(runID, "clarify"); err != nil {
+	if err := eng.ReactReplyRetryLastAs("", runID, "clarify"); err != nil {
 		t.Fatal(err)
 	}
 	retryID := waitRunningTurn(t, eng, runID, "clarify")

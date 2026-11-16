@@ -8,15 +8,10 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// ResumeReviewExternal consumes a review share link (CAS) then force-confirms
-// the bound inbox review via ReactReply(force=true). Busy / validation failures
-// roll back CAS so the token is not burned.
-func (e *Engine) ResumeReviewExternal(share *gateshare.Service, token, action string) (*ExternalResumeResult, error) {
-	return e.ResumeReviewExternalOpts(share, token, action, false)
-}
-
-// ResumeReviewExternalOpts is ResumeReviewExternal with abortRunning: cancel an
-// orphan sandbox turn before confirming (public 「中止当前回合并确认」).
+// ResumeReviewExternalOpts consumes a review share link (CAS) then
+// force-confirms the bound inbox review via ReactReply(force=true). Busy /
+// validation failures roll back CAS so the token is not burned. abortRunning
+// cancels an orphan sandbox turn before confirming (public 「中止当前回合并确认」).
 func (e *Engine) ResumeReviewExternalOpts(share *gateshare.Service, token, action string, abortRunning bool) (*ExternalResumeResult, error) {
 	if e.IsHalted() {
 		return nil, errors.New("server is shutting down")

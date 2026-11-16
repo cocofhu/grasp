@@ -114,7 +114,7 @@ func TestDialogueAcceptanceFlipReconnectRestart(t *testing.T) {
 	view.apply(connectDialogues(t, eng, run.ID, "clarify"))
 	socket := recordDialogues(eng, run.ID)
 
-	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "做登录", nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", run.ID, "clarify", "做登录", nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	turnID := waitRunningTurn(t, eng, run.ID, "clarify")
@@ -243,7 +243,7 @@ func TestDialogueAcceptanceRestartMidTurn(t *testing.T) {
 	if err := eng.waitReviewReadyForTest(run.ID, "clarify", 5*time.Second); err != nil {
 		t.Fatalf("ready: %v", err)
 	}
-	if _, err := eng.EnqueueClarifyTurn(run.ID, "clarify", "做登录", nil, nil); err != nil {
+	if _, err := eng.EnqueueClarifyTurnAs("", run.ID, "clarify", "做登录", nil, nil); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	turnID := waitRunningTurn(t, eng, run.ID, "clarify")

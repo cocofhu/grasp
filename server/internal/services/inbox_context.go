@@ -254,19 +254,6 @@ func (s *RunService) ClarifyContext(runID, nodeID string, iteration int) (models
 	return conv, run, true
 }
 
-// PendingGateAt returns the unresolved gate for an exact run/node/iteration
-// that is still waiting_human (same inbox eligibility as PendingInboxItems).
-func (s *RunService) PendingGateAt(runID, nodeID string, iteration int) (models.Gate, bool) {
-	var g models.Gate
-	if err := pendingGateScope(s.db).
-		Where("gates.run_id = ? AND gates.node_id = ? AND gates.iteration = ?",
-			runID, nodeID, iteration).
-		First(&g).Error; err != nil {
-		return models.Gate{}, false
-	}
-	return g, true
-}
-
 // ClarifyLabel returns the display label for a react node in inbox-context.
 func ClarifyLabel(g models.Graph, nodeID string) string {
 	return nodeLabel(g, nodeID)

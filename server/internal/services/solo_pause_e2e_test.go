@@ -45,7 +45,7 @@ func TestSoloFirstTurnAfterProviderPauseE2E(t *testing.T) {
 	}
 	send := func(text string, n int) models.SoloMessage {
 		t.Helper()
-		if _, err := solo.Send(id, "alice", text, nil); err != nil {
+		if _, err := solo.SendWithReferences(id, "alice", text, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, text+" answered", func() bool {
