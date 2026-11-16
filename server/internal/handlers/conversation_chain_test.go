@@ -274,6 +274,52 @@ func TestConversationChainHandoff(t *testing.T) {
 	}
 }
 
+// Only an ended automatic visit labels its reply with the visit's run info;
+// conversation segments keep it on their own turns.
+func TestConversationChainAutoReplyInfo(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	seedChainRun(t, h, "长")
+	usage := &models.TokenUsage{InputTokens: 900, OutputTokens: 40}
+	exec := &models.ChatExecution{AgentName: "dev", Backend: "codex", ModelID: "gpt-x"}
+	for _, node := range []string{"design", "impl", "dev"} {
+		if err := h.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ? AND iteration = 1", "chain", node).
+			Updates(models.StateRun{Usage: usage, Execution: exec}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var conv models.ReactConversation
+	h.db.Where("run_id = ? AND node_id = ?", "chain", "clarify").First(&conv)
+	conv.Messages[0].ReplyMetadata = models.ReplyMetadata{Usage: &models.TokenUsage{OutputTokens: 5}, Execution: exec, DurationMs: 1500}
+	h.db.Save(&conv)
+	out, code, body := getChain(t, h, "")
+	if code != 200 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	for _, s := range out.Segments {
+		if s.NodeID == "clarify" {
+			u, _ := s.Turns[0]["usage"].(map[string]any)
+			e, _ := s.Turns[0]["execution"].(map[string]any)
+			if u["outputTokens"] != float64(5) || e["modelId"] != "gpt-x" || s.Turns[0]["durationMs"] != float64(1500) {
+				t.Fatalf("clarify turn reply info: %v", s.Turns[0])
+			}
+		}
+		if s.NodeID == "design" && s.Iteration == 1 {
+			u, _ := s.raw["usage"].(map[string]any)
+			e, _ := s.raw["execution"].(map[string]any)
+			if u["inputTokens"] != float64(900) || e["modelId"] != "gpt-x" || e["agentName"] != "dev" || s.raw["durationMs"] != float64(60000) {
+				t.Fatalf("design#1 reply info: %v", s.raw)
+			}
+			continue
+		}
+		for _, key := range []string{"usage", "execution", "durationMs"} {
+			if _, ok := s.raw[key]; ok {
+				t.Fatalf("%s#%d (%s): unexpected %s %v", s.NodeID, s.Iteration, s.Kind, key, s.raw[key])
+			}
+		}
+	}
+}
+
 func TestConversationChainBoot(t *testing.T) {
 	h := newHarness(t)
 	h.h.Eng.Halt()

@@ -608,6 +608,8 @@ export interface NodeRun {
   usage?: TokenUsage | null
   /** Per-model breakdown after ingest merge / bridge backfill. */
   usageByModel?: TokenUsageByModel | null
+  /** Route the automatic run used; absent on non-Agent nodes and older rows. */
+  execution?: ChatExecution
   /** auto | manual. manual = this execution was taken over (never returns to auto). */
   mode?: RunNodeMode
   /** When the user took this execution over (manual only). */

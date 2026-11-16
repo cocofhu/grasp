@@ -10,6 +10,21 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
+func TestRunAgentReportsExecution(t *testing.T) {
+	p, _, _, _, _, req := setupProvider(t, func(int) chatFunc {
+		return func(int) turnAction {
+			return turnAction{narration: "done work", produces: map[string]string{"report.md": "# report\nok"}}
+		}
+	})
+	res, err := p.RunAgent(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Execution; got == nil || got.AgentName != "test-agent" || got.Backend != string(BackendCursor) || got.StartedAt.IsZero() {
+		t.Fatalf("automatic run execution: %+v", got)
+	}
+}
+
 func TestReactReplyFreezesParkedExecutionDespiteAgentDefaultChanges(t *testing.T) {
 	p, _, _, _, req := reactSetup(t, func(int) chatFunc {
 		return func(int) turnAction {

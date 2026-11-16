@@ -109,8 +109,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
         ? execution.events
         : completedEvents.value ?? execution?.events
     // Per-turn turn_end carries the reported usage. Execution totals may span
-    // several turns and must not be attached to a single visible reply.
-    return clarifyTurnsFromLlm(splitTurns(events)).filter((row) => row.role === 'agent')
+    // several turns and must not be attached to a single visible reply. The
+    // route is shared by every turn; its start time is the run's, not theirs.
+    const route = execution?.execution ? { ...execution.execution, startedAt: undefined } : undefined
+    return clarifyTurnsFromLlm(splitTurns(events))
+      .filter((row) => row.role === 'agent')
+      .map((row) => (route ? { ...row, execution: route } : row))
   })
   /**
    * Locked only after confirm succeeds, while the same composer follows a

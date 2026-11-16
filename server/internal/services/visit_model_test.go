@@ -30,7 +30,7 @@ func TestVisitModelStaysOnTheVisitAndRejectsUnboundModels(t *testing.T) {
 	oldExecution := &models.ChatExecution{AgentName: "澄清", Backend: "cursor", ModelID: "composer"}
 	db.Create(&models.ReactConversation{
 		RunID: "run-1", NodeID: "clarify", Iteration: 1,
-		Messages: []models.ReactMessage{{Role: "agent", Text: "earlier", Execution: oldExecution}},
+		Messages: []models.ReactMessage{{Role: "agent", Text: "earlier", ReplyMetadata: models.ReplyMetadata{Execution: oldExecution}}},
 	})
 	db.Create(&models.ReactConversation{RunID: "run-1", NodeID: "clarify", Iteration: 2})
 

@@ -22,6 +22,7 @@ type ChainTurn struct {
 	Parts     []models.AcpPart            `json:"parts,omitempty"`
 	Forms     []models.ReactForm          `json:"forms,omitempty"`
 	Files     []models.ArtifactAttachment `json:"files,omitempty"`
+	models.ReplyMetadata
 }
 
 // ChainSegment is one node execution (nodeId, iteration) of a run's
@@ -48,6 +49,9 @@ type ChainSegment struct {
 	HandoffSource string `json:"handoffSource,omitempty"`
 	// Boot is the visit's sandbox start-up; nil when it has none (yet).
 	Boot *ChainBoot `json:"boot,omitempty"`
+	// ReplyMetadata labels the single reply of an ended agent segment; other
+	// kinds keep it on their turns.
+	*models.ReplyMetadata
 
 	// StateRunID / NodeType are internal (task derivation in the handler).
 	StateRunID uint   `json:"-"`
@@ -94,11 +98,12 @@ func terminalVisit(status string) bool {
 }
 
 // chainStateColumns is every StateRun column the chain needs. The heavy JSON
-// columns (events, vars_snapshot, mcp_calls, usage) are left out; events are
-// only counted (chainEventCounts).
+// columns (events, vars_snapshot, mcp_calls) are left out; events are only
+// counted (chainEventCounts).
 var chainStateColumns = []string{
 	"id", "run_id", "node_id", "node_type", "iteration", "status", "outputs",
 	"vars_before", "started_at", "duration_sec", "mode", "taken_over_at", "sandbox_ready_at",
+	"usage", "usage_by_model", "execution",
 }
 
 // chainEventCounts returns len(events) per StateRun id of the run, computed
@@ -243,6 +248,10 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 			n := counts[sr.ID]
 			seg.EventCount = &n
 		}
+		if kind == CurrentKindAgent && seg.EndedAt != nil {
+			meta := sr.ReplyMetadata()
+			seg.ReplyMetadata = &meta
+		}
 		segs = append(segs, seg)
 	}
 	return segs, rows, nil
@@ -323,6 +332,7 @@ func chainTurns(msgs []models.ReactMessage) *[]ChainTurn {
 		turns = append(turns, ChainTurn{
 			Role: m.Role, Text: m.Text, At: m.At,
 			Questions: m.Questions, Tools: m.Tools, Parts: m.Parts, Forms: m.Forms, Files: m.Files,
+			ReplyMetadata: m.ReplyMetadata,
 		})
 	}
 	return &turns

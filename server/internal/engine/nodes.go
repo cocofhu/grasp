@@ -22,7 +22,9 @@ type nodeOutcome struct {
 	usage *models.TokenUsage
 	// usageByModel is this save's per-model delta (added onto StateRun.UsageByModel).
 	usageByModel models.TokenUsageByModel
-	err          string
+	// execution is the automatic run's CLI route, saved onto the StateRun.
+	execution *models.ChatExecution
+	err       string
 	// handle is the outlet the outcome leaves through, matched against
 	// Edge.SourceHandle: a branch case id / "else", a human_gate action id,
 	// or pass / fail for verdict Agents. "" is the plain outlet.

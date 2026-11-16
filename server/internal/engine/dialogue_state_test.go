@@ -451,6 +451,8 @@ func TestDialogueOrphanTurn(t *testing.T) {
 // by the node's stream, then sealed when the visit ends.
 func TestDialogueObservesAutomaticVisit(t *testing.T) {
 	env := setupTakeoverEngine(t, takeoverPlainGraph(capsPlain))
+	env.provider.agentUsage = &models.TokenUsage{InputTokens: 120, OutputTokens: 30}
+	env.provider.agentExecution = &models.ChatExecution{AgentName: "dev", Backend: "codex", ModelID: "gpt-x"}
 	run, err := env.eng.StartRun("wf", nil, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -468,6 +470,9 @@ func TestDialogueObservesAutomaticVisit(t *testing.T) {
 	if tr := findTurn(st, turnID); tr == nil || tr.Phase != turnRunning || row == nil || row.Phase != rowRunning || row.Text != "正在实现" {
 		t.Fatalf("observed turn %+v row %+v", findTurn(st, turnID), row)
 	}
+	if row.Usage != nil || row.Execution != nil {
+		t.Fatalf("running reply carries run info before the visit ended: %+v", row)
+	}
 
 	env.provider.releaseHold("impl")
 	waitRunStatus(t, env.db, run.ID, "completed")
@@ -482,6 +487,13 @@ func TestDialogueObservesAutomaticVisit(t *testing.T) {
 	if !last.Observe || last.Busy || tr == nil || tr.Phase != turnEnded || tr.Outcome != models.OutcomeOK ||
 		row == nil || row.Phase != rowSealed || row.ID != turnID+":a0" {
 		t.Fatalf("ended observe frame %+v", last)
+	}
+	if row.Usage == nil || row.Usage.InputTokens != 120 || row.Usage.OutputTokens != 30 ||
+		row.Execution == nil || row.Execution.AgentName != "dev" || row.Execution.Backend != "codex" || row.Execution.ModelID != "gpt-x" {
+		t.Fatalf("ended reply run info usage=%+v execution=%+v", row.Usage, row.Execution)
+	}
+	if sr := latestVisit(t, env.db, run.ID, "impl"); sr.Execution == nil || sr.Execution.ModelID != "gpt-x" {
+		t.Fatalf("visit execution not persisted: %+v", sr.Execution)
 	}
 	// A visit nobody watched while it ran is not served as a dialogue.
 	if _, ok := env.eng.DialogueSnapshot(run.ID, "input"); ok {

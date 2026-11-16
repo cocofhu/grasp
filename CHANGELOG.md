@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - 修复页面空闲时 CPU 占用高的问题：侧边栏小猫标志之前一直在循环摇摆、呼吸、眨眼，浏览器每秒要重绘 60 次，任何页面开着都会占用大量 CPU/GPU。现在小猫平时静止，只在鼠标悬停时循环动画，每隔 8–14 秒做一次张望或歪头并眨眼；空闲标签页的 CPU 占用约降低 90%。
 
+- 修复工作流自动过程（无人接管的自动执行）的回复统计信息显示「未提供」：现在显示该次执行的 Agent、编码工具、模型、用时和 Token 用量。收件箱里正在观看的自动过程、刷新后的历史记录、运行详情页和接管后的开场消息都会显示；历史记录里早先节点的澄清、复审对话也会显示每条回复的统计。升级前已结束的执行没有记录 Agent、编码工具和模型，这三项仍显示「未提供」。
+
 - 移除 worktree 部署镜像和本地执行模式（破坏性变更）：不再发布 `ghcr.io/cocofhu/grasp-worktree`，`GRASP_EXECUTION_MODE`、`GRASP_WORKTREE_ROOT`、`GRASP_WORKTREE_BACKEND` 不再生效，Agent 只在沙箱中运行。设置接口去掉 `execution_mode`，设置页去掉「执行方式」。使用 worktree 镜像的部署需改用 `ghcr.io/cocofhu/grasp` 并配置沙箱网关；`server.mcp_advertise` 默认值统一为 `http://host.docker.internal:<port>`。
 
 - Solo 会话里 Agent 提出的选择题和表单改为与工作流对话相同的卡片：一次一题、带进度和「上一题 / 下一个」、整行选项、「采用推荐」，不再把所有题目挤成一排小标签。与工作流一样，「其他」需要勾选后填写的内容才会随答案发送。

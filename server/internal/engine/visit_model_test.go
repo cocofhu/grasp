@@ -47,7 +47,7 @@ func TestBindChatRouteKeepsVisitsIndependent(t *testing.T) {
 	if req.AppliedRoute == nil || req.AppliedRoute.ModelID != "old" {
 		t.Fatalf("applied = %+v", req.AppliedRoute)
 	}
-	fresh := &models.ReactConversation{Messages: []models.ReactMessage{{Role: "agent", Execution: &models.ChatExecution{ModelID: "then"}}}}
+	fresh := &models.ReactConversation{Messages: []models.ReactMessage{{Role: "agent", ReplyMetadata: models.ReplyMetadata{Execution: &models.ChatExecution{ModelID: "then"}}}}}
 	auto := runtime.NodeReq{}
 	e.bindChatRoute(&auto, fresh)
 	if !auto.ResetToDefaultModel || auto.ChatRoute != nil {

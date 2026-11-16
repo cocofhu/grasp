@@ -76,7 +76,7 @@ func (e *Engine) enterReview(c *execCtx, node *models.Node, completed nodeOutcom
 		// Carry completed.usage so saveState still merges production-phase tokens
 		// onto this StateRun (nil usage would leave the timeline as "—").
 		return nodeOutcome{status: "paused", outputMd: "等待人工复审(ReAct)…",
-			outputs: completed.outputs, events: completed.events, usage: completed.usage, usageByModel: completed.usageByModel}
+			outputs: completed.outputs, events: completed.events, usage: completed.usage, usageByModel: completed.usageByModel, execution: completed.execution}
 	}
 	summary := e.reviewSummaryMarkdown(c, node)
 	conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: false,
@@ -85,7 +85,7 @@ func (e *Engine) enterReview(c *execCtx, node *models.Node, completed nodeOutcom
 	e.host.SetActiveReview(c.run.ID, true)
 	log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).Msg("entered post-run ReAct review phase")
 	return nodeOutcome{status: "paused", outputMd: "等待人工复审(ReAct)…",
-		outputs: completed.outputs, events: completed.events, usage: completed.usage, usageByModel: completed.usageByModel}
+		outputs: completed.outputs, events: completed.events, usage: completed.usage, usageByModel: completed.usageByModel, execution: completed.execution}
 }
 
 // reviewSummaryMarkdown renders the node's products as the opening review turn.

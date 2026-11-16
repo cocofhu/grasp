@@ -408,6 +408,7 @@ func (e *Engine) buildObserved(entry *dialogueEntry, st *DialogueState, sr *mode
 			if k == len(rows)-1 {
 				row.Outcome = outcome
 				row.Error = turn.Error
+				row.ReplyMetadata = sr.ReplyMetadata()
 			}
 		}
 		st.Rows = append(st.Rows, row)

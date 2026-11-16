@@ -65,14 +65,14 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	}
 	if errors.Is(err, runtime.ErrCodexLoginRejected) {
 		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "Agent 执行失败:" + err.Error(),
-			events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+			events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel, execution: res.Execution}
 	}
 	if err != nil {
 		return nodeOutcome{status: "failed", err: err.Error(),
-			outputMd: "Agent 执行失败:" + err.Error(), retryable: true, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+			outputMd: "Agent 执行失败:" + err.Error(), retryable: true, events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel, execution: res.Execution}
 	}
 	return nodeOutcome{status: "completed", result: &res,
-		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}
+		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel, execution: res.Execution}
 }
 
 func agentProfile(node *models.Node) string {

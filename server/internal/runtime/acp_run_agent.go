@@ -160,6 +160,8 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		noPark = !reattach
 		return NodeResult{}, ErrNodeTakenOver
 	}
+	started := time.Now()
+	defer func() { res.Execution = stampedExecution(acp, started) }()
 
 	if req.ResetToDefaultModel {
 		if err := c.resetLiveChatModel(ctx, sb, acp); err != nil {

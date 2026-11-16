@@ -119,7 +119,7 @@ function relTime(iso: string): string {
 }
 
 function autoMember(seg: ClarifyPriorSegment) {
-  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label, at: seg.at, endedAt: seg.endedAt }
+  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label, at: seg.at, endedAt: seg.endedAt, reply: seg.reply }
 }
 /**
  * Earlier nodes as transcript rows. Consecutive unattended (auto) nodes that
@@ -484,6 +484,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   :run-id="runId"
                   :started-at="member.at"
                   :ended-at="member.endedAt"
+                  :metadata="member.reply"
                   message-test-id="clarify-prior-agent-message"
                 />
               </div>
