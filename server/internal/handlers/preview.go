@@ -107,21 +107,9 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 				defer cancel()
 			}
 			h.Sbx.TouchActivityByName(sandboxName)
-			fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)
-			if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
-				log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-					Msg("persist preview health failed")
-			}
-			if !healthy {
-				c.String(http.StatusServiceUnavailable, "preview service unavailable")
+			var ok bool
+			if host, ok = h.refreshPreviewHost(ctx, c, reg); !ok {
 				return
-			}
-			if fresh != host {
-				host = fresh
-				if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
-					log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-						Msg("persist preview host failed")
-				}
 			}
 		}
 	}
@@ -164,7 +152,37 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 		_, _ = w.Write([]byte("preview upstream unreachable"))
 	}
 
-	// Strip the mount prefix so the app sees root paths.
+	forwardCookiesToUpstream(c.Request)
+	servePreviewUpstream(c, proxy, target, prefix, private)
+}
+
+// refreshPreviewHost probes reg's port in its running sandbox, persists the
+// health result and a moved upstream (container IPs change across restarts),
+// and returns the host to dial. ok is false once a 503 has been written.
+func (h *Handlers) refreshPreviewHost(ctx context.Context, c *gin.Context, reg mcp.PreviewPort) (host string, ok bool) {
+	runID, nodeID, port := reg.RunID, reg.NodeID, reg.Port
+	fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)
+	if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
+		log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
+			Msg("persist preview health failed")
+	}
+	if !healthy {
+		c.String(http.StatusServiceUnavailable, "preview service unavailable")
+		return "", false
+	}
+	if fresh != reg.Host {
+		if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, fresh); err != nil {
+			log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
+				Msg("persist preview host failed")
+		}
+	}
+	return fresh, true
+}
+
+// servePreviewUpstream strips the mount prefix so the app sees root paths,
+// sets the forwarding headers it needs to build public URLs, and proxies the
+// request to target.
+func servePreviewUpstream(c *gin.Context, proxy *httputil.ReverseProxy, target *url.URL, prefix string, private bool) {
 	path := c.Param("path")
 	if path == "" {
 		path = "/"
@@ -173,7 +191,6 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	// Ask upstream for identity encoding so ModifyResponse can rewrite HTML
 	// bodies (a gzipped body can't be sub_filtered without decoding first).
 	c.Request.Header.Set("Accept-Encoding", "identity")
-	forwardCookiesToUpstream(c.Request)
 
 	publicHost := c.Request.Host
 	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
