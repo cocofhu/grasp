@@ -458,7 +458,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 :data-node-id="member.nodeId"
               >
                 <ClarifyHandoffBubble v-if="askFor(member.nodeId, member.iteration)" class="mb-3" :ask="askFor(member.nodeId, member.iteration)!" />
-                <ClarifyBootLoader phase="done" variant="inline" :boot-key="visitBootKey(member.nodeId, member.iteration)" />
+                <ClarifyBootLoader phase="done" :boot-key="visitBootKey(member.nodeId, member.iteration)" />
                 <p
                   v-if="autoRecord(member).status === 'error'"
                   class="text-[12px] leading-relaxed text-txt2"
@@ -492,7 +492,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
               <ClarifyBootLoader
                 v-if="seg.kind === 'chat' || (seg.kind === 'auto' && !!getBootRecord(visitBootKey(seg.nodeId, seg.iteration))?.live)"
                 phase="done"
-                variant="inline"
                 :boot-key="visitBootKey(seg.nodeId, seg.iteration)"
               />
               <template v-for="(pt, pi) in seg.turns" :key="pi">
@@ -676,7 +675,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
         <ClarifyBootLoader
           v-if="showBootReady"
           phase="done"
-          variant="inline"
           :boot-key="bootRecordKey"
           :title="resolvedDividerTitle"
         />
@@ -694,7 +692,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
       <ClarifyBootLoader
         v-if="showBootStarting"
         phase="starting"
-        variant="inline"
         :boot-key="bootRecordKey"
       />
       <LlmSystemRow
@@ -709,7 +706,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
         <ClarifyBootLoader
           v-if="showBootReady && !hasPriors && index === firstAgentAt"
           phase="done"
-          variant="inline"
           :boot-key="bootRecordKey"
         />
         <ClarifyHandoffBubble
@@ -782,7 +778,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
       <ClarifyBootLoader
         v-if="showBootReady && !hasPriors && firstAgentAt < 0"
         phase="done"
-        variant="inline"
         :boot-key="bootRecordKey"
       />
       <ClarifyHandoffBubble

@@ -2881,27 +2881,15 @@
       }
     },
     "clarifyBootLoader": {
-      "pending": "Node not started yet; waiting to enter clarify…",
-      "pendingHint": "Clarify starts automatically after upstream nodes complete.",
       "stepPulling": {
         "title": "Pulling image…",
         "hint": "First use of this Agent backend downloads the sandbox runtime; this can take a while."
       },
       "stepSandbox": {
-        "title": "Preparing the workspace…",
-        "hint": "First-time setup may take a moment."
-      },
-      "stepRuntime": {
-        "title": "Starting the Agent…",
-        "hint": "Setting up the environment. This may take a moment."
+        "title": "Preparing the workspace…"
       },
       "stepAcp": {
-        "title": "Connecting to the Agent…",
-        "hint": "Almost ready."
-      },
-      "stepQuestions": {
-        "title": "Preparing the first questions…",
-        "hint": "Gathering what we need to confirm with you."
+        "title": "Connecting to the Agent…"
       },
       "checklist": {
         "title": "Starting Agent",

@@ -122,7 +122,6 @@ onMounted(() => {
           <ClarifyBootLoader
             v-if="!confirmFlowWindowVisible"
             phase="starting"
-            variant="inline"
             :sandbox-phase="sandboxPhase"
             :boot-key="bootKey"
           />
