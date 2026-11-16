@@ -81,8 +81,10 @@ if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2
   if [ -e "${GRASP_DESKTOP_MARKER:-/etc/grasp-desktop}" ]; then
     if [ -x /usr/local/bin/desktop-session.sh ] && /usr/local/bin/desktop-session.sh start 9>&-; then
       SHARE_DIR="$(cd "$(dirname "$(readlink -f /usr/local/bin/desktop-session.sh)")/.." && pwd)/share/desktop"
-      DESKTOP_ARGS=(--load-extension="$SHARE_DIR/newtab" --disable-extensions-except="$SHARE_DIR/newtab")
-      START_URL=http://127.0.0.1:6091/
+      # NtpFooter: no "customize Chrome" / extension attribution under the launch page.
+      DESKTOP_ARGS=(--load-extension="$SHARE_DIR/newtab" --disable-extensions-except="$SHARE_DIR/newtab"
+        --disable-features=NtpFooter)
+      START_URL=chrome://newtab/
       # Same session as the desktop apps: input method, locale, D-Bus.
       session_env="${GRASP_DESKTOP_RUN_DIR:-/run/grasp-desktop}/session.env"
       [ -f "$session_env" ] && mapfile -t DESKTOP_ENV <"$session_env"

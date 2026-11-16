@@ -681,9 +681,9 @@ export function buildStageCardThumb(
   return null
 }
 
-const FIXED_STAGE_PANEL_IDS = new Set(['ide', 'terminal', 'browser', 'log'])
+const FIXED_STAGE_PANEL_IDS = new Set(['ide', 'terminal', 'browser', 'computer', 'log'])
 
-/** Keep only IDE / terminal / browser / log ids, in first-seen order. */
+/** Keep only IDE / terminal / browser / computer / log ids, in first-seen order. */
 function normalizeFixedOpen(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   const out: string[] = []

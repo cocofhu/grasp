@@ -3,6 +3,7 @@ Type=Application
 Name=Terminal
 Name[zh_CN]=终端
 Exec=lxterminal --working-directory=/root/workspace
-Icon=utilities-terminal
+Icon=@DESKTOP_SHARE@/icons/terminal.svg
 Terminal=false
+StartupWMClass=Lxterminal
 Categories=System;TerminalEmulator;

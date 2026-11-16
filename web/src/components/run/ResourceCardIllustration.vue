@@ -22,6 +22,10 @@ defineProps<{ kind: string }>()
       <circle cx="32" cy="16.5" r="1" />
     </g>
     <rect v-if="kind === 'browser'" class="resource-address" x="39" y="14" width="33" height="5" rx="2.5" />
+    <template v-else-if="kind === 'app'">
+      <path class="resource-caption" d="M43 16.5h20" />
+      <circle class="resource-live" cx="72" cy="16.5" r="1.8" />
+    </template>
     <path v-else class="resource-caption" d="M43 16.5h28" />
 
     <template v-if="kind === 'ide'">
@@ -35,11 +39,25 @@ defineProps<{ kind: string }>()
       <path class="resource-symbol" d="m32 35 8 7-8 7m15 0h11" />
       <path class="resource-terminal-cursor" d="M64 37v12" />
     </template>
-    <g v-else-if="kind === 'browser'" class="resource-symbol resource-globe">
-      <circle cx="48" cy="42" r="12" />
-      <ellipse cx="48" cy="42" rx="5" ry="12" />
-      <path d="M36 42h24" />
-    </g>
+    <template v-else-if="kind === 'browser'">
+      <rect class="resource-block" x="24" y="29" width="24" height="15" rx="2.5" />
+      <path class="resource-block-mark" d="m28 41 4.5-5 3.5 3.5 2.5-2.5 5 4" />
+      <path class="resource-detail" d="M53 31h19m-19 5h13" />
+      <path class="resource-line" d="M24 50h48m-48 5h32" />
+      <rect class="resource-select" x="21" y="26" width="30" height="21" rx="3.5" />
+      <path class="resource-cursor" d="M47 42v11l3-2.7 2.1 4.5 2-.9-2.1-4.4h4Z" />
+    </template>
+    <template v-else-if="kind === 'app'">
+      <rect class="resource-panel" x="23" y="27" width="50" height="29" rx="3" />
+      <path class="resource-detail" d="M28 32.5h12" />
+      <path class="resource-line" d="M60 32.5h8" />
+      <path class="resource-bars" d="M31 51v-5m7 5v-9m7 9v-7m7 7v-13m7 13v-10" />
+    </template>
+    <template v-else-if="kind === 'computer'">
+      <rect class="resource-symbol" x="34" y="30" width="28" height="19" rx="2.5" />
+      <path class="resource-symbol" d="M44 55h8m-4-6v6" />
+      <path class="resource-detail" d="M42 45h12" />
+    </template>
     <template v-else-if="kind === 'log'">
       <g class="resource-log-dots">
         <circle cx="28" cy="32" r="1.4" />
@@ -100,6 +118,43 @@ defineProps<{ kind: string }>()
 .resource-detail {
   stroke: color-mix(in srgb, var(--ra-muted) 75%, var(--ra-accent));
   stroke-width: 1.4;
+}
+.resource-line {
+  stroke: color-mix(in srgb, var(--ra-muted) 30%, var(--ra-line));
+  stroke-width: 1.4;
+}
+.resource-block {
+  fill: color-mix(in srgb, var(--ra-accent) 14%, var(--ra-surface));
+  stroke: none;
+}
+.resource-block-mark {
+  stroke: color-mix(in srgb, var(--ra-accent) 55%, var(--ra-surface));
+  stroke-width: 1.2;
+}
+.resource-select {
+  stroke: var(--resource-symbol);
+  stroke-width: 1.1;
+  stroke-dasharray: 2.5 2;
+}
+.resource-cursor {
+  fill: var(--ra-surface);
+  stroke: var(--ra-ink);
+  stroke-width: 1.1;
+}
+.resource-panel {
+  fill: color-mix(in srgb, var(--ra-accent) 4%, var(--ra-surface));
+  stroke: color-mix(in srgb, var(--ra-muted) 15%, var(--ra-line));
+  stroke-width: 1;
+}
+.resource-bars {
+  stroke: var(--resource-symbol);
+  stroke-width: 3.4;
+  transition: stroke 200ms ease;
+}
+.resource-live {
+  fill: var(--ra-green);
+  stroke: color-mix(in srgb, var(--ra-green) 25%, transparent);
+  stroke-width: 2.5;
 }
 .resource-log-dots {
   fill: var(--resource-symbol);

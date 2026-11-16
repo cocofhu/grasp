@@ -27,14 +27,14 @@ FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 桌面壳、输入法、中文 locale 与翻译、X 工具（截图 import / xdotool / wmctrl）与 GUI 应用。
+# 桌面壳（openbox + plank + xcompmgr 合成器：Dock 半透明圆角与窗口阴影）、输入法、中文 locale 与翻译、X 工具（截图 import / xdotool / wmctrl）与 GUI 应用。
 # --no-install-recommends：不拉 KiCad 3D 模型等大包。Mesa llvmpipe 供 Blender / ParaView 软件渲染。
 # Ubuntu 基础镜像排除了 *.mo 翻译；桌面应用要中文界面，先放开再装，并重装已在默认镜像里的 GTK/GLib 数据包。
 RUN f=/etc/dpkg/dpkg.cfg.d/excludes && { [ ! -f "$f" ] || sed -i '\|^path-exclude=/usr/share/locale/|d' "$f"; } && \
     apt-get update && \
     apt-get install -y --no-install-recommends --reinstall libgtk-3-common libglib2.0-data && \
     apt-get install -y --no-install-recommends \
-      openbox plank dbus-x11 libglib2.0-bin dconf-gsettings-backend \
+      openbox plank xcompmgr dbus-x11 libglib2.0-bin dconf-gsettings-backend \
       fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5 \
       locales feh imagemagick xdotool wmctrl x11-utils x11-xserver-utils unzip xz-utils \
       adwaita-icon-theme hicolor-icon-theme \

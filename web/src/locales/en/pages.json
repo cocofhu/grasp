@@ -2143,6 +2143,8 @@
       "fixedTerminalTitle": "Terminal",
       "fixedTerminalMeta": "Sandbox terminal",
       "fixedBrowserTitle": "Browser",
+      "fixedComputerTitle": "Computer",
+      "computerCardMeta": "Agent desktop · take over anytime",
       "fixedLogTitle": "Log",
       "fixedLogMeta": "Container log · stdout/stderr",
       "appTab": "App preview",

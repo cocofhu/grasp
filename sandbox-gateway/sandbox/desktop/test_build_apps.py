@@ -52,6 +52,15 @@ class BuildAppsTest(unittest.TestCase):
         self.assertEqual(build_apps.find_icon(["/does/not/exist.svg", icon], dirs=[]), icon)
         self.assertIsNone(build_apps.find_icon(["none"], dirs=[self.icons]))
 
+    def test_xpm_is_last_resort(self):
+        pixmaps = os.path.join(self.dir, "pixmaps")
+        os.makedirs(pixmaps)
+        for d, name in ((pixmaps, "pv.xpm"), (self.icons, "pv.png")):
+            with open(os.path.join(d, name), "wb") as f:
+                f.write(b"x")
+        self.assertEqual(build_apps.find_icon(["pv"], dirs=[pixmaps, self.icons]), os.path.join(self.icons, "pv.png"))
+        self.assertEqual(build_apps.find_icon(["pv"], dirs=[pixmaps]), os.path.join(pixmaps, "pv.xpm"))
+
     def test_main_usage_and_failure(self):
         self.assertEqual(build_apps.main(["build-apps.py"]), 2)
         src = os.path.join(self.dir, "in.json")

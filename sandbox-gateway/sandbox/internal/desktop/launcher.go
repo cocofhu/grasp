@@ -37,6 +37,23 @@ func (l *Launcher) apps() []App {
 	return InstalledApps(LoadApps(l.Paths.Apps), l.LookPath)
 }
 
+// webIcon is the icon file the launch page shows for a: the runtime bundle's
+// icon when there is one, else the image icon if browsers can render it
+// (apps.json may point at XPM).
+func (l *Launcher) webIcon(a App) string {
+	if l.Paths.Share != "" {
+		p := filepath.Join(l.Paths.Share, "icons", a.ID+".svg")
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			return p
+		}
+	}
+	switch strings.ToLower(filepath.Ext(a.Icon)) {
+	case ".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif":
+		return a.Icon
+	}
+	return ""
+}
+
 func (l *Launcher) allowedHost(host string) bool {
 	for _, h := range []string{"127.0.0.1", "localhost", "[::1]"} {
 		if host == fmt.Sprintf("%s:%d", h, l.Port) {
@@ -51,14 +68,14 @@ func (l *Launcher) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self' chrome-extension:")
 		_, _ = w.Write(launcherHTML)
 	})
 	mux.HandleFunc("GET /apps", func(w http.ResponseWriter, _ *http.Request) {
 		list := []launcherApp{}
 		for _, a := range l.apps() {
 			item := launcherApp{ID: a.ID, Name: a.Name, NameZH: a.NameZH, Category: a.Category}
-			if a.Icon != "" {
+			if l.webIcon(a) != "" {
 				item.Icon = "/icons/" + a.ID
 			}
 			list = append(list, item)
@@ -67,16 +84,17 @@ func (l *Launcher) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /icons/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a, ok := FindApp(l.apps(), r.PathValue("id"))
-		if !ok || a.Icon == "" {
+		icon := l.webIcon(a)
+		if !ok || icon == "" {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := os.ReadFile(a.Icon)
+		b, err := os.ReadFile(icon)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		if ct := mime.TypeByExtension(filepath.Ext(a.Icon)); ct != "" {
+		if ct := mime.TypeByExtension(filepath.Ext(icon)); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
 		w.Header().Set("Cache-Control", "max-age=3600")

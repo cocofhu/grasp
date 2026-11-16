@@ -528,11 +528,26 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('desktop image keeps the browser toolbar unless the panel is the 电脑 view', async () => {
+    apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true })
+    const browser = mountNovnc({ console: true })
+    await flushPromises()
+    expect(browser.find('[data-testid="desktop-status-bar"]').exists()).toBe(false)
+    expect(browser.find('input[type="text"]').exists()).toBe(true)
+    browser.unmount()
+
+    const computer = mountNovnc({ console: true, computer: true })
+    await flushPromises()
+    expect(computer.find('[data-testid="desktop-status-bar"]').exists()).toBe(true)
+    expect(computer.find('input[type="text"]').exists()).toBe(false)
+    computer.unmount()
+  })
+
   it('desktop image: status bar, take over reports holder=user with heartbeat, return and unmount hand back', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true })
     apiMocks.setSandboxDesktopControl.mockImplementation(async (_id: number, holder: string) => ({ ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true, holder }))
-    const wrapper = mountNovnc()
+    const wrapper = mountNovnc({ computer: true })
     await flushPromises()
     expect(wrapper.get('[data-testid="desktop-status-bar"]').text()).toContain('电脑')
     expect(wrapper.get('[data-testid="desktop-holder"]').text()).toBe('Agent 控制中')
@@ -565,7 +580,7 @@ describe('NovncPreviewPanel', () => {
 
   it('desktop image: hiding the page returns control; public share tickets never poll', async () => {
     apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: false })
-    const wrapper = mountNovnc()
+    const wrapper = mountNovnc({ computer: true })
     await flushPromises()
     expect(wrapper.find('[data-testid="desktop-starting"]').exists()).toBe(true)
     await controlButton(wrapper).trigger('click')
@@ -580,7 +595,7 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
 
     apiMocks.sandboxDesktop.mockClear()
-    const shared = mountNovnc({ sandboxId: undefined, wsUrl: 'wss://x/public/vnc' })
+    const shared = mountNovnc({ sandboxId: undefined, wsUrl: 'wss://x/public/vnc', computer: true })
     await flushPromises()
     expect(apiMocks.sandboxDesktop).not.toHaveBeenCalled()
     expect(shared.find('[data-testid="desktop-status-bar"]').exists()).toBe(false)

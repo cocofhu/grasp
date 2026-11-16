@@ -27,7 +27,7 @@ const showSessionPeek = ref(false)
 const metaLoading = ref(true)
 const id = Number(route.params.id)
 
-const CONSOLE_TABS = ['terminal', 'ide', 'acp', 'novnc', 'log'] as const
+const CONSOLE_TABS = ['terminal', 'ide', 'acp', 'novnc', 'computer', 'log'] as const
 type ConsoleTab = (typeof CONSOLE_TABS)[number]
 
 function initialConsoleTab(): ConsoleTab {
@@ -44,6 +44,7 @@ const tab = ref<ConsoleTab>(initialConsoleTab())
 // Lazily mount heavy panes on first open, then keep alive (v-show) so
 // sessions survive tab switches — same pattern as the terminal pane.
 const novncMounted = ref(false)
+const computerMounted = ref(false)
 const ideMounted = ref(false)
 const acpMounted = ref(false)
 /** First iframe `load` — keep-alive tab switches must not replay loading. */
@@ -61,12 +62,13 @@ const acpFrame = ref<HTMLIFrameElement | null>(null)
 const acpFrameTheme = ref(theme.value)
 const acpSrc = computed(() => `${api.sandboxBridgeUrl(id)}#theme=${acpFrameTheme.value}`)
 
-/** Desktop image: the novnc tab is the whole computer, not just a browser. */
+/** Desktop image: a 电脑 tab next to the browser shows the whole desktop. */
 const desktopImage = ref(false)
 
 async function detectDesktopImage() {
   try {
     desktopImage.value = (await api.sandboxDesktop(id)).mode === 'desktop'
+    if (!desktopImage.value && tab.value === 'computer') tab.value = 'novnc'
   } catch {
     /* stopped sandbox or old runtime: keep the browser label */
   }
@@ -76,9 +78,8 @@ const tabItems = computed(() => [
   { k: 'terminal', l: t('pages.sandboxConsole.tabs.terminal'), i: 'terminal' },
   { k: 'ide', l: t('pages.sandboxConsole.tabs.ide'), i: 'stage-ide' },
   { k: 'acp', l: t('pages.sandboxConsole.tabs.acp'), i: 'robot' },
-  desktopImage.value
-    ? { k: 'novnc', l: t('pages.sandboxConsole.tabs.computer'), i: 'monitor' }
-    : { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
+  { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
+  ...(desktopImage.value ? [{ k: 'computer', l: t('pages.sandboxConsole.tabs.computer'), i: 'monitor' }] : []),
   { k: 'log', l: t('pages.sandboxConsole.tabs.log'), i: 'stage-log' },
 ])
 
@@ -298,6 +299,7 @@ watch(tab, (t) => {
   if (t === 'ide') ideMounted.value = true
   if (t === 'acp') acpMounted.value = true
   if (t === 'novnc') novncMounted.value = true
+  if (t === 'computer') computerMounted.value = true
   if (t === 'log') fetchLog()
 })
 
@@ -312,6 +314,7 @@ onMounted(async () => {
   if (tab.value === 'ide') ideMounted.value = true
   if (tab.value === 'acp') acpMounted.value = true
   if (tab.value === 'novnc') novncMounted.value = true
+  if (tab.value === 'computer') computerMounted.value = true
   await loadMeta()
   metaPoll = window.setInterval(refreshMeta, META_REFRESH_MS)
   nextTick(() => {
@@ -411,11 +414,11 @@ onBeforeUnmount(() => {
         <button
           v-for="item in tabItems"
           :key="item.k"
-          class="flex items-center gap-1 rounded px-3 py-1 text-[12px] transition"
+          class="flex items-center gap-1.5 rounded px-3.5 py-1.5 text-[13px] transition"
           :class="tab === item.k ? 'text-txt' : 'text-txt3 hover:text-txt2'"
           :data-active="tab === item.k"
           @click="tab = item.k as any"
-        ><Icon :name="item.i" :size="13" />{{ item.l }}</button>
+        ><Icon :name="item.i" :size="15" />{{ item.l }}</button>
       </SlidingTabs>
 
 
@@ -500,6 +503,17 @@ onBeforeUnmount(() => {
           v-if="novncMounted"
           :sandbox-id="id"
           console
+          fill
+        />
+      </div>
+
+      <!-- Desktop image: the whole computer, framed screen with a control dock -->
+      <div v-show="tab === 'computer'" class="h-full">
+        <NovncPreviewPanel
+          v-if="computerMounted"
+          :sandbox-id="id"
+          console
+          computer
           fill
         />
       </div>

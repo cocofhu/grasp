@@ -2,7 +2,8 @@
 Type=Application
 Name=Browser
 Name[zh_CN]=浏览器
-Exec=@DESKTOP_SESSION@ browser about:blank
-Icon=web-browser
+Exec=@DESKTOP_SESSION@ browser
+Icon=@DESKTOP_SHARE@/icons/browser.svg
 Terminal=false
+StartupWMClass=@BROWSER_WM_CLASS@
 Categories=Network;WebBrowser;

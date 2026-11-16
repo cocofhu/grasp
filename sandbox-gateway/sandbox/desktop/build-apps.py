@@ -17,8 +17,10 @@ ICON_DIRS = [
     "/usr/share/icons/hicolor/scalable/apps",
     "/usr/share/icons/hicolor/256x256/apps",
     "/usr/share/icons/hicolor/128x128/apps",
+    "/usr/share/icons/hicolor/96x96/apps",
     "/usr/share/icons/hicolor/64x64/apps",
     "/usr/share/icons/hicolor/48x48/apps",
+    "/usr/share/icons/hicolor/32x32/apps",
     "/usr/share/icons/Adwaita/scalable/apps",
     "/usr/share/icons/Adwaita/256x256/apps",
     "/usr/share/icons/Adwaita/48x48/apps",
@@ -29,16 +31,18 @@ ICON_DIRS = [
 
 
 def find_icon(candidates, dirs=ICON_DIRS):
+    # Browsers cannot render XPM (the launch page), so it is the last resort.
     for c in candidates:
         if os.path.isabs(c):
             if os.path.isfile(c):
                 return c
             continue
-        for d in dirs:
-            for ext in (".svg", ".png", ".xpm"):
-                p = os.path.join(d, c + ext)
-                if os.path.isfile(p):
-                    return p
+        for exts in ((".svg", ".png"), (".xpm",)):
+            for d in dirs:
+                for ext in exts:
+                    p = os.path.join(d, c + ext)
+                    if os.path.isfile(p):
+                        return p
     return None
 
 

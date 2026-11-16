@@ -2143,6 +2143,8 @@
       "fixedTerminalTitle": "Terminal",
       "fixedTerminalMeta": "沙箱终端",
       "fixedBrowserTitle": "浏览器",
+      "fixedComputerTitle": "电脑",
+      "computerCardMeta": "Agent 的桌面 · 可随时接管",
       "fixedLogTitle": "日志",
       "fixedLogMeta": "容器日志 · stdout/stderr",
       "appTab": "应用预览",
