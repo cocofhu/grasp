@@ -500,7 +500,7 @@ func TestDriverLifecyclePrivateStateAndStableRestart(t *testing.T) {
 			bootstrap = string(b)
 		}
 	}
-	if !strings.Contains(envFile, "workspace-password") || !strings.Contains(bootstrap, "/grasp-bootstrap.sh fetch") {
+	if !strings.Contains(envFile, "workspace-password") || !strings.Contains(bootstrap, "/grasp-bootstrap.sh fetch") || !strings.Contains(bootstrap, "export GRASP_SERVICES_LOG=/run/grasp-e2b/bootstrap.log\n") {
 		t.Fatal("exact bootstrap did not receive requested environment")
 	}
 	if _, err := d.Create(t.Context(), spec); err == nil {

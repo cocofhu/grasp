@@ -21,6 +21,16 @@ func TestDispatchEventDataCapturesErrorText(t *testing.T) {
 	}
 }
 
+func TestDispatchEventDataPromptDoneSessionReset(t *testing.T) {
+	c := NewACPClient("127.0.0.1", 1)
+	reset, kept := &ChatResult{}, &ChatResult{}
+	c.dispatchEventData(json.RawMessage(`{"op":"event","data":{"type":"prompt_done","stopReason":"end_turn","sessionId":"S1","sessionReset":true,"previousSessionId":"S0"}}`), reset)
+	c.dispatchEventData(json.RawMessage(`{"op":"event","data":{"type":"prompt_done","stopReason":"end_turn","sessionId":"S0"}}`), kept)
+	if !reset.SessionReset || kept.SessionReset {
+		t.Fatalf("sessionReset not reported: reset=%v kept=%v", reset.SessionReset, kept.SessionReset)
+	}
+}
+
 func TestDispatchEventDataPromptDoneStopReasonFailed(t *testing.T) {
 	c := NewACPClient("127.0.0.1", 1)
 	for _, reason := range []string{"failed", "refusal", " REFUSAL "} {

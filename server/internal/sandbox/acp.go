@@ -630,6 +630,7 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		UsagePartial bool            `json:"usagePartial"`
 		Text         string          `json:"text"`
 		StopReason   string          `json:"stopReason"`
+		SessionReset bool            `json:"sessionReset"`
 	}
 	if err := json.Unmarshal(envelope.Data, &ev); err != nil {
 		c.lg.Warn().Err(err).Msg("malformed event data")
@@ -662,6 +663,7 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 				return true
 			}
 			result.doneSeen = true
+			result.SessionReset = ev.SessionReset
 			result.UsagePartial = ev.UsagePartial
 			result.EndedAt = ev.ReportedAt
 			if u, byModel := parsePromptDoneUsage(ev.Usage, c.bridgeModel); u != nil {

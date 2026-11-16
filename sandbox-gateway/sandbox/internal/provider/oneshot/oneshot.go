@@ -343,7 +343,7 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			merr = e.safeError(merr)
 			log.Printf("oneshot: 附件落盘失败: %v", merr)
 			e.emitError(merr)
-			e.emitPromptDone("failed", nil)
+			e.emitPromptDone("failed", nil, false, nil)
 			return provider.TurnResult{StopReason: "failed"}, merr
 		}
 		log.Printf("oneshot: agent %q 已将 %d 个附件落盘", e.c.AgentName(), len(files))
@@ -356,18 +356,44 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	e.mu.Unlock()
 
 	res, err := e.runOnce(ctx, text, images, resumeID)
-	// Resume fallback: if a resume attempt failed before establishing a
-	// session, retry once from scratch (rescues a stale resume pointer).
-	if err != nil && resumeID != "" && res.newSessionID == "" && !errors.Is(err, context.Canceled) {
+	resumeFailed := func() bool {
+		return err != nil && resumeID != "" && res.newSessionID == "" && !errors.Is(err, context.Canceled) && context.Cause(ctx) == nil
+	}
+	// A CLI that cannot reach its API exits before reporting a session, which
+	// looks like a stale pointer. Dropping the pointer then would silently start
+	// an empty conversation, so connection failures retry the same session.
+	for attempt := 0; resumeFailed() && transientFailure(err, res) && attempt < len(resumeRetryDelays); attempt++ {
+		delay := resumeRetryDelays[attempt]
+		log.Printf("oneshot: resume 遇到网络类错误，%s 后用同一会话重试（%d/%d）: %v", delay, attempt+1, len(resumeRetryDelays), e.safeError(err))
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		spent, spentPartial := res.usage, res.usagePartial
+		res, err = e.runOnce(ctx, text, images, resumeID)
+		res.usage = mergeUsage(spent, res.usage)
+		res.usagePartial = res.usagePartial || spentPartial
+	}
+	// Resume fallback: a non-connection failure before a session was reported
+	// means the CLI rejected the pointer. Retry once from scratch; the pointer
+	// is replaced only when the fresh attempt reports its own session.
+	sessionReset := false
+	if resumeFailed() && !transientFailure(err, res) {
 		spent := res.usage
 		spentPartial := res.usagePartial
 		log.Printf("oneshot: resume 失败，回退为全新会话重试一次: %v", e.safeError(err))
-		e.mu.Lock()
-		e.sessionID = ""
-		e.mu.Unlock()
 		res, err = e.runOnce(ctx, text, images, "")
 		res.usage = mergeUsage(spent, res.usage)
 		res.usagePartial = res.usagePartial || spentPartial
+		sessionReset = res.newSessionID != "" && res.newSessionID != resumeID
+		if sessionReset {
+			log.Printf("oneshot: 已改用全新会话 %s（原会话 %s 的上下文未带入）", res.newSessionID, resumeID)
+		}
+	} else if resumeFailed() {
+		log.Printf("oneshot: resume 重试后仍为网络类错误，保留会话 %s 供下次重试: %v", resumeID, e.safeError(err))
 	}
 	if cause := context.Cause(ctx); err != nil && errors.Is(cause, provider.ErrTurnRecover) {
 		// First idle: the bridge will prompt again. Do not close the user turn.
@@ -411,7 +437,11 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 			e.emitError(err)
 		}
 	}
-	e.emitPromptDone(res.stopReason, res.usage, res.usagePartial)
+	var reset map[string]any
+	if sessionReset {
+		reset = map[string]any{"sessionReset": true, "previousSessionId": resumeID}
+	}
+	e.emitPromptDone(res.stopReason, res.usage, res.usagePartial, reset)
 	return provider.TurnResult{StopReason: res.stopReason, Usage: res.usage, UsagePartial: res.usagePartial}, err
 }
 
@@ -810,15 +840,50 @@ func (e *engine) emitUpdate(m Msg) {
 	e.emit(map[string]any{"type": "session_update", "sessionId": e.SessionID(), "update": update})
 }
 
-func (e *engine) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage, partial ...bool) {
+func (e *engine) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage, partial bool, extra map[string]any) {
 	frame := map[string]any{"type": "prompt_done", "sessionId": e.SessionID(), "stopReason": stopReason}
 	if e.c.ReportsUsage() && len(usage) > 0 {
 		frame["usage"] = usage
-		if len(partial) > 0 && partial[0] {
+		if partial {
 			frame["usagePartial"] = true
 		}
 	}
+	for k, v := range extra {
+		frame[k] = v
+	}
 	e.emit(frame)
+}
+
+// resumeRetryDelays spaces same-session retries after a connection failure.
+// A var (not const) so tests can shrink it.
+var resumeRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 20 * time.Second}
+
+var transientMarkers = []string{
+	"failed to reach", "econnreset", "econnrefused", "econnaborted", "etimedout", "enotfound",
+	"eai_again", "enetunreach", "ehostunreach", "socket hang up", "network", "tls", "handshake",
+	"connection refused", "connection reset", "connection closed", "timed out",
+	"temporary failure in name resolution", "no such host",
+}
+
+// transientFailure reports whether a failed attempt looks like the CLI could
+// not reach its API, as opposed to rejecting the request or its session.
+func transientFailure(err error, res turnOutcome) bool {
+	texts := make([]string, 0, len(res.diagnostics)+1)
+	if err != nil {
+		texts = append(texts, err.Error())
+	}
+	for _, d := range res.diagnostics {
+		texts = append(texts, d.Text)
+	}
+	for _, text := range texts {
+		lower := strings.ToLower(text)
+		for _, marker := range transientMarkers {
+			if strings.Contains(lower, marker) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *engine) emit(ev map[string]any) {

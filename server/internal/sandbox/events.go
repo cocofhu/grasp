@@ -67,6 +67,9 @@ type ChatResult struct {
 	ErrorText string `json:"errorText,omitempty"`
 	// Failed is set when prompt_done.stopReason is "failed" or "refusal".
 	Failed bool `json:"-"`
+	// SessionReset is set when the bridge answered this turn in a new native
+	// CLI session because the previous one could not be resumed.
+	SessionReset bool `json:"-"`
 
 	// OpID is the turn id this client sent with {op:chat}; the bridge echoes it
 	// on every frame of the turn.

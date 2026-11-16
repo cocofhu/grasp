@@ -37,11 +37,15 @@ read_pid() { [ -f "$1" ] && cat "$1" 2>/dev/null; }
 port_open() { (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1; }
 
 # Restarts come from an SSH session: write to the container log and detach.
+# GRASP_SERVICES_LOG names a provider's collected log (E2B: bootstrap.log). A
+# PID1 whose stdout is /dev/null (E2B init) would silently discard the logs.
 service_log_redirect() {
   if [ "${GRASP_SERVICES_INHERIT_STDIO:-}" = "1" ]; then
     return
   fi
-  if [ -w /proc/1/fd/1 ]; then
+  if [ -n "${GRASP_SERVICES_LOG:-}" ] && touch "$GRASP_SERVICES_LOG" 2>/dev/null; then
+    exec >>"$GRASP_SERVICES_LOG" 2>&1
+  elif [ -w /proc/1/fd/1 ] && [ "$(readlink /proc/1/fd/1 2>/dev/null)" != /dev/null ]; then
     exec >>/proc/1/fd/1 2>>/proc/1/fd/2
   else
     exec >>"$RUN_DIR/services.log" 2>&1
