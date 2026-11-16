@@ -9,7 +9,6 @@ package openclaw
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"log"
 	"strconv"
@@ -39,25 +38,17 @@ type Config struct {
 }
 
 // New builds a one-shot provider for the OpenClaw CLI.
-func New(c Config) provider.Provider { return oneshot.NewProvider(&codec{c: c}) }
-
-type codec struct{ c Config }
-
-func (d *codec) AgentName() provider.Name { return d.c.AgentName }
-func (d *codec) Bin() string              { return d.c.Bin }
-func (d *codec) Runtime() string          { return d.c.Runtime }
-func (d *codec) ConfigRoot() string       { return d.c.ConfigRoot }
-func (d *codec) ReportsUsage() bool       { return true }
-func (d *codec) PromptViaStdin() bool     { return false }
-
-func (d *codec) AuthEnv(env []string) []string {
-	if d.c.AuthEnvFn == nil {
-		return env
-	}
-	return d.c.AuthEnvFn(env)
+func New(c Config) provider.Provider {
+	return oneshot.NewProvider(&codec{CLI: oneshot.NewCLI(oneshot.CLIConfig{
+		AgentName: c.AgentName, Bin: c.Bin, Runtime: c.Runtime, ConfigRoot: c.ConfigRoot,
+		AuthEnvFn: c.AuthEnvFn, Catalog: c.Catalog,
+	}), c: c})
 }
 
-func (d *codec) Models(context.Context) ([]provider.Model, error) { return d.c.Catalog, nil }
+type codec struct {
+	oneshot.CLI
+	c Config
+}
 
 // InitSession allocates a stable session id up front so multi-turn continuity
 // survives even when the result document does not echo one back.

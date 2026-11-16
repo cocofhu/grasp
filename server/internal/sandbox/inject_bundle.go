@@ -9,10 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -152,62 +149,9 @@ func randomHex(nBytes int) string {
 
 // PackConfigHomeTarGz builds a .tar.gz of hostDir for SANDBOX_INJECT / bundleUrl.
 func PackConfigHomeTarGz(hostDir string) ([]byte, error) {
-	info, err := os.Stat(hostDir)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("config home %q is not a directory", hostDir)
-	}
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	err = filepath.WalkDir(hostDir, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(hostDir, p)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-		hdr, err := tar.FileInfoHeader(fi, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = filepath.ToSlash(rel)
-		if d.IsDir() {
-			if !strings.HasSuffix(hdr.Name, "/") {
-				hdr.Name += "/"
-			}
-			return tw.WriteHeader(hdr)
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		f, err := os.Open(p)
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(tw, f)
-		_ = f.Close()
-		return copyErr
-	})
-	if err != nil {
-		_ = tw.Close()
-		_ = gz.Close()
-		return nil, err
-	}
-	if err := tw.Close(); err != nil {
+	if err := writeConfigHomeTar(gz, hostDir); err != nil {
 		_ = gz.Close()
 		return nil, err
 	}

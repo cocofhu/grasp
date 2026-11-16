@@ -248,21 +248,9 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 				c.String(http.StatusGone, "sandbox recycled")
 				return
 			}
-			fresh, healthy := h.Preview.ProbeRegisteredPort(ctx, reg)
-			if err := h.Preview.UpdatePreviewHealth(runID, nodeID, port, healthy); err != nil {
-				log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-					Msg("persist preview health failed")
-			}
-			if !healthy {
-				c.String(http.StatusServiceUnavailable, "preview service unavailable")
+			var ok bool
+			if host, ok = h.refreshPreviewHost(ctx, c, reg); !ok {
 				return
-			}
-			if fresh != host {
-				host = fresh
-				if err := h.Preview.UpdatePreviewHost(runID, nodeID, port, host); err != nil {
-					log.Warn().Err(err).Str("runId", runID).Str("nodeId", nodeID).Int("port", port).
-						Msg("persist preview host failed")
-				}
 			}
 		}
 	}
@@ -316,38 +304,7 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte("preview upstream unreachable"))
 	}
-
-	path := c.Param("path")
-	if path == "" {
-		path = "/"
-	}
-	c.Request.URL.Path = path
-	c.Request.Header.Set("Accept-Encoding", "identity")
-
-	publicHost := c.Request.Host
-	if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
-		publicHost = fh
-	}
-	c.Request.Header.Set("X-Forwarded-Host", publicHost)
-	c.Request.Header.Set("X-Forwarded-Prefix", strings.TrimRight(prefix, "/"))
-	proto := c.GetHeader("X-Forwarded-Proto")
-	if proto == "" {
-		if c.Request.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
-	}
-	c.Request.Header.Set("X-Forwarded-Proto", proto)
-	c.Request.Host = target.Host
-	if c.Request.Header.Get("Origin") != "" {
-		c.Request.Header.Set("Origin", target.Scheme+"://"+target.Host)
-	}
-	c.Request.Header.Del("Forwarded")
-	if private {
-		stripPrivateReservedHeaders(c.Request.Header)
-	}
-	proxy.ServeHTTP(c.Writer, c.Request)
+	servePreviewUpstream(c, proxy, target, prefix, private)
 }
 
 func (h *Handlers) watchSharedAppProxy(ctx context.Context, stop context.CancelFunc, claims *gateshare.PreviewTicketClaims) {

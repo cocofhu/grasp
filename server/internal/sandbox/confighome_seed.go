@@ -81,15 +81,24 @@ func (m *Manager) seedConfigHome(ctx context.Context, sb *Sandbox, hostDir, conf
 
 // packConfigHomeTar builds a ustar archive of hostDir (relative paths).
 func packConfigHomeTar(hostDir string) ([]byte, error) {
-	info, err := os.Stat(hostDir)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := writeConfigHomeTar(&buf, hostDir); err != nil {
 		return nil, err
 	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("config home %q is not a directory", hostDir)
+	return buf.Bytes(), nil
+}
+
+// writeConfigHomeTar writes a ustar archive of hostDir (relative paths) to w
+// and closes the archive; w itself stays open.
+func writeConfigHomeTar(w io.Writer, hostDir string) error {
+	info, err := os.Stat(hostDir)
+	if err != nil {
+		return err
 	}
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+	if !info.IsDir() {
+		return fmt.Errorf("config home %q is not a directory", hostDir)
+	}
+	tw := tar.NewWriter(w)
 	err = filepath.WalkDir(hostDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -133,10 +142,7 @@ func packConfigHomeTar(hostDir string) ([]byte, error) {
 	})
 	if err != nil {
 		_ = tw.Close()
-		return nil, err
+		return err
 	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return tw.Close()
 }
