@@ -22,6 +22,7 @@ vi.mock('@/lib/api/api', () => ({
     sandboxTerminalWsUrl: (id: number) => `ws://test.local/sandboxes/${id}/terminal`,
     artifactVersions: vi.fn(async () => []),
     artifactVersionContent: vi.fn(async () => ({})),
+    sandboxDesktop: vi.fn(async () => ({ mode: 'browser' })),
   },
 }))
 
@@ -110,6 +111,31 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
         global: { plugins: [i18n()], stubs },
       })
     }
+
+    it('adds a 电脑 card on the desktop image and drops a restored 电脑 tab on a browser image', async () => {
+      const desktop = { mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] }
+      vi.mocked(api.sandboxDesktop).mockResolvedValueOnce(desktop as never)
+      let wrapper = mountSolo()
+      await flushPromises()
+      await wrapper.get('[data-testid="react-artifact-card-computer"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="react-artifact-tab-computer"]').text()).toContain('电脑')
+      expect(wrapper.get('[data-testid="react-artifact-preview-computer"] [data-testid="novnc-stub"]').attributes('data-sandbox')).toBe('5')
+      wrapper.unmount()
+
+      vi.mocked(api.sandboxDesktop).mockResolvedValueOnce(desktop as never)
+      wrapper = mountSolo()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-tab-computer"]').exists()).toBe(true)
+      wrapper.unmount()
+
+      wrapper = mountSolo()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-card-computer"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="react-artifact-tab-computer"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="react-artifact-preview-computer"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
 
     it('shows a resume placeholder on sandbox tabs and remounts the panel after resume', async () => {
       const wrapper = mountSolo({ sandboxPaused: true })

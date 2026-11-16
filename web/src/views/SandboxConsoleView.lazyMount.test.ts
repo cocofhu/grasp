@@ -253,22 +253,31 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     wrapper.unmount()
   })
 
-  it('labels the novnc tab 电脑 on the desktop image and 浏览器 otherwise', async () => {
+  it('adds a 电脑 tab next to 浏览器 on the desktop image only', async () => {
     let wrapper = await mountConsole()
     expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('电脑'))).toBe(false)
     wrapper.unmount()
 
     apiMocks.sandboxDesktop.mockResolvedValueOnce({ mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] })
     wrapper = await mountConsole()
     await flushPromises()
     expect(wrapper.findAll('button').some((b) => b.text().includes('电脑'))).toBe(true)
-    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
     wrapper.unmount()
 
     apiMocks.sandboxDesktop.mockRejectedValueOnce(new Error('409'))
     wrapper = await mountConsole()
     await flushPromises()
     expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('?tab=computer falls back to 浏览器 on the browser image', async () => {
+    const wrapper = await mountConsole('computer')
+    await flushPromises()
+    const active = wrapper.findAll('button').find((b) => b.attributes('data-active') === 'true')
+    expect(active?.text()).toContain('浏览器')
     wrapper.unmount()
   })
 

@@ -10,11 +10,13 @@ All notable public-release changes are documented here.
   - 网关新增 `GET /api/v1/capabilities`，返回默认镜像（`defaultImage`）、`profiles`、驱动、端口和停止/磁盘语义，使用 v1 鉴权，未配置 API key 的本地网关也可调用；`GET /api/v2/info` 同样返回 `defaultImage`。Grasp 启动日志和 `doctor` 会显示网关的镜像；对接旧版网关时自动回退到 `/api/v2/info`。
   - 升级顺序：先升级网关，再升级 Grasp。网关必须与本版本一起升级：3.3.0 的网关不识别 `SBGW_DOCKER_IMAGE`，新版 Grasp 配旧网关时沙箱会退回网关内置的 `universal-sandbox:local` 而无法创建。
 
+- 桌面镜像换上 Grasp 外观：启动台改为浏览器新标签页（地址栏不再显示 127.0.0.1），页面带 Grasp 吉祥物、时钟和应用图标；Dock 图标不再空白，「我的电脑」用 Grasp 标志，浏览器窗口归到浏览器图标下；紫色壁纸、半透明圆角 Dock 和窗口阴影；ParaView、3D Slicer 显示真实图标。
+- 桌面镜像新增「电脑」页签：桌面画面以圆角卡片居中显示，画面下方的控制胶囊显示谁在控制、Agent 是否在运行，并提供取点、全屏、接管 / 交还；原来的「浏览器」页签保持不变。舞台和沙箱控制台的页签放大；「浏览器」「应用预览」资源卡片换成各自的插画（取点标注的网页 / 运行中的应用），不再共用一个地球图标。
 - 新增「云桌面」镜像，并统一 MCP 配置入口（破坏性变更）：
   - 删除沙箱环境变量 `VNC_PREVIEW` 和 `BROWSER_MCP`，代码不再读取；初始化向导和设置里对应的两个开关一并移除，能力接口去掉 `preview.enableEnv`。沙箱现在始终启动预览栈（Xvfb + Chromium + x11vnc + websockify），每个沙箱常驻内存约增加 460 MiB（实测 PSS：Chromium 360、Xvfb 61、websockify 30、x11vnc 13），与直连预览共存。
   - 所有 MCP 只通过 Agent 的 MCP 配置生效：共享 Agent 为底，单个 Agent 可同名覆盖。新工作区初始化时，共享 Agent 默认带浏览器 MCP（`chrome-devtools`）。**已有工作区不会自动迁移**：升级后请在共享 Agent 的 MCP 页签点「快捷添加 → 浏览器」，否则 Agent 不再有浏览器工具。
   - MCP 页签新增快捷添加：浏览器、桌面控制、Blender、产物存储。
-  - 新增桌面镜像 `ghcr.io/cocofhu/universal-sandbox:<版本>-desktop`（滚动 tag `desktop`）：在默认镜像上叠加 Openbox 桌面、底部 Dock、启动台、中文输入法，以及 Blender、GIMP、Inkscape、Kdenlive、FreeCAD、KiCad、QGIS、Godot、draw.io、3D Slicer 等应用。默认镜像不变。桌面镜像的控制台入口显示为「电脑」，状态条显示当前由谁控制、Agent 是否在操作。桌面预览栈常驻内存约 680 MiB（实测 PSS，不含打开的应用），建议沙箱规格不低于 4 vCPU / 8 GiB 内存 / 30 GiB 磁盘。
+  - 新增桌面镜像 `ghcr.io/cocofhu/universal-sandbox:<版本>-desktop`（滚动 tag `desktop`）：在默认镜像上叠加 Openbox 桌面、底部 Dock、启动台、中文输入法，以及 Blender、GIMP、Inkscape、Kdenlive、FreeCAD、KiCad、QGIS、Godot、draw.io、3D Slicer 等应用。默认镜像不变。桌面镜像在「浏览器」旁多一个「电脑」页签，显示当前由谁控制、Agent 是否在操作。桌面预览栈常驻内存约 680 MiB（实测 PSS，不含打开的应用），建议沙箱规格不低于 4 vCPU / 8 GiB 内存 / 30 GiB 磁盘。
   - 桌面 MCP（截图、窗口与应用列表、点击、输入、按键、启动应用）和 Blender 官方 MCP 需在 MCP 页签快捷添加，不会自动注册。
   - 用户在「电脑」里接管画面时，Agent 的桌面键鼠操作会被拒绝并提示「用户正在控制」，截图与列表照常可用；归还、离开页面或 30 秒未续期后自动交还 Agent。Blender MCP 不受影响。只有登录且有权访问该沙箱的用户可以接管，公开分享链接不能。
   - E2B：`prepare-template.py --desktop` 可构建并校验桌面模板，`gateway.example.yaml` 增加桌面模板示例，部署文档附验收清单。

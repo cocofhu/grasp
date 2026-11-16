@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestLauncherPagesAndApps(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, launcherReq("GET", "/", "127.0.0.1:6091", "", "", ""))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "我的电脑") || w.Header().Get("Content-Security-Policy") == "" {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "我的电脑") || !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'self' chrome-extension:") {
 		t.Fatalf("index: %d %q", w.Code, w.Body.String()[:40])
 	}
 
@@ -58,6 +59,43 @@ func TestLauncherPagesAndApps(t *testing.T) {
 	h.ServeHTTP(w, launcherReq("GET", "/icons/blender", "127.0.0.1:6091", "", "", ""))
 	if w.Code != 404 {
 		t.Fatalf("missing icon file: %d", w.Code)
+	}
+}
+
+func TestLauncherIconsPreferShareAndSkipXPM(t *testing.T) {
+	p := testPaths(t, true)
+	xpm := filepath.Join(filepath.Dir(p.Apps), "mousepad.xpm")
+	if err := os.WriteFile(xpm, []byte("/* XPM */"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p.Apps)
+	if err := os.WriteFile(p.Apps, []byte(strings.Replace(string(b), `"category":"office"}`, `"category":"office","icon":"`+xpm+`"}`, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p.Share = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(p.Share, "icons"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Share, "icons", "blender.svg"), []byte("<svg id=share/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := (&Launcher{Paths: p, Runner: &fakeRunner{}, LookPath: lookAll, Port: 6091}).Handler()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, launcherReq("GET", "/apps", "127.0.0.1:6091", "", "", ""))
+	var apps []launcherApp
+	if err := json.Unmarshal(w.Body.Bytes(), &apps); err != nil || len(apps) != 2 || apps[0].Icon != "" || apps[1].Icon != "/icons/blender" {
+		t.Fatalf("apps: %s %v", w.Body.String(), err)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, launcherReq("GET", "/icons/blender", "127.0.0.1:6091", "", "", ""))
+	if w.Code != 200 || w.Body.String() != "<svg id=share/>" {
+		t.Fatalf("share icon: %d %q", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, launcherReq("GET", "/icons/mousepad", "127.0.0.1:6091", "", "", ""))
+	if w.Code != 404 {
+		t.Fatalf("xpm icon must not be served: %d", w.Code)
 	}
 }
 

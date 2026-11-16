@@ -5,28 +5,65 @@
 <title>我的电脑</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: light; font-family: "Noto Sans CJK SC", "Noto Sans", system-ui, sans-serif; }
-  body { margin: 0; min-height: 100vh; background: linear-gradient(160deg, #e9f1ff 0%, #f7f9fc 55%, #eef5ef 100%); color: #1d2330; }
-  main { max-width: 980px; margin: 0 auto; padding: 64px 32px 48px; }
-  .clock { font-size: 64px; font-weight: 300; letter-spacing: -1px; }
-  .date { color: #5b6475; margin-top: 4px; }
-  h1 { font-size: 22px; font-weight: 500; margin: 36px 0 20px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; }
-  button.app { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 10px; border-radius: 16px; background: rgba(255,255,255,.72); box-shadow: 0 1px 2px rgba(20,30,60,.06); text-align: center; }
-  button.app:hover, button.app:focus-visible { background: #fff; box-shadow: 0 6px 18px rgba(20,30,60,.12); }
-  button.app img, button.app .ph { width: 48px; height: 48px; border-radius: 12px; }
-  button.app .ph { display: grid; place-items: center; background: #3b6cf6; color: #fff; font-size: 22px; font-weight: 600; }
-  button.app span { font-size: 13px; line-height: 1.3; }
-  .empty, .toast { color: #5b6475; font-size: 13px; }
-  .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: #1d2330; color: #fff; padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; }
-  .toast.show { opacity: .92; }
+  :root { color-scheme: light; font-family: "Noto Sans CJK SC", "Noto Sans", system-ui, sans-serif; --ink: #1e1b3a; --muted: #6b6889; --accent: #7b61ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; overflow-x: hidden; color: var(--ink); background: radial-gradient(1200px 700px at 50% -10%, #ffffff 0%, rgba(255,255,255,0) 70%), linear-gradient(170deg, #f3f0ff 0%, #eef1ff 55%, #f5f3ff 100%); }
+  .doodles { position: fixed; inset: 0; pointer-events: none; color: var(--accent); opacity: .13; }
+  .doodles svg { position: absolute; width: 44px; height: 50px; }
+  main { position: relative; display: flex; flex-direction: column; align-items: center; max-width: 920px; margin: 0 auto; padding: 44px 32px 40px; }
+  .hero { display: flex; flex-direction: column; align-items: center; }
+  .bubble { position: relative; max-width: 300px; padding: 10px 16px; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(30,27,58,.06), 0 10px 28px -12px rgba(30,27,58,.25); font-size: 13px; line-height: 1.55; color: #3b3858; text-align: center; }
+  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #fff; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+  .mascot { width: 76px; height: 86px; margin-top: 14px; filter: drop-shadow(0 10px 14px rgba(123,97,255,.28)); animation: float 4.5s ease-in-out infinite; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @media (prefers-reduced-motion: reduce) { .mascot { animation: none; } }
+  .clock { margin-top: 10px; font-size: 96px; font-weight: 300; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+  .greet { margin-top: 14px; font-size: 18px; font-weight: 500; }
+  .date { margin-top: 6px; font-size: 13px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 112px); justify-content: center; gap: 22px 8px; width: 100%; margin-top: 40px; }
+  button.app { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; border-radius: 16px; text-align: center; transition: background .15s ease; }
+  .tile { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px rgba(30,27,58,.05), 0 6px 16px -8px rgba(30,27,58,.3); transition: transform .15s ease, box-shadow .15s ease; }
+  .tile img { width: 40px; height: 40px; object-fit: contain; }
+  .tile.ph { background: linear-gradient(135deg, #9a87ff, #6247f0); color: #fff; font-size: 22px; font-weight: 600; }
+  button.app span { font-size: 12.5px; line-height: 1.35; color: #3b3858; max-width: 100px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  button.app:hover { background: rgba(123,97,255,.07); }
+  button.app:hover .tile { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(123,97,255,.18), 0 12px 22px -10px rgba(98,71,240,.45); }
+  button.app:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.app:active .tile { transform: translateY(0) scale(.96); }
+  .empty { margin-top: 48px; color: var(--muted); font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 8px); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; }
+  .toast.show { opacity: .94; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="cat" viewBox="48 52 104 118"><path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/><ellipse cx="84" cy="110" rx="6" ry="8" fill="currentColor"/><ellipse cx="116" cy="110" rx="6" ry="8" fill="currentColor"/></symbol>
+</svg>
+<div class="doodles" aria-hidden="true">
+  <svg style="left:7%;top:12%;transform:rotate(-14deg)"><use href="#cat"/></svg>
+  <svg style="left:16%;top:58%;transform:rotate(10deg) scale(.8)"><use href="#cat"/></svg>
+  <svg style="left:5%;top:84%;transform:rotate(-6deg) scale(.7)"><use href="#cat"/></svg>
+  <svg style="right:9%;top:16%;transform:rotate(12deg) scale(.85)"><use href="#cat"/></svg>
+  <svg style="right:18%;top:48%;transform:rotate(-10deg) scale(.7)"><use href="#cat"/></svg>
+  <svg style="right:6%;top:78%;transform:rotate(8deg)"><use href="#cat"/></svg>
+  <svg style="left:30%;top:6%;transform:rotate(18deg) scale(.6)"><use href="#cat"/></svg>
+  <svg style="right:30%;top:88%;transform:rotate(-16deg) scale(.6)"><use href="#cat"/></svg>
+</div>
 <main>
-  <div class="clock" id="clock"></div>
-  <div class="date" id="date"></div>
-  <h1 id="title"></h1>
+  <div class="hero">
+    <div class="bubble" id="bubble"></div>
+    <svg class="mascot" viewBox="48 52 104 118" role="img" aria-label="Grasp">
+      <path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"/>
+      <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+      <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+      <path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="74" cy="126" r="6" fill="#c8c8c8"/>
+      <circle cx="126" cy="126" r="6" fill="#c8c8c8"/>
+    </svg>
+    <div class="clock" id="clock"></div>
+    <div class="greet" id="greet"></div>
+    <div class="date" id="date"></div>
+  </div>
   <div class="grid" id="grid"></div>
   <p class="empty" id="empty" hidden></p>
 </main>
@@ -35,16 +72,17 @@
 (function () {
   var zh = (navigator.language || 'zh').toLowerCase().indexOf('zh') === 0;
   var T = zh
-    ? { title: '我的电脑', empty: '这台电脑还没有安装应用。', opening: '正在打开 ', failed: '打开失败：', morning: '早上好', afternoon: '下午好', evening: '晚上好' }
-    : { title: 'My computer', empty: 'No apps are installed on this computer.', opening: 'Opening ', failed: 'Could not open: ', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' };
+    ? { title: '我的电脑', bubble: '这是我的电脑。你可以看我操作，也可以随时接管。', empty: '这台电脑还没有安装应用。', opening: '正在打开 ', failed: '打开失败：', morning: '早上好', afternoon: '下午好', evening: '晚上好', welcome: '，欢迎回来' }
+    : { title: 'My computer', bubble: 'This is my computer. Watch me work, or take over anytime.', empty: 'No apps are installed on this computer.', opening: 'Opening ', failed: 'Could not open: ', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening', welcome: ', welcome back' };
   document.title = T.title;
   document.documentElement.lang = zh ? 'zh-CN' : 'en';
+  document.getElementById('bubble').textContent = T.bubble;
   function tick() {
     var d = new Date();
-    document.getElementById('clock').textContent = d.toLocaleTimeString(zh ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('clock').textContent = d.toLocaleTimeString(zh ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit', hour12: false });
     document.getElementById('date').textContent = d.toLocaleDateString(zh ? 'zh-CN' : 'en', { weekday: 'long', month: 'long', day: 'numeric' });
     var h = d.getHours();
-    document.getElementById('title').textContent = (h < 12 ? T.morning : h < 18 ? T.afternoon : T.evening) + ' · ' + T.title;
+    document.getElementById('greet').textContent = (h < 12 ? T.morning : h < 18 ? T.afternoon : T.evening) + T.welcome;
   }
   tick();
   setInterval(tick, 15000);
@@ -62,6 +100,10 @@
       .then(function (r) { if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || r.status); }); })
       .catch(function (e) { toast(T.failed + label + ' (' + e.message + ')'); });
   }
+  function placeholder(tile, label) {
+    tile.classList.add('ph');
+    tile.textContent = label.slice(0, 1).toUpperCase();
+  }
   fetch('/apps').then(function (r) { return r.json(); }).then(function (apps) {
     var grid = document.getElementById('grid');
     if (!apps.length) {
@@ -75,17 +117,19 @@
       var b = document.createElement('button');
       b.className = 'app';
       b.dataset.app = app.id;
+      b.title = label;
+      var tile = document.createElement('div');
+      tile.className = 'tile';
       if (app.icon) {
         var img = document.createElement('img');
         img.src = app.icon;
         img.alt = '';
-        b.appendChild(img);
+        img.addEventListener('error', function () { placeholder(tile, label); });
+        tile.appendChild(img);
       } else {
-        var ph = document.createElement('div');
-        ph.className = 'ph';
-        ph.textContent = label.slice(0, 1);
-        b.appendChild(ph);
+        placeholder(tile, label);
       }
+      b.appendChild(tile);
       var s = document.createElement('span');
       s.textContent = label;
       b.appendChild(s);

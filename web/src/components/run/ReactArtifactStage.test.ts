@@ -735,13 +735,13 @@ describe('ReactArtifactStage', () => {
       await wrapper.get(`[data-testid="react-artifact-card-${id}"]`).trigger('click')
       await flushPromises()
       const tab = wrapper.get(`[data-testid="react-artifact-tab-${id}"]`)
-      expect(tab.findComponent(Icon).props()).toMatchObject({ name: `stage-${id}`, size: 13 })
-      expect(tab.find('svg').attributes('width')).toBe('13')
+      expect(tab.findComponent(Icon).props()).toMatchObject({ name: `stage-${id}`, size: 15 })
+      expect(tab.find('svg').attributes('width')).toBe('15')
     }
     wrapper.unmount()
   })
 
-  it('keeps the app preview card on the shared globe', async () => {
+  it('draws the app preview card as its own illustration, distinct from the browser', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [],
@@ -753,13 +753,13 @@ describe('ReactArtifactStage', () => {
     })
     await flushPromises()
     const app = wrapper.get('[data-testid="react-artifact-card-app"]').find('svg')
-    expect(app.html()).toContain('r="10"')
-    expect(app.attributes('width')).toBe('28')
-    expect(app.classes()).toContain('opacity-50')
+    expect(app.attributes()).toMatchObject({ viewBox: '0 0 96 72', width: '96', height: '72' })
+    expect(app.find('.resource-bars').exists()).toBe(true)
+    expect(app.find('.resource-live').exists()).toBe(true)
     const browser = wrapper.get('[data-testid="react-artifact-card-browser"]').find('svg')
     expect(browser.attributes()).toMatchObject({ viewBox: '0 0 96 72', width: '96', height: '72' })
-    expect(browser.find('circle[r="12"]').exists()).toBe(true)
-    expect(browser.find('ellipse').exists()).toBe(true)
+    expect(browser.find('.resource-select').exists()).toBe(true)
+    expect(browser.find('.resource-cursor').exists()).toBe(true)
     expect(browser.element.innerHTML).not.toBe(app.element.innerHTML)
     expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').find('svg').html()).toContain('r="10"')
     wrapper.unmount()

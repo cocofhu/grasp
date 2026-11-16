@@ -172,11 +172,11 @@ const initialOpen = restoreStageOpenState(
 )
 /** Default to workflow artifacts grid (no standalone preview chrome Tab). */
 const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_GRID)
-type ResourceView = 'home' | 'ide' | 'terminal' | 'browser' | 'log' | 'app'
+type ResourceView = 'home' | 'ide' | 'terminal' | 'browser' | 'computer' | 'log' | 'app'
 const resourceView = ref<ResourceView>('home')
 const artifactView = ref('home')
 function seedDrawerViews(tab: string) {
-  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'log') resourceView.value = tab
+  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'computer' || tab === 'log') resourceView.value = tab
   else if (tab === REACT_STAGE_TAB_NOVNC) resourceView.value = 'app'
   else {
     const name = previewTabName(tab)
@@ -210,6 +210,27 @@ const sandboxId = computed(() => {
   const n = Number(id)
   return Number.isFinite(n) && n > 0 ? n : null
 })
+/** Desktop image: a 电脑 tab shows the whole desktop next to the browser tab. */
+const desktopImage = ref(false)
+watch(
+  sandboxId,
+  async (id) => {
+    desktopImage.value = false
+    if (!id || props.token) return
+    try {
+      const st = await api.sandboxDesktop(id)
+      if (sandboxId.value !== id) return
+      desktopImage.value = st.mode === 'desktop'
+      if (!desktopImage.value) {
+        removeFixed('computer')
+        fixedMounted.value = { ...fixedMounted.value, computer: false }
+      }
+    } catch {
+      /* stopped sandbox or old runtime: keep the browser label */
+    }
+  },
+  { immediate: true },
+)
 let summaryThumbGen = 0
 let summaryThumbAbort: AbortController | null = null
 const summaryThumbFp: Record<string, string> = {}
@@ -347,6 +368,14 @@ const fixedCards = computed(() => {
       meta: t('pages.reactArtifactStage.novncCardMeta'),
     },
   ]
+  if (desktopImage.value) {
+    cards.push({
+      id: 'computer',
+      icon: 'monitor',
+      title: t('pages.reactArtifactStage.fixedComputerTitle'),
+      meta: t('pages.reactArtifactStage.computerCardMeta'),
+    })
+  }
   if (showAppCard.value) {
     cards.push({
       id: 'app',
@@ -364,7 +393,9 @@ const fixedCards = computed(() => {
   return cards
 })
 const fixedTabsBeforeApp = computed(() =>
-  (['ide', 'terminal', 'browser'] as const).filter((id) => fixedOpen.value.includes(id)),
+  (['ide', 'terminal', 'browser', 'computer'] as const).filter(
+    (id) => fixedOpen.value.includes(id) && (id !== 'computer' || desktopImage.value),
+  ),
 )
 const fixedTabsAfterApp = computed(() =>
   (['log'] as const).filter((id) => fixedOpen.value.includes(id)),
@@ -374,6 +405,7 @@ function fixedTabLabel(id: string): string {
   if (id === 'ide') return t('pages.reactArtifactStage.fixedIdeTitle')
   if (id === 'terminal') return t('pages.reactArtifactStage.fixedTerminalTitle')
   if (id === 'browser') return t('pages.reactArtifactStage.fixedBrowserTitle')
+  if (id === 'computer') return t('pages.reactArtifactStage.fixedComputerTitle')
   if (id === 'log') return t('pages.reactArtifactStage.fixedLogTitle')
   return id
 }
@@ -381,6 +413,7 @@ function fixedTabIcon(id: string): string {
   if (id === 'ide') return 'stage-ide'
   if (id === 'terminal') return 'stage-terminal'
   if (id === 'browser') return 'stage-browser'
+  if (id === 'computer') return 'monitor'
   if (id === 'log') return 'stage-log'
   return 'doc'
 }
@@ -652,7 +685,7 @@ function tabUnreadKind(name: string): StageTabUnreadKind | null {
   return tabUnread.value[name] || null
 }
 
-const FIXED_PANEL_IDS = ['ide', 'terminal', 'browser', 'log'] as const
+const FIXED_PANEL_IDS = ['ide', 'terminal', 'browser', 'computer', 'log'] as const
 type FixedPanelId = (typeof FIXED_PANEL_IDS)[number]
 
 function isFixedPanel(id: string): id is FixedPanelId {
@@ -662,7 +695,7 @@ function isFixedPanel(id: string): id is FixedPanelId {
 function closableTabIds(opts?: { includeApp?: boolean; names?: string[] }): string[] {
   const names = opts?.names || openNames.value
   const ids = names.map((n) => previewTabId(n))
-  for (const id of ['ide', 'terminal', 'browser'] as const) {
+  for (const id of ['ide', 'terminal', 'browser', 'computer'] as const) {
     if (fixedOpen.value.includes(id)) ids.push(id)
   }
   if (opts?.includeApp || (novncOpen.value && showAppCard.value)) ids.push(REACT_STAGE_TAB_NOVNC)
@@ -730,6 +763,11 @@ function selectNovncTab() {
 function closeFixed(id: string) {
   if (!isFixedPanel(id)) return
   markUserMoved()
+  removeFixed(id)
+}
+
+function removeFixed(id: FixedPanelId) {
+  if (!fixedOpen.value.includes(id)) return
   if (splitActive.value) {
     const before = splitModeTabIds()
     fixedOpen.value = fixedOpen.value.filter((x) => x !== id)
@@ -1079,7 +1117,7 @@ watch(
 
 watch(activeTab, (tab) => {
   if (!splitActive.value) return
-  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'log') {
+  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'computer' || tab === 'log') {
     resourceView.value = tab
     return
   }
@@ -1154,7 +1192,7 @@ watch(
 const SANDBOX_BUSY_REFRESH_MS = 3_000
 const SANDBOX_POLL_MS = 5_000
 const SANDBOX_POLL_LIMIT_MS = 120_000
-const SANDBOX_TABS = new Set(['ide', 'terminal', 'browser', 'log'])
+const SANDBOX_TABS = new Set(['ide', 'terminal', 'browser', 'computer', 'log'])
 const nodeSandboxRefreshable = computed(
   () =>
     !props.hideAppPreview &&
@@ -1306,7 +1344,7 @@ onBeforeUnmount(() => {
   <div class="artifact-stage-surface flex h-full min-h-0 flex-col bg-base" data-testid="react-artifact-stage" :data-drawer-mode="splitActive ? (drawerMode || 'closed') : undefined">
     <div
       v-show="showStageTabs"
-      class="artifact-stage-tabs flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5 max-md:px-1.5 max-md:py-1"
+      class="artifact-stage-tabs flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line px-3 py-2 max-md:px-1.5 max-md:py-1"
       data-testid="react-artifact-tabs"
       role="tablist"
     >
@@ -1314,7 +1352,7 @@ onBeforeUnmount(() => {
         v-if="!splitActive"
         type="button"
         role="tab"
-        class="inline-flex max-w-[200px] items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition max-md:px-2 max-md:py-0.5 max-md:text-[11px]"
+        class="inline-flex max-w-[220px] items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] transition max-md:px-2 max-md:py-0.5 max-md:text-[11px]"
         :class="
           showingGrid
             ? 'bg-elevated text-txt'
@@ -1324,13 +1362,13 @@ onBeforeUnmount(() => {
         data-testid="react-artifact-tab-grid"
         @click="selectGridTab"
       >
-        <Icon name="dashboard" :size="13" />
+        <Icon name="dashboard" :size="15" />
         <span class="truncate">{{ t('pages.reactArtifactStage.workflowTab') }}</span>
       </button>
       <div
         v-for="name in displayedPreviewNames"
         :key="name"
-        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        class="group inline-flex max-w-[240px] items-center gap-1 rounded-lg text-[13px] transition max-md:text-[11px]"
         :class="
           activePreviewName === name
             ? 'bg-elevated text-txt'
@@ -1340,12 +1378,12 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="tab"
-          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          class="inline-flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-1"
           :aria-selected="activePreviewName === name ? 'true' : 'false'"
           :data-testid="'react-artifact-tab-' + name"
           @click="selectPreviewTab(name)"
         >
-          <Icon :name="kindIcon[artifactByName(name)?.kind || ''] || 'doc'" :size="13" />
+          <Icon :name="kindIcon[artifactByName(name)?.kind || ''] || 'doc'" :size="15" />
           <span class="truncate">{{ artifactTitle(artifactByName(name)) }}</span>
           <span
             v-if="tabUnreadKind(name)"
@@ -1360,7 +1398,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="react-tab-close mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          class="react-tab-close mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
           :class="{ 'is-dirty': tabDirty(name) }"
           :aria-label="tabDirty(name) ? `${t('pages.reactArtifactStage.closeTab')} · ${t('pages.artifactEditor.dirtyTab')}` : t('pages.reactArtifactStage.closeTab')"
           :title="tabDirty(name) ? t('pages.artifactEditor.dirtyTab') : t('pages.reactArtifactStage.closeTab')"
@@ -1373,13 +1411,13 @@ onBeforeUnmount(() => {
             aria-hidden="true"
             :data-testid="'react-artifact-tab-dirty-' + name"
           />
-          <Icon name="close" :size="12" class="react-tab-close__x" />
+          <Icon name="close" :size="13" class="react-tab-close__x" />
         </button>
       </div>
       <div
         v-for="id in displayedFixedBefore"
         :key="id"
-        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        class="group inline-flex max-w-[240px] items-center gap-1 rounded-lg text-[13px] transition max-md:text-[11px]"
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
@@ -1389,28 +1427,28 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="tab"
-          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          class="inline-flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-1"
           :aria-selected="activeTab === id ? 'true' : 'false'"
           :data-testid="'react-artifact-tab-' + id"
           @click="selectFixedTab(id)"
         >
-          <Icon :name="fixedTabIcon(id)" :size="13" />
+          <Icon :name="fixedTabIcon(id)" :size="15" />
           <span class="truncate">{{ fixedTabLabel(id) }}</span>
         </button>
         <button
           type="button"
-          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          class="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
           :aria-label="t('pages.reactArtifactStage.closeTab')"
           :title="t('pages.reactArtifactStage.closeTab')"
           :data-testid="'react-artifact-tab-close-' + id"
           @click.stop="closeFixed(id)"
         >
-          <Icon name="close" :size="12" />
+          <Icon name="close" :size="13" />
         </button>
       </div>
       <div
         v-if="displayedNovnc"
-        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        class="group inline-flex max-w-[240px] items-center gap-1 rounded-lg text-[13px] transition max-md:text-[11px]"
         :class="
           showingNovnc
             ? 'bg-elevated text-txt'
@@ -1420,29 +1458,29 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="tab"
-          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          class="inline-flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-1"
           :aria-selected="showingNovnc ? 'true' : 'false'"
           data-testid="react-artifact-tab-novnc"
           @click="selectNovncTab"
         >
-          <Icon name="globe" :size="13" />
+          <Icon name="globe" :size="15" />
           <span class="truncate">{{ t('pages.reactArtifactStage.appTab') }}</span>
         </button>
         <button
           type="button"
-          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          class="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
           :aria-label="t('pages.reactArtifactStage.closeTab')"
           :title="t('pages.reactArtifactStage.closeTab')"
           data-testid="react-artifact-tab-close-novnc"
           @click.stop="closeNovnc"
         >
-          <Icon name="close" :size="12" />
+          <Icon name="close" :size="13" />
         </button>
       </div>
       <div
         v-for="id in displayedFixedAfter"
         :key="id"
-        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        class="group inline-flex max-w-[240px] items-center gap-1 rounded-lg text-[13px] transition max-md:text-[11px]"
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
@@ -1452,62 +1490,62 @@ onBeforeUnmount(() => {
         <button
           type="button"
           role="tab"
-          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          class="inline-flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-1"
           :aria-selected="activeTab === id ? 'true' : 'false'"
           :data-testid="'react-artifact-tab-' + id"
           @click="selectFixedTab(id)"
         >
-          <Icon :name="fixedTabIcon(id)" :size="13" />
+          <Icon :name="fixedTabIcon(id)" :size="15" />
           <span class="truncate">{{ fixedTabLabel(id) }}</span>
         </button>
         <button
           type="button"
-          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          class="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
           :aria-label="t('pages.reactArtifactStage.closeTab')"
           :title="t('pages.reactArtifactStage.closeTab')"
           :data-testid="'react-artifact-tab-close-' + id"
           @click.stop="closeFixed(id)"
         >
-          <Icon name="close" :size="12" />
+          <Icon name="close" :size="13" />
         </button>
       </div>
       <div
         v-if="showNewTab"
-        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        class="group inline-flex max-w-[240px] items-center gap-1 rounded-lg text-[13px] transition max-md:text-[11px]"
         :class="showingGrid ? 'bg-elevated text-txt' : 'text-txt3 hover:text-txt2'"
       >
         <button
           type="button"
           role="tab"
-          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          class="inline-flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-1"
           :aria-selected="showingGrid ? 'true' : 'false'"
           data-testid="react-artifact-tab-newtab"
           @click="selectGridTab"
         >
-          <Icon name="dashboard" :size="13" />
+          <Icon name="dashboard" :size="15" />
           <span class="truncate">{{ t('pages.reactArtifactStage.newTab') }}</span>
         </button>
         <button
           type="button"
-          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          class="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
           :aria-label="t('pages.reactArtifactStage.closeTab')"
           :title="t('pages.reactArtifactStage.closeTab')"
           data-testid="react-artifact-tab-close-newtab"
           @click.stop="closeNewTab"
         >
-          <Icon name="close" :size="12" />
+          <Icon name="close" :size="13" />
         </button>
       </div>
       <button
         v-if="splitActive && showStageTabs && !showNewTab"
         type="button"
-        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 transition hover:bg-elevated hover:text-txt"
+        class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-txt3 transition hover:bg-elevated hover:text-txt"
         :aria-label="t('pages.reactArtifactStage.newTab')"
         :title="t('pages.reactArtifactStage.newTab')"
         data-testid="react-artifact-tab-new"
         @click="openNewTab"
       >
-        <Icon name="plus" :size="13" />
+        <Icon name="plus" :size="15" />
       </button>
     </div>
 
@@ -1540,21 +1578,12 @@ onBeforeUnmount(() => {
           :data-testid="'react-artifact-card-' + card.id"
           @click="onFixedCard(card.id)"
         >
-          <div
-            class="artifact-card-cover relative flex h-[110px] items-center justify-center overflow-hidden bg-accent-dim/70"
-            :class="card.id === 'app' ? 'text-txt3' : undefined"
-          >
+          <div class="artifact-card-cover relative flex h-[110px] items-center justify-center overflow-hidden bg-accent-dim/70">
             <span
               class="absolute left-2 top-2 z-[1] rounded-[4px] bg-accent-dim px-[5px] py-[3px] text-[10px] font-semibold leading-none text-accent"
               data-testid="react-artifact-kind-badge"
             >{{ t('pages.reactArtifactStage.resourceBadge') }}</span>
-            <ResourceCardIllustration v-if="card.id !== 'app'" :kind="card.id" />
-            <Icon
-              v-else
-              :name="card.icon"
-              :size="card.id === 'app' ? 28 : 30"
-              :class="card.id === 'app' ? 'opacity-50' : 'text-txt2'"
-            />
+            <ResourceCardIllustration :kind="card.id" />
           </div>
           <div class="px-2.5 py-2">
             <div class="artifact-card-title truncate text-[12px] font-medium text-txt">{{ card.title }}</div>
@@ -1747,6 +1776,24 @@ onBeforeUnmount(() => {
         <Icon name="globe" :size="26" class="mb-2 opacity-40" />
         {{ sandboxLoadingState ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
       </div>
+    </div>
+    <div
+      v-if="fixedMounted.computer"
+      v-show="activeTab === 'computer'"
+      class="flex min-h-0 flex-1 flex-col"
+      data-testid="react-artifact-preview-computer"
+    >
+      <SandboxPausedPlaceholder v-if="sandboxPaused" :waking="sandboxWaking" class="min-h-0 flex-1" @resume="emit('resume')" />
+      <NovncPreviewPanel
+        v-else-if="sandboxId"
+        :key="sandboxId"
+        :sandbox-id="sandboxId"
+        console
+        computer
+        fill
+        :inspectable="annotatable"
+        @pick="onRemotePick"
+      />
     </div>
     <div
       v-if="novncOpen && showAppCard"

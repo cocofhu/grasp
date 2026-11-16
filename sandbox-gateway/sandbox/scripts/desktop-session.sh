@@ -1,13 +1,15 @@
 #!/bin/bash
 # Desktop shell for the desktop image (marker /etc/grasp-desktop): Openbox +
-# Plank dock + fcitx5 (pinyin) + wallpaper + the grasp-desktop launcher on
-# 127.0.0.1:6091, all on the preview stack's Xvfb display.
+# xcompmgr (translucent dock, window shadows) + Plank dock + fcitx5 (pinyin) +
+# wallpaper + the grasp-desktop launcher on 127.0.0.1:6091, all on the preview
+# stack's Xvfb display.
 #
 #   desktop-session.sh start    bring the shell up (idempotent); exit 0 once the
 #                               window manager and launcher answer, otherwise
 #                               record fallbackReason and exit 1 so
 #                               vnc-preview.sh falls back to browser mode
-#   desktop-session.sh browser  open a Chromium window on the launch page (Dock)
+#   desktop-session.sh browser  open a Chromium window on the new tab page, which
+#                               the newtab extension fills with the launch page
 #
 # State for the backend and desktop MCP: $GRASP_DESKTOP_RUN_DIR/state, JSON
 # {"mode":"desktop"|"browser","shellReady":bool,"fallbackReason":"..."}.
@@ -17,7 +19,7 @@ export DISPLAY="${DISPLAY:-:99}"
 RUN_DIR="${GRASP_DESKTOP_RUN_DIR:-/run/grasp-desktop}"
 MARKER="${GRASP_DESKTOP_MARKER:-/etc/grasp-desktop}"
 LAUNCHER_PORT="${GRASP_DESKTOP_LAUNCHER_PORT:-6091}"
-LAUNCHER_URL="http://127.0.0.1:${LAUNCHER_PORT}/"
+HOME_URL="chrome://newtab/"
 PROFILE_DIR="${VNC_CHROME_PROFILE_DIR:-${HOME:-/root}/.grasp-preview-chrome}"
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 RUNTIME_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
@@ -98,7 +100,10 @@ seed_config() {
   mkdir -p "$apps" "$launchers" "$XDG_CONFIG_HOME/fcitx5"
   for f in "$SHARE"/applications/*.desktop; do
     [ -f "$f" ] || continue
-    sed "s#@DESKTOP_SESSION@#$SELF#g" "$f" >"$apps/$(basename "$f")"
+    # Chromium's WM_CLASS instance carries the profile dir; the dock (bamf)
+    # matches on it to group the browser window under its launcher.
+    sed -e "s#@DESKTOP_SESSION@#$SELF#g" -e "s#@DESKTOP_SHARE@#$SHARE#g" \
+      -e "s#@BROWSER_WM_CLASS@#chromium-browser ($PROFILE_DIR)#g" "$f" >"$apps/$(basename "$f")"
   done
   if [ ! -f "$launchers/.seeded" ]; then
     for id in grasp-launcher grasp-browser grasp-terminal grasp-files; do
@@ -107,18 +112,23 @@ seed_config() {
     done
     : >"$launchers/.seeded"
   fi
+  mkdir -p "$XDG_DATA_HOME/plank/themes"
+  rm -rf "$XDG_DATA_HOME/plank/themes/Grasp"
+  cp -r "$SHARE/plank/Grasp" "$XDG_DATA_HOME/plank/themes/Grasp" 2>/dev/null || true
   [ -f "$XDG_CONFIG_HOME/fcitx5/profile" ] || cp "$SHARE/fcitx5-profile" "$XDG_CONFIG_HOME/fcitx5/profile" 2>/dev/null || true
 }
 
 wallpaper() {
-  local img="$RUN_DIR/wallpaper.png"
+  local img="$RUN_DIR/wallpaper-grasp.png"
   if [ ! -f "$img" ] && command -v convert >/dev/null 2>&1; then
-    convert -size 1920x1080 gradient:'#1f3b5a-#0d1b2a' "$img" 2>/dev/null || rm -f "$img"
+    convert -size 1920x1080 xc: -sparse-color Shepards \
+      '0,0 #c9bfff 700,0 #8f7bff 1920,0 #5b44e6 0,1080 #7a64f5 1920,1080 #3d2bbf 1300,700 #6550f0 300,500 #a596ff' \
+      -blur 0x40 "$img" 2>/dev/null || rm -f "$img"
   fi
   if [ -f "$img" ] && command -v feh >/dev/null 2>&1; then
     feh --no-fehbg --bg-fill "$img" >/dev/null 2>&1 && return 0
   fi
-  command -v xsetroot >/dev/null 2>&1 && xsetroot -solid '#16283c' >/dev/null 2>&1
+  command -v xsetroot >/dev/null 2>&1 && xsetroot -solid '#6a55ec' >/dev/null 2>&1
   return 0
 }
 
@@ -145,8 +155,14 @@ cmd_start() {
   running openbox || start_bg openbox openbox
   wait_for 40 wm_ok || fail "openbox did not start"
   wallpaper
+  if ! running xcompmgr && command -v xcompmgr >/dev/null 2>&1; then
+    start_bg xcompmgr xcompmgr -c -C -r 14 -o 0.28 -l -18 -t -12
+  fi
   if command -v gsettings >/dev/null 2>&1; then
-    gsettings set net.launchpad.plank.dock.settings:/net/launchpad/plank/docks/dock1/ hide-mode none >/dev/null 2>&1 || true
+    local dock=net.launchpad.plank.dock.settings:/net/launchpad/plank/docks/dock1/
+    gsettings set "$dock" hide-mode none >/dev/null 2>&1 || true
+    gsettings set "$dock" theme Grasp >/dev/null 2>&1 || true
+    gsettings set "$dock" icon-size 44 >/dev/null 2>&1 || true
   fi
   if ! running fcitx5 && command -v fcitx5 >/dev/null 2>&1; then
     start_bg fcitx5 fcitx5 --replace
@@ -154,7 +170,7 @@ cmd_start() {
   if ! running plank && command -v plank >/dev/null 2>&1; then
     start_bg plank plank
   fi
-  launcher_ok || start_bg launcher "$DESKTOP_BIN" launcher -addr "127.0.0.1:${LAUNCHER_PORT}"
+  launcher_ok || GRASP_DESKTOP_SHARE="$SHARE" start_bg launcher "$DESKTOP_BIN" launcher -addr "127.0.0.1:${LAUNCHER_PORT}"
   wait_for 40 launcher_ok || fail "launcher did not listen on :${LAUNCHER_PORT}"
   write_state desktop true ""
   echo "desktop-session: ready (openbox, launcher :${LAUNCHER_PORT})"
@@ -185,7 +201,7 @@ find_chrome() {
 }
 
 cmd_browser() {
-  local url="${1:-$LAUNCHER_URL}" chrome
+  local url="${1:-$HOME_URL}" chrome
   if ! pgrep -f -- "--user-data-dir=$PROFILE_DIR" >/dev/null 2>&1; then
     exec /usr/local/bin/vnc-preview.sh
   fi

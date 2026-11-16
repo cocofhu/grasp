@@ -32,15 +32,20 @@ type Paths struct {
 	RunDir string
 	// Apps is the image's app catalog.
 	Apps string
+	// Share is the runtime bundle's share/desktop; its icons/<id>.svg
+	// replaces the image icon on the launch page. Empty: image icons only.
+	Share string
 }
 
 // DefaultPaths honours GRASP_DESKTOP_MARKER / GRASP_DESKTOP_RUN_DIR /
-// GRASP_DESKTOP_APPS so the scripts and binaries agree in tests.
+// GRASP_DESKTOP_APPS / GRASP_DESKTOP_SHARE so the scripts and binaries agree
+// in tests.
 func DefaultPaths() Paths {
 	return Paths{
 		Marker: envOr("GRASP_DESKTOP_MARKER", "/etc/grasp-desktop"),
 		RunDir: envOr("GRASP_DESKTOP_RUN_DIR", "/run/grasp-desktop"),
 		Apps:   envOr("GRASP_DESKTOP_APPS", "/opt/grasp-desktop/apps.json"),
+		Share:  envOr("GRASP_DESKTOP_SHARE", ""),
 	}
 }
 

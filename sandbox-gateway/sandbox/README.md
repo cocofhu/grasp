@@ -129,9 +129,10 @@ sandbox/
 
 ## 桌面镜像（可选）
 
-`Dockerfile.desktop` 以默认镜像为基础，叠加 Openbox + Plank + fcitx5 桌面壳、中文字体与一组 GUI 应用，并写入标记文件 `/etc/grasp-desktop`。`IMAGE_LEVEL`、bootstrap 与默认镜像均不变；运行时包同时支持两种镜像。
+`Dockerfile.desktop` 以默认镜像为基础，叠加 Openbox + xcompmgr + Plank + fcitx5 桌面壳、中文字体与一组 GUI 应用，并写入标记文件 `/etc/grasp-desktop`。`IMAGE_LEVEL`、bootstrap 与默认镜像均不变；运行时包同时支持两种镜像。
 
-- `vnc-preview.sh` 检测到标记后调用 `desktop-session.sh` 起桌面壳（壁纸、底部 Dock、启动台 launcher），失败时记录原因到 `/run/grasp-desktop/state` 并回落 browser 模式。
+- `vnc-preview.sh` 检测到标记后调用 `desktop-session.sh` 起桌面壳（Grasp 壁纸、半透明底部 Dock、启动台 launcher），失败时记录原因到 `/run/grasp-desktop/state` 并回落 browser 模式。
+- 启动台是 Chromium 的新标签页：运行时包里的 `share/desktop/newtab` 扩展用 iframe 嵌入 `127.0.0.1:6091`，地址栏保持空白。Dock 图标、启动台里浏览器 / 终端 / 文件的图标和 Dock 主题来自 `share/desktop/{icons,plank}`；其余应用用镜像构建时复制的图标（浏览器显示不了的 XPM 会被跳过）。
 - `grasp-desktop` 随运行时包分发（`/opt/grasp-runtime/current/bin/grasp-desktop`）：`launcher` 子命令在 `127.0.0.1:6091` 提供启动台页面与 `POST /launch`（应用白名单 + Origin 校验）；`mcp` 子命令是 desktop MCP（截图、列出窗口与应用、点击、拖拽、输入、按键、滚动、聚焦窗口、启动应用）。
 - 桌面 MCP 与 Blender MCP 不会自动注册：在 MCP 页签「快捷添加 → 桌面控制 / Blender」。Blender 官方 MCP 插件监听 `127.0.0.1:6092`。
 - 软互锁：用户在 Grasp 接管画面时，平台经 `PUT /api/desktop/control` 上报 `holder=user`（每 10 秒续期，30 秒未续自动回到 `agent`）；此期间 desktop MCP 的键鼠类工具返回「用户正在控制」，截图与列表类工具照常可用。Blender MCP 不受限。

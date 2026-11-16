@@ -50,8 +50,10 @@ const props = withDefaults(
     inspectable?: boolean
     /** Opens url in a new desktop tab; a new seq opens it again. */
     openRequest?: { url: string; seq: number } | null
+    /** 电脑 view: on the desktop image, a framed screen with a control dock instead of the toolbar. */
+    computer?: boolean
   }>(),
-  { console: false, fill: false, compact: false, inspectable: false },
+  { console: false, fill: false, compact: false, inspectable: false, computer: false },
 )
 
 const { t } = useI18n()
@@ -88,6 +90,13 @@ const desktop = useDesktopControl(() => (props.wsUrl ? undefined : props.sandbox
 const desktopHolderLabel = computed(() =>
   t(control.value ? 'pages.appPreview.desktop.holderYou' : desktop.userHolds.value ? 'pages.appPreview.desktop.holderOther' : 'pages.appPreview.desktop.holderAgent'),
 )
+/** 电脑 view on the desktop image: the screen is a framed card with a control dock, no browser toolbar. */
+const desktopShell = computed(() => props.computer && desktop.isDesktop.value)
+const desktopTakeoverText = computed(() => {
+  if (!desktop.agentBusy.value) return ''
+  return t(control.value ? 'pages.appPreview.desktop.takeoverTip' : 'pages.appPreview.desktop.takeoverHint')
+})
+const SCREEN_BACKGROUND = 'rgb(10,10,11)'
 const picked = ref<AppPreviewPickPayload | null>(null)
 const address = ref('about:blank')
 /** Toolbar inline tip (Demo S2/S3): not-ready warn vs describe-failed err. */
@@ -542,7 +551,7 @@ function connect() {
     // Xvfb often has no cursor theme → remote cursor is fully transparent; show a
     // local fallback dot so the viewer always has a pointer.
     rfb.showDotCursor = true
-    rfb.background = 'rgb(10,10,11)'
+    rfb.background = desktopShell.value ? 'transparent' : SCREEN_BACKGROUND
 
     rfb.addEventListener('connect', () => {
       clearConnectTimer()
@@ -789,6 +798,15 @@ function toggleControl() {
   control.value = !control.value
 }
 
+watch(desktopShell, (on) => {
+  if (!rfb) return
+  try {
+    rfb.background = on ? 'transparent' : SCREEN_BACKGROUND
+  } catch {
+    /* ignore */
+  }
+})
+
 watch(inputEnabled, (on) => {
   if (!rfb) return
   try {
@@ -886,7 +904,7 @@ onBeforeUnmount(() => {
   >
     <!-- Preview toolbar: back/forward/reload + Pick + fullscreen + FPS -->
     <div
-      v-if="!consoleMode"
+      v-if="!consoleMode && !desktopShell"
       class="relative z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-elevated px-3 py-1.5"
     >
       <button
@@ -994,7 +1012,7 @@ onBeforeUnmount(() => {
 
     <!-- Console toolbar: back/forward/reload + address + Open (no Pick/FPS) -->
     <form
-      v-else
+      v-else-if="!desktopShell"
       class="flex shrink-0 items-center gap-2 border-b border-line bg-elevated px-3 py-1.5"
       @submit.prevent="openAddress"
     >
@@ -1082,34 +1100,13 @@ onBeforeUnmount(() => {
     </div>
 
     <div
-      v-if="desktop.isDesktop.value"
-      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-elevated px-3 py-1 text-[11px] text-txt2"
-      data-testid="desktop-status-bar"
-    >
-      <span class="inline-flex items-center gap-1 font-medium text-txt">
-        <Icon name="monitor" :size="12" />{{ t('pages.appPreview.desktop.title') }}
-      </span>
-      <span data-testid="desktop-holder" :class="control ? 'text-accent' : ''">{{ desktopHolderLabel }}</span>
-      <span data-testid="desktop-agent" :class="desktop.agentBusy.value ? 'text-warn' : 'text-txt3'">
-        {{ t(desktop.agentBusy.value ? 'pages.appPreview.desktop.agentBusy' : 'pages.appPreview.desktop.agentIdle') }}
-      </span>
-      <span v-if="desktop.status.value && !desktop.status.value.shellReady" class="text-txt3" data-testid="desktop-starting">
-        {{ t('pages.appPreview.desktop.starting') }}
-      </span>
-      <span v-if="control && desktop.agentBusy.value" class="basis-full text-warn" data-testid="desktop-takeover-tip">
-        {{ t('pages.appPreview.desktop.takeoverTip') }}
-      </span>
-      <span v-else-if="!control && desktop.agentBusy.value" class="basis-full text-txt3" data-testid="desktop-takeover-hint">
-        {{ t('pages.appPreview.desktop.takeoverHint') }}
-      </span>
-    </div>
-
-    <div
       ref="viewportEl"
       class="novnc-fs-viewport relative min-h-0 overflow-hidden bg-base"
       :class="[
         fill ? 'flex-1' : compact ? 'h-[280px]' : 'h-[420px]',
         showInspect && inspect ? 'cursor-crosshair' : '',
+        desktopShell ? 'is-desktop desktop-surface' : '',
+        desktopShell && control ? 'is-control' : '',
       ]"
     >
       <!-- Console connecting / unavailable overlays (panel-local, no toast loop) -->
@@ -1146,8 +1143,12 @@ onBeforeUnmount(() => {
           {{ t('pages.appPreview.novnc.reconnect') }}
         </button>
       </div>
-      <div ref="canvasHost" class="novnc-canvas-host absolute inset-0 h-full w-full" />
-      <template v-if="status === 'live'">
+      <div
+        ref="canvasHost"
+        class="novnc-canvas-host absolute"
+        :class="desktopShell ? 'inset-x-5 top-4 bottom-3 max-md:inset-x-2 max-md:top-2 max-md:bottom-2' : 'inset-0 h-full w-full'"
+      />
+      <template v-if="status === 'live' && !desktopShell">
         <div
           v-if="control"
           class="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-accent"
@@ -1205,6 +1206,90 @@ onBeforeUnmount(() => {
     </div>
 
     <div
+      v-if="desktopShell"
+      class="desktop-surface flex shrink-0 flex-col items-center gap-2 px-4 pb-3.5 pt-1 max-md:px-2 max-md:pb-2"
+      data-testid="desktop-status-bar"
+    >
+      <div
+        v-if="inlineTip"
+        class="rounded-md max-w-full border px-2.5 py-1.5 text-[11px] leading-snug"
+        :class="inlineTip.err ? 'border-err/40 bg-err/10 text-err' : 'border-warn/40 bg-warn/10 text-warn'"
+        role="status"
+        data-testid="novnc-inline-tip"
+      >
+        {{ inlineTip.text }}
+      </div>
+      <div
+        class="desktop-dock inline-flex max-w-full items-center gap-2 rounded-full border py-1 pl-3.5 pr-1 text-[12px]"
+        :title="desktopTakeoverText || undefined"
+      >
+        <span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+          <span
+            v-if="!control && desktop.agentBusy.value"
+            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-60"
+          />
+          <span
+            class="relative inline-flex h-2 w-2 rounded-full"
+            :class="control ? 'bg-accent' : desktop.agentBusy.value ? 'bg-ok' : 'bg-txt3'"
+          />
+        </span>
+        <span class="truncate font-medium text-txt" data-testid="desktop-holder">{{ desktopHolderLabel }}</span>
+        <span class="text-txt3" aria-hidden="true">·</span>
+        <span class="shrink-0 text-txt3" data-testid="desktop-agent">{{
+          t(desktop.agentBusy.value ? 'pages.appPreview.desktop.agentBusy' : 'pages.appPreview.desktop.agentIdle')
+        }}</span>
+        <span
+          v-if="desktop.status.value && !desktop.status.value.shellReady"
+          class="inline-flex shrink-0 items-center gap-1 text-txt3"
+          data-testid="desktop-starting"
+        >
+          <Icon name="spinner" :size="12" :interactive="false" />{{ t('pages.appPreview.desktop.starting') }}
+        </span>
+        <span v-if="control && desktop.agentBusy.value" class="sr-only" data-testid="desktop-takeover-tip">
+          {{ desktopTakeoverText }}
+        </span>
+        <span v-else-if="desktop.agentBusy.value" class="sr-only" data-testid="desktop-takeover-hint">
+          {{ desktopTakeoverText }}
+        </span>
+        <span class="ml-1 flex shrink-0 items-center gap-0.5">
+          <button
+            v-if="showInspect"
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-full transition"
+            :class="inspect ? 'bg-ok/15 text-ok' : 'text-txt3 hover:bg-overlay hover:text-txt'"
+            :title="inspectToggleLabel"
+            :aria-label="inspectToggleLabel"
+            :aria-pressed="inspect ? 'true' : 'false'"
+            data-testid="novnc-inspect-toggle"
+            @click="toggleInspect"
+          >
+            <Icon name="crosshair" :size="14" />
+          </button>
+          <slot name="toolbar-extra" />
+          <button
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-full text-txt3 transition hover:bg-overlay hover:text-txt"
+            :title="t(isFullscreen ? 'pages.appPreview.novnc.exitFullscreen' : 'pages.appPreview.novnc.fullscreen')"
+            :aria-label="t(isFullscreen ? 'pages.appPreview.novnc.exitFullscreen' : 'pages.appPreview.novnc.fullscreen')"
+            @click="toggleFullscreen"
+          >
+            <Icon name="expand" :size="14" />
+          </button>
+          <button
+            type="button"
+            class="ml-0.5 inline-flex h-7 items-center rounded-full px-3.5 text-[12px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+            :class="control ? 'bg-accent text-white hover:bg-accent-hover' : 'bg-txt text-surface hover:bg-txt/85'"
+            :title="controlToggleLabel"
+            :aria-pressed="control ? 'true' : 'false'"
+            :disabled="status !== 'live'"
+            data-testid="novnc-control-toggle"
+            @click="toggleControl"
+          >{{ controlToggleLabel }}</button>
+        </span>
+      </div>
+    </div>
+
+    <div
       v-if="showInspect && picked"
       class="shrink-0 border-t border-line bg-elevated px-3 py-2"
       data-testid="novnc-pick-result"
@@ -1244,6 +1329,27 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Inside the artifact stage, follow its --ra-* palette; elsewhere fall back to app tokens. */
+.desktop-surface {
+  background: var(--ra-bg, rgb(var(--c-base)));
+}
+.desktop-dock {
+  border-color: var(--ra-line, rgb(var(--c-line)));
+  background: var(--ra-surface, rgb(var(--c-elevated)));
+  box-shadow: 0 1px 2px var(--ra-shadow, rgba(0, 0, 0, 0.08)), 0 8px 24px -12px var(--ra-shadow-deep, rgba(0, 0, 0, 0.35));
+}
+.novnc-fs-viewport.is-desktop .novnc-canvas-host :deep(canvas) {
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px var(--ra-line, rgb(var(--c-line))),
+    0 18px 40px -18px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.15s ease;
+}
+.novnc-fs-viewport.is-desktop.is-control .novnc-canvas-host :deep(canvas) {
+  box-shadow:
+    0 0 0 2px #7b61ff,
+    0 18px 40px -18px rgba(123, 97, 255, 0.5);
+}
 /*
  * Chrome/Edge often fail to paint CSS cursor:url(data:…) under Element Fullscreen,
  * while noVNC still sets canvas { cursor: none | url(...) }. Force a system cursor

@@ -1,1 +1,1 @@
-location.replace("http://127.0.0.1:6091/");
+document.title = (navigator.language || "zh").toLowerCase().indexOf("zh") === 0 ? "我的电脑" : "My computer";
