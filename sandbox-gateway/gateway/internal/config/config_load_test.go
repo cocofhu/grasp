@@ -177,10 +177,9 @@ func TestPortsConfigAll(t *testing.T) {
 		}
 	}
 
-	// All/Public are the external publish set: session/ide/ssh/app only.
+	// Public is the external publish set: session/ide/ssh/app only.
 	// 9222/6080 must not be treated as host/LB publish ports (g1.1).
 	assertUnique(t, p.Public(), []int{8765, 8744, 22, 80, 443}, []int{9222, 6080})
-	assertUnique(t, p.All(), []int{8765, 8744, 22, 80, 443}, []int{9222, 6080})
 
 	internal := p.Internal()
 	seenI := map[int]int{}

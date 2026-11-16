@@ -660,15 +660,6 @@ func (s *Service) LoadLinkByTokenHash(tokenHash string) (*models.GateShareLink, 
 	return &link, nil
 }
 
-// LoadLinkByID loads a share link row.
-func (s *Service) LoadLinkByID(id string) (*models.GateShareLink, error) {
-	var link models.GateShareLink
-	if err := s.db.First(&link, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &link, nil
-}
-
 // AttachInboxStatus fills shareLink on gate, review and clarify inbox items
 // (no plaintext token).
 func (s *Service) AttachInboxStatus(items []any) {

@@ -857,34 +857,9 @@ func (m *Manager) ListStatuses(ctx context.Context) (map[string]string, error) {
 	return out, nil
 }
 
-// DestroyByCorrelationName destroys every managed gateway sandbox whose
-// grasp.name label equals corr (best effort). Used when a local row still
-// carries the pre-adopt placeholder name so Status/DestroyByName cannot address
-// the real gateway id.
-func (m *Manager) DestroyByCorrelationName(ctx context.Context, corr string) {
-	corr = strings.TrimSpace(corr)
-	if m.gw == nil || corr == "" {
-		return
-	}
-	all, err := m.ListManaged(ctx)
-	if err != nil {
-		return
-	}
-	for i := range all {
-		if all[i].Labels[cfNameLabel] == corr {
-			_ = m.DestroyByName(ctx, all[i].ID)
-		}
-	}
-}
-
-// ExecPTY opens an interactive PTY shell on the sandbox over SSH. Caller must
-// Close the returned terminal. The password is the looked-up sandbox token.
-func (m *Manager) ExecPTY(ctx context.Context, id string, command []string) (*SSHTerminal, error) {
-	return m.ExecPTYWithToken(ctx, id, "", command)
-}
-
-// ExecPTYWithToken is ExecPTY using the caller-supplied sandbox token as the
-// SSH password when the persistent public key is not accepted.
+// ExecPTYWithToken opens an interactive PTY shell on the sandbox over SSH,
+// using the caller-supplied sandbox token as the SSH password when the
+// persistent public key is not accepted. Caller must Close the terminal.
 func (m *Manager) ExecPTYWithToken(ctx context.Context, id, token string, command []string) (*SSHTerminal, error) {
 	sb, err := m.attach(ctx, id, token, true)
 	if err != nil {
