@@ -38,3 +38,29 @@ func TestCurrentNodeIDsAndFailedError(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+func TestCurrentNodeIDsMatchesCurrentNodes(t *testing.T) {
+	db := newTestDB(t)
+	s := NewRunService(db)
+	handoff := models.Run{ID: "handoff", Status: "waiting_human", Graph: pendingAutoGraph()}
+	db.Create(&handoff)
+	db.Create(&models.StateRun{RunID: "handoff", NodeID: "clarify", Status: "waiting_human"})
+	db.Create(&models.StateRun{RunID: "handoff", NodeID: "impl", Status: "running"})
+
+	db.Create(&models.Run{ID: "entering", Status: "waiting_human", Graph: pendingAutoGraph()})
+	wait := models.StateRun{RunID: "entering", NodeID: "clarify", Status: "waiting_human"}
+	db.Create(&wait)
+	entering := pendingAutoRun("entering", "waiting_human", wait.ID)
+
+	runs := []models.Run{handoff, entering}
+	if cn := s.CurrentNodes(runs)["entering"]; cn.State != CurrentStateEntering {
+		t.Fatalf("entering current=%+v", cn)
+	}
+	ids := s.CurrentNodeIDs(runs)
+	if ids["handoff"] != "impl" {
+		t.Fatalf("newer running visit should be current, ids=%v", ids)
+	}
+	if _, ok := ids["entering"]; ok {
+		t.Fatalf("entering successor has no visit, ids=%v", ids)
+	}
+}
