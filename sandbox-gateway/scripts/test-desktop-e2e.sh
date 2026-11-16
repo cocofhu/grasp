@@ -64,7 +64,7 @@ p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized
 p.stdin.flush()
 for n, line in enumerate(sys.stdin, 1):
     req = json.loads(line)
-    print(json.dumps(call(n, req["method"], req.get("params"))), flush=True)
+    print(json.dumps(call(n, req["method"], req.get("params")), ensure_ascii=False), flush=True)
 p.stdin.close()
 p.terminate()
 ' "$@"
