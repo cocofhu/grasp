@@ -108,22 +108,34 @@ sandbox/
 | `8765` | backend（ACP 桥接）：agent 会话 `/ws` + `/api/capabilities` / `/api/events` 等（多后端） |
 | `8744` | code-server：浏览器 IDE（密码 = `ROOT_PASSWORD`；刻意避开常用的 8080） |
 | `22`   | SSH（密码同上；或用 `SSH_KEY` 免密）— 可对外发布 |
-| `9222` | Chromium CDP（`VNC_PREVIEW=1` 时）— **仅容器网/ClusterIP**，不映射宿主 |
-| `6080` | noVNC websockify（`VNC_PREVIEW=1` 时）— **仅容器网/ClusterIP**，不映射宿主 |
+| `9222` | Chromium CDP（预览栈始终启动）— **仅容器网/ClusterIP**，不映射宿主 |
+| `6080` | noVNC websockify（预览栈始终启动）— **仅容器网/ClusterIP**，不映射宿主 |
+| `6090`–`6099` | 桌面镜像内部服务保留段（启动台 launcher `6091`、Blender MCP 插件 `6092`）— **仅回环**，`set_preview` 登记会被拒绝 |
 
 ## Playwright + noVNC 预览
 
 - 镜像预装 **Playwright Chromium**（`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`，版本 `1.61.1`）及系统依赖与 CJK 字体，`npx playwright test` / 无头浏览器验收开箱即用；项目 pin 其它版本时 `npx playwright install chromium` 会按需再拉。
-- 设 `VNC_PREVIEW=1` 启动 **headed Chromium on Xvfb + x11vnc + websockify** 预览栈：箱内 CDP `9222`、noVNC `6080`（无应用层鉴权，**不** publish 到宿主/LB）。用户经 Grasp `/sandbox-vnc/:id/ws` 看这块桌面（Auth 开启时须 Session），每个沙箱只有这一个地址；`BROWSER_MCP=1` 时 Agent 的 chrome-devtools MCP 操作的也是这个浏览器。镜像默认关闭；Grasp 给能登记预览（set_preview）的 Agent 默认打开 `VNC_PREVIEW` 与 `BROWSER_MCP`，显式设置的值优先。
+- 沙箱**始终**启动 **headed Chromium on Xvfb + x11vnc + websockify** 预览栈：箱内 CDP `9222`、noVNC `6080`（无应用层鉴权，**不** publish 到宿主/LB），与直连预览共存。用户经 Grasp `/sandbox-vnc/:id/ws` 看这块屏幕（Auth 开启时须 Session），每个沙箱只有这一个地址；MCP 配置里的 chrome-devtools 条目操作的也是这个浏览器。镜像缺预览组件时只记录原因，backend 照常启动。桌面镜像（存在 `/etc/grasp-desktop`）在同一屏幕上另起桌面壳，见[桌面镜像](#桌面镜像可选)。
 - 设 `PREVIEW_DIRECT=1`（且有 `PREVIEW_PORT`）启动 **直连预览 HTML 注入**：应用仍听 `0.0.0.0:$PREVIEW_PORT`，入站经 iptables REDIRECT 到箱内 `17980` 的 `preview-inject`，只给 `text/html` 插入同域 `<script src="/__grasp/preview-pick.js">`（由注入层自己提供，不依赖 Grasp 的 `localhost` 地址）。浏览器 origin 仍是 `http://IP:PREVIEW_PORT/`。无 iptables / 非 privileged 时打日志跳过，不拖垮启动。旧镜像没有该进程时，Agent 仍可手写 script 兜底。注入层同时提供 `/__grasp/page-control.js`（Agent 页面操作执行器），只在用户于抽屉打开「允许 Agent 操作页面」后由 `preview-pick.js` 按需加载；以及 `/__grasp/live-overlay.js`（Live 实时变体覆盖层），节点开启 Live 时由 `preview-pick.js` 按需加载。注入器保留应用的 CSP，只为 Grasp 脚本、带 nonce 的预览样式、同域票据查询和当前运行的抽屉路径添加许可。响应头含 CSP `sandbox` 时原样转发。仅覆盖 `PREVIEW_PORT`，额外 `set_preview` 口不会注入。HTTPS / 仅 IPv6 不在此层处理。
 
-## 浏览器 MCP（可选）
+## 浏览器 MCP
 
-设 `BROWSER_MCP=1`：把沙箱内 headed Chromium 经 CDP 暴露成 **MCP 工具**给 agent（导航 / 点击 / 输入 / 截图 / 读 DOM / 看 console 等）。启用时：
+沙箱内 headed Chromium 经 CDP 暴露成 **MCP 工具**（导航 / 点击 / 输入 / 截图 / 读 DOM / 看 console 等），只经 MCP 配置启用，没有环境变量开关：
 
-- 预装的 **`chrome-devtools-mcp`**（Google 官方）会以 `--browser-url=http://127.0.0.1:9222` **attach 到预览栈的那个 Chromium**——即 agent 驱动的正是 noVNC 里人能看到的同一个浏览器；
-- 自动开启预览栈（隐含 `VNC_PREVIEW=1`），并把该 MCP **非破坏地合并**进 `$CONFIG_ROOT/mcp.json`（保留业务注入的其它 MCP），在 backend 启动前完成，agent connect 即可见；
-- 之所以 attach 而非让 MCP 自起 Chrome：容器内自起 Chrome 有 sandbox 权限问题，attach 到已 `--no-sandbox` 起好的 Chromium 更稳（官方推荐做法）。
+- 新工作区的共享 Agent 默认带 `chrome-devtools` 条目（`command: chrome-devtools-mcp`，`args: ["--browser-url=http://127.0.0.1:9222"]`），所有 Agent 继承；单个 Agent 可同名覆盖或在 MCP 页签删除。
+- 平台把合并后的 MCP 列表写进 `$CONFIG_ROOT/mcp.json`（以及 OpenCode 的 `opencode.json`、Codex 的 `config.toml`）；`startup.sh` 不改写这些文件。
+- 预装的 **`chrome-devtools-mcp`**（Google 官方）以 `--browser-url` **attach 到预览栈的那个 Chromium**——即 agent 驱动的正是 noVNC 里人能看到的同一个浏览器；attach 而非自起 Chrome，是因为容器内自起 Chrome 有 sandbox 权限问题。
+- 存量工作区升级后不会自动获得该条目：在共享 Agent 的 MCP 页签点「快捷添加 → 浏览器」。
+
+## 桌面镜像（可选）
+
+`Dockerfile.desktop` 以默认镜像为基础，叠加 Openbox + Plank + fcitx5 桌面壳、中文字体与一组 GUI 应用，并写入标记文件 `/etc/grasp-desktop`。`IMAGE_LEVEL`、bootstrap 与默认镜像均不变；运行时包同时支持两种镜像。
+
+- `vnc-preview.sh` 检测到标记后调用 `desktop-session.sh` 起桌面壳（壁纸、底部 Dock、启动台 launcher），失败时记录原因到 `/run/grasp-desktop/state` 并回落 browser 模式。
+- `grasp-desktop` 随运行时包分发（`/opt/grasp-runtime/current/bin/grasp-desktop`）：`launcher` 子命令在 `127.0.0.1:6091` 提供启动台页面与 `POST /launch`（应用白名单 + Origin 校验）；`mcp` 子命令是 desktop MCP（截图、列出窗口与应用、点击、拖拽、输入、按键、滚动、聚焦窗口、启动应用）。
+- 桌面 MCP 与 Blender MCP 不会自动注册：在 MCP 页签「快捷添加 → 桌面控制 / Blender」。Blender 官方 MCP 插件监听 `127.0.0.1:6092`。
+- 软互锁：用户在 Grasp 接管画面时，平台经 `PUT /api/desktop/control` 上报 `holder=user`（每 10 秒续期，30 秒未续自动回到 `agent`）；此期间 desktop MCP 的键鼠类工具返回「用户正在控制」，截图与列表类工具照常可用。Blender MCP 不受限。
+- 选用：Docker / K8s 把沙箱镜像换成桌面镜像 tag（`ghcr.io/cocofhu/universal-sandbox:<版本>-desktop`，滚动 tag `desktop`）；E2B 见 `sandbox-gateway/deploy/e2b/README.md`。建议规格 ≥ 4 vCPU / 8 GiB 内存 / 30 GiB 磁盘。
 
 ## 快速运行
 
@@ -244,16 +256,14 @@ dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次
 | `IS_SANDBOX` | `1` | 标记沙箱环境 |
 | `API_TIMEOUT_MS` | `6000000` | Claude 请求超时（毫秒） |
 
-### 8. noVNC 预览栈
+### 8. 预览栈
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `VNC_PREVIEW` | 空 | `1` / `true` 启动 headed Chromium on Xvfb + x11vnc + websockify（CDP `9222` / noVNC `6080`） |
 | `PREVIEW_DIRECT` | 空 | `1` / `true` 启动直连预览 HTML 注入（`preview-inject` 听 `17980` + iptables REDIRECT `$PREVIEW_PORT`）。须同时有 `PREVIEW_PORT` |
 | `PREVIEW_AUTO_INJECT` | `1`（直连时） | `0` / `false` 时不启动注入（节点开关「自动注入」关闭） |
 | `PREVIEW_PORT` | 空 | 应用监听口（与 Docker/K8s 发布同号）。注入进程**不得**占用此口 |
 | `PREVIEW_PICK_SCRIPT_URL` | 自动注入时为 `/__grasp/preview-pick.js` | Agent 兜底写入 HTML 的 script src。注入层本身始终提供同域该路径，不使用 Grasp 的 `localhost` 绝对地址 |
-| `BROWSER_MCP` | 空 | `1` / `true` 把沙箱内 Chromium 经 CDP 注册为 `chrome-devtools` MCP（合并进 `$CONFIG_ROOT/mcp.json`），并隐含开启预览栈。见[浏览器 MCP](#浏览器-mcp可选) |
 | `CDP_PORT` | `9222` | 箱内 Chromium CDP 监听端口（浏览器 MCP attach 目标；仅容器网可达，不对外发布） |
 | `WS_PORT` | `6080` | 箱内 noVNC websockify 端口（仅容器网可达；用户走平台 VNC WS） |
 | `VNC_PID_DIR` | `/tmp/sandbox-vnc` | 预览栈各进程 PID / 锁文件目录 |
