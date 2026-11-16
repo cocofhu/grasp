@@ -65,6 +65,7 @@ apps="$WORK/home/.local/share/applications"
 grep -q "Exec=$SESSION browser" "$apps/grasp-browser.desktop" || fail "browser entry not substituted"
 test -f "$WORK/home/.config/plank/dock1/launchers/grasp-terminal.dockitem" || fail "dock items missing"
 grep -q 'DefaultIM=pinyin' "$WORK/home/.config/fcitx5/profile" || fail "fcitx5 profile missing"
+grep -q "^GTK_IM_MODULE=fcitx$" "$WORK/run/session.env" && grep -q "^DISPLAY=" "$WORK/run/session.env" || fail "session.env: $(cat "$WORK/run/session.env" 2>&1)"
 
 # Idempotent: a second start reuses the running shell.
 run "$FAKE" "$WORK/marker" >/dev/null 2>&1 || fail "second start failed"

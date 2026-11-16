@@ -83,6 +83,16 @@ dbus_session() {
   export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
 }
 
+# session.env: KEY=VALUE lines that grasp-desktop applies to the apps it
+# starts (desktop MCP runs outside this session, under the Agent CLI).
+write_session_env() {
+  local k
+  for k in DISPLAY DBUS_SESSION_BUS_ADDRESS GTK_IM_MODULE QT_IM_MODULE XMODIFIERS SDL_IM_MODULE \
+    LANG XDG_CONFIG_HOME XDG_DATA_HOME; do
+    [ -n "${!k:-}" ] && printf '%s=%s\n' "$k" "${!k}"
+  done >"$RUN_DIR/session.env.tmp" && mv -f "$RUN_DIR/session.env.tmp" "$RUN_DIR/session.env"
+}
+
 seed_config() {
   local apps="$XDG_DATA_HOME/applications" launchers="$XDG_CONFIG_HOME/plank/dock1/launchers"
   mkdir -p "$apps" "$launchers" "$XDG_CONFIG_HOME/fcitx5"
@@ -130,6 +140,7 @@ cmd_start() {
   fi
   write_state desktop false ""
   dbus_session
+  write_session_env
   seed_config
   running openbox || start_bg openbox openbox
   wait_for 40 wm_ok || fail "openbox did not start"

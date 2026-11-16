@@ -31,7 +31,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	paths := desktop.DefaultPaths()
-	runner := desktop.ExecRunner{}
+	runner := desktop.ExecRunner{SessionEnv: paths.SessionEnv()}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	switch args[0] {

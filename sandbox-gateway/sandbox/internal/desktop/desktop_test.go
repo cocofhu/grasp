@@ -265,4 +265,31 @@ func TestExecRunner(t *testing.T) {
 	if err := (ExecRunner{}).Start("true", nil); err != nil {
 		t.Fatal(err)
 	}
+	out, _ = ExecRunner{}.Output(context.Background(), "sh", "-c", "printf %s \"$DISPLAY\"")
+	if string(out) != ":99" {
+		t.Fatalf("default DISPLAY = %q", out)
+	}
+}
+
+func TestExecRunnerSessionEnv(t *testing.T) {
+	p := Paths{RunDir: t.TempDir()}
+	if err := os.WriteFile(p.SessionEnv(), []byte("DISPLAY=:5\nDBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus,guid=x\nGTK_IM_MODULE=fcitx\n\nnot-a-pair\n=skip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GTK_IM_MODULE", "ibus")
+	t.Setenv("GRASP_KEEP", "1")
+	show := `printf '%s|%s|%s|%s' "$DISPLAY" "$DBUS_SESSION_BUS_ADDRESS" "$GTK_IM_MODULE" "$GRASP_KEEP"`
+	out, err := ExecRunner{SessionEnv: p.SessionEnv()}.Output(context.Background(), "sh", "-c", show)
+	if err != nil || string(out) != ":5|unix:path=/tmp/bus,guid=x|fcitx|1" {
+		t.Fatalf("session env = %q %v", out, err)
+	}
+	out, _ = ExecRunner{Display: ":8", SessionEnv: p.SessionEnv()}.Output(context.Background(), "sh", "-c", `printf %s "$DISPLAY"`)
+	if string(out) != ":8" {
+		t.Fatalf("explicit Display must win, got %q", out)
+	}
+	t.Setenv("DISPLAY", ":3")
+	out, _ = ExecRunner{SessionEnv: filepath.Join(p.RunDir, "missing")}.Output(context.Background(), "sh", "-c", `printf %s "$DISPLAY"`)
+	if string(out) != ":3" {
+		t.Fatalf("missing session env keeps process env, got %q", out)
+	}
 }

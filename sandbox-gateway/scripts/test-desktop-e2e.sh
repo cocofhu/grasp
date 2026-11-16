@@ -30,7 +30,8 @@ die() {
   docker logs "$name" 2>&1 | tail -150 || true
   echo "::endgroup::"
   echo "::group::desktop logs"
-  docker exec "$name" bash -c 'tail -n 80 /tmp/grasp-desktop/*.log /tmp/vnc-preview.log 2>/dev/null' || true
+  docker exec "$name" bash -c 'cat /run/grasp-desktop/state /run/grasp-desktop/session.env; wmctrl -l
+    tail -n 60 /tmp/grasp-desktop-*.log 2>/dev/null' || true
   echo "::endgroup::"
   exit 1
 }
@@ -129,7 +130,7 @@ for _ in $(seq 1 30); do
   in_box wmctrl -l | grep -qi mousepad && break
   sleep 1
 done
-in_box wmctrl -l | grep -qi mousepad || die "Mousepad 窗口未出现"
+in_box wmctrl -l | grep -qi mousepad || die "Mousepad 窗口未出现；launch_app 返回：$(tail -1 <<<"$out")"
 target=/root/workspace/desktop-e2e.txt
 out="$({
   tool focus_window '{"title":"Mousepad"}'

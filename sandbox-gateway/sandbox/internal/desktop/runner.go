@@ -16,25 +16,51 @@ type Runner interface {
 	Start(name string, args []string) error
 }
 
-// ExecRunner runs real processes with DISPLAY set.
+// ExecRunner runs real processes in the desktop session: the process
+// environment, overlaid by SessionEnv (KEY=VALUE lines), then Display.
 type ExecRunner struct {
 	Display string
+	// SessionEnv is the session.env written by desktop-session.sh (D-Bus,
+	// input method, locale); missing means the process environment only.
+	SessionEnv string
 	// LogDir receives one log per started app (default /tmp).
 	LogDir string
 }
 
 func (r ExecRunner) env() []string {
-	display := r.Display
-	if display == "" {
-		display = envOr("DISPLAY", ":99")
+	vals := map[string]string{}
+	var order []string
+	set := func(kv string) {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			return
+		}
+		if _, seen := vals[k]; !seen {
+			order = append(order, k)
+		}
+		vals[k] = v
 	}
-	out := make([]string, 0, len(os.Environ())+1)
 	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "DISPLAY=") {
-			out = append(out, kv)
+		set(kv)
+	}
+	if r.SessionEnv != "" {
+		if b, err := os.ReadFile(r.SessionEnv); err == nil {
+			for _, line := range strings.Split(string(b), "\n") {
+				set(strings.TrimSpace(line))
+			}
 		}
 	}
-	return append(out, "DISPLAY="+display)
+	switch {
+	case r.Display != "":
+		set("DISPLAY=" + r.Display)
+	case vals["DISPLAY"] == "":
+		set("DISPLAY=:99")
+	}
+	out := make([]string, 0, len(order))
+	for _, k := range order {
+		out = append(out, k+"="+vals[k])
+	}
+	return out
 }
 
 // Output runs name and returns stdout.

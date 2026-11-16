@@ -60,6 +60,9 @@ func (p Paths) Available() bool {
 func (p Paths) statePath() string   { return filepath.Join(p.RunDir, "state") }
 func (p Paths) controlPath() string { return filepath.Join(p.RunDir, "control") }
 
+// SessionEnv is the desktop session environment written by desktop-session.sh.
+func (p Paths) SessionEnv() string { return filepath.Join(p.RunDir, "session.env") }
+
 // Shell is the desktop shell state written by desktop-session.sh.
 type Shell struct {
 	Mode           string `json:"mode"`
