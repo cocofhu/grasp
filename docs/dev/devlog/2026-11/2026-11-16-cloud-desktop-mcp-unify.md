@@ -19,10 +19,11 @@
 - 如何验证：
   - 单测与门禁：server 核心覆盖率 90.7%、sandbox 98.0%、gateway 90.4%、web lines 91.76%；golangci-lint v2.12（server / sandbox / gateway 0 issues）、go vet、`gen-configdoc -check`、actionlint、shellcheck（error 级）、vue-tsc、eslint、`npm run build`；`test:e2e:ci` 列表在 desktop project 290 项通过；`test_prepare_template.py` 16 项、`test_build_apps.py`、`test-desktop-session.sh`（假 openbox / wmctrl / launcher）。
   - Blender MCP：本机用 Blender 5.1.2 复现镜像步骤（扩展构建、安装、偏好写入），GUI 启动约 8 秒插件监听 6092，`blender-mcp` 经 stdio 执行代码新建立方体并读回对象列表。
-  - Docker 集成：桌面镜像由 `publish-sandbox-desktop` 在 GitHub Actions 构建（本机 Docker 为 vfs 驱动，无法承载该镜像），推送前跑 `check-desktop-image.sh` 与 `test-desktop-e2e.sh`（桌面壳就绪、启动台白名单与 Origin、desktop MCP 在 Mousepad 写文件、接管期间点击被拒而截图可用、Blender MCP 建模），并以默认镜像跑浏览器模式基线。
-  - 全仓检索 `VNC_PREVIEW` / `BROWSER_MCP`：仅剩 CHANGELOG / DEVLOG 历史与 `server/internal/execution/tools.go`（Worktree 正由并行工作删除，本 PR 按要求不改）。
+  - Docker 集成：桌面镜像由 `publish-sandbox-desktop` 在 GitHub Actions 构建（本机 Docker 为 vfs 驱动，无法承载该镜像），推送前跑 `check-desktop-image.sh` 与 `test-desktop-e2e.sh`。用临时分支构建的 `universal-sandbox:sha-1188529-desktop` 加本分支运行时包，五项全部通过：桌面壳就绪、启动台白名单与 Origin、desktop MCP 在 Mousepad 输入中文并经「另存为」写文件、接管期间点击被拒而截图可用、Blender MCP 建模并读回对象；默认镜像浏览器模式基线通过。
+  - 联调中修掉的问题：Blender 扩展构建缺输出目录；`/usr/games` 不在 PATH（纸牌、围棋改绝对路径）；desktop MCP 在 Agent CLI 下运行、不在桌面会话里，启动的应用拿不到 D-Bus 与输入法——`desktop-session.sh` 写 `session.env`，grasp-desktop 与桌面模式的 Chromium 都套用；Ubuntu 基础镜像排除了 `*.mo`，桌面应用只有英文界面——`Dockerfile.desktop` 放开后再装应用。
+  - 已 rebase 到包含 Worktree 删除（#1275）的 main，rebase 后重跑上述门禁。全仓检索 `VNC_PREVIEW` / `BROWSER_MCP` 只剩 CHANGELOG / DEVLOG 历史。
 - 容量：GitHub Actions 上 `test-desktop-e2e.sh` 按进程名汇总 PSS（共享页只计一次），开机 20 秒后、未打开应用时：
   - 默认镜像浏览器模式（现为每个沙箱固定开销）：合计 464 MiB——Chromium 360、Xvfb 61、websockify 30、x11vnc 13。原先未设 `VNC_PREVIEW` 的沙箱因此多出这部分内存，规划节点容量时按每沙箱约 0.5 GiB 计。
   - 桌面镜像：合计 680 MiB——Chromium 461、Xvfb 69、plank 44、fcitx5 34、websockify 32、openbox 16、x11vnc 13、grasp-desktop 10、dbus 2。打开 Blender、KiCad 等应用另计，建议 4 vCPU / 8 GiB / 30 GiB。
   - 桌面镜像外壳从容器启动到 `shellReady` 约 5 秒；Blender 启动后约 8 秒插件开始监听 6092。
-- 未做：真实 E2B 构建与验收由部署方按 `deploy/e2b/README.md` 清单完成；`server/internal/execution` 中的变量名随 Worktree 删除一并消失，合并前 rebase。
+- 未做：真实 E2B 构建与验收由部署方按 `deploy/e2b/README.md` 清单完成。临时验证分支在 GHCR 留下 `sha-531cb6a-desktop`、`sha-1188529-desktop` 两个 tag，可删除。
