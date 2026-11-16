@@ -276,8 +276,8 @@ type gitCatalogFile struct {
 	body string
 }
 
-// gitCatalogFiles is shared by the sandbox transport and local worktree
-// installer so validation, metadata and secret normalization stay identical.
+// gitCatalogFiles validates and normalizes the credential catalog sent to a
+// sandbox.
 func gitCatalogFiles(credentials []GitCredential) ([]gitCatalogFile, error) {
 	type catalogEntry struct {
 		Index     int    `json:"index"`

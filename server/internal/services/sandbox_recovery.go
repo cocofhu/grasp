@@ -68,9 +68,6 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 	if err != nil {
 		return err
 	}
-	if sb.IsLocal() {
-		return errors.New("local worktree environments cannot be reclaimed")
-	}
 	// In addition to control-plane task state, protect terminals and detached
 	// user processes. A failed probe keeps the original guest intact.
 	busy, err := sb.IdleActivity(ctx)
@@ -305,15 +302,6 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 		}
 		row.Status, row.RecoveryPhase = "stopped", ""
 	}
-	s.mu.Lock()
-	live := s.live[id]
-	if live != nil && live.sb != nil && live.sb.IsLocal() {
-		sb := live.sb
-		s.mu.Unlock()
-		s.TouchActivity(id)
-		return sb, true, nil
-	}
-	s.mu.Unlock()
 	status, err := s.mgr.ProbeStatus(ctx, row.Name)
 	if err != nil {
 		return nil, false, err

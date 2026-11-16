@@ -149,8 +149,8 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	}
 	args = append(args, d.c.BaseArgs...)
 	// --strict-mcp-config means "only MCP from --mcp-config". Without a path,
-	// Claude/CodeBuddy load zero servers without this path. Worktree sessions
-	// stage the managed config outside the image's default CLI home.
+	// Claude/CodeBuddy load zero servers without this path. CONFIG_ROOT wins
+	// over the image's default CLI home.
 	configRoot := strings.TrimSpace(os.Getenv("CONFIG_ROOT"))
 	if configRoot == "" {
 		configRoot = d.c.ConfigRoot

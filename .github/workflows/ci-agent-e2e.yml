@@ -1,12 +1,14 @@
 name: ci-agent-e2e
 
-# No repository/vendor secrets. Every product tool participates; native CLI
-# coverage and proprietary-platform doubles are identified in the report.
+# No repository/vendor secrets. Every product tool participates in a real
+# Docker sandbox built from this checkout; native CLI coverage and
+# proprietary-platform doubles are identified in the report.
 on:
   push:
     branches: [main]
     paths:
       - 'server/**'
+      - 'sandbox-gateway/gateway/**'
       - 'sandbox-gateway/sandbox/**'
       - 'sandbox-gateway/scripts/**'
       - 'scripts/build-sandbox-runtime.sh'
@@ -20,6 +22,7 @@ on:
   pull_request:
     paths:
       - 'server/**'
+      - 'sandbox-gateway/gateway/**'
       - 'sandbox-gateway/sandbox/**'
       - 'sandbox-gateway/scripts/**'
       - 'scripts/build-sandbox-runtime.sh'
@@ -42,7 +45,7 @@ concurrency:
 jobs:
   agent-switching:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 120
     env:
       GOPROXY: https://proxy.golang.org|direct
       GIT_CONFIG_GLOBAL: /dev/null
@@ -60,49 +63,48 @@ jobs:
           go-version: '1.26.11'
           cache-dependency-path: |
             server/go.sum
+            sandbox-gateway/gateway/go.sum
             sandbox-gateway/sandbox/go.sum
-      - name: Check user namespaces for the native Codex workspace sandbox
-        run: |
-          if unshare --user --map-root-user --mount --pid --fork /bin/true; then
-            exit 0
-          fi
-          # This hosted VM is disposable. Restore any changed setting below;
-          # never change the production CLI permission or sandbox policy.
-          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-            old="$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
-            echo "GRASP_E2E_OLD_APPARMOR_USERNS=$old" >> "$GITHUB_ENV"
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          if [[ -r /proc/sys/kernel/unprivileged_userns_clone ]]; then
-            old="$(sysctl -n kernel.unprivileged_userns_clone)"
-            if [[ "$old" == 0 ]]; then
-              echo "GRASP_E2E_OLD_USERNS_CLONE=$old" >> "$GITHUB_ENV"
-              sudo sysctl -w kernel.unprivileged_userns_clone=1
-            fi
-          fi
-          unshare --user --map-root-user --mount --pid --fork /bin/true
       - name: Mock model and complete-matrix contracts
         run: |
           node --test sandbox-gateway/scripts/mock-agent-model.test.mjs sandbox-gateway/scripts/mock-chat-model.test.mjs sandbox-gateway/scripts/agent-platform-wire-fixture.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s sandbox-gateway/scripts -p 'test_agent_switching_test.py'
-      - name: Install and verify every required native CLI
+      - name: Free disk space for the sandbox image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af >/dev/null
+          df -h /
+      - uses: docker/setup-buildx-action@v4
+      - name: Build sandbox image from this checkout
+        uses: docker/build-push-action@v7
+        with:
+          context: ./sandbox-gateway/sandbox
+          file: ./sandbox-gateway/sandbox/Dockerfile
+          load: true
+          tags: universal-sandbox:agent-e2e
+          build-args: |
+            BASE_IMAGE=ubuntu:22.04
+            USE_CN_MIRROR=false
+          cache-from: type=gha,scope=sandbox-image
+      - name: Install platform wire doubles and verify every native CLI
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/agent-e2e-artifacts"
-          bash sandbox-gateway/scripts/install-agent-e2e-clis.sh "$RUNNER_TEMP/grasp-agent-clis" 2>&1 | tee "$RUNNER_TEMP/agent-e2e-artifacts/cli-install.log"
-      - name: Build real server and runtime from this checkout
+          docker build --progress=plain --build-arg SANDBOX_IMAGE=universal-sandbox:agent-e2e \
+            -f sandbox-gateway/scripts/agent-e2e-sandbox.Dockerfile -t grasp-agent-e2e-sandbox:ci \
+            sandbox-gateway/scripts 2>&1 | tee "$RUNNER_TEMP/agent-e2e-artifacts/sandbox-image.log"
+      - name: Build real server, gateway and runtime from this checkout
         run: |
-          cd server
-          go build -o "$RUNNER_TEMP/grasp-agent-server" ./cmd/server
-          cd ..
+          (cd server && go build -o "$RUNNER_TEMP/grasp-agent-server" ./cmd/server)
+          (cd sandbox-gateway/gateway && go build -o "$RUNNER_TEMP/grasp-agent-gateway" ./cmd/server)
           ./scripts/build-sandbox-runtime.sh "$RUNNER_TEMP/grasp-agent-runtime"
-          mkdir "$RUNNER_TEMP/grasp-agent-runtime/current"
-          tar -xzf "$RUNNER_TEMP/grasp-agent-runtime/sandbox-runtime.tgz" -C "$RUNNER_TEMP/grasp-agent-runtime/current"
       - name: All tools, all directed switches, models, reasoning and native MCP
         run: >-
           python3 sandbox-gateway/scripts/test-agent-switching.py
           --server "$RUNNER_TEMP/grasp-agent-server"
-          --runtime "$RUNNER_TEMP/grasp-agent-runtime/current"
+          --gateway "$RUNNER_TEMP/grasp-agent-gateway"
+          --runtime-bundle "$RUNNER_TEMP/grasp-agent-runtime/sandbox-runtime.tgz"
+          --sandbox-image grasp-agent-e2e-sandbox:ci
           --output "$RUNNER_TEMP/agent-e2e-artifacts"
       - name: Publish coverage boundary and results
         if: always()
@@ -121,15 +123,6 @@ jobs:
           print('\nCompleted cases: ' + str(len(r['switches'])) + '. Paid model calls: 0.')
           print('\n' + r['nativePlatformInference'])
           PY
-      - name: Restore hosted-runner namespace settings
-        if: always()
-        run: |
-          if [[ -n "${GRASP_E2E_OLD_APPARMOR_USERNS:-}" ]]; then
-            sudo sysctl -w "kernel.apparmor_restrict_unprivileged_userns=$GRASP_E2E_OLD_APPARMOR_USERNS"
-          fi
-          if [[ -n "${GRASP_E2E_OLD_USERNS_CLONE:-}" ]]; then
-            sudo sysctl -w "kernel.unprivileged_userns_clone=$GRASP_E2E_OLD_USERNS_CLONE"
-          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -44,7 +44,7 @@ func TestConnectedOpenCodeKeepsCurrentManagedMCPWithoutOldRouting(t *testing.T) 
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(config["mcp"], managed["mcp"]) || !reflect.DeepEqual(config["instructions"], managed["instructions"]) {
-				t.Fatal("current worktree's native MCP servers or instructions were dropped")
+				t.Fatal("current config root's native MCP servers or instructions were dropped")
 			}
 			if config["plugin"] != nil || config["model"] != c.RouteID()+"/"+c.SelectedModelID ||
 				!reflect.DeepEqual(config["enabled_providers"], []any{c.RouteID()}) || len(config["provider"].(map[string]any)) != 1 ||

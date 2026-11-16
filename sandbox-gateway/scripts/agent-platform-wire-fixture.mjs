@@ -119,7 +119,7 @@ async function main() {
 if (args.includes('--version')) {
   console.log(`grasp-${provider}-platform-wire-fixture 1`)
 } else if (provider === 'cursor') {
-  // Match the native CLI's actual config root so a broken worktree mapping
+  // Match the native CLI's actual config root so a broken config mapping
   // fails; CONFIG_ROOT alone is not a native Cursor setting.
   const root = process.env.CURSOR_CONFIG_DIR
   if (!root) throw new Error('native CURSOR_CONFIG_DIR was not set')

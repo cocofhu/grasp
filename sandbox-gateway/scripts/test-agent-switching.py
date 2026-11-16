@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Real Grasp/API/runtime/MCP E2E with native CLIs and a free model server.
+"""Real Grasp/gateway/sandbox/MCP E2E with native CLIs and a free model server.
 
-Cursor, Trae and Kimi Code use explicitly labelled platform wire doubles.
-Every other CLI is real. No vendor key is read, inherited or required.
+Grasp and the gateway run on this host; agents run in Docker sandboxes built
+from agent-e2e-sandbox.Dockerfile. Cursor, Trae and Kimi Code use explicitly
+labelled platform wire doubles there. Every other CLI is the one the product
+sandbox image ships. No vendor key is read, inherited or required.
 """
 import argparse
 import http.cookiejar
@@ -96,6 +98,7 @@ class E2E:
         self.data = Path(tempfile.mkdtemp(prefix='grasp-agent-e2e-'))
         self.base = f'http://127.0.0.1:{free_port()}'
         self.processes, self.handles, self.sessions, self.cases = [], [], [], []
+        self.gateway, self.gateway_key = None, 'agent-e2e-'+secrets.token_hex(12)
         self.client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.tools = json.loads((HERE/'agent-e2e-matrix.json').read_text())['tools']
         self.groups = {}
@@ -104,9 +107,9 @@ class E2E:
         self.nonce = 'task-'+secrets.token_hex(12)
         self.marker = 'checkpoint.txt'
 
-    def request(self, path, body=None, method=None, base=None):
+    def request(self, path, body=None, method=None, base=None, headers=None):
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request((base or self.base)+path, data, {'Content-Type': 'application/json'}, method=method or ('POST' if body is not None else 'GET'))
+        req = urllib.request.Request((base or self.base)+path, data, {'Content-Type': 'application/json', **(headers or {})}, method=method or ('POST' if body is not None else 'GET'))
         try:
             with self.client.open(req, timeout=20) as response:
                 raw = response.read(8_000_000)
@@ -143,54 +146,20 @@ class E2E:
     def start(self):
         model_port = free_port()
         self.model = f'http://127.0.0.1:{model_port}'
+        # Sandboxes reach this host through the gateway's host-gateway alias.
+        self.sandbox_model = f'http://host.docker.internal:{model_port}'
         # Deliberately drop host API keys, login tokens, proxy credentials and
         # CI secrets. The only credentials used below are synthetic localhost data.
-        env = {key: value for key, value in os.environ.items() if key in ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TZ']}
-        self.launch(['node', str(HERE/'mock-agent-model.mjs'), '--listen', '127.0.0.1', '--port', str(model_port), '--report-file', str(self.output/'model-report.json')], env, 'model')
+        env = {key: value for key, value in os.environ.items() if key in ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TZ', 'DOCKER_HOST']}
+        self.launch(['node', str(HERE/'mock-agent-model.mjs'), '--listen', '0.0.0.0', '--port', str(model_port), '--report-file', str(self.output/'model-report.json')], env, 'model')
         self.wait(lambda: self.request('/health', base=self.model), 'mock model')
-        fixture_bin = self.data/'platform-wire-bin'
-        fixture_bin.mkdir()
-        native_bin = self.data/'native-usage-bin'
-        native_bin.mkdir()
-        for tool in self.tools:
-            if tool['mode'] == 'platform-wire-fixture':
-                script = fixture_bin/tool['bin']
-                script.write_text('#!/bin/sh\nexec node '+shlex.quote(str(HERE/'agent-platform-wire-fixture.mjs'))+' '+shlex.quote(tool['id'])+' "$@"\n')
-                script.chmod(0o755)
-            else:
-                binary = shutil.which(tool['bin'])
-                if not binary:
-                    raise AssertionError(f'required real CLI missing: {tool["id"]} ({tool["bin"]}); no skip or fake fallback is permitted')
-                if tool['id'] == 'codebuddy':
-                    # Keep independent native counters for diagnosing delayed
-                    # snapshots. The real CLI still handles every request;
-                    # stdout is forwarded unchanged, and prompts are not logged.
-                    wrapper = native_bin/tool['bin']
-                    wrapper.write_text('''#!/usr/bin/env python3
-import json, subprocess, sys
-child = subprocess.Popen([NATIVE_BINARY, *sys.argv[1:]], stdin=sys.stdin.buffer, stdout=subprocess.PIPE)
-with open(USAGE_TRACE, 'a') as trace:
-    for line in child.stdout:
-        try:
-            event = json.loads(line)
-            if isinstance(event, dict):
-                sample = {key: event[key] for key in ('type', 'usage', 'modelUsage') if key in event}
-                message = event.get('message')
-                if isinstance(message, dict) and 'usage' in message:
-                    sample['messageUsage'] = message['usage']
-                if len(sample) > 1:
-                    trace.write(json.dumps(sample) + '\\n')
-                    trace.flush()
-        except (ValueError, TypeError):
-            pass
-        sys.stdout.buffer.write(line)
-        sys.stdout.buffer.flush()
-sys.exit(child.wait())
-'''.replace('NATIVE_BINARY', repr(binary)).replace('USAGE_TRACE', repr(str(self.output/'codebuddy-usage.jsonl'))))
-                    wrapper.chmod(0o755)
-        env.update({'PATH': os.pathsep.join([str(native_bin), str(fixture_bin), env['PATH']]), 'GRASP_EXECUTION_MODE': 'worktree', 'GRASP_WORKTREE_ROOT': str(self.data/'launches'), 'GRASP_WORKTREE_BACKEND': str(Path(self.args.runtime).resolve()/'bin/backend'), 'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
+        self.gateway = f'http://127.0.0.1:{free_port()}'
+        gateway_env = {**env, 'SBGW_LISTEN': self.gateway.removeprefix('http://'), 'SBGW_DB_PATH': str(self.data/'gateway.db'), 'SBGW_DRIVER': 'docker', 'SBGW_DOCKER_IMAGE': self.args.sandbox_image, 'SBGW_API_KEYS': self.gateway_key}
+        self.launch([str(Path(self.args.gateway).resolve())], gateway_env, 'gateway')
+        self.wait(lambda: self.request('/healthz', base=self.gateway) is not None, 'sandbox gateway')
+        env.update({'GRASP_BLOBS_ROOT': str(self.data/'blobs'), 'GIT_ASKPASS': '/bin/false', 'GIT_TERMINAL_PROMPT': '0'})
         port = int(self.base.rsplit(':', 1)[1])
-        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': self.base, 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
+        config = {'server': {'port': port, 'deployment_mode': 'local-demo', 'mcp_advertise': f'http://host.docker.internal:{port}', 'public_advertise': self.base}, 'database': {'path': str(self.data/'grasp.db')}, 'engine': {'profiles_root': str(self.data/'profiles')}, 'sandbox': {'gateway_url': self.gateway, 'gateway_api_key': self.gateway_key, 'runtime_bundle': str(Path(self.args.runtime_bundle).resolve()), 'work_dir': str(self.data/'configs'), 'chat_idle_timeout_seconds': 90}, 'auth': {'users': [{'username': 'admin', 'password_hash': DEMO_HASH, 'is_admin': True}]}}
         config_path = self.data/'config.json'
         config_path.write_text(json.dumps(config)); config_path.chmod(0o600)
         self.launch([str(Path(self.args.server).resolve()), str(config_path)], env, 'server')
@@ -211,7 +180,7 @@ sys.exit(child.wait())
             # OpenCode's documented effort catalog is selected explicitly by
             # provider, never inferred from a model name at a custom endpoint.
             provider = 'openai' if protocol == 'openai-chat-completions' else 'custom'
-            connections[protocol] = self.request('/api/workspace/model-connections', {'name': 'Local '+protocol, 'providerId': provider, 'protocol': protocol, 'baseUrl': self.model+'/v1', 'credentialId': credential['id'], 'auth': {'scheme': 'x-api-key' if protocol == 'anthropic-messages' else 'bearer'}, 'models': models, 'state': 'active'})['id']
+            connections[protocol] = self.request('/api/workspace/model-connections', {'name': 'Local '+protocol, 'providerId': provider, 'protocol': protocol, 'baseUrl': self.sandbox_model+'/v1', 'credentialId': credential['id'], 'auth': {'scheme': 'x-api-key' if protocol == 'anthropic-messages' else 'bearer'}, 'models': models, 'state': 'active'})['id']
         for tool in self.tools:
             if tool['mode'] == 'native-cli':
                 binding = {'kind': 'connection', 'connectionId': connections[tool['protocol']], 'modelId': tool['model'], 'auxiliaryModelIds': ['e2e-auxiliary']}
@@ -222,7 +191,7 @@ sys.exit(child.wait())
                     binding['auxiliaryModelIds'] = tool['auxiliaryModels']
             self.groups[tool['id']] = self.request('/api/workspace/model-configurations', {'name': 'CI '+tool['id'], 'backend': tool['id'], 'binding': binding, 'state': 'active'})['id']
         ids = list(self.groups.values())
-        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}, {'path': 'config.toml', 'content': 'sandbox_mode = "workspace-write"\napproval_policy = "never"\n'}]})
+        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.sandbox_model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}]})
 
     def scenario(self, walk):
         turns = []
@@ -293,7 +262,9 @@ sys.exit(child.wait())
             else:
                 self.request('/api/solo/sessions/'+session_id+'/model', {'configurationId': self.groups[step['backend']], 'modelId': step.get('model', ''), 'reasoningEffort': step.get('effort', '')})
                 self.request('/api/solo/sessions/'+session_id+'/turns', {'text': prompt})
-            state, message = self.wait(lambda: self.completed(session_id, index+1), 'turn '+step['id']+' / '+step['backend'], self.args.turn_timeout)
+            # The first turn also creates and boots the sandbox.
+            timeout = self.args.start_timeout if index == 0 else self.args.turn_timeout
+            state, message = self.wait(lambda: self.completed(session_id, index+1), 'turn '+step['id']+' / '+step['backend'], timeout)
             if step['reply'] not in message.get('content', ''):
                 raise AssertionError('native CLI reply did not contain the model fixture completion marker')
             if sandbox_id is None:
@@ -411,6 +382,15 @@ sys.exit(child.wait())
                     errors.append('session did not close: '+session)
             except Exception as error:
                 errors.append('session cleanup failed: '+str(error))
+        if self.gateway:
+            # Never leave a sandbox container behind, even when Grasp failed
+            # before it could release one.
+            auth = {'Authorization': 'Bearer '+self.gateway_key}
+            try:
+                for sandbox in (self.request('/api/v1/sandboxes', base=self.gateway, headers=auth) or {}).get('sandboxes') or []:
+                    self.request('/api/v1/sandboxes/'+sandbox['id'], method='DELETE', base=self.gateway, headers=auth)
+            except Exception as error:
+                errors.append('sandbox cleanup failed: '+str(error))
         for proc in reversed(self.processes):
             if proc.poll() is None:
                 try:
@@ -436,9 +416,12 @@ sys.exit(child.wait())
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', required=True, help='built Grasp server executable')
-    parser.add_argument('--runtime', required=True, help='extracted runtime directory with bin/backend')
+    parser.add_argument('--gateway', required=True, help='built sandbox-gateway executable')
+    parser.add_argument('--runtime-bundle', required=True, help='sandbox-runtime.tgz built by scripts/build-sandbox-runtime.sh')
+    parser.add_argument('--sandbox-image', required=True, help='image built from agent-e2e-sandbox.Dockerfile')
     parser.add_argument('--output', default='agent-e2e-artifacts')
     parser.add_argument('--tools', help='local debugging subset only; CI always uses all tools')
+    parser.add_argument('--start-timeout', type=int, default=900, help='first turn, including sandbox creation')
     parser.add_argument('--turn-timeout', type=int, default=120)
     parser.add_argument('--keep-data', action='store_true')
     args = parser.parse_args()

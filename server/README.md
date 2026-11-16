@@ -217,7 +217,7 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 | `GRASP_CHAT_IDLE_SEC` | `1200` 秒 | 无输出且无 CPU/IO 活动的时限，续跑一次仍无活动则中断；设置后设置页只读 |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `1200` 秒 | 等待沙箱创建就绪的时限，应不小于 gateway finalize 时限 |
 | `GRASP_SANDBOX_RUNTIME_BUNDLE` | `/app/sandbox-runtime/sandbox-runtime.tgz` | 下发给沙箱的运行时包，服务端镜像已内置；直接运行二进制时提供实际构建路径 |
-| `GRASP_MCP_ADVERTISE` | 沙箱模式 `http://host.docker.internal:<PORT>` | 沙箱回连 MCP 和下载运行时/配置包的 API 基址。远程部署需设置沙箱内可达的地址；worktree 模式默认 `http://127.0.0.1:<PORT>` |
+| `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<PORT>` | 沙箱回连 MCP 和下载运行时/配置包的 API 基址。远程部署需设置沙箱内可达的地址 |
 | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent profile 规则根(挂入 `{configRoot}/rules`) |
 
 > **GitLab 不是平台配置**:平台不依赖任何固定的 GitLab 地址或令牌。仓库地址来自工作流

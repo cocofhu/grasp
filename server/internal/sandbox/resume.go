@@ -9,17 +9,12 @@ import (
 	"io"
 	"maps"
 	"strings"
-
-	"github.com/cocofhu/grasp/internal/execution"
 )
 
 // ResumePrepared rebuilds only application inputs for a released workload.
 // The gateway keeps its original workspace, mounts, image and resource limits;
 // a snapshot-backed warm resume ignores this patch entirely.
 func (m *Manager) ResumePrepared(ctx context.Context, id string, spec Spec) (*Sandbox, error) {
-	if execution.Worktree() {
-		return nil, fmt.Errorf("local worktree environments have no gateway resume")
-	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -88,9 +83,6 @@ func (m *Manager) ResumePrepared(ctx context.Context, id string, spec Spec) (*Sa
 // Resume restarts the existing sandbox. Unlike Create, a failed resume never
 // destroys the workload: its writable layer may be the only copy of user files.
 func (m *Manager) Resume(ctx context.Context, id string) (*Sandbox, error) {
-	if execution.Worktree() {
-		return nil, fmt.Errorf("local worktree environments have no gateway resume")
-	}
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -156,9 +148,6 @@ func runtimeBootstrapScript(data []byte) (string, error) {
 // Stop saves recovery state and releases the workload for a later Resume.
 // The gateway owns provider-specific persistence and restore-point identifiers.
 func (m *Manager) Stop(ctx context.Context, id string, keep int) error {
-	if execution.Worktree() {
-		return fmt.Errorf("local worktree environments have no gateway stop")
-	}
 	if m.gw == nil {
 		return fmt.Errorf("no gateway client")
 	}
@@ -168,9 +157,6 @@ func (m *Manager) Stop(ctx context.Context, id string, keep int) error {
 // RecoveryKind resolves the driver's persistence contract. An unavailable
 // gateway is an error, never permission to destroy a possibly stateful guest.
 func (m *Manager) RecoveryKind(ctx context.Context, id string) (string, error) {
-	if execution.Worktree() {
-		return "", fmt.Errorf("local worktree environments have no gateway recovery")
-	}
 	if m.gw == nil {
 		return "", fmt.Errorf("no gateway client")
 	}

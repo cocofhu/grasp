@@ -536,7 +536,6 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	env["AGENT_PROVIDER"] = string(backend)
 	if req.RunID != "" {
 		env["GRASP_RUN_ID"] = req.RunID
-		env["GRASP_LAUNCH_KIND"] = "run"
 	}
 	ApplyPreviewEnv(env, req.Caps)
 

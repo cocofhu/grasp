@@ -9,11 +9,7 @@ import type {
   SettingItem,
 } from '../apiTypes'
 
-type SettingsResponse = {
-  items: SettingItem[]
-  brand: BrandSettings
-  execution_mode?: 'worktree' | 'sandbox'
-}
+type SettingsResponse = { items: SettingItem[]; brand: BrandSettings }
 
 export const settingsClient = {
   health: () => req<HealthResponse>(`/health`),

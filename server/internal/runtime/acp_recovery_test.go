@@ -7,20 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/execution"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
-
-func TestWorktreeRecoveryNeverConsultsRemoteGatewayRegistry(t *testing.T) {
-	t.Setenv(execution.EnvMode, execution.ModeWorktree)
-	h := newSharedHarness(t, nil)
-	registry := &recoveryRegistry{failure: errors.New("remote gateway must not be called")}
-	h.p.registry = registry
-	if sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), nil); err != nil || found || sess != nil || registry.resumes != 0 {
-		t.Fatalf("local worktree used remote recovery: found=%v calls=%d err=%v", found, registry.resumes, err)
-	}
-}
 
 func TestWorkflowRecoveryPreparationKeepsSelectedSettingsWithoutRecloning(t *testing.T) {
 	h := newSharedHarness(t, nil)

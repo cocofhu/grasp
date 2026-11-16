@@ -96,13 +96,6 @@ func TestWorkspaceRestorePreservesDeletionsAndHiddenFiles(t *testing.T) {
 }
 
 func TestWorkspaceArchiveFailures(t *testing.T) {
-	local := &Sandbox{WorkspaceDir: t.TempDir(), local: &localExec{}}
-	if _, err := local.ArchiveWorkspace(context.Background()); err == nil {
-		t.Fatal("archived a local worktree")
-	}
-	if err := local.RestoreWorkspace(context.Background(), strings.NewReader("")); err == nil {
-		t.Fatal("restored into a local worktree")
-	}
 	empty := &Sandbox{}
 	if _, err := empty.ArchiveWorkspace(context.Background()); err == nil {
 		t.Fatal("archived without a workspace")

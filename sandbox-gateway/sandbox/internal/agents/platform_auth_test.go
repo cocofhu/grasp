@@ -123,7 +123,7 @@ func TestOfficialOpenCodeRefreshesOnlyWhenOpeningSessions(t *testing.T) {
 	callsPath := setupOfficialOpenCodeCLI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	workspace, worktree := t.TempDir(), t.TempDir()
+	workspace, otherWorkspace := t.TempDir(), t.TempDir()
 	sess, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{Cwd: workspace, Model: "opencode/official-model"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -143,17 +143,17 @@ func TestOfficialOpenCodeRefreshesOnlyWhenOpeningSessions(t *testing.T) {
 		}
 	}
 	assertOfficialOpenCodeCalls(t, callsPath, 1, 3)
-	// A new session in another worktree uses the same startup policy and the
+	// A new session in another workspace uses the same startup policy and the
 	// same sandbox cache, independent of its working directory.
-	other, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{Cwd: worktree, Model: "opencode/official-model"}, nil, nil)
+	other, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{Cwd: otherWorkspace, Model: "opencode/official-model"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer other.Close()
 	assertOfficialOpenCodeCalls(t, callsPath, 2, 3)
-	result, err := other.Prompt(ctx, "hello from worktree", nil)
+	result, err := other.Prompt(ctx, "hello from another workspace", nil)
 	if err != nil || result.StopReason != "end_turn" {
-		t.Fatalf("worktree session failed: %+v %v", result, err)
+		t.Fatalf("second workspace session failed: %+v %v", result, err)
 	}
 	assertOfficialOpenCodeCalls(t, callsPath, 2, 4)
 }

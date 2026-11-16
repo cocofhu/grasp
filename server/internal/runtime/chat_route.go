@@ -165,7 +165,7 @@ func (c *acpProvider) restoreDefaultRoute(ctx context.Context, req NodeReq, sess
 	if err != nil {
 		return err
 	}
-	if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image && !sess.sb.IsLocal() {
+	if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image {
 		return fmt.Errorf("default model group requires a different sandbox image")
 	}
 	if err := c.switchSessionTool(ctx, req, sess, want); err != nil {
@@ -196,7 +196,7 @@ func (c *acpProvider) applyChatRoute(ctx context.Context, req NodeReq, sess *rea
 		if err != nil {
 			return err
 		}
-		if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image && !sess.sb.IsLocal() {
+		if sess.sb.Image != "" && want.Image != "" && sess.sb.Image != want.Image {
 			return fmt.Errorf("model group requires a different sandbox image")
 		}
 		if err := c.switchSessionTool(ctx, req, sess, want); err != nil {

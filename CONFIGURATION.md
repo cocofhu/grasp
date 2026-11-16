@@ -82,7 +82,7 @@ docker:
 | `server.port` | `GRASP_PORT` | `8080` | Grasp HTTP 监听端口 |
 | `server.deployment_mode` | `GRASP_DEPLOYMENT_MODE` | `development` | 部署模式；发布脚本使用 `local-demo`，共享部署配置 `production` |
 | `server.public_advertise` | `GRASP_PUBLIC_ADVERTISE` | `http://localhost:<port>` | 用户浏览器可访问的平台来源 |
-| `server.mcp_advertise` | `GRASP_MCP_ADVERTISE` | 沙箱模式为 `http://host.docker.internal:<port>`；worktree 模式为 `http://127.0.0.1:<port>` | 沙箱回连 MCP、下载运行时与配置包的 API 基址，必须从沙箱内可达 |
+| `server.mcp_advertise` | `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<port>` | 沙箱回连 MCP、下载运行时与配置包的 API 基址，必须从沙箱内可达 |
 | `server.frame_ancestors` | `GRASP_FRAME_ANCESTORS` | 空 | 允许嵌入平台页面的门户来源；空表示不允许嵌入 |
 | `database.driver` | `GRASP_DB_DRIVER` | `sqlite`；未指定 driver 但配置 DSN 时推导为 `mysql` | Grasp 数据库类型 |
 | `database.path` | `GRASP_DB` | `grasp.db` | SQLite 文件；容器部署通常覆盖为 `/data/grasp.db` |

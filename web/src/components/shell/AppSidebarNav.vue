@@ -44,7 +44,6 @@ import {
   settingsNavItems,
   type SettingsNavItem,
 } from '@/data/settingsNav'
-import { useExecutionMode } from '@/lib/composables/useBrandSettings'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
@@ -1277,10 +1276,6 @@ const primaryGroup = sidebarNavGroups[0]
 const primaryItems = computed(() => props.rail
   ? primaryGroup?.items.filter((item) => item.to === '/dashboard') ?? []
   : primaryGroup?.items ?? [])
-const { worktreeMode } = useExecutionMode()
-const settingsItems = computed(() => (
-  worktreeMode.value ? settingsNavItems.filter((item) => item.to !== '/sandboxes') : settingsNavItems
-))
 </script>
 
 <template>
@@ -1305,7 +1300,7 @@ const settingsItems = computed(() => (
         <Icon name="arrow-left" :size="16" />
         <span class="flex-1">{{ t('nav.backWorkspace') }}</span>
       </RouterLink>
-      <template v-for="(item, index) in settingsItems" :key="settingsItemKey(item, index)">
+      <template v-for="(item, index) in settingsNavItems" :key="settingsItemKey(item, index)">
         <div
           v-if="item.groupKey"
           class="settings-group-heading"

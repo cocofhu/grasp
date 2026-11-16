@@ -273,7 +273,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	sandbox.ApplyPasswords(env, token)
 	sandbox.ApplyRepoEnv(env, repos)
 	env["GRASP_RUN_ID"] = runID
-	env["GRASP_LAUNCH_KIND"] = "test"
 
 	spec := sandbox.Spec{
 		GitCredentials: gitCredentials,
@@ -878,13 +877,8 @@ func (s *SandboxService) teardownLive(id uint) {
 	delete(s.live, id)
 	s.mu.Unlock()
 	s.codexLogins.Unregister(liveCodexKey(id))
-	if ls != nil {
-		if ls.acp != nil {
-			ls.acp.Close()
-		}
-		if ls.sb != nil && ls.sb.IsLocal() {
-			ls.sb.Destroy(context.Background())
-		}
+	if ls != nil && ls.acp != nil {
+		ls.acp.Close()
 	}
 }
 

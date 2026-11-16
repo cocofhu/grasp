@@ -745,65 +745,6 @@ describe('SettingsView workspace information on the general page', () => {
   })
 })
 
-describe('SettingsView execution mode', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
-  })
-
-  it('shows the sandbox pill from the image and keeps memory settings', async () => {
-    apiMocks.getSettings.mockResolvedValue({ ...SETTINGS, execution_mode: 'sandbox' })
-    const w = mountSettings()
-    await flushPromises()
-    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('沙箱')
-    expect(w.get('[data-testid="execution-mode"]').text()).toContain('来自当前镜像')
-    expect(w.find('#setting-sandbox_memory_mb').exists()).toBe(true)
-    expect(w.find('[data-testid="execution-mode"] input, [data-testid="execution-mode"] [role="switch"]').exists()).toBe(false)
-    expect(w.find('[data-testid="execution-mode-banner"]').exists()).toBe(false)
-    w.unmount()
-  })
-
-  it('shows a read-only worktree mode and does not save it', async () => {
-    const settings = { ...SETTINGS, execution_mode: 'worktree' as const }
-    apiMocks.getSettings.mockResolvedValue(settings)
-    apiMocks.updateSettings.mockResolvedValue(settings)
-    const w = mountSettings()
-    await flushPromises()
-    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('工作树')
-    expect(w.get('[data-testid="execution-mode"]').text()).toContain('没有另一层容器边界')
-    expect(w.get('[data-testid="execution-mode"]').text()).toContain('来自当前镜像')
-    expect(w.find('#setting-sandbox_memory_mb').exists()).toBe(false)
-    expect(w.find('#setting-sandbox_idle_ttl_minutes').exists()).toBe(false)
-    expect(w.find('#setting-max_sandboxes').exists()).toBe(false)
-    expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有 dockerd、sshd 和 code-server')
-    expect(w.get('[data-testid="execution-mode-banner"]').text()).toContain('没有模式开关')
-    expect(w.find('[data-testid="execution-mode"] input, [data-testid="execution-mode"] [role="switch"]').exists()).toBe(false)
-
-    await w.get('#setting-max_concurrent_runs').setValue('6')
-    await w.findAll('button').find((button) => button.text().includes('保存'))!.trigger('click')
-    await flushPromises()
-    const patch = apiMocks.updateSettings.mock.calls[0]![0]
-    expect(patch).toMatchObject({ max_concurrent_runs: 6 })
-    expect(patch).not.toHaveProperty('execution_mode')
-    expect(w.get('[data-testid="execution-mode-value"]').text()).toBe('工作树')
-    w.unmount()
-  })
-
-  it('does not put an execution-mode switch on home, new session, or start run', () => {
-    const dir = dirname(fileURLToPath(import.meta.url))
-    for (const rel of [
-      '../components/solo/HomeSoloPanel.vue',
-      '../components/workflow/RunLaunchModal.vue',
-      'SoloView.vue',
-    ]) {
-      const src = readFileSync(join(dir, rel), 'utf8')
-      expect(src, rel).not.toContain('execution_mode')
-      expect(src, rel).not.toContain('执行模式')
-    }
-  })
-})
-
 describe('SettingsView overview stats', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -812,30 +753,18 @@ describe('SettingsView overview stats', () => {
     apiMocks.dashboard.mockResolvedValue({ running: 2 })
   })
 
-  it('summarises execution mode, running runs and sandbox capacity in sandbox mode', async () => {
+  it('summarises running runs and sandbox capacity', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     const w = mountSettings()
     await flushPromises()
     const strip = w.get('[data-testid="settings-overview-stats"]')
     const value = (key: string) => strip.get(`[data-testid="settings-stat-${key}"] [data-testid="settings-stat-value"]`).text()
-    expect(value('execution-mode')).toBe(pages.pages.settings.execution.sandbox)
     expect(value('running-runs')).toBe('2')
     expect(strip.get('[data-testid="settings-stat-running-runs"]').text()).toContain('/ 4')
     expect(value('sandboxes')).toBe('5')
     expect(value('sandbox-memory')).toBe('8192')
     expect(strip.get('[data-testid="settings-stat-sandbox-memory"]').text()).toContain('MiB')
     expect(w.get('[data-testid="settings-page-header"] h1').text()).toBe(pages.pages.settings.title)
-    w.unmount()
-  })
-
-  it('hides sandbox-only stats in worktree mode', async () => {
-    apiMocks.getSettings.mockResolvedValue({ ...SETTINGS, execution_mode: 'worktree' })
-    const w = mountSettings()
-    await flushPromises()
-    const strip = w.get('[data-testid="settings-overview-stats"]')
-    expect(strip.get('[data-testid="settings-stat-execution-mode"]').text()).toContain(pages.pages.settings.execution.worktree)
-    expect(strip.find('[data-testid="settings-stat-sandboxes"]').exists()).toBe(false)
-    expect(strip.find('[data-testid="settings-stat-sandbox-memory"]').exists()).toBe(false)
     w.unmount()
   })
 

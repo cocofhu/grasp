@@ -72,7 +72,7 @@ Solo 创建支持 `initialConfigurationId` 和原有 `initialModelId`；切换�
 | Codex | ChatGPT 登录文件；Responses |
 | DeepSeek Harness | 三种连接协议；0.2.1-rc.2 的官方 DeepSeek native 路由另行限制 |
 
-连接模式由适配器生成工具配置，禁止凭品牌或相似 API Base 猜测协议。CodeBuddy 工作目录配置读取限制在会话 FSRoot 内，避免项目配置覆盖显式选择或越界读取。受管 MCP 路径使用当前 `CONFIG_ROOT`，支持 worktree 临时配置目录；OpenCode 替换模型连接的原生配置时只继承当前目录的 MCP 与 instructions，不继承其他 provider、plugin 或账号配置。运行时逻辑通过 server 的 runtime bundle 发布。
+连接模式由适配器生成工具配置，禁止凭品牌或相似 API Base 猜测协议。CodeBuddy 工作目录配置读取限制在会话 FSRoot 内，避免项目配置覆盖显式选择或越界读取。受管 MCP 路径使用当前 `CONFIG_ROOT`；OpenCode 替换模型连接的原生配置时只继承当前目录的 MCP 与 instructions，不继承其他 provider、plugin 或账号配置。运行时逻辑通过 server 的 runtime bundle 发布。
 
 调研来源保留为适配依据，具体实现与验证范围由当前测试和 capability 声明决定：
 

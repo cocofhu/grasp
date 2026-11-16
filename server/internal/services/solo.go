@@ -376,7 +376,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			info.ContainerStatus = gv.ContainerStatus
 			info.Connected = gv.Connected
 			info.HasCodeServer = gv.HasCodeServer
-			info.Paused = row.Status == models.SoloStatusRunning && !s.sbx.soloSandboxLocal(sb.ID) &&
+			info.Paused = row.Status == models.SoloStatusRunning &&
 				(gv.ContainerStatus == "exited" || gv.ContainerStatus == "stopped")
 		}
 	}

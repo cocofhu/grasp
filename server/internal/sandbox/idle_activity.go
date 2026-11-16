@@ -11,9 +11,6 @@ import (
 // IdleActivity probes both agent turns and user processes inside the guest.
 // Failure is deliberately unknown (an error), never evidence of inactivity.
 func (s *Sandbox) IdleActivity(ctx context.Context) (bool, error) {
-	if s.IsLocal() {
-		return true, nil
-	}
 	cmd, err := newSafeCmd("python3", "-", s.workspaceDir())
 	if err != nil {
 		return false, err

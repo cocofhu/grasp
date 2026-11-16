@@ -68,14 +68,6 @@ func (s *SandboxService) invokeSoloPausedHook(id uint) {
 	}
 }
 
-// soloSandboxLocal reports whether a resident runs as a local worktree process.
-func (s *SandboxService) soloSandboxLocal(id uint) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	live := s.live[id]
-	return live != nil && live.sb != nil && live.sb.IsLocal()
-}
-
 func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	s.mu.Lock()
 	fn := s.soloOnDestroy

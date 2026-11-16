@@ -82,11 +82,33 @@ class MatrixContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as data:
             test = runner.E2E.__new__(runner.E2E)
             test.sessions, test.processes, test.handles = ['test-session'], [], []
-            test.args, test.data = SimpleNamespace(keep_data=True), Path(data)
+            test.args, test.data, test.gateway = SimpleNamespace(keep_data=True), Path(data), None
             def rejected(*_args, **_kwargs):
                 raise ConnectionError('synthetic unavailable server')
             test.request = rejected
             with self.assertRaisesRegex(AssertionError, 'session cleanup failed'):
+                test.close()
+
+    def test_leftover_gateway_sandboxes_are_deleted_or_reported(self):
+        with tempfile.TemporaryDirectory() as data:
+            test = runner.E2E.__new__(runner.E2E)
+            test.sessions, test.processes, test.handles = [], [], []
+            test.args, test.data = SimpleNamespace(keep_data=True), Path(data)
+            test.gateway, test.gateway_key = 'http://gateway', 'key'
+            deleted = []
+            def gateway(path, body=None, method=None, base=None, headers=None):
+                self.assertEqual((base, headers), ('http://gateway', {'Authorization': 'Bearer key'}))
+                if method == 'DELETE':
+                    deleted.append(path)
+                    return None
+                return {'sandboxes': [{'id': 'a'}, {'id': 'b'}]}
+            test.request = gateway
+            test.close()
+            self.assertEqual(deleted, ['/api/v1/sandboxes/a', '/api/v1/sandboxes/b'])
+            def unavailable(*_args, **_kwargs):
+                raise ConnectionError('synthetic unavailable gateway')
+            test.request = unavailable
+            with self.assertRaisesRegex(AssertionError, 'sandbox cleanup failed'):
                 test.close()
 
 
