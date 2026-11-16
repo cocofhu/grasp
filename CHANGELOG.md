@@ -4,7 +4,17 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 新增「云桌面」镜像，并统一 MCP 配置入口（破坏性变更）：
+  - 删除沙箱环境变量 `VNC_PREVIEW` 和 `BROWSER_MCP`，代码不再读取；初始化向导和设置里对应的两个开关一并移除，能力接口去掉 `preview.enableEnv`。沙箱现在始终启动预览栈（Xvfb + Chromium + x11vnc + websockify），每个沙箱常驻内存约增加 460 MiB（实测 PSS：Chromium 360、Xvfb 61、websockify 30、x11vnc 13），与直连预览共存。
+  - 所有 MCP 只通过 Agent 的 MCP 配置生效：共享 Agent 为底，单个 Agent 可同名覆盖。新工作区初始化时，共享 Agent 默认带浏览器 MCP（`chrome-devtools`）。**已有工作区不会自动迁移**：升级后请在共享 Agent 的 MCP 页签点「快捷添加 → 浏览器」，否则 Agent 不再有浏览器工具。
+  - MCP 页签新增快捷添加：浏览器、桌面控制、Blender、产物存储。
+  - 新增桌面镜像 `ghcr.io/cocofhu/universal-sandbox:<版本>-desktop`（滚动 tag `desktop`）：在默认镜像上叠加 Openbox 桌面、底部 Dock、启动台、中文输入法，以及 Blender、GIMP、Inkscape、Kdenlive、FreeCAD、KiCad、QGIS、Godot、draw.io、3D Slicer 等应用。默认镜像不变。桌面镜像的控制台入口显示为「电脑」，状态条显示当前由谁控制、Agent 是否在操作。桌面预览栈常驻内存约 680 MiB（实测 PSS，不含打开的应用），建议沙箱规格不低于 4 vCPU / 8 GiB 内存 / 30 GiB 磁盘。
+  - 桌面 MCP（截图、窗口与应用列表、点击、输入、按键、启动应用）和 Blender 官方 MCP 需在 MCP 页签快捷添加，不会自动注册。
+  - 用户在「电脑」里接管画面时，Agent 的桌面键鼠操作会被拒绝并提示「用户正在控制」，截图与列表照常可用；归还、离开页面或 30 秒未续期后自动交还 Agent。Blender MCP 不受影响。只有登录且有权访问该沙箱的用户可以接管，公开分享链接不能。
+  - E2B：`prepare-template.py --desktop` 可构建并校验桌面模板，`gateway.example.yaml` 增加桌面模板示例，部署文档附验收清单。
+
 - 移除 worktree 部署镜像和本地执行模式（破坏性变更）：不再发布 `ghcr.io/cocofhu/grasp-worktree`，`GRASP_EXECUTION_MODE`、`GRASP_WORKTREE_ROOT`、`GRASP_WORKTREE_BACKEND` 不再生效，Agent 只在沙箱中运行。设置接口去掉 `execution_mode`，设置页去掉「执行方式」。使用 worktree 镜像的部署需改用 `ghcr.io/cocofhu/grasp` 并配置沙箱网关；`server.mcp_advertise` 默认值统一为 `http://host.docker.internal:<port>`。
+
 
 - Solo 会话里 Agent 提出的选择题和表单改为与工作流对话相同的卡片：一次一题、带进度和「上一题 / 下一个」、整行选项、「采用推荐」，不再把所有题目挤成一排小标签。与工作流一样，「其他」需要勾选后填写的内容才会随答案发送。
 
