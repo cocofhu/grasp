@@ -146,8 +146,6 @@ RUN set -eu; \
 #   - mongosh / mongodb-database-tools：
 #       true → 清华 MongoDB apt + [trusted=yes]（国内规避官方 CDN / pgp SSL）
 #       false → repo.mongodb.org + server-8.0.asc signed-by（海外 CI 可达）
-#   - mongocli：apt 源里没有，走 fastdl 强重试下载（github 在国内会挂，fastdl 可达）。
-ENV MONGOCLI_VERSION=1.30.0
 RUN set -eu; \
     if [ "$USE_CN_MIRROR" = "true" ]; then \
       echo "deb [trusted=yes] https://mirrors.tuna.tsinghua.edu.cn/mongodb/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
@@ -165,14 +163,7 @@ RUN set -eu; \
     done; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*; \
-    command -v mongosh; command -v mongodump; \
-    curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 300 \
-      "https://fastdl.mongodb.org/mongocli/mongocli_${MONGOCLI_VERSION}_linux_x86_64.tar.gz" -o /tmp/mongocli.tgz; \
-    tar -C /usr/local -xzf /tmp/mongocli.tgz; \
-    mv "/usr/local/mongocli_${MONGOCLI_VERSION}_linux_x86_64" /usr/local/mongocli; \
-    rm -f /tmp/mongocli.tgz; \
-    /usr/local/mongocli/bin/mongocli --version
-ENV PATH=$PATH:/usr/local/mongocli/bin
+    command -v mongosh; command -v mongodump
 
 # Agent CLI 运行路径（cursor-agent 等下载型 CLI 装到 /root/.local/bin）。PATH 提前声明，
 # 便于 Cursor Server / SSH 等非 entrypoint 进程也能找到命令。具体 CLI 由末尾的 agent 安装层
@@ -286,7 +277,7 @@ RUN { \
       echo 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64'; \
       echo 'export GOPATH=/root/go'; \
       echo 'export GOPROXY=https://goproxy.cn,direct'; \
-      echo 'for p in /usr/local/go/bin /root/go/bin /usr/local/mongocli/bin $JAVA_HOME/bin; do'; \
+      echo 'for p in /usr/local/go/bin /root/go/bin $JAVA_HOME/bin; do'; \
       echo '  case ":$PATH:" in *:"$p":*) ;; *) export PATH="$PATH:$p" ;; esac'; \
       echo 'done'; \
     } > /etc/profile.d/devtools-path.sh && \
