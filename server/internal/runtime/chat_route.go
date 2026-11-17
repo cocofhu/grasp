@@ -133,7 +133,7 @@ func (c *acpProvider) alignVisitRoute(ctx context.Context, req NodeReq, sess *re
 		if err := c.restoreDefaultRoute(ctx, req, sess); err != nil {
 			return "", err
 		}
-		if err := c.alignChatSettings(ctx, sess, "", ""); err != nil {
+		if err := c.alignChatSettings(ctx, sess, "", "", false); err != nil {
 			return "", err
 		}
 		c.stampRouteExecution(sess, nil)
@@ -202,7 +202,7 @@ func (c *acpProvider) applyChatRoute(ctx context.Context, req NodeReq, sess *rea
 			sess.routeConfigurationID = wantID
 		}
 	}
-	return c.alignChatSettings(ctx, sess, route.ModelID, route.ReasoningEffort)
+	return c.alignChatSettings(ctx, sess, route.ModelID, route.ReasoningEffort, route.FastMode)
 }
 
 func (c *acpProvider) rollbackChatRoute(ctx context.Context, req NodeReq, sess *reactSession) error {
@@ -212,7 +212,7 @@ func (c *acpProvider) rollbackChatRoute(ctx context.Context, req NodeReq, sess *
 			return err
 		}
 		c.stampRouteExecution(sess, nil)
-		return c.alignChatSettings(ctx, sess, "", "")
+		return c.alignChatSettings(ctx, sess, "", "", false)
 	}
 	if err := c.applyChatRoute(ctx, req, sess, applied); err != nil {
 		return err
@@ -226,14 +226,14 @@ func (c *acpProvider) resetLiveChatModel(ctx context.Context, sb *sandbox.Sandbo
 		return nil
 	}
 	sess := &reactSession{sb: sb, acp: acp}
-	if err := c.alignChatSettings(ctx, sess, "", ""); err != nil {
+	if err := c.alignChatSettings(ctx, sess, "", "", false); err != nil {
 		return err
 	}
 	c.stampRouteExecution(sess, nil)
 	return nil
 }
 
-func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession, model, effort string) error {
+func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession, model, effort string, fastMode ...bool) error {
 	if sess == nil || sess.sb == nil {
 		return fmt.Errorf("no sandbox")
 	}
@@ -249,21 +249,27 @@ func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession,
 		// fail so a shared sandbox cannot keep a chat-selected model.
 		return err
 	}
-	if chatSettingsMatch(cur, model, effort) {
+	wantFast := len(fastMode) > 0 && fastMode[0]
+	if wantFast && cur.FastMode == nil {
+		return fmt.Errorf("runtime does not support Fast mode")
+	}
+	if chatSettingsMatch(cur, model, effort, wantFast) {
 		return nil
 	}
-	if err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort); err != nil {
+	if err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantFast); err != nil {
 		return err
 	}
 	return nil
 }
 
-func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort string) bool {
+func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort string, fastMode ...bool) bool {
 	gotEffort := ""
 	if cur.ReasoningEffort != nil {
 		gotEffort = strings.TrimSpace(*cur.ReasoningEffort)
 	}
-	return strings.TrimSpace(cur.Selected) == strings.TrimSpace(model) && gotEffort == strings.TrimSpace(effort)
+	wantFast := len(fastMode) > 0 && fastMode[0]
+	gotFast := cur.FastMode != nil && *cur.FastMode
+	return strings.TrimSpace(cur.Selected) == strings.TrimSpace(model) && gotEffort == strings.TrimSpace(effort) && gotFast == wantFast
 }
 
 func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *reactSession, want sandbox.Spec) error {
@@ -320,6 +326,7 @@ func (c *acpProvider) stampRouteExecution(sess *reactSession, route *ChatRoute) 
 	if route == nil || !route.Set {
 		exec.ModelID = strings.TrimSpace(sess.acp.BridgeModel())
 		exec.ReasoningEffort = ""
+		exec.FastMode = false
 	} else {
 		model := strings.TrimSpace(route.ModelID)
 		if model == "" {
@@ -327,6 +334,7 @@ func (c *acpProvider) stampRouteExecution(sess *reactSession, route *ChatRoute) 
 		}
 		exec.ModelID = model
 		exec.ReasoningEffort = strings.TrimSpace(route.ReasoningEffort)
+		exec.FastMode = route.FastMode
 		if id := strings.TrimSpace(route.ConfigurationID); id != "" {
 			exec.ConfigurationID = id
 		}

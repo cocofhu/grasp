@@ -41,6 +41,7 @@ export function useSoloLauncher() {
   const branches = ref<Record<string, string>>({})
   const initialModelId = ref('')
   const reasoningEffort = ref('')
+  const fastMode = ref(false)
   const loading = ref(false)
   const creating = ref(false)
   const error = ref('')
@@ -58,10 +59,11 @@ export function useSoloLauncher() {
   const canStart = computed(() => !!agent.value && !creating.value)
 
   watch(agentName, (v) => soloPrefs.setLastAgent(v))
-  watch(agentName, () => { initialModelId.value = ''; reasoningEffort.value = '' })
+  watch(agentName, () => { initialModelId.value = ''; reasoningEffort.value = ''; fastMode.value = false })
   watch([initialModelId, modelChoices], ([modelId, choices]) => {
     const selected = modelId ? choices.find(choice => choice.id === modelId) : choices[0]
     const listed = listedEfforts(selected?.efforts)
+    if (selected && !selected.fastModeSupported) fastMode.value = false
     if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
       const next = listed.at(-1) || ''
       reasoningEffort.value = next
@@ -192,6 +194,7 @@ export function useSoloLauncher() {
         repos: soloCreateChoices(projectIds.value, branches.value),
         ...(initialModelId.value ? { initialModelId: parseModelRoute(initialModelId.value).modelId, ...(parseModelRoute(initialModelId.value).configurationId ? { initialConfigurationId: parseModelRoute(initialModelId.value).configurationId } : {}) } : {}),
         ...(reasoningEffort.value ? { reasoningEffort: reasoningEffort.value } : {}),
+        ...(fastMode.value && effective?.fastModeSupported ? { fastMode: true } : {}),
         title: title.trim() || undefined,
         text: text.trim() || undefined,
         images: images.length ? images : undefined,
@@ -222,6 +225,7 @@ export function useSoloLauncher() {
     branches,
     initialModelId,
     reasoningEffort,
+    fastMode,
     modelChoices,
     agent,
     loading,

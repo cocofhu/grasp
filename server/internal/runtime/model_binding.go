@@ -122,6 +122,7 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		Vendor            string   `json:"vendor,omitempty"`
 		ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
 		ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
+		FastModeSupported bool     `json:"fastModeSupported,omitempty"`
 	}
 	modelItem := func(id string) item {
 		id = strings.TrimSpace(id)
@@ -129,7 +130,7 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		if resolved.Backend == "opencode" {
 			efforts = modelrouting.SessionEffortChoices(efforts, resolved.Binding.ToolSettings.ModelEfforts[id])
 		}
-		value := item{ID: id, Vendor: vendor, ReasoningEfforts: efforts}
+		value := item{ID: id, Vendor: vendor, ReasoningEfforts: efforts, FastModeSupported: modelrouting.FastModeSupported(resolved.Backend, id, resolved.Connection)}
 		if resolved.Connection != nil && !modelrouting.FixedEffortBinding(resolved.Backend, resolved.Connection) {
 			for _, model := range resolved.Connection.Models {
 				if model.ID == id && model.Capabilities.Reasoning != nil && !*model.Capabilities.Reasoning {
@@ -173,7 +174,7 @@ func ModelRoutingEnvKeys() []string {
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
 		"KIMI_CODE_API_KEY", "ACP_KIMI_CODE_API_KEY",
-		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
+		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvModelConfigurationID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, EnvACPBridgeFastMode, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR",

@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { configuredModelChoices } from './configuredModels'
 
 describe('configuredModelChoices', () => {
+  it('offers Fast only for an explicitly declared official Codex model', () => {
+    const input = {
+      backend: 'codex', catalogReady: true,
+      cliModels: [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', fastModeSupported: true }],
+    }
+    const platform = configuredModelChoices({ ...input, binding: { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['gpt-future'] } })
+    expect(platform.map(model => !!model.fastModeSupported)).toEqual([true, false])
+    const connection = configuredModelChoices({ ...input, binding: { kind: 'connection', connectionId: 'api', modelId: 'gpt-6.2-sol' } })
+    expect(connection[0]?.fastModeSupported).not.toBe(true)
+    const otherTool = configuredModelChoices({ ...input, backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-login', modelId: 'gpt-6.2-sol' } })
+    expect(otherTool[0]?.fastModeSupported).not.toBe(true)
+  })
+
   it('uses real model names instead of the configuration name while preserving upstream IDs', () => {
     const choices = configuredModelChoices({
       binding: { kind: 'connection', connectionId: 'kimi-account', modelId: 'kimi-k3.1-pro', auxiliaryModelIds: ['kimi-k2.5', 'kimi-k3.1-pro'] },

@@ -66,10 +66,13 @@ type OpenOptions struct {
 	// ReasoningEffortSet distinguishes an explicit tool-default reset from
 	// callers that still follow the legacy process environment.
 	ReasoningEffortSet bool
-	McpServers         json.RawMessage
-	ResumeSessionID    string // one-shot resume pointer; empty for a fresh session
-	CustomArgs         []string
-	AutoPermission     bool
+	FastMode           bool
+	// FastModeSet makes an explicit Standard reset override inherited CLI config.
+	FastModeSet     bool
+	McpServers      json.RawMessage
+	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
+	CustomArgs      []string
+	AutoPermission  bool
 }
 
 // Model is one entry of a provider's model catalog.

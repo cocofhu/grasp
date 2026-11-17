@@ -93,6 +93,35 @@ func TestArgsReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestFastModeIsAnIndependentSessionTierAndExplicitOffOverridesDefaults(t *testing.T) {
+	t.Setenv(envFastMode, "true")
+	t.Setenv(envReasoningEffort, "low")
+	c := codec{}
+	opts := provider.OpenOptions{ReasoningEffort: "ultra", ReasoningEffortSet: true, FastMode: true, FastModeSet: true,
+		CustomArgs: []string{"-c", "service_tier=default", "-c", "features.fast_mode=false"}}
+	args := strings.Join(c.Args(opts, "hello", "resume-id"), " ")
+	if !strings.Contains(args, "model_reasoning_effort=ultra") || !strings.HasSuffix(args, "-c features.fast_mode=true -c service_tier=fast hello") {
+		t.Fatalf("fast tier did not override custom defaults independently of effort: %s", args)
+	}
+	opts.FastMode = false
+	args = strings.Join(c.Args(opts, "hello", ""), " ")
+	if !strings.HasSuffix(args, "-c model_reasoning_effort=ultra -c service_tier=default hello") || strings.Contains(args, "service_tier=fast") {
+		t.Fatalf("explicit Standard reset inherited Fast or changed effort: %s", args)
+	}
+	opts = provider.OpenOptions{}
+	if args = strings.Join(c.Args(opts, "hello", ""), " "); !strings.Contains(args, "service_tier=fast") {
+		t.Fatalf("legacy Fast environment was ignored: %s", args)
+	}
+	t.Setenv(envFastMode, "false")
+	if args = strings.Join(c.Args(opts, "hello", ""), " "); !strings.Contains(args, "service_tier=default") {
+		t.Fatalf("legacy explicit Standard environment was ignored: %s", args)
+	}
+	t.Setenv(envFastMode, "")
+	if args = strings.Join(c.Args(opts, "hello", ""), " "); strings.Contains(args, "service_tier") {
+		t.Fatalf("an unset legacy caller changed CLI defaults: %s", args)
+	}
+}
+
 func TestParseThreadEvents(t *testing.T) {
 	var c codec
 	sid := c.ParseLine([]byte(`{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}`))

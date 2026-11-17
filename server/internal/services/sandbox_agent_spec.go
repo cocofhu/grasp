@@ -143,6 +143,12 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 			delete(env, runtime.EnvACPBridgeReasoningEffort)
 		}
 	}
+	if extra.InitialChatFastMode != nil {
+		env[runtime.EnvACPBridgeFastMode] = "false"
+		if *extra.InitialChatFastMode {
+			env[runtime.EnvACPBridgeFastMode] = "true"
+		}
+	}
 	track.mark(env, EnvSourceSystem)
 	if extra.OnEnv != nil {
 		extra.OnEnv(track.sources)

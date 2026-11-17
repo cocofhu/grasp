@@ -15,6 +15,7 @@ type visitModelBody struct {
 	ConfigurationID *string `json:"configurationId"`
 	ModelID         *string `json:"modelId"`
 	ReasoningEffort *string `json:"reasoningEffort"`
+	FastMode        *bool   `json:"fastMode"`
 }
 
 // GetVisitModel handles GET /api/runs/:id/nodes/:nodeId/model?iteration=.
@@ -57,7 +58,7 @@ func (h *Handlers) SetVisitModel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Agent 不存在", "code": "agent_not_found"})
 		return
 	}
-	choice, err := services.SetVisitModel(h.Runs.DB(), agent, runID, nodeID, body.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
+	choice, err := services.SetVisitModel(h.Runs.DB(), agent, runID, nodeID, body.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort, body.FastMode)
 	if err != nil {
 		writeSoloErr(c, err)
 		return

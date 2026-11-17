@@ -9,6 +9,9 @@ func TestReasoningEffortsRespectAdapterAndExactMetadata(t *testing.T) {
 	no := false
 	connection := &Connection{Models: []Model{
 		{ID: "kimi", ReasoningEfforts: []string{" quiet ", "deep", "deep", ""}},
+		{ID: "gpt-6.2-sol"},
+		{ID: "gpt-6.2-astra"},
+		{ID: "gpt-6.1-terra"},
 		{ID: "gpt-6.1-sol"},
 		{ID: "gpt-6-luna", Capabilities: ModelCapabilities{Reasoning: &no}, ReasoningEfforts: []string{"high"}},
 	}}
@@ -19,6 +22,12 @@ func TestReasoningEffortsRespectAdapterAndExactMetadata(t *testing.T) {
 	}{
 		{"deepseek_harness", "kimi", connection, []string{"quiet", "deep"}},
 		{"codex", "kimi", connection, []string{"quiet", "deep"}},
+		{"codex", "gpt-6.2-sol", nil, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
+		{"codex", "gpt-6.2-astra", nil, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
+		{"codex", "gpt-6.1-terra", nil, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
+		{"codex", "gpt-6.2-sol", connection, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
+		{"codex", "gpt-6.2-astra", connection, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
+		{"codex", "gpt-6.1-terra", connection, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
 		{"codex", "gpt-6.1-sol", connection, []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
 		{"codex", "gpt-6-luna", nil, []string{"low", "medium", "high", "xhigh", "max"}},
 		{"codex", "gpt-6-luna", connection, nil},

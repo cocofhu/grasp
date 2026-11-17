@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -27,6 +28,7 @@ func (c *acpProvider) PrepareSandboxRecovery(req NodeReq) (sandbox.Spec, error) 
 	if route := req.ChatRoute; route != nil && route.Set {
 		spec.Env[EnvInitialChatModel] = route.ModelID
 		spec.Env[EnvACPBridgeReasoningEffort] = route.ReasoningEffort
+		spec.Env[EnvACPBridgeFastMode] = strconv.FormatBool(route.FastMode)
 	}
 	return spec, nil
 }

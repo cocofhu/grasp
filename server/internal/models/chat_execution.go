@@ -10,6 +10,7 @@ type ChatExecution struct {
 	ConfigurationID string    `json:"configurationId,omitempty"`
 	ModelID         string    `json:"modelId,omitempty"`
 	ReasoningEffort string    `json:"reasoningEffort,omitempty"`
+	FastMode        bool      `json:"fastMode,omitempty"`
 	StartedAt       time.Time `json:"startedAt"`
 }
 

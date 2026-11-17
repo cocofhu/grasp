@@ -12,16 +12,17 @@ import (
 // SSH) lack the bridge's environment, and re-prime rewrites only the runtime
 // env file, so that file replaces the session's own route values.
 const readRouteEnvScript = `f="${GRASP_RUNTIME_RUN_DIR:-/run/grasp-runtime}/env"
-if [ -r "$f" ]; then unset ` + EnvACPBridgeModel + ` ` + EnvModelConfigurationID + ` ` + EnvACPBridgeReasoningEffort + `; . "$f" >/dev/null 2>&1; fi
+if [ -r "$f" ]; then unset ` + EnvACPBridgeModel + ` ` + EnvModelConfigurationID + ` ` + EnvACPBridgeReasoningEffort + ` ` + EnvACPBridgeFastMode + `; . "$f" >/dev/null 2>&1; fi
 printf '` + EnvACPBridgeModel + `=%s\n' "${` + EnvACPBridgeModel + `:-}"
 printf '` + EnvModelConfigurationID + `=%s\n' "${` + EnvModelConfigurationID + `:-}"
 printf '` + EnvACPBridgeReasoningEffort + `=%s\n' "${` + EnvACPBridgeReasoningEffort + `:-}"
+printf '` + EnvACPBridgeFastMode + `=%s\n' "${` + EnvACPBridgeFastMode + `:-}"
 `
 
 // readSandboxRouteEnv recovers the model route a running sandbox was primed
 // with. Unreadable values stay empty, which means "not reported".
 func readSandboxRouteEnv(ctx context.Context, sb *sandbox.Sandbox) map[string]string {
-	out := map[string]string{EnvACPBridgeModel: "", EnvModelConfigurationID: "", EnvACPBridgeReasoningEffort: ""}
+	out := map[string]string{EnvACPBridgeModel: "", EnvModelConfigurationID: "", EnvACPBridgeReasoningEffort: "", EnvACPBridgeFastMode: ""}
 	raw, _ := sb.ExecScript(ctx, 10*time.Second, "bash", readRouteEnvScript)
 	return parseRouteEnv(raw, out)
 }

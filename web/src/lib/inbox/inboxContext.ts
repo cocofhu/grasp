@@ -52,6 +52,8 @@ export type ClarifyInboxContext = {
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
+    fastMode?: boolean
+    fastModeSupported?: boolean
     modelNotice?: string
   }
 }
@@ -118,6 +120,8 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
               currentModelId: ctx.clarify.currentModelId,
               currentModelSet: !!ctx.clarify.currentModelSet,
               reasoningEffort: ctx.clarify.reasoningEffort,
+              ...(ctx.clarify.fastMode === undefined ? {} : { fastMode: ctx.clarify.fastMode }),
+              ...(ctx.clarify.fastModeSupported === undefined ? {} : { fastModeSupported: ctx.clarify.fastModeSupported }),
             }
           : {}),
         ...(ctx.clarify.modelNotice ? { modelNotice: ctx.clarify.modelNotice } : {}),

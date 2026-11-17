@@ -16,6 +16,7 @@ type LaunchChoice struct {
 	ConfigurationID string
 	ModelID         string
 	ReasoningEffort string
+	FastMode        bool
 	Repos           *[]models.RepoChoice
 }
 
@@ -48,7 +49,10 @@ func (e *Engine) normalizeLaunchModel(graph *models.Graph, launch LaunchChoice) 
 	if err != nil {
 		return LaunchChoice{}, err
 	}
-	return LaunchChoice{Set: true, ConfigurationID: cfg, ModelID: modelID, ReasoningEffort: effort}, nil
+	if err := services.AcceptFastMode(e.db, cfg, modelID, launch.FastMode); err != nil {
+		return LaunchChoice{}, err
+	}
+	return LaunchChoice{Set: true, ConfigurationID: cfg, ModelID: modelID, ReasoningEffort: effort, FastMode: launch.FastMode}, nil
 }
 
 // firstClarifySuccessNode is the clarify Agent on the input node's success
@@ -119,6 +123,7 @@ func (e *Engine) applyVisitLaunchModel(conv *models.ReactConversation, run *mode
 			conv.CurrentModelID = prev.CurrentModelID
 			conv.CurrentModelSet = true
 			conv.CurrentReasoningEffort = prev.CurrentReasoningEffort
+			conv.CurrentFastMode = prev.CurrentFastMode
 		}
 		return
 	}
@@ -133,6 +138,7 @@ func (e *Engine) applyVisitLaunchModel(conv *models.ReactConversation, run *mode
 	conv.CurrentModelID = run.LaunchModelID
 	conv.CurrentModelSet = true
 	conv.CurrentReasoningEffort = run.LaunchReasoningEffort
+	conv.CurrentFastMode = run.LaunchFastMode
 	conv.ModelNotice = ""
 }
 

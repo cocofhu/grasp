@@ -24,14 +24,16 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 		}
 		_, reasoningEfforts := bridge.ReasoningOptions(bridge.EffectiveModel())
 		c.JSON(http.StatusOK, gin.H{
-			"models":           models,
-			"configured":       configured,
-			"current":          bridge.EffectiveModel(),
-			"selected":         bridge.Model(),
-			"default":          chats.DefaultModel(),
-			"fixed":            false,
-			"reasoningEffort":  bridge.ReasoningEffort(),
-			"reasoningEfforts": reasoningEfforts,
+			"models":            models,
+			"configured":        configured,
+			"current":           bridge.EffectiveModel(),
+			"selected":          bridge.Model(),
+			"default":           chats.DefaultModel(),
+			"fixed":             false,
+			"reasoningEffort":   bridge.ReasoningEffort(),
+			"reasoningEfforts":  reasoningEfforts,
+			"fastMode":          bridge.FastMode(),
+			"fastModeSupported": service.FastModeSupported(bridge.EffectiveModel()),
 		})
 	}
 }
@@ -46,6 +48,7 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		var body struct {
 			Model           *string `json:"model"`
 			ReasoningEffort *string `json:"reasoningEffort"`
+			FastMode        *bool   `json:"fastMode"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
@@ -73,7 +76,17 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		} else if !bridge.ReasoningEffortSelectable(effectiveModel, effort) {
 			effort = ""
 		}
-		sess, err := bridge.SwitchModelSettings(model, effort)
+		fast := bridge.FastMode()
+		if body.FastMode != nil {
+			fast = *body.FastMode
+			if fast && !service.FastModeSupported(effectiveModel) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不支持 Fast 模式", "code": "fast_mode_unavailable"})
+				return
+			}
+		} else if !service.FastModeSupported(effectiveModel) {
+			fast = false
+		}
+		sess, err := bridge.SwitchModelSettings(model, effort, fast)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -81,10 +94,12 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		bridge.Broadcast(bridge.ConnectedPayload(sess))
 		bridge.BroadcastQueueState()
 		c.JSON(http.StatusOK, gin.H{
-			"model":           bridge.EffectiveModel(),
-			"selected":        bridge.Model(),
-			"sessionId":       sess.SessionID(),
-			"reasoningEffort": bridge.ReasoningEffort(),
+			"model":             bridge.EffectiveModel(),
+			"selected":          bridge.Model(),
+			"sessionId":         sess.SessionID(),
+			"reasoningEffort":   bridge.ReasoningEffort(),
+			"fastMode":          bridge.FastMode(),
+			"fastModeSupported": service.FastModeSupported(bridge.EffectiveModel()),
 		})
 	}
 }

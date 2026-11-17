@@ -344,8 +344,10 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 		}
 		conv.Takeover, conv.Done = true, false
 		conv.CurrentConfigurationID, conv.CurrentModelID, conv.CurrentReasoningEffort = "", "", ""
+		conv.CurrentFastMode = false
 		conv.CurrentModelSet = false
 		conv.AppliedConfigurationID, conv.AppliedModelID, conv.AppliedReasoningEffort = "", "", ""
+		conv.AppliedFastMode = false
 		conv.AppliedModelSet = false
 		conv.ModelNotice = ""
 		logDB(e.db.Save(&conv), runID, "reopen takeover conversation")

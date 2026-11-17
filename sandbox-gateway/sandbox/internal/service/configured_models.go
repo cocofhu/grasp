@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -14,11 +15,14 @@ import (
 
 const envConfiguredModels = "GRASP_CONFIGURED_MODELS"
 
+var ErrFastModeUnavailable = errors.New("fast mode unavailable for this model")
+
 type configuredModelSpec struct {
 	ID                string   `json:"id"`
 	Vendor            string   `json:"vendor,omitempty"`
 	ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
 	ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
+	FastModeSupported bool     `json:"fastModeSupported,omitempty"`
 }
 
 var (
@@ -103,6 +107,25 @@ func ReasoningEffortSelectable(model, effort string) bool {
 	return false
 }
 
+// FastModeSupported accepts only server-declared capabilities for Codex's
+// separate service tier. Other adapters must never inherit this setting.
+func FastModeSupported(model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" || agents.Current().Name() != provider.Codex {
+		return false
+	}
+	spec, configured, err := parseConfiguredModels()
+	if err != nil || !configured {
+		return false
+	}
+	for _, item := range spec {
+		if strings.TrimSpace(item.ID) == model {
+			return item.FastModeSupported
+		}
+	}
+	return false
+}
+
 func configuredReasoningOptions(model string) []string {
 	backend := agents.Current().Name()
 	if backend != provider.Codex && backend != provider.DeepSeekHarness && backend != provider.OpenCode && backend != provider.KimiCode {
@@ -177,6 +200,7 @@ func projectConfiguredModels(spec []configuredModelSpec, catalog []AgentModel, c
 	for _, item := range spec {
 		id := strings.TrimSpace(item.ID)
 		vendor := strings.TrimSpace(item.Vendor)
+		fastSupported := id != "" && item.FastModeSupported && agents.Current().Name() == provider.Codex
 		if item.ReasoningDisabled {
 			item.ReasoningEfforts = nil
 		}
@@ -192,10 +216,10 @@ func projectConfiguredModels(spec []configuredModelSpec, catalog []AgentModel, c
 			if strings.TrimSpace(known.Vendor) != "" {
 				vendor = known.Vendor
 			}
-			out = append(out, AgentModel{ID: id, Name: name, Vendor: vendor, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...)})
+			out = append(out, AgentModel{ID: id, Name: name, Vendor: vendor, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...), FastModeSupported: fastSupported})
 			continue
 		}
-		out = append(out, AgentModel{ID: id, Name: id, Vendor: vendor, Unavailable: catalogErr == nil && len(catalog) > 0, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...)})
+		out = append(out, AgentModel{ID: id, Name: id, Vendor: vendor, Unavailable: catalogErr == nil && len(catalog) > 0, ReasoningEfforts: append([]string(nil), item.ReasoningEfforts...), FastModeSupported: fastSupported})
 	}
 	return out
 }

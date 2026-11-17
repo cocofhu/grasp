@@ -17,7 +17,7 @@ func runRouteEnvScript(t *testing.T, env ...string) map[string]string {
 	if err != nil {
 		t.Fatalf("script: %v", err)
 	}
-	return parseRouteEnv(string(out), map[string]string{EnvACPBridgeModel: "", EnvModelConfigurationID: "", EnvACPBridgeReasoningEffort: ""})
+	return parseRouteEnv(string(out), map[string]string{EnvACPBridgeModel: "", EnvModelConfigurationID: "", EnvACPBridgeReasoningEffort: "", EnvACPBridgeFastMode: ""})
 }
 
 func TestReadRouteEnvPrefersRuntimeEnvFile(t *testing.T) {
@@ -30,18 +30,18 @@ func TestReadRouteEnvPrefersRuntimeEnvFile(t *testing.T) {
 	}
 	// An exec session without the bridge environment (E2B), or with the
 	// pre-re-prime container environment (Docker), must not hide the route.
-	got := runRouteEnvScript(t, "GRASP_RUNTIME_RUN_DIR="+dir, "ACP_BRIDGE_MODEL=stale-model", "ACP_BRIDGE_REASONING_EFFORT=high")
+	got := runRouteEnvScript(t, "GRASP_RUNTIME_RUN_DIR="+dir, "ACP_BRIDGE_MODEL=stale-model", "ACP_BRIDGE_REASONING_EFFORT=high", "ACP_BRIDGE_FAST_MODE=true")
 	if got[EnvACPBridgeModel] != "claude-opus-5-5-medium" || got[EnvModelConfigurationID] != "model-d620734c" {
 		t.Fatalf("route env = %#v", got)
 	}
-	if got[EnvACPBridgeReasoningEffort] != "" {
+	if got[EnvACPBridgeReasoningEffort] != "" || got[EnvACPBridgeFastMode] != "" {
 		t.Fatalf("a value cleared by re-prime must not fall back to the session: %#v", got)
 	}
 }
 
 func TestReadRouteEnvWithoutRuntimeEnvFile(t *testing.T) {
-	got := runRouteEnvScript(t, "GRASP_RUNTIME_RUN_DIR="+t.TempDir(), "ACP_BRIDGE_MODEL=env-model")
-	if got[EnvACPBridgeModel] != "env-model" || got[EnvModelConfigurationID] != "" || got[EnvACPBridgeReasoningEffort] != "" {
+	got := runRouteEnvScript(t, "GRASP_RUNTIME_RUN_DIR="+t.TempDir(), "ACP_BRIDGE_MODEL=env-model", "ACP_BRIDGE_FAST_MODE=true")
+	if got[EnvACPBridgeModel] != "env-model" || got[EnvModelConfigurationID] != "" || got[EnvACPBridgeReasoningEffort] != "" || got[EnvACPBridgeFastMode] != "true" {
 		t.Fatalf("route env = %#v", got)
 	}
 }

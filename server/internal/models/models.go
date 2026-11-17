@@ -184,6 +184,7 @@ type Run struct {
 	LaunchConfigurationID string       `json:"-"`
 	LaunchModelID         string       `json:"-"`
 	LaunchReasoningEffort string       `json:"-"`
+	LaunchFastMode        bool         `json:"-"`
 	Attempt               int          `json:"attempt"`
 	Progress              float64      `json:"progress"`
 	Branch                string       `json:"branch,omitempty"`
@@ -507,12 +508,14 @@ type ReactConversation struct {
 	CurrentModelID         string `json:"currentModelId,omitempty"`
 	CurrentModelSet        bool   `json:"currentModelSet,omitempty"`
 	CurrentReasoningEffort string `json:"reasoningEffort,omitempty"`
+	CurrentFastMode        bool   `json:"fastMode"`
 	// Applied* is the route last given to the sandbox chat. It is not part of
 	// the API. AppliedModelSet false means the sandbox still has the visit default.
 	AppliedConfigurationID string `json:"-"`
 	AppliedModelID         string `json:"-"`
 	AppliedModelSet        bool   `json:"-"`
 	AppliedReasoningEffort string `json:"-"`
+	AppliedFastMode        bool   `json:"-"`
 	// ModelNotice is a stable code shown after a switch is rolled back.
 	ModelNotice string `json:"modelNotice,omitempty"`
 }

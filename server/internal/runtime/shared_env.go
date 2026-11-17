@@ -4,6 +4,9 @@ package runtime
 // as model#variant. Tools that already negotiate an effort keep their own path.
 const EnvACPBridgeReasoningEffort = "ACP_BRIDGE_REASONING_EFFORT"
 
+// EnvACPBridgeFastMode selects the chat's independent Codex service tier.
+const EnvACPBridgeFastMode = "ACP_BRIDGE_FAST_MODE"
+
 // ModelIndependentEnv copies environment values excluding model routing/auth.
 // Model selections use explicit configuration references instead of environment values.
 func ModelIndependentEnv(env map[string]string) map[string]string {
@@ -13,6 +16,7 @@ func ModelIndependentEnv(env map[string]string) map[string]string {
 	}
 	ClearModelRoutingEnv(out)
 	delete(out, EnvACPBridgeReasoningEffort)
+	delete(out, EnvACPBridgeFastMode)
 	return out
 }
 

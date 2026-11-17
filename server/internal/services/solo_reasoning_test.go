@@ -371,7 +371,7 @@ func TestSoloEffortWaitsForTurnBoundaryAndCarriesHistory(t *testing.T) {
 	if got := aligner.snapshot(); !reflect.DeepEqual(got, [][2]string{{"aux", "ultra"}}) {
 		t.Fatalf("applied settings: %v", got)
 	}
-	if text := gate.snapshot()[1]; !strings.Contains(text, "推理强度已调整") || !strings.Contains(text, "[用户] keep this context") {
+	if text := gate.snapshot()[1]; !strings.Contains(text, "模型设置已调整") || !strings.Contains(text, "[用户] keep this context") {
 		t.Fatalf("effort change lost dialogue: %q", text)
 	}
 	row, _ := solo.Require(view.ID, "alice")

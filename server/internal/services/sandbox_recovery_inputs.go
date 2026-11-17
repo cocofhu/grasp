@@ -48,6 +48,7 @@ func (s *SandboxService) prepareRecoveryInputs(row *models.Sandbox) (sandbox.Spe
 		specs = s.soloPlatformSpecs(row)
 		extra.LaunchKind, extra.InitialChatModel = "solo", appliedChatModelID(&session)
 		extra.InitialChatReasoningEffort = &session.AppliedReasoningEffort
+		extra.InitialChatFastMode = &session.AppliedFastMode
 	case "test":
 		specs = s.buildTestSandboxSpecs(agent, s.mcpVars(row.RunID, row.Token))
 		extra.LaunchKind = "test"
@@ -114,7 +115,7 @@ func (s *SandboxService) prepareRunRecoveryInputs(row *models.Sandbox) (sandbox.
 		}
 		req.ChatRoute = &runtime.ChatRoute{Set: true, Backend: selected.AcpBackend,
 			ConfigurationID: selected.ModelBinding.ConfigurationID, ModelID: conversation.AppliedModelID,
-			ReasoningEffort: conversation.AppliedReasoningEffort}
+			ReasoningEffort: conversation.AppliedReasoningEffort, FastMode: conversation.AppliedFastMode}
 		req.AppliedRoute = req.ChatRoute
 	}
 	return s.runRecoveryPreparer.PrepareSandboxRecovery(req)

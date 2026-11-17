@@ -282,8 +282,8 @@ func (s *SoloService) buildTurnInput(sessionID string, q *soloTurn, refs []model
 			header = soloResumePreambleHeader
 		} else if row.SessionContextPending && !prep.switched && !row.ModelContextPending {
 			header = soloSessionResetPreambleHeader
-		} else if prep.switched && !row.ModelContextPending && row.CurrentReasoningEffort != row.AppliedReasoningEffort && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
-			header = soloReasoningPreambleHeader
+		} else if prep.switched && !row.ModelContextPending && (row.CurrentReasoningEffort != row.AppliedReasoningEffort || row.CurrentFastMode != row.AppliedFastMode) && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
+			header = soloSettingsPreambleHeader
 		}
 		var history []models.PromptImage
 		pre, history, in.err = s.contextPreambleChecked(sessionID, q.ID, header)
@@ -388,6 +388,6 @@ const (
 	// A model switch restarts only the coding agent. This header must not say
 	// the sandbox was recreated, the repository was cloned again, or uncommitted
 	// work was lost.
-	soloModelPreambleHeader     = "（系统提示）编码模型已更换。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
-	soloReasoningPreambleHeader = "（系统提示）推理强度已调整。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
+	soloModelPreambleHeader    = "（系统提示）编码模型已更换。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
+	soloSettingsPreambleHeader = "（系统提示）模型设置已调整。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
 )

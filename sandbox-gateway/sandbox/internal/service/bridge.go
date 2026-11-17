@@ -86,6 +86,7 @@ type Bridge struct {
 	model string
 	// reasoningEffort belongs to this chat; changing it never mutates process env.
 	reasoningEffort string
+	fastMode        bool
 
 	// 回合看门狗：连续 turnIdle 没有任何活动（输出事件、CPU、IO）或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
@@ -146,6 +147,7 @@ func NewBridge() *Bridge {
 		livenessBeat:    livenessHeartbeatEvery,
 		id:              DefaultChatID,
 		reasoningEffort: strings.TrimSpace(os.Getenv("ACP_BRIDGE_REASONING_EFFORT")),
+		fastMode:        strings.EqualFold(strings.TrimSpace(os.Getenv("ACP_BRIDGE_FAST_MODE")), "true"),
 		createdAt:       time.Now(),
 		permWait:        make(map[string]chan string),
 		clients:         make(map[*websocket.Conn]*wsClient),
@@ -179,6 +181,14 @@ func (b *Bridge) ReasoningEffort() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.reasoningEffort
+}
+
+// FastMode is scoped to this chat and requires the exact model's declaration.
+func (b *Bridge) FastMode() bool {
+	b.mu.Lock()
+	fast := b.fastMode
+	b.mu.Unlock()
+	return fast && FastModeSupported(b.EffectiveModel())
 }
 
 // ReasoningOptions uses the current DSH session's real advertisement only for

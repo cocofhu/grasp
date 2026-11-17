@@ -14,6 +14,7 @@ export interface ConfiguredModelChoice {
   unavailable: boolean
   /** Exact levels accepted by this model and its coding-tool adapter. */
   efforts?: string[]
+  fastModeSupported?: boolean
   configurationId?: string
   modelId?: string
   configurationName?: string
@@ -104,6 +105,7 @@ export function configuredModelChoices(input: {
       backend: !vendor,
       unavailable: input.catalogReady && !known,
       efforts,
+      ...(binding.kind === 'platform' && input.backend === 'codex' && cli?.id === id && cli.fastModeSupported === true ? { fastModeSupported: true } : {}),
     })
   }
   return choices

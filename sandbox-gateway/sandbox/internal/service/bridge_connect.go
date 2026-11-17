@@ -78,6 +78,8 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 	}
 	m["currentModel"] = curModel
 	m["reasoningEffort"] = b.ReasoningEffort()
+	m["fastMode"] = b.FastMode()
+	m["fastModeSupported"] = FastModeSupported(b.EffectiveModel())
 	m["chatId"] = b.id
 	// 协议已预留的可选 usage：仅当该会话上报用量时携带累计量，否则完全省略（帧不变）。
 	if p.ReportsUsage() {
@@ -245,6 +247,8 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		Model:              m,
 		ReasoningEffort:    b.ReasoningEffort(),
 		ReasoningEffortSet: true,
+		FastMode:           b.FastMode(),
+		FastModeSet:        true,
 		McpServers:         mcp,
 		AutoPermission:     autoPerm,
 	}, onEvent, perm)
@@ -367,17 +371,33 @@ func (b *Bridge) RestartAgent() (provider.Session, error) {
 
 // SwitchModelSettings updates model and effort as one operation. A rejected
 // restart restores both choices, and concurrent changes cannot interleave.
-func (b *Bridge) SwitchModelSettings(model, effort string) (provider.Session, error) {
+func (b *Bridge) SwitchModelSettings(model, effort string, fastMode ...bool) (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
+	effectiveModel := strings.TrimSpace(model)
+	if effectiveModel == "" && b.mgr != nil {
+		effectiveModel = b.mgr.DefaultModel()
+	}
+	if len(fastMode) > 0 && fastMode[0] && !FastModeSupported(effectiveModel) {
+		return nil, ErrFastModeUnavailable
+	}
 	b.mu.Lock()
-	previousModel, previousEffort := b.model, b.reasoningEffort
+	previousModel, previousEffort, previousFast := b.model, b.reasoningEffort, b.fastMode
 	b.model, b.reasoningEffort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	if len(fastMode) > 0 {
+		b.fastMode = fastMode[0]
+	}
 	b.mu.Unlock()
+	if !FastModeSupported(b.EffectiveModel()) {
+		b.mu.Lock()
+		b.fastMode = false
+		b.mu.Unlock()
+	}
 	session, err := b.restartAgentLocked()
 	if err != nil {
 		b.mu.Lock()
 		b.model, b.reasoningEffort = previousModel, previousEffort
+		b.fastMode = previousFast
 		b.mu.Unlock()
 	}
 	return session, err

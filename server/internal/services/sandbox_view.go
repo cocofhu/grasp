@@ -80,10 +80,13 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 // and retries on a later one.
 var ErrChatModelUnknown = errors.New("chat model unknown")
 
-func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint) (sandbox.ChatModelSettings, error) {
+func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint, chat ...string) (sandbox.ChatModelSettings, error) {
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return sandbox.ChatModelSettings{}, err
+	}
+	if len(chat) > 0 {
+		return sandbox.GetChatModelSettingsFor(ctx, host, port, password, chat[0])
 	}
 	return sandbox.GetChatModelSettings(ctx, host, port, password)
 }
@@ -114,7 +117,7 @@ func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model stri
 // AlignChatSettings changes model and effort as one unit at a turn boundary.
 // Older bundles continue to support model-only switches; they cannot silently
 // accept a requested reasoning effort that they do not expose.
-func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort string) (bool, error) {
+func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort string, fastMode ...bool) (bool, error) {
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return false, err
@@ -124,6 +127,11 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 		return false, fmt.Errorf("%w: %w", ErrChatModelUnknown, err)
 	}
 	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	fast := len(fastMode) > 0 && fastMode[0]
+	if fast && current.FastMode == nil {
+		return false, errors.New("sandbox does not expose Fast mode")
+	}
+	currentFast := current.FastMode != nil && *current.FastMode
 	if current.ReasoningEffort == nil {
 		if effort != "" {
 			return false, errors.New("sandbox does not expose reasoning effort")
@@ -136,10 +144,10 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 		}
 		return true, nil
 	}
-	if current.Selected == model && *current.ReasoningEffort == effort {
+	if current.Selected == model && *current.ReasoningEffort == effort && currentFast == fast {
 		return false, nil
 	}
-	if err := sandbox.SetChatModelSettings(ctx, host, port, password, model, effort); err != nil {
+	if err := sandbox.SetChatModelSettings(ctx, host, port, password, model, effort, fast); err != nil {
 		return false, err
 	}
 	return true, nil
