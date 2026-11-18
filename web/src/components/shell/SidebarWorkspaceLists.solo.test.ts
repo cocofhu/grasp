@@ -75,7 +75,7 @@ describe('sidebar 历史执行 lists ended Solo sessions', () => {
     expect(closed.classes()).toContain('workspace-recent-row')
     expect(closed.get('.workspace-list-title').text()).toBe('会话 closed')
     const cancelled = closed.get('[data-testid="sidebar-recent-ended"]')
-    expect(cancelled.element.tagName.toLowerCase()).toBe('svg')
+    expect(cancelled.attributes('data-icon')).toBe('stop')
     expect(cancelled.classes()).toContain('is-cancelled')
     expect(cancelled.attributes('title')).toBe('已取消')
 
