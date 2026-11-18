@@ -259,6 +259,7 @@ E2B_SANDBOX='' GRASP_MEMORY_CAP_RECLAIM="$TMP/reclaim" bash "$MEMCAP" once | gre
 rc=0; memcap bogus 2>/dev/null || rc=$?; [ "$rc" = 2 ] || fail "memory-cap usage exit=$rc"
 
 export E2B_SANDBOX=true GRASP_MEMORY_CAP_PROC="$TMP/proc" GRASP_MEMORY_CAP_RECLAIM="$TMP/reclaim" GRASP_MEMORY_CAP_INTERVAL=1
+export GRASP_SERVICES_SYSTEMD=0
 svc start memory-cap
 [ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: running" ] || fail "memory-cap not running"
 MPID1="$(cat "$TMP/run/memory-cap.pid")"
@@ -267,7 +268,39 @@ MPID2="$(cat "$TMP/run/memory-cap.pid")"
 [ "$MPID2" != "$MPID1" ] && ! kill -0 "$MPID1" 2>/dev/null || fail "memory-cap restart kept the old process"
 svc stop memory-cap
 ! kill -0 "$MPID2" 2>/dev/null || fail "memory-cap still alive after stop"
-unset E2B_SANDBOX GRASP_MEMORY_CAP_PROC GRASP_MEMORY_CAP_RECLAIM GRASP_MEMORY_CAP_INTERVAL
+
+# systemd guests: a transient unit that restarts and is shielded from the OOM killer.
+mkdir -p "$TMP/fakebin"
+cat >"$TMP/fakebin/systemd-run" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$@" >"$FAKE_SYSTEMD/run.args"
+echo active >"$FAKE_SYSTEMD/state"
+EOF
+cat >"$TMP/fakebin/systemctl" <<'EOF'
+#!/bin/bash
+echo "$*" >>"$FAKE_SYSTEMD/systemctl.log"
+case "$1" in
+  is-active) [ "$(cat "$FAKE_SYSTEMD/state" 2>/dev/null)" = active ] ;;
+  stop) echo inactive >"$FAKE_SYSTEMD/state" ;;
+esac
+EOF
+chmod +x "$TMP/fakebin/systemd-run" "$TMP/fakebin/systemctl"
+mkdir -p "$TMP/systemd"
+export GRASP_SERVICES_SYSTEMD=1 FAKE_SYSTEMD="$TMP/systemd" PATH="$TMP/fakebin:$PATH"
+svc start memory-cap
+for want in --unit=grasp-memory-cap Restart=always OOMScoreAdjust=-1000 E2B_SANDBOX=true GRASP_MEMORY_CAP_INTERVAL=1 "$SCRIPTS/memory-cap.sh" run; do
+  grep -qxF -- "$want" "$TMP/systemd/run.args" || fail "systemd-run missing $want"
+done
+[ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: running" ] || fail "systemd memory-cap status"
+svc start memory-cap
+grep -q "memory-cap already running" "$TMP/services.out" || fail "systemd start must be a no-op while active"
+svc restart memory-cap
+grep -q "^stop grasp-memory-cap" "$TMP/systemd/systemctl.log" || fail "systemd restart must stop the unit"
+[ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: running" ] || fail "systemd restart must start the unit"
+svc stop memory-cap
+[ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: stopped" ] || fail "systemd memory-cap stop"
+PATH="${PATH#"$TMP/fakebin:"}"
+unset E2B_SANDBOX GRASP_MEMORY_CAP_PROC GRASP_MEMORY_CAP_RECLAIM GRASP_MEMORY_CAP_INTERVAL GRASP_SERVICES_SYSTEMD FAKE_SYSTEMD
 pass "memory-cap.sh"
 
 echo "test-runtime-bootstrap: all passed"

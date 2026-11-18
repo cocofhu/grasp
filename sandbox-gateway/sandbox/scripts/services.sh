@@ -145,10 +145,51 @@ stop_preview_inject() {
   rm -f "$RUN_DIR/preview-inject.pid"
 }
 
+MEMCAP_UNIT=grasp-memory-cap
+
+# E2B guests boot systemd: it restarts memory-cap if anything kills it and
+# keeps the OOM killer off it. GRASP_SERVICES_SYSTEMD=0/1 forces the choice.
+memcap_systemd() {
+  case "${GRASP_SERVICES_SYSTEMD:-}" in
+    0) return 1 ;;
+    1) return 0 ;;
+  esac
+  [ "$(cat /proc/1/comm 2>/dev/null)" = systemd ] && command -v systemd-run >/dev/null 2>&1
+}
+
+# The unit outlives this bundle version: point it at current/, whose old
+# version directories are pruned by later runtime updates.
+memcap_exec() {
+  local current="${GRASP_RUNTIME_ROOT:-/opt/grasp-runtime}/current/scripts/memory-cap.sh"
+  if [ "$(readlink -f "$current" 2>/dev/null)" = "$SCRIPT_DIR/memory-cap.sh" ]; then
+    echo "$current"
+  else
+    echo "$SCRIPT_DIR/memory-cap.sh"
+  fi
+}
+
 start_memory_cap() {
-  local pid_file="$RUN_DIR/memory-cap.pid"
+  local pid_file="$RUN_DIR/memory-cap.pid" v
   if [ "${E2B_SANDBOX:-}" != true ]; then
     echo "services: not an E2B VM guest, memory-cap skipped"
+    return 0
+  fi
+  if memcap_systemd; then
+    if systemctl is-active --quiet "$MEMCAP_UNIT"; then
+      echo "services: memory-cap already running"
+      return 0
+    fi
+    systemctl reset-failed "$MEMCAP_UNIT" >/dev/null 2>&1 || true
+    local args=(--unit="$MEMCAP_UNIT" --collect --quiet -p Restart=always -p RestartSec=5
+      -p OOMScoreAdjust=-1000 -p Nice=19 -p IOSchedulingClass=idle -E E2B_SANDBOX=true)
+    for v in $(compgen -e); do
+      case "$v" in GRASP_MEMORY_CAP_*) args+=(-E "$v=${!v}") ;; esac
+    done
+    if [ -n "${GRASP_SERVICES_LOG:-}" ]; then
+      args+=(-p "StandardOutput=append:$GRASP_SERVICES_LOG" -p "StandardError=append:$GRASP_SERVICES_LOG")
+    fi
+    systemd-run "${args[@]}" "$(memcap_exec)" run || return 1
+    echo "services: memory-cap started (systemd unit $MEMCAP_UNIT)"
     return 0
   fi
   if pid_alive "$(read_pid "$pid_file")"; then
@@ -157,18 +198,25 @@ start_memory_cap() {
   fi
   (
     service_log_redirect
-    exec setsid "$SCRIPT_DIR/memory-cap.sh" run </dev/null
+    exec setsid "$(memcap_exec)" run </dev/null
   ) &
   echo $! >"$pid_file"
   echo "services: memory-cap started (pid $!)"
 }
 
 stop_memory_cap() {
+  if memcap_systemd; then
+    systemctl stop "$MEMCAP_UNIT" >/dev/null 2>&1 || true
+  fi
   stop_pid "$(read_pid "$RUN_DIR/memory-cap.pid")"
   rm -f "$RUN_DIR/memory-cap.pid"
 }
 
 status_of() {
+  if [ "$1" = memory-cap ] && memcap_systemd; then
+    if systemctl is-active --quiet "$MEMCAP_UNIT"; then echo "$1: running"; else echo "$1: stopped"; fi
+    return
+  fi
   if pid_alive "$(read_pid "$RUN_DIR/$1.pid")"; then
     echo "$1: running"
   else

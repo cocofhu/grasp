@@ -271,12 +271,12 @@ dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次
 
 ### 8.1 E2B 客户机缓存上限
 
-E2B 沙箱是 Firecracker 虚拟机，主机按客户机碰过的每一页计占用，客户机的页面缓存在主机上和进程内存一样占着。`services.sh` 管理的 `memory-cap`（`scripts/memory-cap.sh`）只在 `E2B_SANDBOX=true` 时运行：每 10 秒用 `memory.reclaim` 把文件缓存压回上限（先回收最冷的页，不动进程内存），新增的碎片空闲内存超过阈值时整理内存，让空闲页上报能把整块内存还给主机。Docker / K8s 沙箱跳过。
+E2B 沙箱是 Firecracker 虚拟机，主机按客户机碰过的每一页计占用，客户机的页面缓存在主机上和进程内存一样占着。`services.sh` 管理的 `memory-cap`（`scripts/memory-cap.sh`）只在 `E2B_SANDBOX=true` 时运行：每 5 秒用 `memory.reclaim` 把文件缓存压回上限（先回收最冷的页，不动进程内存），新增的碎片空闲内存超过阈值时整理内存，让空闲页上报能把整块内存还给主机。Docker / K8s 沙箱跳过。客户机以 systemd 为 PID 1 时，它作为临时单元 `grasp-memory-cap` 运行（`Restart=always`、`OOMScoreAdjust=-1000`），被杀后 5 秒内自动拉起；没有 systemd 时退回 `setsid` 后台进程。
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |
 | `GRASP_MEMORY_CAP_MIB` | `512` | 文件缓存上限（MiB），`0` 关闭 |
-| `GRASP_MEMORY_CAP_INTERVAL` | `10` | 检查间隔（秒） |
+| `GRASP_MEMORY_CAP_INTERVAL` | `5` | 检查间隔（秒） |
 | `GRASP_MEMORY_CAP_FRAG_MIB` | `512` | 距上次整理新增的碎片空闲内存超过此值才整理（MiB） |
 | `GRASP_MEMORY_CAP_COMPACT_EVERY` | `60` | 两次整理的最短间隔（秒） |
 
