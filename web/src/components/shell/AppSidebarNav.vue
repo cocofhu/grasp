@@ -406,6 +406,11 @@ const menuSolo = computed(() => {
   if (!key || menu.value?.kind !== 'solo') return null
   return soloStore.active.value.find((it) => soloRowKey(it) === key) ?? null
 })
+const menuRun = computed(() => {
+  const id = menuItem.value?.runId
+  return id ? runningRuns.value.find((r) => r.id === id) ?? null : null
+})
+const menuKeepAlive = computed(() => !!(menuSolo.value ? menuSolo.value.keepAlive : menuRun.value?.keepAlive))
 const menuPinned = computed(() => {
   if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
   return menuItem.value ? isRowPinned(menuItem.value) : false
@@ -773,6 +778,23 @@ async function onMenuSoloPower() {
   closeMenu()
   try {
     soloStore.upsert(s.status === 'stopped' ? await api.resumeSoloSession(s.id) : await api.stopSoloSession(s.id))
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function onMenuKeepAlive() {
+  const solo = menuSolo.value
+  const runId = menuItem.value?.runId
+  const next = !menuKeepAlive.value
+  closeMenu()
+  try {
+    if (solo) {
+      soloStore.upsert(await api.setSoloKeepAlive(solo.id, next))
+    } else if (runId) {
+      const res = await api.setRunKeepAlive(runId, next)
+      runningRuns.value = runningRuns.value.map((r) => (r.id === runId ? { ...r, keepAlive: res.keepAlive } : r))
+    }
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e))
   }
@@ -1597,6 +1619,19 @@ const primaryItems = computed(() => props.rail
       >
         <Icon name="copy" :size="14" />
         <span>{{ menuShareLabel }}</span>
+      </button>
+      <button
+        v-if="menuSolo || menuRun"
+        type="button"
+        role="menuitemcheckbox"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-keep-alive"
+        :aria-checked="menuKeepAlive"
+        @click="onMenuKeepAlive"
+      >
+        <Icon v-if="menuKeepAlive" name="check" :size="14" />
+        <span v-else class="inline-block w-[14px] shrink-0" aria-hidden="true" />
+        <span>{{ t('nav.pendingKeepAlive') }}</span>
       </button>
       <button
         v-if="menuSolo && ((menuSolo.status === 'running' && !menuSolo.busy && !menuSolo.waiting) || menuSolo.status === 'stopped')"

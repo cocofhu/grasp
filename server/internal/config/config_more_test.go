@@ -187,3 +187,23 @@ func TestFrameAncestorOrigins(t *testing.T) {
 		t.Fatalf("env override: %q", c.Server.FrameAncestors)
 	}
 }
+
+func TestSandboxLifecycleDefaultsAndOverrides(t *testing.T) {
+	c := &Config{}
+	setDefaults(c)
+	idle, every, cache := c.SandboxMemoryTrim()
+	if c.SandboxIdleTTL() != 6*time.Hour || idle != 10*time.Minute || every != 30*time.Minute || cache != 1024 {
+		t.Fatalf("defaults: ttl=%v trim=%v/%v/%d", c.SandboxIdleTTL(), idle, every, cache)
+	}
+
+	c = &Config{}
+	t.Setenv("GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN", "-1")
+	t.Setenv("GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN", "45")
+	t.Setenv("GRASP_SANDBOX_MEMORY_TRIM_MIN_CACHE_MB", "2048")
+	applyEnvOverrides(c)
+	setDefaults(c)
+	idle, every, cache = c.SandboxMemoryTrim()
+	if idle >= 0 || every != 45*time.Minute || cache != 2048 {
+		t.Fatalf("overrides: trim=%v/%v/%d", idle, every, cache)
+	}
+}

@@ -313,7 +313,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "", "home_dir": home,
-		"last_active_at": time.Now(), "updated_at": time.Now(),
+		"last_active_at": time.Now(), "model_active_at": time.Now(), "updated_at": time.Now(),
 	})
 	// Row gone (user destroyed it mid-launch) or update failed: tear everything
 	// down instead of leaking an orphan container.
@@ -401,7 +401,7 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 		s.mu.Lock()
 		ls.busy = false
 		s.mu.Unlock()
-		s.TouchActivity(id)
+		s.MarkModelActivity(id)
 	}()
 
 	chatCtx, cancel := context.WithCancel(ctx)
@@ -651,7 +651,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if err := s.db.Delete(&models.Sandbox{}, id).Error; err != nil {
 		return err
 	}
-	s.forgetTouch(id)
+	s.forgetModelActivity(id)
 	s.releaseSandboxScope(row.Purpose, row.RunID, "sandbox_destroyed")
 	return nil
 }
@@ -717,7 +717,16 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 		if ctx.Err() != nil {
 			return
 		}
-		if s.isBusyRow(&row) || !s.idleDue(&row, time.Now()) {
+		now := time.Now()
+		if s.modelBusy(&row) {
+			// Long turns keep the persisted interval fresh across restarts.
+			if now.Sub(s.modelIdleSince(&row)) >= time.Minute {
+				s.MarkModelActivity(row.ID)
+			}
+			continue
+		}
+		if !s.idleDue(&row, now) || s.keepAlive(&row) {
+			s.maybeTrimMemory(ctx, row, now)
 			continue
 		}
 		unlock, err := s.lockSoloRecovery(ctx, row.ID)
@@ -853,7 +862,8 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 		s.mu.Unlock()
 		return
 	}
-	s.RetireRunSandbox(row.Name)
+	// The persisted model interval continues; a restart is not model activity.
+	s.archiveLog(ctx, row.Name)
 }
 
 // destroyLocalSandbox tears down the gateway instance (by Name and by

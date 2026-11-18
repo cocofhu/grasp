@@ -470,12 +470,8 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		Password:        row.Token,
 	}
 	v.DestroyAt = nil
-	if row.Status == "running" && !busy {
-		last := row.CreatedAt
-		if row.LastActiveAt != nil {
-			last = *row.LastActiveAt
-		}
-		deadline := last.Add(s.IdleTTL())
+	if row.Status == "running" && !busy && !s.keepAlive(row) {
+		deadline := s.modelIdleSince(row).Add(s.IdleTTL())
 		v.DestroyAt = &deadline
 	}
 	s.applyGatewayLifecycle(ctx, row, &v)

@@ -69,9 +69,15 @@ sandbox:
   chat_idle_timeout_seconds: 1200
   # 未配置节点总时限的 Agent 节点的兜底上限(小时)。
   agent_node_hard_cap_hours: 24
-  # 所有用途/后端共用：无运行任务、排队请求和终端工作达到此时长，保存后释放资源。
+  # 所有用途/后端共用：模型回合结束且无排队请求达到此时长，保存后释放资源。
+  # 页面、IDE、预览和终端访问不续期；会话可在侧栏开启「永不自动回收」。
   # 等待人工不占运行资源；再次使用时恢复最新成功备份。设置页可修改。
-  idle_ttl_minutes: 60
+  idle_ttl_minutes: 360
+  # 仅 E2B：模型回合结束 N 分钟后清理沙箱页面缓存并整理内存，把空闲内存还给主机；
+  # 持续空闲时每隔 interval 分钟、且缓存超过 min_cache_mb 才再次清理。负数关闭。
+  memory_trim_idle_minutes: 10
+  memory_trim_interval_minutes: 30
+  memory_trim_min_cache_mb: 1024
   # 全局沙箱数量上限，创建和恢复使用同一配额；降低不会终止已有沙箱。
   max_sandboxes: 15
   # 内存覆盖（MiB）：0 跟随网关/所选模板；非零至少 1024。

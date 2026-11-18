@@ -54,9 +54,11 @@ type SandboxService struct {
 	// Per-resident locks serialize recovery with explicit destruction without
 	// making one unavailable sandbox block every other session.
 	soloRecoveryLocks sync.Map
-	// lastTouch tracks activity concurrent with an idle-reclamation probe.
-	lastTouch map[uint]time.Time
-	live      map[uint]*liveSandbox
+	// modelActive tracks model turns concurrent with an idle-reclamation probe.
+	modelActive map[uint]time.Time
+	memoryTrims map[uint]*memoryTrimState
+	memoryTrim  MemoryTrimPolicy
+	live        map[uint]*liveSandbox
 	// runActive marks per-run node sandboxes (by container name) that are
 	// currently executing. These are owned by the runtime provider, not by
 	// this service's ACP pool; the flag protects them from being stopped or
@@ -99,6 +101,8 @@ type SandboxOptions struct {
 	Env     map[string]string
 	IdleTTL time.Duration
 	Max     int
+	// MemoryTrim returns idle E2B guests' page cache to the host pool.
+	MemoryTrim MemoryTrimPolicy
 	// SharedAgent optional baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
 	// CredentialReferences resolves ${credential:<id>} values for MCP
@@ -136,7 +140,7 @@ type SandboxView struct {
 // NewSandboxService builds the service.
 func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, host *mcp.Host, opts SandboxOptions) *SandboxService {
 	if opts.IdleTTL <= 0 {
-		opts.IdleTTL = time.Hour
+		opts.IdleTTL = 6 * time.Hour
 	}
 	if opts.Max <= 0 {
 		opts.Max = 15
@@ -155,7 +159,9 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		live:                 map[uint]*liveSandbox{},
 		runActive:            map[string]bool{},
 		runTasks:             map[string]int{},
-		lastTouch:            map[uint]time.Time{},
+		modelActive:          map[uint]time.Time{},
+		memoryTrims:          map[uint]*memoryTrimState{},
+		memoryTrim:           opts.MemoryTrim,
 	}
 	s.idleTTL.Store(int64(opts.IdleTTL))
 	s.max.Store(int64(opts.Max))

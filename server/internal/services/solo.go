@@ -541,6 +541,26 @@ func (s *SoloService) Rename(id, user, title string) (*models.SoloSession, error
 	return row, nil
 }
 
+// SetKeepAlive turns automatic idle reclaim off or back on for the session's
+// environment. Turning it back on restarts the full idle interval. A stopped
+// environment stays stopped and uses the choice when it resumes.
+func (s *SoloService) SetKeepAlive(ctx context.Context, id, user string, on bool) (*SoloSessionView, error) {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status == models.SoloStatusClosed {
+		return nil, soloErr(http.StatusConflict, "session_closed", "会话已关闭")
+	}
+	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("keep_alive", on).Error; err != nil {
+		return nil, err
+	}
+	if !on && row.SandboxID != 0 {
+		s.sbx.MarkModelActivity(row.SandboxID)
+	}
+	return s.Get(ctx, id, user)
+}
+
 // Close stops turns, destroys the sandbox and keeps the history read-only.
 func (s *SoloService) Close(ctx context.Context, id, user string) (*SoloSessionView, error) {
 	row, err := s.Require(id, user)

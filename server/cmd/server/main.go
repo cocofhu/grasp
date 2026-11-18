@@ -386,11 +386,13 @@ func main() {
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Str("default_gateway", cfg.Sandbox.DefaultGateway).
 		Int("named_gateways", len(cfg.Sandbox.Gateways)).Msg("sandbox connections configured")
+	trimIdle, trimEvery, trimCache := cfg.SandboxMemoryTrim()
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		MCPEndpoint:          cfg.Server.MCPAdvertise,
 		Env:                  cfg.Sandbox.Env,
 		IdleTTL:              cfg.SandboxIdleTTL(),
+		MemoryTrim:           services.MemoryTrimPolicy{IdleAfter: trimIdle, Interval: trimEvery, MinCacheMiB: trimCache},
 		Max:                  cfg.Sandbox.MaxSandboxes,
 		SharedAgent:          sharedAgentSvc,
 		CredentialReferences: credentialSvc.ResolveReferences,

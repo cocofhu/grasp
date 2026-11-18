@@ -345,9 +345,17 @@ type SandboxConfig struct {
 	// + boot). Must stay >= the gateway's FinalizeTimeout, else approving gives
 	// up before provisioning finishes. 0 = default 1200 (20 min).
 	CreateTimeoutSeconds int `yaml:"sandbox_create_timeout_seconds"`
-	// IdleTTLMinutes is the inactivity window before saving and releasing any sandbox.
-	// Running work protects the sandbox. 0 = 60 minutes.
+	// IdleTTLMinutes is how long after the last model turn ended a sandbox is
+	// saved and released. Running turns and queued requests protect it. 0 = 360.
 	IdleTTLMinutes int `yaml:"idle_ttl_minutes"`
+	// MemoryTrimIdleMinutes is how long after the last model turn ended an E2B
+	// guest's page cache is first dropped and its free memory compacted, so the
+	// host pool gets it back. 0 = 10; negative disables trims.
+	MemoryTrimIdleMinutes int `yaml:"memory_trim_idle_minutes"`
+	// MemoryTrimIntervalMinutes spaces later trims while the guest stays idle. 0 = 30.
+	MemoryTrimIntervalMinutes int `yaml:"memory_trim_interval_minutes"`
+	// MemoryTrimMinCacheMB skips a trim while the guest caches less than this. 0 = 1024.
+	MemoryTrimMinCacheMB int `yaml:"memory_trim_min_cache_mb"`
 	// MaxSandboxes is the shared admission limit across all sandbox purposes and drivers.
 	// Creating, running and not-yet-reclaimed workloads count. 0 = 15.
 	MaxSandboxes int `yaml:"max_sandboxes"`
@@ -379,6 +387,13 @@ func (c *Config) SandboxRuntimeBundle() string {
 // SandboxIdleTTL returns the shared inactivity window for saving and releasing resources.
 func (c *Config) SandboxIdleTTL() time.Duration {
 	return time.Duration(c.Sandbox.IdleTTLMinutes) * time.Minute
+}
+
+// SandboxMemoryTrim returns the idle E2B guest trim schedule; idleAfter <= 0
+// means disabled.
+func (c *Config) SandboxMemoryTrim() (idleAfter, interval time.Duration, minCacheMiB int) {
+	return time.Duration(c.Sandbox.MemoryTrimIdleMinutes) * time.Minute,
+		time.Duration(c.Sandbox.MemoryTrimIntervalMinutes) * time.Minute, c.Sandbox.MemoryTrimMinCacheMB
 }
 
 // ChatIdleTimeout returns the per-turn idle (no-activity) window as a duration.
@@ -569,6 +584,15 @@ func applyEnvOverrides(c *Config) {
 	if v := envInt("GRASP_SANDBOX_CREATE_TIMEOUT_SEC"); v != 0 {
 		c.Sandbox.CreateTimeoutSeconds = v
 	}
+	if v := envInt("GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN"); v != 0 {
+		c.Sandbox.MemoryTrimIdleMinutes = v
+	}
+	if v := envInt("GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN"); v != 0 {
+		c.Sandbox.MemoryTrimIntervalMinutes = v
+	}
+	if v := envInt("GRASP_SANDBOX_MEMORY_TRIM_MIN_CACHE_MB"); v != 0 {
+		c.Sandbox.MemoryTrimMinCacheMB = v
+	}
 	if v := env("GRASP_SANDBOX_MEMORY_MB"); v != "" {
 		c.Sandbox.MemoryMB, _ = strconv.Atoi(v) // validated by parse before applying overrides
 	}
@@ -696,7 +720,16 @@ func setDefaults(c *Config) {
 		c.Sandbox.CreateTimeoutSeconds = 1200
 	}
 	if c.Sandbox.IdleTTLMinutes <= 0 {
-		c.Sandbox.IdleTTLMinutes = 60
+		c.Sandbox.IdleTTLMinutes = 360
+	}
+	if c.Sandbox.MemoryTrimIdleMinutes == 0 {
+		c.Sandbox.MemoryTrimIdleMinutes = 10
+	}
+	if c.Sandbox.MemoryTrimIntervalMinutes <= 0 {
+		c.Sandbox.MemoryTrimIntervalMinutes = 30
+	}
+	if c.Sandbox.MemoryTrimMinCacheMB <= 0 {
+		c.Sandbox.MemoryTrimMinCacheMB = 1024
 	}
 	if c.Sandbox.MaxSandboxes <= 0 {
 		c.Sandbox.MaxSandboxes = 15

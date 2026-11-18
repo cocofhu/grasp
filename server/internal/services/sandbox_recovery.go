@@ -61,25 +61,30 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 	if row.Status != "running" {
 		return fmt.Errorf("sandbox is not available for idle recovery")
 	}
-	if s.isBusyRow(row) || s.soloBusy != nil && s.soloBusy(id) {
+	if s.modelBusy(row) {
+		s.MarkModelActivity(id)
 		return fmt.Errorf("sandbox has an active task or queued request")
 	}
+	if automatic && s.keepAlive(row) {
+		return errors.New("automatic reclaim is disabled for this sandbox")
+	}
+	if automatic && !s.idleDue(row, time.Now()) {
+		return errors.New("sandbox has recent model activity")
+	}
+	idleSince := s.modelIdleSince(row)
 	sb, err := s.soloHandle(ctx, id)
 	if err != nil {
 		return err
 	}
-	// In addition to control-plane task state, protect terminals and detached
-	// user processes. A failed probe keeps the original guest intact.
-	busy, err := sb.IdleActivity(ctx)
+	// Turns can also start inside the guest (shared or reattached sessions).
+	// A failed probe keeps the original guest intact.
+	busy, err := sb.RuntimeActivity(ctx)
 	if err != nil {
 		return fmt.Errorf("check guest activity: %w", err)
 	}
 	if busy {
-		s.TouchActivity(id)
-		return errors.New("sandbox still has running guest work")
-	}
-	if automatic && !s.idleDue(row, time.Now()) {
-		return errors.New("sandbox has recent activity")
+		s.MarkModelActivity(id)
+		return errors.New("sandbox still has a running model turn")
 	}
 	kind, err := s.mgr.RecoveryKind(ctx, row.Name)
 	if err != nil {
@@ -103,14 +108,9 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 		err = s.saveWorkspace(ctx, row, sb)
 	}
 	if err == nil {
-		// Archiving can take minutes. Recheck guest activity before releasing
-		// the workload so terminal/background work started during save wins.
-		var busy bool
-		busy, err = sb.IdleActivity(ctx)
-		if err == nil && busy {
-			s.TouchActivity(id)
-			err = errors.New("guest work started while saving")
-		}
+		// Archiving can take minutes. A turn or keep-alive choice made during
+		// the save wins over releasing the workload.
+		err = s.recheckBeforeRelease(ctx, row, sb, idleSince, automatic)
 	}
 	if err == nil {
 		// A successful archive from an older attempt is not permission to stop
@@ -396,7 +396,7 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 	sb.Password = row.Token
 	now := time.Now()
 	if err = s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "running", "error": "", "last_active_at": now,
+		"status": "running", "error": "", "last_active_at": now, "model_active_at": now,
 		"host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort,
 		"model_binding_fingerprint": row.ModelBindingFingerprint, "git_bindings_fingerprint": row.GitBindingsFingerprint,
 	}).Error; err != nil {
@@ -425,16 +425,31 @@ func (s *SandboxService) restoreWorkspace(ctx context.Context, sb *sandbox.Sandb
 }
 
 func (s *SandboxService) idleDue(row *models.Sandbox, now time.Time) bool {
-	last := row.CreatedAt
-	if row.LastActiveAt != nil {
-		last = *row.LastActiveAt
+	return !s.modelIdleSince(row).Add(s.IdleTTL()).After(now)
+}
+
+// modelBusy reports control-plane turns and queued requests.
+func (s *SandboxService) modelBusy(row *models.Sandbox) bool {
+	return s.isBusyRow(row) || s.soloBusy != nil && s.soloBusy(row.ID)
+}
+
+func (s *SandboxService) recheckBeforeRelease(ctx context.Context, row *models.Sandbox, sb *sandbox.Sandbox, idleSince time.Time, automatic bool) error {
+	fresh, err := s.Get(row.ID)
+	if err != nil {
+		return err
 	}
-	s.mu.Lock()
-	if t := s.lastTouch[row.ID]; t.After(last) {
-		last = t
+	if s.modelBusy(fresh) || s.modelIdleSince(fresh).After(idleSince) {
+		return errors.New("a model turn started while saving")
 	}
-	s.mu.Unlock()
-	return !last.Add(s.IdleTTL()).After(now)
+	if automatic && s.keepAlive(fresh) {
+		return errors.New("automatic reclaim was disabled while saving")
+	}
+	busy, err := sb.RuntimeActivity(ctx)
+	if err == nil && busy {
+		s.MarkModelActivity(row.ID)
+		err = errors.New("a model turn started while saving")
+	}
+	return err
 }
 
 // RetryRecoveryCleanup handles only cleanup already authorized by cancellation

@@ -362,6 +362,24 @@ func (h *Handlers) UpdateRunTitle(c *gin.Context) {
 	})
 }
 
+// SetRunKeepAlive handles PUT /api/runs/:id/keep-alive.
+func (h *Handlers) SetRunKeepAlive(c *gin.Context) {
+	runID := c.Param("id")
+	if _, ok := h.Runs.Get(runID); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	on, ok := bindKeepAlive(c)
+	if !ok {
+		return
+	}
+	if err := h.Sbx.SetRunKeepAlive(runID, on); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": runID, "keepAlive": on})
+}
+
 type resumeRunBody struct {
 	// NodeID chooses where to continue; empty resumes from the node that failed.
 	NodeID string `json:"nodeId"`

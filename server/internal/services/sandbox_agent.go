@@ -145,7 +145,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "", "home_dir": home,
-		"last_active_at": activeAt, "updated_at": activeAt,
+		"last_active_at": activeAt, "model_active_at": activeAt, "updated_at": activeAt,
 	})
 	if res.Error != nil || res.RowsAffected == 0 {
 		acp.Close()

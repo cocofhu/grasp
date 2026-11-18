@@ -183,6 +183,12 @@ export const runsClient = {
       method: 'PATCH',
       body: JSON.stringify({ title }),
     }),
+  /** Turns automatic idle reclaim off (true) or back on for the run's sandboxes. */
+  setRunKeepAlive: (id: string, keepAlive: boolean) =>
+    req<{ id: string; keepAlive: boolean }>(`/runs/${id}/keep-alive`, {
+      method: 'PUT',
+      body: JSON.stringify({ keepAlive }),
+    }),
   cancelRun: (id: string) => req<{ status: string }>(`/runs/${id}/cancel`, { method: 'POST' }),
   // Hard-delete a completed/failed run. Missing → 404; non-deletable status → 409.
   deleteRun: (id: string) => req<{ status: string }>(`/runs/${id}`, { method: 'DELETE' }),

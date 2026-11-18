@@ -35,7 +35,7 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) error {
 	now := time.Now()
 	row := &models.Sandbox{Name: info.Name, Profile: info.Profile, Purpose: "run", Status: "creating",
 		RepoURL: info.RepoURL, RunID: info.RunID, WorkflowID: info.WorkflowID, WorkflowName: info.WorkflowName,
-		NodeID: info.NodeID, HomeDir: info.HomeDir, Token: info.Token, Shared: info.Shared, LastActiveAt: &now}
+		NodeID: info.NodeID, HomeDir: info.HomeDir, Token: info.Token, Shared: info.Shared, LastActiveAt: &now, ModelActiveAt: &now}
 	if err := s.createSandboxRow(row); err != nil {
 		return err
 	}
@@ -72,6 +72,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 		"error":            "",
 		"updated_at":       time.Now(),
 		"last_active_at":   time.Now(),
+		"model_active_at":  time.Now(),
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
@@ -136,7 +137,7 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
-	s.TouchActivityByName(name)
+	s.MarkModelActivityByName(name)
 }
 
 // ParkRunSandbox releases execution ownership while waiting for human input.
@@ -145,7 +146,23 @@ func (s *SandboxService) ParkRunSandbox(name string) {
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()
-	s.TouchActivityByName(name)
+	s.MarkModelActivityByName(name)
+}
+
+// SetRunKeepAlive turns automatic idle reclaim off or back on for a run's
+// sandboxes. Turning it back on restarts their full idle interval.
+func (s *SandboxService) SetRunKeepAlive(runID string, on bool) error {
+	if err := s.db.Model(&models.Run{}).Where("id = ?", runID).Update("keep_alive", on).Error; err != nil || on {
+		return err
+	}
+	var rows []models.Sandbox
+	if err := s.db.Select("id").Where("run_id = ? AND purpose = ?", runID, "run").Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		s.MarkModelActivity(row.ID)
+	}
+	return nil
 }
 
 // AcquireRunSandbox serializes new work with idle save/resume. Reference
@@ -176,7 +193,7 @@ func (s *SandboxService) AcquireRunSandbox(ctx context.Context, name string) (fu
 				delete(s.runTasks, name)
 			}
 			s.mu.Unlock()
-			s.TouchActivity(row.ID)
+			s.MarkModelActivity(row.ID)
 		})
 	}, nil
 }

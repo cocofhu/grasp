@@ -202,6 +202,8 @@ type Run struct {
 	// debounced). nil on rows that predate the column; readers fall back to
 	// started_at / created_at.
 	LastActivityAt *time.Time `gorm:"index" json:"lastActivityAt,omitempty"`
+	// KeepAlive exempts this run's sandboxes from automatic idle reclaim.
+	KeepAlive bool `gorm:"not null;default:false" json:"keepAlive"`
 }
 
 const (
@@ -918,6 +920,10 @@ type Sandbox struct {
 	// LastActiveAt advances on real work, not list/health polling. Every sandbox
 	// uses the same idle policy regardless of its purpose or provider.
 	LastActiveAt *time.Time `gorm:"index" json:"lastActiveAt,omitempty"`
+	// ModelActiveAt is when a model turn last ran or ended here, or when the
+	// environment became ready. Idle reclaim and memory trim count from it;
+	// pages, IDE, preview and terminal traffic never move it.
+	ModelActiveAt *time.Time `json:"modelActiveAt,omitempty"`
 	// RecoveryKind is "files" or "snapshot". RecoveryPoints are committed
 	// archives; pending object deletions remain durable until they succeed.
 	RecoveryKind string `json:"recoveryKind,omitempty"`

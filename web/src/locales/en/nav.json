@@ -20,6 +20,7 @@
     "pendingPin": "Pin",
     "pendingUnpin": "Unpin",
     "pendingRename": "Rename",
+    "pendingKeepAlive": "Never auto-reclaim",
     "pendingCancelRun": "Cancel run",
     "pendingCancelConfirm": "Only this run is stopped; the sidebar Running list will refresh that row after success.",
     "pendingShareStarting": "Starting",
