@@ -906,12 +906,18 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   const outline = icon.locator('path').first()
   const fill = icon.locator('.solo-effort-bolt-fill')
   const charge = icon.locator('.solo-effort-bolt-charge')
-  const hiddenFill = 'inset(0px 0px 100%) fill-box'
+  async function expectMonochromeSweep() {
+    const ink = await outline.evaluate(path => getComputedStyle(path).stroke)
+    await expect(charge).toHaveCSS('fill', ink)
+    await expect(charge).toHaveCSS('stroke', ink)
+  }
+  const hiddenFill = 'inset(0px 0px 156%) fill-box'
   const boltAtRest = await icon.boundingBox()
   expect(boltAtRest).toMatchObject({ width: 15, height: 15 })
   await expect(outline).toHaveCSS('fill', 'none')
   await expect(fill).toHaveCSS('clip-path', hiddenFill)
   await expect(icon).toHaveCSS('color', 'rgb(141, 142, 143)')
+  await expectMonochromeSweep()
   function watchTransitions(glyph: Locator) {
     return glyph.evaluateHandle(element => {
       const properties = new Set<string>()
@@ -1010,6 +1016,7 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   await page.getByTestId('solo-effort-open').click()
   await fast.hover()
   await settleVisualTransitions(page)
+  await expectMonochromeSweep()
   await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-desktop-dark.png'), animations: 'disabled' })
   await page.reload()
   await expect(page.getByTestId('solo-model-fast-label')).toHaveText('Fast')

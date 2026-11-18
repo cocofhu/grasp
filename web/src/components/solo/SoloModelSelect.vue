@@ -194,7 +194,7 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
             <svg class="solo-effort-bolt" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
               <path :d="boltPath" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
               <path :d="boltPath" class="solo-effort-bolt-fill" fill="currentColor" />
-              <path :d="boltPath" class="solo-effort-bolt-charge" stroke-width="1.6" stroke-linejoin="round" />
+              <path :d="boltPath" class="solo-effort-bolt-charge" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
             </svg>
           </button>
           <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
@@ -271,7 +271,7 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-fast:disabled { opacity: 0.45; }
 .solo-effort-bolt { --hover-ink: light-dark(#525357, #d5d5d8); color: light-dark(#8d8e8f, #aeafb2); }
 .solo-effort-fast--active .solo-effort-bolt { --hover-ink: light-dark(#303034, #dddde0); color: light-dark(#000, #f7f7f8); }
-.solo-effort-bolt-fill { clip-path: inset(0 0 100% 0) fill-box; }
+.solo-effort-bolt-fill { clip-path: inset(0 0 156% 0) fill-box; }
 .solo-effort-fast--active .solo-effort-bolt-fill { clip-path: inset(0) fill-box; }
 .solo-effort-bolt-charge { display: none; }
 .solo-fast-tooltip { position: fixed; z-index: 10000; display: grid; gap: 2px; max-width: 192px; padding: 9px 12px; border-radius: 10px; background: rgb(var(--c-txt)); color: rgb(var(--c-surface)); box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 12px; line-height: 17px; pointer-events: none; }
@@ -293,16 +293,13 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
   .solo-effort-bolt {
     transition: color var(--dur-ui) ease-in-out, opacity var(--dur-press) ease;
   }
-  .solo-effort-bolt-fill { transition: clip-path 240ms ease-in-out; }
+  .solo-effort-bolt-fill, .solo-effort-bolt-charge { transition: clip-path 460ms ease-in-out; }
   .solo-effort-bolt-charge {
     display: inline;
-    fill: light-dark(#ffad19, #ffe18a);
-    stroke: light-dark(#bd5a00, #ffb638);
-    /* The band crosses the whole bolt and parks outside its stroke at either end. */
-    clip-path: inset(-200% -10% 110% -10%) stroke-box;
-    transition: clip-path 460ms ease-in-out;
+    /* A transparent gap separates the leading band from the solid fill. */
+    clip-path: inset(-38% -10% 110% -10%) stroke-box;
   }
-  .solo-effort-fast--active .solo-effort-bolt-charge { clip-path: inset(110% -10% -200% -10%) stroke-box; }
+  .solo-effort-fast--active .solo-effort-bolt-charge { clip-path: inset(110% -10% -38% -10%) stroke-box; }
   .solo-effort-reset-icon { transition: opacity var(--dur-ui) ease; }
   .solo-effort-reset:disabled .solo-effort-reset-icon { transition: opacity 520ms ease-in; }
   .solo-effort-reset-icon :deep(.motion-target) {
