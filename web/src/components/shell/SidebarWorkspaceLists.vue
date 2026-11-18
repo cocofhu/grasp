@@ -218,7 +218,45 @@ onBeforeUnmount(() => {
       <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @click="emit('navigate')"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click.capture="onRunClickCapture" @click="emit('navigate')" @contextmenu="onRunContextMenu($event, entry.run)" @pointerdown="onRunPointerDown($event, entry.run)"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item">
+            <RouterLink
+              v-hover-ink
+              v-if="entry.kind === 'solo'"
+              :to="soloPath(entry.session)"
+              class="workspace-recent-row"
+              :class="{ 'is-active': soloActive(entry.session) }"
+              :aria-current="soloActive(entry.session) ? 'page' : undefined"
+              :title="soloTitle(entry.session)"
+              data-testid="sidebar-recent-solo"
+              :data-solo-id="entry.session.id"
+              :data-status="entry.session.status"
+              @click="emit('navigate')"
+            >
+              <span class="workspace-list-title">{{ soloTitle(entry.session) }}</span>
+              <Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" />
+              <Icon v-else name="stop" :size="14" :interactive="false" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" :title="t('common.status.cancelled')" />
+            </RouterLink>
+            <RouterLink
+              v-hover-ink
+              v-else
+              :to="recentRunTarget(entry.run)"
+              class="workspace-recent-row"
+              :class="{ 'is-active': recentRunActive(entry.run, route) }"
+              :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined"
+              :title="runTitle(entry.run)"
+              data-testid="sidebar-recent-run"
+              :data-run-id="entry.run.id"
+              :data-status="entry.run.status"
+              @click.capture="onRunClickCapture"
+              @click="emit('navigate')"
+              @contextmenu="onRunContextMenu($event, entry.run)"
+              @pointerdown="onRunPointerDown($event, entry.run)"
+            >
+              <span class="workspace-list-title">{{ runTitle(entry.run) }}</span>
+              <Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" />
+              <Icon v-else-if="entry.run.status === 'cancelled'" name="stop" :size="14" :interactive="false" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" :title="t('common.status.cancelled')" />
+            </RouterLink>
+          </div>
         </RecentReorderList>
       </div>
       </div>
@@ -250,14 +288,15 @@ onBeforeUnmount(() => {
 .sidebar-tree-item > .workspace-recent-row { padding-left: 6px; }
 .workspace-recent-row:hover { color: rgb(var(--c-txt)); }
 .workspace-recent-row.is-active, .workspace-recent-row.is-active:hover { color: rgb(var(--c-txt)); background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065)); }
-.workspace-recent-ended { flex: none; transform-box: view-box; transform-origin: center; transition: color 160ms ease; }
-.workspace-recent-ended.is-failed { color: light-dark(#d17a7a, #e08a8a); }
-.workspace-recent-ended.is-cancelled { color: light-dark(#b4b4bb, #6f6f78); }
+.workspace-recent-ended { flex: none; transition: color 160ms ease; }
+.workspace-recent-ended.is-failed { color: light-dark(#d17a7a, #e08a8a); transform-box: view-box; transform-origin: center; }
+.workspace-recent-ended.is-cancelled { color: light-dark(#85858f, #8a8a95); }
 .workspace-recent-row:hover .workspace-recent-ended.is-failed,
 .workspace-recent-row.is-active .workspace-recent-ended.is-failed { color: light-dark(#be5555, #f0a0a0); }
 .workspace-recent-row:hover .workspace-recent-ended.is-cancelled,
+.workspace-recent-row:focus-visible .workspace-recent-ended.is-cancelled,
 .workspace-recent-row.is-active .workspace-recent-ended.is-cancelled { color: light-dark(#71717a, #a1a1aa); }
-.workspace-recent-row:hover .workspace-recent-ended { animation: workspace-recent-ended-sway 1600ms linear 1; }
+.workspace-recent-row:hover .workspace-recent-ended.is-failed { animation: workspace-recent-ended-sway 1600ms linear 1; }
 @keyframes workspace-recent-ended-sway {
   0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
   16% { transform: rotate(9deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
