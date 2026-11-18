@@ -139,3 +139,19 @@ func TestAddTokenUsageAcrossTurns(t *testing.T) {
 		t.Fatalf("zero report = %+v", z)
 	}
 }
+
+func TestUsageModelFollowsTheTurnExecution(t *testing.T) {
+	t.Parallel()
+	c := NewACPClient("127.0.0.1", 1).WithBridgeModel("launch-model")
+	if got := c.usageModel(); got != "launch-model" {
+		t.Fatalf("without execution = %q", got)
+	}
+	c.WithExecution(&models.ChatExecution{ModelID: "routed-model"})
+	if got := c.usageModel(); got != "routed-model" {
+		t.Fatalf("with execution = %q", got)
+	}
+	c.WithExecution(&models.ChatExecution{ModelID: " "})
+	if got := c.usageModel(); got != "launch-model" {
+		t.Fatalf("blank execution model = %q", got)
+	}
+}

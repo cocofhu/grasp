@@ -64,7 +64,7 @@ func TestSandboxChatWithTimeoutReportsProviderFailures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var streamed strings.Builder
-			usage, byModel, err := s.ChatWithTimeout(ctx, row.ID, "hello", nil, time.Minute, func(raw json.RawMessage) {
+			usage, byModel, err := s.ChatWithTimeout(ctx, row.ID, "hello", nil, time.Minute, nil, func(raw json.RawMessage) {
 				streamed.Write(raw)
 			})
 			if tc.wantError == "" {

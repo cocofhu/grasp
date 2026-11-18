@@ -20,7 +20,7 @@ type executionSnapshotChat struct {
 	fail    bool
 }
 
-func (g *executionSnapshotChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, _ time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (g *executionSnapshotChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, _ time.Duration, _ *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	close(g.started)
 	onEvent(json.RawMessage(`{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"kept reply"}}`))
 	select {

@@ -154,7 +154,7 @@ func TestCodexLiveSandboxSurvivesRenewalAndRelogin(t *testing.T) {
 			fx.hub.Register(fx.id, liveCodexKey(row.ID), file, "/root/.codex/auth.json", version)
 			chat := func() {
 				t.Helper()
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "continue", nil, 0, nil); err != nil {
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "continue", nil, 0, nil, nil); err != nil {
 					t.Fatalf("a platform-managed login could not continue: %v", err)
 				}
 			}
@@ -176,13 +176,13 @@ func TestCodexLiveSandboxSurvivesRenewalAndRelogin(t *testing.T) {
 			if _, err := configurations.Update(configuration.ID, configuration); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "changed model", nil, 0, nil); err == nil {
+			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "changed model", nil, 0, nil, nil); err == nil {
 				t.Fatal("changing the model bypassed the binding check")
 			}
 			if err := fx.creds.Revoke(fx.id); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "revoked", nil, 0, nil); err == nil {
+			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "revoked", nil, 0, nil, nil); err == nil {
 				t.Fatal("a revoked credential remained usable")
 			}
 		})

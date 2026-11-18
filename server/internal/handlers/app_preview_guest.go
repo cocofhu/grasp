@@ -11,7 +11,6 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/textutil"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -218,7 +217,11 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				prompt = "Earlier messages in this preview chat (context only):\n" +
 					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
 			}
-			narration, completed, sent := writePreviewGuestTurn(turnCtx, cancel, conn, client, prompt, request.Images)
+			client.WithExecution(h.Sbx.PreviewGuestExecution(turnCtx, sb, client.ChatID()))
+			chat := func(ctx context.Context, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error) {
+				return h.Sbx.ChatPreviewGuestTurn(ctx, sb, link.RunID, link.NodeID, client, prompt, files, onProgress)
+			}
+			narration, completed, sent := writePreviewGuestTurn(turnCtx, cancel, conn, client, chat, prompt, request.Images)
 			if !sent {
 				return
 			}
@@ -309,7 +312,10 @@ func (h *Handlers) watchAppPreviewChat(ctx context.Context, cancel context.Cance
 	}
 }
 
-func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, text string, images []models.PromptImage) (string, bool, bool) {
+// previewGuestChat runs one visitor turn on client; production ledgers it.
+type previewGuestChat func(ctx context.Context, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error)
+
+func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, client *sandbox.ACPClient, chat previewGuestChat, text string, images []models.PromptImage) (string, bool, bool) {
 	last := time.Time{}
 	lastSteps, lastSegments := -1, -1
 	var lastTools []sandbox.ACPToolCall
@@ -324,7 +330,7 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 			"parts":     gateshare.SanitizeParts(models.PartsForReply(result.AcpEvents(), narration)),
 			"startedAt": started.Format(time.RFC3339Nano), "execution": previewExecution(execution)}
 	}
-	result, err := services.ChatPreviewGuestTurn(ctx, client, text, images, func(progress *sandbox.ChatResult) {
+	result, err := chat(ctx, client, text, images, func(progress *sandbox.ChatResult) {
 		if progress == nil {
 			return
 		}

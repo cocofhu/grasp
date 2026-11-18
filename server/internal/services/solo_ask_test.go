@@ -17,7 +17,7 @@ type askChat struct {
 	runID string
 }
 
-func (c *askChat) ChatWithTimeout(_ context.Context, _ uint, _ string, _ []models.PromptImage, _ time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (c *askChat) ChatWithTimeout(_ context.Context, _ uint, _ string, _ []models.PromptImage, _ time.Duration, _ *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	c.host.SetPendingQuestions(c.runID, "solo", []models.ReactQuestion{{ID: "q1", Prompt: "Which database?", Options: []models.ReactOption{{ID: "pg", Label: "Postgres", Recommended: true}, {ID: "my", Label: "MySQL"}}}})
 	c.host.SetPendingForms(c.runID, "solo", []models.ReactForm{{Fields: []models.ReactFormField{{Name: "url", Label: "URL"}}}})
 	onEvent(json.RawMessage(`{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Pick one"}}`))

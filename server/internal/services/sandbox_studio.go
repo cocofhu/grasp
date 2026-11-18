@@ -17,8 +17,6 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
-	"github.com/cocofhu/grasp/internal/tokenledger"
-
 	"github.com/rs/zerolog/log"
 )
 
@@ -341,39 +339,20 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 // guard stays as a safety net; serial ordering of multiple messages is handled
 // by the caller's single-worker queue (see handlers.SandboxChat).
 func (s *SandboxService) Chat(ctx context.Context, id uint, text string, images []models.PromptImage, onEvent func(json.RawMessage)) error {
-	usage, byModel, err := s.ChatWithTimeout(ctx, id, text, images, 0, onEvent)
-	s.recordStudioUsage(id, usage, byModel, err)
+	_, _, err := s.ChatWithTimeout(ctx, id, text, images, 0, nil, onEvent)
 	return err
-}
-
-// recordStudioUsage ledgers an interactive Studio / Agent-workspace chat turn.
-func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, byModel models.TokenUsageByModel, err error) {
-	if usage == nil && byModel == nil {
-		return
-	}
-	var row models.Sandbox
-	_ = s.db.Select("id", "thread_id").Where("id = ?", id).Limit(1).Find(&row).Error
-	status := models.TokenLedgerStatusOK
-	if err != nil {
-		status = models.TokenLedgerStatusFailed
-		if errors.Is(err, context.Canceled) {
-			status = models.TokenLedgerStatusCancelled
-		}
-	}
-	tokenledger.Record(s.db, tokenledger.Entry{
-		Source: models.TokenLedgerSourceStudio, Phase: models.TokenLedgerPhaseChat, Status: status,
-		SandboxID: id, Usage: usage, ByModel: byModel,
-	})
 }
 
 // ChatWithTimeout is Chat with an optional total time limit. timeout<=0 sets
 // none: an active turn may run as long as it needs, and a stalled one ends on
-// the sandbox no-activity watchdog or ctx cancellation.
+// the sandbox no-activity watchdog or ctx cancellation. execution is the turn's
+// route as its reply shows it; usage reported without a model is recorded
+// under its model. nil keeps the connection's.
 //
 // Returns the turn's TokenUsage (+ optional by-model breakdown) from
 // prompt_done (nil = not reported), including failed turns. Provider failures
 // are errors even when their transport completed with prompt_done.
-func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, execution *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	unlock, err := s.lockSoloRecovery(ctx, id)
 	if err != nil {
 		return nil, nil, err
@@ -410,25 +389,10 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	}
 	defer cancel()
 	result, err := s.codexLiveTurn(chatCtx, id, func() (*sandbox.ChatResult, error) {
-		result, err := ls.acp.ChatStream(chatCtx, text, images, onEvent)
-		if result != nil && result.OpID != "" {
-			source := models.TokenLedgerSourceStudio
-			if row.Purpose == SandboxPurposeSolo {
-				source = models.TokenLedgerSourceSolo
-			}
-			tokenledger.Record(s.db, tokenledger.Entry{
-				ID: result.OpID, At: result.EndedAt, Source: source, Phase: models.TokenLedgerPhaseChat,
-				Partial: result.StopReason == "" || result.UsagePartial,
-				Status:  result.UsageStatus(err), ThreadID: row.ThreadID, SandboxID: id,
-				Usage: result.Usage, ByModel: result.UsageByModel,
-			})
-			if result.Usage != nil {
-				result.Usage.LedgerRecorded = true
-			}
-		}
+		result, err := ls.acp.WithExecution(execution).ChatStream(chatCtx, text, images, onEvent)
+		recordTurnUsage(s.db, sandboxChatUsage(row), result, err)
 		return result, err
 	})
-	_ = row
 	if result == nil {
 		return nil, nil, err
 	}

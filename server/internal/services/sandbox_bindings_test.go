@@ -93,7 +93,7 @@ func TestLongLivedSandboxModelChangesBlockNextTurn(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must not reach the old model", nil, 0, nil); err == nil {
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must not reach the old model", nil, 0, nil, nil); err == nil {
 					t.Fatal("a new turn used stale model authorization")
 				}
 			})
@@ -110,7 +110,7 @@ func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
 		} else {
 			s.live[row.ID].acp.Close()
 		}
-		if _, _, err := s.ChatWithTimeout(ctx, row.ID, "continue", nil, 0, nil); err != nil {
+		if _, _, err := s.ChatWithTimeout(ctx, row.ID, "continue", nil, 0, nil, nil); err != nil {
 			t.Fatalf("unchanged authorization failed after reconnect (restart=%v): %v", restart, err)
 		}
 		live := s.live[row.ID]
@@ -119,7 +119,7 @@ func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
 		}
 	}
 	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
-	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git must block", nil, 0, nil); err == nil {
+	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git must block", nil, 0, nil, nil); err == nil {
 		t.Fatal("chat ignored a revoked repository credential")
 	}
 }

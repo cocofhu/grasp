@@ -31,14 +31,17 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 	connected := make(chan string, 2)
 	deleted := make(chan string, 2)
 	modelWrites := make(chan string, 2)
+	var selected atomic.Value
+	selected.Store("")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/chats":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = fmt.Fprintf(w, `{"id":"guest-%d"}`, created.Add(1))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/models":
-			_, _ = fmt.Fprint(w, `{"configured":true,"models":[{"id":"guest-model"}],"reasoningEffort":""}`)
+			_, _ = fmt.Fprintf(w, `{"configured":true,"models":[{"id":"guest-model"}],"selected":%q,"reasoningEffort":""}`, selected.Load())
 		case r.Method == http.MethodPost && r.URL.Path == "/api/model":
+			selected.Store("guest-model")
 			modelWrites <- r.URL.Query().Get("chat")
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/chats/"):
 			deleted <- strings.TrimPrefix(r.URL.Path, "/api/chats/")
@@ -67,6 +70,7 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, expected := range []string{"guest-1", "guest-2"} {
+		selected.Store("")
 		client, closeChat, err := s.OpenPreviewGuest(ctx, row)
 		if err != nil {
 			t.Fatal(err)
@@ -80,8 +84,11 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		if got := <-modelWrites; got != expected {
 			t.Fatalf("switched %q, want %q", got, expected)
 		}
+		if execution := s.PreviewGuestExecution(ctx, row, client.ChatID()); execution.ModelID != "guest-model" || execution.AgentName != "agentA" {
+			t.Fatalf("guest execution = %+v", execution)
+		}
 		file := models.PromptImage{MimeType: "text/plain", Name: "guest.txt", Data: "Z3Vlc3Q="}
-		result, err := ChatPreviewGuestTurn(ctx, client, "guest prompt", []models.PromptImage{file}, nil)
+		result, err := s.ChatPreviewGuestTurn(ctx, row, "run-shared", "preview-node", client, "guest prompt", []models.PromptImage{file}, nil)
 		closeChat()
 		if err != nil || result == nil || result.Narration != "guest reply" {
 			t.Fatalf("guest reply: %+v, %v", result, err)
@@ -101,5 +108,31 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		if got := <-deleted; got != expected {
 			t.Fatalf("deleted %q, want %q", got, expected)
 		}
+	}
+	// Visitor turns consume the owner's tokens and are ledgered like the
+	// workflow node's own visitor lanes.
+	var events []models.TokenUsageEvent
+	if err := db.Order("id").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("guest usage events = %+v", events)
+	}
+	for _, e := range events {
+		if e.Source != models.TokenLedgerSourceWorkflow || e.Phase != models.TokenLedgerPhaseInteractive || e.RunID != "run-shared" || e.NodeID != "preview-node" ||
+			e.SandboxID != row.ID || e.ModelKey != "fixture-model" || e.InputTokens != 7 || e.OutputTokens != 3 {
+			t.Fatalf("guest usage event = %+v", e)
+		}
+	}
+}
+
+func TestPreviewGuestUsageFollowsPreviewOwner(t *testing.T) {
+	solo := previewGuestUsage(&models.Sandbox{ID: 4, Purpose: SandboxPurposeSolo, ThreadID: "session-1"}, "solo-run", "solo-node")
+	if solo.Source != models.TokenLedgerSourceSolo || solo.Phase != models.TokenLedgerPhaseChat || solo.ThreadID != "session-1" || solo.SandboxID != 4 || solo.RunID != "" {
+		t.Fatalf("solo preview usage = %+v", solo)
+	}
+	run := previewGuestUsage(&models.Sandbox{ID: 5, Purpose: "run"}, "run-1", "node-1")
+	if run.Source != models.TokenLedgerSourceWorkflow || run.Phase != models.TokenLedgerPhaseInteractive || run.RunID != "run-1" || run.NodeID != "node-1" || run.SandboxID != 5 {
+		t.Fatalf("workflow preview usage = %+v", run)
 	}
 }

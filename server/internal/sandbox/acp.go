@@ -278,6 +278,17 @@ func (c *ACPClient) BridgeModel() string {
 	return c.bridgeModel
 }
 
+// usageModel names usage the agent reports without a model: the model of the
+// turn's execution, which is what the reply shows, else the launch model.
+func (c *ACPClient) usageModel() string {
+	if c.execution != nil {
+		if model := strings.TrimSpace(c.execution.ModelID); model != "" {
+			return model
+		}
+	}
+	return c.bridgeModel
+}
+
 // WithPassword sets the acp-bridge login secret (ACP_BRIDGE_PASSWORD). Connect
 // authenticates with it before dialing /ws.
 func (c *ACPClient) WithPassword(password string) *ACPClient {
@@ -666,7 +677,7 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 			result.SessionReset = ev.SessionReset
 			result.UsagePartial = ev.UsagePartial
 			result.EndedAt = ev.ReportedAt
-			if u, byModel := parsePromptDoneUsage(ev.Usage, c.bridgeModel); u != nil {
+			if u, byModel := parsePromptDoneUsage(ev.Usage, c.usageModel()); u != nil {
 				result.Usage = models.AddTokenUsage(result.Usage, u)
 				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)
 			}

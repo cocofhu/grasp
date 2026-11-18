@@ -392,7 +392,7 @@ func newGateChat(block bool) *gateChat {
 	return &gateChat{start: make(chan struct{}), goOn: make(chan struct{}), block: block}
 }
 
-func (g *gateChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (g *gateChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, _ *models.ChatExecution, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	g.mu.Lock()
 	first := len(g.prompts) == 0
 	g.prompts = append(g.prompts, text)
