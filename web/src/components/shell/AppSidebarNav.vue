@@ -375,7 +375,7 @@ function onSoloRow(session: SoloSession) {
 
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
-const MENU_WIDTH = 168
+const MENU_WIDTH = 184
 /** Blocked share copy is longer than the two-item menu, so the clamp must follow it. */
 const MENU_WIDTH_BLOCKED = 280
 /** 8px of menu padding plus 32px per row (workflow view, pin, rename, cancel, optional share). */
@@ -1629,9 +1629,9 @@ const primaryItems = computed(() => props.rail
         :aria-checked="menuKeepAlive"
         @click="onMenuKeepAlive"
       >
-        <Icon v-if="menuKeepAlive" name="check" :size="14" />
-        <span v-else class="inline-block w-[14px] shrink-0" aria-hidden="true" />
+        <Icon name="infinity" :size="14" />
         <span>{{ t('nav.pendingKeepAlive') }}</span>
+        <Icon v-if="menuKeepAlive" name="check" :size="14" :interactive="false" class="ms-auto" />
       </button>
       <button
         v-if="menuSolo && ((menuSolo.status === 'running' && !menuSolo.busy && !menuSolo.waiting) || menuSolo.status === 'stopped')"

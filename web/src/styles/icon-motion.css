@@ -873,3 +873,8 @@
 
 /* icon: inbox-reply */
 .app-icon[data-icon="inbox-reply"][data-icon-motion="busy"] .p0{animation:iconMotion_inbox_reply_reply 1200ms ease 1;animation-iteration-count:infinite}
+
+/* icon: infinity */
+.app-icon[data-icon="infinity"] path{transform-origin:12px 12px}
+.app-icon[data-icon="infinity"][data-icon-motion="once"] path{animation:iconMotion_infinity_pulse 500ms ease-in-out}
+@keyframes iconMotion_infinity_pulse{0%,100%{transform:scale(1)}45%{transform:scale(1.08)}}
