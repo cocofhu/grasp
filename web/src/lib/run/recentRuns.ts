@@ -82,9 +82,12 @@ export function isWorkingWaitingRun(run: RecentRun): boolean {
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 
+const FINISHED_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled', 'canceled'])
+
 /**
  * Click target: the live conversation for an automatic process (including one
- * that has not started), the node's chat for a person, else run detail.
+ * that has not started), the node's chat for a person, the read-only
+ * conversation for a finished run, else run detail.
  * `awaitAuto` is the sidebar row already sitting in「自动过程」while the
  * snapshot has no watchable node yet — still the conversation, not detail.
  * Desktop and narrow screens share this target.
@@ -101,6 +104,7 @@ export function recentRunTarget(
     if (options?.awaitAuto && (run.status === 'running' || run.status === 'waiting_human')) {
       return runLivePath(run.id)
     }
+    if (FINISHED_RUN_STATUSES.has(String(run.status))) return runLivePath(run.id)
     return runDetailPath(run.id)
   }
   if (isObservableNode(n)) return { path: runLivePath(run.id), query: { node: n.id } }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import { useI18n } from 'vue-i18n'
 import RecentReorderList from './RecentReorderList.vue'
@@ -19,16 +19,25 @@ import {
   onRecentActivity,
   recentRunActive,
   recentRunTarget,
+  runDetailPath,
   sameRecentRows,
 } from '@/lib/run/recentRuns'
 
 /** Finished runs requested per page, and the same cap on ended Solo sessions before they merge. */
 const SIDEBAR_HISTORY_RUN_LIMIT = 20
+/** Same box as the 正在执行 row menu: 8px padding plus one 32px row. */
+const MENU_WIDTH = 168
+const MENU_HEIGHT = 8 + 32
+const MENU_MARGIN = 8
+/** Touch long-press, same timing as the 正在执行 rows. */
+const LONG_PRESS_MS = 500
+const LONG_PRESS_MOVE_PX = 8
 
 const props = defineProps<{ runTitles?: Record<string, string> }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const context = useWorkspaceContext()
 const { workspace, ensureLoaded } = context
 const workspaceReady = computed(() => !!workspace.value)
@@ -106,7 +115,98 @@ watch([workspaceReady, () => route.path], () => {
 // from pages that hold a run WebSocket (live view, inbox chat).
 const recentTimer = window.setInterval(() => { if (workspaceReady.value && !document.hidden) void loadRuns() }, RECENT_POLL_MS)
 const offRecentActivity = onRecentActivity(() => { if (workspaceReady.value) void loadRuns() })
-onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer); offRecentActivity(); recentHold.detach() })
+
+/** Right-click menu on a workflow run row (Solo sessions have no workflow). */
+const menu = ref<{ runId: string; x: number; y: number } | null>(null)
+const menuEl = ref<HTMLElement | null>(null)
+function openMenu(runId: string, clientX: number, clientY: number) {
+  const x = Math.max(MENU_MARGIN, Math.min(clientX, window.innerWidth - MENU_WIDTH))
+  const y = Math.max(MENU_MARGIN, Math.min(clientY, window.innerHeight - MENU_HEIGHT))
+  menu.value = { runId, x, y }
+}
+function onRunContextMenu(event: MouseEvent, run: Run) {
+  event.preventDefault()
+  event.stopPropagation()
+  clearRowPress()
+  openMenu(run.id, event.clientX, event.clientY)
+}
+let rowPress: { x: number; y: number; timer: number } | null = null
+/** The click that ends a long-press must not also follow the row link. */
+let suppressClick = false
+function clearRowPress() {
+  if (!rowPress) return
+  window.clearTimeout(rowPress.timer)
+  window.removeEventListener('pointermove', onRowPressMove)
+  window.removeEventListener('pointerup', clearRowPress)
+  window.removeEventListener('pointercancel', clearRowPress)
+  rowPress = null
+}
+function onRowPressMove(event: PointerEvent) {
+  if (rowPress && (Math.abs(event.clientX - rowPress.x) > LONG_PRESS_MOVE_PX || Math.abs(event.clientY - rowPress.y) > LONG_PRESS_MOVE_PX)) clearRowPress()
+}
+function onRunPointerDown(event: PointerEvent, run: Run) {
+  if (event.pointerType === 'mouse') return
+  clearRowPress()
+  const timer = window.setTimeout(() => {
+    if (!rowPress) return
+    const { x, y } = rowPress
+    clearRowPress()
+    suppressClick = true
+    window.setTimeout(() => { suppressClick = false }, 400)
+    openMenu(run.id, x, y)
+  }, LONG_PRESS_MS)
+  rowPress = { x: event.clientX, y: event.clientY, timer }
+  window.addEventListener('pointermove', onRowPressMove)
+  window.addEventListener('pointerup', clearRowPress)
+  window.addEventListener('pointercancel', clearRowPress)
+}
+function onRunClickCapture(event: MouseEvent) {
+  if (!suppressClick) return
+  suppressClick = false
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
+function closeMenu() { menu.value = null }
+function onDocMouseDown(event: MouseEvent) {
+  const target = event.target
+  if (target instanceof Node && menuEl.value?.contains(target)) return
+  closeMenu()
+}
+function onDocKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  event.preventDefault()
+  closeMenu()
+}
+watch(menu, (open, was) => {
+  if (open && !was) {
+    document.addEventListener('mousedown', onDocMouseDown)
+    document.addEventListener('keydown', onDocKeydown)
+  } else if (!open && was) {
+    document.removeEventListener('mousedown', onDocMouseDown)
+    document.removeEventListener('keydown', onDocKeydown)
+  }
+})
+function onMenuWorkflowView() {
+  const m = menu.value
+  if (!m) return
+  closeMenu()
+  const query: Record<string, string> = { view: 'canvas' }
+  for (const key of ['wf', 'tag'] as const) {
+    const raw = route.query[key]
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (typeof value === 'string' && value) query[key] = value
+  }
+  const path = runDetailPath(m.runId)
+  if (route.path === path) void router.replace({ path, query })
+  else void router.push({ path, query })
+  emit('navigate')
+}
+
+onBeforeUnmount(() => {
+  runsRequest?.abort(); window.clearInterval(recentTimer); offRecentActivity(); recentHold.detach(); clearRowPress()
+  document.removeEventListener('mousedown', onDocMouseDown)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>
 
 <template>
@@ -118,16 +218,23 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @click="emit('navigate')"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="entry in entries" :key="entry.key" class="sidebar-tree-item"><RouterLink v-hover-ink v-if="entry.kind === 'solo'" :to="soloPath(entry.session)" class="workspace-recent-row" :class="{ 'is-active': soloActive(entry.session) }" :aria-current="soloActive(entry.session) ? 'page' : undefined" :title="soloTitle(entry.session)" data-testid="sidebar-recent-solo" :data-solo-id="entry.session.id" :data-status="entry.session.status" @click="emit('navigate')"><span class="workspace-list-title">{{ soloTitle(entry.session) }}</span><Icon v-if="entry.session.status === 'error'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink><RouterLink v-hover-ink v-else :to="recentRunTarget(entry.run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(entry.run, route) }" :aria-current="recentRunActive(entry.run, route) ? 'page' : undefined" :title="runTitle(entry.run)" data-testid="sidebar-recent-run" :data-run-id="entry.run.id" :data-status="entry.run.status" @click.capture="onRunClickCapture" @click="emit('navigate')" @contextmenu="onRunContextMenu($event, entry.run)" @pointerdown="onRunPointerDown($event, entry.run)"><span class="workspace-list-title">{{ runTitle(entry.run) }}</span><Icon v-if="entry.run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="entry.run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
         </RecentReorderList>
       </div>
       </div>
     </section>
+    <Teleport to="body">
+      <div v-if="menu" ref="menuEl" class="recent-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card" role="menu" data-testid="sidebar-recent-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @mousedown.stop @click.stop @contextmenu.prevent>
+        <button type="button" role="menuitem" class="recent-row-menu__item" data-testid="sidebar-recent-menu-workflow" @click="onMenuWorkflowView"><Icon name="workflow" :size="14" /><span>{{ t('nav.pendingWorkflowView') }}</span></button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .workspace-lists { min-width: 0; font-size: 13px; }
+.recent-row-menu__item { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 12px; color: rgb(var(--c-txt2)); font-size: 12px; text-align: start; white-space: nowrap; cursor: pointer; }
+.recent-row-menu__item:hover, .recent-row-menu__item:focus-visible { color: rgb(var(--c-txt)); background: rgb(var(--c-overlay)); outline: none; }
 .workspace-list-heading { display: flex; align-items: center; justify-content: flex-start; gap: 1px; margin: 0 0 4px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
 .workspace-list-heading:hover { color: rgb(var(--c-txt)); }
 .workspace-list-heading > a:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; color: inherit; }

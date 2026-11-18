@@ -39,11 +39,11 @@ describe('recentRunMark uses the status primitives', () => {
 })
 
 describe('recentRunTarget goes straight into the chat', () => {
-  it('auto node → live stream; waiting/taken-over → inbox chat; else detail', () => {
+  it('auto node → live stream; waiting/taken-over → inbox chat; finished → read-only conversation', () => {
     expect(recentRunTarget(run(cur('agent', 'running')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
     expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/runs/r1/nodes/n1' })
     expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/runs/r1/nodes/n1' })
-    expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
+    expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1/live')
     // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
     expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
     // Chosen but not started: the live conversation, on any width. Not run detail.
@@ -59,12 +59,12 @@ describe('recentRunTarget goes straight into the chat', () => {
     expect(recentRunTarget(run(undefined, 'running'), undefined, { awaitAuto: true })).toBe('/runs/r1/live')
     // The same gap outside「自动过程」still opens run detail.
     expect(recentRunTarget(run(undefined, 'waiting_human'))).toBe('/runs/r1')
-    // Finished runs leave, even if a stale entering node or an auto-row hint is attached.
-    expect(recentRunTarget(run(cur('agent', 'entering'), 'completed'))).toBe('/runs/r1')
-    expect(recentRunTarget(run(cur('agent', 'entering'), 'failed'))).toBe('/runs/r1')
-    expect(recentRunTarget(run(cur('agent', 'entering'), 'cancelled'))).toBe('/runs/r1')
-    expect(recentRunTarget(run(undefined, 'failed'), undefined, { awaitAuto: true })).toBe('/runs/r1')
-    expect(recentRunTarget(run(undefined, 'cancelled'), undefined, { awaitAuto: true })).toBe('/runs/r1')
+    // Finished runs open their read-only conversation, even with a stale entering node or an auto-row hint.
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'completed'))).toBe('/runs/r1/live')
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'failed'))).toBe('/runs/r1/live')
+    expect(recentRunTarget(run(cur('agent', 'entering'), 'cancelled'))).toBe('/runs/r1/live')
+    expect(recentRunTarget(run(undefined, 'failed'), undefined, { awaitAuto: true })).toBe('/runs/r1/live')
+    expect(recentRunTarget(run(undefined, 'cancelled'), undefined, { awaitAuto: true })).toBe('/runs/r1/live')
   })
   it('marks the row active on its detail, live and chat pages', () => {
     const r = run(undefined)

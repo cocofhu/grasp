@@ -213,6 +213,60 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     } finally { wrapper.unmount() }
   })
 
+  it('opens a finished run read-only on its last node instead of leaving for run detail', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
+    await router.push('/runs/r1/live')
+    const replace = vi.spyOn(router, 'replace')
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'completed' })
+    mocks.nodeEvents.mockResolvedValue({ events: [] })
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'r1', status: 'completed', currentNode: null,
+      segments: [
+        { nodeId: 'need', iteration: 1, name: '需求澄清', kind: 'clarify', mode: 'manual', status: 'completed', turns: [{ role: 'user', text: '做个页面' }] },
+        { nodeId: 'impl', iteration: 1, name: '实现', kind: 'agent', mode: 'auto', status: 'completed', task: '实现页面', eventCount: 3 },
+      ],
+    })
+    let live!: ReturnType<typeof useRunLive>
+    const Harness = defineComponent({
+      setup() {
+        live = useRunLive(ref('r1'), computed(() => String(router.currentRoute.value.query.node || '')), ref({ releaseConfirmPending: vi.fn() }))
+        return () => h('div')
+      },
+    })
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
+    const wrapper = mount(Harness, { global: { plugins: [router, i18n] } })
+    try {
+      await flushPromises()
+      expect(replace).not.toHaveBeenCalled()
+      expect(live.nodeId.value).toBe('impl')
+      expect(live.mode.value).toBe('observe')
+      expect(live.ended.value).toBe(true)
+      expect(live.endState.value).toEqual({ kind: 'run', status: 'completed' })
+      expect(live.task.value).toBe('实现页面')
+      expect(live.priorSegments.value.map((s) => s.nodeId)).toEqual(['need'])
+    } finally { wrapper.unmount() }
+  })
+
+  it('still leaves a finished run with no conversation for run detail', async () => {
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'cancelled' })
+    mocks.runConversationChain.mockResolvedValue({ runId: 'r1', status: 'cancelled', currentNode: null, segments: [] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
+    await router.push('/runs/r1/live')
+    const replace = vi.spyOn(router, 'replace')
+    const Harness = defineComponent({
+      setup() {
+        useRunLive(ref('r1'), computed(() => ''), ref({ releaseConfirmPending: vi.fn() }))
+        return () => h('div')
+      },
+    })
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
+    const wrapper = mount(Harness, { global: { plugins: [router, i18n] } })
+    try {
+      await flushPromises()
+      expect(replace).toHaveBeenCalledExactlyOnceWith('/runs/r1')
+    } finally { wrapper.unmount() }
+  })
+
   it('loads the initial conversation chain for the selected iteration above one', async () => {
     mocks.getRun.mockResolvedValue({ ...autoRun, currentNode: { ...cur('impl', 'agent', 'auto', 'running'), iteration: 2 } })
     mocks.nodeEvents.mockResolvedValue({ events: [] })
