@@ -50,6 +50,7 @@ export type ClarifyFollowProcess = {
 </script>
 
 <script setup lang="ts">
+import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
@@ -600,8 +601,10 @@ onMounted(() => document.addEventListener('pointerdown', onPlusOutside))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onPlusOutside))
 
 /** The picker takes ↑↓ Tab Esc, and Enter only while a row is highlighted; everything else is the chat's. */
+const commandMenu = ref<InstanceType<typeof SlashCommandMenu>>()
 function onClarifyKeydown(e: KeyboardEvent) {
   if (mention.onKeydown(e)) return
+  if (commandMenu.value?.handleKeydown(e)) return
   onComposerKeydown(e)
 }
 function onClarifyInput() {
@@ -1698,6 +1701,14 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </div>
       <div class="relative">
+      <SlashCommandMenu
+        ref="commandMenu"
+        v-model="draft"
+        :textarea="textareaRef"
+        :disabled="composerInputLocked || !!mention.trigger.value"
+        :composing="composing"
+        test-prefix="clarify"
+      />
       <Transition name="ref-pop">
         <ReferencePicker
           v-if="referencesOn && mention.trigger.value"

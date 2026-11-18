@@ -13,6 +13,7 @@ import GateHotUnifiedActions from './GateHotUnifiedActions.vue'
 function mountHot(
   patch: Record<string, unknown> = {},
   locale: 'zh-CN' | 'en' = 'zh-CN',
+  withInput = false,
 ) {
   const cancelReactRevise = vi.fn()
   const sendHotReject = vi.fn()
@@ -61,9 +62,10 @@ function mountHot(
   const i18n = createI18n({ legacy: false, locale, messages })
   const wrapper = mount(GateHotUnifiedActions, {
     props: { layout: 'content-fit' },
+    attachTo: withInput ? document.body : undefined,
     global: {
       plugins: [i18n],
-      stubs: { Icon: true, ParagraphInput: true, GateReactStreamPanel: true, PendingSendQueuePanel: true },
+      stubs: { Icon: true, ParagraphInput: !withInput, GateReactStreamPanel: true, PendingSendQueuePanel: true },
       provide: {
         [gateApprovalKey as symbol]: {
           s,
@@ -78,6 +80,21 @@ function mountHot(
 }
 
 describe('GateHotUnifiedActions hot toolbar', () => {
+  it('completes a slash command in the preview review input', async () => {
+    const { wrapper, s } = mountHot({}, 'zh-CN', true)
+    try {
+      const input = wrapper.get<HTMLTextAreaElement>('[data-testid="paragraph-input"]')
+      input.element.focus()
+      await input.setValue('/')
+      expect(wrapper.get('[data-testid="gate-preview-commands"]').findAll('[role="option"]')).toHaveLength(3)
+      await input.trigger('keydown', { key: 'ArrowDown' })
+      await input.trigger('keydown', { key: 'Enter' })
+      expect(s.reactText).toBe('/compact')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('idle empty draft shows an inactive send icon, record, and confirm outside the box', async () => {
     const { wrapper } = mountHot()
     await flushPromises()

@@ -6,6 +6,13 @@ import { createI18n } from 'vue-i18n'
 import ChatUserMessage from './ChatUserMessage.vue'
 
 describe('ChatUserMessage markdown', () => {
+  it('shows the selected skill separately from its task', () => {
+    const w = mount(ChatUserMessage, { props: { text: '/skill review 检查 **移动端** 版式' } })
+    expect(w.get('[data-testid="chat-skill-tag"] code').text()).toBe('review')
+    expect(w.get('.chat-prose').text()).toBe('检查 移动端 版式')
+    expect(w.get('.chat-prose strong').text()).toBe('移动端')
+    w.unmount()
+  })
   it('shows the recorded time on hover without inventing a time for older rows', () => {
     const known = mount(ChatUserMessage, { props: { text: 'A question', createdAt: '2026-10-28T08:00:00Z' } })
     expect(known.attributes('title')).toMatch(/2026-10-28/)

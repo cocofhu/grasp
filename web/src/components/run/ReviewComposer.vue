@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
 import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
 import { attachmentsReading } from '@/lib/shared/attachments'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -176,6 +177,7 @@ const emit = defineEmits<{
 }>()
 
 const paragraphRef = ref<{ pickFiles?: () => void; textarea?: HTMLTextAreaElement | null } | null>(null)
+const commandMenu = ref<InstanceType<typeof SlashCommandMenu>>()
 
 const chatRef = ref<{
   applyRequestRejected: (frame: any) => void
@@ -313,7 +315,8 @@ onMounted(() => document.addEventListener('pointerdown', onGatePlusOutside))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onGatePlusOutside))
 
 function onGateKeydown(e: KeyboardEvent) {
-  if (e.target === paragraphRef.value?.textarea) gateMention.onKeydown(e)
+  if (e.target !== paragraphRef.value?.textarea || gateMention.onKeydown(e)) return
+  commandMenu.value?.handleKeydown(e)
 }
 function onGateCaret(e: Event) {
   if (e.target === paragraphRef.value?.textarea) gateMention.updateTrigger()
@@ -473,6 +476,15 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
         </TransitionGroup>
       </template>
       <div class="relative">
+      <SlashCommandMenu
+        v-if="!coldSession"
+        ref="commandMenu"
+        v-model="draft"
+        :textarea="paragraphRef?.textarea"
+        :disabled="rejecting || !canReject || !!gateMention.trigger.value"
+        :composing="gateComposing"
+        test-prefix="gate"
+      />
       <Transition name="ref-pop">
         <ReferencePicker
           v-if="gateReferencesOn && gateMention.trigger.value"

@@ -21,6 +21,7 @@ import (
 type ArtifactTurn struct {
 	SessionID  string
 	TurnID     string
+	ContextID  string
 	Lane       string
 	SandboxID  uint
 	StateRunID uint
@@ -160,7 +161,7 @@ func (s *ArtifactDeliveryService) deliver(ctx context.Context, runID, nodeID str
 				return findErr
 			}
 			if errors.Is(findErr, gorm.ErrRecordNotFound) {
-				reply = models.SoloMessage{ID: id, SessionID: turn.SessionID, Role: "assistant", TurnID: turn.TurnID, CreatedAt: time.Now()}
+				reply = models.SoloMessage{ID: id, SessionID: turn.SessionID, Role: "assistant", TurnID: turn.TurnID, ContextID: turn.ContextID, CreatedAt: time.Now()}
 			}
 			reply.Files = append(reply.Files, a)
 			return tx.Save(&reply).Error

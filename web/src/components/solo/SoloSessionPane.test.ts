@@ -23,6 +23,7 @@ const box = vi.hoisted(() => ({
     initialModelId?: string
     currentModelId?: string
     currentModelSet?: boolean
+    skills?: string[]
     reasoningEffort?: string
     reasoningEfforts?: string[]
   }>,
@@ -148,11 +149,59 @@ function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
 }
 
 describe('SoloSessionPane', () => {
+  it('offers slash commands and lets the user add a task before sending a skill', async () => {
+    resetCliCatalog()
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockResolvedValueOnce([
+      { name: 'Coder', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'c1' } },
+    ] as never)
+    vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({
+      items: [{ id: 'c1', name: 'cfg', backend: 'cursor', state: 'active', revision: 1, binding: { kind: 'platform', credentialId: 'k', modelId: 'primary' } }],
+    })
+    vi.mocked(api.cliModels).mockResolvedValueOnce({ models: [{ id: 'primary', name: 'Primary', vendor: 'cursor' }] } as never)
+    currentModelId.value = 'primary'
+    sessionState.value = { ...sessionState.value, skills: ['review'] }
+    box.send.mockClear()
+    const wrapper = mountPane(pages)
+    try {
+      await flushPromises()
+      const input = wrapper.get<HTMLTextAreaElement>('[data-testid="solo-input"]')
+      await input.trigger('focus')
+      await input.setValue('/')
+      const menu = wrapper.get('[data-testid="solo-commands"]')
+      expect(menu.findAll('code')).toHaveLength(0)
+      expect(menu.get('[aria-selected="true"]').attributes('data-command')).toBe('new')
+      await input.trigger('keydown', { key: 'ArrowDown' })
+      expect(menu.get('[aria-selected="true"]').attributes('data-command')).toBe('compact')
+      await input.trigger('keydown', { key: 'ArrowUp' })
+      await input.trigger('keydown', { key: 'Enter' })
+      expect(input.element.value).toBe('/new')
+      expect(box.send).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="solo-commands"]').exists()).toBe(false)
+
+      await input.setValue('/skill')
+      await wrapper.get('[data-testid="solo-commands"] [role="option"]').trigger('click')
+      expect(input.element.value).toBe('/skill ')
+      await wrapper.get('[data-testid="solo-commands"] [role="option"]').trigger('click')
+      await flushPromises()
+      expect(input.element.value).toBe('/skill review ')
+      await input.setValue('/skill review check the draft')
+      await input.trigger('keydown', { key: 'Enter' })
+      expect(box.send).toHaveBeenCalledWith('/skill review check the draft', [], [], [])
+    } finally {
+      wrapper.unmount()
+      sessionState.value = { ...sessionState.value, skills: undefined }
+      currentModelId.value = ''
+      resetCliCatalog()
+    }
+  })
+
   it('shows the question card only on the latest reply and sends the choice as a message', async () => {
     const question = { id: 'q1', prompt: '用哪个?', options: [{ id: 'a', label: 'A', recommended: true }, { id: 'b', label: 'B' }] }
     const earlier = { ...turn('a:a0', 'agent', 'old'), questions: [question] }
     const latest = { ...turn('a:a1', 'agent', 'pick'), questions: [question] }
-    turns.value = [turn('u:u0', 'user', 'hi'), earlier, turn('u:u1', 'user', 'again'), latest]
+    turns.value = [turn('u:u0', 'user', 'hi'), earlier, turn('u:u1', 'user', 'again'), latest,
+      { ...turn('s:compact', 'system', '/compact'), contextCommand: 'compact' }]
     box.send.mockClear()
     resetCliCatalog()
     const { api } = await import('@/lib/api/api')

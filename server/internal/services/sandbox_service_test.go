@@ -1253,6 +1253,7 @@ func fakeACPServerStream(t *testing.T, onChat func([]byte), closeAfterChat bool,
 			return
 		}
 		defer c.Close()
+		generation := 1
 		for {
 			_, msg, err := c.ReadMessage()
 			if err != nil {
@@ -1265,7 +1266,10 @@ func fakeACPServerStream(t *testing.T, onChat func([]byte), closeAfterChat bool,
 			json.Unmarshal(msg, &m)
 			switch m.Op {
 			case "connect":
-				c.WriteJSON(map[string]any{"op": "connected", "sessionId": "sess-1"})
+				c.WriteJSON(map[string]any{"op": "connected", "sessionId": fmt.Sprintf("sess-%d", generation)})
+			case "restart_agent":
+				generation++
+				c.WriteJSON(map[string]any{"op": "connected", "sessionId": fmt.Sprintf("sess-%d", generation)})
 			case "chat":
 				if onChat != nil {
 					onChat(msg)

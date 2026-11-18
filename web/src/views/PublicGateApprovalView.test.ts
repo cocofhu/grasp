@@ -2067,6 +2067,18 @@ describe('embedded Chat page candidate mode', () => {
     expect(requestPageContext).not.toHaveBeenCalled()
   })
 
+  it('routes slash commands to chat when page candidate mode is enabled', async () => {
+    const { wrapper, vm, requestPageContext } = await setup({ sessions: [{ sid: 'active-1', mode: 'replace', state: 'ready', variants: [{ n: 1 }] }] })
+    vm.setLiveView('active-1', { current: 1, mode: 'inplace', params: {} })
+    await wrapper.get('[data-testid="live-candidate-mode"]').trigger('click')
+    await wrapper.get('[data-testid="clarify-input"]').setValue('/compact')
+    await wrapper.get('[data-testid="clarify-send-label"]').trigger('click')
+    await flushPromises()
+    expect(mocks.reply).toHaveBeenCalledWith(expect.objectContaining({ text: '/compact', liveCtx: null }))
+    expect(mocks.reply.mock.calls[0][0]).not.toHaveProperty('live')
+    expect(requestPageContext).not.toHaveBeenCalled()
+  })
+
   it('generates three page candidates with the current preview URL, attachments and annotations', async () => {
     const { wrapper, requestPageContext } = await setup()
     mocks.reply.mockImplementation(async (request) => ({ status: 'accepted', live: { sid: request.live.sid, mode: 'replace', state: 'generating' } }))

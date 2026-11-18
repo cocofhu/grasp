@@ -41,6 +41,16 @@ func (c *acpProvider) VisitorTurn(ctx context.Context, req NodeReq, lane, prelud
 		return ReactTurn{Msg: "(访客会话启动失败:" + err.Error() + ")", Err: err}
 	}
 	defer finishChatTurn(&out, vl.acp, time.Now())
+	human, err = c.skillPrompt(req, vl.sb, "", human)
+	if err != nil {
+		return ReactTurn{Msg: err.Error(), Err: err}
+	}
+	if req.VisitorContextReset != "" {
+		if err := vl.acp.RestartChatContext(ctx); err != nil {
+			return ReactTurn{Msg: err.Error(), Err: err}
+		}
+		vl.primed = false
+	}
 	prompt := human
 	if !vl.primed {
 		prelude = strings.TrimSpace(prelude + clarifyPreviewExtras(req) + reviewCapabilityExtras(req))

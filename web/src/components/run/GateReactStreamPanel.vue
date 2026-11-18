@@ -22,6 +22,9 @@ import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ThinkingBusyCue from './ThinkingBusyCue.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
+import ChatUserMessage from './ChatUserMessage.vue'
+import ContextCommandNotice from '@/components/chat/ContextCommandNotice.vue'
+import { contextSlashCommand, isPlatformSlashCommand } from '@/lib/chat/chatCommands'
 import { renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 
 const props = withDefaults(
@@ -142,6 +145,9 @@ const showPanel = computed(
     showCompleted.value ||
     (props.interrupted && (hasThought.value || hasMessage.value)),
 )
+const contextCommand = computed(() =>
+  showCompleted.value && props.streamText ? contextSlashCommand(props.userText) : undefined,
+)
 
 /** Default open while thought-only streaming; collapse once message / done. */
 const thoughtOpen = computed(() => {
@@ -179,7 +185,8 @@ function onThoughtToggle(e: Event) {
   >
     <div v-if="userText || userImages.length || userAnnotations.length" class="flex justify-end" data-testid="gate-live-human">
       <div class="max-w-[88%] space-y-2 rounded-lg bg-elevated px-3 py-2 text-[13px] text-txt">
-        <div v-if="userText" class="whitespace-pre-wrap break-words">{{ userText }}</div>
+        <ChatUserMessage v-if="isPlatformSlashCommand(userText)" :text="userText" class="!bg-transparent !p-0" />
+        <div v-else-if="userText" class="whitespace-pre-wrap break-words">{{ userText }}</div>
         <div v-if="userImages.length" class="flex flex-wrap gap-1.5">
           <template v-for="(im, index) in userImages" :key="index">
           <ChatImageThumb
@@ -237,7 +244,8 @@ function onThoughtToggle(e: Event) {
 
     <AgentToolGroup v-if="streamTools.length" :tools="streamTools" :busy="streaming" :run-id="runId" />
 
-    <div v-if="hasMessage" class="chat-prose md" data-testid="gate-react-message">
+    <ContextCommandNotice v-if="contextCommand" :command="contextCommand" />
+    <div v-else-if="hasMessage" class="chat-prose md" data-testid="gate-react-message">
       <StreamMarkdown :blocks="messageBlocks" /><span
         v-if="streaming"
         class="gate-stream-caret"
@@ -248,7 +256,7 @@ function onThoughtToggle(e: Event) {
     </div>
 
     <div
-      v-if="showCompleted"
+      v-if="showCompleted && !contextCommand"
       class="chat-meta flex items-center justify-between gap-2 pt-1.5"
       data-testid="gate-turn-completed"
     >

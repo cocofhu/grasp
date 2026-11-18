@@ -321,11 +321,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     // already reconciled from an earlier response.
     if (incoming.length >= persistedHistory.length) persistedHistory = incoming
     const history = persistedHistory.slice()
-    for (const user of history) {
-      if (user.role !== 'user') continue
-      const send = adoptLocalSend({ id: user.id.slice(2), text: user.text, images: user.images || [], annotations: user.annotations })
+    const completedCommands = new Set<string>()
+    for (const turn of history) {
+      if (turn.role !== 'user' && !turn.contextCommand) continue
+      const id = turn.id.slice(2)
+      if (turn.contextCommand) completedCommands.add(id)
+      const send = adoptLocalSend({ id, text: turn.text, images: turn.images || [], annotations: turn.annotations })
       if (send) send.started = true
     }
+    if (completedCommands.has(activeId.value)) endActive()
     // A queue item can be removed in another viewer. Confirm its absence
     // against a history read started after the queue frame, since a missing
     // queue item may also have completed while this socket was disconnected.
@@ -367,7 +371,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       const live = turns.value.find((turn) => turn.id === `live:${key}`)
       // Keep an active stream until its terminal/idle frame: history may be
       // persisted before the last output frames have reached this browser.
-      if (activeId.value !== key && index >= 0 && historyCoversLive(history[index + 1], live)) {
+      if (completedCommands.has(key) || (activeId.value !== key && index >= 0 && historyCoversLive(history[index + 1], live))) {
         openSends.splice(openSends.indexOf(send), 1)
       } else {
         retained.add(key)
@@ -958,7 +962,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
       if (!openSends.includes(send)) return false
       forgetSend(send)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 || !!activeId.value })
-      actionError.value = String(e?.message || e)
+      actionError.value = soloErrorText(e, t, te, locale.value)
       if (wakes && !wakeRequests) sandboxWaking.value = false
       return false
     }

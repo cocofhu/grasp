@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -41,6 +42,7 @@ type reviewQueueItem struct {
 	Effective   string // annotations folded (sent to agent)
 	Images      []models.PromptImage
 	Annotations []models.ReactAnnotation
+	Command     chatcmd.Command `json:",omitzero"`
 	// References are the validated @ picks; pinned when the turn begins.
 	References []models.MessageReference
 	// ReferenceUser is the sender References were validated for. Never
@@ -178,7 +180,7 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 			return map[string]any{"gateNodeId": it.GateNodeID, "source": it.Source}
 		},
 		BeforeTurn: func(it *reviewQueueItem, done <-chan struct{}) {
-			if e.pageControlOnline(s.runID, s.producerID, it.Owner) {
+			if !it.Command.ChangesContext() && e.pageControlOnline(s.runID, s.producerID, it.Owner) {
 				it.PageSession = e.mintPageSession(s, it.Owner, done)
 			}
 		},
@@ -546,6 +548,16 @@ func (e *Engine) enqueueLaneItem(runID, producerID, lane, linkID string, kind se
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
+	item.Command = chatcmd.Parse(item.Text)
+	if item.Command.ChangesContext() && lane == "" && item.LiveWritesDenied {
+		return 0, chatcmd.ErrSharedContext
+	}
+	if err := item.Command.Validate(len(item.Images)+len(item.Annotations)+len(item.References) > 0); err != nil {
+		return 0, err
+	}
+	if item.Command.Name == chatcmd.Skill {
+		item.Effective = renderReviewHuman(item.Command.Prompt, item.Annotations)
+	}
 	s, release := e.reviewSess.AcquireOrCreate(e.laneSessionKey(runID, producerID, lane), func() *reviewSession {
 		return e.newReviewSession(runID, producerID, lane, linkID, kind)
 	})
@@ -757,6 +769,9 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 			Dropped:         &DroppedTurn{Text: item.Text, Images: item.Images, Annotations: item.Annotations},
 		}
 	}
+	if item.Command.ChangesContext() {
+		return e.saveContextCommand(ctx, &conv, item)
+	}
 
 	now := time.Now().Format(time.RFC3339)
 	var humanMsg models.ReactMessage
@@ -789,6 +804,7 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	e.publishReact(s.runID, s.producerID)
 
 	req := e.nodeReq(c, node)
+	req.UserSkill = item.Command.Skill
 	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	force := item.Force
 	var t runtime.ReactTurn
@@ -922,6 +938,9 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	if conv.Done {
 		return false, errors.New("上游复审会话已结束")
 	}
+	if item.Command.ChangesContext() {
+		return e.saveContextCommand(ctx, &conv, item)
+	}
 
 	// Turns of a gate hot-revise are tagged with the gate so read views can
 	// attribute them to the gate visit rather than to the producer.
@@ -943,6 +962,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	humanMsg := conv.Messages[len(conv.Messages)-1]
 
 	req := e.nodeReq(c, producer)
+	req.UserSkill = item.Command.Skill
 	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	e.host.SetActiveReview(s.runID, true)
 

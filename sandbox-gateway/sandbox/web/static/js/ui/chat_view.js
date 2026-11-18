@@ -21,6 +21,7 @@ import {
     putSnapshot,
 } from './chat_persist_db.js';
 import {runtimeIcon} from './icons.js';
+import {contextCommand, contextCommandNotice, readSkillCommand} from './chat_commands.js';
 import {sanitizeImageURL} from './safe_image_url.js';
 
 const AVATAR_SVG = runtimeIcon('robot', 16);
@@ -88,6 +89,7 @@ export class ChatView {
         this._replaying = false;
         /** 待确认的用户消息队列（发送时入队，prompt_begin 时出队显示） */
         this._pendingUserMessages = [];
+        this._contextCommandOp = '';
         /** 历史分页 */
         this._totalTurns = 0;
         this._hasMoreTurns = false;
@@ -466,7 +468,7 @@ export class ChatView {
             this._finishAssistantTurn();
             const empty = this._emptyEl();
             const hasRows = this.logEl.querySelector(
-                '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line'
+                '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line, .cc-context-notice'
             );
             if (empty) empty.hidden = !!hasRows;
             this.scrollToBottom();
@@ -654,7 +656,7 @@ export class ChatView {
         this._mergeConsecutiveAssistantRows();
         this._ensureEmptyStateNode();
         const hasRows = this.logEl.querySelector(
-            '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line'
+            '.cc-user-row, .cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-notice, .cc-error-line, .cc-context-notice'
         );
         const empty = this._emptyEl();
         if (empty) empty.hidden = !!hasRows;
@@ -816,7 +818,8 @@ export class ChatView {
     _lastUserBubbleText() {
         const rows = this.logEl.querySelectorAll('.cc-user-bubble');
         if (!rows.length) return '';
-        return String(rows[rows.length - 1].textContent || '').trim();
+        const last = rows[rows.length - 1];
+        return String(last.dataset.prompt ?? last.textContent ?? '').trim();
     }
 
     /**
@@ -833,6 +836,7 @@ export class ChatView {
             if (el.classList.contains('cc-user-row')) return 'user';
             if (
                 el.classList.contains('cc-asst-row') ||
+                el.classList.contains('cc-context-notice') ||
                 el.classList.contains('cc-tool-wrap') ||
                 el.classList.contains('cc-tool-group')
             ) {
@@ -874,6 +878,8 @@ export class ChatView {
         row.className = 'cc-user-row';
         const b = document.createElement('div');
         b.className = 'cc-user-bubble';
+        const command = contextCommand((text || '').trim());
+        if (command && imageURLs.length === 0) b.classList.add('cc-user-command');
         /* 图片附件 */
         if (imageURLs.length > 0) {
             const imgWrap = document.createElement('div');
@@ -893,9 +899,23 @@ export class ChatView {
             b.appendChild(imgWrap);
         }
         /* 文本内容 */
-        if (text) {
-            const span = document.createElement('span');
-            span.textContent = text;
+        const skill = readSkillCommand(text || '');
+        if (skill) {
+            const tag = document.createElement('span');
+            tag.className = 'cc-skill-tag';
+            const name = document.createElement('code');
+            name.textContent = skill.name;
+            const icon = document.createElement('span');
+            icon.innerHTML = runtimeIcon('skills', 13);
+            tag.append(icon, name);
+            b.dataset.prompt = text;
+            b.appendChild(tag);
+        }
+        const body = skill ? skill.task : text;
+        if (body) {
+            const span = document.createElement(command ? 'code' : 'span');
+            span.textContent = body;
+            if (skill) span.className = 'cc-skill-task';
             b.appendChild(span);
         }
         row.appendChild(b);
@@ -910,8 +930,8 @@ export class ChatView {
         /* 仅 queued：勿剥主 log（避免 LS 里已有成对块被清空） */
         if (done.length === 0 && !running) return;
         /* querySelectorAll 用 :scope > 限定只匹配 logEl 直接子节点；matches() 不支持 :scope，用简单选择器 */
-        const agentQSel = ':scope > .cc-asst-row, :scope > .cc-tool-wrap, :scope > .cc-tool-group';
-        const agentMatch = '.cc-asst-row, .cc-tool-wrap, .cc-tool-group';
+        const agentQSel = ':scope > .cc-asst-row, :scope > .cc-tool-wrap, :scope > .cc-tool-group, :scope > .cc-context-notice';
+        const agentMatch = '.cc-asst-row, .cc-tool-wrap, .cc-tool-group, .cc-context-notice';
         for (const el of [...this.logEl.querySelectorAll(':scope > .cc-user-row')]) {
             el.remove();
         }
@@ -1263,6 +1283,20 @@ export class ChatView {
             this.appendNotice('notice', String(data));
             return;
         }
+        if (u.type === 'context_boundary') return;
+        if (u.type === 'context_command') {
+            const command = contextCommand(String(u.command || ''));
+            if (command) {
+                this._finishAssistantTurn();
+                this.endStream();
+                this._contextCommandOp = String(u.opId || '');
+                this.logEl.appendChild(contextCommandNotice(command));
+                this.hideEmptyState();
+                this.scrollToBottom();
+                this._schedulePersist();
+            }
+            return;
+        }
         if (u.type !== 'session_update') {
             if (u.type === 'prompt_begin') {
                 /*
@@ -1273,6 +1307,7 @@ export class ChatView {
                  */
                 this.endStream();
                 this.resetToolsForNewTurn();
+                this._contextCommandOp = '';
                 const full = String(u.promptText != null ? u.promptText : u.text || '').trim();
                 if (full) {
                     this._finishAssistantTurn();
@@ -1284,6 +1319,7 @@ export class ChatView {
                 return;
             }
             if (u.type === 'prompt_done') {
+                if (u.opId === this._contextCommandOp) this._contextCommandOp = '';
                 this.endStream();
                 this._collapseAllTools();
                 this._attachTurnUsage(u.usage);
@@ -1323,6 +1359,7 @@ export class ChatView {
             return;
         }
 
+        if (this._contextCommandOp && u.opId === this._contextCommandOp) return;
         let upd;
         try {
             upd = typeof u.update === 'string' ? JSON.parse(u.update) : u.update;

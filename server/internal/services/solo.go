@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -99,8 +100,9 @@ type SoloSessionView struct {
 	ReasoningEfforts []string                  `json:"reasoningEfforts"`
 	ServiceTiers     []string                  `json:"serviceTiers"`
 	// Backend and Model describe the Agent CLI for display.
-	Backend string `json:"backend,omitempty"`
-	Model   string `json:"model,omitempty"`
+	Backend string   `json:"backend,omitempty"`
+	Model   string   `json:"model,omitempty"`
+	Skills  []string `json:"skills,omitempty"`
 }
 
 // SoloEnvEntry is one injected env key and where it came from.
@@ -168,6 +170,7 @@ type soloTurn struct {
 	Images        []models.PromptImage
 	Annotations   []models.ReactAnnotation `json:",omitempty"`
 	PreviewShared bool                     `json:",omitempty"`
+	Command       chatcmd.Command          `json:",omitzero"`
 	// References were validated at send time; Solo anchors are pinned when
 	// the turn begins.
 	References []models.MessageReference `json:",omitempty"`
@@ -337,6 +340,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			if s.sbx != nil {
 				agent = s.sbx.effectiveAgent(agent)
 			}
+			v.Skills = soloSkills(agent.Files)
 			if selected, err := s.sessionAgent(row); err == nil {
 				agent = selected
 				v.Backend = selected.AcpBackend
@@ -477,6 +481,10 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		return nil, err
 	}
 
+	first := &soloTurn{Text: in.Text, Images: in.Images}
+	if err := s.prepareSoloCommand(agentName, first, len(in.References) > 0); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	row := &models.SoloSession{
 		ID: uuid.NewString(), UserID: user, Title: soloTitle(in, agentName), AgentName: agentName,
@@ -517,7 +525,8 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		s.projects.Touch(p.ID)
 	}
 	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 || len(references) > 0 {
-		if _, err := s.enqueueTurn(row.ID, &soloTurn{Text: in.Text, Images: in.Images, References: references}); err != nil {
+		first.References = references
+		if _, err := s.enqueueTurn(row.ID, first); err != nil {
 			log.Warn().Err(err).Str("session", row.ID).Msg("solo first message enqueue failed")
 		}
 	}

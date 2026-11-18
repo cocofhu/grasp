@@ -69,6 +69,7 @@ func (c *acpProvider) ReactResume(ctx context.Context, req NodeReq, history []mo
 // itself fails, so the caller surfaces a retryable state rather than silently
 // finishing the node with an empty deliverable.
 func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history []models.ReactMessage) *reactSession {
+	history = models.ActiveChatContext(history).Messages
 	if sess, found, err := c.restoreReactEnvironment(ctx, req, history); found {
 		if err != nil {
 			log.Warn().Err(err).Str("run", req.RunID).Msg("workflow environment recovery deferred")
@@ -122,6 +123,8 @@ func (c *acpProvider) rehydrateReact(ctx context.Context, req NodeReq, history [
 // under force/max_rounds). Only then is the produces contract ensured (with
 // re-prompting) and the sandbox torn down.
 func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) (out ReactTurn) {
+	dialogue := models.ActiveChatContext(history)
+	history = dialogue.Messages
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	started := time.Now()
 	var chatOp string
@@ -171,6 +174,10 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
+	human, skillErr := c.skillPrompt(req, sess.sb, sess.home, human)
+	if skillErr != nil {
+		return ReactTurn{Msg: skillErr.Error(), Err: skillErr}
+	}
 	// Confirm (force) exposes node_complete before the confirm turn so
 	// tools/list includes it and tools/call can succeed; the dialogue hides it.
 	if req.Caps.Clarify() {
@@ -178,7 +185,17 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	}
 	prompt := human
 	chatImages := images
-	if clarifyInjectOpenPrompt(req, history) {
+	if dialogue.Pending != "" {
+		if err := sess.acp.RestartChatContext(chatCtx); err != nil {
+			return ReactTurn{Msg: err.Error(), Err: err}
+		}
+		dialogue.Messages = historyWithoutTrailingHuman(history)
+		prompt = workflowContextPrompt(c.buildReactOpenPrompt(req, c.upstreamArtifacts(req), sess.sb), dialogue, strings.TrimRight(human, "\n"))
+		chatImages = mergePromptImages(req.PromptImages, images)
+		if force {
+			prompt = c.reactConfirmPrefix(req) + "\n\n" + prompt
+		}
+	} else if clarifyInjectOpenPrompt(req, history) {
 		prompt = c.buildReactOpenPrompt(req, c.upstreamArtifacts(req), sess.sb) + "\n\n## 用户消息\n" + strings.TrimRight(human, "\n")
 		chatImages = mergePromptImages(req.PromptImages, images)
 		if force {
@@ -306,6 +323,8 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 // producer's parked session). A dead/lost session is rebuilt from the
 // transcript, mirroring ReactReply.
 func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage) (out ReactTurn) {
+	dialogue := models.ActiveChatContext(history)
+	history = dialogue.Messages
 	started := time.Now()
 	var chatOp string
 	defer func() {
@@ -359,7 +378,18 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
+	human, skillErr := c.skillPrompt(req, sess.sb, sess.home, human)
+	if skillErr != nil {
+		return ReactTurn{Msg: skillErr.Error(), Err: skillErr}
+	}
 	prompt := reviewTurnPrompt(req, history, human, rehydrated)
+	if dialogue.Pending != "" {
+		if err := sess.acp.RestartChatContext(chatCtx); err != nil {
+			return ReactTurn{Msg: err.Error(), Err: err}
+		}
+		dialogue.Messages = historyWithoutTrailingHuman(history)
+		prompt = workflowContextPrompt(c.buildAgentPrompt(req, c.upstreamArtifacts(req), sess.sb)+reviewCapabilityExtras(req), dialogue, human)
+	}
 	// A revise turn may edit code without writing a product; only a
 	// node_complete made during or after it reflects the edit.
 	c.host.NoteNodeChange(req.RunID, req.NodeID)

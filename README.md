@@ -91,6 +91,14 @@ The default login is `admin` / `demo1234` (for local evaluation only; configure 
 3. Start a run from the home page with a single prompt, or open the canvas to customize nodes and `success` / `fail` / `rollback` edges.
 4. When a run pauses at a human gate, review the spec, preview page, or code diff from the inbox to approve or reject.
 
+### Agent chat commands
+
+Type `/` in an Agent conversation to open the command menu. Select a command with the mouse or arrow keys, then send it.
+
+- `/new` or `/new chat` starts a fresh conversation context in the current workspace. Earlier messages stay visible.
+- `/compact` starts a fresh context with a bounded excerpt of the recent conversation. Workflow turns also carry the current node's task and delivery requirements.
+- `/skill <name> [task]` selects a configured skill for the next turn. When the skill list is available, choose a name from the menu.
+
 ### Common commands
 
 ```bash

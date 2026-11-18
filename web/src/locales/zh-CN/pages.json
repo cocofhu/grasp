@@ -3222,6 +3222,31 @@
       "duration": "用时",
       "notReported": "未提供"
     },
+    "chatCommands": {
+      "menu": "斜杠命令",
+      "new": {
+        "title": "新对话",
+        "description": "在当前工作区开启新上下文",
+        "status": "新对话已开始",
+        "detail": "下一条消息从新的对话上下文开始。"
+      },
+      "compact": {
+        "title": "压缩上下文",
+        "description": "带上关键要求和近期对话继续",
+        "status": "已安排压缩上下文",
+        "detail": "下一条消息将带上关键要求和近期对话。"
+      },
+      "skill": {
+        "title": "使用技能",
+        "description": "选择本轮使用的技能"
+      },
+      "chooseSkill": "选择技能",
+      "skillHint": "输入已配置的技能名称，空格后可补充任务。",
+      "back": "返回命令列表",
+      "move": "选择",
+      "insert": "填入",
+      "close": "关闭"
+    },
     "solo": {
       "title": "Solo 对话",
       "capacity": "全部沙箱占用 {n} / {max}",
@@ -3374,6 +3399,10 @@
         "session_closed": "会话已关闭，请先重新启动",
         "session_error": "沙箱不可用，请重新启动会话",
         "content_required": "消息不能为空",
+        "command_has_attachments": "请单独发送 /new 或 /compact，移除附件、引用和标注后再试",
+        "command_context_shared": "请在独立对话或工作区会话中重设上下文",
+        "skill_required": "请输入 /skill 和 skill 名称，可在名称后补充本轮任务",
+        "skill_not_found": "当前 Agent 没有名为 {skill} 的 skill",
         "agent_not_found": "Agent 不存在",
         "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
         "model_unavailable": "所选模型已不可用",

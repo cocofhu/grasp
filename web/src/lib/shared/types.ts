@@ -1,4 +1,5 @@
 import type { AgentCapabilities, MessageReference, RepoChoice, SessionRepo } from '../api/apiTypes'
+import type { ContextCommand } from '../chat/chatCommands'
 
 export type NodeType =
   | 'input'
@@ -574,6 +575,7 @@ export interface ChatExecution {
 
 /** Message-local facts shared by Solo, workflow, test and assistant chat views. */
 export interface ChatMessageMetadata {
+  contextCommand?: ContextCommand
   createdAt?: string
   at?: string
   startedAt?: string
