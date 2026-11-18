@@ -282,7 +282,7 @@ func (s *SoloService) buildTurnInput(sessionID string, q *soloTurn, refs []model
 			header = soloResumePreambleHeader
 		} else if row.SessionContextPending && !prep.switched && !row.ModelContextPending {
 			header = soloSessionResetPreambleHeader
-		} else if prep.switched && !row.ModelContextPending && (row.CurrentReasoningEffort != row.AppliedReasoningEffort || row.CurrentFastMode != row.AppliedFastMode) && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
+		} else if prep.switched && !row.ModelContextPending && (row.CurrentReasoningEffort != row.AppliedReasoningEffort || row.CurrentServiceTier != row.AppliedServiceTier) && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloSettingsPreambleHeader
 		}
 		var history []models.PromptImage

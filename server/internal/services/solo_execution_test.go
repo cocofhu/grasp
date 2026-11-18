@@ -85,7 +85,7 @@ func TestSoloExecutionSnapshotSurvivesSelectionChangesAndFailures(t *testing.T) 
 			}
 			// This selection is for the following turn. It must not relabel the
 			// active response or change its reload representation.
-			if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux2"), nil); err != nil {
+			if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux2"), nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			replayed, unReplay, err := solo.Subscribe(view.ID, "alice", 0)

@@ -33,11 +33,11 @@ describe('VisitModelSelect', () => {
   })
 
   it.each([false, true])('uses catalog Fast support before a route is stored and runtime support afterwards (stored: %s)', async stored => {
-    mocks.choices = [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', hint: 'gpt-6.2-sol', vendor: 'openai', backend: false, unavailable: false, efforts: ['low', 'high'], fastModeSupported: true, configurationId: 'codex-group', modelId: 'gpt-6.2-sol' }]
+    mocks.choices = [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', hint: 'gpt-6.2-sol', vendor: 'openai', backend: false, unavailable: false, efforts: ['low', 'high'], serviceTiers: ['fast'], configurationId: 'codex-group', modelId: 'gpt-6.2-sol' }]
     mocks.ready = true
     mocks.defaultConfigurationId = 'codex-group'
-    mocks.getVisitModel.mockResolvedValue({ currentModelSet: stored, currentModelId: stored ? 'gpt-6.2-sol' : '', currentConfigurationId: stored ? 'codex-group' : '', reasoningEffort: 'low', fastMode: false, fastModeSupported: false })
-    mocks.setVisitModel.mockResolvedValue({ currentModelSet: true, currentModelId: 'gpt-6.2-sol', currentConfigurationId: 'codex-group', reasoningEffort: 'low', fastMode: true, fastModeSupported: true })
+    mocks.getVisitModel.mockResolvedValue({ currentModelSet: stored, currentModelId: stored ? 'gpt-6.2-sol' : '', currentConfigurationId: stored ? 'codex-group' : '', reasoningEffort: 'low', serviceTier: '', serviceTiers: [] })
+    mocks.setVisitModel.mockResolvedValue({ currentModelSet: true, currentModelId: 'gpt-6.2-sol', currentConfigurationId: 'codex-group', reasoningEffort: 'low', serviceTier: 'fast', serviceTiers: ['fast'] })
     const wrapper = mount(VisitModelSelect, {
       attachTo: document.body,
       props: { runId: 'run', nodeId: 'clarify', agentName: 'Codex' },
@@ -58,7 +58,7 @@ describe('VisitModelSelect', () => {
       expect(toggle).not.toBeNull()
       toggle!.click()
       await flushPromises()
-      expect(mocks.setVisitModel).toHaveBeenCalledWith('run', 'clarify', { iteration: 1, configurationId: 'codex-group', modelId: '', reasoningEffort: 'low', fastMode: true })
+      expect(mocks.setVisitModel).toHaveBeenCalledWith('run', 'clarify', { iteration: 1, configurationId: 'codex-group', modelId: '', reasoningEffort: 'low', serviceTier: 'fast' })
       expect(document.querySelector('[data-testid="solo-effort-slider"]')?.getAttribute('aria-valuetext')).toBe('低')
       expect(document.querySelector('[data-testid="solo-fast-toggle"]')?.getAttribute('aria-pressed')).toBe('true')
     } finally {

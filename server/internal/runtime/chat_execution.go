@@ -21,7 +21,7 @@ func (c *acpProvider) executionForEnvironment(req NodeReq, env map[string]string
 		ConfigurationID: strings.TrimSpace(env[EnvModelConfigurationID]),
 		ModelID:         strings.TrimSpace(env[EnvACPBridgeModel]),
 		ReasoningEffort: strings.TrimSpace(env[EnvACPBridgeReasoningEffort]),
-		FastMode:        strings.EqualFold(strings.TrimSpace(env[EnvACPBridgeFastMode]), "true"),
+		ServiceTier:     ParseServiceTierEnv(env[EnvACPBridgeServiceTier]),
 	}
 }
 

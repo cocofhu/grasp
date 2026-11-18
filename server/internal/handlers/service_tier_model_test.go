@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -10,7 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-func TestSoloFastOnlyEndpointPreservesModelAndReasoning(t *testing.T) {
+func TestSoloTierOnlyEndpointPreservesModelAndReasoning(t *testing.T) {
 	hn := newHarness(t)
 	hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, services.NewProjectService(hn.db))
 	configuration := models.ModelConfiguration{ID: "fast-codex", Name: "Fast model", Backend: "codex", State: "active", Binding: modelrouting.Binding{Kind: "platform", ModelID: "gpt-6.2-sol", AuxiliaryModelIDs: []string{"custom"}}}
@@ -26,12 +27,12 @@ func TestSoloFastOnlyEndpointPreservesModelAndReasoning(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		body   map[string]any
-		fast   bool
+		tier   string
 		effort string
 	}{
-		{map[string]any{"fastMode": true}, true, "high"},
-		{map[string]any{"reasoningEffort": "ultra"}, true, "ultra"},
-		{map[string]any{"fastMode": false}, false, "ultra"},
+		{map[string]any{"serviceTier": "fast"}, "fast", "high"},
+		{map[string]any{"reasoningEffort": "ultra"}, "fast", "ultra"},
+		{map[string]any{"serviceTier": ""}, "", "ultra"},
 	} {
 		response := hn.do(http.MethodPost, "/api/solo/sessions/solo-fast/model", tc.body)
 		if response.Code != http.StatusOK {
@@ -41,16 +42,21 @@ func TestSoloFastOnlyEndpointPreservesModelAndReasoning(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
 			t.Fatal(err)
 		}
-		if view.CurrentModelID != "" || view.CurrentFastMode != tc.fast || !view.FastModeSupported || view.CurrentReasoningEffort != tc.effort {
+		if view.CurrentModelID != "" || view.CurrentServiceTier != tc.tier || !slices.Equal(view.ServiceTiers, []string{"fast"}) || view.CurrentReasoningEffort != tc.effort {
 			t.Fatalf("settings changed an independent value: %+v", view)
 		}
 	}
-	response := hn.do(http.MethodPost, "/api/solo/sessions/solo-fast/model", map[string]any{"modelId": "custom", "reasoningEffort": "", "fastMode": true})
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("unsupported Fast: %d %s", response.Code, response.Body)
-	}
-	var failure map[string]string
-	if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil || failure["code"] != "fast_mode_unavailable" {
-		t.Fatalf("error code: %+v %v", failure, err)
+	for _, body := range []map[string]any{
+		{"modelId": "custom", "reasoningEffort": "", "serviceTier": "fast"},
+		{"serviceTier": "turbo"},
+	} {
+		response := hn.do(http.MethodPost, "/api/solo/sessions/solo-fast/model", body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("unsupported tier %v: %d %s", body, response.Code, response.Body)
+		}
+		var failure map[string]string
+		if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil || failure["code"] != "service_tier_unavailable" {
+			t.Fatalf("error code: %+v %v", failure, err)
+		}
 	}
 }

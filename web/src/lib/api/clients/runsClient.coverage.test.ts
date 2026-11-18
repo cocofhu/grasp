@@ -18,10 +18,10 @@ describe('runsClient request coverage', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('preserves omitted model and effort settings in Fast-only updates, including explicit off', async () => {
-    await runsClient.setVisitModel('run', 'node', { fastMode: true })
-    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toEqual({ iteration: 1, fastMode: true })
-    await runsClient.setVisitModel('run', 'node', { iteration: 2, fastMode: false })
-    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toEqual({ iteration: 2, fastMode: false })
+    await runsClient.setVisitModel('run', 'node', { serviceTier: 'fast' })
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toEqual({ iteration: 1, serviceTier: 'fast' })
+    await runsClient.setVisitModel('run', 'node', { iteration: 2, serviceTier: '' })
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toEqual({ iteration: 2, serviceTier: '' })
     await runsClient.setVisitModel('run', 'node', { modelId: '', reasoningEffort: '' })
     expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toEqual({ iteration: 1, modelId: '', reasoningEffort: '' })
   })
@@ -116,13 +116,13 @@ describe('runsClient request coverage', () => {
 
     await runsClient.startRun('wf-home', {}, 'manual', 'normal', [], {
       publishedSnapshot: true,
-      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high', fastMode: true },
+      launchModel: { configurationId: 'group', modelId: '', reasoningEffort: 'high', serviceTier: 'fast' },
     })
     expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toMatchObject({
       launchConfigurationId: 'group',
       launchModelId: '',
       launchReasoningEffort: 'high',
-      launchFastMode: true,
+      launchServiceTier: 'fast',
     })
 
     await runsClient.updateRunPriority('r1', 'high')

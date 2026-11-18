@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestPreviewGuestFastOnlyFramePreservesActualModelAndEffort(t *testing.T) {
+func TestPreviewGuestTierOnlyFramePreservesActualModelAndEffort(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	requests := make(chan previewGuestRequest, 1)
@@ -30,18 +30,18 @@ func TestPreviewGuestFastOnlyFramePreservesActualModelAndEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	if err := client.WriteJSON(map[string]any{"fastMode": true}); err != nil {
+	if err := client.WriteJSON(map[string]any{"serviceTier": "fast"}); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case request := <-requests:
 		defer request.finish()
 		high := "high"
-		completePreviewGuestFastSelection(&request, sandbox.ChatModelSettings{Selected: "aux", ReasoningEffort: &high})
-		if request.ModelID == nil || *request.ModelID != "aux" || request.ReasoningEffort != high || request.FastMode == nil || !*request.FastMode || request.Text != "" {
-			t.Fatalf("Fast-only frame changed independent selection: %+v", request)
+		completePreviewGuestTierSelection(&request, sandbox.ChatModelSettings{Selected: "aux", ReasoningEffort: &high})
+		if request.ModelID == nil || *request.ModelID != "aux" || request.ReasoningEffort != high || request.ServiceTier == nil || *request.ServiceTier != "fast" || request.Text != "" {
+			t.Fatalf("tier-only frame changed independent selection: %+v", request)
 		}
 	case <-ctx.Done():
-		t.Fatal("Fast-only settings frame was discarded")
+		t.Fatal("tier-only settings frame was discarded")
 	}
 }

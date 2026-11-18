@@ -5,14 +5,14 @@ describe('configuredModelChoices', () => {
   it('offers Fast only for an explicitly declared official Codex model', () => {
     const input = {
       backend: 'codex', catalogReady: true,
-      cliModels: [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', fastModeSupported: true }],
+      cliModels: [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', serviceTiers: ['fast'] }],
     }
     const platform = configuredModelChoices({ ...input, binding: { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['gpt-future'] } })
-    expect(platform.map(model => !!model.fastModeSupported)).toEqual([true, false])
+    expect(platform.map(model => model.serviceTiers)).toEqual([['fast'], undefined])
     const connection = configuredModelChoices({ ...input, binding: { kind: 'connection', connectionId: 'api', modelId: 'gpt-6.2-sol' } })
-    expect(connection[0]?.fastModeSupported).not.toBe(true)
+    expect(connection[0]?.serviceTiers).toBeUndefined()
     const otherTool = configuredModelChoices({ ...input, backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-login', modelId: 'gpt-6.2-sol' } })
-    expect(otherTool[0]?.fastModeSupported).not.toBe(true)
+    expect(otherTool[0]?.serviceTiers).toBeUndefined()
   })
 
   it('uses real model names instead of the configuration name while preserving upstream IDs', () => {

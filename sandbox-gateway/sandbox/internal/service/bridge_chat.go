@@ -415,7 +415,7 @@ func (b *Bridge) ensureSelectableModel() {
 	if !ReasoningEffortSelectable(primary, effort) {
 		effort = ""
 	}
-	sess, err := b.SwitchModelSettings("", effort)
+	sess, err := b.SwitchModelSettings("", effort, nil)
 	if err != nil {
 		log.Printf("acp-bridge: 当前模型已不可用，回到主模型失败: %v", err)
 		return

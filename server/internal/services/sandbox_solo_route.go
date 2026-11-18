@@ -170,7 +170,7 @@ func (s *SandboxService) alignSoloModelRoute(ctx context.Context, id uint, agent
 	if rollbackSelection != nil {
 		selection = rollbackSelection
 	}
-	extra := agentContainerExtra{Resident: true, LaunchKind: "solo", Repos: effectiveSessionRepos(&session), InitialChatModel: chatModelID(selection), InitialChatReasoningEffort: &selection.CurrentReasoningEffort, InitialChatFastMode: &selection.CurrentFastMode}
+	extra := agentContainerExtra{Resident: true, LaunchKind: "solo", Repos: effectiveSessionRepos(&session), InitialChatModel: chatModelID(selection), InitialChatReasoningEffort: &selection.CurrentReasoningEffort, InitialChatServiceTier: &selection.CurrentServiceTier}
 	selectedConfiguration := chatConfigurationID(selection)
 	if selectedConfiguration == "" {
 		if original := s.effectiveAgent(profile); original.ModelBinding != nil {
@@ -182,7 +182,7 @@ func (s *SandboxService) alignSoloModelRoute(ctx context.Context, id uint, agent
 		// later turn. Never boot that new model under this turn's older group.
 		extra.InitialChatModel = ""
 		extra.InitialChatReasoningEffort = nil
-		extra.InitialChatFastMode = nil
+		extra.InitialChatServiceTier = nil
 	}
 	prepared, err := s.prepareAgentContainer(row.Profile, row.ThreadID, row.RunID, row.Token, row.Name, platformSpecs, agent, extra)
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *SandboxService) alignSoloModelRoute(ctx context.Context, id uint, agent
 		if previousKnown {
 			extra.InitialChatModel = appliedChatModelID(&session)
 			extra.InitialChatReasoningEffort = &session.AppliedReasoningEffort
-			extra.InitialChatFastMode = &session.AppliedFastMode
+			extra.InitialChatServiceTier = &session.AppliedServiceTier
 			previous, err = s.prepareAgentContainer(row.Profile, row.ThreadID, row.RunID, row.Token, row.Name, platformSpecs, previousAgent, extra)
 		}
 		if previous == nil || err != nil {
@@ -214,7 +214,7 @@ func (s *SandboxService) alignSoloModelRoute(ctx context.Context, id uint, agent
 		}
 	}
 	if rollbackSelection == nil {
-		previous = soloPreparedSettings(previous, appliedChatModelID(&session), session.AppliedReasoningEffort, session.AppliedFastMode)
+		previous = soloPreparedSettings(previous, appliedChatModelID(&session), session.AppliedReasoningEffort, session.AppliedServiceTier)
 	}
 	ops := s.soloRouteRuntime
 	if ops == nil {
@@ -238,7 +238,7 @@ func (s *SandboxService) alignSoloModelRoute(ctx context.Context, id uint, agent
 	}
 	apply := func(applyCtx context.Context, target, old *preparedAgentContainer) (*sandbox.ACPClient, error) {
 		keys := append(sandbox.ReprimeEnvKeys(old.spec), runtime.ModelRoutingEnvKeys()...)
-		keys = append(keys, "AGENT_PROVIDER", "CONFIG_ROOT", "CODEX_HOME", runtime.EnvACPBridgeReasoningEffort, runtime.EnvACPBridgeFastMode)
+		keys = append(keys, "AGENT_PROVIDER", "CONFIG_ROOT", "CODEX_HOME", runtime.EnvACPBridgeReasoningEffort, runtime.EnvACPBridgeServiceTier)
 		if err := ops.SwitchTool(applyCtx, ls.sb, target.spec, keys); err != nil {
 			return nil, err
 		}
@@ -327,7 +327,7 @@ func (s *SandboxService) rememberSoloEndpoint(id uint, sb *sandbox.Sandbox) erro
 	return s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"host": sb.Host, "acp_port": sb.Port}).Error
 }
 
-func soloPreparedSettings(prepared *preparedAgentContainer, model, effort string, fastMode ...bool) *preparedAgentContainer {
+func soloPreparedSettings(prepared *preparedAgentContainer, model, effort, tier string) *preparedAgentContainer {
 	out := *prepared
 	out.spec.Env = maps.Clone(prepared.spec.Env)
 	if out.spec.Env == nil {
@@ -343,10 +343,7 @@ func soloPreparedSettings(prepared *preparedAgentContainer, model, effort string
 	} else {
 		out.spec.Env[runtime.EnvACPBridgeReasoningEffort] = effort
 	}
-	out.spec.Env[runtime.EnvACPBridgeFastMode] = "false"
-	if len(fastMode) > 0 && fastMode[0] {
-		out.spec.Env[runtime.EnvACPBridgeFastMode] = "true"
-	}
+	out.spec.Env[runtime.EnvACPBridgeServiceTier] = runtime.ServiceTierEnv(tier)
 	return &out
 }
 

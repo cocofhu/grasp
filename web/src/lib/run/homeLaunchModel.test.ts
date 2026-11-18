@@ -27,9 +27,9 @@ const aux: ConfiguredModelChoice = {
 
 describe('resolveHomeLaunchModel', () => {
   it('sends Fast without changing effort and rejects unsupported Fast launches', () => {
-    const input = { clarify: true, ready: true, custom: true, modelId: '', effort: 'low', fastMode: true }
-    expect(resolveHomeLaunchModel({ ...input, choices: [{ ...primary, fastModeSupported: true }] })).toEqual({
-      action: 'send', model: { configurationId: 'group', modelId: '', reasoningEffort: 'low', fastMode: true },
+    const input = { clarify: true, ready: true, custom: true, modelId: '', effort: 'low', serviceTier: 'fast' }
+    expect(resolveHomeLaunchModel({ ...input, choices: [{ ...primary, serviceTiers: ['fast'] }] })).toEqual({
+      action: 'send', model: { configurationId: 'group', modelId: '', reasoningEffort: 'low', serviceTier: 'fast' },
     })
     expect(resolveHomeLaunchModel({ ...input, choices: [primary] })).toEqual({ action: 'block', notice: 'invalid' })
   })

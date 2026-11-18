@@ -3388,7 +3388,7 @@
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
-        "fast_mode_unavailable": "当前模型不支持 Fast 模式，请重新选择。",
+        "service_tier_unavailable": "当前模型不支持所选速度档位，请重新选择。",
         "commit_name_invalid": "提交用户名不能包含尖括号或换行，且不超过 120 个字符",
         "commit_email_invalid": "提交邮箱格式不正确",
         "credential_invalid": "仓库凭据不可用：请确认凭据未吊销，且与仓库地址的协议和主机一致",

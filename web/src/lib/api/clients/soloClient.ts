@@ -36,8 +36,8 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
     setSoloSessionReasoningEffort: (id: string, reasoningEffort: string) =>
       req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ reasoningEffort }) }),
     /** Fast mode changes preserve both the selected model and reasoning effort. */
-    setSoloSessionFastMode: (id: string, fastMode: boolean) =>
-      req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ fastMode }) }),
+    setSoloSessionServiceTier: (id: string, serviceTier: string) =>
+      req<SoloSession>(`${path(id)}/model`, { method: 'POST', body: JSON.stringify({ serviceTier }) }),
     listSoloMessages: (id: string) => req<SoloMessage[]>(`${path(id)}/messages`),
     sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: ReferenceInput[] }) =>
       req<{ waiting: number }>(`${path(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),

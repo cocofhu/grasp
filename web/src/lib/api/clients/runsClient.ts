@@ -32,8 +32,8 @@ export type VisitModelChoice = {
   currentModelId?: string
   currentModelSet?: boolean
   reasoningEffort?: string
-  fastMode?: boolean
-  fastModeSupported?: boolean
+  serviceTier?: string
+  serviceTiers?: string[]
   modelNotice?: string
   backend?: string
 }
@@ -50,14 +50,14 @@ type ShareLinkResult = {
 
 /** Body fragment for the home composer's launch model. Absent means "do not send". */
 function startRunLaunchModel(
-  model?: { configurationId?: string; modelId?: string; reasoningEffort?: string; fastMode?: boolean } | null,
-): { launchConfigurationId: string; launchModelId: string; launchReasoningEffort: string; launchFastMode?: boolean } | null {
+  model?: { configurationId?: string; modelId?: string; reasoningEffort?: string; serviceTier?: string } | null,
+): { launchConfigurationId: string; launchModelId: string; launchReasoningEffort: string; launchServiceTier?: string } | null {
   if (!model) return null
   return {
     launchConfigurationId: model.configurationId ?? '',
     launchModelId: model.modelId ?? '',
     launchReasoningEffort: model.reasoningEffort ?? '',
-    ...(model.fastMode === undefined ? {} : { launchFastMode: model.fastMode }),
+    ...(model.serviceTier === undefined ? {} : { launchServiceTier: model.serviceTier }),
   }
 }
 
@@ -152,7 +152,7 @@ export const runsClient = {
        * Home composer only. Empty modelId is the primary model. Omitted by
        * every other start path, including a non-clarify workflow.
        */
-      launchModel?: { configurationId?: string; modelId?: string; reasoningEffort?: string; fastMode?: boolean } | null
+      launchModel?: { configurationId?: string; modelId?: string; reasoningEffort?: string; serviceTier?: string } | null
       /** Subset of the workflow's bound repositories; omitted clones all of them. */
       repos?: RepoChoice[]
     },
@@ -315,7 +315,7 @@ export const runsClient = {
   setVisitModel: (
     runId: string,
     nodeId: string,
-    body: { iteration?: number; configurationId?: string; modelId?: string; reasoningEffort?: string; fastMode?: boolean },
+    body: { iteration?: number; configurationId?: string; modelId?: string; reasoningEffort?: string; serviceTier?: string },
   ) =>
     req<VisitModelChoice>(`/runs/${runId}/nodes/${nodeId}/model`, {
       method: 'POST',
@@ -324,7 +324,7 @@ export const runsClient = {
         ...(body.configurationId === undefined ? {} : { configurationId: body.configurationId }),
         ...(body.modelId === undefined ? {} : { modelId: body.modelId }),
         ...(body.reasoningEffort === undefined ? {} : { reasoningEffort: body.reasoningEffort }),
-        ...(body.fastMode === undefined ? {} : { fastMode: body.fastMode }),
+        ...(body.serviceTier === undefined ? {} : { serviceTier: body.serviceTier }),
       }),
     }),
   reactReply: (

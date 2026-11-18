@@ -4,18 +4,18 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
-import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+import { FAST_SERVICE_TIER, type ConfiguredModelChoice } from '@/lib/solo/configuredModels'
 
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
-  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; fastMode?: boolean; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
-  { reasoningEffort: '', fastMode: false, disabled: false, emptyAsLabel: false, flat: false },
+  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; serviceTier?: string; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
+  { reasoningEffort: '', serviceTier: '', disabled: false, emptyAsLabel: false, flat: false },
 )
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
   (e: 'update:reasoningEffort', v: string): void
-  (e: 'update:fastMode', v: boolean): void
+  (e: 'update:serviceTier', v: string): void
 }>()
 const { t, te } = useI18n()
 const view = ref<'models' | 'effort'>('models')
@@ -49,7 +49,8 @@ const effortIndex = computed(() => {
 const effortLabel = computed(() => levelLabel(resolvedEffort.value))
 const atHighest = computed(() => efforts.value.length > 0 && resolvedEffort.value === efforts.value[efforts.value.length - 1])
 const effortBlocked = computed(() => props.disabled || !!current.value?.unavailable)
-const fastModeSupported = computed(() => current.value?.fastModeSupported === true)
+const fastModeSupported = computed(() => current.value?.serviceTiers?.includes(FAST_SERVICE_TIER) === true)
+const fastMode = computed(() => fastModeSupported.value && props.serviceTier === FAST_SERVICE_TIER)
 const dragging = ref(false)
 const position = ref(0)
 const effortPanel = ref<HTMLElement | null>(null)
@@ -98,7 +99,7 @@ function setEffort(value: string) {
 }
 function toggleFastMode() {
   if (effortBlocked.value || !fastModeSupported.value) return
-  emit('update:fastMode', !props.fastMode)
+  emit('update:serviceTier', fastMode.value ? '' : FAST_SERVICE_TIER)
 }
 function showFastTooltip() {
   const box = fastButton.value?.getBoundingClientRect()
@@ -184,7 +185,7 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
       <span class="solo-model-name" :title="label">{{ label }}</span>
       <span v-if="multipleGroups && current?.configurationName" class="truncate text-[10px] text-txt3">{{ current.configurationName }}</span>
       <span v-if="efforts.length" class="solo-model-effort" data-testid="solo-model-effort-label">{{ effortLabel }}</span>
-      <span v-if="fastModeSupported && fastMode" class="solo-model-fast-label" data-testid="solo-model-fast-label">Fast</span>
+      <span v-if="fastMode" class="solo-model-fast-label" data-testid="solo-model-fast-label">Fast</span>
     </template>
     <template v-if="view === 'models'" #header>
       <div class="solo-model-menu-title">{{ t('pages.solo.modelSelect.placeholder') }}</div>

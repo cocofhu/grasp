@@ -6,7 +6,7 @@ export type HomeLaunchModel = {
   configurationId: string
   modelId: string
   reasoningEffort: string
-  fastMode?: boolean
+  serviceTier?: string
 }
 
 type HomeLaunchDecision =
@@ -30,7 +30,7 @@ export function resolveHomeLaunchModel(input: {
   custom: boolean
   modelId: string
   effort: string
-  fastMode?: boolean
+  serviceTier?: string
   choices: ConfiguredModelChoice[]
 }): HomeLaunchDecision {
   if (!input.clarify) return { action: 'omit' }
@@ -50,7 +50,7 @@ export function resolveHomeLaunchModel(input: {
   const primary = choices[0]!
   const picked = input.modelId ? choices.find((choice) => choice.id === input.modelId) ?? null : primary
   if (!picked) return { action: 'block', notice: 'invalid' }
-  if (input.fastMode && !picked.fastModeSupported) return { action: 'block', notice: 'invalid' }
+  if (input.serviceTier && !picked.serviceTiers?.includes(input.serviceTier)) return { action: 'block', notice: 'invalid' }
   const listed = listedEfforts(picked.efforts)
   let effort = input.effort.trim()
   if (effort && !listed.includes(effort)) return { action: 'block', notice: 'invalid' }
@@ -62,7 +62,7 @@ export function resolveHomeLaunchModel(input: {
       configurationId: picked.configurationId || parseModelRoute(picked.id).configurationId || '',
       modelId,
       reasoningEffort: effort,
-      ...(input.fastMode ? { fastMode: true } : {}),
+      ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     },
   }
 }

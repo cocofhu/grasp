@@ -12,7 +12,7 @@ import (
 // frozen selection, which may already differ from the next queued turn's choice.
 func (s *SoloService) turnExecutionSnapshot(row *models.SoloSession, sandboxID uint, started time.Time) *models.ChatExecution {
 	result := &models.ChatExecution{AgentName: row.AgentName, ConfigurationID: chatConfigurationID(row),
-		ModelID: chatModelID(row), ReasoningEffort: strings.TrimSpace(row.CurrentReasoningEffort), FastMode: row.CurrentFastMode, StartedAt: started.UTC()}
+		ModelID: chatModelID(row), ReasoningEffort: strings.TrimSpace(row.CurrentReasoningEffort), ServiceTier: strings.TrimSpace(row.CurrentServiceTier), StartedAt: started.UTC()}
 	if s.sbx != nil && s.modelAlign == nil {
 		s.sbx.mu.Lock()
 		if live := s.sbx.live[sandboxID]; live != nil && live.prepared != nil {

@@ -117,7 +117,7 @@ func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model stri
 // AlignChatSettings changes model and effort as one unit at a turn boundary.
 // Older bundles continue to support model-only switches; they cannot silently
 // accept a requested reasoning effort that they do not expose.
-func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort string, fastMode ...bool) (bool, error) {
+func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort, tier string) (bool, error) {
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
 		return false, err
@@ -126,12 +126,14 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", ErrChatModelUnknown, err)
 	}
-	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
-	fast := len(fastMode) > 0 && fastMode[0]
-	if fast && current.FastMode == nil {
-		return false, errors.New("sandbox does not expose Fast mode")
+	model, effort, tier = strings.TrimSpace(model), strings.TrimSpace(effort), strings.TrimSpace(tier)
+	var wantTier *string
+	currentTier := ""
+	if current.ServiceTier != nil {
+		wantTier, currentTier = &tier, *current.ServiceTier
+	} else if tier != "" {
+		return false, errors.New("sandbox does not expose service tiers")
 	}
-	currentFast := current.FastMode != nil && *current.FastMode
 	if current.ReasoningEffort == nil {
 		if effort != "" {
 			return false, errors.New("sandbox does not expose reasoning effort")
@@ -144,10 +146,10 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 		}
 		return true, nil
 	}
-	if current.Selected == model && *current.ReasoningEffort == effort && currentFast == fast {
+	if current.Selected == model && *current.ReasoningEffort == effort && currentTier == tier {
 		return false, nil
 	}
-	if err := sandbox.SetChatModelSettings(ctx, host, port, password, model, effort, fast); err != nil {
+	if err := sandbox.SetChatModelSettings(ctx, host, port, password, model, effort, wantTier); err != nil {
 		return false, err
 	}
 	return true, nil

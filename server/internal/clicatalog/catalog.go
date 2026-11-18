@@ -29,8 +29,9 @@ type Model struct {
 	// Efforts lists the reasoning levels the CLI accepts for this model;
 	// empty means the CLI exposes none.
 	Efforts []string `json:"efforts,omitempty"`
-	// FastModeSupported is a separate service tier, independent of reasoning.
-	FastModeSupported bool `json:"fastModeSupported,omitempty"`
+	// ServiceTiers lists the speed tiers beyond standard the CLI accepts for
+	// this model, independent of reasoning; empty means standard only.
+	ServiceTiers []string `json:"serviceTiers,omitempty"`
 }
 
 var (
@@ -41,6 +42,7 @@ var (
 
 	codexEfforts     = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
 	codexLunaEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+	codexFastTiers   = []string{"fast"}
 	kimiEfforts      = []string{"low", "high", "max"}
 )
 
@@ -339,16 +341,16 @@ var catalog = map[string][]Model{
 	},
 	// The models Codex lists in its picker (models_cache.json, visibility "list").
 	"codex": {
-		{ID: "gpt-6.2-sol", Name: "GPT-6.2 Sol", Vendor: "openai", Tags: visionReasoning, Context: 500, Recommended: true, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6.2-astra", Name: "GPT-6.2 Astra", Vendor: "openai", Tags: visionReasoning, Context: 272, Recommended: true, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6.1-terra", Name: "GPT-6.1 Terra", Vendor: "openai", Tags: visionReasoning, Context: 500, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6.1-sol", Name: "GPT-6.1 Sol", Vendor: "openai", Tags: visionReasoning, Context: 500, Recommended: true, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6-astra", Name: "GPT-6 Astra", Vendor: "openai", Tags: visionReasoning, Context: 272, Recommended: true, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6-sol", Name: "GPT-6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-6-luna", Name: "GPT-6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts, FastModeSupported: true},
-		{ID: "gpt-5.6-sol", Name: "GPT-5.6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-5.6-terra", Name: "GPT-5.6 Terra", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, FastModeSupported: true},
-		{ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts, FastModeSupported: true},
+		{ID: "gpt-6.2-sol", Name: "GPT-6.2 Sol", Vendor: "openai", Tags: visionReasoning, Context: 500, Recommended: true, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6.2-astra", Name: "GPT-6.2 Astra", Vendor: "openai", Tags: visionReasoning, Context: 272, Recommended: true, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6.1-terra", Name: "GPT-6.1 Terra", Vendor: "openai", Tags: visionReasoning, Context: 500, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6.1-sol", Name: "GPT-6.1 Sol", Vendor: "openai", Tags: visionReasoning, Context: 500, Recommended: true, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6-astra", Name: "GPT-6 Astra", Vendor: "openai", Tags: visionReasoning, Context: 272, Recommended: true, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6-sol", Name: "GPT-6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-6-luna", Name: "GPT-6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-5.6-sol", Name: "GPT-5.6 Sol", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-5.6-terra", Name: "GPT-5.6 Terra", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexEfforts, ServiceTiers: codexFastTiers},
+		{ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", Vendor: "openai", Tags: visionReasoning, Context: 272, Efforts: codexLunaEfforts, ServiceTiers: codexFastTiers},
 	},
 	"codebuddy": {
 		{ID: "claude-4.5-sonnet", Name: "Claude Sonnet 4.5", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},

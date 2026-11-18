@@ -104,12 +104,12 @@ func TestAllModelConfigurationsResolveLiveRoutesWithoutDefaultFallback(t *testin
 		t.Fatal(err)
 	}
 	auxiliary, empty := "composer-fast", ""
-	choice, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &later.ID, &auxiliary, &empty)
+	choice, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &later.ID, &auxiliary, &empty, nil)
 	if err != nil || choice.CurrentConfigurationID != later.ID || choice.CurrentModelID != auxiliary || choice.Backend != later.Backend {
 		t.Fatalf("workflow visit cannot use a later dynamic group: %+v %v", choice, err)
 	}
 	invalid := "outside-model"
-	if _, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &later.ID, &invalid, nil); err == nil {
+	if _, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &later.ID, &invalid, nil, nil); err == nil {
 		t.Fatal("all groups expanded a group's own configured models")
 	}
 	if err := credentials.Revoke(key.ID); err != nil {
@@ -138,7 +138,7 @@ func TestAllModelConfigurationsResolveLiveRoutesWithoutDefaultFallback(t *testin
 		if _, err := selectSoloConfiguration(configurations.db, agent, id); err == nil {
 			t.Fatalf("unavailable dynamic group was selectable: %s", id)
 		}
-		if _, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &id, &empty, nil); err == nil {
+		if _, err := SetVisitModel(configurations.db, agent, "all-run", "all-node", 1, &id, &empty, nil, nil); err == nil {
 			t.Fatalf("workflow accepted unavailable dynamic group: %s", id)
 		}
 	}

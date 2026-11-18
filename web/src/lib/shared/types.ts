@@ -568,7 +568,7 @@ export interface ChatExecution {
   configurationId?: string
   modelId?: string
   reasoningEffort?: string
-  fastMode?: boolean
+  serviceTier?: string
   startedAt?: string
 }
 
@@ -1055,15 +1055,15 @@ export interface Run {
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
-    fastMode?: boolean
-    fastModeSupported?: boolean
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }
   // Per-node react conversations, keyed by node id (a run may have several
   // react nodes). Lets each react node show its own dialogue immediately.
   clarifyByNode?: Record<
     string,
-    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string; currentConfigurationId?: string; currentModelId?: string; currentModelSet?: boolean; reasoningEffort?: string; fastMode?: boolean; fastModeSupported?: boolean; modelNotice?: string }
+    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string; currentConfigurationId?: string; currentModelId?: string; currentModelSet?: boolean; reasoningEffort?: string; serviceTier?: string; serviceTiers?: string[]; modelNotice?: string }
   >
   /** Server dialogue state per node (same as the WebSocket `dialogue` full frame). */
   dialogueByNode?: Record<string, unknown>

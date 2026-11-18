@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"backend/internal/provider"
@@ -24,8 +23,16 @@ const (
 	// envReasoningEffort maps to Codex's model_reasoning_effort config key
 	// (minimal / low / medium / high, depending on the model).
 	envReasoningEffort = "ACP_BRIDGE_REASONING_EFFORT"
-	envFastMode        = "ACP_BRIDGE_FAST_MODE"
+	// envServiceTier is a chat speed tier name, or "default" for an explicit
+	// standard reset. Unset leaves the CLI's own configuration in place.
+	envServiceTier = "ACP_BRIDGE_SERVICE_TIER"
 )
+
+// serviceTierArgs maps Grasp speed tiers to Codex config overrides. A tier the
+// CLI does not know falls back to an explicit standard request.
+var serviceTierArgs = map[string][]string{
+	"fast": {"-c", "features.fast_mode=true", "-c", "service_tier=fast"},
+}
 
 // New returns the Codex one-shot provider.
 func New() provider.Provider { return oneshot.NewProvider(&codec{}) }
@@ -93,15 +100,15 @@ func (codec) Args(opts provider.OpenOptions, prompt, resumeID string) []string {
 	if sessionEffort && effort != "" && effort != "auto" {
 		args = append(args, "-c", "model_reasoning_effort="+effort)
 	}
-	fast, fastSet := opts.FastMode, opts.FastModeSet || opts.FastMode
-	if !fastSet {
-		if value, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(envFastMode))); err == nil {
-			fast, fastSet = value, true
+	tier, tierSet := strings.TrimSpace(opts.ServiceTier), opts.ServiceTierSet || strings.TrimSpace(opts.ServiceTier) != ""
+	if !tierSet {
+		if value := strings.TrimSpace(os.Getenv(envServiceTier)); value != "" {
+			tier, tierSet = value, true
 		}
 	}
-	if fastSet {
-		if fast {
-			args = append(args, "-c", "features.fast_mode=true", "-c", "service_tier=fast")
+	if tierSet {
+		if tierArgs, ok := serviceTierArgs[tier]; ok {
+			args = append(args, tierArgs...)
 		} else {
 			args = append(args, "-c", "service_tier=default")
 		}

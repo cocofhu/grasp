@@ -1,11 +1,32 @@
 package runtime
 
+import "strings"
+
 // EnvACPBridgeReasoningEffort is the variant for this run. OpenCode receives it
 // as model#variant. Tools that already negotiate an effort keep their own path.
 const EnvACPBridgeReasoningEffort = "ACP_BRIDGE_REASONING_EFFORT"
 
-// EnvACPBridgeFastMode selects the chat's independent Codex service tier.
-const EnvACPBridgeFastMode = "ACP_BRIDGE_FAST_MODE"
+// EnvACPBridgeServiceTier selects the chat's independent speed tier. The
+// value "default" is an explicit standard reset; unset follows the CLI config.
+const EnvACPBridgeServiceTier = "ACP_BRIDGE_SERVICE_TIER"
+
+const serviceTierStandardEnv = "default"
+
+// ServiceTierEnv encodes a chat speed tier; empty is the standard tier.
+func ServiceTierEnv(tier string) string {
+	if tier = strings.TrimSpace(tier); tier != "" {
+		return tier
+	}
+	return serviceTierStandardEnv
+}
+
+// ParseServiceTierEnv decodes ServiceTierEnv; unset and "default" are standard.
+func ParseServiceTierEnv(value string) string {
+	if value = strings.TrimSpace(value); value != serviceTierStandardEnv {
+		return value
+	}
+	return ""
+}
 
 // ModelIndependentEnv copies environment values excluding model routing/auth.
 // Model selections use explicit configuration references instead of environment values.
@@ -16,7 +37,7 @@ func ModelIndependentEnv(env map[string]string) map[string]string {
 	}
 	ClearModelRoutingEnv(out)
 	delete(out, EnvACPBridgeReasoningEffort)
-	delete(out, EnvACPBridgeFastMode)
+	delete(out, EnvACPBridgeServiceTier)
 	return out
 }
 

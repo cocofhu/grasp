@@ -56,7 +56,7 @@ const router = useRouter()
 const store = useSoloSessions()
 const toast = useToast()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentFastMode, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentFastMode } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentServiceTier, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentServiceTier } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -89,7 +89,7 @@ const shownModels = computed(() => {
   return choices.map(choice => choice.id === selectedId ? {
     ...choice,
     ...(row.reasoningEffort === undefined ? {} : { efforts: modelChangePending.value ? [] : row.reasoningEfforts || [] }),
-    ...(row.fastModeSupported === undefined ? {} : { fastModeSupported: !modelChangePending.value && row.fastModeSupported }),
+    ...(row.serviceTiers === undefined ? {} : { serviceTiers: modelChangePending.value ? [] : row.serviceTiers || [] }),
   } : choice)
 })
 function chooseSessionModel(value: string) {
@@ -98,10 +98,10 @@ function chooseSessionModel(value: string) {
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   return setCurrentModel(choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value)
 }
-async function chooseSessionFastMode(value: boolean) {
+async function chooseSessionServiceTier(value: string) {
   const sessionId = props.sessionId
-  const saved = await setCurrentFastMode(value)
-  if (saved && sessionId === props.sessionId && currentFastMode.value === value) {
+  const saved = await setCurrentServiceTier(value)
+  if (saved && sessionId === props.sessionId && currentServiceTier.value === value) {
     toast.show(t('pages.solo.modelSelect.fastModeNextTurn'))
   }
 }
@@ -676,13 +676,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 flat
                 :model-value="currentSelection"
                 :reasoning-effort="currentReasoningEffort"
-                :fast-mode="currentFastMode"
+                :service-tier="currentServiceTier"
                 :models="shownModels"
                 :disabled="!canSend || !modelCatalogReady"
                 :empty-as-label="modelCatalogReady && !modelChoices.length"
                 @update:model-value="chooseSessionModel"
                 @update:reasoning-effort="setCurrentReasoningEffort"
-                @update:fast-mode="chooseSessionFastMode"
+                @update:service-tier="chooseSessionServiceTier"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
               <template v-if="!embedded && status === 'running'">

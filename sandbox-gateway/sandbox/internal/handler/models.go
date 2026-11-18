@@ -32,8 +32,8 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 			"fixed":             false,
 			"reasoningEffort":   bridge.ReasoningEffort(),
 			"reasoningEfforts":  reasoningEfforts,
-			"fastMode":          bridge.FastMode(),
-			"fastModeSupported": service.FastModeSupported(bridge.EffectiveModel()),
+			"serviceTier":       bridge.ServiceTier(),
+			"serviceTiers":      service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }
@@ -48,7 +48,7 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		var body struct {
 			Model           *string `json:"model"`
 			ReasoningEffort *string `json:"reasoningEffort"`
-			FastMode        *bool   `json:"fastMode"`
+			ServiceTier     *string `json:"serviceTier"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
@@ -76,17 +76,17 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		} else if !bridge.ReasoningEffortSelectable(effectiveModel, effort) {
 			effort = ""
 		}
-		fast := bridge.FastMode()
-		if body.FastMode != nil {
-			fast = *body.FastMode
-			if fast && !service.FastModeSupported(effectiveModel) {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不支持 Fast 模式", "code": "fast_mode_unavailable"})
+		tier := bridge.ServiceTier()
+		if body.ServiceTier != nil {
+			tier = strings.TrimSpace(*body.ServiceTier)
+			if !service.ServiceTierSelectable(effectiveModel, tier) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不支持所选速度档位", "code": "service_tier_unavailable"})
 				return
 			}
-		} else if !service.FastModeSupported(effectiveModel) {
-			fast = false
+		} else if !service.ServiceTierSelectable(effectiveModel, tier) {
+			tier = ""
 		}
-		sess, err := bridge.SwitchModelSettings(model, effort, fast)
+		sess, err := bridge.SwitchModelSettings(model, effort, &tier)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -98,8 +98,8 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 			"selected":          bridge.Model(),
 			"sessionId":         sess.SessionID(),
 			"reasoningEffort":   bridge.ReasoningEffort(),
-			"fastMode":          bridge.FastMode(),
-			"fastModeSupported": service.FastModeSupported(bridge.EffectiveModel()),
+			"serviceTier":       bridge.ServiceTier(),
+			"serviceTiers":      service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }

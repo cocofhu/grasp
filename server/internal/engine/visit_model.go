@@ -24,23 +24,21 @@ func (e *Engine) bindChatRoute(req *runtime.NodeReq, conv *models.ReactConversat
 		req.ResetToDefaultModel = true
 		return
 	}
-	route := e.routeFrom(conv.CurrentConfigurationID, conv.CurrentModelID, conv.CurrentReasoningEffort, conv.CurrentFastMode)
+	route := e.routeFrom(conv.CurrentConfigurationID, conv.CurrentModelID, conv.CurrentReasoningEffort, conv.CurrentServiceTier)
 	req.ChatRoute = &route
 	if conv.AppliedModelSet {
-		applied := e.routeFrom(conv.AppliedConfigurationID, conv.AppliedModelID, conv.AppliedReasoningEffort, conv.AppliedFastMode)
+		applied := e.routeFrom(conv.AppliedConfigurationID, conv.AppliedModelID, conv.AppliedReasoningEffort, conv.AppliedServiceTier)
 		req.AppliedRoute = &applied
 	}
 }
 
-func (e *Engine) routeFrom(configurationID, modelID, effort string, fastMode ...bool) runtime.ChatRoute {
+func (e *Engine) routeFrom(configurationID, modelID, effort, tier string) runtime.ChatRoute {
 	route := runtime.ChatRoute{
 		ConfigurationID: strings.TrimSpace(configurationID),
 		ModelID:         strings.TrimSpace(modelID),
 		ReasoningEffort: strings.TrimSpace(effort),
+		ServiceTier:     strings.TrimSpace(tier),
 		Set:             true,
-	}
-	if len(fastMode) > 0 {
-		route.FastMode = fastMode[0]
 	}
 	if route.ConfigurationID != "" && e.db != nil {
 		var cfg models.ModelConfiguration
@@ -63,13 +61,13 @@ func (e *Engine) noteChatRoute(conv *models.ReactConversation, req *runtime.Node
 			conv.CurrentConfigurationID = conv.AppliedConfigurationID
 			conv.CurrentModelID = conv.AppliedModelID
 			conv.CurrentReasoningEffort = conv.AppliedReasoningEffort
-			conv.CurrentFastMode = conv.AppliedFastMode
+			conv.CurrentServiceTier = conv.AppliedServiceTier
 			conv.CurrentModelSet = true
 		} else {
 			conv.CurrentConfigurationID = ""
 			conv.CurrentModelID = ""
 			conv.CurrentReasoningEffort = ""
-			conv.CurrentFastMode = false
+			conv.CurrentServiceTier = ""
 			conv.CurrentModelSet = false
 		}
 		return
@@ -79,7 +77,7 @@ func (e *Engine) noteChatRoute(conv *models.ReactConversation, req *runtime.Node
 		conv.AppliedConfigurationID = req.ChatRoute.ConfigurationID
 		conv.AppliedModelID = req.ChatRoute.ModelID
 		conv.AppliedReasoningEffort = req.ChatRoute.ReasoningEffort
-		conv.AppliedFastMode = req.ChatRoute.FastMode
+		conv.AppliedServiceTier = req.ChatRoute.ServiceTier
 		conv.AppliedModelSet = true
 		return
 	}
@@ -87,7 +85,7 @@ func (e *Engine) noteChatRoute(conv *models.ReactConversation, req *runtime.Node
 		conv.AppliedConfigurationID = ""
 		conv.AppliedModelID = ""
 		conv.AppliedReasoningEffort = ""
-		conv.AppliedFastMode = false
+		conv.AppliedServiceTier = ""
 		conv.AppliedModelSet = true
 	}
 }

@@ -64,16 +64,18 @@ async function waitFor(condition, label) {
   throw new Error(`timed out waiting for ${label}`)
 }
 
+const tier = fast => fast ? 'fast' : ''
+
 async function start(restoredFast) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TZ'].includes(key)))
   Object.assign(env, {AGENT_PROVIDER: 'codex', CONFIG_ROOT: home, CODEX_HOME: home,
-    GRASP_MODEL_API_KEY: 'synthetic-local-fast-key', ACP_BRIDGE_MODEL: primary, ACP_BRIDGE_REASONING_EFFORT: 'high', ACP_BRIDGE_FAST_MODE: String(restoredFast),
-    GRASP_CONFIGURED_MODELS: JSON.stringify([{id: primary, reasoningEfforts: ['low', 'high'], fastModeSupported: true}, {id: standard, reasoningEfforts: ['low', 'high']}]),
+    GRASP_MODEL_API_KEY: 'synthetic-local-fast-key', ACP_BRIDGE_MODEL: primary, ACP_BRIDGE_REASONING_EFFORT: 'high', ACP_BRIDGE_SERVICE_TIER: restoredFast ? 'fast' : 'default',
+    GRASP_CONFIGURED_MODELS: JSON.stringify([{id: primary, reasoningEfforts: ['low', 'high'], serviceTiers: ['fast']}, {id: standard, reasoningEfforts: ['low', 'high']}]),
     GRASP_MODEL_CONNECTION: JSON.stringify({connectionId: 'fast-native-fixture', providerId: 'fixture', protocol: 'openai-responses', baseUrl: model.url + '/v1', auth: {scheme: 'bearer'}, selectedModelId: primary, models: [primary, standard].map(id => ({id, capabilities: {reasoning: true, toolCalls: true}}))}),
   })
   backend = spawn(join(runtime, 'bin/backend'), ['-listen', `127.0.0.1:${port}`, '-gin-mode', 'release', '-web', join(runtime, 'share/backend/web')], {cwd, env, stdio: ['ignore', 'pipe', 'pipe']})
   for (const stream of [backend.stdout, backend.stderr]) stream.on('data', data => appendFileSync(join(output, 'codex-fast-runtime.log'), data))
-  await waitFor(async () => (await request('/api/models')).fastMode === restoredFast, 'runtime readiness and restored speed')
+  await waitFor(async () => (await request('/api/models')).serviceTier === tier(restoredFast), 'runtime readiness and restored speed')
 }
 
 async function stop() {
@@ -99,7 +101,7 @@ async function turn(chat, label, fast, effort, expectedModel = primary) {
         if (frame.op === 'error') throw new Error(frame.message)
         if (frame.op === 'connected' && !sent) {
           sent = true
-          assert.equal(frame.fastMode, fast)
+          assert.equal(frame.serviceTier, tier(fast))
           ws.send(JSON.stringify({op: 'chat', opId: label, text: `[GRASP_MOCK run=${run} turn=${label}] Return the fixture response.`}))
         }
         if (frame.op === 'event' && frame.opId === label && frame.data?.type === 'prompt_done') {
@@ -118,34 +120,34 @@ async function turn(chat, label, fast, effort, expectedModel = primary) {
     assert.equal(request.serviceTier, fast ? 'priority' : undefined, `${label}: wrong service tier`)
     assert.equal(request.reasoning.effort, effort, `${label}: speed changed reasoning`)
   }
-  cases.push({label, fastMode: fast, reasoningEffort: effort, requestCount: requests.length, serviceTier: fast ? 'priority' : null})
+  cases.push({label, tier: tier(fast), reasoningEffort: effort, requestCount: requests.length, wireServiceTier: fast ? 'priority' : null})
 }
 
 try {
   await start(false)
-  assert.equal((await request('/api/models')).fastModeSupported, true)
+  assert.deepEqual((await request('/api/models')).serviceTiers, ['fast'])
   await turn('default', 'boot-standard', false, 'high')
-  assert.equal((await request('/api/model', {fastMode: true})).reasoningEffort, 'high')
+  assert.equal((await request('/api/model', {serviceTier: 'fast'})).reasoningEffort, 'high')
   await turn('default', 'fast-high', true, 'high')
-  assert.equal((await request('/api/model', {reasoningEffort: 'low'})).fastMode, true)
+  assert.equal((await request('/api/model', {reasoningEffort: 'low'})).serviceTier, 'fast')
   await turn('default', 'fast-low', true, 'low')
   const other = await request('/api/chats', {title: 'Independent Standard chat', model: primary})
-  assert.equal((await request('/api/models?chat=' + other.id)).fastMode, false)
+  assert.equal((await request('/api/models?chat=' + other.id)).serviceTier, '')
   await turn(other.id, 'isolated-standard', false, 'high')
-  assert.equal((await request('/api/model', {fastMode: false})).reasoningEffort, 'low')
+  assert.equal((await request('/api/model', {serviceTier: ''})).reasoningEffort, 'low')
   await turn('default', 'standard-low', false, 'low')
-  await request('/api/model', {fastMode: true})
+  await request('/api/model', {serviceTier: 'fast'})
   const changed = await request('/api/model', {model: standard})
-  assert.equal(changed.fastMode, false)
-  assert.equal(changed.fastModeSupported, false)
+  assert.equal(changed.serviceTier, '')
+  assert.equal(changed.serviceTiers, null)
   await turn('default', 'unsupported-target', false, 'low', standard)
-  const rejected = await fetch(base + '/api/model', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({fastMode: true})})
+  const rejected = await fetch(base + '/api/model', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({serviceTier: 'fast'})})
   assert.equal(rejected.status, 400)
-  assert.equal((await rejected.json()).code, 'fast_mode_unavailable')
+  assert.equal((await rejected.json()).code, 'service_tier_unavailable')
   await stop()
   await start(true)
   await turn('default', 'restored-fast', true, 'high')
-  await request('/api/model', {fastMode: false})
+  await request('/api/model', {serviceTier: ''})
   await turn('default', 'restored-off', false, 'high')
   writeFileSync(join(output, 'codex-fast-report.json'), JSON.stringify({status: 'passed', mode: 'native-cli', cases, paidModelCalls: 0}, null, 2))
   process.stdout.write(JSON.stringify({codexFastMode: 'passed', cases: cases.length}) + '\n')

@@ -33,7 +33,7 @@ type startRunBody struct {
 	LaunchConfigurationID *string `json:"launchConfigurationId"`
 	LaunchModelID         *string `json:"launchModelId"`
 	LaunchReasoningEffort *string `json:"launchReasoningEffort"`
-	LaunchFastMode        *bool   `json:"launchFastMode"`
+	LaunchServiceTier     *string `json:"launchServiceTier"`
 	// Repos picks a subset of the workflow's bound repositories; omitted
 	// takes all of them.
 	Repos *[]models.RepoChoice `json:"repos"`
@@ -77,7 +77,7 @@ func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessa
 }
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
-	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil && b.LaunchFastMode == nil {
+	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil && b.LaunchServiceTier == nil {
 		return engine.LaunchChoice{Repos: b.Repos}
 	}
 	choice := engine.LaunchChoice{Set: true, Repos: b.Repos}
@@ -90,8 +90,8 @@ func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 	if b.LaunchReasoningEffort != nil {
 		choice.ReasoningEffort = strings.TrimSpace(*b.LaunchReasoningEffort)
 	}
-	if b.LaunchFastMode != nil {
-		choice.FastMode = *b.LaunchFastMode
+	if b.LaunchServiceTier != nil {
+		choice.ServiceTier = strings.TrimSpace(*b.LaunchServiceTier)
 	}
 	return choice
 }

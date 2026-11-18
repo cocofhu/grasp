@@ -117,8 +117,8 @@ const props = withDefaults(
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
-    fastMode?: boolean
-    fastModeSupported?: boolean
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }>(),
   {
@@ -153,8 +153,8 @@ const props = withDefaults(
     observe: false,
     stopping: false,
     referencesEnabled: true,
-    fastMode: undefined,
-    fastModeSupported: undefined,
+    serviceTier: undefined,
+    serviceTiers: undefined,
   },
 )
 
@@ -394,8 +394,8 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :current-model-id="currentModelId"
       :current-model-set="currentModelSet"
       :reasoning-effort="reasoningEffort"
-      :fast-mode="fastMode"
-      :fast-mode-supported="fastModeSupported"
+      :service-tier="serviceTier"
+      :service-tiers="serviceTiers"
       :model-notice="modelNotice"
       :done-note="doneNote ?? null"
       :follow-tail="followTail ?? null"
@@ -536,8 +536,8 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
             :current-model-id="currentModelId"
             :current-model-set="currentModelSet"
             :reasoning-effort="reasoningEffort"
-            :fast-mode="fastMode"
-            :fast-mode-supported="fastModeSupported"
+            :service-tier="serviceTier"
+            :service-tiers="serviceTiers"
             :model-notice="modelNotice"
           />
         </template>

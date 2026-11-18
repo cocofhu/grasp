@@ -565,7 +565,7 @@ export interface CliCatalogModel {
   /** Reasoning levels the CLI accepts for this model; absent means none. */
   efforts?: string[]
   /** Fast mode is declared by the coding-tool catalog. */
-  fastModeSupported?: boolean
+  serviceTiers?: string[]
 }
 
 export interface CliModelsResponse {
@@ -663,8 +663,8 @@ export interface SoloSession {
   reasoningEffort?: string
   /** Exact supported levels for the current model. Empty/absent means unsupported. */
   reasoningEfforts?: string[]
-  fastMode?: boolean
-  fastModeSupported?: boolean
+  serviceTier?: string
+  serviceTiers?: string[]
   /** Stable code set when a model switch is rolled back. */
   modelNotice?: string
   /** Ordered repositories frozen at launch. Empty means an empty workspace. */
@@ -720,7 +720,7 @@ export interface SoloCreateBody {
   initialModelId?: string
   initialConfigurationId?: string
   reasoningEffort?: string
-  fastMode?: boolean
+  serviceTier?: string
   title?: string
   text?: string
   images?: ClarifyImage[]

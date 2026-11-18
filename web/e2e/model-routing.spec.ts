@@ -864,10 +864,10 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   state.configurations.push({ id: 'codex-fast', name: 'Codex', backend: 'codex', binding: { kind: 'platform', credentialId: 'codex-login', modelId, auxiliaryModelIds: ['gpt-6.2-astra'] }, state: 'active', revision: 1 })
   state.agents.push({ name: 'Solo', acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'codex-fast' }, files: [], mcp: [], env: {}, layout: {} })
   await routeApi(page, '**/api/acp-backends/codex/models', route => route.fulfill({ json: { models: [
-    { id: modelId, name: 'GPT-6.2 Sol', vendor: 'openai', efforts, fastModeSupported: true },
-    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', vendor: 'openai', efforts, fastModeSupported: true },
+    { id: modelId, name: 'GPT-6.2 Sol', vendor: 'openai', efforts, serviceTiers: ['fast'] },
+    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', vendor: 'openai', efforts, serviceTiers: ['fast'] },
   ] } }))
-  const session = { id: 'solo-fast', title: 'Fast task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], backend: 'codex', currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'codex-fast', reasoningEffort: 'low', reasoningEfforts: efforts, fastMode: false, fastModeSupported: true }
+  const session = { id: 'solo-fast', title: 'Fast task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], backend: 'codex', currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'codex-fast', reasoningEffort: 'low', reasoningEfforts: efforts, serviceTier: '', serviceTiers: ['fast'] }
   const writes: Record<string, unknown>[] = []
   await routeApi(page, '**/api/solo/sessions**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -876,7 +876,7 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
     if (path.endsWith('/model')) {
       const body = route.request().postDataJSON()
       writes.push(body)
-      if (Object.hasOwn(body, 'fastMode')) session.fastMode = body.fastMode === true
+      if (Object.hasOwn(body, 'serviceTier')) session.serviceTier = typeof body.serviceTier === 'string' ? body.serviceTier : ''
       if (Object.hasOwn(body, 'reasoningEffort')) session.reasoningEffort = String(body.reasoningEffort)
     }
     return route.fulfill({ json: session })
@@ -904,7 +904,7 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   await fast.hover()
   await expect(page.getByRole('tooltip')).toContainText('响应更快，用量更多')
   await fast.click()
-  await expect.poll(() => writes.at(-1)).toEqual({ fastMode: true })
+  await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: 'fast' })
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('solo-effort-slider')).toHaveValue('0')
   await page.getByTestId('solo-effort-slider').press('End')
@@ -935,7 +935,7 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   await settleVisualTransitions(page)
   await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-mobile.png'), animations: 'disabled' })
   await fast.click()
-  await expect.poll(() => writes.at(-1)).toEqual({ fastMode: false })
+  await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: '' })
   await expect(page.getByTestId('solo-effort-slider')).toHaveValue('5')
   expect(writes.every(body => !Object.hasOwn(body, 'modelId'))).toBe(true)
 })

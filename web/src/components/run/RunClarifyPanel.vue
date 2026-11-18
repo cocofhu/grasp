@@ -44,8 +44,8 @@ const props = defineProps<{
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
-    fastMode?: boolean
-    fastModeSupported?: boolean
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   } | null
   runId: string
@@ -203,8 +203,8 @@ defineExpose({
         :current-model-id="clarify?.currentModelId"
         :current-model-set="clarify?.currentModelSet"
         :reasoning-effort="clarify?.reasoningEffort"
-        :fast-mode="clarify?.fastMode"
-        :fast-mode-supported="clarify?.fastModeSupported"
+        :service-tier="clarify?.serviceTier"
+        :service-tiers="clarify?.serviceTiers"
         :model-notice="clarify?.modelNotice"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"

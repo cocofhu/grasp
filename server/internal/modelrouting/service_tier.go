@@ -1,25 +1,27 @@
 package modelrouting
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/clicatalog"
 )
 
-// FastModeSupported requires an exact model capability from the official Codex
+// ServiceTiers requires an exact model capability from the official Codex
 // catalog. Compatible API accounts do not inherit platform speed tiers.
-func FastModeSupported(backend, modelID string, connection *Connection) bool {
+// Empty means only the standard tier is available.
+func ServiceTiers(backend, modelID string, connection *Connection) []string {
 	if strings.TrimSpace(backend) != "codex" || connection != nil {
-		return false
+		return nil
 	}
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" || modelID == "auto" {
-		return false
+		return nil
 	}
 	for _, model := range clicatalog.Models("codex") {
 		if model.ID == modelID {
-			return model.FastModeSupported
+			return slices.Clone(model.ServiceTiers)
 		}
 	}
-	return false
+	return nil
 }

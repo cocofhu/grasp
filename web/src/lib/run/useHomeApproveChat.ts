@@ -41,7 +41,7 @@ export const HOME_PRIORITY_MEMORY_KEY = 'grasp.home.lastPriority'
 /** Per-workflow last model and effort for the home composer. Browser-local only. */
 export const HOME_LAUNCH_MODEL_MEMORY_KEY = 'grasp.home.lastLaunchModel'
 
-type LaunchMemory = { modelId: string; effort: string; fastMode?: boolean }
+type LaunchMemory = { modelId: string; effort: string; serviceTier?: string }
 
 /** Debounce for auto-save (plan g2.2; NFR ~300–800ms). */
 export const HOME_COMPOSER_DRAFT_DEBOUNCE_MS = 400
@@ -104,7 +104,7 @@ function writeLaunchMemory(workflowId: string, memory: LaunchMemory) {
   if (!workflowId) return
   try {
     const all = readLaunchMemory()
-    all[workflowId] = { modelId: memory.modelId || '', effort: memory.effort || '', ...(memory.fastMode ? { fastMode: true } : {}) }
+    all[workflowId] = { modelId: memory.modelId || '', effort: memory.effort || '', ...(memory.serviceTier ? { serviceTier: memory.serviceTier } : {}) }
     localStorage.setItem(HOME_LAUNCH_MODEL_MEMORY_KEY, JSON.stringify(all))
   } catch {
     /* ignore quota / private mode */
@@ -126,7 +126,7 @@ export function useHomeApproveChat() {
   const launchPriority = ref<RunPriority>(readLastPriority())
   const launchModelId = ref('')
   const launchReasoningEffort = ref('')
-  const launchFastMode = ref(false)
+  const launchServiceTier = ref('')
   const launchModelTouched = ref(false)
   const launchModelForModal = ref<HomeLaunchModel | null>(null)
   let launchResetAnnounced = ''
@@ -276,7 +276,7 @@ export function useHomeApproveChat() {
     const saved = id ? readLaunchMemory()[id] : undefined
     launchModelId.value = saved?.modelId || ''
     launchReasoningEffort.value = saved?.effort || ''
-    launchFastMode.value = saved?.fastMode === true
+    launchServiceTier.value = typeof saved?.serviceTier === 'string' ? saved.serviceTier : ''
     launchModelTouched.value = false
     launchResetAnnounced = ''
   }, { immediate: true })
@@ -292,7 +292,7 @@ export function useHomeApproveChat() {
     if (modelId && !choices.some((choice) => choice.id === modelId && !choice.unavailable)) {
       launchModelId.value = ''
       launchReasoningEffort.value = ''
-      launchFastMode.value = false
+      launchServiceTier.value = ''
       writeLaunchMemory(wfId, { modelId: '', effort: '' })
       if (launchResetAnnounced !== announce) {
         launchResetAnnounced = announce
@@ -301,15 +301,15 @@ export function useHomeApproveChat() {
       return
     }
     const picked = modelId ? choices.find((choice) => choice.id === modelId) : choices[0]
-    if (launchFastMode.value && !picked?.fastModeSupported) {
-      launchFastMode.value = false
+    if (launchServiceTier.value && !picked?.serviceTiers?.includes(launchServiceTier.value)) {
+      launchServiceTier.value = ''
       writeLaunchMemory(wfId, { modelId, effort })
     }
     const listed = listedEfforts(picked?.efforts)
     if (effort && !listed.includes(effort)) {
       const next = listed.at(-1) || ''
       launchReasoningEffort.value = next
-      writeLaunchMemory(wfId, { modelId, effort: next, fastMode: launchFastMode.value })
+      writeLaunchMemory(wfId, { modelId, effort: next, serviceTier: launchServiceTier.value })
       if (launchResetAnnounced !== announce) {
         launchResetAnnounced = announce
         toast.warn(t('pages.dashboard.launchModelReset'))
@@ -398,7 +398,7 @@ export function useHomeApproveChat() {
   function rememberLaunchSelection() {
     const wfId = selected.value?.id || ''
     if (!wfId) return
-    writeLaunchMemory(wfId, { modelId: launchModelId.value, effort: launchReasoningEffort.value, fastMode: launchFastMode.value })
+    writeLaunchMemory(wfId, { modelId: launchModelId.value, effort: launchReasoningEffort.value, serviceTier: launchServiceTier.value })
   }
 
   function selectLaunchModel(id: string) {
@@ -409,7 +409,7 @@ export function useHomeApproveChat() {
       ? launchModelChoices.value.find((choice) => choice.id === id)
       : launchModelChoices.value[0]
     const listed = listedEfforts(picked?.efforts)
-    if (!picked?.fastModeSupported) launchFastMode.value = false
+    if (!picked?.serviceTiers?.includes(launchServiceTier.value)) launchServiceTier.value = ''
     if (previousEffort && !listed.includes(previousEffort)) {
       launchReasoningEffort.value = listed.at(-1) || ''
       toast.warn(t('pages.solo.modelSelect.effortResetNotice'))
@@ -422,21 +422,21 @@ export function useHomeApproveChat() {
     launchModelTouched.value = true
     rememberLaunchSelection()
   }
-  function selectLaunchFastMode(fastMode: boolean) {
-    launchFastMode.value = fastMode
+  function selectLaunchServiceTier(serviceTier: string) {
+    launchServiceTier.value = serviceTier
     launchModelTouched.value = true
     rememberLaunchSelection()
   }
 
   function decideLaunchModel() {
-    const custom = launchModelTouched.value || !!launchModelId.value || !!launchReasoningEffort.value || launchFastMode.value
+    const custom = launchModelTouched.value || !!launchModelId.value || !!launchReasoningEffort.value || !!launchServiceTier.value
     return resolveHomeLaunchModel({
       clarify: showLaunchModel.value,
       ready: launchCatalog.ready.value,
       custom,
       modelId: launchModelId.value,
       effort: launchReasoningEffort.value,
-      fastMode: launchFastMode.value,
+      serviceTier: launchServiceTier.value,
       choices: launchModelChoices.value,
     })
   }
@@ -616,12 +616,12 @@ export function useHomeApproveChat() {
     showLaunchModel,
     launchModelId,
     launchReasoningEffort,
-    launchFastMode,
+    launchServiceTier,
     launchModelChoices,
     launchModelForModal,
     selectLaunchModel,
     selectLaunchEffort,
-    selectLaunchFastMode,
+    selectLaunchServiceTier,
     draft,
     sending,
     hidingWorkflowId,

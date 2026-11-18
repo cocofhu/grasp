@@ -78,8 +78,8 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 	}
 	m["currentModel"] = curModel
 	m["reasoningEffort"] = b.ReasoningEffort()
-	m["fastMode"] = b.FastMode()
-	m["fastModeSupported"] = FastModeSupported(b.EffectiveModel())
+	m["serviceTier"] = b.ServiceTier()
+	m["serviceTiers"] = ServiceTiers(b.EffectiveModel())
 	m["chatId"] = b.id
 	// 协议已预留的可选 usage：仅当该会话上报用量时携带累计量，否则完全省略（帧不变）。
 	if p.ReportsUsage() {
@@ -247,8 +247,8 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 		Model:              m,
 		ReasoningEffort:    b.ReasoningEffort(),
 		ReasoningEffortSet: true,
-		FastMode:           b.FastMode(),
-		FastModeSet:        true,
+		ServiceTier:        b.ServiceTier(),
+		ServiceTierSet:     true,
 		McpServers:         mcp,
 		AutoPermission:     autoPerm,
 	}, onEvent, perm)
@@ -369,35 +369,35 @@ func (b *Bridge) RestartAgent() (provider.Session, error) {
 	return b.restartAgentLocked()
 }
 
-// SwitchModelSettings updates model and effort as one operation. A rejected
-// restart restores both choices, and concurrent changes cannot interleave.
-func (b *Bridge) SwitchModelSettings(model, effort string, fastMode ...bool) (provider.Session, error) {
+// SwitchModelSettings updates model, effort and speed tier as one operation.
+// A nil tier keeps the current one. A rejected restart restores every choice,
+// and concurrent changes cannot interleave.
+func (b *Bridge) SwitchModelSettings(model, effort string, serviceTier *string) (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
 	effectiveModel := strings.TrimSpace(model)
 	if effectiveModel == "" && b.mgr != nil {
 		effectiveModel = b.mgr.DefaultModel()
 	}
-	if len(fastMode) > 0 && fastMode[0] && !FastModeSupported(effectiveModel) {
-		return nil, ErrFastModeUnavailable
+	if serviceTier != nil && !ServiceTierSelectable(effectiveModel, *serviceTier) {
+		return nil, ErrServiceTierUnavailable
 	}
 	b.mu.Lock()
-	previousModel, previousEffort, previousFast := b.model, b.reasoningEffort, b.fastMode
+	previousModel, previousEffort, previousTier := b.model, b.reasoningEffort, b.serviceTier
 	b.model, b.reasoningEffort = strings.TrimSpace(model), strings.TrimSpace(effort)
-	if len(fastMode) > 0 {
-		b.fastMode = fastMode[0]
+	if serviceTier != nil {
+		b.serviceTier = strings.TrimSpace(*serviceTier)
 	}
 	b.mu.Unlock()
-	if !FastModeSupported(b.EffectiveModel()) {
+	if !ServiceTierSelectable(b.EffectiveModel(), b.rawServiceTier()) {
 		b.mu.Lock()
-		b.fastMode = false
+		b.serviceTier = ""
 		b.mu.Unlock()
 	}
 	session, err := b.restartAgentLocked()
 	if err != nil {
 		b.mu.Lock()
-		b.model, b.reasoningEffort = previousModel, previousEffort
-		b.fastMode = previousFast
+		b.model, b.reasoningEffort, b.serviceTier = previousModel, previousEffort, previousTier
 		b.mu.Unlock()
 	}
 	return session, err

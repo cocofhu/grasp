@@ -195,7 +195,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		Status: "queued", Trigger: trigger, Inputs: inputs, Graph: graph, Title: title,
 		FirstMessage:   firstMessage,
 		LaunchModelSet: storedLaunch.Set, LaunchConfigurationID: storedLaunch.ConfigurationID,
-		LaunchModelID: storedLaunch.ModelID, LaunchReasoningEffort: storedLaunch.ReasoningEffort, LaunchFastMode: storedLaunch.FastMode,
+		LaunchModelID: storedLaunch.ModelID, LaunchReasoningEffort: storedLaunch.ReasoningEffort, LaunchServiceTier: storedLaunch.ServiceTier,
 		Tags:       append([]string{}, tags...),
 		Priority:   priority,
 		SandboxEnv: sandboxEnv,

@@ -57,13 +57,13 @@ const {
   launchPriority,
   showLaunchModel,
   launchModelId,
-  launchFastMode,
+  launchServiceTier,
   launchReasoningEffort,
   launchModelChoices,
   launchModelForModal,
   selectLaunchModel,
   selectLaunchEffort,
-  selectLaunchFastMode,
+  selectLaunchServiceTier,
   draft,
   sending,
   hidingWorkflowId,
@@ -110,7 +110,7 @@ const soloProjectIds = solo.projectIds
 const soloBranches = solo.branches
 const soloInitialModelId = solo.initialModelId
 const soloReasoningEffort = solo.reasoningEffort
-const soloFastMode = solo.fastMode
+const soloServiceTier = solo.serviceTier
 const soloModelChoices = solo.modelChoices
 const soloLimitOpen = solo.limitOpen
 const projectDrawerOpen = ref(false)
@@ -1009,12 +1009,12 @@ onBeforeUnmount(() => {
                   v-if="showLaunchModel"
                   :model-value="launchModelId"
                   :reasoning-effort="launchReasoningEffort"
-                  :fast-mode="launchFastMode"
+                  :service-tier="launchServiceTier"
                   :models="launchModelChoices"
                   :disabled="sending"
                   @update:model-value="selectLaunchModel"
                   @update:reasoning-effort="selectLaunchEffort"
-                  @update:fast-mode="selectLaunchFastMode"
+                  @update:service-tier="selectLaunchServiceTier"
                 />
                 <HomePrioritySelect
                   :model-value="launchPriority"
@@ -1041,7 +1041,7 @@ onBeforeUnmount(() => {
                 <SoloModelSelect
                   v-model="soloInitialModelId"
                   v-model:reasoning-effort="soloReasoningEffort"
-                  v-model:fast-mode="soloFastMode"
+                  v-model:service-tier="soloServiceTier"
                   :models="soloModelChoices"
                   :disabled="solo.creating.value"
                 />

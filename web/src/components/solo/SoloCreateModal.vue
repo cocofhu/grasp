@@ -16,7 +16,7 @@ const props = defineProps<{ open: boolean; presetAgent?: string; presetProject?:
 const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useI18n()
 const launcher = useSoloLauncher()
-const { agents, projects, agentName, projectIds, branches, initialModelId, reasoningEffort, fastMode, modelChoices, loading, creating, error, limitOpen } = launcher
+const { agents, projects, agentName, projectIds, branches, initialModelId, reasoningEffort, serviceTier, modelChoices, loading, creating, error, limitOpen } = launcher
 
 const text = ref('')
 const title = ref('')
@@ -97,7 +97,7 @@ function onSaved(p: Project) {
       </div>
       <div>
         <span class="label">{{ t('pages.solo.modelSelect.label') }}</span>
-        <SoloModelSelect v-model="initialModelId" v-model:reasoning-effort="reasoningEffort" v-model:fast-mode="fastMode" class="!max-w-none" :models="modelChoices" :disabled="creating" />
+        <SoloModelSelect v-model="initialModelId" v-model:reasoning-effort="reasoningEffort" v-model:service-tier="serviceTier" class="!max-w-none" :models="modelChoices" :disabled="creating" />
       </div>
       <label class="block">
         <span class="label">{{ t('pages.solo.create.titleLabel') }}</span>

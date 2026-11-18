@@ -30,11 +30,11 @@ const props = withDefaults(
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
-    fastMode?: boolean
-    fastModeSupported?: boolean
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }>(),
-  { iteration: 1, currentConfigurationId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', fastMode: false, fastModeSupported: undefined, modelNotice: '' },
+  { iteration: 1, currentConfigurationId: '', currentModelId: '', currentModelSet: false, reasoningEffort: '', serviceTier: '', serviceTiers: undefined, modelNotice: '' },
 )
 
 const { t, te, locale } = useI18n()
@@ -45,8 +45,8 @@ const configurationId = ref(props.currentConfigurationId)
 const modelId = ref(props.currentModelSet ? props.currentModelId : '')
 const modelSet = ref(props.currentModelSet)
 const effort = ref(props.reasoningEffort)
-const fastMode = ref(props.fastMode)
-const fastModeSupported = ref(props.fastModeSupported)
+const serviceTier = ref(props.serviceTier)
+const serviceTiers = ref(props.serviceTiers)
 const notice = ref(props.modelNotice)
 const saving = ref(false)
 const localError = ref('')
@@ -57,8 +57,8 @@ function apply(choice: VisitModelChoice) {
   modelSet.value = !!choice.currentModelSet
   modelId.value = choice.currentModelSet ? choice.currentModelId || '' : ''
   effort.value = choice.reasoningEffort || ''
-  fastMode.value = choice.fastMode === true
-  fastModeSupported.value = choice.fastModeSupported
+  serviceTier.value = choice.serviceTier || ''
+  serviceTiers.value = choice.serviceTiers
   notice.value = choice.modelNotice || ''
 }
 
@@ -76,7 +76,7 @@ async function reload() {
 
 watch(() => [props.runId, props.nodeId, props.iteration], () => void reload(), { immediate: true })
 watch(
-  () => [props.currentModelSet, props.currentModelId, props.currentConfigurationId, props.reasoningEffort, props.fastMode, props.fastModeSupported, props.modelNotice],
+  () => [props.currentModelSet, props.currentModelId, props.currentConfigurationId, props.reasoningEffort, props.serviceTier, props.serviceTiers, props.modelNotice],
   () => {
     if (saving.value) return
     apply({
@@ -84,8 +84,8 @@ watch(
       currentModelId: props.currentModelId,
       currentModelSet: props.currentModelSet,
       reasoningEffort: props.reasoningEffort,
-      fastMode: props.fastMode,
-      fastModeSupported: props.fastModeSupported,
+      serviceTier: props.serviceTier,
+      serviceTiers: props.serviceTiers,
       modelNotice: props.modelNotice,
     })
   },
@@ -102,7 +102,7 @@ const currentSelection = computed(() => {
 })
 const shownModels = computed(() => {
   const selectedId = currentSelection.value
-  const choices = catalog.choices.value.map(choice => choice.id === selectedId && modelSet.value && configurationId.value && fastModeSupported.value !== undefined ? { ...choice, fastModeSupported: fastModeSupported.value } : choice)
+  const choices = catalog.choices.value.map(choice => choice.id === selectedId && modelSet.value && configurationId.value && serviceTiers.value !== undefined ? { ...choice, serviceTiers: serviceTiers.value } : choice)
   if (!selectedId || choices.some(choice => choice.id === selectedId)) return choices
   return [...choices, {
     id: selectedId,
@@ -117,13 +117,13 @@ const noticeText = computed(() => notice.value ? soloErrorText({ code: notice.va
 const errorText = computed(() => localError.value || noticeText.value)
 const catalogFailedDefault = computed(() => catalog.blocked.value && !modelSet.value)
 
-async function save(nextConfiguration: string, nextModel: string, nextEffort: string, nextFastMode = fastMode.value) {
-  const previous = { configurationId: configurationId.value, modelId: modelId.value, modelSet: modelSet.value, effort: effort.value, fastMode: fastMode.value, notice: notice.value }
+async function save(nextConfiguration: string, nextModel: string, nextEffort: string, nextServiceTier = serviceTier.value) {
+  const previous = { configurationId: configurationId.value, modelId: modelId.value, modelSet: modelSet.value, effort: effort.value, serviceTier: serviceTier.value, notice: notice.value }
   configurationId.value = nextConfiguration
   modelId.value = nextModel
   modelSet.value = true
   effort.value = nextEffort
-  fastMode.value = nextFastMode
+  serviceTier.value = nextServiceTier
   localError.value = ''
   notice.value = ''
   const token = ++generation
@@ -134,7 +134,7 @@ async function save(nextConfiguration: string, nextModel: string, nextEffort: st
       configurationId: nextConfiguration,
       modelId: nextModel,
       reasoningEffort: nextEffort,
-      ...(nextFastMode || previous.fastMode || fastModeSupported.value ? { fastMode: nextFastMode } : {}),
+      ...(nextServiceTier || previous.serviceTier || serviceTiers.value?.length ? { serviceTier: nextServiceTier } : {}),
     })
     if (token === generation) apply(choice)
     return token === generation
@@ -144,7 +144,7 @@ async function save(nextConfiguration: string, nextModel: string, nextEffort: st
     modelId.value = previous.modelId
     modelSet.value = previous.modelSet
     effort.value = previous.effort
-    fastMode.value = previous.fastMode
+    serviceTier.value = previous.serviceTier
     notice.value = previous.notice
     localError.value = soloErrorText(err, t, te, locale.value)
     return false
@@ -159,13 +159,13 @@ function chooseModel(value: string) {
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   const encoded = choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value
   const route = parseModelRoute(encoded)
-  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', choice?.efforts?.includes(effort.value) ? effort.value : '', choice?.fastModeSupported ? fastMode.value : false)
+  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', choice?.efforts?.includes(effort.value) ? effort.value : '', choice?.serviceTiers?.includes(serviceTier.value) ? serviceTier.value : '')
 }
 
 function chooseEffort(value: string) {
   void save(configurationId.value || currentGroup.value, modelId.value, value)
 }
-async function chooseFastMode(value: boolean) {
+async function chooseServiceTier(value: string) {
   if (await save(configurationId.value || currentGroup.value, modelId.value, effort.value, value)) {
     toast.show(t('pages.solo.modelSelect.fastModeNextTurn'))
   }
@@ -179,12 +179,12 @@ async function chooseFastMode(value: boolean) {
       :models="shownModels"
       :model-value="currentSelection"
       :reasoning-effort="effort"
-      :fast-mode="fastMode"
+      :service-tier="serviceTier"
       :disabled="disabled || saving || !catalog.ready.value"
       :empty-as-label="catalog.ready.value && !shownModels.length && !modelSet"
       @update:model-value="chooseModel"
       @update:reasoning-effort="chooseEffort"
-      @update:fast-mode="chooseFastMode"
+      @update:service-tier="chooseServiceTier"
     />
     <p v-if="catalogFailedDefault" class="mt-1 text-[11px] text-txt2" role="status" data-testid="visit-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailedDefault') }}</p>
     <p v-if="errorText" class="mt-1 text-[11px] text-err" data-testid="visit-model-notice">{{ errorText }}</p>

@@ -30,7 +30,7 @@ type SoloSandboxOpts struct {
 	InitialModelID         string
 	InitialConfigurationID string
 	ReasoningEffort        string
-	FastMode               bool
+	ServiceTier            string
 	OnEnv                  func(sources map[string]string)
 	OnReady                func(sandboxID uint)
 	OnFail                 func(sandboxID uint, err error)
@@ -132,7 +132,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	if s.host != nil {
 		s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
 	}
-	extra := agentContainerExtra{Repos: snapshots, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, InitialChatFastMode: &opts.FastMode, Restore: opts.Restore}
+	extra := agentContainerExtra{Repos: snapshots, Resident: true, LaunchKind: "solo", OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID), InitialChatReasoningEffort: &opts.ReasoningEffort, InitialChatServiceTier: &opts.ServiceTier, Restore: opts.Restore}
 	id := row.ID
 	if opts.OnReady != nil {
 		extra.OnReady = func() { opts.OnReady(id) }

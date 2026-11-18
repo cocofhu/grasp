@@ -19,7 +19,7 @@ const source = (name: string) => readFileSync(join(here, name), 'utf8')
 const base: ConfiguredModelChoice = { id: 'kimi-k3.1-pro', name: 'Kimi', hint: 'kimi-k3.1-pro', vendor: 'kimi', backend: false, unavailable: false }
 const fast: ConfiguredModelChoice = { id: 'aux-fast', name: 'Fast', hint: 'aux-fast', vendor: 'moonshot', backend: false, unavailable: false }
 const mounted: Array<{ unmount: () => void }> = []
-function mountSelect(props: { models?: ConfiguredModelChoice[]; modelValue?: string; reasoningEffort?: string; fastMode?: boolean; disabled?: boolean } = {}) {
+function mountSelect(props: { models?: ConfiguredModelChoice[]; modelValue?: string; reasoningEffort?: string; serviceTier?: string; disabled?: boolean } = {}) {
   const wrapper = mount(SoloModelSelect, {
     attachTo: document.body,
     props: { models: [base, fast], modelValue: '', ...props },
@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe('SoloModelSelect', () => {
   it('toggles advertised Fast mode independently of the model and reasoning effort', async () => {
-    const wrapper = mountSelect({ models: [{ ...base, fastModeSupported: true, efforts: ['low', 'high'] }], reasoningEffort: 'low' })
+    const wrapper = mountSelect({ models: [{ ...base, serviceTiers: ['fast'], efforts: ['low', 'high'] }], reasoningEffort: 'low' })
     await openEffort(wrapper)
     const toggle = element('solo-fast-toggle')!
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
@@ -60,10 +60,10 @@ describe('SoloModelSelect', () => {
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('响应更快，用量更多')
     toggle.click()
     await flushPromises()
-    expect(wrapper.emitted('update:fastMode')).toEqual([[true]])
+    expect(wrapper.emitted('update:serviceTier')).toEqual([['fast']])
     expect(wrapper.emitted('update:reasoningEffort')).toBeUndefined()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    await wrapper.setProps({ fastMode: true })
+    await wrapper.setProps({ serviceTier: 'fast' })
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
     expect(element('solo-effort-slider')?.getAttribute('aria-valuetext')).toBe('低')
     expect(wrapper.get('[data-testid="solo-model-fast-label"]').text()).toBe('Fast')
@@ -75,7 +75,7 @@ describe('SoloModelSelect', () => {
     const wrapper = mountSelect({ models: [{ ...base, id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'high'] }] })
     await openEffort(wrapper)
     expect(element('solo-fast-toggle')).toBeNull()
-    await wrapper.setProps({ models: [{ ...base, fastModeSupported: true, efforts: ['low', 'high'] }] })
+    await wrapper.setProps({ models: [{ ...base, serviceTiers: ['fast'], efforts: ['low', 'high'] }] })
     element('solo-fast-toggle')!.focus()
     await flushPromises()
     expect(document.querySelector('[role="tooltip"]')).not.toBeNull()

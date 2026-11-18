@@ -18,9 +18,9 @@ import (
 func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	selected := "old"
 	effort := "low"
-	fastMode := false
+	tier := ""
 	var posts []string
-	var postedFast []bool
+	var postedTiers []string
 	failNew := true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/login" {
@@ -33,18 +33,18 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/models":
-			_ = json.NewEncoder(w).Encode(map[string]any{"selected": selected, "reasoningEffort": effort, "fastMode": fastMode})
+			_ = json.NewEncoder(w).Encode(map[string]any{"selected": selected, "reasoningEffort": effort, "serviceTier": tier})
 		case "/api/model":
 			var body struct {
 				Model           string `json:"model"`
 				ReasoningEffort string `json:"reasoningEffort"`
-				FastMode        bool   `json:"fastMode"`
+				ServiceTier     string `json:"serviceTier"`
 			}
 			raw, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(raw, &body)
 			posts = append(posts, body.Model+"/"+body.ReasoningEffort)
-			postedFast = append(postedFast, body.FastMode)
-			fastMode = body.FastMode
+			postedTiers = append(postedTiers, body.ServiceTier)
+			tier = body.ServiceTier
 			if failNew && body.Model == "new" {
 				selected, effort = body.Model, body.ReasoningEffort
 				w.WriteHeader(http.StatusBadRequest)
@@ -62,7 +62,7 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	acp := sandbox.NewACPClient(host, port).WithPassword("secret").WithBridgeModel("primary").WithExecution(&models.ChatExecution{ModelID: "primary", Backend: "cursor"})
 	acp.SeedBridgeForTest(sandbox.BridgeState{}, "", "")
 	p := &acpProvider{sessions: map[string]*reactSession{}, backend: BackendCursor}
-	req := NodeReq{RunID: "run", NodeID: "clarify", ChatRoute: &ChatRoute{ModelID: "new", ReasoningEffort: "high", FastMode: true, Set: true}, AppliedRoute: &ChatRoute{ModelID: "old", ReasoningEffort: "low", Set: true}}
+	req := NodeReq{RunID: "run", NodeID: "clarify", ChatRoute: &ChatRoute{ModelID: "new", ReasoningEffort: "high", ServiceTier: "fast", Set: true}, AppliedRoute: &ChatRoute{ModelID: "old", ReasoningEffort: "low", Set: true}}
 	p.sessions[reactKey(req)] = &reactSession{sb: &sandbox.Sandbox{Host: host, Port: port, Password: "secret"}, acp: acp}
 
 	notice, aligned, err := p.AlignChatRoute(context.Background(), req)
@@ -72,10 +72,10 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	if len(posts) != 2 || posts[0] != "new/high" || posts[1] != "old/low" {
 		t.Fatalf("posts = %#v", posts)
 	}
-	if !postedFast[0] || postedFast[1] || fastMode {
-		t.Fatalf("Fast mode did not roll back with the route: %v", postedFast)
+	if postedTiers[0] != "fast" || postedTiers[1] != "" || tier != "" {
+		t.Fatalf("service tier did not roll back with the route: %q", postedTiers)
 	}
-	if got := p.sessions[reactKey(req)].acp.Execution(); got == nil || got.ModelID != "old" || got.ReasoningEffort != "low" || got.FastMode {
+	if got := p.sessions[reactKey(req)].acp.Execution(); got == nil || got.ModelID != "old" || got.ReasoningEffort != "low" || got.ServiceTier != "" {
 		t.Fatalf("execution = %+v", got)
 	}
 	posts = nil
@@ -83,7 +83,7 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 	selected, effort = "old", "low"
 	req.ChatRoute.ModelID = "aux"
 	req.ChatRoute.ReasoningEffort = ""
-	req.ChatRoute.FastMode = false
+	req.ChatRoute.ServiceTier = ""
 	notice, aligned, err = p.AlignChatRoute(context.Background(), req)
 	if err != nil || notice != "" || !aligned || len(posts) != 1 || posts[0] != "aux/" {
 		t.Fatalf("apply: notice=%q posts=%#v err=%v", notice, posts, err)

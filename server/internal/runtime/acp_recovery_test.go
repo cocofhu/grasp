@@ -15,13 +15,13 @@ func TestWorkflowRecoveryPreparationKeepsSelectedSettingsWithoutRecloning(t *tes
 	h := newSharedHarness(t, nil)
 	req := h.req("n1")
 	req.Repos = []models.SessionRepo{{RepoURL: "https://example.com/private.git"}}
-	req.ChatRoute = &ChatRoute{Set: true, ModelID: "applied-model", ReasoningEffort: "high", FastMode: true}
+	req.ChatRoute = &ChatRoute{Set: true, ModelID: "applied-model", ReasoningEffort: "high", ServiceTier: "fast"}
 	spec, err := h.p.PrepareSandboxRecovery(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(spec.ConfigHome) }()
-	if spec.Env["GIT_REPOS"] != "" || spec.ConfigHome == "" || spec.Env[EnvInitialChatModel] != "applied-model" || spec.Env[EnvACPBridgeReasoningEffort] != "high" || spec.Env[EnvACPBridgeFastMode] != "true" || h.mgr.createCount() != 0 {
+	if spec.Env["GIT_REPOS"] != "" || spec.ConfigHome == "" || spec.Env[EnvInitialChatModel] != "applied-model" || spec.Env[EnvACPBridgeReasoningEffort] != "high" || spec.Env[EnvACPBridgeServiceTier] != "fast" || h.mgr.createCount() != 0 {
 		t.Fatal("recovery preparation cloned/created or lost applied settings")
 	}
 }

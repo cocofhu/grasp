@@ -87,7 +87,7 @@ func TestSoloRouteSettingsNotifyViewersWithoutApplyingTheNextTurn(t *testing.T) 
 	}
 	ctx := context.Background()
 	aux, high := "aux", "high"
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &aux, &high); err != nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &aux, &high, nil); err != nil {
 		t.Fatal(err)
 	}
 	expectSelection(other.ID, aux, "codex", high, "model", []string{"low", "high"})
@@ -98,32 +98,32 @@ func TestSoloRouteSettingsNotifyViewersWithoutApplyingTheNextTurn(t *testing.T) 
 	if err := db.Model(&row).Updates(map[string]any{"applied_configuration_id": other.ID, "applied_model_id": aux}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, nil, &high); err != nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, nil, &high, nil); err != nil {
 		t.Fatal(err)
 	}
 	expectSelection(other.ID, aux, "codex", high, "effort", []string{"low", "high"})
 	if err := db.Model(&row).Update("applied_reasoning_effort", high).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, nil, &high); err != nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, nil, &high, nil); err != nil {
 		t.Fatal(err)
 	}
 	expectSelection(other.ID, aux, "codex", high, "", []string{"low", "high"})
 	primary := "primary"
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, &primary, nil); err != nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, &primary, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	expectSelection(other.ID, "", "codex", high, "model", []string{"low", "high"})
 	defaultGroup := ""
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &defaultGroup, &primary, nil); err != nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &defaultGroup, &primary, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	expectSelection("sandbox-fixture", "", "cursor", "", "model", []string{})
 	invalid := "missing-model"
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, &invalid, nil); err == nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", nil, &invalid, nil, nil); err == nil {
 		t.Fatal("invalid model was accepted")
 	}
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "bob", &other.ID, &aux, nil); err == nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "bob", &other.ID, &aux, nil, nil); err == nil {
 		t.Fatal("another user changed the selected model")
 	}
 	const callback = "fail-solo-settings-notification-write"
@@ -135,7 +135,7 @@ func TestSoloRouteSettingsNotifyViewersWithoutApplyingTheNextTurn(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Callback().Update().Remove(callback) })
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &aux, nil); err == nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &aux, nil, nil); err == nil {
 		t.Fatal("failed settings write was reported as successful")
 	}
 	expectNoEvents()
@@ -174,7 +174,7 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 	}
 	ctx := context.Background()
 	primary := "primary"
-	view, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &primary, nil)
+	view, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &other.ID, &primary, nil, nil)
 	if err != nil || view.CurrentConfigurationID != other.ID || view.CurrentModelID != "" || view.Backend != "claude_code" || view.InitialConfigurationID != "sandbox-fixture" {
 		t.Fatalf("qualified same primary: %+v, %v", view, err)
 	}
@@ -184,7 +184,7 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 	}
 	// Omitted configuration stays on the selected group, rather than returning
 	// to the Agent default when only the model or effort changes.
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", new("aux"), nil)
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", new("aux"), nil, nil)
 	if err != nil || view.CurrentConfigurationID != other.ID || view.CurrentModelID != "aux" {
 		t.Fatalf("model-only selection lost group: %+v %v", view, err)
 	}
@@ -202,7 +202,7 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 	if err := db.Model(&other).Update("state", "disabled").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", new(""), nil); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", new(""), nil, nil); err == nil {
 		t.Fatal("disabled selected group was accepted")
 	}
 	current, _ = solo.Require(row.ID, "alice")
@@ -214,14 +214,14 @@ func TestSoloGroupQualifiedSelectionKeepsDefaultAndChoosesItsTool(t *testing.T) 
 		t.Fatalf("invalid group borrowed default tool/settings: %+v %v", view, err)
 	}
 	missing := "not-bound"
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &missing, &primary, nil); err == nil || !strings.Contains(err.Error(), "未绑定") {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &missing, &primary, nil, nil); err == nil || !strings.Contains(err.Error(), "未绑定") {
 		t.Fatalf("unbound group: %v", err)
 	}
-	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "bob", &missing, &primary, nil); err == nil {
+	if _, err := solo.SetCurrentModelRouteSettings(ctx, row.ID, "bob", &missing, &primary, nil, nil); err == nil {
 		t.Fatal("another user changed this session")
 	}
 	defaultGroup := ""
-	view, err = solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &defaultGroup, &primary, nil)
+	view, err = solo.SetCurrentModelRouteSettings(ctx, row.ID, "alice", &defaultGroup, &primary, nil, nil)
 	if err != nil || view.CurrentConfigurationID != "sandbox-fixture" || view.Backend != "cursor" {
 		t.Fatalf("explicit default: %+v %v", view, err)
 	}
@@ -245,7 +245,7 @@ func TestSoloHistoryReadFailureBlocksFreshModelUntilContextCanBeLoaded(t *testin
 	solo.SetChatterForTest(gate)
 	aligner := &recordAligner{}
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.SetCurrentModelSettings(ctx, view.ID, "alice", new("aux"), nil); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, view.ID, "alice", new("aux"), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	const callback = "fail-history-handoff-query"
@@ -370,7 +370,7 @@ func TestSoloAmbiguousModelSwitchStillSeedsHistoryWhenRetryIsNoop(t *testing.T) 
 	solo.SetChatterForTest(gate)
 	aligner := &ambiguousSoloModelAligner{}
 	solo.SetModelAlignerForTest(aligner)
-	if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux"), nil); err != nil {
+	if _, err := solo.SetCurrentModelSettings(context.Background(), view.ID, "alice", new("aux"), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := solo.SendWithReferences(view.ID, "alice", "remember my task", nil, nil); err != nil {

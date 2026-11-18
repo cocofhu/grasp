@@ -189,8 +189,8 @@ const props = withDefaults(
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
-    fastMode?: boolean
-    fastModeSupported?: boolean
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }>(),
   {
@@ -211,8 +211,8 @@ const props = withDefaults(
     nodeTask: '',
     systemNotes: () => [],
     referencesEnabled: true,
-    fastMode: undefined,
-    fastModeSupported: undefined,
+    serviceTier: undefined,
+    serviceTiers: undefined,
   },
 )
 
@@ -1767,8 +1767,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :current-model-id="currentModelId"
             :current-model-set="currentModelSet"
             :reasoning-effort="reasoningEffort"
-            :fast-mode="fastMode"
-            :fast-mode-supported="fastModeSupported"
+            :service-tier="serviceTier"
+            :service-tiers="serviceTiers"
             :model-notice="modelNotice"
           />
           <slot name="composer-controls" :compact="true" />
