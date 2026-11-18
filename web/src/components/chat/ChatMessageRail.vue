@@ -21,6 +21,8 @@ const emit = defineEmits<{ navigate: [id: string]; loadEarlier: [] }>()
 const { t } = useI18n()
 const cardId = `chat-message-rail-card-${useId().replace(/:/g, '')}`
 const activeId = ref('')
+const visibleIds = ref<string[]>([])
+const visibleSet = computed(() => new Set(visibleIds.value))
 const hoverId = ref('')
 const focusId = ref('')
 const open = ref(false)
@@ -101,6 +103,19 @@ function readingLineActiveId(scroller: HTMLElement) {
   return found
 }
 
+/** A question owns the thread until the next question starts, so its reply keeps the tick lit. */
+function visibleIdsIn(scroller: HTMLElement) {
+  const viewTop = scroller.getBoundingClientRect().top
+  const viewBottom = viewTop + scroller.clientHeight
+  const targets = messageTargets()
+  const placed: Array<{ id: string; top: number }> = []
+  for (const item of props.items) {
+    const target = targets.get(item.id)
+    if (target) placed.push({ id: item.id, top: target.getBoundingClientRect().top })
+  }
+  return placed.filter((entry, index) => entry.top < viewBottom && (placed[index + 1]?.top ?? Infinity) > viewTop).map(entry => entry.id)
+}
+
 /** Bring the active tick into the rail column. Scrolling the column never moves the conversation. */
 function revealActiveTick(pinToBottom: boolean) {
   const column = track.value
@@ -126,6 +141,9 @@ function updateActive() {
   const overflows = scroller.scrollHeight > scroller.clientHeight + BOTTOM_SLACK_PX
   const atBottom = overflows && distanceFromBottom(scroller) <= BOTTOM_SLACK_PX
   activeId.value = atBottom ? props.items[props.items.length - 1]!.id : readingLineActiveId(scroller)
+  const visible = visibleIdsIn(scroller)
+  if (!visible.includes(activeId.value)) visible.push(activeId.value)
+  if (visible.join('\n') !== visibleIds.value.join('\n')) visibleIds.value = visible
   revealActiveTick(atBottom)
 }
 
@@ -267,6 +285,7 @@ watch(() => props.items.map(item => item.id).join('\n'), async () => {
 watch(() => props.scopeKey, () => {
   focusId.value = ''
   activeId.value = ''
+  visibleIds.value = []
   pointerInside = false
   closeCard()
   clearHighlight()
@@ -281,7 +300,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
       <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" />
     </button>
     <div ref="track" class="chat-message-rail-track" data-testid="chat-message-rail-track" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave">
-      <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="navigate(item.id)">
+      <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-visible': visibleSet.has(item.id), 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="navigate(item.id)">
         <span aria-hidden="true" />
       </button>
     </div>
@@ -309,12 +328,12 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 
 <style scoped>
 .chat-message-rail { position: absolute; z-index: 5; inset-block: 18px; left: 0; width: var(--chat-message-rail-width); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
-.chat-message-rail-track { display: flex; min-height: 0; max-height: min(420px, 100%); flex-direction: column; gap: 2px; overflow-y: auto; padding-block: 5px; scrollbar-width: none; pointer-events: auto; }
+.chat-message-rail-track { display: flex; min-height: 0; max-height: min(420px, 100%); flex-direction: column; overflow-y: auto; padding-block: 5px; scrollbar-width: none; pointer-events: auto; }
 .chat-message-rail-track::-webkit-scrollbar { display: none; }
-.chat-message-rail-mark { display: flex; width: var(--chat-message-rail-width); min-height: 18px; flex: none; align-items: center; justify-content: flex-start; padding-left: 7px; outline: none; }
-.chat-message-rail-mark > span { width: 8px; height: 1.5px; border-radius: 1px; background: rgb(var(--c-txt3) / .4); transition: width 160ms ease, background 160ms ease; }
-.chat-message-rail-mark.is-pointed > span { width: 12px; background: rgb(var(--c-txt2)); }
-.chat-message-rail-mark.is-active > span { width: 16px; background: rgb(var(--c-txt)); }
+.chat-message-rail-mark { display: flex; width: var(--chat-message-rail-width); min-height: 10px; flex: none; align-items: center; justify-content: flex-start; padding-left: 7px; outline: none; }
+.chat-message-rail-mark > span { width: 10px; height: 1.5px; border-radius: 1px; background: rgb(var(--c-txt3) / .35); transition: width 160ms ease, background 160ms ease; }
+.chat-message-rail-mark.is-visible > span { background: rgb(var(--c-txt) / .75); }
+.chat-message-rail-mark.is-pointed > span { width: 14px; background: rgb(var(--c-txt)); }
 .chat-message-rail-mark:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: -2px; border-radius: 4px; }
 .chat-message-rail-earlier { display: flex; width: var(--chat-message-rail-width); min-height: 26px; flex: none; align-items: center; justify-content: center; color: rgb(var(--c-txt3)); pointer-events: auto; }
 .chat-message-rail-earlier:hover { color: rgb(var(--c-txt)); }
