@@ -856,7 +856,7 @@ for (const backend of ['cursor', 'opencode', 'deepseek_harness']) {
 }
 
 
-test('Solo Fast mode uses a larger lightning control and persists independently of reasoning effort', async ({ page }, testInfo) => {
+test('Solo Fast mode keeps the icons steady and persists independently of reasoning effort', async ({ page }, testInfo) => {
   const state = await setup(page)
   const modelId = 'gpt-6.2-sol'
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
@@ -904,7 +904,8 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   expect((await fast.boundingBox())!.width).toBeGreaterThanOrEqual(36)
   const icon = fast.locator('svg')
   const bolt = icon.locator('path')
-  expect(await icon.boundingBox()).toMatchObject({ width: 15, height: 15 })
+  const boltAtRest = await icon.boundingBox()
+  expect(boltAtRest).toMatchObject({ width: 15, height: 15 })
   await expect(bolt).toHaveCSS('fill-opacity', '0')
   await expect(bolt).toHaveCSS('stroke', 'rgb(141, 142, 143)')
   function watchTransitions(glyph: Locator) {
@@ -914,30 +915,44 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
       return properties
     })
   }
+  async function pressStationaryGlyph(glyph: Locator, restingBox: Awaited<ReturnType<Locator['boundingBox']>>) {
+    await settleVisualTransitions(page)
+    expect(await glyph.boundingBox()).toEqual(restingBox)
+    const hoverOpacity = await glyph.evaluate(el => Number(getComputedStyle(el).opacity))
+    await page.mouse.down()
+    await settleVisualTransitions(page)
+    expect(await glyph.boundingBox()).toEqual(restingBox)
+    expect(await glyph.evaluate(el => Number(getComputedStyle(el).opacity))).toBeLessThan(hoverOpacity)
+    await page.mouse.up()
+  }
   const boltTransitions = await watchTransitions(icon)
   await expectClearFastButton()
   await fast.hover()
-  await expect.poll(() => boltTransitions.evaluate(properties => properties.has('transform'))).toBe(true)
+  await expect.poll(() => boltTransitions.evaluate(properties => properties.has('color'))).toBe(true)
   await expectClearFastButton()
   await expect(page.getByRole('tooltip')).toContainText('响应更快，用量更多')
-  await fast.click()
+  await pressStationaryGlyph(icon, boltAtRest)
   await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: 'fast' })
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
-  await expect(bolt).toHaveCSS('fill', 'rgb(0, 0, 0)')
   await expect(bolt).toHaveCSS('fill-opacity', '1')
   expect(await boltTransitions.evaluate(properties => properties.has('fill-opacity'))).toBe(true)
   await expectClearFastButton()
   await page.mouse.move(0, 0)
+  await expect(bolt).toHaveCSS('fill', 'rgb(0, 0, 0)')
   await expectClearFastButton()
   await expect(slider).toHaveValue('4')
   await slider.press('Home')
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'low' })
   const restoreIcon = reset.locator('svg')
-  const restoreTransitions = await watchTransitions(restoreIcon)
+  const restoreAtRest = await restoreIcon.boundingBox()
+  const arc = restoreIcon.locator('path').first()
+  const arcTransitions = await watchTransitions(arc)
+  const arrowheadTransitions = await watchTransitions(restoreIcon.locator('path').last())
   await reset.hover()
-  await expect.poll(() => restoreTransitions.evaluate(properties => properties.has('transform'))).toBe(true)
-  await reset.click()
-  await expect.poll(() => restoreTransitions.evaluate(properties => properties.has('rotate'))).toBe(true)
+  await pressStationaryGlyph(restoreIcon, restoreAtRest)
+  await expect.poll(() => arcTransitions.evaluate(properties => properties.has('stroke-dashoffset'))).toBe(true)
+  expect(await arrowheadTransitions.evaluate(properties => properties.has('stroke-dashoffset'))).toBe(false)
+  await expect(restoreIcon).toHaveCSS('rotate', 'none')
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'max' })
   await expect(slider).toHaveValue('4')
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
@@ -977,6 +992,7 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   await expect(bolt).toHaveCSS('fill-opacity', '0')
   await expect(slider).toHaveValue('5')
   await reset.hover()
+  await expect(arc).toHaveCSS('transition-duration', '0s')
   await expect(restoreIcon).toHaveCSS('transition-duration', '0s')
   await expect(restoreIcon).toHaveCSS('transform', 'none')
   await reset.press('Enter')
