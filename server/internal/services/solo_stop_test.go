@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -24,6 +23,8 @@ type workspaceExec struct {
 	restored  []string
 	archives  int
 	failUntar bool
+	guestBusy bool
+	trims     []string
 }
 
 func (w *workspaceExec) install(t *testing.T) {
@@ -33,7 +34,13 @@ func (w *workspaceExec) install(t *testing.T) {
 		defer w.mu.Unlock()
 		switch {
 		case strings.Contains(command, "'python3' '-'"):
+			if w.guestBusy {
+				return []byte(`{"busy":true}`), nil
+			}
 			return []byte(`{"busy":false}`), nil
+		case strings.Contains(command, "'sh' '-s' '--'"):
+			w.trims = append(w.trims, command)
+			return []byte(`{"cachedKiB":4194304,"freedKiB":3145728}`), nil
 		case strings.Contains(command, "-czf"):
 			w.archives++
 			if !strings.Contains(command, "--exclude=node_modules") {
@@ -329,9 +336,8 @@ func TestUnifiedIdleReclaimCoversEveryPurpose(t *testing.T) {
 		t.Run(purpose, func(t *testing.T) {
 			f := newStopFixture(t)
 			row := f.recovery(t)
-			old := time.Now().Add(-2 * time.Hour)
-			f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"purpose": purpose, "last_active_at": old})
-			f.sbx.SetIdleTTL(time.Hour)
+			f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("purpose", purpose)
+			expireModelIdle(t, f.sbx, row.ID)
 			f.sbx.sweepOnce(context.Background())
 			if got, _ := f.sbx.Get(row.ID); got.Status != "stopped" || len(got.RecoveryPoints) != 1 {
 				t.Fatalf("idle %s not saved: %+v", purpose, got)

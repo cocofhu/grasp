@@ -1024,6 +1024,8 @@ export interface Run {
   /** Admission priority: high | normal | low (default normal). */
   priority?: 'high' | 'normal' | 'low'
   tags?: string[]
+  /** Sandboxes of this run skip automatic idle reclaim. */
+  keepAlive?: boolean
   /** Immutable StartRun sandbox env snapshot (secrets masked as ****). */
   sandboxEnv?: SandboxEnvEntry[]
   /** Detail only: repositories frozen at start. */

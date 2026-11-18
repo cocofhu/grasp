@@ -148,27 +148,6 @@ func (m *ChatManager) RuntimeActivity() (busy bool, reason string) {
 	return m.runtimeBusy(false)
 }
 
-// ResidentAgentPIDs identifies idle agent transport processes. Their presence
-// alone is not work; child commands remain visible to the process probe.
-func (m *ChatManager) ResidentAgentPIDs() []int {
-	m.mu.Lock()
-	list := make([]*Bridge, 0, len(m.order))
-	for _, id := range m.order {
-		list = append(list, m.chats[id])
-	}
-	m.mu.Unlock()
-	var pids []int
-	for _, b := range list {
-		b.mu.Lock()
-		sess := b.sess
-		b.mu.Unlock()
-		if source, ok := sess.(interface{ ResidentAgentPIDs() []int }); ok {
-			pids = append(pids, source.ResidentAgentPIDs()...)
-		}
-	}
-	return pids
-}
-
 func (m *ChatManager) runtimeBusy(includeClients bool) (busy bool, reason string) {
 	m.mu.Lock()
 	list := make([]*Bridge, 0, len(m.order))

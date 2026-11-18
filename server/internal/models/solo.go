@@ -121,6 +121,11 @@ type SoloSession struct {
 	SandboxID uint          `gorm:"index" json:"sandboxId,omitempty"`
 	Status    string        `gorm:"index" json:"status"`
 	Error     string        `json:"error,omitempty"`
+
+	// KeepAlive exempts this session's environment from automatic idle
+	// reclaim, across restarts, recovery and rebuilds.
+	KeepAlive bool `gorm:"not null;default:false" json:"keepAlive"`
+
 	// EnvSources maps each injected env key to where it came from
 	// (platform | agent | project | credential | system). Values are never stored.
 	EnvSources map[string]string `gorm:"serializer:json" json:"-"`

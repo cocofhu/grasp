@@ -137,7 +137,10 @@ docker:
 | `engine.max_concurrent_runs` | `GRASP_MAX_RUNS` | `5` | 最大并发运行数；设置页可改 |
 | `engine.node_auto_retry_max` | `GRASP_NODE_AUTO_RETRY` | `3` | 节点自动重试次数；设置页可改 |
 | `sandbox.max_sandboxes` | — | `15` | 所有用途和后端共用的同时运行上限；创建和恢复都计入，设置页可改 |
-| `sandbox.idle_ttl_minutes` | — | `60 分钟` | 无任务、排队请求和终端工作时，保存后释放运行资源；设置页可改 |
+| `sandbox.idle_ttl_minutes` | — | `360 分钟` | 模型回合结束且无排队请求后开始计时，到期保存并释放运行资源；页面、IDE、预览和终端访问不续期。设置页可改，会话/运行可单独开启「永不自动回收」 |
+| `sandbox.memory_trim_idle_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN` | `10 分钟` | 仅 E2B：模型回合结束后多久首次清理沙箱页面缓存并整理内存，让空闲内存还给主机大页池；负数关闭 |
+| `sandbox.memory_trim_interval_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN` | `30 分钟` | 沙箱持续空闲时再次清理的间隔 |
+| `sandbox.memory_trim_min_cache_mb` | `GRASP_SANDBOX_MEMORY_TRIM_MIN_CACHE_MB` | `1024` | 页面缓存低于该值（MiB）时跳过清理 |
 | `sandbox.chat_idle_timeout_seconds` | `GRASP_CHAT_IDLE_SEC` | `1200 秒` | Agent 无输出且无 CPU/IO 活动的时限；设置页以分钟显示，默认 `20 分钟` |
 | `sandbox.agent_node_hard_cap_hours` | `GRASP_AGENT_NODE_HARD_CAP_HOURS` | `24 小时` | 画布未设节点总时限时的兜底上限 |
 | `sandbox.sandbox_create_timeout_seconds` | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `1200 秒` | Grasp 等待沙箱创建就绪的时限，应不小于 gateway 的 finalize 时限 |

@@ -98,6 +98,8 @@ const apiMocks = vi.hoisted(() => ({
   closeSoloSession: vi.fn(),
   stopSoloSession: vi.fn(),
   resumeSoloSession: vi.fn(),
+  setSoloKeepAlive: vi.fn(),
+  setRunKeepAlive: vi.fn(),
   listRuns: vi.fn(),
   listSoloSessions: vi.fn(),
   cancelRun: vi.fn(),
@@ -119,6 +121,8 @@ vi.mock('@/lib/api/api', () => ({
     listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
     stopSoloSession: (...args: unknown[]) => apiMocks.stopSoloSession(...args),
     resumeSoloSession: (...args: unknown[]) => apiMocks.resumeSoloSession(...args),
+    setSoloKeepAlive: (...args: unknown[]) => apiMocks.setSoloKeepAlive(...args),
+    setRunKeepAlive: (...args: unknown[]) => apiMocks.setRunKeepAlive(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
   },
 }))
@@ -440,6 +444,48 @@ describe('AppSidebarNav', () => {
     await flushPromises()
     expect(apiMocks.resumeSoloSession).toHaveBeenCalledWith('off')
     expect(useToast().toasts.value.some((item) => item.message === 'quota full')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('toggles Never auto-reclaim above Stop environment for sessions and runs', async () => {
+    const solo = (keepAlive: boolean) => ({
+      id: 'idle', title: 'idle', agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, keepAlive,
+      createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
+    })
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [solo(false)], maxSandboxes: 5 })
+    apiMocks.listRuns.mockResolvedValue({ items: [
+      { id: 'R', workflowId: 'wf', workflowName: 'w', title: '工作流 R', status: 'waiting_human', startedAt: 'T0', keepAlive: true },
+    ], total: 1 })
+    apiMocks.setSoloKeepAlive.mockResolvedValue(solo(true))
+    apiMocks.setRunKeepAlive.mockResolvedValueOnce({ id: 'R', keepAlive: false }).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountNav()
+    await flushPromises()
+    const section = wrapper.get('[data-testid="nav-pending-approvals"]')
+    const item = () => document.querySelector<HTMLElement>('[data-testid="nav-pending-menu-keep-alive"]')
+    const order = () => [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role^="menuitem"]')].map((el) => el.getAttribute('data-testid'))
+
+    await section.get('[data-key="idle"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(order().indexOf('nav-pending-menu-keep-alive')).toBe(order().indexOf('nav-pending-menu-solo-power') - 1)
+    expect(item()?.getAttribute('aria-checked')).toBe('false')
+    expect(item()?.textContent).toContain('永不自动回收')
+    item()!.click()
+    await flushPromises()
+    expect(apiMocks.setSoloKeepAlive).toHaveBeenCalledWith('idle', true)
+    await section.get('[data-key="idle"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(item()?.getAttribute('aria-checked')).toBe('true')
+    document.body.click()
+
+    const runRow = section.get('[data-key="R"]')
+    await runRow.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(item()?.getAttribute('aria-checked')).toBe('true')
+    item()!.click()
+    await flushPromises()
+    expect(apiMocks.setRunKeepAlive).toHaveBeenCalledWith('R', false)
+    await runRow.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(item()?.getAttribute('aria-checked')).toBe('false')
+    item()!.click()
+    await flushPromises()
+    expect(useToast().toasts.value.some((t) => t.message === 'offline')).toBe(true)
     wrapper.unmount()
   })
 

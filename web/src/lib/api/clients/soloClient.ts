@@ -88,6 +88,9 @@ export const soloClient = {
   /** Restores the newest successful recovery point. */
   resumeSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/resume`, { method: 'POST' }),
+  /** Turns automatic idle reclaim off (true) or back on; back on restarts the full idle interval. */
+  setSoloKeepAlive: (id: string, keepAlive: boolean) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/keep-alive`, { method: 'PUT', body: JSON.stringify({ keepAlive }) }),
   /** Resumes the same sandbox of a running session after the platform paused it. */
   wakeSoloSession: (id: string) =>
     req<SoloSession>(`/solo/sessions/${enc(id)}/wake`, { method: 'POST' }),

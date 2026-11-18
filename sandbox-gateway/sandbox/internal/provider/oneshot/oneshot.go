@@ -793,8 +793,6 @@ func (e *engine) AgentPIDs() []int {
 	return nil
 }
 
-func (e *engine) ResidentAgentPIDs() []int { return e.AgentPIDs() }
-
 func (e *engine) ExitInfo() (string, error) {
 	return "Agent 会话已结束（one-shot：每轮独立进程）。", nil
 }

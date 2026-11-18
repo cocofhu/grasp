@@ -646,8 +646,8 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 		t.Fatal("live row should survive")
 	}
 	var runLive, adopted models.Sandbox
-	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.LastActiveAt == nil {
-		t.Fatalf("live run row should be kept and retired: err=%v destroyAt=%v", err, runLive.DestroyAt)
+	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.ModelActiveAt != nil || s.view(ctx, &runLive).DestroyAt == nil {
+		t.Fatalf("live run row should keep its idle interval and deadline: err=%v row=%+v", err, runLive)
 	}
 	if err := db.Where("name = ?", "grasp-sb-run-adopted").First(&adopted).Error; err != nil || adopted.DestroyAt != nil {
 		t.Fatalf("adopted run row should be kept without deadline: err=%v destroyAt=%v", err, adopted.DestroyAt)

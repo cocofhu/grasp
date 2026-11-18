@@ -672,6 +672,8 @@ export interface SoloSession {
   sandboxId?: number
   status: SoloStatus
   error?: string
+  /** The environment skips automatic idle reclaim. */
+  keepAlive?: boolean
   restarts: number
   /** Newest successful recovery point (archive bytes when available). */
   backupSize?: number

@@ -1,12 +1,13 @@
 # Sandbox save, release and restore
 
 Every sandbox purpose and Docker, Kubernetes and E2B share one idle timeout and
-one capacity limit in Settings. Defaults are **60 minutes** and **15 sandboxes**.
+one capacity limit in Settings. Defaults are **6 hours (360 minutes)** after the
+last model turn and **15 sandboxes**.
 Workflow concurrency remains a separate task scheduling limit.
 
 | Behavior | Docker | Kubernetes | E2B |
 | --- | --- | --- | --- |
-| Idle | No executing task, queued request or terminal/background work | Same | Same |
+| Idle | The model turn ended and no request is queued; terminals, background processes, pages and the IDE do not count | Same | Same |
 | Idle timeout or Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Native pause, or independent checkpoint then release for multiple points; no file archive |
 | Next use | Recreate, restore the newest successful archive, reconnect | Same | Restore the newest successful snapshot and reconnect |
 | Periodic running backup | None | None | None |
@@ -19,16 +20,44 @@ workspace. E2B preserves memory, but TCP connections and external requests must
 reconnect. Docker shared bind mounts are not removed. Kubernetes storage-class
 and CSI reclaim policies determine physical volume deletion.
 
-A workflow waiting for human input can release its idle environment while
-remaining in the waiting state. A reply restores it before continuing. Any
-active node protects a shared sandbox. Closing the browser does not establish
-idleness; status polling does not count as activity. Manual Stop uses the same
-save path and refuses while work or queued requests remain. Cancel is a separate
+The idle interval starts when a complete model turn ends with no queued request,
+or when a new environment becomes ready. Generating, thinking, running tools or
+waiting for tool results never counts as idle, and every new turn restarts the
+interval. The interval is persisted across platform restarts. Page polling,
+WebSockets, IDE/preview access and terminal activity do not extend it, so dev
+servers, downloads or background commands left after a turn are saved and paused
+with the environment when it expires.
+
+To keep an environment, right-click the session or run under Running in the
+sidebar and check **Never auto-reclaim**. The choice is stored on the session or
+run and survives restarts, recovery and rebuilds; unchecking it grants a full
+interval again. It still counts toward the running limit and does not affect
+manual Stop, Cancel or Close.
+
+A workflow waiting for human input can release its idle environment once its
+turn has ended, while remaining in the waiting state. A reply restores it before
+continuing. Any active node protects a shared sandbox. Manual Stop uses the same
+save path and refuses while a turn or queued request remains. Cancel is a separate
 terminal operation: conversation/workflow history stays, recovery points do not.
+
+## E2B idle memory return
+
+Files an E2B guest has read stay in its page cache, and its free memory
+fragments, so the host hugepage pool cannot take that memory back and new
+sandboxes may fail to start. Ten minutes after the last model turn, Grasp
+flushes writes, drops the guest's file cache and compacts its memory so free
+memory returns to the host in whole blocks. While the guest stays idle it checks
+again every 30 minutes and trims only when the cache exceeds 1 GiB, including
+environments marked Never auto-reclaim. No data is lost and no process is
+interrupted; the next build or large project read is slower the first time.
+Docker/Kubernetes containers share the host kernel and are never trimmed.
 
 ```yaml
 sandbox:
-  idle_ttl_minutes: 60
+  idle_ttl_minutes: 360
+  memory_trim_idle_minutes: 10 # negative disables
+  memory_trim_interval_minutes: 30
+  memory_trim_min_cache_mb: 1024
   max_sandboxes: 15
 solo_backup:
   keep: 1

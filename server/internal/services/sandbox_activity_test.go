@@ -10,13 +10,25 @@ import (
 	"github.com/cocofhu/grasp/internal/solobackup"
 )
 
+// expireModelIdle moves the sandbox's model idle interval past the TTL.
+func expireModelIdle(t *testing.T, s *SandboxService, id uint) time.Time {
+	t.Helper()
+	old := time.Now().Add(-s.IdleTTL() - time.Minute)
+	s.mu.Lock()
+	delete(s.modelActive, id)
+	s.mu.Unlock()
+	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("model_active_at", old).Error; err != nil {
+		t.Fatal(err)
+	}
+	return old
+}
+
 func TestIdleSweepReadsLatestActivityNotStaleCandidate(t *testing.T) {
 	f := newStopFixture(t)
 	row := f.recovery(t)
-	old := time.Now().Add(-2 * time.Hour)
-	f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("last_active_at", old)
-	row.LastActiveAt = &old
-	f.sbx.TouchActivity(row.ID)
+	old := expireModelIdle(t, f.sbx, row.ID)
+	row.ModelActiveAt = &old
+	f.sbx.MarkModelActivity(row.ID)
 	f.sbx.sweepRows(context.Background(), []models.Sandbox{*row})
 	if fresh := f.recovery(t); fresh.Status != "running" {
 		t.Fatal("stale sweep reclaimed active sandbox")
@@ -46,8 +58,7 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 	chat := newRestoreChat(false)
 	f.solo.SetChatterForTest(chat)
 	row := f.recovery(t)
-	old := time.Now().Add(-2 * time.Hour)
-	f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("last_active_at", old)
+	expireModelIdle(t, f.sbx, row.ID)
 	saved := make(chan struct{})
 	go func() { f.sbx.sweepOnce(context.Background()); close(saved) }()
 	select {
@@ -88,8 +99,7 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 func TestIdleSavedSoloDoesNotWakeInBackground(t *testing.T) {
 	f := newStopFixture(t)
 	row := f.recovery(t)
-	old := time.Now().Add(-2 * time.Hour)
-	f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("last_active_at", old)
+	expireModelIdle(t, f.sbx, row.ID)
 	f.sbx.sweepOnce(context.Background())
 	f.sbx.RecoverSoloSandboxes(context.Background())
 	if row := f.recovery(t); row.Status != "stopped" {

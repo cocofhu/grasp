@@ -36,6 +36,9 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_SANDBOX_MAX_ATTEMPTS` | `sandbox.sandbox_max_attempts` | integer | `3` | Public | Maximum attempts for retryable sandbox faults |
 | `GRASP_SANDBOX_RETRY_BACKOFF_SEC` | `sandbox.sandbox_retry_backoff_seconds` | integer | `2` | Public | Base sandbox retry backoff in seconds |
 | `GRASP_SANDBOX_CREATE_TIMEOUT_SEC` | `sandbox.sandbox_create_timeout_seconds` | integer | `1200` | Public | Timeout waiting for sandbox readiness in seconds |
+| `GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN` | `sandbox.memory_trim_idle_minutes` | integer | `10` | Public | Minutes after the last model turn before an E2B guest's page cache is first dropped and its memory compacted, returning it to the host; negative disables |
+| `GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN` | `sandbox.memory_trim_interval_minutes` | integer | `30` | Public | Minutes between later trims while an E2B guest stays idle |
+| `GRASP_SANDBOX_MEMORY_TRIM_MIN_CACHE_MB` | `sandbox.memory_trim_min_cache_mb` | integer | `1024` | Public | Skip a trim while the guest page cache is below this many MiB |
 | `GRASP_SANDBOX_MEMORY_MB` | `sandbox.sandbox_memory_mb` | integer | `0` | Public | Sandbox memory override in MiB; 0 follows the gateway/template, otherwise at least 1024 and E2B must match its template; env overrides and locks the settings page |
 | `GRASP_SANDBOX_WORK_DIR` | `sandbox.work_dir` | path | `Not set` | Public | Host work directory for ConfigHome |
 | `GRASP_SANDBOX_RUNTIME_BUNDLE` | `sandbox.runtime_bundle` | path | `/app/sandbox-runtime/sandbox-runtime.tgz` | Public | Runtime bundle served to sandboxes (built by scripts/build-sandbox-runtime.sh) |

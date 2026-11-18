@@ -259,6 +259,37 @@ func (h *Handlers) PatchSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
+type keepAliveBody struct {
+	KeepAlive *bool `json:"keepAlive"`
+}
+
+func bindKeepAlive(c *gin.Context) (bool, bool) {
+	var body keepAliveBody
+	if err := c.ShouldBindJSON(&body); err != nil || body.KeepAlive == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "keepAlive (boolean) is required"})
+		return false, false
+	}
+	return *body.KeepAlive, true
+}
+
+// SetSoloKeepAlive handles PUT /api/solo/sessions/:id/keep-alive.
+func (h *Handlers) SetSoloKeepAlive(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	on, ok := bindKeepAlive(c)
+	if !ok {
+		return
+	}
+	v, err := h.Solo.SetKeepAlive(c.Request.Context(), c.Param("id"), user, on)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 // SetSoloSessionModel handles POST /api/solo/sessions/:id/model.
 // Omitted settings stay unchanged. Explicit empty values restore the primary
 // model or tool-default effort; the sandbox applies them at the next turn.

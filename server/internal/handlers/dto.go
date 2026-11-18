@@ -264,9 +264,10 @@ func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
 		"status":          r.Status, "trigger": r.Trigger, "startedAt": r.StartedAt,
 		"createdAt":   r.CreatedAt,
 		"durationSec": effectiveRunDuration(r), "progress": r.Progress, "branch": r.Branch,
-		"title":    r.Title,
-		"priority": models.PriorityLabel(r.Priority),
-		"tags":     runTagsDTO(r.Tags),
+		"title":     r.Title,
+		"priority":  models.PriorityLabel(r.Priority),
+		"tags":      runTagsDTO(r.Tags),
+		"keepAlive": r.KeepAlive,
 	}
 	if currentNodeLabel != "" {
 		out["currentNodeLabel"] = currentNodeLabel

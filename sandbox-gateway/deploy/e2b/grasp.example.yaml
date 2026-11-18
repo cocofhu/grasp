@@ -16,7 +16,8 @@ sandbox:
   runtime_bundle: /app/sandbox-runtime/sandbox-runtime.tgz
   sandbox_create_timeout_seconds: 1200
   chat_idle_timeout_seconds: 1200
-  idle_ttl_minutes: 60
+  idle_ttl_minutes: 360
+  memory_trim_idle_minutes: 10 # return idle guests' page cache to the hugepage pool
   max_sandboxes: 15
 # Auth users, encryption key and gateway key are injected via Compose environment.
 

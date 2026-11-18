@@ -64,15 +64,6 @@ func (s *session) CumulativeUsage() map[string]provider.TokenUsage { return nil 
 // AgentPIDs are the ACP agent subprocess and its terminals.
 func (s *session) AgentPIDs() []int { return s.p.ProcessPIDs() }
 
-// ResidentAgentPIDs excludes ACP terminal processes: they may still execute
-// user commands after an agent turn has completed.
-func (s *session) ResidentAgentPIDs() []int {
-	if conn := s.p.Conn(); conn != nil && conn.PID() > 0 {
-		return []int{conn.PID()}
-	}
-	return nil
-}
-
 func (s *session) Cancel() error { return s.p.Cancel() }
 func (s *session) Close() error  { err := s.p.Close(); s.clean(); return err }
 
