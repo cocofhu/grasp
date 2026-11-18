@@ -1,8 +1,8 @@
 [
   {
-    "id": "GHSA-vfj7-8cjw-p6xm",
-    "package": "braces",
-    "reason": "No patched release (all versions <=3.0.3). Reached only via devDependencies (tailwindcss 3 -> chokidar/micromatch, @vue/eslint-config-typescript -> fast-glob) that expand our own config globs at build/lint time; never bundled or fed untrusted patterns. Upstream fix: micromatch/braces#72.",
-    "expires": "2026-12-31"
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "reason": "Reviewed 2026-11-18: no patched release; official npm latest is 4.0.7 and https://github.com/advisories/GHSA-fc5q-39xc-vjpf lists all versions <=4.0.7 as affected with no fix. Every installed picomatch node is dev-only (Tailwind 3 -> chokidar/micromatch; Vite 6 -> tinyglobby/fdir; Vitest 4), matching repository-controlled file/config globs. npm ls picomatch --omit=dev is empty, app source does not import it, and production serves the built dist. The repeated-extglob ReDoS requires an attacker-controlled glob pattern, which is not a runtime input here. Recheck upstream and remove this temporary exception when a patched release is available.",
+    "expires": "2026-12-02"
   }
 ]

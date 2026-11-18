@@ -4,8 +4,9 @@
 import {strict as assert} from 'node:assert'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
-import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs'
+import {appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {createServer} from 'node:net'
+import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import {setTimeout as delay} from 'node:timers/promises'
 import {createMockAgentServer} from './mock-agent-model.mjs'
@@ -17,8 +18,11 @@ const standard = 'standard-fixture-model'
 const labels = ['boot-standard', 'fast-high', 'fast-low', 'isolated-standard', 'standard-low', 'unsupported-target', 'restored-fast', 'restored-off']
 const run = 'codex-fast-probe'
 mkdirSync(output, {recursive: true})
-const home = join(output, 'codex-home')
-const cwd = join(output, 'workspace')
+// Native Codex creates private directories and files as the container user.
+// Keep its home/session state out of the host's published artifact directory.
+const scratch = mkdtempSync(join(tmpdir(), 'grasp-codex-fast-'))
+const home = join(scratch, 'codex-home')
+const cwd = join(scratch, 'workspace')
 mkdirSync(home, {recursive: true})
 mkdirSync(cwd, {recursive: true})
 
@@ -146,6 +150,10 @@ try {
   writeFileSync(join(output, 'codex-fast-report.json'), JSON.stringify({status: 'passed', mode: 'native-cli', cases, paidModelCalls: 0}, null, 2))
   process.stdout.write(JSON.stringify({codexFastMode: 'passed', cases: cases.length}) + '\n')
 } finally {
-  await stop()
-  await model.close()
+  try {
+    await stop()
+    await model.close()
+  } finally {
+    rmSync(scratch, {recursive: true, force: true})
+  }
 }

@@ -57,6 +57,31 @@ class MatrixContracts(unittest.TestCase):
                 runner.assert_reasoning_requests(requests, 'max', 'kimi_code')
         runner.assert_reasoning_requests([{'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'max'}}, {'reasoning': {'thinking_type': 'enabled', 'thinking_effort': 'max'}}], 'max', 'kimi_code')
 
+    def test_fast_probe_artifacts_exclude_private_cli_state(self):
+        with tempfile.TemporaryDirectory() as data:
+            output = Path(data)
+            report = {'status': 'passed', 'cases': [{} for _ in range(8)]}
+            (output/'codex-fast-report.json').write_text(json.dumps(report))
+            (output/'probe.log').write_text('native probe completed\n')
+            (output/'codex-fast-runtime.log').write_text('runtime completed\n')
+            self.assertEqual(runner.load_codex_fast_report(output), report)
+            private = output/'codex-home'/'tmp'/'arg0-linux'
+            private.mkdir(parents=True, mode=0o700)
+            with self.assertRaisesRegex(AssertionError, 'private CLI state'):
+                runner.load_codex_fast_report(output)
+
+    def test_fast_probe_rejects_symlinks_and_incomplete_native_coverage(self):
+        with tempfile.TemporaryDirectory() as data:
+            output = Path(data)
+            report = output/'codex-fast-report.json'
+            report.write_text(json.dumps({'status': 'passed', 'cases': [{} for _ in range(7)]}))
+            with self.assertRaisesRegex(AssertionError, 'every required case'):
+                runner.load_codex_fast_report(output)
+            report.write_text(json.dumps({'status': 'passed', 'cases': [{} for _ in range(8)]}))
+            (output/'probe.log').symlink_to(report)
+            with self.assertRaisesRegex(AssertionError, 'only report/log files'):
+                runner.load_codex_fast_report(output)
+
     def test_history_result_must_match_its_native_call(self):
         message = {'events': [
             {'data': {'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'history-1', 'title': 'artifact-store/get_history'}}},

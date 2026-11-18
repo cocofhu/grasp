@@ -90,6 +90,22 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
+def load_codex_fast_report(output):
+    # Only bounded diagnostic logs and the result report may be published.
+    # Native CLI homes contain private, container-owned state which the
+    # unprivileged CI artifact uploader cannot traverse.
+    allowed = {'probe.log', 'codex-fast-runtime.log', 'codex-fast-report.json'}
+    for artifact in output.iterdir():
+        if artifact.name not in allowed or artifact.is_symlink() or not artifact.is_file():
+            raise AssertionError('Codex Fast artifacts must contain only report/log files; private CLI state must stay outside the artifact directory')
+        with artifact.open('rb') as stream:
+            stream.read(1)
+    report = json.loads((output/'codex-fast-report.json').read_text())
+    if report.get('status') != 'passed' or len(report.get('cases') or []) != 8:
+        raise AssertionError('native Codex Fast probe did not complete every required case')
+    return report
+
+
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -375,9 +391,7 @@ class E2E:
         try:
             with (output/'probe.log').open('w') as log:
                 subprocess.run(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
-            self.fast_probe_report = json.loads((output/'codex-fast-report.json').read_text())
-            if self.fast_probe_report.get('status') != 'passed' or len(self.fast_probe_report.get('cases') or []) != 8:
-                raise AssertionError('native Codex Fast probe did not complete every required case')
+            self.fast_probe_report = load_codex_fast_report(output)
         finally:
             subprocess.run(['docker', 'rm', '-f', container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
