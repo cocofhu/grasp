@@ -25,6 +25,7 @@ const fastButton = ref<HTMLButtonElement | null>(null)
 const fastTooltip = ref(false)
 const fastTooltipId = `solo-fast-${useId().replace(/:/g, '')}`
 const fastTooltipStyle = ref<Record<string, string>>({})
+const boltPath = 'M13.5 2.55c.48-.6 1.43-.16 1.28.6L13.5 9.2h6.22c.78 0 1.18.89.68 1.49l-9.57 11.05c-.5.6-1.4.14-1.26-.61l1.31-6.05H4.6c-.77 0-1.17-.9-.67-1.49Z'
 
 const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? (!props.modelValue ? props.models[0] : null) ?? null)
 const multipleGroups = computed(() => new Set(props.models.map(model => model.configurationId).filter(Boolean)).size > 1)
@@ -190,14 +191,16 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
       <section v-if="view === 'effort'" ref="effortPanel" class="solo-effort" :class="{ 'solo-effort--dragging': dragging }" :style="{ '--effort-color': effortColor, '--effort-ratio': String(ratio) }" data-testid="solo-effort-panel" :aria-label="t('pages.solo.modelSelect.reasoningEffort')">
         <header class="solo-effort-heading">
           <button v-if="fastModeSupported" ref="fastButton" type="button" class="solo-effort-fast" :class="{ 'solo-effort-fast--active': fastMode }" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.fastMode')" :aria-pressed="fastMode" :aria-describedby="fastTooltip ? fastTooltipId : undefined" data-testid="solo-fast-toggle" @click="toggleFastMode" @pointerenter="showFastTooltip" @pointerleave="fastTooltip = false" @focus="showFastTooltip" @blur="fastTooltip = false">
-            <svg class="solo-effort-bolt" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-              <path d="M13.5 2.55c.48-.6 1.43-.16 1.28.6L13.5 9.2h6.22c.78 0 1.18.89.68 1.49l-9.57 11.05c-.5.6-1.4.14-1.26-.61l1.31-6.05H4.6c-.77 0-1.17-.9-.67-1.49Z" />
+            <svg class="solo-effort-bolt" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="boltPath" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+              <path :d="boltPath" class="solo-effort-bolt-fill" fill="currentColor" />
             </svg>
           </button>
           <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
           <button type="button" class="solo-effort-reset" :disabled="effortBlocked || resolvedEffort === defaultEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="restoreEffort">
-            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" :style="{ '--restore-count': restoreCount }" />
+            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" />
+            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-trace" :style="{ '--restore-count': restoreCount }" />
           </button>
         </header>
         <button type="button" class="solo-effort-back" :aria-label="t('pages.solo.modelSelect.backToModels')" data-testid="solo-effort-back" @click="showModels">
@@ -266,8 +269,10 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-entry-glyph { display: grid; width: 24px; height: 24px; flex-shrink: 0; place-items: center; color: rgb(var(--c-txt2)); }
 .solo-effort-fast { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 9px; background: transparent; }
 .solo-effort-fast:disabled { opacity: 0.45; }
-.solo-effort-bolt { --hover-ink: light-dark(#525357, #d5d5d8); color: light-dark(#8d8e8f, #aeafb2); fill-opacity: 0; }
-.solo-effort-fast--active .solo-effort-bolt { --hover-ink: light-dark(#303034, #dddde0); color: light-dark(#000, #f7f7f8); fill-opacity: 1; }
+.solo-effort-bolt { --hover-ink: light-dark(#525357, #d5d5d8); color: light-dark(#8d8e8f, #aeafb2); }
+.solo-effort-fast--active .solo-effort-bolt { --hover-ink: light-dark(#303034, #dddde0); color: light-dark(#000, #f7f7f8); }
+.solo-effort-bolt-fill { clip-path: inset(0 0 100% 0) fill-box; }
+.solo-effort-fast--active .solo-effort-bolt-fill { clip-path: inset(0) fill-box; }
 .solo-fast-tooltip { position: fixed; z-index: 10000; display: grid; gap: 2px; max-width: 192px; padding: 9px 12px; border-radius: 10px; background: rgb(var(--c-txt)); color: rgb(var(--c-surface)); box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 12px; line-height: 17px; pointer-events: none; }
 .solo-fast-tooltip strong { font-weight: 600; }
 .solo-fast-tooltip span { opacity: 0.75; }
@@ -276,7 +281,9 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-back:hover { color: rgb(var(--c-txt)); }
 .solo-effort-reset { display: grid; height: 26px; width: 26px; place-items: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
 .solo-effort-reset:hover:not(:disabled) { background: rgb(var(--c-txt) / 0.05); color: rgb(var(--c-txt)); }
-.solo-effort-reset:disabled { opacity: 0.4; }
+.solo-effort-reset-icon, .solo-effort-reset-trace { grid-area: 1 / 1; }
+.solo-effort-reset:disabled .solo-effort-reset-icon { opacity: 0.4; }
+.solo-effort-reset-trace { display: none; pointer-events: none; }
 .solo-effort-fast:enabled:focus-visible .solo-effort-bolt { color: var(--hover-ink); }
 @media (hover: hover) {
   .solo-effort-fast:enabled:hover .solo-effort-bolt { color: var(--hover-ink); }
@@ -285,18 +292,21 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-reset:enabled:active .solo-effort-reset-icon { opacity: 0.7; }
 @media (prefers-reduced-motion: no-preference) {
   .solo-effort-bolt {
-    transition: color var(--dur-ui) ease-in-out, fill-opacity var(--dur-ui) ease-in-out, opacity var(--dur-press) ease;
+    transition: color var(--dur-ui) ease-in-out, opacity var(--dur-press) ease;
   }
-  .solo-effort-reset-icon { transition: opacity var(--dur-press) ease; }
-  .solo-effort-reset-icon :deep(path:first-child) {
-    /* The dash covers the arc at rest. Each click sweeps one gap toward the fixed arrowhead. */
-    --arc-dash: 60px;
-    --arc-gap: 6px;
-    stroke-dasharray: var(--arc-dash) var(--arc-gap);
-    stroke-dashoffset: calc(-1 * var(--restore-count) * (var(--arc-dash) + var(--arc-gap)));
-    transition: stroke-dashoffset 360ms ease-in-out;
+  .solo-effort-bolt-fill { transition: clip-path 240ms ease-in-out; }
+  .solo-effort-reset-icon { transition: opacity var(--dur-ui) ease; }
+  .solo-effort-reset-trace { display: block; color: rgb(var(--c-txt)); }
+  .solo-effort-reset-trace :deep(path:first-child) {
+    /* Park the highlight in the gap between passes. One click advances a full pattern. */
+    --highlight: 26px;
+    --gap: 66px;
+    stroke-dasharray: var(--highlight) var(--gap);
+    stroke-dashoffset: calc(var(--highlight) + 2px - var(--restore-count) * (var(--highlight) + var(--gap)));
+    transition: stroke-dashoffset 420ms ease-in-out;
   }
-  .solo-effort-reset { transition: background-color var(--dur-ui) ease, color var(--dur-ui) ease, opacity var(--dur-ui) ease; }
+  .solo-effort-reset-trace :deep(path:last-child) { visibility: hidden; }
+  .solo-effort-reset { transition: background-color var(--dur-ui) ease, color var(--dur-ui) ease; }
 }
 .solo-effort-control { position: relative; height: 28px; }
 .solo-effort-control--disabled { opacity: 0.45; }
