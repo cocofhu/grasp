@@ -96,6 +96,10 @@ const desktopTakeoverText = computed(() => {
   if (!desktop.agentBusy.value) return ''
   return t(control.value ? 'pages.appPreview.desktop.takeoverTip' : 'pages.appPreview.desktop.takeoverHint')
 })
+/** 电脑 view: `ready` can arrive before noVNC paints, so keep loading until the first frame. */
+const computerLoading = computed(
+  () => props.computer && (status.value === 'connecting' || (status.value === 'live' && !fpsCounter.painted.value)),
+)
 const SCREEN_BACKGROUND = 'rgb(10,10,11)'
 const picked = ref<AppPreviewPickPayload | null>(null)
 const address = ref('about:blank')
@@ -1111,7 +1115,21 @@ onBeforeUnmount(() => {
     >
       <!-- Console connecting / unavailable overlays (panel-local, no toast loop) -->
       <div
-        v-if="consoleMode && status === 'connecting'"
+        v-if="computerLoading"
+        class="desktop-surface absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-testid="novnc-computer-loading"
+      >
+        <span
+          class="h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-txt2"
+          aria-hidden="true"
+        />
+        <span class="text-sm text-txt3">{{ t('pages.appPreview.desktop.starting') }}</span>
+      </div>
+      <div
+        v-else-if="consoleMode && status === 'connecting'"
         class="absolute inset-0 z-10 flex items-center justify-center bg-base/90 px-6 text-center text-sm text-txt3"
         role="status"
         aria-live="polite"
