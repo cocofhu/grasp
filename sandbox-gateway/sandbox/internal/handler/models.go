@@ -24,16 +24,16 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 		}
 		_, reasoningEfforts := bridge.ReasoningOptions(bridge.EffectiveModel())
 		c.JSON(http.StatusOK, gin.H{
-			"models":            models,
-			"configured":        configured,
-			"current":           bridge.EffectiveModel(),
-			"selected":          bridge.Model(),
-			"default":           chats.DefaultModel(),
-			"fixed":             false,
-			"reasoningEffort":   bridge.ReasoningEffort(),
-			"reasoningEfforts":  reasoningEfforts,
-			"serviceTier":       bridge.ServiceTier(),
-			"serviceTiers":      service.ServiceTiers(bridge.EffectiveModel()),
+			"models":           models,
+			"configured":       configured,
+			"current":          bridge.EffectiveModel(),
+			"selected":         bridge.Model(),
+			"default":          chats.DefaultModel(),
+			"fixed":            false,
+			"reasoningEffort":  bridge.ReasoningEffort(),
+			"reasoningEfforts": reasoningEfforts,
+			"serviceTier":      bridge.ServiceTier(),
+			"serviceTiers":     service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }
@@ -94,12 +94,12 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		bridge.Broadcast(bridge.ConnectedPayload(sess))
 		bridge.BroadcastQueueState()
 		c.JSON(http.StatusOK, gin.H{
-			"model":             bridge.EffectiveModel(),
-			"selected":          bridge.Model(),
-			"sessionId":         sess.SessionID(),
-			"reasoningEffort":   bridge.ReasoningEffort(),
-			"serviceTier":       bridge.ServiceTier(),
-			"serviceTiers":      service.ServiceTiers(bridge.EffectiveModel()),
+			"model":           bridge.EffectiveModel(),
+			"selected":        bridge.Model(),
+			"sessionId":       sess.SessionID(),
+			"reasoningEffort": bridge.ReasoningEffort(),
+			"serviceTier":     bridge.ServiceTier(),
+			"serviceTiers":    service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }
