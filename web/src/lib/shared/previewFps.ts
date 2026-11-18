@@ -12,6 +12,8 @@ interface RfbWithDisplay {
 interface PreviewFpsCounter {
   fps: Ref<number>
   hasRecentFrames: Ref<boolean>
+  /** A frame has been painted since the last reset (true when flip cannot be hooked). */
+  painted: Ref<boolean>
   attach(rfb: RfbWithDisplay): void
   detach(): void
   reset(): void
@@ -20,6 +22,7 @@ interface PreviewFpsCounter {
 export function createPreviewFpsCounter(): PreviewFpsCounter {
   const fps = ref(0)
   const hasRecentFrames = ref(false)
+  const painted = ref(false)
 
   let flipTimestamps: number[] = []
   let intervalId: ReturnType<typeof setInterval> | null = null
@@ -53,7 +56,10 @@ export function createPreviewFpsCounter(): PreviewFpsCounter {
   function attach(rfb: RfbWithDisplay) {
     detach()
     const display = rfb._display
-    if (!display?.flip) return
+    if (!display?.flip) {
+      painted.value = true
+      return
+    }
 
     attachedDisplay = display
     origFlip = display.flip
@@ -61,6 +67,7 @@ export function createPreviewFpsCounter(): PreviewFpsCounter {
 
     wrapper = (...args: unknown[]) => {
       flipTimestamps.push(now())
+      if (!painted.value) painted.value = true
       return origFlip!.apply(display, args)
     }
     display.flip = wrapper
@@ -82,7 +89,8 @@ export function createPreviewFpsCounter(): PreviewFpsCounter {
     flipTimestamps = []
     fps.value = 0
     hasRecentFrames.value = false
+    painted.value = false
   }
 
-  return { fps, hasRecentFrames, attach, detach, reset }
+  return { fps, hasRecentFrames, painted, attach, detach, reset }
 }
