@@ -32,12 +32,17 @@ describe('VisitModelSelect', () => {
     mocks.getVisitModel.mockResolvedValue({ currentModelSet: true, currentModelId: 'composer-fast', currentConfigurationId: 'group-a' })
   })
 
-  it.each([false, true])('uses catalog Fast support before a route is stored and runtime support afterwards (stored: %s)', async stored => {
-    mocks.choices = [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', hint: 'gpt-6.2-sol', vendor: 'openai', backend: false, unavailable: false, efforts: ['low', 'high'], serviceTiers: ['fast'], configurationId: 'codex-group', modelId: 'gpt-6.2-sol' }]
+  it.each([
+    { stored: false, effort: 'low', expectedEffort: 'low' },
+    { stored: false, effort: '', expectedEffort: 'max' },
+    { stored: false, effort: 'removed', expectedEffort: 'max' },
+    { stored: true, effort: 'low', expectedEffort: 'low' },
+  ])('uses catalog Fast support before a route is stored and runtime support afterwards ($stored, $effort)', async ({ stored, effort, expectedEffort }) => {
+    mocks.choices = [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', hint: 'gpt-6.2-sol', vendor: 'openai', backend: false, unavailable: false, efforts: ['low', 'max', 'ultra'], serviceTiers: ['fast'], configurationId: 'codex-group', modelId: 'gpt-6.2-sol' }]
     mocks.ready = true
     mocks.defaultConfigurationId = 'codex-group'
-    mocks.getVisitModel.mockResolvedValue({ currentModelSet: stored, currentModelId: stored ? 'gpt-6.2-sol' : '', currentConfigurationId: stored ? 'codex-group' : '', reasoningEffort: 'low', serviceTier: '', serviceTiers: [] })
-    mocks.setVisitModel.mockResolvedValue({ currentModelSet: true, currentModelId: 'gpt-6.2-sol', currentConfigurationId: 'codex-group', reasoningEffort: 'low', serviceTier: 'fast', serviceTiers: ['fast'] })
+    mocks.getVisitModel.mockResolvedValue({ currentModelSet: stored, currentModelId: stored ? 'gpt-6.2-sol' : '', currentConfigurationId: stored ? 'codex-group' : '', reasoningEffort: effort, serviceTier: '', serviceTiers: [] })
+    mocks.setVisitModel.mockResolvedValue({ currentModelSet: true, currentModelId: 'gpt-6.2-sol', currentConfigurationId: 'codex-group', reasoningEffort: expectedEffort, serviceTier: 'fast', serviceTiers: ['fast'] })
     const wrapper = mount(VisitModelSelect, {
       attachTo: document.body,
       props: { runId: 'run', nodeId: 'clarify', agentName: 'Codex' },
@@ -58,8 +63,8 @@ describe('VisitModelSelect', () => {
       expect(toggle).not.toBeNull()
       toggle!.click()
       await flushPromises()
-      expect(mocks.setVisitModel).toHaveBeenCalledWith('run', 'clarify', { iteration: 1, configurationId: 'codex-group', modelId: '', reasoningEffort: 'low', serviceTier: 'fast' })
-      expect(document.querySelector('[data-testid="solo-effort-slider"]')?.getAttribute('aria-valuetext')).toBe('低')
+      expect(mocks.setVisitModel).toHaveBeenCalledWith('run', 'clarify', { iteration: 1, configurationId: 'codex-group', modelId: '', reasoningEffort: expectedEffort, serviceTier: 'fast' })
+      expect((document.querySelector('[data-testid="solo-effort-slider"]') as HTMLInputElement)?.value).toBe(expectedEffort === 'max' ? '1' : '0')
       expect(document.querySelector('[data-testid="solo-fast-toggle"]')?.getAttribute('aria-pressed')).toBe('true')
     } finally {
       wrapper.unmount()

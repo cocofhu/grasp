@@ -11,6 +11,7 @@ export type VisitModelTransport = Pick<typeof visitModelApi, 'getVisitModel' | '
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
+import { defaultReasoningEffort, listedEfforts } from '@/lib/solo/configuredModels'
 import { api } from '@/lib/api/api'
 import type { VisitModelChoice } from '@/lib/api/clients/runsClient'
 import { modelRouteValue, parseModelRoute } from '@/lib/agent/modelBindings'
@@ -159,14 +160,19 @@ function chooseModel(value: string) {
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   const encoded = choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value
   const route = parseModelRoute(encoded)
-  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', choice?.efforts?.includes(effort.value) ? effort.value : '', choice?.serviceTiers?.includes(serviceTier.value) ? serviceTier.value : '')
+  const levels = listedEfforts(choice?.efforts)
+  const nextEffort = levels.includes(effort.value) ? effort.value : defaultReasoningEffort(levels)
+  void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', nextEffort, choice?.serviceTiers?.includes(serviceTier.value) ? serviceTier.value : '')
 }
 
 function chooseEffort(value: string) {
   void save(configurationId.value || currentGroup.value, modelId.value, value)
 }
 async function chooseServiceTier(value: string) {
-  if (await save(configurationId.value || currentGroup.value, modelId.value, effort.value, value)) {
+  const choice = catalog.choices.value.find(item => item.id === currentSelection.value)
+  const levels = listedEfforts(choice?.efforts)
+  const nextEffort = levels.length && !levels.includes(effort.value) ? defaultReasoningEffort(levels) : effort.value
+  if (await save(configurationId.value || currentGroup.value, modelId.value, nextEffort, value)) {
     toast.show(t('pages.solo.modelSelect.fastModeNextTurn'))
   }
 }

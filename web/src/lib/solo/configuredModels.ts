@@ -7,6 +7,14 @@ import { boundConfigurationIds, modelRouteValue } from '@/lib/agent/modelBinding
 /** The speed tier behind the Fast toggle. Empty selects the standard tier. */
 export const FAST_SERVICE_TIER = 'fast'
 
+export function listedEfforts(efforts?: readonly string[]): string[] {
+  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
+}
+
+export function defaultReasoningEffort(levels: readonly string[]): string {
+  return levels.includes('max') ? 'max' : levels.at(-1) || ''
+}
+
 export interface ConfiguredModelChoice {
   id: string
   name: string

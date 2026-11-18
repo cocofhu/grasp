@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
@@ -436,9 +437,8 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	return changed, nil
 }
 
-// resolveChatEffort keeps a saved level and fills an empty one with the last
-// advertised choice. Models without a list stay empty, including a custom lock
-// that hides the menu.
+// resolveChatEffort keeps a saved level and otherwise prefers max, falling back
+// to the last advertised choice. Models without a list stay empty.
 func (s *SoloService) resolveChatEffort(ctx context.Context, row *models.SoloSession, model, effort string) string {
 	effort = strings.TrimSpace(effort)
 	if effort != "" || row == nil {
@@ -454,6 +454,9 @@ func (s *SoloService) resolveChatEffort(ctx context.Context, row *models.SoloSes
 	}
 	if len(choices) == 0 {
 		return ""
+	}
+	if slices.Contains(choices, "max") {
+		return "max"
 	}
 	return choices[len(choices)-1]
 }
