@@ -10,6 +10,8 @@
 #                               vnc-preview.sh falls back to browser mode
 #   desktop-session.sh browser  open a Chromium window on the new tab page, which
 #                               the newtab extension fills with the launch page
+#   desktop-session.sh refresh-launchers
+#                               update existing desktop entries after a bundle install
 #
 # State for the backend and desktop MCP: $GRASP_DESKTOP_RUN_DIR/state, JSON
 # {"mode":"desktop"|"browser","shellReady":bool,"fallbackReason":"..."}.
@@ -95,16 +97,39 @@ write_session_env() {
   done >"$RUN_DIR/session.env.tmp" && mv -f "$RUN_DIR/session.env.tmp" "$RUN_DIR/session.env"
 }
 
-seed_config() {
-  local apps="$XDG_DATA_HOME/applications" launchers="$XDG_CONFIG_HOME/plank/dock1/launchers"
-  mkdir -p "$apps" "$launchers" "$XDG_CONFIG_HOME/fcitx5"
+seed_app_entries() {
+  local apps="$XDG_DATA_HOME/applications" f entry staged
+  mkdir -p "$apps" || return 1
   for f in "$SHARE"/applications/*.desktop; do
     [ -f "$f" ] || continue
+    entry="$apps/${f##*/}"
+    staged="$(mktemp "$apps/.grasp-desktop.XXXXXX")" || return 1
     # Chromium's WM_CLASS instance carries the profile dir; the dock (bamf)
     # matches on it to group the browser window under its launcher.
-    sed -e "s#@DESKTOP_SESSION@#$SELF#g" -e "s#@DESKTOP_SHARE@#$SHARE#g" \
-      -e "s#@BROWSER_WM_CLASS@#chromium-browser ($PROFILE_DIR)#g" "$f" >"$apps/$(basename "$f")"
+    if ! sed -e "s#@DESKTOP_SHARE@#$SHARE#g" \
+      -e "s#@BROWSER_WM_CLASS@#chromium-browser ($PROFILE_DIR)#g" "$f" >"$staged"; then
+      rm -f "$staged"
+      return 1
+    fi
+    if cmp -s "$staged" "$entry"; then
+      rm -f "$staged"
+    elif ! mv -f "$staged" "$entry"; then
+      rm -f "$staged"
+      return 1
+    fi
   done
+}
+
+refresh_launchers() {
+  if [ -e "$MARKER" ] && [ -f "$XDG_DATA_HOME/applications/grasp-launcher.desktop" ]; then
+    seed_app_entries
+  fi
+}
+
+seed_config() {
+  local apps="$XDG_DATA_HOME/applications" launchers="$XDG_CONFIG_HOME/plank/dock1/launchers" id
+  seed_app_entries || return 1
+  mkdir -p "$launchers" "$XDG_CONFIG_HOME/fcitx5" || return 1
   if [ ! -f "$launchers/.seeded" ]; then
     for id in grasp-launcher grasp-browser grasp-terminal grasp-files; do
       [ -f "$apps/$id.desktop" ] || continue
@@ -151,7 +176,7 @@ cmd_start() {
   write_state desktop false ""
   dbus_session
   write_session_env
-  seed_config
+  seed_config || fail "cannot seed desktop configuration"
   running openbox || start_bg openbox openbox
   wait_for 40 wm_ok || fail "openbox did not start"
   wallpaper
@@ -211,14 +236,16 @@ cmd_browser() {
   }
   # Same profile: Chromium hands the request to the running instance (CDP and
   # browser MCP keep seeing one browser).
-  start_bg browser "$chrome" --user-data-dir="$PROFILE_DIR" --new-window "$url"
+  # Match vnc-preview.sh: even the handoff process needs --no-sandbox as root.
+  start_bg browser "$chrome" --no-sandbox --user-data-dir="$PROFILE_DIR" --new-window "$url"
 }
 
 case "${1:-start}" in
 start) cmd_start ;;
 browser) cmd_browser "${2:-}" ;;
+refresh-launchers) refresh_launchers ;;
 *)
-  echo "usage: desktop-session.sh start|browser [url]" >&2
+  echo "usage: desktop-session.sh start|browser [url]|refresh-launchers" >&2
   exit 2
   ;;
 esac

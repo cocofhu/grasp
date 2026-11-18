@@ -178,6 +178,10 @@ main() {
         start_backend || exit 1
         wait_backend || exit 1
       else
+        # Runtime updates restart this service while the desktop stays running.
+        if [ -x "$BIN_DIR/desktop-session.sh" ]; then
+          "$BIN_DIR/desktop-session.sh" refresh-launchers || echo "services: could not refresh desktop launchers" >&2
+        fi
         if ! truthy "${PREVIEW_DIRECT:-}"; then
           echo "services: PREVIEW_DIRECT not set, preview-inject skipped"
           exit 0

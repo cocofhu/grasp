@@ -124,7 +124,17 @@ code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: 
 [ "$code" = 403 ] || die "跨源启动应返回 403，实际 $code"
 code="$(in_box curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"id":"rm -rf"}' http://127.0.0.1:6091/launch)"
 [ "$code" = 404 ] || die "白名单外 id 应返回 404，实际 $code"
-log "2. 启动台白名单与 Origin：通过"
+home_window_count() { in_box wmctrl -l | awk '/ (我的电脑|My computer) - / { n++ } END { print n+0 }'; }
+home_windows="$(home_window_count)"
+[ "$home_windows" -gt 0 ] || die "初始「我的电脑」窗口未出现"
+# Exercise the same .desktop entry as Plank against the running root Chromium.
+in_box gio launch /root/.local/share/applications/grasp-launcher.desktop || die "无法运行「我的电脑」快捷方式"
+for _ in $(seq 1 40); do
+  [ "$(home_window_count)" -gt "$home_windows" ] && break
+  sleep 0.25
+done
+[ "$(home_window_count)" -gt "$home_windows" ] || die "「我的电脑」快捷方式未打开新窗口"
+log "2. 启动台快捷方式、白名单与 Origin：通过"
 
 # --- 3. 桌面 MCP：Mousepad 写文件 ---
 desk=/opt/grasp-runtime/current/bin/grasp-desktop

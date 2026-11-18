@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="$ROOT/sandbox/scripts/desktop-session.sh"
+SERVICES="$ROOT/sandbox/scripts/services.sh"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$ROOT/sandbox/desktop" -p 'test_*.py'
 
 WORK="$(mktemp -d)"
@@ -74,7 +75,9 @@ state | grep -q '"fallbackReason":"missing openbox"' || fail "no-openbox state: 
 run "$FAKE" "$WORK/marker" >/dev/null 2>&1 || fail "start failed: $(state)"
 state | grep -q '"mode":"desktop","shellReady":true' || fail "ready state: $(state)"
 apps="$WORK/home/.local/share/applications"
-grep -q "Exec=$SESSION browser" "$apps/grasp-browser.desktop" || fail "browser entry not substituted"
+for id in grasp-browser grasp-launcher; do
+  grep -Fxq 'Exec=/usr/local/bin/desktop-session.sh browser' "$apps/$id.desktop" || fail "wrong $id entry"
+done
 test -f "$WORK/home/.config/plank/dock1/launchers/grasp-terminal.dockitem" || fail "dock items missing"
 grep -q 'DefaultIM=pinyin' "$WORK/home/.config/fcitx5/profile" || fail "fcitx5 profile missing"
 grep -q "^GTK_IM_MODULE=fcitx$" "$WORK/run/session.env" && grep -q "^DISPLAY=" "$WORK/run/session.env" || fail "session.env: $(cat "$WORK/run/session.env" 2>&1)"
@@ -82,5 +85,17 @@ grep -q "^GTK_IM_MODULE=fcitx$" "$WORK/run/session.env" && grep -q "^DISPLAY=" "
 # Idempotent: a second start reuses the running shell.
 run "$FAKE" "$WORK/marker" >/dev/null 2>&1 || fail "second start failed"
 [ "$(pgrep -x openbox | wc -l)" = 1 ] || fail "openbox started twice"
+
+# A runtime update fixes existing shortcuts even when direct preview is disabled.
+for id in grasp-browser grasp-launcher; do
+  sed -i 's|^Exec=.*|Exec=/opt/grasp-runtime/old/scripts/desktop-session.sh browser|' "$apps/$id.desktop"
+done
+ln -s "$SESSION" "$FAKE/desktop-session.sh"
+env -i PATH="$FAKE:/usr/bin:/bin" HOME="$WORK/home" \
+  GRASP_DESKTOP_MARKER="$WORK/marker" GRASP_RUNTIME_RUN_DIR="$WORK/runtime" \
+  GRASP_RUNTIME_BIN_DIR="$FAKE" bash "$SERVICES" restart preview-inject >/dev/null
+for id in grasp-browser grasp-launcher; do
+  grep -Fxq 'Exec=/usr/local/bin/desktop-session.sh browser' "$apps/$id.desktop" || fail "stale $id entry"
+done
 
 echo "desktop-session smoke OK"
