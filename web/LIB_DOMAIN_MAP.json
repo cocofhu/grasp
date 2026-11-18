@@ -204,6 +204,7 @@
       "wsReconnect.ts"
     ],
     "shared": [
+      "artifactBadge.ts",
       "attachments.ts",
       "auditNodeLabel.ts",
       "auditPayload.ts",
@@ -287,7 +288,7 @@
     "inbox": 47,
     "onboarding": 2,
     "run": 74,
-    "shared": 40,
+    "shared": 41,
     "solo": 16,
     "workflow": 3,
     "workspace": 6
