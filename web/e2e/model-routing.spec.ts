@@ -905,6 +905,7 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   const icon = fast.locator('svg')
   const outline = icon.locator('path').first()
   const fill = icon.locator('.solo-effort-bolt-fill')
+  const charge = icon.locator('.solo-effort-bolt-charge')
   const hiddenFill = 'inset(0px 0px 100%) fill-box'
   const boltAtRest = await icon.boundingBox()
   expect(boltAtRest).toMatchObject({ width: 15, height: 15 })
@@ -917,6 +918,23 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
       element.addEventListener('transitionrun', event => properties.add((event as TransitionEvent).propertyName))
       return properties
     })
+  }
+  function sampleTransition(glyph: Locator, property: string) {
+    return glyph.evaluateHandle((element, property) => {
+      const samples: string[] = []
+      element.addEventListener('transitionrun', () => {
+        const motion = element.getAnimations().find(a => a instanceof CSSTransition && a.transitionProperty === property)
+        if (!motion?.effect) return
+        const elapsed = motion.currentTime
+        const duration = Number(motion.effect.getComputedTiming().duration)
+        for (const fraction of [0, .25, .5, .75, 1]) {
+          motion.currentTime = duration * fraction
+          samples.push(getComputedStyle(element).getPropertyValue(property))
+        }
+        motion.currentTime = elapsed
+      }, { once: true })
+      return samples
+    }, property)
   }
   async function pressStationaryGlyph(glyph: Locator, restingBox: Awaited<ReturnType<Locator['boundingBox']>>) {
     await settleVisualTransitions(page)
@@ -934,11 +952,19 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   await expect.poll(() => boltTransitions.evaluate(properties => properties.has('color'))).toBe(true)
   await expectClearFastButton()
   await expect(page.getByRole('tooltip')).toContainText('响应更快，用量更多')
+  const chargeFrames = await sampleTransition(charge, 'clip-path')
   await pressStationaryGlyph(icon, boltAtRest)
   await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: 'fast' })
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
   await expect(fill).toHaveCSS('clip-path', 'inset(0px) fill-box')
   expect(await boltTransitions.evaluate(properties => properties.has('clip-path'))).toBe(true)
+  const chargeVisible = await chargeFrames.evaluate(frames => frames.map(clip => {
+    const [top = 0, , bottom = top] = clip.match(/[-.\d]+(?=%)/g)!.map(Number)
+    return top < 100 && bottom < 100 && top + bottom < 100
+  }))
+  expect(chargeVisible[0]).toBe(false)
+  expect(chargeVisible[2]).toBe(true)
+  expect(chargeVisible[4]).toBe(false)
   expect(await icon.boundingBox()).toEqual(boltAtRest)
   await expectClearFastButton()
   await page.mouse.move(0, 0)
@@ -948,20 +974,25 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   await slider.press('Home')
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'low' })
   const restoreIcon = reset.locator('.solo-effort-reset-icon')
-  const trace = reset.locator('.solo-effort-reset-trace')
+  const arrow = restoreIcon.locator('.motion-target')
   const restoreAtRest = await restoreIcon.boundingBox()
-  expect(await trace.boundingBox()).toEqual(restoreAtRest)
-  const arc = trace.locator('path').first()
-  const arcTransitions = await watchTransitions(arc)
-  const guideTransitions = await watchTransitions(restoreIcon)
-  await expect(trace.locator('path').last()).toBeHidden()
-  await expect(arc).toHaveCSS('stroke-dashoffset', '28px')
+  expect(restoreAtRest).toMatchObject({ width: 14, height: 14 })
+  await expect(arrow).toHaveCSS('transform-origin', '12px 12px')
+  const rotationFrames = await sampleTransition(arrow, 'transform')
   await reset.hover()
   await pressStationaryGlyph(restoreIcon, restoreAtRest)
-  await expect.poll(() => arcTransitions.evaluate(properties => properties.has('stroke-dashoffset'))).toBe(true)
-  await expect(arc).toHaveCSS('stroke-dashoffset', '-64px')
-  expect(await guideTransitions.evaluate(properties => properties.has('stroke-dashoffset'))).toBe(false)
-  expect(await trace.boundingBox()).toEqual(restoreAtRest)
+  await expect.poll(() => rotationFrames.evaluate(frames => frames.length)).toBe(5)
+  const rotations = await rotationFrames.evaluate(frames => frames.map(frame => {
+    const matrix = new DOMMatrix(frame === 'none' ? undefined : frame)
+    return { cosine: matrix.a, sine: matrix.b, x: matrix.e, y: matrix.f }
+  }))
+  expect(rotations[0]!.cosine).toBeCloseTo(1)
+  expect(rotations[1]!.sine).toBeGreaterThan(0)
+  expect(rotations[2]!.cosine).toBeLessThan(0)
+  expect(rotations[3]!.sine).toBeLessThan(0)
+  expect(rotations[4]!.cosine).toBeCloseTo(1)
+  expect(rotations.every(frame => frame.x === 0 && frame.y === 0)).toBe(true)
+  expect(await restoreIcon.boundingBox()).toEqual(restoreAtRest)
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'max' })
   await expect(slider).toHaveValue('4')
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
@@ -1000,15 +1031,16 @@ test('Solo Fast mode keeps the icons steady and persists independently of reason
   await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: '' })
   await expect(fill).toHaveCSS('clip-path', hiddenFill)
   await expect(fill).toHaveCSS('transition-duration', '0s')
+  await expect(charge).toBeHidden()
   await expect(slider).toHaveValue('5')
   await reset.hover()
-  await expect(trace).toBeHidden()
-  await expect(arc).toHaveCSS('transition-duration', '0s')
+  await expect(arrow).toHaveCSS('transition-duration', '0s')
   await expect(restoreIcon).toHaveCSS('transition-duration', '0s')
   await expect(restoreIcon).toHaveCSS('transform', 'none')
   await reset.press('Enter')
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'max' })
   await expect(slider).toHaveValue('4')
+  await expect(arrow).toHaveCSS('transform', 'none')
   await expect(reset).toBeDisabled()
   await expect(fast).toHaveAttribute('aria-pressed', 'false')
   expect(writes.every(body => !Object.hasOwn(body, 'modelId'))).toBe(true)

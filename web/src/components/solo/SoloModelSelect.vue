@@ -194,13 +194,13 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
             <svg class="solo-effort-bolt" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
               <path :d="boltPath" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
               <path :d="boltPath" class="solo-effort-bolt-fill" fill="currentColor" />
+              <path :d="boltPath" class="solo-effort-bolt-charge" stroke-width="1.6" stroke-linejoin="round" />
             </svg>
           </button>
           <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
           <button type="button" class="solo-effort-reset" :disabled="effortBlocked || resolvedEffort === defaultEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="restoreEffort">
-            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" />
-            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-trace" :style="{ '--restore-count': restoreCount }" />
+            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" :style="{ '--restore-count': restoreCount }" />
           </button>
         </header>
         <button type="button" class="solo-effort-back" :aria-label="t('pages.solo.modelSelect.backToModels')" data-testid="solo-effort-back" @click="showModels">
@@ -273,6 +273,7 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-fast--active .solo-effort-bolt { --hover-ink: light-dark(#303034, #dddde0); color: light-dark(#000, #f7f7f8); }
 .solo-effort-bolt-fill { clip-path: inset(0 0 100% 0) fill-box; }
 .solo-effort-fast--active .solo-effort-bolt-fill { clip-path: inset(0) fill-box; }
+.solo-effort-bolt-charge { display: none; }
 .solo-fast-tooltip { position: fixed; z-index: 10000; display: grid; gap: 2px; max-width: 192px; padding: 9px 12px; border-radius: 10px; background: rgb(var(--c-txt)); color: rgb(var(--c-surface)); box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 12px; line-height: 17px; pointer-events: none; }
 .solo-fast-tooltip strong { font-weight: 600; }
 .solo-fast-tooltip span { opacity: 0.75; }
@@ -281,9 +282,7 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-back:hover { color: rgb(var(--c-txt)); }
 .solo-effort-reset { display: grid; height: 26px; width: 26px; place-items: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
 .solo-effort-reset:hover:not(:disabled) { background: rgb(var(--c-txt) / 0.05); color: rgb(var(--c-txt)); }
-.solo-effort-reset-icon, .solo-effort-reset-trace { grid-area: 1 / 1; }
 .solo-effort-reset:disabled .solo-effort-reset-icon { opacity: 0.4; }
-.solo-effort-reset-trace { display: none; pointer-events: none; }
 .solo-effort-fast:enabled:focus-visible .solo-effort-bolt { color: var(--hover-ink); }
 @media (hover: hover) {
   .solo-effort-fast:enabled:hover .solo-effort-bolt { color: var(--hover-ink); }
@@ -295,17 +294,23 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
     transition: color var(--dur-ui) ease-in-out, opacity var(--dur-press) ease;
   }
   .solo-effort-bolt-fill { transition: clip-path 240ms ease-in-out; }
-  .solo-effort-reset-icon { transition: opacity var(--dur-ui) ease; }
-  .solo-effort-reset-trace { display: block; color: rgb(var(--c-txt)); }
-  .solo-effort-reset-trace :deep(path:first-child) {
-    /* Park the highlight in the gap between passes. One click advances a full pattern. */
-    --highlight: 26px;
-    --gap: 66px;
-    stroke-dasharray: var(--highlight) var(--gap);
-    stroke-dashoffset: calc(var(--highlight) + 2px - var(--restore-count) * (var(--highlight) + var(--gap)));
-    transition: stroke-dashoffset 420ms ease-in-out;
+  .solo-effort-bolt-charge {
+    display: inline;
+    fill: light-dark(#ffad19, #ffe18a);
+    stroke: light-dark(#bd5a00, #ffb638);
+    /* The band crosses the whole bolt and parks outside its stroke at either end. */
+    clip-path: inset(-200% -10% 110% -10%) stroke-box;
+    transition: clip-path 460ms ease-in-out;
   }
-  .solo-effort-reset-trace :deep(path:last-child) { visibility: hidden; }
+  .solo-effort-fast--active .solo-effort-bolt-charge { clip-path: inset(110% -10% -200% -10%) stroke-box; }
+  .solo-effort-reset-icon { transition: opacity var(--dur-ui) ease; }
+  .solo-effort-reset:disabled .solo-effort-reset-icon { transition: opacity 520ms ease-in; }
+  .solo-effort-reset-icon :deep(.motion-target) {
+    transform-box: view-box;
+    transform-origin: center;
+    transform: rotate(calc(var(--restore-count) * 1turn));
+    transition: transform 520ms ease-in-out;
+  }
   .solo-effort-reset { transition: background-color var(--dur-ui) ease, color var(--dur-ui) ease; }
 }
 .solo-effort-control { position: relative; height: 28px; }
