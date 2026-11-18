@@ -281,6 +281,19 @@ describe('ChatMessageRail', () => {
     expect(currentId(wrapper)).toBe('question-4')
   })
 
+  it('lights every question whose turn is on screen', async () => {
+    // Viewport spans 100..500; question-2's reply runs until question-3 starts at 450.
+    const { scroller, items, scroll } = threaded(6, { scrollHeight: 3000, scrollTop: 0 }, [-200, 150, 450, 900, 1300, 1700])
+    const wrapper = render(scroller, { items })
+    await settle()
+    const lit = () => wrapper.findAll('.chat-message-rail-mark.is-visible').map(mark => mark.attributes('data-message-id'))
+    expect(lit()).toEqual(['question-1', 'question-2', 'question-3'])
+    scroll.scrollTop = 1000
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(lit()).toEqual(['question-4', 'question-5'])
+  })
+
   it('keeps the reading line when the thread is too short to scroll', async () => {
     const { scroller, items, scroll } = threaded(3, { scrollHeight: 404, scrollTop: 0 }, [120, 240, 360])
     const wrapper = render(scroller, { items })
