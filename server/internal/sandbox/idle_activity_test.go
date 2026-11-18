@@ -51,7 +51,7 @@ func TestRuntimeActivityScriptReportsOnlyRuntimeState(t *testing.T) {
 		busy    bool
 		fails   bool
 	}{
-		{name: "idle with resident processes", runtime: `{"busy":false,"resident_pids":[20]}`},
+		{name: "idle", runtime: `{"busy":false,"reason":""}`},
 		{name: "turn", runtime: `{"busy":true,"reason":"turn:default"}`, busy: true},
 		{name: "queue", runtime: `{"busy":true,"reason":"queue:default"}`, busy: true},
 		{name: "missing state", runtime: `{}`, fails: true},

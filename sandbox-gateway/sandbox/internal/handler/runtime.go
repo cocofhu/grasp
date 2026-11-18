@@ -23,7 +23,7 @@ func RuntimeActivity(chats *service.ChatManager) gin.HandlerFunc {
 			return
 		}
 		busy, reason := chats.RuntimeActivity()
-		c.JSON(http.StatusOK, gin.H{"busy": busy, "reason": reason, "resident_pids": chats.ResidentAgentPIDs()})
+		c.JSON(http.StatusOK, gin.H{"busy": busy, "reason": reason})
 	}
 }
 

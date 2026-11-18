@@ -339,10 +339,3 @@ func (s *session) AgentPIDs() []int {
 	}
 	return nil
 }
-
-func (s *session) ResidentAgentPIDs() []int {
-	if agent, ok := s.Session.(interface{ ResidentAgentPIDs() []int }); ok {
-		return agent.ResidentAgentPIDs()
-	}
-	return nil
-}
