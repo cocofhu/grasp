@@ -650,6 +650,9 @@ chmod 700 "$GRASP_RUNTIME_RUN_DIR"
 )
 unset _v
 
+# E2B 客户机缓存上限：主机按客户机碰过的页计占用，把页面缓存压在约 512 MiB，空闲内存经空闲页上报还给主机。其他驱动直接跳过。
+"$_services" start memory-cap || echo "客户机缓存上限启动失败" >&2
+
 # 直连预览 HTML 注入：应用仍听 PREVIEW_PORT；入站经 iptables REDIRECT 到 17980，与预览栈共存。
 if [ "${PREVIEW_DIRECT:-}" = "1" ] || [ "${PREVIEW_DIRECT:-}" = "true" ]; then
   echo "启动直连预览 HTML 注入（PREVIEW_DIRECT=1）…"

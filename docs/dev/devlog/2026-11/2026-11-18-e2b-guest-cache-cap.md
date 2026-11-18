@@ -1,0 +1,7 @@
+# 2026-11-18（E2B 客户机常驻缓存上限，主机占用贴近实际使用）
+
+- 日期：2026-11-18
+- 范围：`sandbox-gateway/sandbox/scripts/memory-cap.sh`、`sandbox-gateway/sandbox/scripts/services.sh`、`sandbox-gateway/sandbox/scripts/startup.sh`、`scripts/build-sandbox-runtime.sh`、`server/internal/sandbox/runtime_ensure.go`、`sandbox-gateway/scripts/test-runtime-bootstrap.sh`
+- 做了什么：运行时包新增常驻服务 `memory-cap`，只在 E2B 客户机（`E2B_SANDBOX=true`）运行。每 10 秒把文件缓存经 `memory.reclaim` 压回 512 MiB；`compaction_proactiveness` 设回 20；距上次整理新增的碎片空闲内存（2 MiB 以下的块）超过 512 MiB、且距上次整理满 60 秒时执行 `compact_memory`。新沙箱由 `startup.sh` 启动，运行中的沙箱在推送运行时包后由服务端 `services.sh restart memory-cap` 接管。不改模板、内存规格、主机配置和空闲回收（#1288）。
+- 为什么：E2B 主机按客户机碰过的大页计占用，客户机的页面缓存在主机上和进程内存一样占着，空闲页上报只归还完整的 2 MiB 空闲块。192.168.2.18 上一台客户机已用 1.9 GiB 的沙箱主机占 14.8 GiB；#1288 只在模型回合空闲后清理，一直忙的沙箱从不回收，且模板默认 `compaction_proactiveness=0`，空闲内存越用越碎。
+- 如何验证：`sandbox-gateway/scripts/test-runtime-bootstrap.sh` 新增伪 procfs 用例（超出上限的回收量、松弛区不回收、碎片阈值触发整理、`0` 关闭、非 E2B 跳过、services 启停与重启）；`go test ./internal/sandbox/`、`shellcheck-error.sh` 通过。实机（沙箱 `i3ue0r5cotc4tifhhfnsk`，16 GiB 大页客户机）：写读 3 GiB 文件并让进程占用 2 GiB 后退出，主机占用峰值 6158 MiB，30 秒内回落并稳定在 3402 MiB（客户机已用约 1.5 GiB、缓存约 0.38 GiB）；只压缓存不整理时停在 4546 MiB，整理一次耗时 0.9 秒。客户机内核内存、程序映射的文件页和不可移动页造成的碎片约 1–1.5 GiB，压不到客户机已用量本身。

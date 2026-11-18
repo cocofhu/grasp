@@ -226,6 +226,48 @@ svc start preview-inject
 grep -q "PREVIEW_DIRECT not set" "$TMP/services.out" || fail "preview-inject skip message"
 [ "$(bash "$SERVICES" status preview-inject)" = "preview-inject: stopped" ] || fail "preview-inject status"
 [ $((8#$(stat -c %a "$TMP/run") & 8#077)) = 0 ] || fail "run dir must not be group/other accessible"
+
+unset E2B_SANDBOX
+svc start memory-cap
+grep -q "not an E2B VM guest, memory-cap skipped" "$TMP/services.out" || fail "memory-cap must skip outside E2B"
+[ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: stopped" ] || fail "memory-cap status outside E2B"
 pass "services.sh"
+
+# --- memory-cap.sh against fake procfs / cgroup files.
+MEMCAP="$SCRIPTS/memory-cap.sh"
+mkdir -p "$TMP/proc/sys/vm"
+printf 'Active(file):     614400 kB\nInactive(file):   409600 kB\n' >"$TMP/proc/meminfo"
+echo 0 >"$TMP/proc/sys/vm/compaction_proactiveness"
+# 1024 order-0 pages (4 MiB) + 64 order-8 blocks (64 MiB) fragmented; order 9+ ignored.
+echo 'Node 0, zone   Normal   1024 0 0 0 0 0 0 0 64 500 900' >"$TMP/proc/buddyinfo"
+: >"$TMP/proc/sys/vm/compact_memory"
+: >"$TMP/reclaim"
+memcap() {
+  E2B_SANDBOX=true GRASP_MEMORY_CAP_PROC="$TMP/proc" GRASP_MEMORY_CAP_RECLAIM="$TMP/reclaim" \
+    GRASP_MEMORY_CAP_INTERVAL=1 bash "$MEMCAP" "$@"
+}
+GRASP_MEMORY_CAP_MIB=512 memcap once >/dev/null || fail "memory-cap once failed"
+[ "$(cat "$TMP/reclaim")" = "488M" ] || fail "memory-cap reclaim=$(cat "$TMP/reclaim") want 488M"
+[ "$(cat "$TMP/proc/sys/vm/compaction_proactiveness")" = 20 ] || fail "memory-cap must enable proactive compaction"
+[ ! -s "$TMP/proc/sys/vm/compact_memory" ] || fail "memory-cap must not compact 68 MiB of fragments"
+: >"$TMP/reclaim"
+GRASP_MEMORY_CAP_MIB=960 GRASP_MEMORY_CAP_FRAG_MIB=60 memcap once >/dev/null
+[ ! -s "$TMP/reclaim" ] || fail "memory-cap must not reclaim within slack"
+[ "$(cat "$TMP/proc/sys/vm/compact_memory")" = 1 ] || fail "memory-cap must compact fragments above the threshold"
+GRASP_MEMORY_CAP_MIB=0 memcap once | grep -q skipped || fail "GRASP_MEMORY_CAP_MIB=0 must disable"
+E2B_SANDBOX='' GRASP_MEMORY_CAP_RECLAIM="$TMP/reclaim" bash "$MEMCAP" once | grep -q skipped || fail "memory-cap must skip outside E2B"
+rc=0; memcap bogus 2>/dev/null || rc=$?; [ "$rc" = 2 ] || fail "memory-cap usage exit=$rc"
+
+export E2B_SANDBOX=true GRASP_MEMORY_CAP_PROC="$TMP/proc" GRASP_MEMORY_CAP_RECLAIM="$TMP/reclaim" GRASP_MEMORY_CAP_INTERVAL=1
+svc start memory-cap
+[ "$(bash "$SERVICES" status memory-cap)" = "memory-cap: running" ] || fail "memory-cap not running"
+MPID1="$(cat "$TMP/run/memory-cap.pid")"
+svc restart memory-cap
+MPID2="$(cat "$TMP/run/memory-cap.pid")"
+[ "$MPID2" != "$MPID1" ] && ! kill -0 "$MPID1" 2>/dev/null || fail "memory-cap restart kept the old process"
+svc stop memory-cap
+! kill -0 "$MPID2" 2>/dev/null || fail "memory-cap still alive after stop"
+unset E2B_SANDBOX GRASP_MEMORY_CAP_PROC GRASP_MEMORY_CAP_RECLAIM GRASP_MEMORY_CAP_INTERVAL
+pass "memory-cap.sh"
 
 echo "test-runtime-bootstrap: all passed"

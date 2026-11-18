@@ -1,10 +1,10 @@
 #!/bin/bash
-# Long-running Grasp services inside the sandbox (backend / ACP bridge and the
-# direct-preview injector). startup.sh starts them through here, and Grasp calls
-# `restart` over SSH after installing a new runtime bundle, so a new bundle
-# takes over without restarting the container.
+# Long-running Grasp services inside the sandbox (backend / ACP bridge, the
+# direct-preview injector and the E2B guest cache cap). startup.sh starts them
+# through here, and Grasp calls `restart` over SSH after installing a new
+# runtime bundle, so a new bundle takes over without restarting the container.
 #
-# Usage: services.sh <start|stop|restart|status> <backend|preview-inject> [--if-idle]
+# Usage: services.sh <start|stop|restart|status> <backend|preview-inject|memory-cap> [--if-idle]
 # Exit:  0 ok · 1 failed · 2 usage · 3 backend busy (with --if-idle; retry later)
 set -u
 
@@ -13,6 +13,9 @@ ENV_FILE="$RUN_DIR/env"
 BIN_DIR="${GRASP_RUNTIME_BIN_DIR:-/usr/local/bin}"
 SHARE_DIR="${GRASP_RUNTIME_SHARE_DIR:-/usr/local/share/backend}"
 INJECT_PID_FILE="${PREVIEW_INJECT_PID_DIR:-/tmp/sandbox-preview-inject}/preview-inject.pid"
+# Scripts that are not linked into BIN_DIR by the image live next to this one
+# in the installed bundle; resolve through the /usr/local/bin symlink.
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 # SSH sessions do not inherit PID1's environment; startup.sh saves it here.
 # Sourced at top level so `declare -x` lines stay global.
@@ -142,6 +145,29 @@ stop_preview_inject() {
   rm -f "$RUN_DIR/preview-inject.pid"
 }
 
+start_memory_cap() {
+  local pid_file="$RUN_DIR/memory-cap.pid"
+  if [ "${E2B_SANDBOX:-}" != true ]; then
+    echo "services: not an E2B VM guest, memory-cap skipped"
+    return 0
+  fi
+  if pid_alive "$(read_pid "$pid_file")"; then
+    echo "services: memory-cap already running"
+    return 0
+  fi
+  (
+    service_log_redirect
+    exec setsid "$SCRIPT_DIR/memory-cap.sh" run </dev/null
+  ) &
+  echo $! >"$pid_file"
+  echo "services: memory-cap started (pid $!)"
+}
+
+stop_memory_cap() {
+  stop_pid "$(read_pid "$RUN_DIR/memory-cap.pid")"
+  rm -f "$RUN_DIR/memory-cap.pid"
+}
+
 status_of() {
   if pid_alive "$(read_pid "$RUN_DIR/$1.pid")"; then
     echo "$1: running"
@@ -151,25 +177,36 @@ status_of() {
 }
 
 usage() {
-  echo "usage: services.sh <start|stop|restart|status> <backend|preview-inject> [--if-idle]" >&2
+  echo "usage: services.sh <start|stop|restart|status> <backend|preview-inject|memory-cap> [--if-idle]" >&2
   exit 2
 }
 
 main() {
   local action="${1:-}" name="${2:-}" if_idle=0
   [ "${3:-}" = "--if-idle" ] && if_idle=1
-  case "$name" in backend|preview-inject) ;; *) usage ;; esac
+  case "$name" in backend|preview-inject|memory-cap) ;; *) usage ;; esac
   mkdir -p "$RUN_DIR"
   chmod 700 "$RUN_DIR" 2>/dev/null || true
   case "$action" in
     start)
-      if [ "$name" = backend ]; then start_backend; else start_preview_inject; fi
+      case "$name" in
+        backend) start_backend ;;
+        preview-inject) start_preview_inject ;;
+        memory-cap) start_memory_cap ;;
+      esac
       ;;
     stop)
-      if [ "$name" = backend ]; then stop_backend; else stop_preview_inject; fi
+      case "$name" in
+        backend) stop_backend ;;
+        preview-inject) stop_preview_inject ;;
+        memory-cap) stop_memory_cap ;;
+      esac
       ;;
     restart)
-      if [ "$name" = backend ]; then
+      if [ "$name" = memory-cap ]; then
+        stop_memory_cap
+        start_memory_cap || exit 1
+      elif [ "$name" = backend ]; then
         if [ "$if_idle" = 1 ] && backend_busy; then
           echo "services: backend busy, restart deferred"
           exit 3
