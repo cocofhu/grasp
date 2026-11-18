@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
-import { FAST_SERVICE_TIER, type ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+import { defaultReasoningEffort, FAST_SERVICE_TIER, listedEfforts, type ConfiguredModelChoice } from '@/lib/solo/configuredModels'
 
 defineOptions({ inheritAttrs: false })
 
@@ -25,6 +25,7 @@ const fastButton = ref<HTMLButtonElement | null>(null)
 const fastTooltip = ref(false)
 const fastTooltipId = `solo-fast-${useId().replace(/:/g, '')}`
 const fastTooltipStyle = ref<Record<string, string>>({})
+const boltPath = 'M13.5 2.55c.48-.6 1.43-.16 1.28.6L13.5 9.2h6.22c.78 0 1.18.89.68 1.49l-9.57 11.05c-.5.6-1.4.14-1.26-.61l1.31-6.05H4.6c-.77 0-1.17-.9-.67-1.49Z'
 
 const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? (!props.modelValue ? props.models[0] : null) ?? null)
 const multipleGroups = computed(() => new Set(props.models.map(model => model.configurationId).filter(Boolean)).size > 1)
@@ -33,21 +34,13 @@ const label = computed(() => {
   if (!props.models.length && props.emptyAsLabel) return t('pages.solo.modelSelect.empty')
   return current.value?.name || t('pages.solo.modelSelect.placeholder')
 })
-const efforts = computed(() => [...new Set((current.value?.efforts || []).map((value) => value.trim()).filter(Boolean))])
+const efforts = computed(() => listedEfforts(current.value?.efforts))
 const effortMax = computed(() => Math.max(0, efforts.value.length - 1))
-const resolvedEffort = computed(() => {
-  const choices = efforts.value
-  if (!choices.length) return ''
-  return choices.includes(props.reasoningEffort) ? props.reasoningEffort : choices[choices.length - 1]!
-})
-const effortIndex = computed(() => {
-  const choices = efforts.value
-  if (!choices.length) return 0
-  const index = choices.indexOf(resolvedEffort.value)
-  return index >= 0 ? index : choices.length - 1
-})
+const defaultEffort = computed(() => defaultReasoningEffort(efforts.value))
+const restoreCount = ref(0)
+const resolvedEffort = computed(() => efforts.value.includes(props.reasoningEffort) ? props.reasoningEffort : defaultEffort.value)
+const effortIndex = computed(() => Math.max(0, efforts.value.indexOf(resolvedEffort.value)))
 const effortLabel = computed(() => levelLabel(resolvedEffort.value))
-const atHighest = computed(() => efforts.value.length > 0 && resolvedEffort.value === efforts.value[efforts.value.length - 1])
 const effortBlocked = computed(() => props.disabled || !!current.value?.unavailable)
 const fastModeSupported = computed(() => current.value?.serviceTiers?.includes(FAST_SERVICE_TIER) === true)
 const fastMode = computed(() => fastModeSupported.value && props.serviceTier === FAST_SERVICE_TIER)
@@ -96,6 +89,10 @@ function setEffort(value: string) {
   if (effortBlocked.value || !efforts.value.includes(value) || value === announced.value) return
   announced.value = value
   emit('update:reasoningEffort', value)
+}
+function restoreEffort() {
+  restoreCount.value++
+  setEffort(defaultEffort.value)
 }
 function toggleFastMode() {
   if (effortBlocked.value || !fastModeSupported.value) return
@@ -194,12 +191,16 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
       <section v-if="view === 'effort'" ref="effortPanel" class="solo-effort" :class="{ 'solo-effort--dragging': dragging }" :style="{ '--effort-color': effortColor, '--effort-ratio': String(ratio) }" data-testid="solo-effort-panel" :aria-label="t('pages.solo.modelSelect.reasoningEffort')">
         <header class="solo-effort-heading">
           <button v-if="fastModeSupported" ref="fastButton" type="button" class="solo-effort-fast" :class="{ 'solo-effort-fast--active': fastMode }" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.fastMode')" :aria-pressed="fastMode" :aria-describedby="fastTooltip ? fastTooltipId : undefined" data-testid="solo-fast-toggle" @click="toggleFastMode" @pointerenter="showFastTooltip" @pointerleave="fastTooltip = false" @focus="showFastTooltip" @blur="fastTooltip = false">
-            <Icon name="priority-bolt" :size="28" :interactive="false" />
+            <svg class="solo-effort-bolt" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="boltPath" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+              <path :d="boltPath" class="solo-effort-bolt-fill" fill="currentColor" />
+              <path :d="boltPath" class="solo-effort-bolt-charge" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            </svg>
           </button>
           <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
-          <button type="button" class="solo-effort-reset" :disabled="effortBlocked || atHighest" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="setEffort(efforts[efforts.length - 1] || '')">
-            <Icon name="refresh" :size="14" :interactive="false" />
+          <button type="button" class="solo-effort-reset" :disabled="effortBlocked || resolvedEffort === defaultEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="restoreEffort">
+            <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" :style="{ '--restore-count': restoreCount }" />
           </button>
         </header>
         <button type="button" class="solo-effort-back" :aria-label="t('pages.solo.modelSelect.backToModels')" data-testid="solo-effort-back" @click="showModels">
@@ -266,11 +267,13 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-heading { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; min-height: 36px; align-items: center; gap: 5px; }
 .solo-effort-glyph { display: grid; width: 36px; height: 36px; place-items: center; color: var(--effort-color); }
 .solo-effort-entry-glyph { display: grid; width: 24px; height: 24px; flex-shrink: 0; place-items: center; color: rgb(var(--c-txt2)); }
-.solo-effort-fast { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid transparent; border-radius: 9px; background: rgb(var(--c-txt) / 0.05); color: rgb(var(--c-txt2)); }
-.solo-effort-fast:hover:not(:disabled) { background: rgb(var(--c-txt) / 0.1); color: rgb(var(--c-txt)); }
-.solo-effort-fast--active { border-color: rgb(var(--c-accent) / 0.35); background: rgb(var(--c-accent) / 0.15); color: rgb(var(--c-accent-2)); }
-.solo-effort-fast--active:hover:not(:disabled) { background: rgb(var(--c-accent) / 0.22); color: rgb(var(--c-accent-2)); }
+.solo-effort-fast { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 9px; background: transparent; }
 .solo-effort-fast:disabled { opacity: 0.45; }
+.solo-effort-bolt { --hover-ink: light-dark(#525357, #d5d5d8); color: light-dark(#8d8e8f, #aeafb2); }
+.solo-effort-fast--active .solo-effort-bolt { --hover-ink: light-dark(#303034, #dddde0); color: light-dark(#000, #f7f7f8); }
+.solo-effort-bolt-fill { clip-path: inset(0 0 156% 0) fill-box; }
+.solo-effort-fast--active .solo-effort-bolt-fill { clip-path: inset(0) fill-box; }
+.solo-effort-bolt-charge { display: none; }
 .solo-fast-tooltip { position: fixed; z-index: 10000; display: grid; gap: 2px; max-width: 192px; padding: 9px 12px; border-radius: 10px; background: rgb(var(--c-txt)); color: rgb(var(--c-surface)); box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 12px; line-height: 17px; pointer-events: none; }
 .solo-fast-tooltip strong { font-weight: 600; }
 .solo-fast-tooltip span { opacity: 0.75; }
@@ -279,7 +282,34 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
 .solo-effort-back:hover { color: rgb(var(--c-txt)); }
 .solo-effort-reset { display: grid; height: 26px; width: 26px; place-items: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
 .solo-effort-reset:hover:not(:disabled) { background: rgb(var(--c-txt) / 0.05); color: rgb(var(--c-txt)); }
-.solo-effort-reset:disabled { opacity: 0.4; }
+.solo-effort-reset:disabled .solo-effort-reset-icon { opacity: 0.4; }
+.solo-effort-fast:enabled:focus-visible .solo-effort-bolt { color: var(--hover-ink); }
+@media (hover: hover) {
+  .solo-effort-fast:enabled:hover .solo-effort-bolt { color: var(--hover-ink); }
+}
+.solo-effort-fast:enabled:active .solo-effort-bolt,
+.solo-effort-reset:enabled:active .solo-effort-reset-icon { opacity: 0.7; }
+@media (prefers-reduced-motion: no-preference) {
+  .solo-effort-bolt {
+    transition: color var(--dur-ui) ease-in-out, opacity var(--dur-press) ease;
+  }
+  .solo-effort-bolt-fill, .solo-effort-bolt-charge { transition: clip-path 460ms ease-in-out; }
+  .solo-effort-bolt-charge {
+    display: inline;
+    /* A transparent gap separates the leading band from the solid fill. */
+    clip-path: inset(-38% -10% 110% -10%) stroke-box;
+  }
+  .solo-effort-fast--active .solo-effort-bolt-charge { clip-path: inset(110% -10% -38% -10%) stroke-box; }
+  .solo-effort-reset-icon { transition: opacity var(--dur-ui) ease; }
+  .solo-effort-reset:disabled .solo-effort-reset-icon { transition: opacity 520ms ease-in; }
+  .solo-effort-reset-icon :deep(.motion-target) {
+    transform-box: view-box;
+    transform-origin: center;
+    transform: rotate(calc(var(--restore-count) * 1turn));
+    transition: transform 520ms ease-in-out;
+  }
+  .solo-effort-reset { transition: background-color var(--dur-ui) ease, color var(--dur-ui) ease; }
+}
 .solo-effort-control { position: relative; height: 28px; }
 .solo-effort-control--disabled { opacity: 0.45; }
 .solo-effort-track { position: absolute; inset: 2px 0; overflow: hidden; border-radius: 999px; background: rgb(var(--c-txt) / 0.08); box-shadow: inset 0 0 0 1px rgb(var(--c-line) / 0.5); pointer-events: none; }

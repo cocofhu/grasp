@@ -184,12 +184,14 @@ describe('useSoloLauncher', () => {
       binding: { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['custom-model'] },
     }] } as never)
     mocks.cliModels.mockResolvedValueOnce({ models: [
-      { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', efforts: ['low', 'high'], serviceTiers: ['fast'] },
+      { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', efforts: ['low', 'high', 'max', 'ultra'], serviceTiers: ['fast'] },
       { id: 'custom-model', name: 'Custom model', vendor: 'openai', efforts: ['low', 'high'] },
     ] } as never)
     const launcher = mountLauncher()
     await launcher.load()
     await flushPromises()
+    await launcher.start('Use the default effort')
+    expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ reasoningEffort: 'max' }))
     launcher.reasoningEffort.value = 'low'
     launcher.serviceTier.value = 'fast'
     await launcher.start('Use Fast with low reasoning')
@@ -231,7 +233,7 @@ describe('useSoloLauncher', () => {
     await flushPromises()
     expect(launcher.modelChoices.value.find(choice => choice.id === 'gemini-3.1-flash-lite-image')?.efforts).toEqual(['minimal', 'high'])
     expect(launcher.reasoningEffort.value).toBe('high')
-    expect(launcher.error.value).toBe('所选思考强度已不可用，已改用该模型的最高强度。')
+    expect(launcher.error.value).toBe('所选思考强度已不可用，已改用该模型的默认强度。')
   })
 
   it('starts Kimi Code with the selected CLI effort and clears it for K2.7', async () => {

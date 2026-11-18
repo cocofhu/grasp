@@ -51,6 +51,12 @@ describe('resolveHomeLaunchModel', () => {
     })
   })
 
+  it('defaults to max when ultra is also offered and sends an explicit ultra unchanged', () => {
+    const input = { clarify: true, ready: true, custom: false, modelId: '', choices: [{ ...primary, efforts: ['low', 'max', 'ultra'] }] }
+    expect(resolveHomeLaunchModel({ ...input, effort: '' })).toMatchObject({ action: 'send', model: { reasoningEffort: 'max' } })
+    expect(resolveHomeLaunchModel({ ...input, effort: 'ultra' })).toMatchObject({ action: 'send', model: { reasoningEffort: 'ultra' } })
+  })
+
   it('sends the chosen auxiliary model and effort', () => {
     const decision = resolveHomeLaunchModel({
       clarify: true, ready: true, custom: true, modelId: 'm2', effort: 'low', choices: [primary, aux],
