@@ -1794,6 +1794,14 @@ onBeforeUnmount(() => {
         :inspectable="annotatable"
         @pick="onRemotePick"
       />
+      <div
+        v-else
+        class="flex h-full flex-col items-center justify-center p-6 text-center text-[12px] text-txt3"
+        data-testid="react-artifact-computer-missing"
+      >
+        <Icon name="monitor" :size="26" class="mb-2 opacity-40" />
+        {{ sandboxLoadingState ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
+      </div>
     </div>
     <div
       v-if="novncOpen && showAppCard"
