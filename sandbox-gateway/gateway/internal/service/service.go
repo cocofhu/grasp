@@ -480,6 +480,8 @@ func (s *SandboxService) syncObservedStatus(sb *models.Sandbox, st driver.Status
 		next = models.StatusRunning
 	case st == driver.StatusNotFound && (sb.Status == models.StatusRunning || sb.Status == models.StatusStopped):
 		next, reason = models.StatusError, "resource not found"
+	case st == driver.StatusCrashed && sb.Status == models.StatusRunning:
+		next, reason = models.StatusError, "sandbox crashed"
 	default:
 		return
 	}

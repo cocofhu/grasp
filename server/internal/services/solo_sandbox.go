@@ -119,15 +119,25 @@ func (s *SoloService) publishRunningStatus(sandboxID uint) {
 
 // onSandboxGone marks sessions whose sandbox was destroyed outside Close.
 func (s *SoloService) onSandboxGone(sandboxID uint) {
+	s.failSandboxSessions(sandboxID, "沙箱已被销毁，可重新启动会话", "沙箱已不存在，可从工作区备份恢复")
+}
+
+// onSandboxCrashed marks sessions whose sandbox the provider reports crashed,
+// before the sandbox is released, so they show the crash instead of hanging.
+func (s *SoloService) onSandboxCrashed(sandboxID uint) {
+	s.failSandboxSessions(sandboxID, "沙箱已崩溃（虚拟机异常退出），请重新启动会话", "沙箱已崩溃（虚拟机异常退出），可从工作区备份恢复")
+}
+
+func (s *SoloService) failSandboxSessions(sandboxID uint, message, backupMessage string) {
 	var rows []models.SoloSession
 	s.db.Where("sandbox_id = ? AND status IN ?", sandboxID,
 		[]string{models.SoloStatusStarting, models.SoloStatusRunning}).Find(&rows)
 	for _, r := range rows {
-		updates := map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": "沙箱已被销毁，可重新启动会话"}
+		updates := map[string]any{"status": models.SoloStatusError, "sandbox_id": 0, "error": message}
 		if s.backups != nil {
 			if _, err := s.legacyRestorePoint(r.ID); err == nil {
 				// Resume restores the newest archive into a new sandbox.
-				updates["status"], updates["error"] = models.SoloStatusStopped, "沙箱已不存在，可从工作区备份恢复"
+				updates["status"], updates["error"] = models.SoloStatusStopped, backupMessage
 			}
 		}
 		result := s.db.Model(&models.SoloSession{}).Where("id = ? AND sandbox_id = ? AND status IN ?", r.ID, sandboxID,

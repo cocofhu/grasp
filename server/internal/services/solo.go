@@ -191,6 +191,7 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 		sbx.SetSoloSandboxDestroyHook(s.onSandboxGone)
 		sbx.SetSoloSandboxRecoveredHook(s.onSandboxRecovered)
 		sbx.SetSoloSandboxPausedHook(s.onSandboxPaused)
+		sbx.SetSoloSandboxCrashedHook(s.onSandboxCrashed)
 		sbx.soloBusy = func(id uint) bool {
 			var row models.SoloSession
 			if db.Where("sandbox_id = ?", id).First(&row).Error != nil {

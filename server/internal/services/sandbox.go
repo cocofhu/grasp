@@ -49,6 +49,8 @@ type SandboxService struct {
 	soloOnRecovered func(sandboxID uint)
 	// soloOnPaused reports a running resident the provider paused.
 	soloOnPaused func(sandboxID uint)
+	// soloOnCrashed reports a running resident the provider reports crashed.
+	soloOnCrashed func(sandboxID uint)
 
 	mu sync.Mutex
 	// Per-resident locks serialize recovery with explicit destruction without

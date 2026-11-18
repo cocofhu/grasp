@@ -38,6 +38,7 @@ type lifecycleProvider struct {
 	created, deleted, connected, paused, renewed                                                                                int
 	connectFailures                                                                                                             int
 	publishFailures                                                                                                             int
+	timeoutStatus                                                                                                               int
 	createStatus, getStatus, deleteStatus, uploadStatus, processStatus, pauseStatus, connectStatus, healthStatus, publishStatus int
 	ready                                                                                                                       bool
 	capacity                                                                                                                    int64
@@ -314,6 +315,10 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			f.connected++
 			_ = json.NewEncoder(w).Encode(s)
 		case "timeout":
+			if f.timeoutStatus != 0 {
+				w.WriteHeader(f.timeoutStatus)
+				return
+			}
 			var body struct {
 				Timeout int `json:"timeout"`
 			}

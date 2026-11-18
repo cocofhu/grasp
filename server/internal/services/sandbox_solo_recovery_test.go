@@ -288,7 +288,7 @@ func TestSoloCloseDuringRecoveryDoesNotResurrectSession(t *testing.T) {
 }
 
 func TestSoloRunningRowsReleasedOnlyWhenProviderConfirmsAbsence(t *testing.T) {
-	for _, status := range []string{"not_found", "stopped", "probe_failure", "missing_record"} {
+	for _, status := range []string{"not_found", "crashed", "stopped", "probe_failure", "missing_record"} {
 		t.Run(status, func(t *testing.T) {
 			db := newTestDB(t)
 			ds := &dockerState{}
@@ -312,7 +312,7 @@ func TestSoloRunningRowsReleasedOnlyWhenProviderConfirmsAbsence(t *testing.T) {
 			svc.ReleaseVanishedSoloSandboxes(context.Background())
 			ds.fg.FailStatus = false
 			_, err := svc.Get(row.ID)
-			if status == "not_found" {
+			if status == "not_found" || status == "crashed" {
 				if err == nil {
 					t.Fatal("confirmed absence kept the sandbox row")
 				}
@@ -320,6 +320,9 @@ func TestSoloRunningRowsReleasedOnlyWhenProviderConfirmsAbsence(t *testing.T) {
 				db.First(&session, "id = ?", "session")
 				if session.Status != models.SoloStatusError || session.SandboxID != 0 {
 					t.Fatalf("session still bound to a vanished sandbox: %+v", session)
+				}
+				if crashed := strings.Contains(session.Error, "崩溃"); crashed != (status == "crashed") {
+					t.Fatalf("session error %q does not match provider status %s", session.Error, status)
 				}
 				return
 			}

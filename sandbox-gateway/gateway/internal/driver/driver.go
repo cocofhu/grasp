@@ -20,6 +20,10 @@ const (
 	StatusNotFound Status = "not_found"
 	StatusPending  Status = "pending"
 	StatusError    Status = "error"
+	// StatusCrashed is a guest the provider still lists but that has stopped
+	// answering and can no longer be renewed. It does not recover; callers
+	// destroy it and start a new sandbox.
+	StatusCrashed Status = "crashed"
 )
 
 // ConfigInject describes optional rules/skills/mcp configuration to seed into

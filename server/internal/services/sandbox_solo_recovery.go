@@ -219,7 +219,8 @@ func (s *SandboxService) RunSoloRecovery(ctx context.Context) {
 // provider can kill an idle guest on expiry without telling Grasp; a confirmed
 // absence is released like any missing resident so the session reports it. A
 // guest the provider paused is reported to the session and left for
-// EnsureSoloRunning on its next use.
+// EnsureSoloRunning on its next use. A crashed guest fails its session and is
+// released.
 func (s *SandboxService) ReleaseVanishedSoloSandboxes(ctx context.Context) {
 	var rows []models.Sandbox
 	if err := s.db.Where("purpose = ? AND status = ?", SandboxPurposeSolo, "running").Find(&rows).Error; err != nil {
@@ -251,6 +252,13 @@ func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sand
 	switch status {
 	case "exited", "stopped":
 		s.invokeSoloPausedHook(row.ID)
+		return
+	case "crashed":
+		// The guest's memory is gone, so there is nothing to recover in place;
+		// fail the session first so it does not report the generic destroy.
+		log.Warn().Uint("sandbox", row.ID).Str("name", row.Name).Msg("solo sandbox crashed at the provider; releasing it")
+		s.invokeSoloCrashedHook(row.ID)
+		s.destroyLocalSandbox(ctx, row)
 		return
 	case "not_found":
 	default:

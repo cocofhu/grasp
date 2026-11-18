@@ -711,6 +711,23 @@ func TestStatusRecordsProviderSideChanges(t *testing.T) {
 	}
 }
 
+func TestObservedCrashRecordsError(t *testing.T) {
+	svc, _, st := testService(t)
+	sb, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSvcRunning(t, svc, sb.ID)
+	got, err := st.Get(context.Background(), sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.syncObservedStatus(got, driver.StatusCrashed)
+	if got, _ = st.Get(context.Background(), sb.ID); got.Status != models.StatusError || got.Error != "sandbox crashed" {
+		t.Fatalf("stored status %q error %q after provider crash", got.Status, got.Error)
+	}
+}
+
 func TestNewDefaultSessionPort(t *testing.T) {
 	svc, drv, st := testService(t)
 	_ = svc

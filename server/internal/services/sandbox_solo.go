@@ -69,6 +69,23 @@ func (s *SandboxService) invokeSoloPausedHook(id uint) {
 	}
 }
 
+// SetSoloSandboxCrashedHook registers a callback for running residents the
+// provider reports crashed, called before the sandbox is released.
+func (s *SandboxService) SetSoloSandboxCrashedHook(fn func(sandboxID uint)) {
+	s.mu.Lock()
+	s.soloOnCrashed = fn
+	s.mu.Unlock()
+}
+
+func (s *SandboxService) invokeSoloCrashedHook(id uint) {
+	s.mu.Lock()
+	fn := s.soloOnCrashed
+	s.mu.Unlock()
+	if fn != nil {
+		fn(id)
+	}
+}
+
 func (s *SandboxService) invokeSoloDestroyHook(id uint) {
 	s.mu.Lock()
 	fn := s.soloOnDestroy

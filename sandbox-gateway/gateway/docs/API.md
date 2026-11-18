@@ -257,8 +257,14 @@ POST   /api/v1/sandboxes/:id/start      # recreate saved workload / resume E2B
 POST   /api/v1/sandboxes/:id/stop       # release Docker/K8s resources / E2B memory snapshot
 POST   /api/v1/sandboxes/:id/reinstall  # rebuild Pod; optional PVC wipe
 DELETE /api/v1/sandboxes/:id            # remove sandbox + record
-GET    /api/v1/sandboxes/:id/status     # {"status":"running|stopped|not_found|..."}
+GET    /api/v1/sandboxes/:id/status     # {"status":"running|stopped|not_found|pending|error|crashed"}
 ```
+
+`crashed` (E2B only) means the provider still lists the guest but has
+rejected two consecutive lease renewals and the guest relay does not answer,
+as when its VM dies on host memory exhaustion. The guest will not recover;
+the stored record moves to `error` ("sandbox crashed") and callers should
+destroy it and create a new sandbox. A later accepted renewal clears it.
 
 ### Start with current configuration
 

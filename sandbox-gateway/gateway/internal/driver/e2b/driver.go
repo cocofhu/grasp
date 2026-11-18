@@ -710,6 +710,9 @@ func (d *Driver) Get(ctx context.Context, id string) (*driver.Handle, error) {
 		return nil, err
 	}
 	defer e.mu.Unlock()
+	if e.isCrashed() {
+		return handle(&e.record, nil, driver.StatusCrashed), nil
+	}
 	return d.refresh(ctx, &e.record)
 }
 func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
@@ -721,6 +724,9 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 		return driver.StatusError, err
 	}
 	defer e.mu.Unlock()
+	if e.isCrashed() {
+		return driver.StatusCrashed, nil
+	}
 	// Every private preview asset checks sandbox liveness. Bound remote probes
 	// to once per two seconds while retaining immediate local lifecycle changes.
 	if e.record.Phase == "running" && e.status == driver.StatusRunning && time.Since(e.statusAt) < 2*time.Second {
@@ -1215,13 +1221,40 @@ func (d *Driver) renewLease(ctx context.Context, e *entry) {
 		return
 	}
 	if s.State == "paused" || s.State == "stopped" {
+		e.renewFailures = 0
 		return
 	}
 	d.checkLeaseCap(e, s, time.Now())
 	if err = d.client.SetTimeout(ctx, s.ID, int(d.opts.Lease/time.Second)); err != nil {
-		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
+		e.renewFailures++
+		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Int("consecutive_failures", e.renewFailures).Msg("E2B lease renewal failed; provider expiry remains in force")
+		d.detectCrash(ctx, e)
+		return
 	}
+	e.renewFailures, e.crashed = 0, false
 }
+
+// crashRenewalFailures is how many consecutive rejected renewals, together
+// with an unreachable relay, mark a guest crashed. E2B keeps listing a guest
+// whose VM died (for example on host memory exhaustion) as running and only
+// rejects its renewals, so neither signal alone separates a crash from a
+// transient API or network fault.
+const crashRenewalFailures = 2
+
+func (d *Driver) detectCrash(ctx context.Context, e *entry) {
+	if e.crashed || e.renewFailures < crashRenewalFailures {
+		return
+	}
+	probe := d.observe(ctx, &e.record)
+	if probe == nil {
+		return
+	}
+	e.crashed = true
+	log.Error().Err(probe).Str("sandbox_id", e.record.ID).Str("provider_id", e.record.Provider.ID).
+		Int("consecutive_failures", e.renewFailures).Msg("E2B guest crashed: lease renewals rejected and relay unreachable")
+}
+
+func (e *entry) isCrashed() bool { return e.crashed && e.record.Phase == "running" }
 
 // checkLeaseCap reports a provider that accepted earlier renewals but kept an
 // earlier expiry, which E2B does silently at the team's maximum sandbox
