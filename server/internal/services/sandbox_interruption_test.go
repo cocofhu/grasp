@@ -32,7 +32,7 @@ func TestSandboxChatReportsPartialDisconnect(t *testing.T) {
 				t.Fatal(err)
 			}
 			var streamed strings.Builder
-			_, _, err = s.ChatWithTimeout(ctx, row.ID, "hello", nil, 0, func(raw json.RawMessage) {
+			_, _, err = s.ChatWithTimeout(ctx, row.ID, "hello", nil, 0, nil, func(raw json.RawMessage) {
 				streamed.Write(raw)
 			})
 			if complete && err != nil {

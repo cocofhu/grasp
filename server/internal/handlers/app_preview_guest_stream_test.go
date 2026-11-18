@@ -14,6 +14,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// bridgeGuestChat runs the turn without ledgering it; services owns that.
+func bridgeGuestChat(ctx context.Context, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error) {
+	return client.ChatStreamResult(ctx, prompt, files, onProgress)
+}
+
 func TestPreviewGuestStreamsSanitizedProcessAndFinalTimeline(t *testing.T) {
 	advance := make(chan struct{})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -73,7 +78,7 @@ func TestPreviewGuestStreamsSanitizedProcessAndFinalTimeline(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		text, ok, sent := writePreviewGuestTurn(ctx, cancel, conn, client, "Update the page", nil)
+		text, ok, sent := writePreviewGuestTurn(ctx, cancel, conn, client, bridgeGuestChat, "Update the page", nil)
 		completed <- ok && sent && text == "Page updated"
 	}))
 	defer preview.Close()

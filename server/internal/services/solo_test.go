@@ -583,7 +583,7 @@ type imageChat struct {
 	done   chan struct{}
 }
 
-func (c *imageChat) ChatWithTimeout(_ context.Context, _ uint, text string, images []models.PromptImage, _ time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (c *imageChat) ChatWithTimeout(_ context.Context, _ uint, text string, images []models.PromptImage, _ time.Duration, _ *models.ChatExecution, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	c.mu.Lock()
 	c.calls++
 	c.text = text
@@ -606,7 +606,7 @@ type deadlineChat struct {
 	done        chan struct{}
 }
 
-func (c *deadlineChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, timeout time.Duration, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (c *deadlineChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, timeout time.Duration, _ *models.ChatExecution, _ func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	c.timeout = timeout
 	_, c.hasDeadline = ctx.Deadline()
 	close(c.done)

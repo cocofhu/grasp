@@ -186,11 +186,11 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 				if err := s.skills.Save(agent); err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "unchanged defaults", nil, 0, nil); err != nil {
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "unchanged defaults", nil, 0, nil, nil); err != nil {
 					t.Fatalf("unchanged defaults blocked: %v", err)
 				}
 				s.teardownLive(row.ID)
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "reconnect inherited defaults", nil, 0, nil); err != nil {
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "reconnect inherited defaults", nil, 0, nil, nil); err != nil {
 					t.Fatalf("inherited defaults failed after a cold reconnect: %v", err)
 				}
 				if s.live[row.ID].sb.ConfigRoot != DefaultConfigRootForBackend("opencode") {
@@ -209,7 +209,7 @@ func TestInheritedDefaultsChangesBlockLongLivedSandbox(t *testing.T) {
 				if err := shared.Save(defaults); err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must reopen", nil, 0, nil); err == nil {
+				if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must reopen", nil, 0, nil, nil); err == nil {
 					t.Fatal("a new turn ignored changed inherited defaults")
 				}
 			})

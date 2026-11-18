@@ -432,9 +432,10 @@ func frameIsPromptBegin(raw json.RawMessage) bool {
 	return probe.Type == "prompt_begin"
 }
 
-// dispatchFrame folds one persisted event frame into the aggregate. Frames may
-// arrive either as a full {op:"event", data:{...}} envelope or as the bare
-// event payload {type, update}; both are handled.
+// dispatchFrame folds one persisted event frame into the timeline aggregate.
+// Frames may arrive either as a full {op:"event", data:{...}} envelope or as
+// the bare event payload {type, update}; both are handled. Usage is ledgered
+// from live turns and ReplayTurn only, never from these display reads.
 func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 	data := raw
 	var env struct {
@@ -447,7 +448,6 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 	var ev struct {
 		Type   string          `json:"type"`
 		Update json.RawMessage `json:"update"`
-		Usage  json.RawMessage `json:"usage"`
 	}
 	if json.Unmarshal(data, &ev) != nil {
 		return
@@ -455,16 +455,6 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 	if ev.Type == "turn_segment" {
 		if result != nil {
 			result.sealSegment()
-		}
-		return
-	}
-	if ev.Type == "prompt_done" {
-		if result != nil {
-			// Event-log replay has no session bridge context; weak keys → unknown.
-			if u, byModel := parsePromptDoneUsage(ev.Usage, ""); u != nil {
-				result.Usage = models.AddTokenUsage(result.Usage, u)
-				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)
-			}
 		}
 		return
 	}

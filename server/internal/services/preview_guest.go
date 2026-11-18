@@ -43,8 +43,27 @@ func (s *SandboxService) OpenPreviewGuest(ctx context.Context, row models.Sandbo
 	return client, closeChat, nil
 }
 
-// ChatPreviewGuestTurn uses transient attachment storage for one visitor turn.
-func ChatPreviewGuestTurn(ctx context.Context, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error) {
+// PreviewGuestExecution is the route of the next visitor turn: the preview's
+// Agent on the model the visitor chat has selected.
+func (s *SandboxService) PreviewGuestExecution(ctx context.Context, row models.Sandbox, chatID string) *models.ChatExecution {
+	execution := &models.ChatExecution{AgentName: row.Profile}
+	if s.skills != nil {
+		if agent, ok := s.skills.Get(row.Profile); ok {
+			execution.Backend = agent.AcpBackend
+		}
+	}
+	if current, err := s.ChatModelSettings(ctx, row.ID, chatID); err == nil {
+		execution.ModelID = current.Selected
+		if execution.ModelID == "" {
+			execution.ModelID = current.Default
+		}
+	}
+	return execution
+}
+
+// ChatPreviewGuestTurn runs one visitor turn with transient attachment storage
+// and ledgers it against the preview's owner (runID/nodeID of the share link).
+func (s *SandboxService) ChatPreviewGuestTurn(ctx context.Context, row models.Sandbox, runID, nodeID string, client *sandbox.ACPClient, prompt string, files []models.PromptImage, onProgress func(*sandbox.ChatResult)) (*sandbox.ChatResult, error) {
 	if len(files) > 0 {
 		store := blob.NewMemory()
 		var err error
@@ -55,5 +74,7 @@ func ChatPreviewGuestTurn(ctx context.Context, client *sandbox.ACPClient, prompt
 		client.WithBlobs(store)
 		defer client.WithBlobs(nil)
 	}
-	return client.ChatStreamResult(ctx, prompt, files, onProgress)
+	result, err := client.ChatStreamResult(ctx, prompt, files, onProgress)
+	recordTurnUsage(s.db, previewGuestUsage(&row, runID, nodeID), result, err)
+	return result, err
 }

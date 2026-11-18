@@ -10,10 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/tokenledger"
-
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -155,7 +152,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		return stopped, err
 	}
 	in := c.svc.buildTurnInput(c.id, q, userMsg.References, prep)
-	out := c.runAgent(ctx, prep.sandboxID, in)
+	out := c.runAgent(ctx, prep, in)
 	c.saveTurnResult(q.ID, started, prep, in, out)
 	if out.err != nil {
 		return ctx.Err() != nil, out.err
@@ -193,7 +190,6 @@ type soloTurnOutput struct {
 	questions []models.ReactQuestion
 	forms     []models.ReactForm
 	status    string
-	ledger    string
 	errText   string
 	err       error
 }
@@ -304,13 +300,13 @@ func (s *SoloService) buildTurnInput(sessionID string, q *soloTurn, refs []model
 
 // runAgent sends the prompt (unless building it failed), collects the asks and
 // streamed reply, and classifies how the turn ended.
-func (c *soloChat) runAgent(ctx context.Context, sandboxID uint, in soloTurnInput) soloTurnOutput {
-	s := c.svc
+func (c *soloChat) runAgent(ctx context.Context, prep soloTurnPrep, in soloTurnInput) soloTurnOutput {
+	s, sandboxID := c.svc, prep.sandboxID
 	out := soloTurnOutput{err: in.err}
 	askRunID := s.soloAskRunID(sandboxID)
 	s.takeSoloAsks(askRunID)
 	if out.err == nil {
-		out.usage, out.byModel, out.err = s.chat.ChatWithTimeout(ctx, sandboxID, in.prompt, in.images, 0, c.onAcp)
+		out.usage, out.byModel, out.err = s.chat.ChatWithTimeout(ctx, sandboxID, in.prompt, in.images, 0, prep.execution, c.onAcp)
 	}
 	out.questions, out.forms = s.takeSoloAsks(askRunID)
 
@@ -320,12 +316,12 @@ func (c *soloChat) runAgent(ctx context.Context, sandboxID uint, in soloTurnInpu
 	c.events = nil
 	c.mu.Unlock()
 
-	out.status, out.ledger = "ok", models.TokenLedgerStatusOK
+	out.status = "ok"
 	switch {
 	case out.err != nil && ctx.Err() != nil:
-		out.status, out.ledger, out.errText = "stopped", models.TokenLedgerStatusCancelled, "已停止"
+		out.status, out.errText = "stopped", "已停止"
 	case out.err != nil:
-		out.status, out.ledger, out.errText = "failed", models.TokenLedgerStatusFailed, truncErr(out.err)
+		out.status, out.errText = "failed", truncErr(out.err)
 	}
 	return out
 }
@@ -369,16 +365,6 @@ func (c *soloChat) saveTurnResult(turnID string, started time.Time, prep soloTur
 	}
 	now := time.Now()
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &now)
-	recordSoloUsage(s.db, c.id, prep.sandboxID, out.usage, out.byModel, out.ledger)
-}
-
-// recordSoloUsage ledgers one Solo turn; failed and stopped turns still
-// consumed tokens.
-func recordSoloUsage(db *gorm.DB, sessionID string, sandboxID uint, usage *models.TokenUsage, byModel models.TokenUsageByModel, status string) {
-	tokenledger.Record(db, tokenledger.Entry{
-		Source: models.TokenLedgerSourceSolo, Phase: models.TokenLedgerPhaseChat, Status: status,
-		ThreadID: sessionID, SandboxID: sandboxID, Usage: usage, ByModel: byModel,
-	})
 }
 
 const (

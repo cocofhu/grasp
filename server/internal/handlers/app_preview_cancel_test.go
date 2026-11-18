@@ -121,7 +121,7 @@ func TestPreviewGuestCancelReachesBridgeAndKeepsChatConnected(t *testing.T) {
 					case <-chatCtx.Done():
 						return
 					case request := <-requests:
-						_, _, sent := writePreviewGuestTurn(request.ctx, closeChat, conn, client, request.Text, nil)
+						_, _, sent := writePreviewGuestTurn(request.ctx, closeChat, conn, client, bridgeGuestChat, request.Text, nil)
 						request.finish()
 						if !sent {
 							return

@@ -110,7 +110,7 @@ type SoloEnvEntry struct {
 }
 
 type soloChatter interface {
-	ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error)
+	ChatWithTimeout(ctx context.Context, id uint, text string, images []models.PromptImage, timeout time.Duration, execution *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error)
 	Cancel(id uint)
 }
 

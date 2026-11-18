@@ -28,7 +28,7 @@ func newRestoreChat(blocking bool) *restoreChat {
 	return c
 }
 
-func (c *restoreChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+func (c *restoreChat) ChatWithTimeout(ctx context.Context, _ uint, text string, _ []models.PromptImage, _ time.Duration, _ *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
 	c.mu.Lock()
 	c.prompts = append(c.prompts, text)
 	c.mu.Unlock()
