@@ -8,6 +8,7 @@ import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
 import { soloErrorText } from './soloErrors'
+import { defaultReasoningEffort, listedEfforts } from './configuredModels'
 import { useSoloSessions } from './useSoloSessions'
 
 export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
@@ -29,10 +30,6 @@ function parseFrame(data: unknown): any {
   } catch {
     return null
   }
-}
-
-function listedEfforts(efforts?: string[]) {
-  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
 }
 
 function queueItem(raw: any): SoloQueueItem {
@@ -1019,11 +1016,11 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         let row = kind === 'model' ? configurationId === undefined ? await transport.setSoloSessionModel(id, next) : await transport.setSoloSessionModel(id, next, undefined, configurationId) : kind === 'effort' ? await transport.setSoloSessionReasoningEffort(id, next) : await transport.setSoloSessionServiceTier(id, next)
         if (!isCurrentSession() || row.id !== id) return false
         // A model switch clears an effort the new model does not offer. The
-        // selector shows that gap as the highest level, so persist that token.
+        // selector shows the new model's default in its place.
         if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
-          const highest = listedEfforts(row.reasoningEfforts).at(-1)
-          if (highest) {
-            row = await transport.setSoloSessionReasoningEffort(id, highest)
+          const effort = defaultReasoningEffort(listedEfforts(row.reasoningEfforts))
+          if (effort) {
+            row = await transport.setSoloSessionReasoningEffort(id, effort)
             if (!isCurrentSession() || row.id !== id) return false
           }
         }

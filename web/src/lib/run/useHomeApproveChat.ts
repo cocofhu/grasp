@@ -13,11 +13,8 @@ import {
   publishedClarifyFirstAgentName,
   withPublishedSnapshot,
 } from '@/lib/run/clarifyFirstWorkflow'
-import {
-  listedEfforts,
-  resolveHomeLaunchModel,
-  type HomeLaunchModel,
-} from '@/lib/run/homeLaunchModel'
+import { resolveHomeLaunchModel, type HomeLaunchModel } from '@/lib/run/homeLaunchModel'
+import { defaultReasoningEffort, listedEfforts } from '@/lib/solo/configuredModels'
 import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import {
   clearHomeComposerDraft,
@@ -307,7 +304,7 @@ export function useHomeApproveChat() {
     }
     const listed = listedEfforts(picked?.efforts)
     if (effort && !listed.includes(effort)) {
-      const next = listed.at(-1) || ''
+      const next = defaultReasoningEffort(listed)
       launchReasoningEffort.value = next
       writeLaunchMemory(wfId, { modelId, effort: next, serviceTier: launchServiceTier.value })
       if (launchResetAnnounced !== announce) {
@@ -411,7 +408,7 @@ export function useHomeApproveChat() {
     const listed = listedEfforts(picked?.efforts)
     if (!picked?.serviceTiers?.includes(launchServiceTier.value)) launchServiceTier.value = ''
     if (previousEffort && !listed.includes(previousEffort)) {
-      launchReasoningEffort.value = listed.at(-1) || ''
+      launchReasoningEffort.value = defaultReasoningEffort(listed)
       toast.warn(t('pages.solo.modelSelect.effortResetNotice'))
     }
     rememberLaunchSelection()

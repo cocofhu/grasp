@@ -5,7 +5,7 @@ import { api } from '@/lib/api/api'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import type { Agent, CliCatalogModel, CredentialItem, MessageReference, ModelConfiguration, ModelConnection, Project, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
-import { boundModelChoices } from './configuredModels'
+import { boundModelChoices, defaultReasoningEffort, listedEfforts } from './configuredModels'
 import { parseModelRoute, boundConfigurationIds, effectiveModelAgent } from '@/lib/agent/modelBindings'
 import { ensureModelCatalogEvents, modelCatalogRevision } from '@/lib/api/modelCatalogEvents'
 import { soloPrefs } from './soloPrefs'
@@ -14,10 +14,6 @@ import { soloCreateChoices } from './sessionRepos'
 import { useSoloSessions } from './useSoloSessions'
 import { ONBOARDING_SOLO_AGENT_NAME } from '@/lib/onboarding/onboardingWizard'
 import { firstInstallCompletedAt } from '@/lib/onboarding/firstInstall'
-
-function listedEfforts(efforts?: string[]) {
-  return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
-}
 
 /**
  * Agent / repository selection and session creation shared by the home
@@ -65,7 +61,7 @@ export function useSoloLauncher() {
     const listed = listedEfforts(selected?.efforts)
     if (selected && !selected.serviceTiers?.includes(serviceTier.value)) serviceTier.value = ''
     if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
-      const next = listed.at(-1) || ''
+      const next = defaultReasoningEffort(listed)
       reasoningEffort.value = next
       if (next) error.value = t('pages.solo.modelSelect.effortResetNotice')
     }
@@ -182,13 +178,11 @@ export function useSoloLauncher() {
       const effective = initialModelId.value ? selected : modelChoices.value[0]
       const listed = listedEfforts(effective?.efforts)
       if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
-        reasoningEffort.value = listed.at(-1) || ''
+        reasoningEffort.value = defaultReasoningEffort(listed)
         error.value = t('pages.solo.modelSelect.effortResetNotice')
         return null
       }
-      // The selector shows an empty effort as the highest level. Send that token
-      // so creation does not inherit a lower model-group variant or the tool default.
-      if (!reasoningEffort.value && listed.length) reasoningEffort.value = listed[listed.length - 1]!
+      if (!reasoningEffort.value) reasoningEffort.value = defaultReasoningEffort(listed)
       const s = await api.createSoloSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),

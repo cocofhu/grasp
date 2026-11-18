@@ -1,5 +1,5 @@
 import { parseModelRoute } from '@/lib/agent/modelBindings'
-import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+import { defaultReasoningEffort, listedEfforts, type ConfiguredModelChoice } from '@/lib/solo/configuredModels'
 
 /** Model and effort sent with a home workflow start. Empty modelId is the primary model. */
 export type HomeLaunchModel = {
@@ -14,14 +14,10 @@ type HomeLaunchDecision =
   | { action: 'block'; notice: 'blocked' | 'invalid' }
   | { action: 'send'; model: HomeLaunchModel }
 
-export function listedEfforts(efforts?: string[]): string[] {
-  return [...new Set((efforts || []).map((value) => value.trim()).filter(Boolean))]
-}
-
 /**
  * What the home composer should attach to this start.
  * A clarify-first workflow with a ready catalog always sends the effort on
- * screen, including the highest level when the user left it untouched.
+ * screen, including the default level when the user left it untouched.
  */
 export function resolveHomeLaunchModel(input: {
   clarify: boolean
@@ -52,16 +48,15 @@ export function resolveHomeLaunchModel(input: {
   if (!picked) return { action: 'block', notice: 'invalid' }
   if (input.serviceTier && !picked.serviceTiers?.includes(input.serviceTier)) return { action: 'block', notice: 'invalid' }
   const listed = listedEfforts(picked.efforts)
-  let effort = input.effort.trim()
+  const effort = input.effort.trim()
   if (effort && !listed.includes(effort)) return { action: 'block', notice: 'invalid' }
-  if (!effort && listed.length) effort = listed[listed.length - 1]!
   const modelId = input.modelId ? (picked.modelId ?? parseModelRoute(picked.id).modelId) : ''
   return {
     action: 'send',
     model: {
       configurationId: picked.configurationId || parseModelRoute(picked.id).configurationId || '',
       modelId,
-      reasoningEffort: effort,
+      reasoningEffort: effort || defaultReasoningEffort(listed),
       ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     },
   }

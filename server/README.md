@@ -176,7 +176,7 @@ dsh ACP 文本按已提交的消息块推送，`usage_update` 仅表示上下文
 
 - 使用 [Kimi Code 订阅控制台](https://www.kimi.com/code/console) 创建的 API Key，保存为工作区的 Kimi Code 凭据。国内站连接 `https://api.kimi.com/coding/v1`，国际站连接 `https://api.kimi.ai/coding/v1`。
 - 模型使用订阅版 ID：`k3.1-pro`、`k3.1-pro-highspeed`、`k3`、`k3-256k`、`kimi-for-coding`（K2.8 Preview）和 `kimi-for-coding-highspeed`（K2.7 Code Highspeed），实际访问权限由订阅决定。旧配置中的 `kimi-k3.1-pro`、`kimi-k3.1-pro-highspeed` 和 `kimi-k3` 会映射到对应订阅模型。
-- 除 K2.7 Code Highspeed 外，上述模型提供 `low` / `high` / `max` 思考强度。Solo 沿用当前统一规则：未选强度时使用列表最后一档 `max`。修改在下一轮应用，原生 ACP 确认后再请求模型；并行聊天的模型和强度配置独立保存。
+- 除 K2.7 Code Highspeed 外，上述模型提供 `low` / `high` / `max` 思考强度。Solo 默认使用模型提供的 `max`，没有 `max` 时使用列表最后一档。修改在下一轮应用，原生 ACP 确认后再请求模型；并行聊天的模型和强度配置独立保存。
 
 ### 模型目录与 Solo 会话设置
 

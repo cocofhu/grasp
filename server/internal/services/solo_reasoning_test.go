@@ -416,58 +416,61 @@ func TestSoloFailedSettingsRollbackBothAndPreserveNewerChoice(t *testing.T) {
 	}
 }
 
-func TestSoloEmptyEffortUsesHighestListedLevelOnTheNextTurn(t *testing.T) {
-	solo, _, _, _ := newSoloFixture(t, 0, 3)
-	prepareSoloEfforts(t, solo)
-	var connection models.ModelConnection
-	if err := solo.db.First(&connection, "id = ?", "effort-connection").Error; err != nil {
-		t.Fatal(err)
-	}
-	connection.Models[0].ReasoningEfforts = []string{"low", "medium", "high"}
-	if err := solo.db.Save(&connection).Error; err != nil {
-		t.Fatal(err)
-	}
-	row := &models.SoloSession{ID: "empty-effort", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, CurrentModelSet: true, AppliedModelSet: true}
-	if err := solo.db.Create(row).Error; err != nil {
-		t.Fatal(err)
-	}
-	aligner := &settingsAligner{}
-	solo.SetModelAlignerForTest(aligner)
-	loaded, err := solo.Require(row.ID, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed, err := solo.alignSessionModel(context.Background(), solo.newChat(row.ID), 1, loaded)
-	if err != nil || !changed {
-		t.Fatalf("empty effort was not applied: changed=%v err=%v", changed, err)
-	}
-	if got := aligner.snapshot(); !reflect.DeepEqual(got, [][2]string{{"", "high"}}) {
-		t.Fatalf("applied effort: %v", got)
-	}
-	stored, _ := solo.Require(row.ID, "alice")
-	if stored.CurrentReasoningEffort != "high" || stored.AppliedReasoningEffort != "high" {
-		t.Fatalf("empty effort was not stored as the highest level: %+v", stored)
-	}
-
-	low := &models.SoloSession{ID: "kept-low", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, CurrentModelSet: true, AppliedModelSet: true, CurrentReasoningEffort: "low", AppliedReasoningEffort: "low"}
-	if err := solo.db.Create(low).Error; err != nil {
-		t.Fatal(err)
-	}
-	before := len(aligner.snapshot())
-	kept, err := solo.Require(low.ID, "alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed, err = solo.alignSessionModel(context.Background(), solo.newChat(low.ID), 1, kept)
-	if err != nil || changed {
-		t.Fatalf("saved low was realigned: changed=%v err=%v", changed, err)
-	}
-	if len(aligner.snapshot()) != before {
-		t.Fatalf("saved low was sent: %v", aligner.snapshot())
-	}
-	stored, _ = solo.Require(low.ID, "alice")
-	if stored.CurrentReasoningEffort != "low" || stored.AppliedReasoningEffort != "low" {
-		t.Fatalf("saved low was promoted: %+v", stored)
+func TestSoloNextTurnReasoningEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		choices []string
+		saved   string
+		want    string
+	}{
+		{"default max", []string{"low", "max", "ultra"}, "", "max"},
+		{"default without max", []string{"low", "medium", "high"}, "", "high"},
+		{"saved low", []string{"low", "max", "ultra"}, "low", "low"},
+		{"saved ultra", []string{"low", "max", "ultra"}, "ultra", "ultra"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			solo, _, _, _ := newSoloFixture(t, 0, 3)
+			prepareSoloEfforts(t, solo)
+			var connection models.ModelConnection
+			if err := solo.db.First(&connection, "id = ?", "effort-connection").Error; err != nil {
+				t.Fatal(err)
+			}
+			connection.Models[0].ReasoningEfforts = tc.choices
+			if err := solo.db.Save(&connection).Error; err != nil {
+				t.Fatal(err)
+			}
+			row := &models.SoloSession{
+				ID: "next-turn-effort", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning,
+				CurrentModelSet: true, AppliedModelSet: true, CurrentReasoningEffort: tc.saved, AppliedReasoningEffort: tc.saved,
+			}
+			if err := solo.db.Create(row).Error; err != nil {
+				t.Fatal(err)
+			}
+			aligner := &settingsAligner{}
+			solo.SetModelAlignerForTest(aligner)
+			current, err := solo.Require(row.ID, "alice")
+			if err != nil {
+				t.Fatal(err)
+			}
+			changed, err := solo.alignSessionModel(context.Background(), solo.newChat(row.ID), 1, current)
+			if err != nil || changed != (tc.want != tc.saved) {
+				t.Fatalf("next turn alignment: changed=%v err=%v", changed, err)
+			}
+			var calls [][2]string
+			if tc.want != tc.saved {
+				calls = append(calls, [2]string{"", tc.want})
+			}
+			if got := aligner.snapshot(); !reflect.DeepEqual(got, calls) {
+				t.Fatalf("applied settings: got %v, want %v", got, calls)
+			}
+			stored, err := solo.Require(row.ID, "alice")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.CurrentReasoningEffort != tc.want || stored.AppliedReasoningEffort != tc.want {
+				t.Fatalf("stored effort: current=%q applied=%q, want %q", stored.CurrentReasoningEffort, stored.AppliedReasoningEffort, tc.want)
+			}
+		})
 	}
 }
 

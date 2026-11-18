@@ -1067,6 +1067,6 @@ describe('useHomeApproveChat', () => {
     await flushPromises()
     expect(chat.launchModelId.value).toBe('')
     expect(chat.launchReasoningEffort.value).toBe('')
-    expect(mocks.toastWarn).toHaveBeenCalledWith('上次选择的模型或思考强度已不可用，已改回主模型和最高思考强度。')
+    expect(mocks.toastWarn).toHaveBeenCalledWith('上次选择的模型或思考强度已不可用，已改回主模型和默认思考强度。')
   })
 })

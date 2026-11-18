@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo, type WebSocketRoute } from '@playwright/test'
+import { expect, test, type Locator, type Page, type TestInfo, type WebSocketRoute } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
@@ -867,7 +867,7 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
     { id: modelId, name: 'GPT-6.2 Sol', vendor: 'openai', efforts, serviceTiers: ['fast'] },
     { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', vendor: 'openai', efforts, serviceTiers: ['fast'] },
   ] } }))
-  const session = { id: 'solo-fast', title: 'Fast task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], backend: 'codex', currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'codex-fast', reasoningEffort: 'low', reasoningEfforts: efforts, serviceTier: '', serviceTiers: ['fast'] }
+  const session = { id: 'solo-fast', title: 'Fast task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], backend: 'codex', currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'codex-fast', reasoningEffort: '', reasoningEfforts: efforts, serviceTier: '', serviceTiers: ['fast'] }
   const writes: Record<string, unknown>[] = []
   await routeApi(page, '**/api/solo/sessions**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -892,22 +892,56 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   expect((await entryIcon.boundingBox())!.width).toBeGreaterThanOrEqual(24)
   await page.getByTestId('solo-effort-open').click()
   await settleVisualTransitions(page)
+  const slider = page.getByTestId('solo-effort-slider')
+  const reset = page.getByTestId('solo-effort-reset')
+  await expect(slider).toHaveValue('4')
+  await expect(reset).toBeDisabled()
   const fast = page.getByTestId('solo-fast-toggle')
+  async function expectClearFastButton() {
+    await expect(fast).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    await expect(fast).toHaveCSS('border-width', '0px')
+  }
   expect((await fast.boundingBox())!.width).toBeGreaterThanOrEqual(36)
-  const ink = await fast.locator('svg path').evaluate(path => {
-    const box = (path as SVGGraphicsElement).getBBox()
-    const matrix = (path as SVGGraphicsElement).getScreenCTM()!
-    return { width: box.width * matrix.a, height: box.height * matrix.d }
-  })
-  expect(ink.width).toBeGreaterThanOrEqual(12)
-  expect(ink.height).toBeGreaterThanOrEqual(20)
+  const icon = fast.locator('svg')
+  const bolt = icon.locator('path')
+  expect(await icon.boundingBox()).toMatchObject({ width: 15, height: 15 })
+  await expect(bolt).toHaveCSS('fill-opacity', '0')
+  await expect(bolt).toHaveCSS('stroke', 'rgb(141, 142, 143)')
+  function watchTransitions(glyph: Locator) {
+    return glyph.evaluateHandle(element => {
+      const properties = new Set<string>()
+      element.addEventListener('transitionrun', event => properties.add((event as TransitionEvent).propertyName))
+      return properties
+    })
+  }
+  const boltTransitions = await watchTransitions(icon)
+  await expectClearFastButton()
   await fast.hover()
+  await expect.poll(() => boltTransitions.evaluate(properties => properties.has('transform'))).toBe(true)
+  await expectClearFastButton()
   await expect(page.getByRole('tooltip')).toContainText('响应更快，用量更多')
   await fast.click()
   await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: 'fast' })
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('0')
-  await page.getByTestId('solo-effort-slider').press('End')
+  await expect(bolt).toHaveCSS('fill', 'rgb(0, 0, 0)')
+  await expect(bolt).toHaveCSS('fill-opacity', '1')
+  expect(await boltTransitions.evaluate(properties => properties.has('fill-opacity'))).toBe(true)
+  await expectClearFastButton()
+  await page.mouse.move(0, 0)
+  await expectClearFastButton()
+  await expect(slider).toHaveValue('4')
+  await slider.press('Home')
+  await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'low' })
+  const restoreIcon = reset.locator('svg')
+  const restoreTransitions = await watchTransitions(restoreIcon)
+  await reset.hover()
+  await expect.poll(() => restoreTransitions.evaluate(properties => properties.has('transform'))).toBe(true)
+  await reset.click()
+  await expect.poll(() => restoreTransitions.evaluate(properties => properties.has('rotate'))).toBe(true)
+  await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'max' })
+  await expect(slider).toHaveValue('4')
+  await expect(fast).toHaveAttribute('aria-pressed', 'true')
+  await slider.press('End')
   await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'ultra' })
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
   await fast.hover()
@@ -927,16 +961,29 @@ test('Solo Fast mode uses a larger lightning control and persists independently 
   await trigger.click()
   await page.getByTestId('solo-effort-open').click()
   await expect(fast).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('5')
+  await expect(slider).toHaveValue('5')
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await page.getByTestId('solo-model-select-panel').boundingBox()
   expect(panel!.x).toBeGreaterThanOrEqual(0)
   expect(panel!.x + panel!.width).toBeLessThanOrEqual(390)
   await settleVisualTransitions(page)
   await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-mobile.png'), animations: 'disabled' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await fast.hover()
+  await expect(icon).toHaveCSS('transition-duration', '0s')
+  await expect(icon).toHaveCSS('transform', 'none')
   await fast.click()
   await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: '' })
-  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('5')
+  await expect(bolt).toHaveCSS('fill-opacity', '0')
+  await expect(slider).toHaveValue('5')
+  await reset.hover()
+  await expect(restoreIcon).toHaveCSS('transition-duration', '0s')
+  await expect(restoreIcon).toHaveCSS('transform', 'none')
+  await reset.press('Enter')
+  await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'max' })
+  await expect(slider).toHaveValue('4')
+  await expect(reset).toBeDisabled()
+  await expect(fast).toHaveAttribute('aria-pressed', 'false')
   expect(writes.every(body => !Object.hasOwn(body, 'modelId'))).toBe(true)
 })
 
