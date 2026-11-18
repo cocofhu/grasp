@@ -35,7 +35,7 @@ func TestConfiguredModelsCarryExactEffortsWithoutExpandingModels(t *testing.T) {
 }
 
 func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.T) {
-	env := map[string]string{"ANTHROPIC_API_KEY": "old", "OPENAI_BASE_URL": "old", "GITHUB_TOKEN": "git", "MCP_URL": "mcp", "CODEBUDDY_BIG_SLOW_MODEL": "old-model", "CLAUDE_CODE_USE_VERTEX": "1"}
+	env := map[string]string{"ANTHROPIC_API_KEY": "old", "OPENAI_BASE_URL": "old", "GITHUB_TOKEN": "git", "MCP_URL": "mcp", "CODEBUDDY_BIG_SLOW_MODEL": "old-model", "CLAUDE_CODE_USE_VERTEX": "1", EnvACPBridgeServiceTier: "true"}
 	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily"}
 	resolve := func(backend string, got *modelrouting.Binding) (modelrouting.Resolved, error) {
 		if backend != "codex" || got != binding {
@@ -54,7 +54,7 @@ func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.
 	if env[EnvModelAPIKey] != "private-key-value" || env[EnvACPBridgeModel] != "vendor/raw/model" {
 		t.Fatal("selected secret or raw model was lost")
 	}
-	if env["ANTHROPIC_API_KEY"] != "" || env["OPENAI_BASE_URL"] != "" || env["CODEBUDDY_BIG_SLOW_MODEL"] != "" || env["CLAUDE_CODE_USE_VERTEX"] != "" || env["GITHUB_TOKEN"] != "git" || env["MCP_URL"] != "mcp" {
+	if env["ANTHROPIC_API_KEY"] != "" || env["OPENAI_BASE_URL"] != "" || env["CODEBUDDY_BIG_SLOW_MODEL"] != "" || env["CLAUDE_CODE_USE_VERTEX"] != "" || env[EnvACPBridgeServiceTier] != "" || env["GITHUB_TOKEN"] != "git" || env["MCP_URL"] != "mcp" {
 		t.Fatalf("incorrect environment isolation: %v", env)
 	}
 	if _, err := PrepareBoundAuth(BackendCodex, env, ""); err != nil {

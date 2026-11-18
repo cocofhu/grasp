@@ -406,7 +406,7 @@ function recordRequest(body, protocol, normalized, decision, sequence) {
   for (const [key, value] of Object.entries({reasoning_effort: body.reasoning_effort, effort: body.reasoning?.effort, thinking_type: body.thinking?.type, thinking_effort: body.thinking?.effort, thinking_budget: body.thinking?.budget_tokens, output_effort: body.output_config?.effort})) {
     if (value !== undefined) reasoning[key] = scalar(value)
   }
-  return {sequence, protocol, model: identifier(body.model), stream: Boolean(body.stream), reasoning,
+  return {sequence, protocol, model: identifier(body.model), stream: Boolean(body.stream), reasoning, serviceTier: scalar(body.service_tier),
     // Canonical disjoint buckets provide independent accounting evidence for
     // the native CLI matrix, including cache hits and Anthropic cache writes.
     usage: {inputTokens: protocol === 'messages' ? TOKEN_USAGE.input : TOKEN_USAGE.input - TOKEN_USAGE.cacheRead,

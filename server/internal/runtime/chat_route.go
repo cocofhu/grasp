@@ -133,7 +133,7 @@ func (c *acpProvider) alignVisitRoute(ctx context.Context, req NodeReq, sess *re
 		if err := c.restoreDefaultRoute(ctx, req, sess); err != nil {
 			return "", err
 		}
-		if err := c.alignChatSettings(ctx, sess, "", ""); err != nil {
+		if err := c.alignChatSettings(ctx, sess, "", "", ""); err != nil {
 			return "", err
 		}
 		c.stampRouteExecution(sess, nil)
@@ -202,7 +202,7 @@ func (c *acpProvider) applyChatRoute(ctx context.Context, req NodeReq, sess *rea
 			sess.routeConfigurationID = wantID
 		}
 	}
-	return c.alignChatSettings(ctx, sess, route.ModelID, route.ReasoningEffort)
+	return c.alignChatSettings(ctx, sess, route.ModelID, route.ReasoningEffort, route.ServiceTier)
 }
 
 func (c *acpProvider) rollbackChatRoute(ctx context.Context, req NodeReq, sess *reactSession) error {
@@ -212,7 +212,7 @@ func (c *acpProvider) rollbackChatRoute(ctx context.Context, req NodeReq, sess *
 			return err
 		}
 		c.stampRouteExecution(sess, nil)
-		return c.alignChatSettings(ctx, sess, "", "")
+		return c.alignChatSettings(ctx, sess, "", "", "")
 	}
 	if err := c.applyChatRoute(ctx, req, sess, applied); err != nil {
 		return err
@@ -226,14 +226,14 @@ func (c *acpProvider) resetLiveChatModel(ctx context.Context, sb *sandbox.Sandbo
 		return nil
 	}
 	sess := &reactSession{sb: sb, acp: acp}
-	if err := c.alignChatSettings(ctx, sess, "", ""); err != nil {
+	if err := c.alignChatSettings(ctx, sess, "", "", ""); err != nil {
 		return err
 	}
 	c.stampRouteExecution(sess, nil)
 	return nil
 }
 
-func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession, model, effort string) error {
+func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession, model, effort, tier string) error {
 	if sess == nil || sess.sb == nil {
 		return fmt.Errorf("no sandbox")
 	}
@@ -243,27 +243,38 @@ func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession,
 	}
 	model = strings.TrimSpace(model)
 	effort = strings.TrimSpace(effort)
+	tier = strings.TrimSpace(tier)
 	cur, err := sandbox.GetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat)
 	if err != nil {
 		// An unread session is not the primary model. Reset and align both
 		// fail so a shared sandbox cannot keep a chat-selected model.
 		return err
 	}
-	if chatSettingsMatch(cur, model, effort) {
+	var wantTier *string
+	if cur.ServiceTier != nil {
+		wantTier = &tier
+	} else if tier != "" {
+		return fmt.Errorf("runtime does not support service tiers")
+	}
+	if chatSettingsMatch(cur, model, effort, tier) {
 		return nil
 	}
-	if err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort); err != nil {
+	if err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantTier); err != nil {
 		return err
 	}
 	return nil
 }
 
-func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort string) bool {
+func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort, tier string) bool {
 	gotEffort := ""
 	if cur.ReasoningEffort != nil {
 		gotEffort = strings.TrimSpace(*cur.ReasoningEffort)
 	}
-	return strings.TrimSpace(cur.Selected) == strings.TrimSpace(model) && gotEffort == strings.TrimSpace(effort)
+	gotTier := ""
+	if cur.ServiceTier != nil {
+		gotTier = strings.TrimSpace(*cur.ServiceTier)
+	}
+	return strings.TrimSpace(cur.Selected) == strings.TrimSpace(model) && gotEffort == strings.TrimSpace(effort) && gotTier == strings.TrimSpace(tier)
 }
 
 func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *reactSession, want sandbox.Spec) error {
@@ -320,6 +331,7 @@ func (c *acpProvider) stampRouteExecution(sess *reactSession, route *ChatRoute) 
 	if route == nil || !route.Set {
 		exec.ModelID = strings.TrimSpace(sess.acp.BridgeModel())
 		exec.ReasoningEffort = ""
+		exec.ServiceTier = ""
 	} else {
 		model := strings.TrimSpace(route.ModelID)
 		if model == "" {
@@ -327,6 +339,7 @@ func (c *acpProvider) stampRouteExecution(sess *reactSession, route *ChatRoute) 
 		}
 		exec.ModelID = model
 		exec.ReasoningEffort = strings.TrimSpace(route.ReasoningEffort)
+		exec.ServiceTier = strings.TrimSpace(route.ServiceTier)
 		if id := strings.TrimSpace(route.ConfigurationID); id != "" {
 			exec.ConfigurationID = id
 		}

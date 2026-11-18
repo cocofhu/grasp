@@ -274,6 +274,44 @@ test('create credentials, then save a reusable tool-credential-model configurati
   expect(state.keyWrites).toHaveLength(1)
 })
 
+test('Codex GPT-6.2 models can be selected and persist when the configuration is reopened', async ({ page }) => {
+  const state = await setup(page)
+  state.credentials.push({ id: 'codex-login', name: 'Codex login', purpose: 'tool_auth', toolId: 'codex', provider: 'codex', type: 'ai', secretKind: 'login_file', configured: true, enabled: true })
+  const efforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  await routeApi(page, '**/api/acp-backends/codex/models', route => route.fulfill({ json: { models: [
+    { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', tags: ['vision', 'reasoning'], context: 500, recommended: true, efforts },
+    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', vendor: 'openai', tags: ['vision', 'reasoning'], context: 272, recommended: true, efforts },
+    { id: 'gpt-6.1-terra', name: 'GPT-6.1 Terra', vendor: 'openai', tags: ['vision', 'reasoning'], context: 500, efforts },
+  ] } }))
+  await openCredentials(page)
+  await page.getByTestId('credentials-tab-models').click()
+  await addModelConfiguration(page)
+  await page.getByTestId('model-configuration-name').fill('Team GPT-6.2')
+  await page.getByTestId('model-configuration-backend-codex').click()
+  await page.getByTestId('model-configuration-next').click()
+  await chooseCredential(page, 'platform:codex-login')
+  await page.getByTestId('model-configuration-next').click()
+  await page.getByTestId('cli-model-trigger').click()
+  await expect(page.getByTestId('cli-model-option-gpt-6.2-sol')).toContainText('GPT-6.2 Sol')
+  await expect(page.getByTestId('cli-model-option-gpt-6.2-astra')).toContainText('GPT-6.2 Astra')
+  await expect(page.getByTestId('cli-model-option-gpt-6.1-terra')).toContainText('GPT-6.1 Terra')
+  await page.getByTestId('cli-model-option-gpt-6.2-sol').click()
+  await page.getByTestId('model-configuration-add-model').click()
+  await expect(page.getByTestId('model-configuration-aux-select-0')).toContainText('GPT-6.2 Astra')
+  await page.getByTestId('model-configuration-save').click()
+  await expect(page.getByTestId('model-configuration-configured-model')).toContainText('Team GPT-6.2')
+  const binding = { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['gpt-6.2-astra'] }
+  expect(state.configurationWrites).toEqual([expect.objectContaining({ backend: 'codex', binding })])
+  await page.reload()
+  await page.getByTestId('credentials-tab-models').click()
+  await page.getByTestId('model-configuration-configured-model').getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByTestId('model-configuration-next').click()
+  await page.getByTestId('model-configuration-next').click()
+  await expect(page.getByTestId('cli-model-trigger')).toContainText('GPT-6.2 Sol')
+  await expect(page.getByTestId('model-configuration-aux-select-0')).toContainText('GPT-6.2 Astra')
+  expect(state.configurations[0]!.binding).toEqual(binding)
+})
+
 test('named model configurations preserve tool and credential identity when edited or disabled', async ({ page }) => {
   const state = await setup(page, [connection('responses-account', 'openai-responses', 'vendor/raw/model')])
   state.configurations.push({ id: 'configured-model', name: 'Team Codex model', backend: 'codex', binding: { kind: 'connection', connectionId: 'responses-account', modelId: 'vendor/raw/model' }, state: 'active', revision: 1 })
@@ -817,6 +855,90 @@ for (const backend of ['cursor', 'opencode', 'deepseek_harness']) {
   })
 }
 
+
+test('Solo Fast mode uses a larger lightning control and persists independently of reasoning effort', async ({ page }, testInfo) => {
+  const state = await setup(page)
+  const modelId = 'gpt-6.2-sol'
+  const efforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  state.credentials.push({ id: 'codex-login', name: 'Codex login', purpose: 'tool_auth', toolId: 'codex', provider: 'codex', secretKind: 'login_file', configured: true, enabled: true })
+  state.configurations.push({ id: 'codex-fast', name: 'Codex', backend: 'codex', binding: { kind: 'platform', credentialId: 'codex-login', modelId, auxiliaryModelIds: ['gpt-6.2-astra'] }, state: 'active', revision: 1 })
+  state.agents.push({ name: 'Solo', acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'codex-fast' }, files: [], mcp: [], env: {}, layout: {} })
+  await routeApi(page, '**/api/acp-backends/codex/models', route => route.fulfill({ json: { models: [
+    { id: modelId, name: 'GPT-6.2 Sol', vendor: 'openai', efforts, serviceTiers: ['fast'] },
+    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', vendor: 'openai', efforts, serviceTiers: ['fast'] },
+  ] } }))
+  const session = { id: 'solo-fast', title: 'Fast task', agentName: 'Solo', userId: 'preview', status: 'running', createdAt: '', updatedAt: '', restarts: 0, busy: false, waiting: 0, repos: [], backend: 'codex', currentModelSet: true, currentModelId: modelId, currentConfigurationId: 'codex-fast', reasoningEffort: 'low', reasoningEfforts: efforts, serviceTier: '', serviceTiers: ['fast'] }
+  const writes: Record<string, unknown>[] = []
+  await routeApi(page, '**/api/solo/sessions**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+    if (path.endsWith('/messages') || path.endsWith('/env')) return route.fulfill({ json: [] })
+    if (path.endsWith('/model')) {
+      const body = route.request().postDataJSON()
+      writes.push(body)
+      if (Object.hasOwn(body, 'serviceTier')) session.serviceTier = typeof body.serviceTier === 'string' ? body.serviceTier : ''
+      if (Object.hasOwn(body, 'reasoningEffort')) session.reasoningEffort = String(body.reasoningEffort)
+    }
+    return route.fulfill({ json: session })
+  })
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', ws => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/workspace-config.html?view=/solo/solo-fast')
+  const trigger = page.getByTestId('solo-model-select-trigger')
+  await trigger.click()
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-fast-menu-desktop.png'), animations: 'disabled' })
+  const entryIcon = page.getByTestId('solo-effort-open').locator('[data-icon="priority-bolt"]')
+  expect((await entryIcon.boundingBox())!.width).toBeGreaterThanOrEqual(24)
+  await page.getByTestId('solo-effort-open').click()
+  await settleVisualTransitions(page)
+  const fast = page.getByTestId('solo-fast-toggle')
+  expect((await fast.boundingBox())!.width).toBeGreaterThanOrEqual(36)
+  const ink = await fast.locator('svg path').evaluate(path => {
+    const box = (path as SVGGraphicsElement).getBBox()
+    const matrix = (path as SVGGraphicsElement).getScreenCTM()!
+    return { width: box.width * matrix.a, height: box.height * matrix.d }
+  })
+  expect(ink.width).toBeGreaterThanOrEqual(12)
+  expect(ink.height).toBeGreaterThanOrEqual(20)
+  await fast.hover()
+  await expect(page.getByRole('tooltip')).toContainText('响应更快，用量更多')
+  await fast.click()
+  await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: 'fast' })
+  await expect(fast).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('0')
+  await page.getByTestId('solo-effort-slider').press('End')
+  await expect.poll(() => writes.at(-1)).toEqual({ reasoningEffort: 'ultra' })
+  await expect(fast).toHaveAttribute('aria-pressed', 'true')
+  await fast.hover()
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-desktop.png'), animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('shell-theme-toggle').click()
+  await trigger.click()
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-fast-menu-desktop-dark.png'), animations: 'disabled' })
+  await page.getByTestId('solo-effort-open').click()
+  await fast.hover()
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-desktop-dark.png'), animations: 'disabled' })
+  await page.reload()
+  await expect(page.getByTestId('solo-model-fast-label')).toHaveText('Fast')
+  await trigger.click()
+  await page.getByTestId('solo-effort-open').click()
+  await expect(fast).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('5')
+  await page.setViewportSize({ width: 390, height: 844 })
+  const panel = await page.getByTestId('solo-model-select-panel').boundingBox()
+  expect(panel!.x).toBeGreaterThanOrEqual(0)
+  expect(panel!.x + panel!.width).toBeLessThanOrEqual(390)
+  await settleVisualTransitions(page)
+  await page.screenshot({ path: testInfo.outputPath('solo-fast-effort-mobile.png'), animations: 'disabled' })
+  await fast.click()
+  await expect.poll(() => writes.at(-1)).toEqual({ serviceTier: '' })
+  await expect(page.getByTestId('solo-effort-slider')).toHaveValue('5')
+  expect(writes.every(body => !Object.hasOwn(body, 'modelId'))).toBe(true)
+})
 
 test('Solo uses real model names and sends exact model IDs and advertised effort values', async ({ page }, testInfo) => {
   const primary = 'kimi-k3.1-pro'

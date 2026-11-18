@@ -66,10 +66,14 @@ type OpenOptions struct {
 	// ReasoningEffortSet distinguishes an explicit tool-default reset from
 	// callers that still follow the legacy process environment.
 	ReasoningEffortSet bool
-	McpServers         json.RawMessage
-	ResumeSessionID    string // one-shot resume pointer; empty for a fresh session
-	CustomArgs         []string
-	AutoPermission     bool
+	// ServiceTier is the chat's speed tier; empty is the tool's standard tier.
+	ServiceTier string
+	// ServiceTierSet makes an explicit standard reset override inherited CLI config.
+	ServiceTierSet  bool
+	McpServers      json.RawMessage
+	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
+	CustomArgs      []string
+	AutoPermission  bool
 }
 
 // Model is one entry of a provider's model catalog.

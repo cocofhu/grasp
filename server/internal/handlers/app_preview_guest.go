@@ -26,6 +26,7 @@ type previewGuestRequest struct {
 	ID              string  `json:"id,omitempty"`
 	ModelID         *string `json:"modelId"`
 	ReasoningEffort string  `json:"reasoningEffort"`
+	ServiceTier     *string `json:"serviceTier"`
 	ctx             context.Context
 	finish          context.CancelFunc
 }
@@ -167,7 +168,7 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 					continue
 				}
 				if selection != nil && request.ModelID == nil {
-					if _, err := client.SetIndependentModelSettings(turnCtx, *selection.ModelID, selection.ReasoningEffort); err != nil {
+					if _, err := client.SetIndependentModelSettings(turnCtx, *selection.ModelID, selection.ReasoningEffort, selection.ServiceTier); err != nil {
 						closeChat()
 						client, closeChat = nil, nil
 						writePreviewGuestUnavailable(conn, request)
@@ -175,10 +176,27 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 					}
 				}
 			}
+			if request.ModelID == nil && request.ServiceTier != nil {
+				current, readErr := h.Sbx.ChatModelSettings(turnCtx, sb.ID, client.ChatID())
+				if readErr != nil {
+					if writeChatJSON(conn, gin.H{"type": "model", "ok": false}) != nil {
+						return
+					}
+					continue
+				}
+				completePreviewGuestTierSelection(&request, current)
+			}
 			if request.ModelID != nil {
-				restarted, err := client.SetIndependentModelSettings(turnCtx, *request.ModelID, request.ReasoningEffort)
+				restarted, err := client.SetIndependentModelSettings(turnCtx, *request.ModelID, request.ReasoningEffort, request.ServiceTier)
 				restoreHistory = restoreHistory || restarted
 				if err == nil {
+					// Remember the actual value after an implicit model switch, which
+					// can clear a speed tier unsupported by the new model.
+					if current, readErr := h.Sbx.ChatModelSettings(turnCtx, sb.ID, client.ChatID()); readErr == nil {
+						request.ServiceTier = current.ServiceTier
+					} else if request.ServiceTier == nil && selection != nil {
+						request.ServiceTier = selection.ServiceTier
+					}
 					selection = &request
 				}
 				if writeChatJSON(conn, gin.H{"type": "model", "ok": err == nil}) != nil {
@@ -243,7 +261,7 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 			return
 		}
 		if frame.Type == "cancel" {
-			if frame.ID == "" || frame.ModelID != nil || frame.Text != "" || frame.ReasoningEffort != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 {
+			if frame.ID == "" || frame.ModelID != nil || frame.Text != "" || frame.ReasoningEffort != "" || frame.ServiceTier != nil || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 {
 				return
 			}
 			turns.cancel(frame.ID)
@@ -252,11 +270,11 @@ func readPreviewGuestRequests(ctx context.Context, cancel context.CancelFunc, co
 		if frame.Type != "" {
 			return
 		}
-		if frame.ModelID == nil {
+		if frame.ModelID == nil && frame.ServiceTier == nil {
 			if !frame.normalize() {
 				return
 			}
-		} else if frame.Text != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 || len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 {
+		} else if frame.Text != "" || len(frame.Annotations)+len(frame.Images)+len(frame.References) != 0 || frame.ModelID != nil && len(*frame.ModelID) > 512 || len(frame.ReasoningEffort) > 64 || frame.ServiceTier != nil && len(*frame.ServiceTier) > 64 || frame.ModelID == nil && frame.ReasoningEffort != "" {
 			return
 		}
 		if !turns.prepare(ctx, &frame) {
@@ -355,4 +373,13 @@ func previewGuestNarration(result *sandbox.ChatResult) string {
 		}
 	}
 	return strings.Join(append(parts, result.Narration), "\n\n")
+}
+
+// Tier-only guest settings preserve the independent chat's actual model and effort.
+func completePreviewGuestTierSelection(request *previewGuestRequest, current sandbox.ChatModelSettings) {
+	model := current.Selected
+	request.ModelID = &model
+	if current.ReasoningEffort != nil {
+		request.ReasoningEffort = *current.ReasoningEffort
+	}
 }

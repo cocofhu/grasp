@@ -27,12 +27,13 @@ type startRunBody struct {
 	// instead of the latest saved head. Editor, home, and sidebar starts omit it.
 	PublishedSnapshot bool `json:"publishedSnapshot"`
 	// Launch* is the home composer's optional model for the first clarify
-	// visit. All three absent keeps the previous start behavior. An empty
+	// visit. All model settings absent keeps the previous start behavior. An empty
 	// model id means that Agent's primary model. Pointers distinguish omit
 	// from an explicit empty string.
 	LaunchConfigurationID *string `json:"launchConfigurationId"`
 	LaunchModelID         *string `json:"launchModelId"`
 	LaunchReasoningEffort *string `json:"launchReasoningEffort"`
+	LaunchServiceTier     *string `json:"launchServiceTier"`
 	// Repos picks a subset of the workflow's bound repositories; omitted
 	// takes all of them.
 	Repos *[]models.RepoChoice `json:"repos"`
@@ -76,7 +77,7 @@ func (h *Handlers) firstMessage(c *gin.Context, workflowID string, b *firstMessa
 }
 
 func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
-	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil {
+	if b.LaunchConfigurationID == nil && b.LaunchModelID == nil && b.LaunchReasoningEffort == nil && b.LaunchServiceTier == nil {
 		return engine.LaunchChoice{Repos: b.Repos}
 	}
 	choice := engine.LaunchChoice{Set: true, Repos: b.Repos}
@@ -88,6 +89,9 @@ func launchChoiceFromBody(b startRunBody) engine.LaunchChoice {
 	}
 	if b.LaunchReasoningEffort != nil {
 		choice.ReasoningEffort = strings.TrimSpace(*b.LaunchReasoningEffort)
+	}
+	if b.LaunchServiceTier != nil {
+		choice.ServiceTier = strings.TrimSpace(*b.LaunchServiceTier)
 	}
 	return choice
 }

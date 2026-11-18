@@ -4,6 +4,9 @@ import { effortChoices, validEffortToken } from '@/lib/agent/fixedEffort'
 import { credentialUsable } from '@/lib/agent/modelRouting'
 import { boundConfigurationIds, modelRouteValue } from '@/lib/agent/modelBindings'
 
+/** The speed tier behind the Fast toggle. Empty selects the standard tier. */
+export const FAST_SERVICE_TIER = 'fast'
+
 export interface ConfiguredModelChoice {
   id: string
   name: string
@@ -14,6 +17,8 @@ export interface ConfiguredModelChoice {
   unavailable: boolean
   /** Exact levels accepted by this model and its coding-tool adapter. */
   efforts?: string[]
+  /** Speed tiers beyond standard that this exact model accepts. */
+  serviceTiers?: string[]
   configurationId?: string
   modelId?: string
   configurationName?: string
@@ -104,6 +109,7 @@ export function configuredModelChoices(input: {
       backend: !vendor,
       unavailable: input.catalogReady && !known,
       efforts,
+      ...(binding.kind === 'platform' && input.backend === 'codex' && cli?.id === id && cli.serviceTiers?.length ? { serviceTiers: [...cli.serviceTiers] } : {}),
     })
   }
   return choices

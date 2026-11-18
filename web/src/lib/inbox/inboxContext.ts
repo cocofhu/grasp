@@ -52,6 +52,8 @@ export type ClarifyInboxContext = {
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }
 }
@@ -118,6 +120,8 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
               currentModelId: ctx.clarify.currentModelId,
               currentModelSet: !!ctx.clarify.currentModelSet,
               reasoningEffort: ctx.clarify.reasoningEffort,
+              ...(ctx.clarify.serviceTier === undefined ? {} : { serviceTier: ctx.clarify.serviceTier }),
+              ...(ctx.clarify.serviceTiers === undefined ? {} : { serviceTiers: ctx.clarify.serviceTiers }),
             }
           : {}),
         ...(ctx.clarify.modelNotice ? { modelNotice: ctx.clarify.modelNotice } : {}),

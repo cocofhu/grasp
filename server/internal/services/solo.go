@@ -67,6 +67,7 @@ type SoloCreateInput struct {
 	InitialModelID         string               `json:"initialModelId,omitempty"`
 	InitialConfigurationID string               `json:"initialConfigurationId,omitempty"`
 	ReasoningEffort        string               `json:"reasoningEffort,omitempty"`
+	ServiceTier            string               `json:"serviceTier,omitempty"`
 }
 
 // SoloSandboxInfo is the sandbox state shown on a session.
@@ -96,6 +97,7 @@ type SoloSessionView struct {
 	ArtifactRunID    string                    `json:"artifactRunId,omitempty"`
 	Capabilities     *models.AgentCapabilities `json:"capabilities,omitempty"`
 	ReasoningEfforts []string                  `json:"reasoningEfforts"`
+	ServiceTiers     []string                  `json:"serviceTiers"`
 	// Backend and Model describe the Agent CLI for display.
 	Backend string `json:"backend,omitempty"`
 	Model   string `json:"model,omitempty"`
@@ -322,7 +324,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 		ctx, cancel = context.WithTimeout(ctx, soloLiveViewBudget)
 		defer cancel()
 	}
-	v := SoloSessionView{SoloSession: *row, ReasoningEfforts: []string{}}
+	v := SoloSessionView{SoloSession: *row, ReasoningEfforts: []string{}, ServiceTiers: s.ServiceTiers(row)}
 	if len(v.Repos) == 0 {
 		v.Repos = legacySessionRepos(row)
 	}
@@ -463,6 +465,10 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if err != nil {
 		return nil, err
 	}
+	serviceTier, err := resolveServiceTier("", &in.ServiceTier, s.serviceTiers(effective, initialModel))
+	if err != nil {
+		return nil, err
+	}
 	effort := strings.TrimSpace(in.ReasoningEffort)
 	if effort == "" {
 		effort = s.configuredOpenCodeEffort(effective, initialModel)
@@ -479,6 +485,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		CurrentModelID: initialModel, CurrentModelSet: true,
 		AppliedModelID: initialModel, AppliedModelSet: true,
 		CurrentReasoningEffort: effort, AppliedReasoningEffort: effort,
+		CurrentServiceTier: serviceTier, AppliedServiceTier: serviceTier,
 	}
 	// One repository keeps the legacy columns so a single-repo session still
 	// reads the same as sessions created before multi-select.
@@ -789,6 +796,7 @@ func applySoloResumeSnapshot(qs map[string]any, row *models.SoloSession) {
 	qs["initialConfigurationId"] = row.InitialConfigurationID
 	qs["currentModelSet"] = row.CurrentModelSet
 	qs["reasoningEffort"] = row.CurrentReasoningEffort
+	qs["serviceTier"] = row.CurrentServiceTier
 	qs["modelNotice"] = row.ModelNotice
 }
 

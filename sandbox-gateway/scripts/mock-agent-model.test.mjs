@@ -326,6 +326,16 @@ describe('deterministic multi-protocol native tool fixture', () => {
     assert.equal(report.requests.at(-1).model, 'kimi-for-coding')
   })
 
+  it('records the service tier independently of reasoning without retaining arbitrary fields', async () => {
+    await invoke(server, 'responses', [], {service_tier: 'priority', reasoning: {effort: 'high'}, private_metadata: 'do-not-log-extra-field'})
+    const request = server.report().requests.at(-1)
+    assert.equal(request.serviceTier, 'priority')
+    assert.deepEqual(request.reasoning, {effort: 'high'})
+    assert.equal(JSON.stringify(request).includes('do-not-log-extra-field'), false)
+    await invoke(server, 'responses', [], {reasoning: {effort: 'low'}})
+    assert.equal(server.report().requests.at(-1).serviceTier, undefined)
+  })
+
   for (const stream of [false, true]) {
     it(`encodes native Responses namespace separately from the function name (stream=${stream})`, async () => {
       const tools = [{type: 'namespace', name: 'mcp__artifact_store', tools: [{type: 'function', name: 'get_history', parameters: history.parameters}]}, ...toolsFor('responses', [shell])]

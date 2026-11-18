@@ -26,6 +26,11 @@ type soloSettingsAligner interface {
 	AlignChatSettings(ctx context.Context, sandboxID uint, model, effort string) (changed bool, err error)
 }
 
+// soloTierSettingsAligner also applies the chat's speed tier in the same switch.
+type soloTierSettingsAligner interface {
+	AlignChatSettings(ctx context.Context, sandboxID uint, model, effort, tier string) (changed bool, err error)
+}
+
 func (s *SoloService) modelAligner() soloModelAligner {
 	if s.modelAlign != nil {
 		return s.modelAlign
@@ -41,13 +46,14 @@ func (s *SoloService) modelAligner() soloModelAligner {
 // already generating keeps its model; the sandbox is updated before the next
 // turn starts. Omitted settings are preserved and validated before any write;
 // an effort-only request never changes the selected model.
-func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user string, requested, requestedEffort *string) (*SoloSessionView, error) {
-	return s.SetCurrentModelRouteSettings(ctx, id, user, nil, requested, requestedEffort)
+func (s *SoloService) SetCurrentModelSettings(ctx context.Context, id, user string, requested, requestedEffort, requestedServiceTier *string) (*SoloSessionView, error) {
+	return s.SetCurrentModelRouteSettings(ctx, id, user, nil, requested, requestedEffort, requestedServiceTier)
 }
 
 // SetCurrentModelRouteSettings stores a group-qualified choice without interrupting
 // the active turn. Omitted group keeps the current group; empty selects the default.
-func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user string, requestedConfiguration, requested, requestedEffort *string) (*SoloSessionView, error) {
+// An omitted speed tier is kept while the selected model still offers it.
+func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user string, requestedConfiguration, requested, requestedEffort, requestedServiceTier *string) (*SoloSessionView, error) {
 	row, err := s.Require(id, user)
 	if err != nil {
 		return nil, err
@@ -104,8 +110,12 @@ func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user
 	} else if s.validateSessionReasoningEffort(ctx, row, agent, stored, effort) != nil {
 		effort = ""
 	}
+	serviceTier, err := resolveServiceTier(row.CurrentServiceTier, requestedServiceTier, s.serviceTiers(agent, stored))
+	if err != nil {
+		return nil, err
+	}
 	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
-		"current_configuration_id": configurationID, "current_model_id": stored, "current_model_set": true, "current_reasoning_effort": effort, "model_notice": "",
+		"current_configuration_id": configurationID, "current_model_id": stored, "current_model_set": true, "current_reasoning_effort": effort, "current_service_tier": serviceTier, "model_notice": "",
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -126,10 +136,13 @@ func (s *SoloService) SetCurrentModelRouteSettings(ctx context.Context, id, user
 		pendingChange = "model"
 	} else if view.CurrentReasoningEffort != view.AppliedReasoningEffort {
 		pendingChange = "effort"
+	} else if view.CurrentServiceTier != view.AppliedServiceTier {
+		pendingChange = "serviceTier"
 	}
 	c.stream.Session(SoloEventModel, map[string]any{
 		"currentConfigurationId": view.CurrentConfigurationID, "currentModelId": view.CurrentModelID, "currentModelSet": view.CurrentModelSet,
 		"reasoningEffort": view.CurrentReasoningEffort, "reasoningEfforts": view.ReasoningEfforts,
+		"serviceTier": view.CurrentServiceTier, "serviceTiers": view.ServiceTiers,
 		"backend": view.Backend, "modelNotice": view.ModelNotice, "pendingChange": pendingChange,
 	}, chatsession.KeepNone)
 	return view, nil
@@ -289,9 +302,9 @@ func (s *SoloService) validateSessionReasoningEffort(ctx context.Context, row *m
 	return s.validateReasoningEffort(agent, model, effort)
 }
 
-func (s *SoloService) rememberAppliedRoute(id, configuration, model, effort string) error {
+func (s *SoloService) rememberAppliedRoute(id, configuration, model, effort, tier string) error {
 	return s.db.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
-		"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "model_notice": "",
+		"applied_configuration_id": configuration, "applied_model_id": model, "applied_model_set": true, "applied_reasoning_effort": effort, "applied_service_tier": strings.TrimSpace(tier), "model_notice": "",
 	}).Error
 }
 
@@ -335,6 +348,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	storedEffort := strings.TrimSpace(row.CurrentReasoningEffort)
 	desiredEffort := s.resolveChatEffort(ctx, row, desired, storedEffort)
 	appliedEffort := strings.TrimSpace(row.AppliedReasoningEffort)
+	desiredTier, appliedTier := row.CurrentServiceTier, row.AppliedServiceTier
 	var changed bool
 	var err error
 	if s.sbx != nil && s.modelAlign == nil {
@@ -346,7 +360,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 		changed, err = s.sbx.AlignSoloModelRoute(ctx, sandboxID, agent)
 	}
 	routeChanged := changed
-	if err == nil && !changed && !row.ModelContextPending && desired == applied && desiredEffort == appliedEffort && desiredConfiguration == appliedConfiguration {
+	if err == nil && !changed && !row.ModelContextPending && desired == applied && desiredEffort == appliedEffort && desiredTier == appliedTier && desiredConfiguration == appliedConfiguration {
 		if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
 			return false, err
 		}
@@ -363,7 +377,11 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 			return false, err
 		}
 		var modelChanged bool
-		if settings, ok := aligner.(soloSettingsAligner); ok {
+		if settings, ok := aligner.(soloTierSettingsAligner); ok {
+			modelChanged, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort, desiredTier)
+		} else if desiredTier != appliedTier {
+			err = errors.New("sandbox service tier settings unavailable")
+		} else if settings, ok := aligner.(soloSettingsAligner); ok {
 			modelChanged, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort)
 		} else if desiredEffort != appliedEffort {
 			err = errors.New("sandbox reasoning settings unavailable")
@@ -380,27 +398,30 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 			previous := *row
 			previous.CurrentConfigurationID = appliedConfiguration
 			previous.CurrentModelID, previous.CurrentModelSet = applied, true
+			previous.CurrentReasoningEffort, previous.CurrentServiceTier = appliedEffort, appliedTier
 			oldAgent, rollbackErr := s.sessionAgent(&previous)
 			if rollbackErr == nil {
-				_, rollbackErr = s.sbx.AlignSoloModelRoute(ctx, sandboxID, oldAgent)
+				_, rollbackErr = s.sbx.alignSoloModelRoute(ctx, sandboxID, oldAgent, &previous)
 			}
 			if rollbackErr != nil {
 				return false, fmt.Errorf("切换失败且恢复原执行环境失败: %w", errors.Join(err, rollbackErr))
 			}
 		}
-		res := s.db.Model(&models.SoloSession{}).Where("id = ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ? AND COALESCE(current_configuration_id, '') = ?", row.ID, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort, row.CurrentConfigurationID).Updates(map[string]any{
-			"current_configuration_id": appliedConfiguration, "current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "model_notice": soloModelSwitchFailed,
+		res := s.db.Model(&models.SoloSession{}).Where("id = ? AND current_model_id = ? AND current_model_set = ? AND COALESCE(current_reasoning_effort, '') = ? AND COALESCE(current_configuration_id, '') = ? AND COALESCE(current_service_tier, '') = ?", row.ID, row.CurrentModelID, row.CurrentModelSet, row.CurrentReasoningEffort, row.CurrentConfigurationID, row.CurrentServiceTier).Updates(map[string]any{
+			"current_configuration_id": appliedConfiguration, "current_model_id": applied, "current_model_set": true, "current_reasoning_effort": appliedEffort, "current_service_tier": appliedTier, "model_notice": soloModelSwitchFailed,
 		})
 		if res.Error == nil && res.RowsAffected > 0 {
 			c.stream.Session(SoloEventModel, map[string]any{
 				"currentConfigurationId": appliedConfiguration, "currentModelId": applied, "currentModelSet": true, "reasoningEffort": appliedEffort,
-				"modelNotice": soloModelSwitchFailed, "error": "切换模型设置失败，已恢复原来的设置",
+				"serviceTier":  appliedTier,
+				"serviceTiers": configuredServiceTiers(s.db, appliedConfiguration, applied),
+				"modelNotice":  soloModelSwitchFailed, "error": "切换模型设置失败，已恢复原来的设置",
 			}, chatsession.KeepNone)
 		}
 		log.Warn().Err(err).Str("session", row.ID).Str("configuration", desiredConfiguration).Str("model", desired).Msg("solo model switch rolled back")
 		return false, err
 	}
-	changed = changed || row.ModelContextPending || desired != applied || desiredEffort != appliedEffort || desiredConfiguration != appliedConfiguration
+	changed = changed || row.ModelContextPending || desired != applied || desiredEffort != appliedEffort || desiredTier != appliedTier || desiredConfiguration != appliedConfiguration
 	if changed {
 		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
 			return false, err
@@ -409,7 +430,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
 		return false, err
 	}
-	if err := s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort); err != nil {
+	if err := s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort, desiredTier); err != nil {
 		return false, err
 	}
 	return changed, nil

@@ -86,6 +86,8 @@ type Bridge struct {
 	model string
 	// reasoningEffort belongs to this chat; changing it never mutates process env.
 	reasoningEffort string
+	// serviceTier is this chat's speed tier; empty is the standard tier.
+	serviceTier string
 
 	// 回合看门狗：连续 turnIdle 没有任何活动（输出事件、CPU、IO）或总时长超过 turnMax 即终止回合；0 表示不限。
 	turnIdle time.Duration
@@ -146,6 +148,7 @@ func NewBridge() *Bridge {
 		livenessBeat:    livenessHeartbeatEvery,
 		id:              DefaultChatID,
 		reasoningEffort: strings.TrimSpace(os.Getenv("ACP_BRIDGE_REASONING_EFFORT")),
+		serviceTier:     envServiceTier(),
 		createdAt:       time.Now(),
 		permWait:        make(map[string]chan string),
 		clients:         make(map[*websocket.Conn]*wsClient),
@@ -179,6 +182,30 @@ func (b *Bridge) ReasoningEffort() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.reasoningEffort
+}
+
+// ServiceTier is scoped to this chat and requires the exact model's declaration.
+func (b *Bridge) ServiceTier() string {
+	tier := b.rawServiceTier()
+	if tier == "" || !ServiceTierSelectable(b.EffectiveModel(), tier) {
+		return ""
+	}
+	return tier
+}
+
+func (b *Bridge) rawServiceTier() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.serviceTier
+}
+
+// envServiceTier reads the boot tier; "default" is an explicit standard reset.
+func envServiceTier() string {
+	tier := strings.TrimSpace(os.Getenv("ACP_BRIDGE_SERVICE_TIER"))
+	if tier == "default" {
+		return ""
+	}
+	return tier
 }
 
 // ReasoningOptions uses the current DSH session's real advertisement only for

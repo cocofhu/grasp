@@ -94,9 +94,9 @@ const modelTransport: VisitModelTransport = {
           if (ok) resolve()
           else reject(new Error(t('pages.solo.errors.model_switch_failed')))
         }
-        activeSocket.send(JSON.stringify({ modelId: body.modelId || '', reasoningEffort: body.reasoningEffort || '' }))
+        activeSocket.send(JSON.stringify({ modelId: body.modelId || '', reasoningEffort: body.reasoningEffort || '', ...(body.serviceTier === undefined ? {} : { serviceTier: body.serviceTier }) }))
       })
-      guestChoice = { currentModelId: body.modelId, currentModelSet: true, reasoningEffort: body.reasoningEffort }
+      guestChoice = { currentModelId: body.modelId, currentModelSet: true, reasoningEffort: body.reasoningEffort, serviceTier: body.serviceTier ?? guestChoice.serviceTier }
       return guestChoice
     } finally {
       guestModelReply = undefined
@@ -530,6 +530,8 @@ onBeforeUnmount(() => {
             :current-model-id="mainChoice?.currentModelId"
             :current-configuration-id="mainChoice?.currentConfigurationId"
             :reasoning-effort="mainChoice?.reasoningEffort"
+            :service-tier="mainChoice?.serviceTier"
+            :service-tiers="mainChoice?.serviceTiers"
             :model-notice="mainChoice?.modelNotice"
             :disabled="!chatReady || (session.chatMode === 'isolated' && busy)"
           />

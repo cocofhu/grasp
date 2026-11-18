@@ -209,12 +209,12 @@ func (h *Handlers) PublicAppPreviewModel(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
 			return
 		}
-		row, err := h.Solo.SetCurrentModelRouteSettings(c.Request.Context(), sb.ThreadID, link.CreatedBy, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
+		row, err := h.Solo.SetCurrentModelRouteSettings(c.Request.Context(), sb.ThreadID, link.CreatedBy, body.ConfigurationID, body.ModelID, body.ReasoningEffort, body.ServiceTier)
 		if err != nil {
 			writeSoloErr(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, soloPreviewModel(&row.SoloSession))
+		c.JSON(http.StatusOK, soloPreviewModel(&row.SoloSession, row.ServiceTiers))
 		return
 	}
 	agent, found := h.visitModelAgent(link.RunID, link.NodeID)
@@ -222,7 +222,7 @@ func (h *Handlers) PublicAppPreviewModel(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "model choice unavailable"})
 		return
 	}
-	choice, err := services.SetVisitModel(h.Runs.DB(), agent, link.RunID, link.NodeID, link.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort)
+	choice, err := services.SetVisitModel(h.Runs.DB(), agent, link.RunID, link.NodeID, link.Iteration, body.ConfigurationID, body.ModelID, body.ReasoningEffort, body.ServiceTier)
 	if err != nil {
 		writeSoloErr(c, err)
 		return
@@ -239,15 +239,15 @@ func (h *Handlers) mainPreviewModel(link *models.GateShareLink, sb models.Sandbo
 		if err != nil {
 			return services.VisitModelChoice{}, err
 		}
-		return soloPreviewModel(row), nil
+		return soloPreviewModel(row, h.Solo.ServiceTiers(row)), nil
 	}
 	return services.GetVisitModel(h.Runs.DB(), link.RunID, link.NodeID, link.Iteration)
 }
 
-func soloPreviewModel(row *models.SoloSession) services.VisitModelChoice {
+func soloPreviewModel(row *models.SoloSession, tiers []string) services.VisitModelChoice {
 	choice := services.VisitModelChoice{
 		CurrentConfigurationID: row.CurrentConfigurationID, CurrentModelID: row.CurrentModelID,
-		CurrentModelSet: row.CurrentModelSet, ReasoningEffort: row.CurrentReasoningEffort, ModelNotice: row.ModelNotice,
+		CurrentModelSet: row.CurrentModelSet, ReasoningEffort: row.CurrentReasoningEffort, ServiceTier: row.CurrentServiceTier, ServiceTiers: tiers, ModelNotice: row.ModelNotice,
 	}
 	if !row.CurrentModelSet {
 		choice.CurrentConfigurationID = row.InitialConfigurationID

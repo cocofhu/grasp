@@ -1,23 +1,30 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, ref, useId, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
-import type { ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+import { FAST_SERVICE_TIER, type ConfiguredModelChoice } from '@/lib/solo/configuredModels'
+
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
-  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
-  { reasoningEffort: '', disabled: false, emptyAsLabel: false, flat: false },
+  defineProps<{ models: ConfiguredModelChoice[]; modelValue: string; reasoningEffort?: string; serviceTier?: string; disabled?: boolean; emptyAsLabel?: boolean; flat?: boolean }>(),
+  { reasoningEffort: '', serviceTier: '', disabled: false, emptyAsLabel: false, flat: false },
 )
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
   (e: 'update:reasoningEffort', v: string): void
+  (e: 'update:serviceTier', v: string): void
 }>()
 const { t, te } = useI18n()
 const view = ref<'models' | 'effort'>('models')
 const effortSlider = ref<HTMLInputElement | null>(null)
 const effortEntry = ref<HTMLButtonElement | null>(null)
+const fastButton = ref<HTMLButtonElement | null>(null)
+const fastTooltip = ref(false)
+const fastTooltipId = `solo-fast-${useId().replace(/:/g, '')}`
+const fastTooltipStyle = ref<Record<string, string>>({})
 
 const current = computed(() => props.models.find((model) => model.id === props.modelValue) ?? (!props.modelValue ? props.models[0] : null) ?? null)
 const multipleGroups = computed(() => new Set(props.models.map(model => model.configurationId).filter(Boolean)).size > 1)
@@ -42,6 +49,8 @@ const effortIndex = computed(() => {
 const effortLabel = computed(() => levelLabel(resolvedEffort.value))
 const atHighest = computed(() => efforts.value.length > 0 && resolvedEffort.value === efforts.value[efforts.value.length - 1])
 const effortBlocked = computed(() => props.disabled || !!current.value?.unavailable)
+const fastModeSupported = computed(() => current.value?.serviceTiers?.includes(FAST_SERVICE_TIER) === true)
+const fastMode = computed(() => fastModeSupported.value && props.serviceTier === FAST_SERVICE_TIER)
 const dragging = ref(false)
 const position = ref(0)
 const effortPanel = ref<HTMLElement | null>(null)
@@ -88,6 +97,19 @@ function setEffort(value: string) {
   announced.value = value
   emit('update:reasoningEffort', value)
 }
+function toggleFastMode() {
+  if (effortBlocked.value || !fastModeSupported.value) return
+  emit('update:serviceTier', fastMode.value ? '' : FAST_SERVICE_TIER)
+}
+function showFastTooltip() {
+  const box = fastButton.value?.getBoundingClientRect()
+  if (!box) return
+  fastTooltipStyle.value = {
+    left: `${Math.max(8, Math.min(box.left, window.innerWidth - 200))}px`,
+    top: `${Math.max(8, box.top - 60)}px`,
+  }
+  fastTooltip.value = true
+}
 function paintEffort(raw: number) {
   const max = effortMax.value
   if (!efforts.value.length || effortBlocked.value || !Number.isFinite(raw)) return
@@ -118,10 +140,11 @@ function settleEffort(event: Event) {
   else apply()
 }
 async function showEffort() {
-  if (!efforts.value.length || effortBlocked.value) return
+  if ((!efforts.value.length && !fastModeSupported.value) || effortBlocked.value) return
   view.value = 'effort'
   await nextTick()
-  effortSlider.value?.focus()
+  const control = effortSlider.value || fastButton.value
+  control?.focus()
 }
 async function showModels() {
   view.value = 'models'
@@ -130,13 +153,18 @@ async function showModels() {
 }
 async function onOpen() {
   view.value = 'models'
-  if (props.models.length === 1 && efforts.value.length && !effortBlocked.value) await showEffort()
+  fastTooltip.value = false
+  if (props.models.length === 1 && (efforts.value.length || fastModeSupported.value) && !effortBlocked.value) await showEffort()
 }
-watch(efforts, (values) => { if (!values.length) view.value = 'models' })
+watch([efforts, fastModeSupported], ([values, supportsFast]) => {
+  if (!supportsFast) fastTooltip.value = false
+  if (!values.length && !supportsFast) view.value = 'models'
+})
 </script>
 
 <template>
   <SoloPickerShell
+    v-bind="$attrs"
     :label="label"
     :placeholder="!current"
     :disabled="disabled || !models.length"
@@ -147,6 +175,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
     compact
     test-id="solo-model-select"
     @open="onOpen"
+    @close="fastTooltip = false"
   >
     <template #trigger>
       <VendorMark v-if="current" :vendor="current.vendor" :backend="current.backend" :auto="current.backend && !(current.modelId ?? current.id)" :size="20" :flat="flat" />
@@ -156,6 +185,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
       <span class="solo-model-name" :title="label">{{ label }}</span>
       <span v-if="multipleGroups && current?.configurationName" class="truncate text-[10px] text-txt3">{{ current.configurationName }}</span>
       <span v-if="efforts.length" class="solo-model-effort" data-testid="solo-model-effort-label">{{ effortLabel }}</span>
+      <span v-if="fastMode" class="solo-model-fast-label" data-testid="solo-model-fast-label">Fast</span>
     </template>
     <template v-if="view === 'models'" #header>
       <div class="solo-model-menu-title">{{ t('pages.solo.modelSelect.placeholder') }}</div>
@@ -163,7 +193,10 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
     <template #default="{ query, close }">
       <section v-if="view === 'effort'" ref="effortPanel" class="solo-effort" :class="{ 'solo-effort--dragging': dragging }" :style="{ '--effort-color': effortColor, '--effort-ratio': String(ratio) }" data-testid="solo-effort-panel" :aria-label="t('pages.solo.modelSelect.reasoningEffort')">
         <header class="solo-effort-heading">
-          <Icon name="priority-bolt" :size="15" :interactive="false" class="solo-effort-glyph" />
+          <button v-if="fastModeSupported" ref="fastButton" type="button" class="solo-effort-fast" :class="{ 'solo-effort-fast--active': fastMode }" :disabled="effortBlocked" :aria-label="t('pages.solo.modelSelect.fastMode')" :aria-pressed="fastMode" :aria-describedby="fastTooltip ? fastTooltipId : undefined" data-testid="solo-fast-toggle" @click="toggleFastMode" @pointerenter="showFastTooltip" @pointerleave="fastTooltip = false" @focus="showFastTooltip" @blur="fastTooltip = false">
+            <Icon name="priority-bolt" :size="28" :interactive="false" />
+          </button>
+          <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
           <button type="button" class="solo-effort-reset" :disabled="effortBlocked || atHighest" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="setEffort(efforts[efforts.length - 1] || '')">
             <Icon name="refresh" :size="14" :interactive="false" />
@@ -173,7 +206,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
           <span class="truncate">{{ label }}</span>
           <Icon name="chevron-right" :size="11" :interactive="false" />
         </button>
-        <div class="solo-effort-control" :class="{ 'solo-effort-control--disabled': effortBlocked }">
+        <div v-if="efforts.length" class="solo-effort-control" :class="{ 'solo-effort-control--disabled': effortBlocked }">
           <div class="solo-effort-track" aria-hidden="true">
             <span class="solo-effort-fill" />
             <span v-for="(value, index) in efforts" :key="value" class="solo-effort-tick" :class="{ 'solo-effort-tick--filled': index <= position + 0.02 }" :style="{ left: tickPosition(index) }" />
@@ -201,15 +234,21 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
         </template>
       </template>
     </template>
-    <template v-if="view === 'models' && efforts.length" #footer>
+    <template v-if="view === 'models' && (efforts.length || fastModeSupported)" #footer>
       <button ref="effortEntry" type="button" data-picker-opt :disabled="effortBlocked" data-testid="solo-effort-open" @click="showEffort">
-        <Icon name="priority-bolt" :size="13" :interactive="false" class="shrink-0 text-txt3" />
+        <span class="solo-effort-entry-glyph"><Icon name="priority-bolt" :size="24" :interactive="false" /></span>
         <span class="min-w-0 flex-1">{{ t('pages.solo.modelSelect.reasoningEffort') }}</span>
         <span class="solo-model-effort">{{ effortLabel }}</span>
         <Icon name="chevron-right" :size="14" :interactive="false" />
       </button>
     </template>
   </SoloPickerShell>
+  <Teleport to="body">
+    <div v-if="fastTooltip" :id="fastTooltipId" role="tooltip" class="solo-fast-tooltip" :style="fastTooltipStyle">
+      <strong>{{ t('pages.solo.modelSelect.fastMode') }}</strong>
+      <span>{{ t('pages.solo.modelSelect.fastModeHint') }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -220,11 +259,21 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 .solo-model-option-name { font-size: 13px; line-height: 18px; }
 .solo-model-option-note { min-height: 14px; color: rgb(var(--c-txt3)); font-size: 10px; line-height: 14px; }
 .solo-model-effort { flex-shrink: 0; color: rgb(var(--c-accent-2)); font-size: 12px; font-weight: 500; }
+.solo-model-fast-label { flex-shrink: 0; padding: 1px 5px; border-radius: 5px; background: rgb(var(--c-accent) / 0.12); color: rgb(var(--c-accent-2)); font-size: 10px; font-weight: 600; }
 .solo-model-menu-title { padding: 4px 8px 5px; color: rgb(var(--c-txt3)); font-size: 11px; font-weight: 500; line-height: 16px; }
 .solo-effort { padding: 1px 6px 6px; transition: --effort-ratio 200ms cubic-bezier(0.22, 1, 0.36, 1); }
 .solo-effort--dragging { transition: none; }
-.solo-effort-heading { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; min-height: 24px; align-items: center; gap: 5px; }
-.solo-effort-glyph { justify-self: start; color: var(--effort-color); }
+.solo-effort-heading { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; min-height: 36px; align-items: center; gap: 5px; }
+.solo-effort-glyph { display: grid; width: 36px; height: 36px; place-items: center; color: var(--effort-color); }
+.solo-effort-entry-glyph { display: grid; width: 24px; height: 24px; flex-shrink: 0; place-items: center; color: rgb(var(--c-txt2)); }
+.solo-effort-fast { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid transparent; border-radius: 9px; background: rgb(var(--c-txt) / 0.05); color: rgb(var(--c-txt2)); }
+.solo-effort-fast:hover:not(:disabled) { background: rgb(var(--c-txt) / 0.1); color: rgb(var(--c-txt)); }
+.solo-effort-fast--active { border-color: rgb(var(--c-accent) / 0.35); background: rgb(var(--c-accent) / 0.15); color: rgb(var(--c-accent-2)); }
+.solo-effort-fast--active:hover:not(:disabled) { background: rgb(var(--c-accent) / 0.22); color: rgb(var(--c-accent-2)); }
+.solo-effort-fast:disabled { opacity: 0.45; }
+.solo-fast-tooltip { position: fixed; z-index: 10000; display: grid; gap: 2px; max-width: 192px; padding: 9px 12px; border-radius: 10px; background: rgb(var(--c-txt)); color: rgb(var(--c-surface)); box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 12px; line-height: 17px; pointer-events: none; }
+.solo-fast-tooltip strong { font-weight: 600; }
+.solo-fast-tooltip span { opacity: 0.75; }
 .solo-effort-current { min-width: 0; overflow: hidden; color: var(--effort-color); font-size: 13px; font-weight: 500; line-height: 20px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .solo-effort-back { display: flex; max-width: 100%; min-width: 0; align-items: center; justify-content: center; gap: 2px; margin: -1px auto 10px; padding: 0 3px; border-radius: 4px; color: rgb(var(--c-txt3)); font-size: 11px; line-height: 17px; }
 .solo-effort-back:hover { color: rgb(var(--c-txt)); }
@@ -245,7 +294,7 @@ watch(efforts, (values) => { if (!values.length) view.value = 'models' })
 .solo-effort-slider::-moz-range-track { height: 28px; border: 0; border-radius: 999px; background: transparent; }
 .solo-effort-slider::-moz-range-thumb { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
 .solo-effort-slider:disabled { cursor: default; }
-.solo-effort-slider:focus-visible, .solo-effort-back:focus-visible, .solo-effort-reset:focus-visible { outline: 2px solid rgb(var(--c-accent) / 0.65); outline-offset: 3px; }
+.solo-effort-slider:focus-visible, .solo-effort-back:focus-visible, .solo-effort-reset:focus-visible, .solo-effort-fast:focus-visible { outline: 2px solid rgb(var(--c-accent) / 0.65); outline-offset: 3px; }
 </style>
 
 <style>

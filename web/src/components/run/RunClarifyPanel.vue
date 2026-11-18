@@ -44,6 +44,8 @@ const props = defineProps<{
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   } | null
   runId: string
@@ -201,6 +203,8 @@ defineExpose({
         :current-model-id="clarify?.currentModelId"
         :current-model-set="clarify?.currentModelSet"
         :reasoning-effort="clarify?.reasoningEffort"
+        :service-tier="clarify?.serviceTier"
+        :service-tiers="clarify?.serviceTiers"
         :model-notice="clarify?.modelNotice"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"

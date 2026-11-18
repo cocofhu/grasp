@@ -36,6 +36,7 @@ import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { useToast } from '@/lib/composables/useToast'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useFormDraft, useQuestionDeck } from '@/lib/inbox/clarifyAnswers'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
@@ -53,8 +54,9 @@ const emit = defineEmits<{ back: []; ready: [] }>()
 const { t, te, locale } = useI18n()
 const router = useRouter()
 const store = useSoloSessions()
+const toast = useToast()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, modelChangePending, setCurrentModel, setCurrentReasoningEffort } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentServiceTier, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentServiceTier } = chat
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -83,14 +85,25 @@ const shownModels = computed(() => {
     choices = [...choices, { id: selectedId, name: currentModelId.value || session.value?.model || t('pages.solo.modelSelect.placeholder'), hint: currentModelId.value, vendor: '', backend: false, unavailable: selectionInvalid.value }]
   }
   const row = session.value
-  if (!row || row.reasoningEffort === undefined) return choices
-  return choices.map(choice => choice.id === selectedId ? { ...choice, efforts: modelChangePending.value ? [] : row.reasoningEfforts || [] } : choice)
+  if (!row) return choices
+  return choices.map(choice => choice.id === selectedId ? {
+    ...choice,
+    ...(row.reasoningEffort === undefined ? {} : { efforts: modelChangePending.value ? [] : row.reasoningEfforts || [] }),
+    ...(row.serviceTiers === undefined ? {} : { serviceTiers: modelChangePending.value ? [] : row.serviceTiers || [] }),
+  } : choice)
 })
 function chooseSessionModel(value: string) {
   const choice = modelChoices.value.find(choice => choice.id === value) || (!value ? modelChoices.value[0] : undefined)
   const grouped = modelChoices.value.some(choice => choice.id.startsWith('@group:'))
   const changesGroup = !!choice?.configurationId && !!currentGroup.value && choice.configurationId !== currentGroup.value
   return setCurrentModel(choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value)
+}
+async function chooseSessionServiceTier(value: string) {
+  const sessionId = props.sessionId
+  const saved = await setCurrentServiceTier(value)
+  if (saved && sessionId === props.sessionId && currentServiceTier.value === value) {
+    toast.show(t('pages.solo.modelSelect.fastModeNextTurn'))
+  }
 }
 const repos = computed(() => sessionRepos(session.value))
 const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
@@ -663,11 +676,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 flat
                 :model-value="currentSelection"
                 :reasoning-effort="currentReasoningEffort"
+                :service-tier="currentServiceTier"
                 :models="shownModels"
                 :disabled="!canSend || !modelCatalogReady"
                 :empty-as-label="modelCatalogReady && !modelChoices.length"
                 @update:model-value="chooseSessionModel"
                 @update:reasoning-effort="setCurrentReasoningEffort"
+                @update:service-tier="chooseSessionServiceTier"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
               <template v-if="!embedded && status === 'running'">

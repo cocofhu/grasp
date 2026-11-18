@@ -51,7 +51,7 @@ function queueItem(raw: any): SoloQueueItem {
  * turn on reconnect, so a dropped socket only pauses the view).
  */
 type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
-  | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
+  | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'setSoloSessionServiceTier' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
   soloChatProtocols?: string[]
 }
 
@@ -108,7 +108,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   let pendingSettings = 0
   let pendingModels = 0
   let settingsQueue: Promise<void> = Promise.resolve()
-  type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentConfigurationId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts' | 'backend' | 'model'>
+  type ModelSettings = Pick<SoloSession, 'currentModelId' | 'currentConfigurationId' | 'currentModelSet' | 'modelNotice' | 'reasoningEffort' | 'reasoningEfforts' | 'serviceTier' | 'serviceTiers' | 'backend' | 'model'>
   let confirmedSettings: ModelSettings | null = null
   const modelChangePending = ref(false)
   // 真实帧按序号和事件类型去重；订阅快照不进入此表，避免吞掉同序号的开场帧。
@@ -158,10 +158,11 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   })
   const currentConfigurationId = computed(() => session.value?.currentConfigurationId || session.value?.initialConfigurationId || '')
   const currentReasoningEffort = computed(() => session.value?.reasoningEffort || '')
+  const currentServiceTier = computed(() => session.value?.serviceTier || '')
   const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
   function modelSettings(row: SoloSession): ModelSettings {
-    return { currentConfigurationId: row.currentConfigurationId, backend: row.backend, model: row.model, currentModelId: row.currentModelId, currentModelSet: row.currentModelSet, modelNotice: row.modelNotice, reasoningEffort: row.reasoningEffort, reasoningEfforts: row.reasoningEfforts ? [...row.reasoningEfforts] : undefined }
+    return { currentConfigurationId: row.currentConfigurationId, backend: row.backend, model: row.model, currentModelId: row.currentModelId, currentModelSet: row.currentModelSet, modelNotice: row.modelNotice, reasoningEffort: row.reasoningEffort, reasoningEfforts: row.reasoningEfforts ? [...row.reasoningEfforts] : undefined, serviceTier: row.serviceTier, serviceTiers: row.serviceTiers ? [...row.serviceTiers] : undefined }
   }
 
   function setSession(v: SoloSession) {
@@ -190,6 +191,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (typeof frame.currentConfigurationId === 'string') patch.currentConfigurationId = frame.currentConfigurationId
     if (typeof frame.backend === 'string') patch.backend = frame.backend
     if (typeof frame.reasoningEffort === 'string') patch.reasoningEffort = frame.reasoningEffort
+    if (typeof frame.serviceTier === 'string') patch.serviceTier = frame.serviceTier
+    if (Array.isArray(frame.serviceTiers)) patch.serviceTiers = frame.serviceTiers.filter((tier: unknown): tier is string => typeof tier === 'string')
     if (typeof frame.modelNotice === 'string') patch.modelNotice = frame.modelNotice
     if (!Object.keys(patch).length) return
     patchSession(patch)
@@ -728,6 +731,8 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         if (typeof frame.currentConfigurationId === 'string') patch.currentConfigurationId = frame.currentConfigurationId
         if (typeof frame.backend === 'string') patch.backend = frame.backend
         if (typeof frame.reasoningEffort === 'string') patch.reasoningEffort = frame.reasoningEffort
+        if (typeof frame.serviceTier === 'string') patch.serviceTier = frame.serviceTier
+        if (Array.isArray(frame.serviceTiers)) patch.serviceTiers = frame.serviceTiers.filter((tier: unknown): tier is string => typeof tier === 'string')
         if (Array.isArray(frame.reasoningEfforts)) patch.reasoningEfforts = frame.reasoningEfforts.filter((value: unknown): value is string => typeof value === 'string')
         patchSession(patch)
         // A saved choice from another tab supersedes metadata reads already in flight.
@@ -985,14 +990,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
   }
 
-  async function saveModelSetting(kind: 'model' | 'effort', value: string): Promise<boolean> {
+  async function saveModelSetting(kind: 'model' | 'effort' | 'serviceTier', value: string): Promise<boolean> {
     const id = sessionId.value
     const cur = session.value
     if (!id || !cur || !sessionOpen.value || disposed) return false
     const route = kind === 'model' ? parseModelRoute(value.trim()) : undefined
     const next = route?.modelId ?? value.trim()
     const configurationId = route?.configurationId
-    if (kind === 'model' ? cur.currentModelSet && (cur.currentModelId || '') === next && (configurationId === undefined || cur.currentConfigurationId === configurationId) : (cur.reasoningEffort || '') === next) return true
+    if (kind === 'serviceTier' && next && !cur.serviceTiers?.includes(next)) return false
+    if (kind === 'model' ? cur.currentModelSet && (cur.currentModelId || '') === next && (configurationId === undefined || cur.currentConfigurationId === configurationId) : kind === 'effort' ? (cur.reasoningEffort || '') === next : (cur.serviceTier || '') === next) return true
     const generation = sessionGeneration
     const epoch = settingsEpoch
     const sequence = ++settingSequence
@@ -1000,7 +1006,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     pendingSettings++
     if (kind === 'model') { pendingModels++; modelChangePending.value = true }
     actionError.value = ''
-    patchSession(kind === 'model' ? { currentModelId: next, ...(configurationId === undefined ? {} : { currentConfigurationId: configurationId }), currentModelSet: true, reasoningEffort: '', reasoningEfforts: [], modelNotice: '' } : { reasoningEffort: next, modelNotice: '' })
+    patchSession(kind === 'model' ? { currentModelId: next, ...(configurationId === undefined ? {} : { currentConfigurationId: configurationId }), currentModelSet: true, reasoningEffort: '', reasoningEfforts: [], serviceTiers: [], modelNotice: '' } : kind === 'effort' ? { reasoningEffort: next, modelNotice: '' } : { serviceTier: next, modelNotice: '' })
     const isCurrentSession = () => !disposed && id === sessionId.value && generation === sessionGeneration && epoch === settingsEpoch
     const latest = () => isCurrentSession() && sequence === settingSequence
     const request = settingsQueue.then(async () => {
@@ -1010,7 +1016,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
           if (latest() && confirmedSettings) patchSession(confirmedSettings)
           return false
         }
-        let row = kind === 'model' ? configurationId === undefined ? await transport.setSoloSessionModel(id, next) : await transport.setSoloSessionModel(id, next, undefined, configurationId) : await transport.setSoloSessionReasoningEffort(id, next)
+        let row = kind === 'model' ? configurationId === undefined ? await transport.setSoloSessionModel(id, next) : await transport.setSoloSessionModel(id, next, undefined, configurationId) : kind === 'effort' ? await transport.setSoloSessionReasoningEffort(id, next) : await transport.setSoloSessionServiceTier(id, next)
         if (!isCurrentSession() || row.id !== id) return false
         // A model switch clears an effort the new model does not offer. The
         // selector shows that gap as the highest level, so persist that token.
@@ -1040,14 +1046,15 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         }
       }
     })
-    // Both controls share one queue, so an effort always follows earlier model
-    // changes and rapid slider updates reach the server in selection order.
+    // Model, effort and Fast share one queue so rapid updates reach the server
+    // in selection order and stale reads cannot undo a newer setting.
     settingsQueue = request.then(() => undefined)
     return request
   }
 
   function setCurrentModel(modelId: string) { return saveModelSetting('model', modelId) }
   function setCurrentReasoningEffort(effort: string) { return saveModelSetting('effort', effort) }
+  function setCurrentServiceTier(serviceTier: string) { return saveModelSetting('serviceTier', serviceTier) }
 
   async function cancel() {
     const id = sessionId.value
@@ -1193,11 +1200,13 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     currentModelId,
     currentConfigurationId,
     currentReasoningEffort,
+    currentServiceTier,
     modelChangePending,
     load,
     send,
     setCurrentModel,
     setCurrentReasoningEffort,
+    setCurrentServiceTier,
     cancel,
     removeQueued,
     takeQueued,

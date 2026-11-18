@@ -14,6 +14,8 @@ type InboxClarifySession = {
   currentModelId?: string
   currentModelSet?: boolean
   reasoningEffort?: string
+  serviceTier?: string
+  serviceTiers?: string[]
   modelNotice?: string
 }
 

@@ -189,6 +189,8 @@ const props = withDefaults(
     currentModelId?: string
     currentModelSet?: boolean
     reasoningEffort?: string
+    serviceTier?: string
+    serviceTiers?: string[]
     modelNotice?: string
   }>(),
   {
@@ -209,6 +211,8 @@ const props = withDefaults(
     nodeTask: '',
     systemNotes: () => [],
     referencesEnabled: true,
+    serviceTier: undefined,
+    serviceTiers: undefined,
   },
 )
 
@@ -1763,6 +1767,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :current-model-id="currentModelId"
             :current-model-set="currentModelSet"
             :reasoning-effort="reasoningEffort"
+            :service-tier="serviceTier"
+            :service-tiers="serviceTiers"
             :model-notice="modelNotice"
           />
           <slot name="composer-controls" :compact="true" />

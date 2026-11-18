@@ -29,6 +29,8 @@ const producerConversation = computed(() => s.run?.clarifyByNode?.[s.gate.reactU
     :current-model-id="producerConversation?.currentModelId"
     :current-model-set="producerConversation?.currentModelSet"
     :reasoning-effort="producerConversation?.reasoningEffort"
+    :service-tier="producerConversation?.serviceTier"
+    :service-tiers="producerConversation?.serviceTiers"
     :model-notice="producerConversation?.modelNotice"
     v-model:draft="s.reactText"
     v-model:attachments="s.reactImages"

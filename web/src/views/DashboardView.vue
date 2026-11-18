@@ -57,11 +57,13 @@ const {
   launchPriority,
   showLaunchModel,
   launchModelId,
+  launchServiceTier,
   launchReasoningEffort,
   launchModelChoices,
   launchModelForModal,
   selectLaunchModel,
   selectLaunchEffort,
+  selectLaunchServiceTier,
   draft,
   sending,
   hidingWorkflowId,
@@ -108,6 +110,7 @@ const soloProjectIds = solo.projectIds
 const soloBranches = solo.branches
 const soloInitialModelId = solo.initialModelId
 const soloReasoningEffort = solo.reasoningEffort
+const soloServiceTier = solo.serviceTier
 const soloModelChoices = solo.modelChoices
 const soloLimitOpen = solo.limitOpen
 const projectDrawerOpen = ref(false)
@@ -1006,10 +1009,12 @@ onBeforeUnmount(() => {
                   v-if="showLaunchModel"
                   :model-value="launchModelId"
                   :reasoning-effort="launchReasoningEffort"
+                  :service-tier="launchServiceTier"
                   :models="launchModelChoices"
                   :disabled="sending"
                   @update:model-value="selectLaunchModel"
                   @update:reasoning-effort="selectLaunchEffort"
+                  @update:service-tier="selectLaunchServiceTier"
                 />
                 <HomePrioritySelect
                   :model-value="launchPriority"
@@ -1036,6 +1041,7 @@ onBeforeUnmount(() => {
                 <SoloModelSelect
                   v-model="soloInitialModelId"
                   v-model:reasoning-effort="soloReasoningEffort"
+                  v-model:service-tier="soloServiceTier"
                   :models="soloModelChoices"
                   :disabled="solo.creating.value"
                 />

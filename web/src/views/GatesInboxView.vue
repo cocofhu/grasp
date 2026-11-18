@@ -231,6 +231,8 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :current-model-id="activeClarify?.currentModelId"
                   :current-model-set="activeClarify?.currentModelSet"
                   :reasoning-effort="activeClarify?.reasoningEffort"
+                  :service-tier="activeClarify?.serviceTier"
+                  :service-tiers="activeClarify?.serviceTiers"
                   :model-notice="activeClarify?.modelNotice"
                   :confirm-error="clarifyConfirmError"
                   :confirm-can-abort="clarifyConfirmCanAbort"

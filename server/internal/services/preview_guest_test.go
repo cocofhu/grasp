@@ -71,10 +71,10 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if changed, err := client.SetIndependentModelSettings(ctx, "unlisted-model", ""); changed || err == nil {
+		if changed, err := client.SetIndependentModelSettings(ctx, "unlisted-model", "", nil); changed || err == nil {
 			t.Fatalf("unlisted model: changed=%v err=%v", changed, err)
 		}
-		if changed, err := client.SetIndependentModelSettings(ctx, "guest-model", ""); !changed || err != nil {
+		if changed, err := client.SetIndependentModelSettings(ctx, "guest-model", "", nil); !changed || err != nil {
 			t.Fatalf("guest model: changed=%v err=%v", changed, err)
 		}
 		if got := <-modelWrites; got != expected {

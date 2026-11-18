@@ -16,6 +16,7 @@ type LaunchChoice struct {
 	ConfigurationID string
 	ModelID         string
 	ReasoningEffort string
+	ServiceTier     string
 	Repos           *[]models.RepoChoice
 }
 
@@ -48,7 +49,11 @@ func (e *Engine) normalizeLaunchModel(graph *models.Graph, launch LaunchChoice) 
 	if err != nil {
 		return LaunchChoice{}, err
 	}
-	return LaunchChoice{Set: true, ConfigurationID: cfg, ModelID: modelID, ReasoningEffort: effort}, nil
+	tier := strings.TrimSpace(launch.ServiceTier)
+	if err := services.AcceptServiceTier(e.db, cfg, modelID, tier); err != nil {
+		return LaunchChoice{}, err
+	}
+	return LaunchChoice{Set: true, ConfigurationID: cfg, ModelID: modelID, ReasoningEffort: effort, ServiceTier: tier}, nil
 }
 
 // firstClarifySuccessNode is the clarify Agent on the input node's success
@@ -119,6 +124,7 @@ func (e *Engine) applyVisitLaunchModel(conv *models.ReactConversation, run *mode
 			conv.CurrentModelID = prev.CurrentModelID
 			conv.CurrentModelSet = true
 			conv.CurrentReasoningEffort = prev.CurrentReasoningEffort
+			conv.CurrentServiceTier = prev.CurrentServiceTier
 		}
 		return
 	}
@@ -133,6 +139,7 @@ func (e *Engine) applyVisitLaunchModel(conv *models.ReactConversation, run *mode
 	conv.CurrentModelID = run.LaunchModelID
 	conv.CurrentModelSet = true
 	conv.CurrentReasoningEffort = run.LaunchReasoningEffort
+	conv.CurrentServiceTier = run.LaunchServiceTier
 	conv.ModelNotice = ""
 }
 

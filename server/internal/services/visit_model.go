@@ -15,22 +15,25 @@ const VisitModelSwitchFailed = "model_switch_failed"
 // VisitModelChoice is the selection stored for one node visit. Empty model
 // follows that visit's Agent primary model. It is not an Agent binding.
 type VisitModelChoice struct {
-	RunID                  string `json:"runId"`
-	NodeID                 string `json:"nodeId"`
-	Iteration              int    `json:"iteration"`
-	CurrentConfigurationID string `json:"currentConfigurationId,omitempty"`
-	CurrentModelID         string `json:"currentModelId,omitempty"`
-	CurrentModelSet        bool   `json:"currentModelSet"`
-	ReasoningEffort        string `json:"reasoningEffort,omitempty"`
-	ModelNotice            string `json:"modelNotice,omitempty"`
-	Backend                string `json:"backend,omitempty"`
+	RunID                  string   `json:"runId"`
+	NodeID                 string   `json:"nodeId"`
+	Iteration              int      `json:"iteration"`
+	CurrentConfigurationID string   `json:"currentConfigurationId,omitempty"`
+	CurrentModelID         string   `json:"currentModelId,omitempty"`
+	CurrentModelSet        bool     `json:"currentModelSet"`
+	ReasoningEffort        string   `json:"reasoningEffort,omitempty"`
+	ServiceTier            string   `json:"serviceTier"`
+	ServiceTiers           []string `json:"serviceTiers"`
+	ModelNotice            string   `json:"modelNotice,omitempty"`
+	Backend                string   `json:"backend,omitempty"`
 }
 
-func visitModelChoice(conv models.ReactConversation, backend string) VisitModelChoice {
+func visitModelChoice(conv models.ReactConversation, backend string, tiers []string) VisitModelChoice {
 	return VisitModelChoice{
 		RunID: conv.RunID, NodeID: conv.NodeID, Iteration: conv.Iteration,
 		CurrentConfigurationID: conv.CurrentConfigurationID, CurrentModelID: conv.CurrentModelID,
 		CurrentModelSet: conv.CurrentModelSet, ReasoningEffort: conv.CurrentReasoningEffort,
+		ServiceTier: conv.CurrentServiceTier, ServiceTiers: tiers,
 		ModelNotice: conv.ModelNotice, Backend: backend,
 	}
 }
@@ -41,13 +44,14 @@ func GetVisitModel(db *gorm.DB, runID, nodeID string, iteration int) (VisitModel
 	if err != nil {
 		return VisitModelChoice{}, err
 	}
-	return visitModelChoice(conv, ""), nil
+	return visitModelChoice(conv, "", configuredServiceTiers(db, conv.CurrentConfigurationID, conv.CurrentModelID)), nil
 }
 
 // SetVisitModel stores the next chat turn's model. It does not touch the
 // sandbox, the Agent binding, or the workflow definition. Omitted pointers
-// keep the stored value. An empty model selects the primary model.
-func SetVisitModel(db *gorm.DB, agent Agent, runID, nodeID string, iteration int, configurationID, modelID, effort *string) (VisitModelChoice, error) {
+// keep the stored value. An empty model selects the primary model and an empty
+// speed tier selects the standard tier.
+func SetVisitModel(db *gorm.DB, agent Agent, runID, nodeID string, iteration int, configurationID, modelID, effort, serviceTier *string) (VisitModelChoice, error) {
 	conv, err := loadVisitConversation(db, runID, nodeID, iteration)
 	if err != nil {
 		return VisitModelChoice{}, err
@@ -80,11 +84,17 @@ func SetVisitModel(db *gorm.DB, agent Agent, runID, nodeID string, iteration int
 	if err != nil {
 		return VisitModelChoice{}, err
 	}
+	tiers := configuredServiceTiers(db, storedConfig, storedModel)
+	storedTier, err := resolveServiceTier(conv.CurrentServiceTier, serviceTier, tiers)
+	if err != nil {
+		return VisitModelChoice{}, err
+	}
 	if err := db.Model(&models.ReactConversation{}).Where("id = ?", conv.ID).Updates(map[string]any{
 		"current_configuration_id": storedConfig,
 		"current_model_id":         storedModel,
 		"current_model_set":        true,
 		"current_reasoning_effort": storedEffort,
+		"current_service_tier":     storedTier,
 		"model_notice":             "",
 	}).Error; err != nil {
 		return VisitModelChoice{}, err
@@ -93,8 +103,9 @@ func SetVisitModel(db *gorm.DB, agent Agent, runID, nodeID string, iteration int
 	conv.CurrentModelID = storedModel
 	conv.CurrentModelSet = true
 	conv.CurrentReasoningEffort = storedEffort
+	conv.CurrentServiceTier = storedTier
 	conv.ModelNotice = ""
-	return visitModelChoice(conv, backend), nil
+	return visitModelChoice(conv, backend, tiers), nil
 }
 
 func loadVisitConversation(db *gorm.DB, runID, nodeID string, iteration int) (models.ReactConversation, error) {

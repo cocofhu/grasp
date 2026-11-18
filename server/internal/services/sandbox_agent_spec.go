@@ -143,6 +143,9 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 			delete(env, runtime.EnvACPBridgeReasoningEffort)
 		}
 	}
+	if extra.InitialChatServiceTier != nil {
+		env[runtime.EnvACPBridgeServiceTier] = runtime.ServiceTierEnv(*extra.InitialChatServiceTier)
+	}
 	track.mark(env, EnvSourceSystem)
 	if extra.OnEnv != nil {
 		extra.OnEnv(track.sources)

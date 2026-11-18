@@ -93,6 +93,8 @@ type SoloSession struct {
 	// CurrentReasoningEffort is a session choice, independent of the Agent's
 	// saved configuration. Empty selects the tool's default reasoning behavior.
 	CurrentReasoningEffort string `json:"reasoningEffort"`
+	// CurrentServiceTier is the session speed tier; empty is the standard tier.
+	CurrentServiceTier string `json:"serviceTier"`
 	// AppliedModelID is the model last given to the sandbox chat. It is not
 	// part of the API. AppliedModelSet false means the sandbox still has the
 	// opening model (or has not been aligned yet).
@@ -100,6 +102,7 @@ type SoloSession struct {
 	AppliedConfigurationID string `json:"-"`
 	AppliedModelSet        bool   `json:"-"`
 	AppliedReasoningEffort string `json:"-"`
+	AppliedServiceTier     string `json:"-"`
 	// ModelNotice is a stable error code shown after a switch is rolled back.
 	ModelNotice string `json:"modelNotice,omitempty"`
 	// ModelContextPending survives a cancelled switch after the coding tool was

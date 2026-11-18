@@ -82,7 +82,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(view.ReasoningEfforts, []string{"quiet", "deep"}) {
 		t.Fatalf("missing negotiated choices: %+v %v", view, err)
 	}
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("deep"))
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("deep"), nil)
 	if err != nil || view.CurrentModelID != "" || view.CurrentReasoningEffort != "deep" || posts != 0 {
 		t.Fatalf("effort-only changed model or applied too early: %+v posts=%d err=%v", view, posts, err)
 	}
@@ -91,7 +91,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 		t.Fatalf("negotiated effort not applied: changed=%v posts=%d pair=%s/%s err=%v", changed, posts, selected, effort, err)
 	}
 	selected = "not-configured"
-	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet")); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet"), nil); err == nil {
 		t.Fatal("live options from another model were accepted")
 	}
 	selected = ""
@@ -103,7 +103,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(view.ReasoningEfforts, []string{"quiet", "deep"}) {
 		t.Fatalf("stale metadata replaced live choices: %+v %v", view, err)
 	}
-	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("invented")); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("invented"), nil); err == nil {
 		t.Fatal("stale metadata granted a non-advertised effort")
 	}
 	available = []string{}
@@ -111,7 +111,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err != nil || view.ReasoningEfforts == nil || len(view.ReasoningEfforts) != 0 {
 		t.Fatalf("empty live capability must override stale metadata: %+v %v", view, err)
 	}
-	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet")); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet"), nil); err == nil {
 		t.Fatal("empty live capabilities did not block effort")
 	}
 	available = []string{"quiet", "deep"}
@@ -124,7 +124,7 @@ func TestSoloFixedModelUsesNegotiatedDSHEffortsWithoutMetadata(t *testing.T) {
 	if err != nil || len(view.ReasoningEfforts) != 0 {
 		t.Fatalf("explicit non-reasoning capability ignored: %+v %v", view, err)
 	}
-	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet")); err == nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("quiet"), nil); err == nil {
 		t.Fatal("live options overrode explicit non-support")
 	}
 }
@@ -185,7 +185,7 @@ func TestSoloTargetDSHGroupDoesNotBorrowAnotherRoutesLiveEfforts(t *testing.T) {
 			if err := db.Create(&row).Error; err != nil {
 				t.Fatal(err)
 			}
-			view, err := solo.SetCurrentModelRouteSettings(context.Background(), row.ID, "alice", &target.ID, effortPointer(""), effortPointer("low"))
+			view, err := solo.SetCurrentModelRouteSettings(context.Background(), row.ID, "alice", &target.ID, effortPointer(""), effortPointer("low"), nil)
 			if err != nil || view.CurrentConfigurationID != target.ID || view.CurrentReasoningEffort != "low" || view.AppliedConfigurationID != current.ID || !reflect.DeepEqual(view.ReasoningEfforts, []string{"low", "high"}) {
 				t.Fatalf("target group inherited another route's empty live capabilities: view=%+v err=%v", view, err)
 			}
@@ -229,23 +229,23 @@ func TestSoloReasoningChoicesValidateWithoutChangingAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	view, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("ultra"))
+	view, err := solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("ultra"), nil)
 	if err != nil || view.CurrentModelID != "aux" || view.CurrentReasoningEffort != "ultra" || !reflect.DeepEqual(view.ReasoningEfforts, []string{"high", "ultra"}) {
 		t.Fatalf("effort-only: view=%+v err=%v", view, err)
 	}
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("primary"), nil)
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("primary"), nil, nil)
 	if err != nil || view.CurrentModelID != "" || view.CurrentReasoningEffort != "" {
 		t.Fatalf("incompatible effort must reset: view=%+v err=%v", view, err)
 	}
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("high"))
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer("high"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("aux"), nil)
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("aux"), nil, nil)
 	if err != nil || view.CurrentReasoningEffort != "high" {
 		t.Fatalf("compatible effort lost: %+v %v", view, err)
 	}
-	_, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("fixed"), effortPointer("ultra"))
+	_, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", effortPointer("fixed"), effortPointer("ultra"), nil)
 	var inputErr *SoloError
 	if !errors.As(err, &inputErr) || inputErr.Code != "reasoning_effort_unavailable" {
 		t.Fatalf("unadvertised effort accepted: %v", err)
@@ -254,7 +254,7 @@ func TestSoloReasoningChoicesValidateWithoutChangingAgent(t *testing.T) {
 	if got.CurrentModelID != "aux" || got.CurrentReasoningEffort != "high" {
 		t.Fatalf("invalid request wrote settings: %+v", got)
 	}
-	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer(""))
+	view, err = solo.SetCurrentModelSettings(ctx, row.ID, "alice", nil, effortPointer(""), nil)
 	if err != nil || view.CurrentModelID != "aux" || view.CurrentReasoningEffort != "" {
 		t.Fatalf("explicit reset: %+v %v", view, err)
 	}
@@ -354,7 +354,7 @@ func TestSoloEffortWaitsForTurnBoundaryAndCarriesHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "first turn", gate.started)
-	if _, err := solo.SetCurrentModelSettings(ctx, view.ID, "alice", nil, effortPointer("ultra")); err != nil {
+	if _, err := solo.SetCurrentModelSettings(ctx, view.ID, "alice", nil, effortPointer("ultra"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(aligner.snapshot()) != 0 {
@@ -371,7 +371,7 @@ func TestSoloEffortWaitsForTurnBoundaryAndCarriesHistory(t *testing.T) {
 	if got := aligner.snapshot(); !reflect.DeepEqual(got, [][2]string{{"aux", "ultra"}}) {
 		t.Fatalf("applied settings: %v", got)
 	}
-	if text := gate.snapshot()[1]; !strings.Contains(text, "推理强度已调整") || !strings.Contains(text, "[用户] keep this context") {
+	if text := gate.snapshot()[1]; !strings.Contains(text, "模型设置已调整") || !strings.Contains(text, "[用户] keep this context") {
 		t.Fatalf("effort change lost dialogue: %q", text)
 	}
 	row, _ := solo.Require(view.ID, "alice")
@@ -392,7 +392,7 @@ func TestSoloFailedSettingsRollbackBothAndPreserveNewerChoice(t *testing.T) {
 			aligner := &settingsAligner{err: errors.New("CLI rejected effort")}
 			if newer {
 				aligner.before = func() {
-					if _, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", effortPointer("primary"), effortPointer("low")); err != nil {
+					if _, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", effortPointer("primary"), effortPointer("low"), nil); err != nil {
 						t.Fatal(err)
 					}
 				}

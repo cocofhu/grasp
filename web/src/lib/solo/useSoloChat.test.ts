@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   reorderSoloQueue: vi.fn(),
   setSoloSessionModel: vi.fn(),
   setSoloSessionReasoningEffort: vi.fn(),
+  setSoloSessionServiceTier: vi.fn(),
   soloChatWsUrl: vi.fn(() => 'ws://example.test/solo'),
 }))
 
@@ -908,6 +909,39 @@ describe('useSoloChat', () => {
     expect(chat.currentModelId.value).toBe('aux')
     ws.emit({ type: 'session', event: 'queue_state', busy: false, items: [] })
     await flushPromises()
+    app.unmount()
+  })
+
+  it('serializes Fast after effort, ignores stale acknowledgements and rolls back only the failed Fast choice', async () => {
+    const initial = { currentModelSet: true, currentModelId: 'gpt-6.2-sol', reasoningEffort: 'low', serviceTier: '', serviceTiers: ['fast'] }
+    mocks.getSoloSession.mockResolvedValue(session(initial))
+    let resolveEffort!: (value: ReturnType<typeof session>) => void
+    let rejectFast!: (error: Error) => void
+    mocks.setSoloSessionReasoningEffort.mockImplementationOnce(() => new Promise(done => { resolveEffort = done }))
+    mocks.setSoloSessionServiceTier.mockImplementationOnce(() => new Promise((_, reject) => { rejectFast = reject }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    const effort = chat.setCurrentReasoningEffort('high')
+    const fast = chat.setCurrentServiceTier('fast')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    expect(chat.currentServiceTier.value).toBe('fast')
+    await flushPromises()
+    expect(mocks.setSoloSessionServiceTier).not.toHaveBeenCalled()
+    ws.emit({ type: 'session', event: 'model', ...initial })
+    expect(chat.currentServiceTier.value).toBe('fast')
+    resolveEffort(session({ ...initial, reasoningEffort: 'high' }))
+    expect(await effort).toBe(true)
+    await flushPromises()
+    expect(mocks.setSoloSessionServiceTier).toHaveBeenCalledWith('s1', 'fast')
+    expect(chat.currentServiceTier.value).toBe('fast')
+    rejectFast(Object.assign(new Error('Fast unavailable'), { code: 'service_tier_unavailable' }))
+    expect(await fast).toBe(false)
+    expect(chat.currentServiceTier.value).toBe('')
+    expect(chat.currentReasoningEffort.value).toBe('high')
+    expect(chat.currentModelId.value).toBe('gpt-6.2-sol')
     app.unmount()
   })
 

@@ -32,6 +32,8 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 			"fixed":            false,
 			"reasoningEffort":  bridge.ReasoningEffort(),
 			"reasoningEfforts": reasoningEfforts,
+			"serviceTier":      bridge.ServiceTier(),
+			"serviceTiers":     service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }
@@ -46,6 +48,7 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		var body struct {
 			Model           *string `json:"model"`
 			ReasoningEffort *string `json:"reasoningEffort"`
+			ServiceTier     *string `json:"serviceTier"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
@@ -73,7 +76,17 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		} else if !bridge.ReasoningEffortSelectable(effectiveModel, effort) {
 			effort = ""
 		}
-		sess, err := bridge.SwitchModelSettings(model, effort)
+		tier := bridge.ServiceTier()
+		if body.ServiceTier != nil {
+			tier = strings.TrimSpace(*body.ServiceTier)
+			if !service.ServiceTierSelectable(effectiveModel, tier) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不支持所选速度档位", "code": "service_tier_unavailable"})
+				return
+			}
+		} else if !service.ServiceTierSelectable(effectiveModel, tier) {
+			tier = ""
+		}
+		sess, err := bridge.SwitchModelSettings(model, effort, &tier)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -85,6 +98,8 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 			"selected":        bridge.Model(),
 			"sessionId":       sess.SessionID(),
 			"reasoningEffort": bridge.ReasoningEffort(),
+			"serviceTier":     bridge.ServiceTier(),
+			"serviceTiers":    service.ServiceTiers(bridge.EffectiveModel()),
 		})
 	}
 }

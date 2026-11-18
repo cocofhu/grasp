@@ -186,6 +186,7 @@ func putReactModelChoice(out gin.H, conv models.ReactConversation) {
 		out["currentModelId"] = conv.CurrentModelID
 		out["currentModelSet"] = conv.CurrentModelSet
 		out["reasoningEffort"] = conv.CurrentReasoningEffort
+		out["serviceTier"] = conv.CurrentServiceTier
 	}
 	if notice := strings.TrimSpace(conv.ModelNotice); notice != "" {
 		out["modelNotice"] = notice

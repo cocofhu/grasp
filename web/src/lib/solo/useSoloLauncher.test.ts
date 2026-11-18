@@ -26,6 +26,7 @@ vi.mock('@/lib/api/api', () => ({ api: mocks }))
 import { useSoloLauncher } from './useSoloLauncher'
 import { soloPrefs } from './soloPrefs'
 import { firstInstallCompletedAt } from '@/lib/onboarding/firstInstall'
+import { resetCliCatalog } from '@/lib/agent/cliCatalog'
 
 const mountedApps: ReturnType<typeof createApp>[] = []
 function mountLauncher() {
@@ -44,6 +45,7 @@ function mountLauncher() {
 
 describe('useSoloLauncher', () => {
   beforeEach(() => {
+    resetCliCatalog()
     localStorage.clear()
     firstInstallCompletedAt.value = 0
     mocks.push.mockClear()
@@ -173,6 +175,31 @@ describe('useSoloLauncher', () => {
     await launcher.start('Use the other model')
     expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).toMatchObject({ initialModelId: 'kimi-k2.5' })
     expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('launches with Fast independently of effort and clears Fast for an unsupported model', async () => {
+    mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'codex-config' } }] as never)
+    mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
+      id: 'codex-config', name: 'Codex', backend: 'codex', state: 'active', revision: 1,
+      binding: { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['custom-model'] },
+    }] } as never)
+    mocks.cliModels.mockResolvedValueOnce({ models: [
+      { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', efforts: ['low', 'high'], serviceTiers: ['fast'] },
+      { id: 'custom-model', name: 'Custom model', vendor: 'openai', efforts: ['low', 'high'] },
+    ] } as never)
+    const launcher = mountLauncher()
+    await launcher.load()
+    await flushPromises()
+    launcher.reasoningEffort.value = 'low'
+    launcher.serviceTier.value = 'fast'
+    await launcher.start('Use Fast with low reasoning')
+    expect(mocks.createSoloSession).toHaveBeenLastCalledWith(expect.objectContaining({ serviceTier: 'fast', reasoningEffort: 'low' }))
+    launcher.initialModelId.value = 'custom-model'
+    await flushPromises()
+    expect(launcher.serviceTier.value).toBe('')
+    expect(launcher.reasoningEffort.value).toBe('low')
+    await launcher.start('Continue without Fast')
+    expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('serviceTier')
   })
 
   it('sends the highest Gemini 4 Argon effort when the slider is left untouched and keeps a saved lower level', async () => {

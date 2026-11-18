@@ -24,6 +24,7 @@ type AgentModel struct {
 	IsDefault        bool     `json:"isDefault,omitempty"`
 	Unavailable      bool     `json:"unavailable,omitempty"`
 	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
+	ServiceTiers     []string `json:"serviceTiers,omitempty"`
 }
 
 // ListAgentModels 返回当前 provider 的模型目录：优先用 provider 声明的目录，

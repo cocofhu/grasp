@@ -22,6 +22,7 @@ func (s *SoloService) openSandboxWith(ctx context.Context, row *models.SoloSessi
 		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
 		InitialConfigurationID: chatConfigurationID(row),
 		ReasoningEffort:        row.CurrentReasoningEffort,
+		ServiceTier:            row.CurrentServiceTier,
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})
@@ -58,7 +59,7 @@ func (s *SoloService) openSandboxWith(ctx context.Context, row *models.SoloSessi
 		return err
 	}
 	// The new container is born on this model. Later switches compare against it.
-	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort)
+	return s.rememberAppliedRoute(sid, chatConfigurationID(row), model, row.CurrentReasoningEffort, row.CurrentServiceTier)
 }
 
 func (s *SoloService) onSandboxRecovered(sandboxID uint) {

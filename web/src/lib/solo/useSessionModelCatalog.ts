@@ -16,7 +16,7 @@ export type ScopedSessionModelCatalog = {
   unavailableConfigurationIds?: string[]
   runtime?: {
     default: string
-    models: { id: string; name: string; vendor?: string; unavailable?: boolean; reasoningEfforts?: string[] }[]
+    models: { id: string; name: string; vendor?: string; unavailable?: boolean; reasoningEfforts?: string[]; serviceTiers?: string[] }[]
   }
 }
 
@@ -47,6 +47,7 @@ export function useSessionModelCatalog(agentName: Ref<string>, scopedSource?: ()
       return ordered.map(row => ({
         id: row.id, name: row.name || row.id, hint: row.id, vendor: row.vendor || '', backend: !row.vendor,
         unavailable: !!row.unavailable, efforts: row.reasoningEfforts,
+        serviceTiers: row.serviceTiers,
       }))
     }
     const rows = boundModelChoices({

@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 放大模型选择器中的思考强度闪电图标，并为支持加速的 Codex 官方模型新增独立 Fast 开关。Fast 与思考强度分别设置，提示用量增加；选择会随 Solo 会话、工作流对话及预览保存和恢复，并在下一轮生效。
+
+- Codex 模型选择新增 GPT-6.2 Sol、GPT-6.2 Astra 和 GPT-6.1 Terra，同步各模型的上下文窗口与推理档位。
+
 - 沙箱镜像不再安装 `mongocli`（已无用途）。`mongosh` 和 `mongodump` 等数据库工具保留。构建时不再访问 `fastdl.mongodb.org`。
 
 - 沙箱镜像改由 sandbox-gateway 统一决定，Grasp 不再配置镜像（破坏性变更）：

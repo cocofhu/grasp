@@ -35,6 +35,7 @@ type agentContainerExtra struct {
 	// InitialChatModel selects only the sandbox's first chat. Empty follows the primary model.
 	InitialChatModel           string
 	InitialChatReasoningEffort *string
+	InitialChatServiceTier     *string
 }
 
 // Env key provenance labels reported to the Solo environment panel.

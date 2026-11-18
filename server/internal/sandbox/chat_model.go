@@ -21,10 +21,11 @@ type ChatModelOption struct {
 	Vendor           string   `json:"vendor,omitempty"`
 	Unavailable      bool     `json:"unavailable,omitempty"`
 	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
+	ServiceTiers     []string `json:"serviceTiers,omitempty"`
 }
 
 // ChatModelSettings contains one chat's explicit model and the configured options.
-// A nil effort is an older runtime that does not expose this capability.
+// Nil settings identify an older runtime that does not expose that capability.
 type ChatModelSettings struct {
 	Models           []ChatModelOption `json:"models"`
 	Configured       bool              `json:"configured"`
@@ -32,6 +33,8 @@ type ChatModelSettings struct {
 	Selected         string            `json:"selected"`
 	ReasoningEffort  *string           `json:"reasoningEffort"`
 	ReasoningEfforts []string          `json:"reasoningEfforts"`
+	ServiceTier      *string           `json:"serviceTier"`
+	ServiceTiers     []string          `json:"serviceTiers"`
 }
 
 // ChatHTTPError is a non-OK status from the bridge or the proxy in front of
@@ -74,11 +77,16 @@ func GetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 		value := strings.TrimSpace(*settings.ReasoningEffort)
 		settings.ReasoningEffort = &value
 	}
+	if settings.ServiceTier != nil {
+		value := strings.TrimSpace(*settings.ServiceTier)
+		settings.ServiceTier = &value
+	}
 	return settings, nil
 }
 
 // SetIndependentModelSettings changes only the non-default chat this client owns.
-func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effort string) (bool, error) {
+// A nil tier keeps the chat's current speed tier.
+func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effort string, tier *string) (bool, error) {
 	if c.chatID == "" || c.chatID == "default" {
 		return false, fmt.Errorf("independent chat required")
 	}
@@ -95,10 +103,19 @@ func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effo
 			return false, fmt.Errorf("model is outside the active preview configuration")
 		}
 	}
-	if settings.Selected == model && settings.ReasoningEffort != nil && *settings.ReasoningEffort == effort {
+	tierMatches := true
+	if tier != nil {
+		want := strings.TrimSpace(*tier)
+		if settings.ServiceTier == nil && want != "" {
+			return false, fmt.Errorf("runtime does not support service tiers")
+		}
+		tierMatches = settings.ServiceTier == nil || *settings.ServiceTier == want
+		tier = &want
+	}
+	if settings.Selected == model && settings.ReasoningEffort != nil && *settings.ReasoningEffort == effort && tierMatches {
 		return false, nil
 	}
-	return true, SetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID, model, effort)
+	return true, SetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID, model, effort, tier)
 }
 
 // GetChatModel reads the default chat's explicit model. Empty means the
@@ -125,21 +142,26 @@ func GetChatModel(ctx context.Context, host string, port int, password string) (
 // coding agent. Empty restores the primary model. The caller must not invoke
 // this while a turn is still generating.
 func SetChatModel(ctx context.Context, host string, port int, password, model string) error {
-	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery("default"), map[string]string{"model": strings.TrimSpace(model)})
+	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery("default"), map[string]any{"model": strings.TrimSpace(model)})
 }
 
-// SetChatModelSettings applies both settings through one runtime restart.
-func SetChatModelSettings(ctx context.Context, host string, port int, password, model, effort string) error {
-	return SetChatModelSettingsFor(ctx, host, port, password, "default", model, effort)
+// SetChatModelSettings applies the settings through one runtime restart.
+// A nil tier preserves the chat's current speed tier.
+func SetChatModelSettings(ctx context.Context, host string, port int, password, model, effort string, tier *string) error {
+	return SetChatModelSettingsFor(ctx, host, port, password, "default", model, effort, tier)
 }
 
-// SetChatModelSettingsFor applies both settings to one bridge chat. Empty chat
+// SetChatModelSettingsFor applies the settings to one bridge chat. Empty chat
 // is the default chat. Empty model restores that chat's primary model.
-func SetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat, model, effort string) error {
-	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery(chat), map[string]string{"model": strings.TrimSpace(model), "reasoningEffort": strings.TrimSpace(effort)})
+func SetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat, model, effort string, tier *string) error {
+	settings := map[string]any{"model": strings.TrimSpace(model), "reasoningEffort": strings.TrimSpace(effort)}
+	if tier != nil {
+		settings["serviceTier"] = strings.TrimSpace(*tier)
+	}
+	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery(chat), settings)
 }
 
-func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]string) error {
+func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]any) error {
 	body, err := json.Marshal(settings)
 	if err != nil {
 		return err

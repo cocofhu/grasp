@@ -35,33 +35,33 @@ func TestVisitModelStaysOnTheVisitAndRejectsUnboundModels(t *testing.T) {
 	db.Create(&models.ReactConversation{RunID: "run-1", NodeID: "clarify", Iteration: 2})
 
 	primary := ""
-	choice, err := SetVisitModel(db, agent, "run-1", "clarify", 1, &primary, &primary, &primary)
+	choice, err := SetVisitModel(db, agent, "run-1", "clarify", 1, &primary, &primary, &primary, nil)
 	if err != nil || !choice.CurrentModelSet || choice.CurrentModelID != "" || choice.CurrentConfigurationID != "group-a" {
 		t.Fatalf("selecting the default primary: %+v %v", choice, err)
 	}
 	fast := "composer-fast"
-	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &fast, nil)
+	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &fast, nil, nil)
 	if err != nil || choice.CurrentModelID != "composer-fast" || choice.CurrentConfigurationID != "group-a" {
 		t.Fatalf("auxiliary: %+v %v", choice, err)
 	}
 	composer := "composer"
-	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &composer, nil)
+	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &composer, nil, nil)
 	if err != nil || choice.CurrentModelID != "" || !choice.CurrentModelSet {
 		t.Fatalf("selecting the primary id stores the default: %+v %v", choice, err)
 	}
 	otherGroup := "group-b"
-	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, &otherGroup, &primary, &primary)
+	choice, err = SetVisitModel(db, agent, "run-1", "clarify", 1, &otherGroup, &primary, &primary, nil)
 	if err != nil || choice.CurrentConfigurationID != "group-b" || choice.CurrentModelID != "" || choice.Backend != "opencode" {
 		t.Fatalf("other group: %+v %v", choice, err)
 	}
 
 	before := choice
 	missing := "not-bound"
-	if _, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &missing, nil); err == nil {
+	if _, err = SetVisitModel(db, agent, "run-1", "clarify", 1, nil, &missing, nil, nil); err == nil {
 		t.Fatal("unbound model was accepted")
 	}
 	off := "group-off"
-	if _, err = SetVisitModel(db, agent, "run-1", "clarify", 1, &off, &primary, nil); err == nil {
+	if _, err = SetVisitModel(db, agent, "run-1", "clarify", 1, &off, &primary, nil, nil); err == nil {
 		t.Fatal("disabled group was accepted")
 	}
 	reloaded, err := GetVisitModel(db, "run-1", "clarify", 1)
@@ -99,12 +99,12 @@ func TestVisitModelRejectsUnavailableEffort(t *testing.T) {
 	db.Create(&models.ReactConversation{RunID: "run-e", NodeID: "clarify", Iteration: 1})
 	empty := ""
 	high := "high"
-	choice, err := SetVisitModel(db, agent, "run-e", "clarify", 1, &empty, &empty, &high)
+	choice, err := SetVisitModel(db, agent, "run-e", "clarify", 1, &empty, &empty, &high, nil)
 	if err != nil || choice.ReasoningEffort != "high" || choice.CurrentModelID != "" {
 		t.Fatalf("effort: %+v %v", choice, err)
 	}
 	nope := "ultra"
-	if _, err = SetVisitModel(db, agent, "run-e", "clarify", 1, nil, nil, &nope); err == nil {
+	if _, err = SetVisitModel(db, agent, "run-e", "clarify", 1, nil, nil, &nope, nil); err == nil {
 		t.Fatal("unknown effort was accepted")
 	}
 	reloaded, err := GetVisitModel(db, "run-e", "clarify", 1)
@@ -114,7 +114,7 @@ func TestVisitModelRejectsUnavailableEffort(t *testing.T) {
 	if err := db.Model(&models.ReactConversation{}).Where("run_id = ?", "run-e").Update("done", true).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err = SetVisitModel(db, agent, "run-e", "clarify", 1, nil, nil, &empty); err == nil {
+	if _, err = SetVisitModel(db, agent, "run-e", "clarify", 1, nil, nil, &empty, nil); err == nil {
 		t.Fatal("ended visit accepted a switch")
 	}
 }

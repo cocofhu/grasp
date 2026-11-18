@@ -187,6 +187,7 @@ type ChatRoute struct {
 	Backend         string
 	ModelID         string
 	ReasoningEffort string
+	ServiceTier     string
 	Set             bool
 }
 

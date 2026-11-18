@@ -161,6 +161,8 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :current-model-id="liveConversation?.currentModelId"
                   :current-model-set="liveConversation?.currentModelSet"
                   :reasoning-effort="liveConversation?.reasoningEffort"
+                  :service-tier="liveConversation?.serviceTier"
+                  :service-tiers="liveConversation?.serviceTiers"
                   :model-notice="liveConversation?.modelNotice"
                   :done-note="doneNote"
                   @takeover="takeover"

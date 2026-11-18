@@ -191,7 +191,7 @@ func TestCursorCatalogMatchesCLISnapshot(t *testing.T) {
 	}
 }
 
-func TestNonCursorCatalogsUnchanged(t *testing.T) {
+func TestNonCursorCatalogSnapshots(t *testing.T) {
 	want := map[string][]string{
 		"claude_code": {
 			"sonnet\tClaude Sonnet (latest)\tanthropic\tvision,reasoning\t200\ttrue\t",
@@ -201,6 +201,9 @@ func TestNonCursorCatalogsUnchanged(t *testing.T) {
 			"claude-opus-4-1\tClaude Opus 4.1\tanthropic\tvision,reasoning\t200\tfalse\t",
 		},
 		"codex": {
+			"gpt-6.2-sol\tGPT-6.2 Sol\topenai\tvision,reasoning\t500\ttrue\tlow,medium,high,xhigh,max,ultra",
+			"gpt-6.2-astra\tGPT-6.2 Astra\topenai\tvision,reasoning\t272\ttrue\tlow,medium,high,xhigh,max,ultra",
+			"gpt-6.1-terra\tGPT-6.1 Terra\topenai\tvision,reasoning\t500\tfalse\tlow,medium,high,xhigh,max,ultra",
 			"gpt-6.1-sol\tGPT-6.1 Sol\topenai\tvision,reasoning\t500\ttrue\tlow,medium,high,xhigh,max,ultra",
 			"gpt-6-astra\tGPT-6 Astra\topenai\tvision,reasoning\t272\ttrue\tlow,medium,high,xhigh,max,ultra",
 			"gpt-6-sol\tGPT-6 Sol\topenai\tvision,reasoning\t272\tfalse\tlow,medium,high,xhigh,max,ultra",

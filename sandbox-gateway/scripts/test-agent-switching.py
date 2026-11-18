@@ -90,6 +90,22 @@ def assert_reasoning_requests(requests, effort, backend):
         raise AssertionError('reasoning strength did not reach every main model request for '+backend+'/'+effort)
 
 
+def load_codex_fast_report(output):
+    # Only bounded diagnostic logs and the result report may be published.
+    # Native CLI homes contain private, container-owned state which the
+    # unprivileged CI artifact uploader cannot traverse.
+    allowed = {'probe.log', 'codex-fast-runtime.log', 'codex-fast-report.json'}
+    for artifact in output.iterdir():
+        if artifact.name not in allowed or artifact.is_symlink() or not artifact.is_file():
+            raise AssertionError('Codex Fast artifacts must contain only report/log files; private CLI state must stay outside the artifact directory')
+        with artifact.open('rb') as stream:
+            stream.read(1)
+    report = json.loads((output/'codex-fast-report.json').read_text())
+    if report.get('status') != 'passed' or len(report.get('cases') or []) != 8:
+        raise AssertionError('native Codex Fast probe did not complete every required case')
+    return report
+
+
 class E2E:
     def __init__(self, args):
         self.args = args
@@ -106,6 +122,7 @@ class E2E:
         self.run = 'switch-'+secrets.token_hex(6)
         self.nonce = 'task-'+secrets.token_hex(12)
         self.marker = 'checkpoint.txt'
+        self.fast_probe_report = None
 
     def request(self, path, body=None, method=None, base=None, headers=None):
         data = None if body is None else json.dumps(body).encode()
@@ -312,6 +329,8 @@ class E2E:
             if not any(request.get('model') == model and request.get('completed') for request in observed):
                 raise AssertionError('selected primary/auxiliary model did not reach the upstream API for '+step['id'])
             main_requests = [request for request in observed if request.get('availableTools') and not request.get('failure') and request.get('model') == model]
+            if step['backend'] != 'codex' and any(request.get('serviceTier') in ['priority', 'fast'] for request in observed):
+                raise AssertionError('Codex Fast mode leaked into another backend: '+step['backend'])
             wired = step.get('effort') or (self.resolved_effort(step) if step['backend'] == 'kimi_code' or step['kind'] == 'effort' and step.get('effort') == '' else '')
             if wired:
                 assert_reasoning_requests(main_requests, wired, step['backend'])
@@ -354,6 +373,28 @@ class E2E:
                     else:
                         raise AssertionError('unsupported reasoning strength was silently accepted for '+tool['id']+'/'+effort)
 
+    def check_codex_fast_mode(self):
+        # Public Fast selection is limited to official platform model metadata.
+        # A separate real runtime/CLI probe declares that capability explicitly
+        # while keeping every model request inside its container-local fixture.
+        if not any(tool['id'] == 'codex' for tool in self.tools):
+            return
+        output = self.output/'codex-fast-mode'
+        output.mkdir(mode=0o700, exist_ok=True)
+        container = 'grasp-codex-fast-probe-'+secrets.token_hex(6)
+        argv = ['docker', 'run', '--rm', '--name', container,
+                '-v', str(HERE)+':/probe-scripts:ro',
+                '-v', str(Path(self.args.runtime_bundle).resolve())+':/probe-runtime.tgz:ro',
+                '-v', str(output)+':/probe-output',
+                '--entrypoint', '/bin/bash', self.args.sandbox_image, '-lc',
+                'mkdir -p /probe-runtime && tar -xzf /probe-runtime.tgz -C /probe-runtime && exec node /probe-scripts/codex-fast-mode-probe.mjs /probe-runtime /probe-output']
+        try:
+            with (output/'probe.log').open('w') as log:
+                subprocess.run(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
+            self.fast_probe_report = load_codex_fast_report(output)
+        finally:
+            subprocess.run(['docker', 'rm', '-f', container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
     def verify_native_usage(self, step, case, report):
         tool = next(tool for tool in self.tools if tool['id'] == step['backend'])
         if tool['mode'] != 'native-cli':
@@ -367,6 +408,7 @@ class E2E:
 
     def save_report(self, error=None):
         report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report['codexFastMode'] = self.fast_probe_report
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:
             # Test prompts, commands and credentials are synthetic. Keep the
@@ -428,7 +470,7 @@ def main():
     test = E2E(args)
     failure = None
     try:
-        test.start(); test.seed(); test.run_matrix()
+        test.start(); test.seed(); test.run_matrix(); test.check_codex_fast_mode()
     except Exception as error:
         failure = error
     finally:
