@@ -158,7 +158,7 @@ describe('sidebar 历史执行 lists ended Solo sessions', () => {
     for (const item of failed) {
       expect(ids).toContain(item.id)
       const row = wrapper.get(`[data-run-id="${item.id}"]`)
-      expect(row.attributes('href')).toBe(`/runs/${item.id}`)
+      expect(row.attributes('href')).toBe(`/runs/${item.id}/live`)
       expect(row.attributes('data-status')).toBe('failed')
       const mark = row.get('[data-testid="sidebar-recent-ended"]')
       expect(mark.classes()).toContain('is-failed')
@@ -185,7 +185,7 @@ describe('sidebar 历史执行 lists ended Solo sessions', () => {
     await flushPromises()
     expect(order(wrapper)).toEqual(['fresh', 'solo:closed', 'keep'])
     const row = wrapper.get('[data-run-id="fresh"]')
-    expect(row.attributes('href')).toBe('/runs/fresh')
+    expect(row.attributes('href')).toBe('/runs/fresh/live')
     expect(row.get('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
     expect(row.get('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('失败')
     wrapper.unmount()

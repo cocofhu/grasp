@@ -159,6 +159,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let aheadEvents: { nodeId: string; events: AcpEvent[] } | null = null
   /** A node has been shown on this page: from now on, no automatic navigation. */
   let shown = false
+  /** openEnded is reading the chain; later snapshots must not end the page on no node. */
+  let openingEnded = false
   const reviewState = createReviewSessionState()
   const reconnect = createWsReconnectController({
     connect: () => connect(runId.value),
@@ -302,8 +304,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    * it is opening; after a node was shown the run is followed in place, and
    * a gate or the end of the run ends it in place.
    */
-  function applyRun(r: Run, id: string, fromSnapshot = false, checkpoint?: ReviewRecoveryCheckpoint) {
-    if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value) return
+  function applyRun(r: Run, id: string, fromSnapshot = false, checkpoint?: ReviewRecoveryCheckpoint): Promise<void> | void {
+    if (disposed || id !== runId.value || (r.id && r.id !== id) || ended.value || openingEnded) return
     ingestDialogues(r.dialogueByNode, id)
     const d = decideLive(r, requestedNode.value)
     const c = recentCurrentNode(r)
@@ -347,7 +349,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return continueTo(d.nodeId, 'chat', c)
     }
     if (d.kind === 'detail') {
-      if (!shown) return leaveTo(runDetailPath(id))
+      if (!shown) return openEnded(r, id)
       endState.value = { kind: 'run', status: String(r.status || '') }
       return finish()
     }
@@ -362,6 +364,35 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (shown && nodeId.value !== d.nodeId) return continueTo(d.nodeId, 'observe', c)
     applyObserve(d, id)
+  }
+
+  /**
+   * A run that already ended when the page opened: its conversation, read-only,
+   * on the requested node or else the last one, earlier nodes folded above.
+   * A run with no conversation at all falls back to run detail.
+   */
+  async function openEnded(r: Run, id: string) {
+    const visit = visitEpoch
+    shown = true
+    openingEnded = true
+    try {
+      await loadChain()
+      if (!currentVisit(visit, id)) return
+      if (!chain.value) chain.value = runChainFromRun(r)
+      const segs = chain.value.segments
+      const want = requestedNode.value
+      const seg = (want && [...segs].reverse().find((s) => s.nodeId === want)) || segs[segs.length - 1]
+      if (!seg) return leaveTo(runDetailPath(id))
+      nodeId.value = seg.nodeId
+      iteration.value = seg.iteration
+      nodeLabel.value = seg.label
+      task.value = clipTask(seg.task)
+      mode.value = seg.kind === 'chat' ? 'chat' : 'observe'
+      endState.value = { kind: 'run', status: String(r.status || '') }
+      finish()
+    } finally {
+      if (currentVisit(visit, id)) openingEnded = false
+    }
   }
 
   /**
@@ -445,7 +476,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const r = await api.getRun(id, { signal })
       if (signal.aborted || gen !== loadGen || !currentVisit(visit, id)) return
       if (continuedChat && !reviewState.isCurrent(checkpoint, node)) return
-      applyRun(r, id, false, checkpoint)
+      await applyRun(r, id, false, checkpoint)
       if (continuedChat && mode.value === 'chat' && chatBusy) await seed(true, signal)
       else if (observingSeeded && mode.value === 'observe' && nodeId.value === node &&
         reviewState.isCurrent(checkpoint, node)) await seed(true, signal)
@@ -783,6 +814,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     ended.value = false
     endState.value = null
     shown = false
+    openingEnded = false
     mode.value = 'observe'
     chatKind.value = 'review'
     completedEvents.value = null
