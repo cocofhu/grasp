@@ -29,7 +29,7 @@ type runtimeSSH struct {
 func (f *runtimeSSH) hook(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, key := range []string{"install-stdin", "version", "restart preview-inject", "restart backend"} {
+	for _, key := range []string{"install-stdin", "version", "restart preview-inject", "restart memory-cap", "restart backend"} {
 		if !strings.Contains(strings.ReplaceAll(command, "'", ""), key) {
 			continue
 		}
@@ -82,7 +82,7 @@ func TestEnsureRuntimeUpdatesAndRestarts(t *testing.T) {
 	if err := m.EnsureRuntime(context.Background(), sb); err != nil {
 		t.Fatal(err)
 	}
-	if got := joined(f.take()); got != "version,install-stdin,restart preview-inject,restart backend" {
+	if got := joined(f.take()); got != "version,install-stdin,restart preview-inject,restart memory-cap,restart backend" {
 		t.Fatalf("calls=%s", got)
 	}
 	if !bytes.Equal(f.stdin, data) {
@@ -181,6 +181,7 @@ func TestEnsureRuntimeErrors(t *testing.T) {
 		"version":                reply("", nil),
 		"install-stdin":          reply("disk full", fakeExit(1)),
 		"restart preview-inject": reply("nope", fakeExit(1)),
+		"restart memory-cap":     reply("nope", fakeExit(1)),
 	}}
 	installSSH(t, f)
 	sb := &Sandbox{ID: "sb", SSHHost: "h"}
@@ -191,14 +192,14 @@ func TestEnsureRuntimeErrors(t *testing.T) {
 		t.Fatal("failed install must be retried")
 	}
 
-	// preview-inject restart failure is logged only; backend failure is returned.
+	// preview-inject / memory-cap restart failures are logged only; backend failure is returned.
 	f.replies["install-stdin"] = reply("", nil)
 	f.replies["restart backend"] = reply("boom", fakeExit(1))
 	f.take()
 	if err := m.EnsureRuntime(context.Background(), sb); err == nil || !strings.Contains(err.Error(), "restart backend") {
 		t.Fatalf("backend error=%v", err)
 	}
-	if got := joined(f.take()); got != "version,install-stdin,restart preview-inject,restart backend" {
+	if got := joined(f.take()); got != "version,install-stdin,restart preview-inject,restart memory-cap,restart backend" {
 		t.Fatalf("calls=%s", got)
 	}
 	f.replies["restart backend"] = nil

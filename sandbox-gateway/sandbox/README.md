@@ -22,7 +22,7 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
   `/usr/local/bin/backend`、`preview-inject`、`*.sh` 和 `/usr/local/share/backend` 都是指向 `current` 的软链。
   **没有 `GRASP_RUNTIME_URL` 时容器直接失败退出**：镜像不能脱离 Grasp 单独运行。
 - 运行中的沙箱：Grasp 每次使用沙箱时（`Attach`）后台比对版本，不一致就经 SSH 推送新包（`grasp-bootstrap.sh install-stdin`），
-  再 `services.sh restart preview-inject` 和 `services.sh restart backend --if-idle`。backend 有进行中的轮次、排队的 prompt 或已连接的 WebSocket 时返回 busy（退出码 3），下次使用时再重启。
+  再 `services.sh restart preview-inject`、`services.sh restart memory-cap` 和 `services.sh restart backend --if-idle`。backend 有进行中的轮次、排队的 prompt 或已连接的 WebSocket 时返回 busy（退出码 3），下次使用时再重启。
   热更新**不会**重跑 `startup.sh` 里只执行一次的步骤（凭据、克隆、dockerd、code-server 配置），这类改动只对新沙箱生效。
 - 兼容性：镜像写入 `/etc/grasp-image-level`（来自 `IMAGE_LEVEL`），运行时包 MANIFEST 带 `min_image`。镜像版本不够时 bootstrap 退出码 4，
   日志提示“请重建沙箱镜像”；Grasp 对这类沙箱不再推送。服务端与镜像一起发布，不支持不带 bootstrap 的镜像。
@@ -96,7 +96,7 @@ sandbox/
 ├── cmd/preview-inject/ # 直连预览 HTML 注入进程（听 17980）
 ├── internal/           # acp(ACP 协议传输层) + backend(...) + previewinject + service/handler/router/...
 ├── web/                # 前端静态资源（进运行时包）
-├── scripts/            # grasp-bootstrap.sh（打进镜像）；startup.sh / services.sh / vnc-preview.sh / preview-inject.sh / claude-env.sh（进运行时包）
+├── scripts/            # grasp-bootstrap.sh（打进镜像）；startup.sh / services.sh / memory-cap.sh / vnc-preview.sh / preview-inject.sh / claude-env.sh（进运行时包）
 ├── docs/               # PROTOCOL.md / ARCHITECTURE.md / BACKEND.md
 └── README.md           # 本文（镜像总览）
 ```
@@ -268,6 +268,17 @@ dsh 的启动 patch 不包含密钥，并关闭托管凭据来源，保证本次
 | `CDP_PORT` | `9222` | 箱内 Chromium CDP 监听端口（浏览器 MCP attach 目标；仅容器网可达，不对外发布） |
 | `WS_PORT` | `6080` | 箱内 noVNC websockify 端口（仅容器网可达；用户走平台 VNC WS） |
 | `VNC_PID_DIR` | `/tmp/sandbox-vnc` | 预览栈各进程 PID / 锁文件目录 |
+
+### 8.1 E2B 客户机缓存上限
+
+E2B 沙箱是 Firecracker 虚拟机，主机按客户机碰过的每一页计占用，客户机的页面缓存在主机上和进程内存一样占着。`services.sh` 管理的 `memory-cap`（`scripts/memory-cap.sh`）只在 `E2B_SANDBOX=true` 时运行：每 5 秒用 `memory.reclaim` 把文件缓存压回上限（先回收最冷的页，不动进程内存），新增的碎片空闲内存超过阈值时整理内存，让空闲页上报能把整块内存还给主机。Docker / K8s 沙箱跳过。客户机以 systemd 为 PID 1 时，它作为临时单元 `grasp-memory-cap` 运行（`Restart=always`、`OOMScoreAdjust=-1000`），被杀后 5 秒内自动拉起；没有 systemd 时退回 `setsid` 后台进程。
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `GRASP_MEMORY_CAP_MIB` | `512` | 文件缓存上限（MiB），`0` 关闭 |
+| `GRASP_MEMORY_CAP_INTERVAL` | `5` | 检查间隔（秒） |
+| `GRASP_MEMORY_CAP_FRAG_MIB` | `512` | 距上次整理新增的碎片空闲内存超过此值才整理（MiB） |
+| `GRASP_MEMORY_CAP_COMPACT_EVERY` | `60` | 两次整理的最短间隔（秒） |
 
 ### 9. 契约注入（启动期，先于所有服务）
 

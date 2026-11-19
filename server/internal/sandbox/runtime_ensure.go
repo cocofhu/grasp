@@ -55,7 +55,7 @@ func (m *Manager) ensureRuntimeAsync(sb *Sandbox) {
 
 // EnsureRuntime brings a running sandbox to the server's runtime bundle: push
 // the bundle over SSH when the installed version differs, restart
-// preview-inject, and restart backend once it is idle. Sandboxes from images
+// preview-inject and memory-cap, and restart backend once it is idle. Sandboxes from images
 // too old for the bundle are skipped for good.
 func (m *Manager) EnsureRuntime(ctx context.Context, sb *Sandbox) error {
 	if m == nil || m.runtime == nil || sb == nil || sb.ID == "" {
@@ -141,13 +141,15 @@ func (m *Manager) pushRuntime(ctx context.Context, creds sshCreds, id string, da
 		return fmt.Errorf("install runtime: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	log.Info().Str("sandbox", id).Str("version", shortVersion(man.Version)).Msg("sandbox runtime installed")
-	restart, err := newSafeCmd(runtimeServices, "restart", "preview-inject")
-	if err != nil {
-		return err
-	}
-	if out, err := creds.run(ctx, 60*time.Second, restart); err != nil {
-		log.Warn().Err(err).Str("sandbox", id).Str("detail", strings.TrimSpace(string(out))).
-			Msg("restart preview-inject after runtime update failed")
+	for _, service := range []string{"preview-inject", "memory-cap"} {
+		restart, err := newSafeCmd(runtimeServices, "restart", service)
+		if err != nil {
+			return err
+		}
+		if out, err := creds.run(ctx, 60*time.Second, restart); err != nil {
+			log.Warn().Err(err).Str("sandbox", id).Str("service", service).Str("detail", strings.TrimSpace(string(out))).
+				Msg("restart service after runtime update failed")
+		}
 	}
 	st.backendPending = true
 	return nil

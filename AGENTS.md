@@ -304,7 +304,7 @@ not a substitute for these gates.
    skip module jobs. The always-on `ci` gate runs actionlint and shellcheck,
    and is still not module proof. Still run local suites for trees you actually touched.
 4. **Runtime hot update skips one-time startup** — Pushing a bundle restarts
-   only `backend` / `preview-inject` (`services.sh`); one-time `startup.sh`
+   only `backend` / `preview-inject` / `memory-cap` (`services.sh`); one-time `startup.sh`
    steps (credentials, clone, dockerd, code-server config) apply to new sandboxes only.
 5. **Page script copies** — After editing `live-overlay.js` (and other page
    scripts) run `npm run build:live-overlay` in `web/`; it syncs the three copies
