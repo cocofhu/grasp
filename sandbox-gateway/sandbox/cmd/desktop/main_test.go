@@ -42,7 +42,9 @@ func TestRunUsageAndUnknown(t *testing.T) {
 func TestRunVNCWSServesUntilSignal(t *testing.T) {
 	addr := "127.0.0.1:" + strconv.Itoa(freePort(t))
 	done := make(chan int, 1)
-	go func() { done <- run([]string{"vnc-ws", "-addr", addr, "-vnc", "127.0.0.1:1"}, nil, io.Discard, io.Discard) }()
+	go func() {
+		done <- run([]string{"vnc-ws", "-addr", addr, "-vnc", "127.0.0.1:1"}, nil, io.Discard, io.Discard)
+	}()
 	var resp *http.Response
 	var err error
 	for i := 0; i < 50; i++ {
