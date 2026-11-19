@@ -71,6 +71,9 @@ type ParseResult struct {
 	TracksSessionUsage bool
 	UsagePartial       bool
 	StopReason         string
+	// RetryDiagnostic describes a transport retry. Preserve it in case the CLI
+	// exits before producing a new message or reporting the turn outcome.
+	RetryDiagnostic string
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its

@@ -190,6 +190,7 @@ func TestParseCapturedUnauthenticatedExec(t *testing.T) {
 	// Captured from codex-cli 0.160.1: `codex exec --json --skip-git-repo-check`
 	// with no ChatGPT login. The CLI emits thread.started, then 401s against
 	// api.openai.com, and ends with turn.failed. Request ids are omitted.
+	t.Setenv(modelconnection.EnvConfig, "")
 	var c codec
 	lines := []string{
 		`{"type":"thread.started","thread_id":"01a111df-5174-7100-b248-f5a9d4076a15"}`,
@@ -205,11 +206,15 @@ func TestParseCapturedUnauthenticatedExec(t *testing.T) {
 	if turn := c.ParseLine([]byte(lines[1])); turn.StopReason != "" || len(turn.Msgs) != 0 {
 		t.Fatalf("turn.started=%+v", turn)
 	}
-	for _, line := range lines[2:] {
+	for _, line := range lines[2:4] {
 		got := c.ParseLine([]byte(line))
-		if got.StopReason != "failed" || len(got.Msgs) != 1 || got.Msgs[0].Kind != oneshot.KindError || got.Msgs[0].Text != codexLoginRepaste {
-			t.Fatalf("line %s => %+v", line, got)
+		if got.StopReason != "" || len(got.Msgs) != 0 {
+			t.Fatalf("transport progress became an authentication failure: %+v", got)
 		}
+	}
+	got := c.ParseLine([]byte(lines[4]))
+	if got.StopReason != "failed" || len(got.Msgs) != 1 || got.Msgs[0].Kind != oneshot.KindError || got.Msgs[0].Text != codexLoginRepaste {
+		t.Fatalf("lost final authentication failure: %+v", got)
 	}
 }
 
