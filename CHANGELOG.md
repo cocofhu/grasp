@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 模型选择按钮省略分组名，展开菜单可查看分组。
+
 - Agent 对话的斜杠菜单增加图标、中文标题和键盘选中状态。`/new` 在聊天记录中显示分隔线，`/compact` 显示压缩状态，`/skill` 在消息里显示所选技能。可读取已配置技能的入口提供技能列表。
 
 - Agent 对话支持 `/` 命令，适用于 Solo、工作流澄清、复审和审批预览、Agent Studio、沙箱控制台及独立访客对话。`/new`（也可输入 `/new chat`）在当前工作区开启新对话，旧消息仍可查看。`/compact` 用限长的历史摘录继续当前任务。`/skill <名称> [任务]` 为本轮选用 Agent 或共享 Agent 已配置的 skill。
