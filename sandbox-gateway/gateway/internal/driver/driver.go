@@ -20,9 +20,9 @@ const (
 	StatusNotFound Status = "not_found"
 	StatusPending  Status = "pending"
 	StatusError    Status = "error"
-	// StatusCrashed is a guest the provider still lists but that has stopped
-	// answering and can no longer be renewed. It does not recover; callers
-	// destroy it and start a new sandbox.
+	// StatusCrashed is a guest the provider still lists as running but no
+	// longer hosts. It does not recover; callers destroy it and start a new
+	// sandbox.
 	StatusCrashed Status = "crashed"
 )
 

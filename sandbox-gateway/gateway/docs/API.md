@@ -260,11 +260,14 @@ DELETE /api/v1/sandboxes/:id            # remove sandbox + record
 GET    /api/v1/sandboxes/:id/status     # {"status":"running|stopped|not_found|pending|error|crashed"}
 ```
 
-`crashed` (E2B only) means the provider still lists the guest but has
-rejected two consecutive lease renewals and the guest relay does not answer,
-as when its VM dies on host memory exhaustion. The guest will not recover;
-the stored record moves to `error` ("sandbox crashed") and callers should
-destroy it and create a new sandbox. A later accepted renewal clears it.
+`crashed` (E2B only) means the E2B API still lists the guest as running but
+the E2B sandbox proxy answers the relay probe with its own "The sandbox was
+not found" for that sandbox, twice about two seconds apart. This happens
+when the VM dies, for example on host memory exhaustion: the orchestrator
+drops the guest's route within seconds, while the API keeps the record until
+its lease expires. The guest will not recover; the stored record moves to
+`error` ("sandbox crashed") and callers should destroy it and create a new
+sandbox. A slow, failing or unreachable relay stays `error`.
 
 ### Start with current configuration
 

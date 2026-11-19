@@ -713,7 +713,11 @@ func (d *Driver) Get(ctx context.Context, id string) (*driver.Handle, error) {
 	if e.isCrashed() {
 		return handle(&e.record, nil, driver.StatusCrashed), nil
 	}
-	return d.refresh(ctx, &e.record)
+	h, err := d.refresh(ctx, &e.record)
+	if err != nil && d.noteCrash(ctx, e, err) {
+		return handle(&e.record, nil, driver.StatusCrashed), nil
+	}
+	return h, err
 }
 func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 	e, err := d.lockEntry(id)
@@ -734,6 +738,9 @@ func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
 	}
 	h, err := d.refresh(ctx, &e.record)
 	if err != nil {
+		if d.noteCrash(ctx, e, err) {
+			return driver.StatusCrashed, nil
+		}
 		return driver.StatusError, err
 	}
 	e.status, e.statusAt = h.Status, time.Now()
@@ -1221,37 +1228,38 @@ func (d *Driver) renewLease(ctx context.Context, e *entry) {
 		return
 	}
 	if s.State == "paused" || s.State == "stopped" {
-		e.renewFailures = 0
 		return
 	}
 	d.checkLeaseCap(e, s, time.Now())
 	if err = d.client.SetTimeout(ctx, s.ID, int(d.opts.Lease/time.Second)); err != nil {
-		e.renewFailures++
-		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Int("consecutive_failures", e.renewFailures).Msg("E2B lease renewal failed; provider expiry remains in force")
-		d.detectCrash(ctx, e)
-		return
+		log.Warn().Err(err).Str("sandbox_id", e.record.ID).Msg("E2B lease renewal failed; provider expiry remains in force")
 	}
-	e.renewFailures, e.crashed = 0, false
 }
 
-// crashRenewalFailures is how many consecutive rejected renewals, together
-// with an unreachable relay, mark a guest crashed. E2B keeps listing a guest
-// whose VM died (for example on host memory exhaustion) as running and only
-// rejects its renewals, so neither signal alone separates a crash from a
-// transient API or network fault.
-const crashRenewalFailures = 2
+// crashConfirmDelay separates the two proxy verdicts that mark a guest
+// crashed, so a routing update in flight is not mistaken for a lost guest.
+var crashConfirmDelay = 2 * time.Second
 
-func (d *Driver) detectCrash(ctx context.Context, e *entry) {
-	if e.crashed || e.renewFailures < crashRenewalFailures {
-		return
+// noteCrash latches a crash when the relay probe got the E2B proxy's own
+// "sandbox not found" while the API still lists the guest as running. The
+// API keeps a dead VM's record until its lease expires, but the orchestrator
+// drops its route within seconds, so the proxy is the authoritative signal.
+func (d *Driver) noteCrash(ctx context.Context, e *entry, probe error) bool {
+	if !errors.Is(probe, ErrGuestNotFound) {
+		return false
 	}
-	probe := d.observe(ctx, &e.record)
-	if probe == nil {
-		return
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(crashConfirmDelay):
+	}
+	if err := d.observe(ctx, &e.record); !errors.Is(err, ErrGuestNotFound) {
+		return false
 	}
 	e.crashed = true
-	log.Error().Err(probe).Str("sandbox_id", e.record.ID).Str("provider_id", e.record.Provider.ID).
-		Int("consecutive_failures", e.renewFailures).Msg("E2B guest crashed: lease renewals rejected and relay unreachable")
+	log.Error().Str("sandbox_id", e.record.ID).Str("provider_id", e.record.Provider.ID).
+		Msg("E2B guest crashed: API lists it running but the sandbox proxy reports it not found")
+	return true
 }
 
 func (e *entry) isCrashed() bool { return e.crashed && e.record.Phase == "running" }

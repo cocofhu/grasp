@@ -21,6 +21,24 @@ import (
 
 const relayPort = 8081
 
+// ErrGuestNotFound is the E2B sandbox proxy's own answer that no node routes
+// the guest, as opposed to a relay that is slow, failing or unreachable.
+var ErrGuestNotFound = errors.New("E2B sandbox proxy reports the sandbox was not found")
+
+// proxyNotFound matches the client-proxy's JSON error for a guest missing
+// from its routing catalog, scoped to the requested sandbox.
+func proxyNotFound(body io.Reader, sandboxID string) bool {
+	var e struct {
+		SandboxID string `json:"sandboxId"`
+		Message   string `json:"message"`
+		Code      int    `json:"code"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 4096)).Decode(&e) != nil {
+		return false
+	}
+	return e.SandboxID == sandboxID && e.Code == http.StatusBadGateway && e.Message == "The sandbox was not found"
+}
+
 // RelayCredentials never belong in API DTOs or logs. EndpointURL is the private
 // port-8081 origin returned by Client.SandboxEndpoint, including cloud domains.
 // Empty EndpointURL uses the manager's configured Embed proxy origin.
@@ -150,6 +168,9 @@ func (m *TunnelManager) control(ctx context.Context, creds RelayCredentials, met
 		return errors.New("E2B relay control request failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusBadGateway && proxyNotFound(resp.Body, creds.SandboxID) {
+		return ErrGuestNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("E2B relay control returned HTTP %d", resp.StatusCode)
 	}

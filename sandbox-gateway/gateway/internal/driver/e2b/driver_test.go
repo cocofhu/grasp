@@ -27,18 +27,20 @@ import (
 // authenticated relay control and loopback listener implementation. Only the
 // provider and guest service responses are fixtures; no provider API is called.
 type lifecycleProvider struct {
-	getRequests                                                                                                                 int
-	mu                                                                                                                          sync.Mutex
-	server                                                                                                                      *httptest.Server
-	sandboxes                                                                                                                   map[string]*sandboxWire
-	files                                                                                                                       map[string][]byte
-	relayKeys                                                                                                                   map[string]string
-	env                                                                                                                         map[string]string
-	command                                                                                                                     string
-	created, deleted, connected, paused, renewed                                                                                int
-	connectFailures                                                                                                             int
-	publishFailures                                                                                                             int
-	timeoutStatus                                                                                                               int
+	getRequests                                  int
+	mu                                           sync.Mutex
+	server                                       *httptest.Server
+	sandboxes                                    map[string]*sandboxWire
+	files                                        map[string][]byte
+	relayKeys                                    map[string]string
+	env                                          map[string]string
+	command                                      string
+	created, deleted, connected, paused, renewed int
+	connectFailures                              int
+	publishFailures                              int
+	// goneProbes answers that many relay health probes with the sandbox
+	// proxy's not-found error; negative answers all of them.
+	goneProbes                                                                                                                  int
 	createStatus, getStatus, deleteStatus, uploadStatus, processStatus, pauseStatus, connectStatus, healthStatus, publishStatus int
 	ready                                                                                                                       bool
 	capacity                                                                                                                    int64
@@ -315,10 +317,6 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			f.connected++
 			_ = json.NewEncoder(w).Encode(s)
 		case "timeout":
-			if f.timeoutStatus != 0 {
-				w.WriteHeader(f.timeoutStatus)
-				return
-			}
 			var body struct {
 				Timeout int `json:"timeout"`
 			}
@@ -416,6 +414,12 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 		select {
 		case f.healthSeen <- struct{}{}:
 		default:
+		}
+		if f.goneProbes != 0 {
+			f.goneProbes--
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]any{"sandboxId": s.ID, "message": "The sandbox was not found", "code": 502})
+			return
 		}
 		if f.healthStatus != 0 {
 			w.WriteHeader(f.healthStatus)
