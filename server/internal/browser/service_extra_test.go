@@ -150,6 +150,31 @@ func TestResolvePreviewEndpointsUsesClusterDNS(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketURL(t *testing.T) {
+	s, _ := newResolverService(map[string]string{
+		"cdp":   "10.88.0.12:9222",
+		"novnc": "10.88.0.12:16080",
+	})
+	if u, err := s.AudioWebSocketURL(context.Background(), "sb", "10.1.2.3"); err != nil || u != "ws://10.88.0.12:16080/audio" {
+		t.Fatalf("url=%q err=%v", u, err)
+	}
+
+	bare, _ := newResolverService(map[string]string{"cdp": "10.88.0.12:9222", "novnc": "10.88.0.12"})
+	if u, err := bare.AudioWebSocketURL(context.Background(), "sb", "10.1.2.3"); err != nil || u != "ws://10.88.0.12:6080/audio" {
+		t.Fatalf("bare host url=%q err=%v", u, err)
+	}
+
+	missing, _ := newResolverService(map[string]string{"session": "203.0.113.9:8765"})
+	if _, err := missing.AudioWebSocketURL(context.Background(), "sb", "203.0.113.9"); !errors.Is(err, ErrInternalEndpointMissing) {
+		t.Fatalf("missing novnc must fail closed, got %v", err)
+	}
+
+	legacy, _, _ := newFakeService(Config{MaxTabs: 1, MaxTabsPerContainer: 1, TabIdleTTL: time.Hour, ContainerIdleTTL: time.Hour})
+	if u, err := legacy.AudioWebSocketURL(context.Background(), "sb", "10.1.2.3"); err != nil || u != "ws://10.1.2.3:6080/audio" {
+		t.Fatalf("legacy url=%q err=%v", u, err)
+	}
+}
+
 func TestResolvePreviewEndpointsUsesContainerIP(t *testing.T) {
 	s, _ := newResolverService(map[string]string{
 		"cdp":   "10.88.0.12:9222",

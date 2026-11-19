@@ -273,13 +273,14 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 | 端口 | 协议 | 用途 | 可达面 |
 | --- | --- | --- | --- |
 | `9222` | HTTP CDP (`/json/version` + DevTools) | Pick / navigate / 开隔离 tab | 仅集群内 / 容器网;Grasp 拨号 |
-| `6080` | WebSocket(websockify → RFB) | 前端 noVNC 画面 | 仅集群内 / 容器网;用户经 Grasp WS |
+| `6080` | WebSocket(`grasp-desktop vnc-ws`:`/audio` 为桌面声音,其余路径 → RFB) | 前端 noVNC 画面与声音 | 仅集群内 / 容器网;用户经 Grasp WS |
 
 用户只走平台代理:
 
 - `/sandbox-vnc/:sandboxId/ws`（每个沙箱一个桌面；应用端口是桌面里的页面）
+- `/sandbox-audio/:sandboxId/ws`（同一桌面的声音：s16le 交错立体声 48 kHz，每帧 20 ms；静音帧不发送）
 
-启用平台 Auth 时该 WS **须有效 Session**（仅校验登录有效，不校验沙箱/跑步归属）。
+启用平台 Auth 时这两个 WS **须有效 Session**（仅校验登录有效，不校验沙箱/跑步归属）。
 集群外 Grasp 不能拨 CDP/noVNC,不是支持的拓扑。旧书签 `host:9222` /
 `host:6080` 不可达为预期破坏性变更。Docker 已运行容器的 `-p` 须 TTL/Reinstall；
 K8s 存量 `*-lb` 在网关启动调和 / Start / Reinstall 完成前仍可能对外暴露这两口。
@@ -287,7 +288,8 @@ K8s 存量 `*-lb` 在网关启动调和 / Start / Reinstall 完成前仍可能�
 参考实现细节(可替换,只要对**平台**契约不变;勿改 `vnc-preview.sh` 监听与 `-nopw`):
 
 - Chromium remote-debugging 绑 loopback(如 `:9223`),再经 `socat` 转到 `0.0.0.0:9222`。
-- `x11vnc` 只听 localhost RFB,`websockify` 把 `:6080` 转到该 RFB。
+- `x11vnc` 只听 localhost RFB,`grasp-desktop vnc-ws` 把 `:6080` 转到该 RFB(运行时缺该二进制时回退 `websockify`)。
+- 声音:`pulseaudio` 加载 null sink `grasp`(socket `/tmp/grasp-pulse/native`,经 `PULSE_SERVER` 给 Chromium 与桌面应用),`vnc-ws` 每个 `/audio` 连接用 `parec` 录 `grasp.monitor`。镜像无 `pulseaudio` 时桌面无声,`/audio` 返回 503。
 - 建议 `--shm-size≥1g`,避免 Chromium `/dev/shm` 耗尽。
 - 不做传统 VNC 8 字符密码;隔离靠发布面 + 平台 Session,不靠 RFB 鉴权。
 

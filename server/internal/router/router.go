@@ -346,6 +346,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 	// The one VNC address of a sandbox desktop (WebSocket): noVNC RFB proxy +
 	// CDP Pick/navigate control. App ports are pages on this desktop.
 	r.GET("/sandbox-vnc/:sandboxId/ws", h.SandboxVNC)
+	// Sound of that desktop (raw PCM over WebSocket), opened next to the VNC socket.
+	r.GET("/sandbox-audio/:sandboxId/ws", h.SandboxAudio)
 
 	// Public approval page + API (no session). Security headers + no ACAO.
 	pub := r.Group("/public/approvals")
@@ -411,6 +413,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 			strings.HasPrefix(p, "/sandbox/") ||
 			strings.HasPrefix(p, "/sandbox-bridge/") ||
 			strings.HasPrefix(p, "/sandbox-vnc/") ||
+			strings.HasPrefix(p, "/sandbox-audio/") ||
 			strings.HasPrefix(p, "/preview/") ||
 			strings.HasPrefix(p, "/preview-vnc/") ||
 			strings.HasPrefix(p, "/embed/") ||
