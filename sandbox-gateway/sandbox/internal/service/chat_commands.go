@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,13 +109,41 @@ func consoleSkillPrompt(name, task string) (string, error) {
 	if root == "" {
 		root = agents.Current().DefaultConfigRoot()
 	}
-	skillRoot := filepath.Join(root, "skills", name)
-	entry := filepath.Join(skillRoot, "SKILL.md")
-	if info, err := os.Stat(entry); err != nil || !info.Mode().IsRegular() {
+	entry, ok := consoleSkillEntry(root, name)
+	if !ok {
 		return "", fmt.Errorf("当前 Agent 没有名为 %q 的 skill", name)
 	}
-	instruction := fmt.Sprintf("本轮请使用 skill %q，先阅读 %q。skill 中的相对路径以 %q 为基准。", name, entry, skillRoot)
+	instruction := fmt.Sprintf("本轮请使用 skill %q，先阅读 %q。skill 中的相对路径以 %q 为基准。", name, entry, filepath.Dir(entry))
 	return strings.TrimSpace(instruction + "\n\n" + task), nil
+}
+
+func consoleSkillEntry(home, name string) (string, bool) {
+	config, err := os.OpenRoot(home)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = config.Close() }()
+	skills, err := config.OpenRoot("skills")
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = skills.Close() }()
+	entries, err := fs.ReadDir(skills.FS(), ".")
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if entry.Name() != name {
+			continue
+		}
+		relative := filepath.Join(entry.Name(), "SKILL.md")
+		info, err := skills.Stat(relative)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", false
+		}
+		return filepath.Join(home, "skills", relative), true
+	}
+	return "", false
 }
 
 func (b *Bridge) compactTranscript(currentOp string) string {

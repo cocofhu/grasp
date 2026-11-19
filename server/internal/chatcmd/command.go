@@ -4,6 +4,7 @@ package chatcmd
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -108,10 +109,32 @@ func InstalledSkill(name string, configHomes ...string) bool {
 		return false
 	}
 	for _, home := range configHomes {
-		if home != "" {
-			if info, err := os.Stat(filepath.Join(home, "skills", name, "SKILL.md")); err == nil && info.Mode().IsRegular() {
-				return true
-			}
+		if home != "" && installedSkillIn(home, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func installedSkillIn(home, name string) bool {
+	config, err := os.OpenRoot(home)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = config.Close() }()
+	skills, err := config.OpenRoot("skills")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = skills.Close() }()
+	entries, err := fs.ReadDir(skills.FS(), ".")
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Name() == name {
+			info, err := skills.Stat(filepath.Join(entry.Name(), "SKILL.md"))
+			return err == nil && info.Mode().IsRegular()
 		}
 	}
 	return false
