@@ -28,6 +28,7 @@ type turnAccumulator struct {
 	newSID              string
 	stop                string
 	diagnostics         []Msg
+	retryDiagnostic     string
 	hasText             bool
 
 	// resultSeen closes on the first stop reason; resultStop is written before
@@ -43,6 +44,9 @@ func newTurnAccumulator(e *engine, bg *backgroundShells) *turnAccumulator {
 
 func (a *turnAccumulator) apply(pr ParseResult) {
 	a.bg.event()
+	if pr.RetryDiagnostic != "" || len(pr.Msgs) > 0 {
+		a.retryDiagnostic = pr.RetryDiagnostic
+	}
 	a.tracksSessionUsage = a.tracksSessionUsage || pr.TracksSessionUsage
 	if pr.SessionUsage != nil {
 		copy := *pr.SessionUsage
@@ -120,6 +124,9 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 func (a *turnAccumulator) outcome(waitErr, streamErr error, tail *stderrTail) (turnOutcome, error) {
 	stop := a.stop
 	if stop == "" {
+		if a.retryDiagnostic != "" && streamErr == nil {
+			streamErr = fmt.Errorf("CLI exited during network retry: %s", a.retryDiagnostic)
+		}
 		if waitErr != nil || streamErr != nil {
 			stop = "failed"
 		} else {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 
 	"backend/internal/provider"
@@ -48,8 +49,8 @@ func (codec) PromptViaStdin() bool     { return false }
 
 func (codec) IsRecoverableDiagnostic(message oneshot.Msg) bool {
 	// The native CLI reports missing custom-model metadata as an error event,
-	// then continues using its fallback metadata. Keep every other error fatal;
-	// oneshot also requires a complete successful answer before ignoring this.
+	// then continues using its fallback metadata. The engine requires a
+	// complete successful answer before suppressing this diagnostic.
 	return message.Kind == oneshot.KindError &&
 		strings.HasPrefix(message.Text, "Model metadata for `") &&
 		strings.HasSuffix(message.Text, "` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.") &&
@@ -253,20 +254,34 @@ func parseLegacyLine(line []byte) oneshot.ParseResult {
 			res.UsagePartial = true // legacy token_count has no reliable turn boundary
 		}
 	case "error":
-		res.StopReason = "failed"
-		if m.Message != "" {
-			diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(m.Message)}
-			res.Msgs = append(res.Msgs, diagnostic)
-			if (codec{}).IsRecoverableDiagnostic(diagnostic) {
-				res.StopReason = ""
-			}
-		}
+		applyErrorEvent(&res, m.Message)
 	case "task_complete", "turn_complete", "shutdown_complete":
 		res.StopReason = "end_turn"
 	case "turn_aborted":
 		res.StopReason = "cancelled"
 	}
 	return res
+}
+
+var reconnectNoticePattern = regexp.MustCompile(`(?s)^Reconnecting\.\.\. [0-9]+/[0-9]+( \(.*\))?$`)
+
+// Codex uses error events for transport progress too. A retry or switch to
+// HTTPS leaves the CLI working. Only a terminal result should arm its exit timer.
+func applyErrorEvent(res *oneshot.ParseResult, message string) {
+	const fallback = "Falling back from WebSockets to HTTPS transport."
+	if reconnectNoticePattern.MatchString(message) || message == fallback || strings.HasPrefix(message, fallback+" ") {
+		res.RetryDiagnostic = rewriteCodexAuthError(message)
+		return
+	}
+	res.StopReason = "failed"
+	if message == "" {
+		return
+	}
+	diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(message)}
+	res.Msgs = append(res.Msgs, diagnostic)
+	if (codec{}).IsRecoverableDiagnostic(diagnostic) {
+		res.StopReason = ""
+	}
 }
 
 func truncateForLog(b []byte, n int) string {
@@ -408,16 +423,7 @@ func parseThreadLine(line []byte) oneshot.ParseResult {
 			res.UsagePartial = !ev.Usage.complete || ev.Type == "turn.failed"
 		}
 	case "error":
-		res.StopReason = "failed"
-		if msg := firstNonEmpty(ev.Message, errMessage(ev.Error)); msg != "" {
-			diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)}
-			res.Msgs = append(res.Msgs, diagnostic)
-			if (codec{}).IsRecoverableDiagnostic(diagnostic) {
-				// This warning does not end a turn. Arming the result watchdog here
-				// can kill the CLI before its actual terminal response is received.
-				res.StopReason = ""
-			}
-		}
+		applyErrorEvent(&res, firstNonEmpty(ev.Message, errMessage(ev.Error)))
 	case "item.started":
 		if ev.Item != nil && isCodexToolItem(ev.Item.Type) {
 			res.Msgs = append(res.Msgs, codexToolUse(ev.Item))
@@ -438,12 +444,7 @@ func parseThreadLine(line []byte) oneshot.ParseResult {
 		case "error":
 			msg := firstNonEmpty(ev.Item.Message, ev.Item.Text, errMessage(ev.Item.Error))
 			if msg != "" {
-				res.StopReason = "failed"
-				diagnostic := oneshot.Msg{Kind: oneshot.KindError, Text: rewriteCodexAuthError(msg)}
-				res.Msgs = append(res.Msgs, diagnostic)
-				if (codec{}).IsRecoverableDiagnostic(diagnostic) {
-					res.StopReason = ""
-				}
+				applyErrorEvent(&res, msg)
 			}
 		default:
 			if isCodexToolItem(ev.Item.Type) {
