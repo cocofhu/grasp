@@ -9,22 +9,26 @@ import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import ReferencePicker from '@/components/solo/ReferencePicker.vue'
 import ReferencePlusMenu from '@/components/solo/ReferencePlusMenu.vue'
 import type { ChatComposerDraft } from '@/lib/chat/useChatComposerDraft'
+import { isComposingKey } from '@/lib/chat/composerKeys'
 import type { ReferenceScope, ReferenceTab, ScopedReferenceSearch } from '@/lib/solo/useReferenceSearch'
 import type { ReactAnnotation } from '@/lib/shared/types'
 import ChatAttachments from './ChatAttachments.vue'
 import ChatComposerTextarea from './ChatComposerTextarea.vue'
+import SlashCommandMenu from './SlashCommandMenu.vue'
 
 const props = withDefaults(defineProps<{
   draft: ChatComposerDraft
   picks: ReactAnnotation[]
   placeholder: string
   scope: ReferenceScope
+  commandSkills?: readonly string[]
+  allowContextCommands?: boolean
   scopedSearch?: ScopedReferenceSearch
   allowSolo?: boolean
   disabled?: boolean
   testPrefix: string
   pickTestId: string
-}>(), { allowSolo: true })
+}>(), { allowSolo: true, allowContextCommands: true })
 const emit = defineEmits<{ send: []; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
 const { t } = useI18n()
 const { attach, mention, input, composing, textareaComponent, defaultRepo } = props.draft
@@ -32,10 +36,13 @@ const { fileInput } = attach
 const { picker, trigger, pickerTab, tokens } = mention
 const plusOpen = ref(false)
 const plus = ref<HTMLElement>()
+const commandMenu = ref<InstanceType<typeof SlashCommandMenu>>()
 
 function onKeydown(event: KeyboardEvent) {
   if (mention.onKeydown(event)) return
-  if (event.key !== 'Enter' || event.shiftKey || composing.value || event.isComposing || event.keyCode === 229) return
+  if (isComposingKey(event, composing.value)) return
+  if (commandMenu.value?.handleKeydown(event)) return
+  if (event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
   if (!props.disabled) emit('send')
 }
@@ -83,6 +90,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       <AnnotationChip v-for="(pick, index) in picks" :key="index" :ann="pick" removable :test-id="pickTestId" @remove="emit('remove-pick', index)" />
     </div>
     <div class="relative">
+      <SlashCommandMenu
+        v-if="commandSkills"
+        ref="commandMenu"
+        v-model="input"
+        :textarea="draft.textarea.value"
+        :skills="commandSkills"
+        :disabled="disabled || !!trigger"
+        :composing="composing"
+        :allow-context="allowContextCommands"
+        :test-prefix="testPrefix"
+      />
       <ComposerShell wrap-toolbar :show-footer="false">
         <template #input>
           <Transition name="ref-pop">

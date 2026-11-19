@@ -48,6 +48,11 @@ test('mobile workflow links reopen chat after refresh and preserve drafts when r
   await expect(page.getByTestId('inbox-mobile-chat-back')).toHaveCount(0)
   await expect(page.getByTestId('gate-share-copy-btn-detail')).toHaveCount(0)
   await expect(page).toHaveTitle(/对话/)
+  await input.fill('/com')
+  const command = page.getByRole('listbox', { name: '斜杠命令' }).getByRole('option', { name: /压缩上下文/ })
+  await command.click()
+  await expect(input).toHaveValue('/compact')
+  await input.fill('')
 
   await page.reload()
   await expect(page.getByTestId('conversation-title')).toHaveText(item.runTitle)
@@ -130,6 +135,38 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   await card.locator('.artifact-card-cover').click()
   await expect(page.getByTestId('react-artifact-tab-demo.html')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('react-artifact-preview-demo.html').frameLocator('iframe:visible').getByText('Solo preview smoke')).toBeVisible()
+})
+
+test('Solo slash commands open in the composer and support keyboard and pointer selection', async ({ page }) => {
+  await installWorkspaceApiDefaults(page)
+  const session = { id: 'slash-commands', title: 'Solo', agentName: 'Demo', status: 'running', skills: ['review'] }
+  await routeApi(page, '**/api/solo/sessions**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+    if (path.endsWith('/messages')) return route.fulfill({ json: [] })
+    await route.fulfill({ json: session })
+  })
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', (ws) => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/workspace-config.html?view=/solo/${session.id}`)
+  const input = page.getByTestId('solo-input')
+  const menu = page.getByRole('listbox', { name: '斜杠命令' })
+  await input.fill('/')
+  await expect(menu.getByRole('option')).toHaveCount(3)
+  await expect(menu.getByRole('option', { selected: true })).toContainText('新对话')
+  await expect(menu.getByText(/^\/(new|compact|skill)$/)).toHaveCount(0)
+  await input.press('ArrowDown')
+  await expect(menu.getByRole('option', { selected: true })).toContainText('压缩上下文')
+  await input.press('ArrowUp')
+  await input.press('Enter')
+  await expect(input).toHaveValue('/new')
+  await expect(menu).toBeHidden()
+  await input.fill('/')
+  await menu.getByRole('option', { name: /使用技能/ }).click()
+  await expect(input).toHaveValue('/skill ')
+  await page.getByRole('listbox', { name: '选择技能' }).getByRole('option', { name: 'review' }).click()
+  await expect(input).toHaveValue('/skill review ')
+  await expect(input).toBeFocused()
 })
 
 test('a direct Solo preview streams the reply to a message with a picked element', async ({ page, context, baseURL }) => {

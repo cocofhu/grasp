@@ -34,6 +34,9 @@ func (e *Engine) CurrentArtifactTurn(runID, nodeID string) (services.ArtifactTur
 	if s := e.laneSession(runID, nodeID, ""); s != nil {
 		v := s.View()
 		if v.HasActive && v.Active != nil {
+			if v.Active.Command.ChangesContext() {
+				return turn, errors.New("there is no active Agent turn")
+			}
 			turn.TurnID = v.Active.ID
 			return turn, nil
 		}
@@ -57,7 +60,7 @@ func (e *Engine) attachDialogueFiles(st *DialogueState) {
 	last := map[string]int{}
 	lastAgent := -1
 	for i, row := range st.Rows {
-		if row.Role == "agent" {
+		if row.Role == "agent" && row.ContextCommand == "" {
 			lastAgent = i
 			if row.TurnID != "" {
 				last[row.TurnID] = i

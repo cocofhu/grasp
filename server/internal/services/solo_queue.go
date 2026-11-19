@@ -114,6 +114,9 @@ func (s *SoloService) sendSoloTurn(row *models.SoloSession, turn *soloTurn, inpu
 	if turn.Text == "" && len(turn.Images) == 0 && len(turn.References) == 0 && len(turn.Annotations) == 0 && len(inputs) == 0 {
 		return 0, soloErr(http.StatusBadRequest, "content_required", "消息不能为空")
 	}
+	if err := s.prepareSoloCommand(row.AgentName, turn, len(inputs) > 0); err != nil {
+		return 0, err
+	}
 	if len(inputs) > 0 {
 		references, err := s.prepareReferences(context.Background(), row, inputs)
 		if err != nil {
@@ -252,13 +255,16 @@ func (s *SoloService) settleInterruptedTurn(sessionID, turnID string) bool {
 	if err := s.db.First(&user, "id = ? AND session_id = ?", turnID, sessionID).Error; err != nil {
 		return false
 	}
+	if user.Role == "system" {
+		return true
+	}
 	var replies int64
 	s.db.Model(&models.SoloMessage{}).
 		Where("session_id = ? AND role = ? AND created_at >= ?", sessionID, "assistant", user.CreatedAt).Count(&replies)
 	if replies > 0 || user.Status != "" {
 		return true
 	}
-	reply := models.SoloMessage{ID: uuid.NewString(), SessionID: sessionID, Role: "assistant",
+	reply := models.SoloMessage{ID: uuid.NewString(), SessionID: sessionID, TurnID: turnID, ContextID: user.ContextID, Role: "assistant",
 		Status: "stopped", Error: soloRestartStopped}
 	if err := s.db.Create(&reply).Error; err != nil {
 		log.Warn().Err(err).Str("session", sessionID).Msg("solo: record interrupted turn failed")

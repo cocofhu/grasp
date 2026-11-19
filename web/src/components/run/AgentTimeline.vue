@@ -13,6 +13,7 @@ import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { fmtTime, fmtTurnElapsed, wallClockSec } from '@/lib/shared/format'
 import ChatMessageMeta from '@/components/chat/ChatMessageMeta.vue'
+import ContextCommandNotice from '@/components/chat/ContextCommandNotice.vue'
 import { renderChatMarkdown, renderChatMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
@@ -242,7 +243,8 @@ function onToggle(index: number, last: boolean, e: Event) {
 </script>
 
 <template>
-  <div class="agent-timeline flex min-w-0 flex-col" data-testid="agent-timeline">
+  <ContextCommandNotice v-if="!streaming && metadata?.contextCommand" :command="metadata.contextCommand" />
+  <div v-else class="agent-timeline flex min-w-0 flex-col" data-testid="agent-timeline">
     <template v-if="settled">
       <button
         type="button"

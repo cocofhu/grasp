@@ -542,6 +542,9 @@ type ReactMessage struct {
 	// TurnID is the platform queue item that produced this row; a human row
 	// and its replies share it. Absent on rows written before it existed.
 	TurnID string `json:"turnId,omitempty"`
+	// ContextCommand marks a platform command and its acknowledgment in the
+	// visible transcript. Only ordinary dialogue is replayed to the Agent.
+	ContextCommand string `json:"contextCommand,omitempty"`
 	// Outcome is how this reply's turn ended (ReplyOutcome); agent rows only.
 	// Older rows leave it empty and ReplyOutcome derives it.
 	Outcome string `json:"outcome,omitempty"`

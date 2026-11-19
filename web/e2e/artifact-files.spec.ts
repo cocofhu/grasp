@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const media = (path: string) => readFileSync(fileURLToPath(new URL(`../../media/${path}`, import.meta.url)))
 const video = media('grasp-demo.mp4')
 const image = media('yume-mark.png')
-const wide = media('screenshots/artifact-review.webp')
+const wide = media('screenshots/artifacts.webp')
 const small = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"><path d="M13 2 5 13h6l-2 9 10-13h-6z" fill="none" stroke="#71717a" stroke-width="2"/></svg>'
 function wav() {
   const data = Buffer.alloc(8044)

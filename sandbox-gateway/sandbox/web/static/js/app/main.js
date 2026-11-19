@@ -6,6 +6,7 @@ import {setHeaderConnLive} from '../ws/session.js';
 import {announceReady, bindEmbedTheme, isEmbedded} from './embed.js';
 import {TabManager} from './tab_manager.js';
 import {modelDisplayName, modelPickerItems} from './tab_state.js';
+import {bindChatCommands} from '../ui/chat_commands.js';
 
 hydrateRuntimeIcons(document);
 const iconTemplate = document.getElementById('chatPaneTpl');
@@ -485,6 +486,7 @@ async function buildImages() {
 }
 
 if (domOk && btnSend && inputEl) {
+    const handleChatCommand = bindChatCommands(inputEl, document.getElementById('chatCommands'));
     btnSend.addEventListener('click', async () => {
         try {
             const tab = tabs.active;
@@ -507,6 +509,7 @@ if (domOk && btnSend && inputEl) {
             tab.chat.enqueueUserMessage(displayText, imageURLs);
             tab.session.sendChat(t, images);
             inputEl.value = '';
+            inputEl.dispatchEvent(new Event('input'));
             tab.draft = '';
             clearFiles();
             inputEl.classList.remove('cc-textarea--expanded');
@@ -538,7 +541,7 @@ if (domOk && btnSend && inputEl) {
     });
 
     inputEl.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
+        if (handleChatCommand(e) || e.isComposing || e.keyCode === 229 || e.key !== 'Enter') return;
         /* Ctrl/⌘+Enter：换行并允许出现滚动条；其余 Enter：发送 */
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();

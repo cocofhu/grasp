@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
@@ -255,6 +256,9 @@ func (h *Handlers) PublicGateReply(c *gin.Context) {
 	if text == "" && len(body.Annotations) == 0 && len(body.Images) == 0 && len(refs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_reply", "message": "请填写修订意见或标注后再发送"})
 		return
+	}
+	if chatcmd.Parse(text).Name != "" {
+		body.LiveCtx = nil
 	}
 	if lane != "" && body.LiveCtx == nil {
 		h.publicVisitorReply(c, lookup, lane, owner, text, body)

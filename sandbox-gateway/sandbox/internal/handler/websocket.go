@@ -102,7 +102,7 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 						writeWSError(bridge, conn, acp.UserFacingAny(err))
 					}
 				}
-			case "chat":
+			case "chat", "chat_command":
 				chatOpID, err := handleChat(bridge, payload)
 				if err != nil {
 					log.Printf("ws cid=%s oid=%s: chat 失败: %v", cid, chatOpID, err)
@@ -115,7 +115,15 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 				_ = json.Unmarshal(payload, &body)
 				bridge.CancelPromptOp(body.OpID)
 			case "restart_agent":
-				panel, err := bridge.RestartAgent()
+				var body struct {
+					PreserveHistory bool `json:"preserveHistory"`
+				}
+				_ = json.Unmarshal(payload, &body)
+				restart := bridge.RestartAgent
+				if body.PreserveHistory {
+					restart = bridge.RestartChatContext
+				}
+				panel, err := restart()
 				if err != nil {
 					log.Printf("ws cid=%s: restart_agent 失败: %v", cid, err)
 					writeWSError(bridge, conn, acp.UserFacingAny(err))
@@ -171,6 +179,7 @@ const maxChatClientOpIDLen = 128
 // handleChat 返回最终入队使用的 opId（与客户端 opId/id 或服务端生成一致），便于与 prompt 日志 oid= 交叉检索。
 func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error) {
 	var body struct {
+		Op      string                `json:"op"`
 		Text    string                `json:"text"`
 		Action  string                `json:"action"`
 		Type    string                `json:"type"`
@@ -193,6 +202,9 @@ func handleChat(bridge *service.Bridge, payload []byte) (opID string, err error)
 	act := strings.TrimSpace(body.Action)
 	if act == "" {
 		act = strings.TrimSpace(body.Type)
+	}
+	if body.Op == "chat_command" || (body.Text != "" && body.Content == "") {
+		act = service.UserChatCommand
 	}
 	opID = strings.TrimSpace(body.OpID)
 	if opID == "" {

@@ -212,6 +212,9 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 	defer c.turnOpID.Store("")
 	idle := c.agentIdle()
 	msg := chatMessage(text, images, opID)
+	if ctx.Value(userChatCommandKey{}) == true {
+		msg["op"] = "chat_command"
+	}
 	turnLimitFields(msg, ctx, idle)
 	if err := c.send(msg); err != nil {
 		return nil, fmt.Errorf("%w: send chat: %v", ErrConnClosed, err)

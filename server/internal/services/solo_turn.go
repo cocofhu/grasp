@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/rs/zerolog/log"
@@ -119,7 +121,8 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 
 // recordPreparationFailure leaves a reply even when the CLI never starts. The
 // transcript renders failures on assistant rows, including after a reload.
-func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, started time.Time, err error) {
+func (c *soloChat) recordPreparationFailure(ctx context.Context, user models.SoloMessage, started time.Time, err error) {
+	turnID := user.ID
 	status := "failed"
 	if ctx.Err() != nil {
 		status = "stopped"
@@ -128,7 +131,7 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 	c.svc.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).
 		Updates(map[string]any{"status": status, "error": errText})
 	reply := models.SoloMessage{
-		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, Role: "assistant",
+		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, ContextID: user.ContextID, Role: "assistant",
 		Status: status, Error: errText, DurationMs: time.Since(started).Milliseconds(),
 	}
 	if perr := c.svc.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}},
@@ -142,13 +145,22 @@ func (c *soloChat) recordPreparationFailure(ctx context.Context, turnID string, 
 // save the result. The bool reports a turn stopped by its context.
 func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	started := time.Now()
+	if q.Command.ChangesContext() {
+		err := c.executeContextCommand(ctx, q, started)
+		if err != nil {
+			if user, saveErr := c.saveUserMessage(q, started); saveErr == nil {
+				c.recordPreparationFailure(ctx, user, started, err)
+			}
+		}
+		return ctx.Err() != nil, err
+	}
 	userMsg, err := c.saveUserMessage(q, started)
 	if err != nil {
 		return false, err
 	}
 	prep, stopped, err := c.prepareTurn(ctx, q.ID, started)
 	if err != nil {
-		c.recordPreparationFailure(ctx, q.ID, started, err)
+		c.recordPreparationFailure(ctx, userMsg, started, err)
 		return stopped, err
 	}
 	in := c.svc.buildTurnInput(c.id, q, userMsg.References, prep)
@@ -197,13 +209,13 @@ type soloTurnOutput struct {
 // saveUserMessage persists the user row, pinning its references first.
 func (c *soloChat) saveUserMessage(q *soloTurn, started time.Time) (models.SoloMessage, error) {
 	s := c.svc
-	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
+	row, err := s.load(c.id)
+	if err != nil {
+		return models.SoloMessage{}, err
+	}
+	userMsg := models.SoloMessage{ID: q.ID, SessionID: c.id, ContextID: row.ContextID, Role: "user", Content: q.Text, Images: q.Images, Annotations: q.Annotations, PreviewShared: q.PreviewShared}
 	if len(q.References) > 0 {
-		if row, err := s.load(c.id); err == nil {
-			userMsg.References = s.pinReferences(row, q.References)
-		} else {
-			userMsg.References = q.References
-		}
+		userMsg.References = s.pinReferences(row, q.References)
 	}
 	if err := s.db.Create(&userMsg).Error; err != nil {
 		return userMsg, err
@@ -240,6 +252,11 @@ func (c *soloChat) prepareTurn(ctx context.Context, turnID string, started time.
 	if prep.switched, err = s.alignSessionModel(ctx, c, sandboxID, row); err != nil {
 		return prep, ctx.Err() != nil, err
 	}
+	if row.ContextResetPending != "" {
+		if err := s.sbx.restartSoloAgent(ctx, sandboxID); err != nil {
+			return prep, ctx.Err() != nil, fmt.Errorf("重开 Agent 会话失败，可重试：%w", err)
+		}
+	}
 	prep.execution = s.turnExecutionSnapshot(row, sandboxID, started)
 	c.mu.Lock()
 	c.execution = prep.execution
@@ -254,35 +271,50 @@ func (c *soloChat) prepareTurn(ctx context.Context, turnID string, started time.
 // the coding agent lost its own history, a context preamble of the dialogue.
 func (s *SoloService) buildTurnInput(sessionID string, q *soloTurn, refs []models.MessageReference, prep soloTurnPrep) soloTurnInput {
 	row := prep.row
-	prompt := q.Text
+	text := q.Text
+	if q.Command.Name == chatcmd.Skill {
+		text = q.Command.Prompt
+	}
+	prompt := text
 	if len(q.Annotations) > 0 {
-		prompt = models.RenderAnnotatedPrompt(q.Text, q.Annotations)
+		prompt = models.RenderAnnotatedPrompt(text, q.Annotations)
 	} else if prompt == "" && len(q.Images) > 0 {
 		prompt = "（见附件）"
-	} else if prompt == "" {
+	} else if prompt == "" && (q.Command.Name != chatcmd.Skill || len(refs) > 0) {
 		prompt = "（见引用）"
 	}
 	if block := s.renderReferenceBlock(refs); block != "" {
 		prompt = block + "\n\n" + prompt
 	}
 	in := soloTurnInput{images: q.Images}
+	if q.Command.Name == chatcmd.Skill {
+		configRoot, err := s.skillConfigRoot(prep)
+		if err != nil {
+			in.err = err
+			return in
+		}
+		prompt = chatcmd.WithSkill(configRoot, q.Command.Skill, prompt)
+	}
 	// A recreated sandbox still uses the restart summary. A model switch only
 	// restarts the coding agent, so it must not claim the sandbox or the
 	// repository was rebuilt.
 	var pre string
-	if row.NeedsPreamble || prep.switched || row.ModelContextPending || row.ResumeContextPending || row.SessionContextPending {
+	in.usedPreamble = row.ContextResetPending != ""
+	if row.ContextResetPending == chatcmd.Compact || row.NeedsPreamble || prep.switched || row.ModelContextPending || row.ResumeContextPending || row.SessionContextPending {
 		header := soloModelPreambleHeader
 		if row.NeedsPreamble {
 			header = soloRestartPreambleHeader
 		} else if row.ResumeContextPending {
 			header = soloResumePreambleHeader
+		} else if row.ContextResetPending == chatcmd.Compact {
+			header = soloCompactPreambleHeader
 		} else if row.SessionContextPending && !prep.switched && !row.ModelContextPending {
 			header = soloSessionResetPreambleHeader
 		} else if prep.switched && !row.ModelContextPending && (row.CurrentReasoningEffort != row.AppliedReasoningEffort || row.CurrentServiceTier != row.AppliedServiceTier) && chatModelID(row) == appliedChatModelID(row) && chatConfigurationID(row) == appliedChatConfigurationID(row) {
 			header = soloSettingsPreambleHeader
 		}
 		var history []models.PromptImage
-		pre, history, in.err = s.contextPreambleChecked(sessionID, q.ID, header)
+		pre, history, in.err = s.contextPreambleChecked(sessionID, q.ID, header, row.ContextID, row.ContextResetPending == chatcmd.Compact)
 		if len(history) > 0 {
 			in.images = append(slices.Clone(q.Images), history...)
 		}
@@ -331,7 +363,7 @@ func (c *soloChat) runAgent(ctx context.Context, prep soloTurnPrep, in soloTurnI
 func (c *soloChat) saveTurnResult(turnID string, started time.Time, prep soloTurnPrep, in soloTurnInput, out soloTurnOutput) {
 	s := c.svc
 	reply := models.SoloMessage{
-		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, Role: "assistant", Content: out.text, Events: out.events,
+		ID: "reply:" + turnID, TurnID: turnID, SessionID: c.id, ContextID: prep.row.ContextID, Role: "assistant", Content: out.text, Events: out.events,
 		Status: out.status, Error: out.errText, Usage: out.usage, UsageByModel: out.byModel,
 		Questions: out.questions, Forms: out.forms,
 		Execution:  prep.execution,
@@ -355,7 +387,10 @@ func (c *soloChat) saveTurnResult(turnID string, started time.Time, prep soloTur
 		s.db.Model(&models.SoloMessage{}).Where("id = ?", turnID).Update("status", out.status)
 	}
 	if in.usedPreamble && out.status == "ok" {
-		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false, "session_context_pending": false})
+		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Updates(map[string]any{
+			"needs_preamble": false, "model_context_pending": false, "resume_context_pending": false,
+			"session_context_pending": false, "context_reset_pending": "",
+		})
 	}
 	// A switch that failed on an earlier turn leaves model_notice set. Once a
 	// later turn succeeds on the model that is already applied, the banner is
@@ -371,6 +406,7 @@ const (
 	soloResumePreambleHeader       = "（系统提示）沙箱已从停止状态恢复，仓库、工作区和未提交的改动都已保留。请结合下面的对话记录继续：\n\n"
 	soloSessionResetPreambleHeader = "（系统提示）编码工具没能接上原来的会话，已新开会话。仓库和工作区没有变化，已有改动都还在。请结合下面的对话记录继续：\n\n"
 	soloRestartPreambleHeader      = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
+	soloCompactPreambleHeader      = "（系统提示）用户压缩了对话上下文。请结合以下要求与近期记录继续当前任务：\n\n"
 	// A model switch restarts only the coding agent. This header must not say
 	// the sandbox was recreated, the repository was cloned again, or uncommitted
 	// work was lost.

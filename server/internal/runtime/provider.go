@@ -179,6 +179,10 @@ type NodeReq struct {
 	// adopted Live source edits are committable at CheckGit even though the
 	// Agent never commits code otherwise.
 	LiveEdits bool
+	// UserSkill is the explicit skill selection for this human turn.
+	UserSkill string
+	// VisitorContextReset is a pending control action on an isolated visitor lane.
+	VisitorContextReset string
 }
 
 // ChatRoute is one visit's model choice. It is not an Agent binding.

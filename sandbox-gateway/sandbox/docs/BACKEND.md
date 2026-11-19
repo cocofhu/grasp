@@ -177,7 +177,8 @@ go build -o backend ./cmd/backend
 - **`connect`**：同步工作目录、fsRoot、MCP、自动授权等；若尚无 Agent 则拉起 / 握手。
 - **`chat`**：用户文本入队；忙时 FIFO，与一轮 `session/prompt` 对应。
 - **`cancel`**：停止当前轮次（对应顶栏停止图标）。
-- **`restart_agent`**：结束子进程并重新握手 / `session/new`。
+- **`restart_agent`**：结束子进程并重新握手 / `session/new`。`preserveHistory: true` 保留聊天记录和队列。
+- **`chat_command`**：把平台提供的斜杠命令入队。控制台的 `chat` 帧使用 `text` 字段时同样识别这些命令。
 - **`permission`**：用户对权限请求的选择（非自动授权时）。
 
 具体字段以 `internal/handler/websocket.go` 与前端 `web/static/js/ws/session.js` 为准。

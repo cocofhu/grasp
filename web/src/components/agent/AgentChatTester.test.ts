@@ -104,6 +104,27 @@ describe('AgentChatTester image preview (f4)', () => {
     globalThis.WebSocket = originalWS
   })
 
+  it('replays a context command as the platform status', async () => {
+    apiMocks.sandboxEventLog.mockResolvedValueOnce({ events: [
+      { type: 'prompt_begin', opId: 'op-compact', text: '/compact' },
+      { type: 'context_command', opId: 'op-compact', command: '/compact' },
+      { type: 'session_update', opId: 'op-compact', update: {
+        sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'bridge acknowledgment' },
+      } },
+      { type: 'prompt_done', opId: 'op-compact' },
+    ] })
+    const wrapper = mountTester()
+    try {
+      await flushPromises()
+      const notice = wrapper.get('[data-testid="chat-context-notice"]')
+      expect(notice.attributes('data-context-command')).toBe('compact')
+      expect(notice.text()).toContain('已安排压缩上下文')
+      expect(wrapper.text()).not.toContain('bridge acknowledgment')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('restored history (empty mimeType) still shows thumb and opens preview', async () => {
     const wrapper = mountTester()
     await flushPromises()

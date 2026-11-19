@@ -20,6 +20,7 @@ import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
 import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
+import { configuredSkillNames } from '@/lib/chat/chatCommands'
 
 const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
@@ -263,6 +264,9 @@ async function createStudioChatTest(
     ...(payload.repos ? { repos: payload.repos } : {}),
   })
 }
+const agentChatSkills = computed(() => configuredSkillNames(
+  agents.value.find(agent => agent.name === activeName.value)?.files ?? [],
+))
 </script>
 <template>
   <div
@@ -652,6 +656,7 @@ async function createStudioChatTest(
             <AgentChatTester
               :key="activeName"
               :profile="activeName"
+              :skills="agentChatSkills"
               :create-test="createStudioChatTest"
             />
           </div>

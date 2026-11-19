@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGateApprovalCtx } from './gateApprovalContext'
+import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
 import Icon from '../../ui/Icon.vue'
 import ParagraphInput from '../../ui/ParagraphInput.vue'
 import ComposerShell from '../ComposerShell.vue'
@@ -15,7 +16,8 @@ const props = defineProps<{
 const { t } = useI18n()
 const { s } = useGateApprovalCtx()
 
-const paragraphRef = ref<{ pickFiles?: () => void } | null>(null)
+const paragraphRef = ref<InstanceType<typeof ParagraphInput> | null>(null)
+const slashMenu = ref<InstanceType<typeof SlashCommandMenu> | null>(null)
 
 /** The mobile drawer shares its height with help copy and the review history. */
 const compact = computed(() => props.layout === 'mobile' || s.isMobile)
@@ -50,15 +52,24 @@ const showSend = computed(() => {
   <div v-if="s.reactError" class="mb-1.5 text-[11px] text-err">{{ s.reactError }}</div>
   <ComposerShell class="chat-thread" :compact="compact">
     <template #input>
-      <ParagraphInput
-        ref="paragraphRef"
-        v-model:text="s.reactText"
-        v-model:images="s.reactImages"
-        embedded
-        :compact="compact"
-        :disabled="s.reactSending"
-        :placeholder="t('pages.gateApproval.reactRevise.placeholder')"
-      />
+      <div class="relative" @keydown="slashMenu?.handleKeydown($event)">
+        <SlashCommandMenu
+          ref="slashMenu"
+          v-model="s.reactText"
+          :textarea="paragraphRef?.textarea"
+          :disabled="s.reactSending"
+          test-prefix="gate-preview"
+        />
+        <ParagraphInput
+          ref="paragraphRef"
+          v-model:text="s.reactText"
+          v-model:images="s.reactImages"
+          embedded
+          :compact="compact"
+          :disabled="s.reactSending"
+          :placeholder="t('pages.gateApproval.reactRevise.placeholder')"
+        />
+      </div>
     </template>
     <template #toolbar-start>
       <button

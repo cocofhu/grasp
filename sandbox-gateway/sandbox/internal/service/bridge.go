@@ -81,6 +81,9 @@ type Bridge struct {
 
 	// 会话级事件日志（内存全量）；刷新页面后随 connected 下发，前端重放以恢复聊天界面
 	evLog eventLog
+	// The next prompt after a console /compact carries this excerpt.
+	// Guarded by mu and consumed inside the FIFO worker.
+	compactPreamble string
 
 	// 本会话选择的模型；空表示跟随 ChatManager 的默认模型（-model / ACP_BRIDGE_MODEL）。
 	model string

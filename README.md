@@ -184,6 +184,14 @@ Edges are `success`, `failure` or `rollback`, optionally guarded by `when` expre
 | **Observability & cost** | State timeline, node handoff notes, sandbox logs, and token / cost tracking by workflow, source and model. |
 | **Sandboxes** | Docker, Kubernetes or E2B through one gateway; idle sandboxes are saved and released automatically. |
 
+### Agent chat commands
+
+Type `/` in an Agent conversation to open the command menu. Select a command with the mouse or arrow keys, then send it.
+
+- `/new` or `/new chat` starts a fresh conversation context in the current workspace. Earlier messages stay visible.
+- `/compact` starts a fresh context with a bounded excerpt of the recent conversation. Workflow turns also carry the current node's task and delivery requirements.
+- `/skill <name> [task]` selects a configured skill for the next turn. When the skill list is available, choose a name from the menu.
+
 <p align="center">
   <img src="media/screenshots/visual-clarify.webp" alt="Clarify conversation with an option card and a live page preview" width="100%" />
 </p>

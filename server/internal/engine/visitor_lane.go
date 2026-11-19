@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -348,7 +349,26 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 	if err != nil {
 		return false, err
 	}
-	prelude := e.visitorPrelude(c, producer, conv.Messages, conv.HistoryLen)
+	if item.Command.ChangesContext() {
+		conv.Messages = appendContextCommand(conv.Messages, item)
+		conv.LastActiveAt = time.Now()
+		if err := e.db.WithContext(ctx).Save(conv).Error; err != nil {
+			return ctx.Err() != nil, err
+		}
+		e.touchVisitorLane(s.runID, s.producerID, s.lane)
+		e.dialogueChangedLane(s.runID, s.producerID, s.lane, true)
+		return false, nil
+	}
+	split := min(conv.HistoryLen, len(conv.Messages))
+	ownContext := models.ActiveChatContext(conv.Messages[split:])
+	nodeContext := models.ActiveChatContext(conv.Messages[:split])
+	history := ownContext.Messages
+	baseline := 0
+	if !ownContext.Started {
+		baseline = len(nodeContext.Messages)
+		history = append(slices.Clone(nodeContext.Messages), history...)
+	}
+	prelude := e.visitorPrelude(c, producer, history, baseline)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: time.Now().Format(time.RFC3339),
 		Images: item.Images, Annotations: item.Annotations,
@@ -361,6 +381,8 @@ func (e *Engine) executeVisitorTurn(ctx context.Context, s *reviewSession, item 
 
 	s.SetLiveEvents(nil)
 	req := e.nodeReq(c, producer)
+	req.UserSkill = item.Command.Skill
+	req.VisitorContextReset = ownContext.Pending
 	t := vp.VisitorTurn(ctx, req, s.lane, prelude, withPageSession(item.PageSession, item.Effective), item.Images, func(events []models.AcpEvent, busy bool) {
 		s.SetLiveEvents(events)
 		e.publishVisitorAcp(s, events, busy)

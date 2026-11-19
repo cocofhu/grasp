@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
@@ -133,7 +134,7 @@ func (h *Handlers) appPreviewMainHistory(link *models.GateShareLink, sb models.S
 			source := state.Rows[i]
 			item := sharedPreviewRow{ID: row.ID, Role: row.Role, Text: row.Text, At: row.At,
 				Streaming: row.Streaming, Thought: row.Thought, Parts: row.Parts, Tools: row.Tools,
-				Interrupted: row.Interrupted, Annotations: row.Annotations}
+				Interrupted: row.Interrupted, Annotations: row.Annotations, ContextCommand: row.ContextCommand}
 			if row.Role == "agent" {
 				item.Execution = previewExecution(source.Execution)
 				item.Usage = models.CloneTokenUsage(source.Usage)
@@ -158,6 +159,14 @@ func previewSoloRow(message models.SoloMessage) sharedPreviewRow {
 	row := sharedPreviewRow{ID: message.ID, Role: message.Role, Text: message.Content,
 		Streaming: strings.HasPrefix(message.ID, "live:"), Annotations: gateshare.SanitizeAnnotations(message.Annotations),
 		Interrupted: message.Status == "stopped"}
+	if message.Role == "system" {
+		switch message.Status {
+		case "context_new":
+			row.ContextCommand = chatcmd.New
+		case "context_compact":
+			row.ContextCommand = chatcmd.Compact
+		}
+	}
 	if !message.CreatedAt.IsZero() {
 		row.At = message.CreatedAt.Format(time.RFC3339Nano)
 	}

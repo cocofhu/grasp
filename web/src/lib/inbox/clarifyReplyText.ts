@@ -1,4 +1,5 @@
 import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
+import { contextSlashCommand } from '@/lib/chat/chatCommands'
 
 /** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
 const CHOICE_PREFIX_ZH = '我的选择:'
@@ -23,6 +24,7 @@ interface FormRow {
 export function latestQuestionTurnIndex(turnList: ClarifyTurn[]): number {
   for (let i = turnList.length - 1; i >= 0; i--) {
     const t = turnList[i]
+    if (t.contextCommand === 'new') break
     if (t.role === 'agent' && t.questions?.length) return i
   }
   return -1
@@ -32,6 +34,7 @@ export function latestQuestionTurnIndex(turnList: ClarifyTurn[]): number {
 export function latestFormTurnIndex(turnList: ClarifyTurn[]): number {
   for (let i = turnList.length - 1; i >= 0; i--) {
     const t = turnList[i]
+    if (t.contextCommand === 'new') break
     if (t.role === 'agent' && t.forms?.length) return i
   }
   return -1
@@ -100,6 +103,7 @@ export function createReplyText(translate: (key: string) => string) {
   ): boolean {
     if (isChoiceReply(text) || isFormReply(text) || textHasSkipPrefix(text)) return true
     if ((images?.length || 0) > 0 || (anns?.length || 0) > 0) return true
+    if (contextSlashCommand(text)) return false
     return !!(text || '').trim()
   }
 

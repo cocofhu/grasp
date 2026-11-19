@@ -177,7 +177,8 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
         createdAt: m.createdAt,
       })
     } else if (m.role === 'system') {
-      out.push({ id: `s:${m.id}`, role: 'system', text: m.content, tools: [], steps: [], plan: [], streaming: false, createdAt: m.createdAt })
+      const contextCommand = m.status === 'context_new' ? 'new' : m.status === 'context_compact' ? 'compact' : undefined
+      out.push({ id: `s:${m.id}`, role: 'system', text: m.content, contextCommand, tools: [], steps: [], plan: [], streaming: false, createdAt: m.createdAt })
     } else {
       const turn = emptyAgentTurn(`a:${m.id}`, false, m.execution?.startedAt || addMs(m.createdAt, m.durationMs))
       turn.endedAt = m.createdAt
