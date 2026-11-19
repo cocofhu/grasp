@@ -2265,6 +2265,12 @@
           "closed": "Disconnected",
           "reconnecting": "Reconnecting…",
           "error": "Error"
+        },
+        "audio": {
+          "off": "Turn sound on",
+          "connecting": "Connecting sound…",
+          "on": "Turn sound off",
+          "error": "Sound unavailable (sandbox image has no audio stack or the connection failed). Click to retry"
         }
       },
       "feedback": {

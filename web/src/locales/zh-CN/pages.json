@@ -2265,6 +2265,12 @@
           "closed": "已断开",
           "reconnecting": "重连中…",
           "error": "错误"
+        },
+        "audio": {
+          "off": "打开声音",
+          "connecting": "正在连接声音…",
+          "on": "关闭声音",
+          "error": "声音不可用（沙箱镜像未带音频组件或连接失败），点击重试"
         }
       },
       "feedback": {

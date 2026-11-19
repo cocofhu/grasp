@@ -43,6 +43,25 @@ func TestProductionSandboxVNCRequiresSessionNoCookie(t *testing.T) {
 	assertNoWSUpgrade(t, w)
 }
 
+func TestProductionSandboxAudioRequiresSession(t *testing.T) {
+	hn := newHarness(t)
+	w := httptest.NewRecorder()
+	hn.r.ServeHTTP(w, wsUpgradeRequest("/sandbox-audio/1/ws"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d %s", w.Code, w.Body.String())
+	}
+	assertNoWSUpgrade(t, w)
+
+	w = httptest.NewRecorder()
+	req := wsUpgradeRequest("/sandbox-audio/1/ws")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+	hn.r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound && w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 404/503 business response, got %d %s", w.Code, w.Body.String())
+	}
+	assertNoWSUpgrade(t, w)
+}
+
 func TestProductionSandboxVNCValidSessionEntersHandler(t *testing.T) {
 	hn := newHarness(t)
 	w := httptest.NewRecorder()

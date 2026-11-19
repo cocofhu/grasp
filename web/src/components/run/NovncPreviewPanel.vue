@@ -6,6 +6,7 @@ import { api } from '@/lib/api/api'
 import { PreviewVncChannel } from '@/lib/shared/previewVncChannel'
 import { createPreviewFpsCounter } from '@/lib/shared/previewFps'
 import { useDesktopControl } from '@/lib/composables/useDesktopControl'
+import { useDesktopAudio } from '@/lib/composables/useDesktopAudio'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import {
   VNC_HEARTBEAT_MS,
@@ -90,6 +91,10 @@ const desktop = useDesktopControl(() => (props.wsUrl ? undefined : props.sandbox
 const desktopHolderLabel = computed(() =>
   t(control.value ? 'pages.appPreview.desktop.holderYou' : desktop.userHolds.value ? 'pages.appPreview.desktop.holderOther' : 'pages.appPreview.desktop.holderAgent'),
 )
+/** Desktop sound; public share tickets have none. */
+const audio = useDesktopAudio(() => (props.wsUrl ? undefined : props.sandboxId))
+const audioOn = computed(() => audio.state.value === 'on' || audio.state.value === 'connecting')
+const audioLabel = computed(() => t(`pages.appPreview.novnc.audio.${audio.state.value}`))
 /** 电脑 view on the desktop image: the screen is a framed card with a control dock, no browser toolbar. */
 const desktopShell = computed(() => props.computer && desktop.isDesktop.value)
 const desktopTakeoverText = computed(() => {
@@ -966,6 +971,19 @@ onBeforeUnmount(() => {
       >
         {{ isFullscreen ? '⤢' : '⛶' }}
       </button>
+      <button
+        v-if="audio.available.value"
+        type="button"
+        class="rounded px-1.5 py-0.5 text-[11px] transition"
+        :class="audioOn ? 'bg-accent/20 text-accent' : audio.state.value === 'error' ? 'text-warn hover:bg-overlay' : 'text-txt2 hover:bg-overlay'"
+        :title="audioLabel"
+        :aria-label="audioLabel"
+        :aria-pressed="audioOn ? 'true' : 'false'"
+        data-testid="novnc-audio-toggle"
+        @click="audio.toggle"
+      >
+        <Icon :name="audioOn ? 'volume' : 'volume-off'" :size="13" :busy="audio.state.value === 'connecting'" />
+      </button>
       <slot name="toolbar-extra" />
       <span class="ml-auto flex items-center gap-2.5 text-[10px]">
         <span
@@ -1069,6 +1087,19 @@ onBeforeUnmount(() => {
         @click="toggleControl"
       >
         {{ controlToggleLabel }}
+      </button>
+      <button
+        v-if="audio.available.value"
+        type="button"
+        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] transition"
+        :class="audioOn ? 'bg-accent/20 text-accent' : audio.state.value === 'error' ? 'text-warn hover:bg-overlay' : 'text-txt2 hover:bg-overlay'"
+        :title="audioLabel"
+        :aria-label="audioLabel"
+        :aria-pressed="audioOn ? 'true' : 'false'"
+        data-testid="novnc-audio-toggle"
+        @click="audio.toggle"
+      >
+        <Icon :name="audioOn ? 'volume' : 'volume-off'" :size="13" :busy="audio.state.value === 'connecting'" />
       </button>
       <button
         v-if="inspectable"
@@ -1284,6 +1315,19 @@ onBeforeUnmount(() => {
             <Icon name="crosshair" :size="14" />
           </button>
           <slot name="toolbar-extra" />
+          <button
+            v-if="audio.available.value"
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-full transition"
+            :class="audioOn ? 'bg-accent/15 text-accent' : audio.state.value === 'error' ? 'text-warn hover:bg-overlay' : 'text-txt3 hover:bg-overlay hover:text-txt'"
+            :title="audioLabel"
+            :aria-label="audioLabel"
+            :aria-pressed="audioOn ? 'true' : 'false'"
+            data-testid="novnc-audio-toggle"
+            @click="audio.toggle"
+          >
+            <Icon :name="audioOn ? 'volume' : 'volume-off'" :size="14" :busy="audio.state.value === 'connecting'" />
+          </button>
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-full text-txt3 transition hover:bg-overlay hover:text-txt"

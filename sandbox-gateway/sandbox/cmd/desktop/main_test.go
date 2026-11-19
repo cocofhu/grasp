@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -29,6 +30,45 @@ func TestRunUsageAndUnknown(t *testing.T) {
 	}
 	if code := run([]string{"launcher", "-addr", "0.0.0.0:0"}, nil, io.Discard, io.Discard); code != 1 {
 		t.Fatalf("non-loopback must be refused: %d", code)
+	}
+	if code := run([]string{"vnc-ws", "-bogus"}, nil, io.Discard, io.Discard); code != 2 {
+		t.Fatalf("vnc-ws bad flag: %d", code)
+	}
+	if code := run([]string{"vnc-ws", "-addr", "bad"}, nil, io.Discard, io.Discard); code != 1 {
+		t.Fatalf("vnc-ws bad addr: %d", code)
+	}
+}
+
+func TestRunVNCWSServesUntilSignal(t *testing.T) {
+	addr := "127.0.0.1:" + strconv.Itoa(freePort(t))
+	done := make(chan int, 1)
+	go func() { done <- run([]string{"vnc-ws", "-addr", addr, "-vnc", "127.0.0.1:1"}, nil, io.Discard, io.Discard) }()
+	var resp *http.Response
+	var err error
+	for i := 0; i < 50; i++ {
+		resp, err = http.Get("http://" + addr + "/")
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("vnc-ws did not stop")
 	}
 }
 

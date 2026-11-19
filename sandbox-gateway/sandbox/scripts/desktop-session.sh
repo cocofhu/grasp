@@ -92,7 +92,7 @@ dbus_session() {
 write_session_env() {
   local k
   for k in DISPLAY DBUS_SESSION_BUS_ADDRESS GTK_IM_MODULE QT_IM_MODULE XMODIFIERS SDL_IM_MODULE \
-    LANG XDG_CONFIG_HOME XDG_DATA_HOME; do
+    LANG XDG_CONFIG_HOME XDG_DATA_HOME PULSE_SERVER; do
     [ -n "${!k:-}" ] && printf '%s=%s\n' "$k" "${!k}"
   done >"$RUN_DIR/session.env.tmp" && mv -f "$RUN_DIR/session.env.tmp" "$RUN_DIR/session.env"
 }

@@ -221,7 +221,9 @@ RUN npm install -g yarn pnpm typescript ts-node
 
 # Playwright 浏览器 E2E + noVNC 预览栈：预装 Chromium + Playwright 系统依赖，落到共享目录
 # /ms-playwright；另装 CJK 字体（无头渲染/截图不出方块）与 xvfb/x11vnc/websockify/socat
-# （vnc-preview.sh 起 headed Chromium + CDP + websockify）。
+# （vnc-preview.sh 起 headed Chromium + CDP + grasp-desktop vnc-ws；websockify 仅作旧运行时回退）。
+# pulseaudio + pulseaudio-utils(parec)：桌面声音，null sink 由 vnc-ws 的 /audio 推给查看者；
+# 缺失时桌面照常、只是没有声音。
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV PLAYWRIGHT_VERSION=1.61.1
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -233,6 +235,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       x11vnc \
       websockify \
       socat \
+      pulseaudio \
+      pulseaudio-utils \
     && npx --yes playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/* /root/.npm

@@ -54,7 +54,7 @@ func BuildCapabilities(bridge *service.Bridge) gin.H {
 			"codeServer": true,
 			"port":       envInt("CODE_SERVER_PORT", 8744),
 		},
-		// 预览栈:沙箱内 Xvfb+Chromium+x11vnc+websockify,始终启动;平台 dial cdpPort / websockifyPort。
+		// 预览栈:沙箱内 Xvfb+Chromium+x11vnc+grasp-desktop vnc-ws(RFB 与 /audio 声音),始终启动;平台 dial cdpPort / websockifyPort。
 		"preview": gin.H{
 			"vnc":            true,
 			"cdpPort":        9222,

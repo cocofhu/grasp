@@ -1142,5 +1142,21 @@
     "filled": false,
     "strokeWidth": 1.7,
     "note": "无穷符号轻微放大后复位"
+  },
+  "volume": {
+    "body": "<path d=\"M11 5 6 9H3v6h3l5 4z\"/><path d=\"M15.5 8.5a5 5 0 0 1 0 7\"/><path d=\"M18.5 5.5a9 9 0 0 1 0 13\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "喇叭固定，两道声波向外轻扩后复位"
+  },
+  "volume-off": {
+    "body": "<path d=\"M11 5 6 9H3v6h3l5 4z\"/><path d=\"M22 9l-6 6\"/><path d=\"M16 9l6 6\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "喇叭固定，静音叉轻缩后复位"
   }
 }
