@@ -290,18 +290,26 @@ describe('SoloModelSelect', () => {
     expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
   })
 
-  it('shows only the user-defined group name and does not merge groups that share it', async () => {
+  it('shows group names in the menu and distinguishes groups with the same name', async () => {
+    const codex = {
+      ...base, id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', hint: 'gpt-6.2-sol', vendor: 'openai',
+      configurationId: 'cfg-codex', configurationName: 'Codex', tool: 'codex', efforts: ['low', 'max'], serviceTiers: ['fast'],
+    }
     const opencode = { ...base, id: 'gemini-4-argon', name: 'Gemini 4 Argon Contributor', hint: 'gemini-4-argon', configurationId: 'cfg-opencode', configurationName: 'OpenCode', tool: 'opencode', source: '' }
     const token = { ...base, id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', hint: 'kimi-k3.1-pro', configurationId: 'cfg-token', configurationName: 'TokenHub', tool: 'deepseek_harness', source: '腾讯混元 / TokenHub · TokenHub' }
     const tokenAgain = { ...fast, id: 'deepseek-v4', name: 'DeepSeek-V4.1-Flash-1017', hint: 'deepseek-v4', configurationId: 'cfg-token-2', configurationName: 'TokenHub', tool: 'cursor', source: '' }
     const cursorx = { ...fast, id: 'grok-4.7-high', name: 'Grok 4.7 High', hint: 'grok-4.7-high', configurationId: 'cfg-cursor', configurationName: 'CursorX', tool: 'cursor', source: '' }
-    const wrapper = mountSelect({ models: [opencode, token, tokenAgain, cursorx], modelValue: 'kimi-k3.1-pro' })
+    const wrapper = mountSelect({ models: [codex, opencode, token, tokenAgain, cursorx], reasoningEffort: 'max', serviceTier: 'fast' })
+    const trigger = wrapper.get('[data-testid="solo-model-select-trigger"]')
+    expect(trigger.text()).toContain('GPT-6.2 Sol')
+    expect(trigger.text()).not.toContain('Codex')
+    expect(trigger.get('[data-testid="solo-model-effort-label"]').text()).toBe('最高')
+    expect(trigger.get('[data-testid="solo-model-fast-label"]').text()).toBe('Fast')
     await open(wrapper)
     const titles = [...document.querySelectorAll('.solo-picker__list .solo-model-menu-title')].map((node) => node.textContent)
-    expect(titles).toEqual(['OpenCode', 'TokenHub', 'TokenHub', 'CursorX'])
+    expect(titles).toEqual(['Codex', 'OpenCode', 'TokenHub', 'TokenHub', 'CursorX'])
     expect(document.querySelector('.solo-picker__list')?.textContent).not.toContain('DeepSeek Harness')
     expect(document.querySelector('.solo-picker__list')?.textContent).not.toContain('OpenCode · OpenCode')
-    expect(wrapper.get('[data-testid="solo-model-select-trigger"]').text()).toContain('TokenHub')
   })
 
   it('gives every model row the same height and a source or hint caption', async () => {
