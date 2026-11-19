@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -51,12 +52,17 @@ func TestCodexMetadataWarningIsNotTerminal(t *testing.T) {
 }
 
 func TestCodexMetadataWarningDoesNotMisclassifyLingeringSuccessfulProcess(t *testing.T) {
-	root := t.TempDir()
 	warning, _ := json.Marshal(map[string]any{"type": "item.completed", "item": map[string]any{"type": "error", "message": "Model metadata for `gpt-5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}})
-	script := "#!/bin/sh\nprintf '%s\\n' '" + string(warning) + "' " +
+	script := "printf '%s\\n' '" + string(warning) + "' " +
 		"'{\"type\":\"item.completed\",\"item\":{\"id\":\"answer\",\"type\":\"agent_message\",\"text\":\"complete answer\"}}' " +
 		"'{\"type\":\"turn.completed\"}'\nexec sleep 30\n"
-	if err := os.WriteFile(filepath.Join(root, "codex"), []byte(script), 0o755); err != nil {
+	checkCodexDiagnosticTurn(t, script, "end_turn", "complete answer")
+}
+
+func checkCodexDiagnosticTurn(t *testing.T, script, wantStop, wantText string, wantErrors ...string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "codex"), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -75,19 +81,23 @@ func TestCodexMetadataWarningDoesNotMisclassifyLingeringSuccessfulProcess(t *tes
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	result, err := session.Prompt(ctx, "continue", nil)
-	if err != nil || result.StopReason != "end_turn" {
-		t.Fatalf("successful lingering CLI was failed by its earlier metadata warning: result=%+v err=%v", result, err)
+	if result.StopReason != wantStop || (err != nil && wantStop == "end_turn") {
+		t.Fatalf("want %s, got result=%+v err=%v", wantStop, result, err)
 	}
 	var text string
+	var diagnostics, done []string
 	for _, frame := range frames {
 		if frame["type"] == "error_text" {
-			t.Fatal("successful complete answer was reported as failed")
+			diagnostics = append(diagnostics, frame["text"].(string))
+		}
+		if frame["type"] == "prompt_done" {
+			done = append(done, frame["stopReason"].(string))
 		}
 		if update, ok := frame["update"].(map[string]any); ok && update["sessionUpdate"] == "agent_message_chunk" {
 			text += update["content"].(map[string]any)["text"].(string)
 		}
 	}
-	if text != "complete answer" {
-		t.Fatal("complete answer was lost")
+	if text != wantText || !slices.Equal(diagnostics, wantErrors) || !slices.Equal(done, []string{wantStop}) {
+		t.Fatalf("answer=%q errors=%q prompt_done=%v", text, diagnostics, done)
 	}
 }

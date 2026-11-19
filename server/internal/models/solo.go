@@ -114,6 +114,10 @@ type SoloSession struct {
 	// SessionContextPending restores dialogue context after the coding tool
 	// replaced its native session in an otherwise unchanged sandbox.
 	SessionContextPending bool `json:"-"`
+	// ContextID changes on /new. Empty denotes the original conversation.
+	ContextID string `json:"-"`
+	// ContextResetPending asks the next turn to open a fresh native session.
+	ContextResetPending string `json:"-"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace
 	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
 	// read as a one-element list built from ProjectSnapshot.
@@ -222,6 +226,7 @@ type SoloMessage struct {
 	Files     []ArtifactAttachment `gorm:"serializer:json" json:"files,omitempty"`
 	ID        string               `gorm:"primaryKey" json:"id"`
 	SessionID string               `gorm:"index" json:"sessionId"`
+	ContextID string               `json:"-"`
 	// Role: user | assistant | system (system marks restarts).
 	Role          string            `json:"role"`
 	Content       string            `gorm:"serializer:filetext" json:"content"`
@@ -236,7 +241,7 @@ type SoloMessage struct {
 	// ask_question / ask_form; the user answers them with the next message.
 	Questions []ReactQuestion `gorm:"serializer:json" json:"questions,omitempty"`
 	Forms     []ReactForm     `gorm:"serializer:json" json:"forms,omitempty"`
-	// Status: ok | failed | stopped. Empty means ok.
+	// Status: ok | failed | stopped for turns, or context_new | context_compact for system commands.
 	Status       string            `json:"status,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	Usage        *TokenUsage       `gorm:"serializer:json" json:"usage,omitempty"`

@@ -148,13 +148,23 @@ func TestPublicShareVisitorsGetSeparateConversations(t *testing.T) {
 	if strings.Contains(fresh, "message from A") || strings.Contains(fresh, "message from B") {
 		t.Fatalf("a new visitor sees other visitors: %s", fresh)
 	}
+	reset := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
+		"token": token, "text": "/new chat", "liveCtx": models.LiveCtx{SID: strings.Repeat("a", 32), Current: 1},
+	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost, headerShareVisitor: a})
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset A: %d %s", reset.Code, reset.Body.String())
+	}
+	waitPreviewContains(t, h, token, a, `"contextCommand":"new"`)
+	if body := visitorPreviewTurns(t, h, token, b); strings.Contains(body, `"contextCommand"`) {
+		t.Fatalf("visitor B saw visitor A's context reset: %s", body)
+	}
 
 	var conv models.ReactConversation
 	if err := h.db.Where("run_id = ? AND node_id = ?", "run-lanes", "design").First(&conv).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range conv.Messages {
-		if strings.Contains(m.Text, "message from") {
+		if strings.Contains(m.Text, "message from") || m.ContextCommand != "" {
 			t.Fatalf("visitor message leaked into the node's own dialogue: %+v", conv.Messages)
 		}
 	}

@@ -36,7 +36,7 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 	if reg.Name() != "registry" {
 		t.Fatalf("Name = %q, want registry", reg.Name())
 	}
-	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness} {
+	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness, BackendKimiCode} {
 		p, ok := reg.providers[b]
 		if !ok || p == nil {
 			t.Fatalf("missing provider for backend %q", b)

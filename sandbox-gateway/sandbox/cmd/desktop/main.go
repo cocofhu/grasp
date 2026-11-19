@@ -2,6 +2,7 @@
 //
 //	grasp-desktop launcher [-addr 127.0.0.1:6091]   launch page + POST /launch
 //	grasp-desktop mcp                               desktop MCP on stdio
+//	grasp-desktop vnc-ws [-addr 0.0.0.0:6080]       RFB + /audio WebSocket (replaces websockify)
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"backend/internal/desktop"
+	"backend/internal/vncws"
 )
 
 func main() {
@@ -27,7 +29,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: grasp-desktop launcher|mcp")
+		_, _ = fmt.Fprintln(stderr, "usage: grasp-desktop launcher|mcp|vnc-ws")
 		return 2
 	}
 	paths := desktop.DefaultPaths()
@@ -44,6 +46,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if err := serveLauncher(ctx, *addr, paths, runner); err != nil {
 			_, _ = fmt.Fprintln(stderr, "grasp-desktop launcher:", err)
+			return 1
+		}
+		return 0
+	case "vnc-ws":
+		fs := flag.NewFlagSet("vnc-ws", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		addr := fs.String("addr", "0.0.0.0:6080", "listen address")
+		vnc := fs.String("vnc", "127.0.0.1:5900", "x11vnc RFB address")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		srv := &vncws.Server{VNCAddr: *vnc, Audio: vncws.ParecSource(exec.LookPath)}
+		if err := serveHTTP(ctx, *addr, srv.Handler()); err != nil {
+			_, _ = fmt.Fprintln(stderr, "grasp-desktop vnc-ws:", err)
 			return 1
 		}
 		return 0
@@ -77,12 +93,16 @@ func serveLauncher(ctx context.Context, addr string, paths desktop.Paths, runner
 	if err != nil {
 		return err
 	}
+	l := &desktop.Launcher{Paths: paths, Runner: runner, LookPath: exec.LookPath, Port: port}
+	return serveHTTP(ctx, addr, l.Handler())
+}
+
+func serveHTTP(ctx context.Context, addr string, h http.Handler) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	l := &desktop.Launcher{Paths: paths, Runner: runner, LookPath: exec.LookPath, Port: port}
-	srv := &http.Server{Handler: l.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

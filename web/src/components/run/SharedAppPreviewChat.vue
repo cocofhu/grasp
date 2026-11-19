@@ -5,6 +5,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ContextCommandNotice from '@/components/chat/ContextCommandNotice.vue'
 import ThinkingBusyCue from './ThinkingBusyCue.vue'
 import { useChatTailScroll } from '@/lib/chat/chatScroll'
 import { relTime } from '@/lib/shared/format'
@@ -325,6 +326,7 @@ function connectGuest() {
       if (message.durationMs !== undefined) reply.durationMs = message.durationMs
       reply.endedAt = message.endedAt
       reply.interrupted = message.interrupted
+      reply.contextCommand = message.contextCommand
       reply.streaming = message.type === 'reply'
       if (message.type === 'done') reply.at = message.endedAt || new Date().toISOString()
     }
@@ -468,7 +470,11 @@ onBeforeUnmount(() => {
           {{ t(chatReady ? 'pages.appPreview.share.emptyChat' : 'pages.embedChat.connecting') }}
         </p>
         <template v-for="row in rows" :key="row.id">
-          <div v-if="row.role === 'user' || row.role === 'human'" class="flex justify-end">
+          <ContextCommandNotice
+            v-if="row.contextCommand && row.role === 'system'"
+            :command="row.contextCommand"
+          />
+          <div v-else-if="row.role === 'user' || row.role === 'human'" class="flex justify-end">
             <div class="min-w-0 max-w-[85%]">
               <ChatAttachments v-if="row.images?.length" :images="shownAttachments(row)" sent @preview="openImagePreview" />
               <ChatUserMessage v-if="row.text || row.annotations?.length" :text="row.text" :annotations="row.annotations" :references="row.references" :created-at="row.at" />
@@ -509,6 +515,8 @@ onBeforeUnmount(() => {
       <ChatComposer
         class="chat-pane-column"
         :draft="draft"
+        :command-skills="[]"
+        :allow-context-commands="session.chatMode === 'isolated'"
         :picks="picks"
         :placeholder="t('pages.solo.chat.placeholder', { agent: session.agentName || 'Agent' })"
         :scope="referenceScope"

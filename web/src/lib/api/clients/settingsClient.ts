@@ -16,6 +16,9 @@ export const settingsClient = {
   /** The one noVNC address of a sandbox desktop; app ports are pages on it. */
   sandboxVncWsUrl: (sandboxId: number) =>
     rootWsUrl(`/sandbox-vnc/${sandboxId}/ws`),
+  /** Sound of that desktop: raw PCM frames (see lib/shared/desktopAudio). */
+  sandboxAudioWsUrl: (sandboxId: number) =>
+    rootWsUrl(`/sandbox-audio/${sandboxId}/ws`),
   listGates: (params?: {
     page?: number
     pageSize?: number

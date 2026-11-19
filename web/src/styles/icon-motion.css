@@ -878,3 +878,13 @@
 .app-icon[data-icon="infinity"] path{transform-origin:12px 12px}
 .app-icon[data-icon="infinity"][data-icon-motion="once"] path{animation:iconMotion_infinity_pulse 500ms ease-in-out}
 @keyframes iconMotion_infinity_pulse{0%,100%{transform:scale(1)}45%{transform:scale(1.08)}}
+
+/* icon: volume */
+.app-icon[data-icon="volume"] path:nth-of-type(2), .app-icon[data-icon="volume"] path:nth-of-type(3){transform-box:view-box;transform-origin:11px 12px}
+.app-icon[data-icon="volume"][data-icon-motion="once"] path:nth-of-type(2), .app-icon[data-icon="volume"][data-icon-motion="once"] path:nth-of-type(3){animation:iconMotion_volume_wave 500ms 0ms cubic-bezier(.25,.7,.3,1) 1 both}
+@keyframes iconMotion_volume_wave{0%,100%{transform:scale(1)}45%{transform:scale(1.08)}}
+
+/* icon: volume-off */
+.app-icon[data-icon="volume-off"] path:nth-of-type(2), .app-icon[data-icon="volume-off"] path:nth-of-type(3){transform-box:fill-box;transform-origin:center}
+.app-icon[data-icon="volume-off"][data-icon-motion="once"] path:nth-of-type(2), .app-icon[data-icon="volume-off"][data-icon-motion="once"] path:nth-of-type(3){animation:iconMotion_volume_off_x 500ms 0ms cubic-bezier(.25,.7,.3,1) 1 both}
+@keyframes iconMotion_volume_off_x{0%,100%{transform:scale(1)}45%{transform:scale(.85)}}

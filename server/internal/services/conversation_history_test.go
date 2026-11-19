@@ -136,7 +136,7 @@ func TestContextPreambleResendsRecentAttachments(t *testing.T) {
 		}
 	}
 	solo := &SoloService{db: db}
-	pre, history, err := solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n")
+	pre, history, err := solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestContextPreambleResendsRecentAttachments(t *testing.T) {
 	if err := db.Model(&models.SoloMessage{}).Where("id = ?", "big").Update("images", []models.PromptImage{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, history, _ = solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n")
+	_, history, _ = solo.contextPreambleChecked(sb.ThreadID, "now", "handoff\n", "", false)
 	if len(history) != 1 || history[0].Ref != "blob:892fe2a4" {
 		t.Fatalf("older attachment should be re-sent once the bound allows: %+v", history)
 	}
@@ -191,7 +191,7 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 		}
 	}
 	solo := &SoloService{db: db}
-	pre, _, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff\n")
+	pre, _, err := solo.contextPreambleChecked(sb.ThreadID, "", "handoff\n", "", false)
 	if err != nil || !strings.Contains(pre, "改用 React，取消支付功能") || !strings.Contains(pre, "较新的更正优先") || !strings.Contains(pre, "较早的 18 条对话正文") {
 		t.Fatalf("middle correction disappeared: %s %v", pre, err)
 	}

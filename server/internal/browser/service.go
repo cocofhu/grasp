@@ -205,6 +205,24 @@ func (se *Session) VNCWebSocketURL() (string, error) {
 	return fmt.Sprintf("ws://%s:%d", host, port), nil
 }
 
+// AudioWebSocketURL returns the desktop sound stream on the sandbox's
+// websockify port (grasp-desktop vnc-ws serves /audio beside RFB). It does
+// not start the preview stack; viewers open it next to a live VNC session.
+func (s *Service) AudioWebSocketURL(ctx context.Context, sandboxName, sandboxIP string) (string, error) {
+	_, novncAddr, err := s.resolvePreviewEndpoints(ctx, sandboxName, sandboxIP)
+	if err != nil {
+		return "", err
+	}
+	host, port := splitHostPort(preferIPAddr(ctx, novncAddr))
+	if host == "" {
+		return "", fmt.Errorf("vnc container %s missing", sandboxName)
+	}
+	if port <= 0 {
+		port = vncWSport
+	}
+	return "ws://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/audio", nil
+}
+
 func (cs *containerState) novncHostPort() (string, int) {
 	if host, port := splitHostPort(cs.novncAddr); host != "" && port > 0 {
 		return host, port

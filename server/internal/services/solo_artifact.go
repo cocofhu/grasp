@@ -24,10 +24,10 @@ func (s *SoloService) CurrentArtifactTurn(runID, nodeID string) (ArtifactTurn, e
 		return ArtifactTurn{}, errors.New("there is no active Solo turn")
 	}
 	v := c.sess.View()
-	if !v.HasActive || v.Active == nil {
+	if !v.HasActive || v.Active == nil || v.Active.Command.ChangesContext() {
 		return ArtifactTurn{}, errors.New("there is no active Solo turn")
 	}
-	return ArtifactTurn{SessionID: sb.ThreadID, TurnID: v.Active.ID, SandboxID: sb.ID}, nil
+	return ArtifactTurn{SessionID: sb.ThreadID, TurnID: v.Active.ID, SandboxID: sb.ID, ContextID: session.ContextID}, nil
 }
 
 // soloAskRunID is the MCP run namespace of a Solo sandbox ("" when unknown).

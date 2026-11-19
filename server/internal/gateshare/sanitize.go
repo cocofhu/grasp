@@ -22,14 +22,15 @@ const (
 // Questions and Forms are omitted when empty so turns without structured
 // prompts keep the same JSON (and sparse-poll hash) as before they existed.
 type PreviewTurn struct {
-	Role        string              `json:"role"`
-	Text        string              `json:"text,omitempty"`
-	At          string              `json:"at,omitempty"`
-	Interrupted bool                `json:"interrupted,omitempty"`
-	Images      []PreviewImage      `json:"images,omitempty"`
-	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
-	Questions   []PreviewQuestion   `json:"questions,omitempty"`
-	Forms       []PreviewForm       `json:"forms,omitempty"`
+	Role           string              `json:"role"`
+	Text           string              `json:"text,omitempty"`
+	At             string              `json:"at,omitempty"`
+	Interrupted    bool                `json:"interrupted,omitempty"`
+	Images         []PreviewImage      `json:"images,omitempty"`
+	Annotations    []PreviewAnnotation `json:"annotations,omitempty"`
+	Questions      []PreviewQuestion   `json:"questions,omitempty"`
+	Forms          []PreviewForm       `json:"forms,omitempty"`
+	ContextCommand string              `json:"contextCommand,omitempty"`
 	// Narration is the auto phase's final agent message on a takeover's
 	// opening turn (raw events are never exposed publicly). Treated like
 	// Text.
@@ -380,7 +381,7 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if role != "agent" && role != "human" {
 			continue
 		}
-		turn := PreviewTurn{Role: role, Text: m.Text, At: strings.TrimSpace(m.At), Interrupted: m.Interrupted}
+		turn := PreviewTurn{Role: role, Text: m.Text, At: strings.TrimSpace(m.At), Interrupted: m.Interrupted, ContextCommand: m.ContextCommand}
 		if role == "agent" {
 			turn.Narration = m.Narration
 		}

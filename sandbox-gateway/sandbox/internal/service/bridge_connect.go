@@ -133,18 +133,18 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 		}
 		log.Printf("acp: connect 带来非空 MCP，重建此前空 MCP 会话")
 		b.mu.Unlock()
-		return b.connectOrTest(cwd, fsRoot, mcp, auto)
+		return b.connectOrTest(cwd, fsRoot, mcp, auto, false)
 	}
 	b.mu.Unlock()
 
-	return b.connectOrTest(cwd, fsRoot, mcp, auto)
+	return b.connectOrTest(cwd, fsRoot, mcp, auto, false)
 }
 
-func (b *Bridge) connectOrTest(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+func (b *Bridge) connectOrTest(cwd, fsRoot string, mcp json.RawMessage, auto *bool, preserveHistory bool) (provider.Session, error) {
 	if b.testConnect != nil {
 		return b.testConnect(cwd, fsRoot, mcp, auto)
 	}
-	return b.Connect(cwd, fsRoot, mcp, auto)
+	return b.connect(cwd, fsRoot, mcp, auto, preserveHistory)
 }
 
 // mcpEmpty reports whether the MCP payload is absent / null / empty list.
@@ -188,6 +188,10 @@ func mcpServerSummary(mcp json.RawMessage) (count int, names []string) {
 
 // Connect 启动或替换 Agent 会话（由 AGENT_PROVIDER 选定的 provider 负责拉起对应 transport）。
 func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
+	return b.connect(cwd, fsRoot, mcp, auto, false)
+}
+
+func (b *Bridge) connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool, preserveHistory bool) (provider.Session, error) {
 	cwd, fsRoot, mcp = b.inheritFromDefault(cwd, fsRoot, mcp)
 	if cwd == "" {
 		wd, err := os.Getwd()
@@ -224,9 +228,14 @@ func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (p
 	b.mu.Unlock()
 	m := b.EffectiveModel()
 
-	b.clearPromptQueue()
-	b.clearUserTurnHistory()
-	b.evLog.clear()
+	if !preserveHistory {
+		b.mu.Lock()
+		b.compactPreamble = ""
+		b.mu.Unlock()
+		b.clearPromptQueue()
+		b.clearUserTurnHistory()
+		b.evLog.clear()
+	}
 	b.enqueueMu.Unlock()
 
 	// 握手 RPC 用 handshakeCtx；子进程必须用会话级 ctx（agentCtx）。切勿把 handshakeCtx 传给 provider.Open，
@@ -366,7 +375,31 @@ func (b *Bridge) broadcastAgentExitDebounced(msg string) {
 func (b *Bridge) RestartAgent() (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
-	return b.restartAgentLocked()
+	return b.restartAgentLocked(false)
+}
+
+// RestartChatContext resets the provider session while preserving visible
+// events and accepted prompts in this bridge chat.
+func (b *Bridge) RestartChatContext() (provider.Session, error) {
+	return b.restartChatContext("", true)
+}
+
+func (b *Bridge) restartChatContext(preamble string, markBoundary bool) (provider.Session, error) {
+	b.ensureMu.Lock()
+	defer b.ensureMu.Unlock()
+	session, err := b.restartAgentLocked(true)
+	if err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	b.compactPreamble = preamble
+	b.mu.Unlock()
+	if markBoundary {
+		// The platform supplies the new context in its next prompt. A later
+		// console command must not replay the earlier archived prompts.
+		b.Broadcast(eventEnvelope(map[string]any{"type": "context_boundary"}, ""))
+	}
+	return session, nil
 }
 
 // SwitchModelSettings updates model, effort and speed tier as one operation.
@@ -394,7 +427,7 @@ func (b *Bridge) SwitchModelSettings(model, effort string, serviceTier *string) 
 		b.serviceTier = ""
 		b.mu.Unlock()
 	}
-	session, err := b.restartAgentLocked()
+	session, err := b.restartAgentLocked(false)
 	if err != nil {
 		b.mu.Lock()
 		b.model, b.reasoningEffort, b.serviceTier = previousModel, previousEffort, previousTier
@@ -403,7 +436,7 @@ func (b *Bridge) SwitchModelSettings(model, effort string, serviceTier *string) 
 	return session, err
 }
 
-func (b *Bridge) restartAgentLocked() (provider.Session, error) {
+func (b *Bridge) restartAgentLocked(preserveHistory bool) (provider.Session, error) {
 
 	b.mu.Lock()
 	var cwd, fsRoot string
@@ -433,5 +466,5 @@ func (b *Bridge) restartAgentLocked() (provider.Session, error) {
 	}
 	ap := auto
 	log.Printf("acp: 收到重启请求，将重建 Agent（cwd=%q fsRoot=%q）", cwd, fsRoot)
-	return b.connectOrTest(cwd, fsRoot, mcp, &ap)
+	return b.connectOrTest(cwd, fsRoot, mcp, &ap, preserveHistory)
 }

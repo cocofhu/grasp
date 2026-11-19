@@ -1,4 +1,5 @@
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
+import { isPlatformSlashCommand } from '@/lib/chat/chatCommands'
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
@@ -828,7 +829,7 @@ function prepareComposerSend(
   if ((!text && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return null
   if (attachmentFiles.blockSendIfOversized(imgs) || attachmentFiles.blockSendIfOversized(attachments.value)) return null
   let outText = text
-  if (pendingInteractiveOpen.value) {
+  if (pendingInteractiveOpen.value && !isPlatformSlashCommand(text)) {
     outText = formatSkipReply(text)
     deck.reset()
     formDraft.reset()

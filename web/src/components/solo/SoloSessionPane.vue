@@ -21,6 +21,7 @@ import { appendPreviewPick, readPreviewMessage, type AppPreviewPickPayload } fro
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import { useChatTailScroll } from '@/lib/chat/chatScroll'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
+import ContextCommandNotice from '@/components/chat/ContextCommandNotice.vue'
 import { useChatComposerDraft } from '@/lib/chat/useChatComposerDraft'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/PendingSendQueuePanel.vue'
@@ -290,7 +291,10 @@ async function send() {
 // --- ask_question / ask_form ------------------------------------------------
 /** The latest reply, when it ended with questions and nothing was sent after it. */
 const askTurn = computed(() => {
-  const last = turns.value[turns.value.length - 1]
+  const rows = turns.value
+  let index = rows.length - 1
+  while (rows[index]?.contextCommand === 'compact') index--
+  const last = rows[index]
   return last?.role === 'agent' && !last.streaming && (last.questions?.length || last.forms?.length) && !queued.value.length ? last : null
 })
 const askQuestions = computed(() => askTurn.value?.questions ?? [])
@@ -535,7 +539,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </div>
 
           <template v-for="turn in turns" :key="turn.id">
-            <div v-if="turn.role === 'system'" class="solo-system">
+            <ContextCommandNotice v-if="turn.contextCommand" :command="turn.contextCommand" />
+            <div v-else-if="turn.role === 'system'" class="solo-system">
               <span>{{ turn.text }}</span>
             </div>
             <div v-else-if="turn.role === 'user'" class="flex justify-end" :data-chat-message-id="turn.id">
@@ -659,6 +664,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <ChatComposer
             :draft="draft"
+            :command-skills="session.skills || []"
             :picks="picks"
             :placeholder="t('pages.solo.chat.placeholder', { agent: session.agentName })"
             :scope="{ sessionId: props.sessionId }"

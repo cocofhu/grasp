@@ -3,12 +3,44 @@ package services
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
+
+func (s *SandboxService) PreviewGuestSkillPrompt(row models.Sandbox, name, prompt string) (string, error) {
+	if s.skills == nil {
+		return "", chatcmd.UnknownSkill(name)
+	}
+	agent, ok := s.skills.Get(row.Profile)
+	if !ok {
+		return "", chatcmd.UnknownSkill(name)
+	}
+	var home, root string
+	s.mu.Lock()
+	if live := s.live[row.ID]; live != nil {
+		home = live.home
+		if live.sb != nil {
+			root = live.sb.ConfigRoot
+		}
+	}
+	s.mu.Unlock()
+	if home != "" {
+		if !chatcmd.InstalledSkill(name, home) {
+			return "", chatcmd.UnknownSkill(name)
+		}
+	} else if !slices.Contains(soloSkills(s.effectiveAgent(agent).Files), name) {
+		return "", chatcmd.UnknownSkill(name)
+	}
+	if root == "" {
+		root = s.effectiveAgent(agent).Layout.ConfigRoot
+	}
+	return chatcmd.WithSkill(root, name, prompt), nil
+}
 
 // OpenPreviewGuest creates a separate Agent chat inside the preview's existing
 // sandbox. The visitor shares the workspace but never reads the default chat.

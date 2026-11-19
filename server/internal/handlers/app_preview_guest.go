@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -203,16 +204,49 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 				}
 				continue
 			}
+			command := chatcmd.Parse(request.Text)
+			if err := command.Validate(len(request.Images)+len(request.Annotations)+len(request.References) > 0); err != nil {
+				if !writePreviewGuestCommand(conn, "", err) {
+					return
+				}
+				continue
+			}
+			if command.ChangesContext() {
+				err := client.RestartChatContext(turnCtx)
+				if err == nil {
+					if command.Name == chatcmd.New {
+						history = nil
+					}
+					restoreHistory = len(history) > 0
+				}
+				if !writePreviewGuestCommand(conn, command.Name, err) {
+					return
+				}
+				continue
+			}
 			refs, err := h.prepareAppPreviewReferences(turnCtx, link, sb, request.References)
 			if err != nil {
 				writePreviewGuestUnavailable(conn, request)
 				continue
 			}
-			instruction := models.RenderAnnotatedPrompt(request.Text, request.Annotations)
+			text := request.Text
+			if command.Name == chatcmd.Skill {
+				text = command.Prompt
+			}
+			instruction := models.RenderAnnotatedPrompt(text, request.Annotations)
 			if len(refs) > 0 {
 				instruction = h.Solo.RenderReferenceBlock(refs) + "\n\n" + instruction
 			}
 			prompt := instruction
+			if command.Name == chatcmd.Skill {
+				prompt, err = h.Sbx.PreviewGuestSkillPrompt(sb, command.Skill, prompt)
+				if err != nil {
+					if !writePreviewGuestCommand(conn, "", err) {
+						return
+					}
+					continue
+				}
+			}
 			if restoreHistory && len(history) > 0 {
 				prompt = "Earlier messages in this preview chat (context only):\n" +
 					strings.Join(history, "\n\n") + "\n\nCurrent user message:\n" + prompt
@@ -239,6 +273,17 @@ func (h *Handlers) PublicAppPreviewGuestChat(c *gin.Context) {
 			}
 		}
 	}
+}
+
+func writePreviewGuestCommand(conn *websocket.Conn, command string, err error) bool {
+	frame := gin.H{"type": "done", "failed": err != nil, "endedAt": time.Now().Format(time.RFC3339Nano)}
+	if err != nil {
+		frame["text"] = err.Error()
+	} else {
+		frame["text"] = chatcmd.Scheduled(command)
+		frame["contextCommand"] = command
+	}
+	return writeChatJSON(conn, frame) == nil
 }
 
 func writePreviewGuestUnavailable(conn *websocket.Conn, request previewGuestRequest) {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/mcp"
@@ -339,8 +340,44 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 // guard stays as a safety net; serial ordering of multiple messages is handled
 // by the caller's single-worker queue (see handlers.SandboxChat).
 func (s *SandboxService) Chat(ctx context.Context, id uint, text string, images []models.PromptImage, onEvent func(json.RawMessage)) error {
+	command := chatcmd.Parse(text)
+	if err := command.Validate(len(images) > 0); err != nil {
+		return err
+	}
+	if command.Name != "" {
+		ctx = sandbox.WithUserChatCommand(ctx)
+	}
 	_, _, err := s.ChatWithTimeout(ctx, id, text, images, 0, nil, onEvent)
 	return err
+}
+
+// restartSoloAgent drops the native conversation inside the running sandbox.
+// The recovery lock and busy flag serialize it with chat, recovery and model switches.
+func (s *SandboxService) restartSoloAgent(ctx context.Context, id uint) error {
+	unlock, err := s.lockSoloRecovery(ctx, id)
+	if err != nil {
+		return err
+	}
+	ls, _, err := s.ensureConnected(ctx, id)
+	if err != nil {
+		unlock()
+		return err
+	}
+	s.mu.Lock()
+	if ls.busy || ls.switching {
+		s.mu.Unlock()
+		unlock()
+		return fmt.Errorf("sandbox busy")
+	}
+	ls.busy = true
+	s.mu.Unlock()
+	unlock()
+	defer func() {
+		s.mu.Lock()
+		ls.busy = false
+		s.mu.Unlock()
+	}()
+	return ls.acp.RestartChatContext(ctx)
 }
 
 // ChatWithTimeout is Chat with an optional total time limit. timeout<=0 sets

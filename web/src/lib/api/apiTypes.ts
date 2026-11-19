@@ -686,6 +686,7 @@ export interface SoloSession {
   waiting: number
   sandbox?: SoloSandboxInfo
   backend?: BackendId | string
+  skills?: string[]
   model?: string
   artifactRunId?: string
   capabilities?: AgentCapabilities
@@ -797,7 +798,7 @@ export interface SoloMessage {
   /** Assistant turn: raised through ask_question / ask_form, answered by the next user message. */
   questions?: ReactQuestion[]
   forms?: ReactForm[]
-  status?: '' | 'ok' | 'failed' | 'stopped'
+  status?: '' | 'ok' | 'failed' | 'stopped' | 'context_new' | 'context_compact'
   error?: string
   usage?: TokenUsage
   usageByModel?: TokenUsageByModel

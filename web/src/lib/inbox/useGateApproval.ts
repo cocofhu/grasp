@@ -5,6 +5,7 @@ import { api, type PreviewIssue } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isCompositeFilled, normalizeCompositeSubmit } from '@/lib/shared/compositeText'
 import { attachmentsReading } from '@/lib/shared/attachments'
+import { isPlatformSlashCommand } from '@/lib/chat/chatCommands'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { pushAnnotationUnique } from '@/lib/inbox/reviewQuote'
@@ -1671,6 +1672,7 @@ async function cancelReactRevise() {
 const canRecordIssue = computed(
   () =>
     !reactSending.value &&
+    !isPlatformSlashCommand(reactText.value) &&
     (reactText.value.trim().length > 0 ||
       reactImages.value.length > 0 ||
       !!pickedElementImage.value?.data),
@@ -1850,6 +1852,7 @@ async function sendHotReject(references: ReferenceInput[] = []) {
   reactSending.value = true
   reactError.value = null
   const body = reactText.value.trim()
+  const slashCommand = isPlatformSlashCommand(body)
   const issueImages = collectUnifiedIssueImages()
   const anns = cloneReactAnnotations(reactAnnotations.value)
   const reviseImages = issueImages.map((im) => ({ data: im.data, mimeType: im.mimeType }))
@@ -1870,21 +1873,22 @@ async function sendHotReject(references: ReferenceInput[] = []) {
   reactQueueTurnKeys.set(item, turn.key)
   reactThinking.value = true
   try {
-    const synced = await syncHotRejectHistory(anns)
-    if (!synced) {
-      removeReactSend(turn)
-      return
+    if (!slashCommand) {
+      const synced = await syncHotRejectHistory(anns)
+      if (!synced) {
+        removeReactSend(turn)
+        return
+      }
+      // PreviewFeedbackChat now owns this human row (text, images and annotations).
+      turn.historySynced = usesPreviewIssues.value
     }
-
-    // PreviewFeedbackChat now owns this human row (text, images and annotations).
-    turn.historySynced = usesPreviewIssues.value
     await api.gateReactRevise(props.run.id, props.gate.nodeId, body, reviseImages, anns, ...(references.length ? [references] : []))
     clearUnifiedDraft()
     emit('react-revised')
   } catch (e: any) {
     removeReactSend(turn)
     syncReactQueueThinking()
-    if (hotRejectHistorySynced.value) {
+    if (!slashCommand && hotRejectHistorySynced.value) {
       reactError.value = t('pages.gateApproval.reactRevise.issueSavedReviseFailed')
       reactText.value = draftSnap.text
       reactImages.value = draftSnap.images

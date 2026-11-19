@@ -42,6 +42,7 @@ type conversationCursor struct {
 // up to the latest message; RefID selects the reference cursor format.
 type historyScope struct {
 	SessionID string
+	ContextID string
 	Title     string
 	AnchorID  string
 	RefID     string
@@ -93,7 +94,19 @@ func (s *ConversationHistoryService) ReadConversationHistory(runID string, req m
 	if err != nil {
 		return mcp.ConversationHistoryPage{Messages: []mcp.ConversationHistoryMessage{}}, err
 	}
-	return s.readSession(historyScope{SessionID: session.ID, Title: session.Title}, req)
+	title := session.Title
+	if session.ContextID != "" {
+		title = "新对话"
+	}
+	return s.readSession(historyScope{SessionID: session.ID, ContextID: session.ContextID, Title: title}, req)
+}
+
+func soloHistoryQuery(db *gorm.DB, sessionID, contextID string) *gorm.DB {
+	query := db.Model(&models.SoloMessage{}).Where("session_id = ?", sessionID)
+	if contextID != "" {
+		query = query.Where("context_id = ?", contextID)
+	}
+	return query
 }
 
 // readSession pages one conversation inside scope. It does not check the
@@ -125,7 +138,7 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 			return page, errors.New("invalid history cursor")
 		}
 	}
-	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ?", scope.SessionID)
+	base := soloHistoryQuery(s.db, scope.SessionID, scope.ContextID)
 	var snapshot models.SoloMessage
 	switch {
 	case cursor.SnapshotID != "":
@@ -193,7 +206,7 @@ func (s *ConversationHistoryService) ReadReference(runID, refID string, req mcp.
 		}
 		return empty, err
 	}
-	ref, err := findAttachedReference(s.db, session.ID, refID)
+	ref, err := findAttachedReference(s.db, session, refID)
 	if err != nil {
 		return empty, err
 	}
@@ -244,13 +257,14 @@ func (s *ConversationHistoryService) readRunReference(runID, refID string, req m
 
 // findAttachedReference looks up refID among the references persisted on the
 // session's own user messages. Nothing else can name a referenced session.
-func findAttachedReference(db *gorm.DB, sessionID, refID string) (*models.MessageReference, error) {
+func findAttachedReference(db *gorm.DB, session *models.SoloSession, refID string) (*models.MessageReference, error) {
 	refID = strings.TrimSpace(refID)
 	if refID == "" {
 		return nil, errors.New("ref is required")
 	}
 	var rows []models.SoloMessage
-	if err := db.Select("id", "message_references").Where("session_id = ? AND role = ? AND message_references LIKE ? ESCAPE ?", sessionID, "user", "%"+escapeLikePattern(refID)+"%", `\`).
+	if err := soloHistoryQuery(db, session.ID, session.ContextID).Select("id", "message_references").
+		Where("role = ? AND message_references LIKE ? ESCAPE ?", "user", "%"+escapeLikePattern(refID)+"%", `\`).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -425,10 +439,14 @@ func selectHistoryAttachments(rows []models.SoloMessage) []models.PromptImage {
 
 // contextPreambleChecked also returns the history attachments to re-send with
 // the turn, oldest first.
-func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header string) (string, []models.PromptImage, error) {
-	base := s.db.Model(&models.SoloMessage{}).Where("session_id = ? AND role <> ? AND id <> ?", sessionID, "system", exceptMsgID)
+func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, contextID string, compact bool) (string, []models.PromptImage, error) {
+	base := soloHistoryQuery(s.db, sessionID, contextID).Where("role <> ? AND id <> ?", "system", exceptMsgID)
+	recentLimit, promptBudget, instructionBudget := 12, 32000, 12000
+	if compact {
+		recentLimit, promptBudget, instructionBudget = 8, 16000, 8000
+	}
 	var recent, anchors []models.SoloMessage
-	if err := base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(12).Find(&recent).Error; err != nil {
+	if err := base.Session(&gorm.Session{}).Order("created_at desc, id desc").Limit(recentLimit).Find(&recent).Error; err != nil {
 		return "", nil, err
 	}
 	if len(recent) == 0 {
@@ -449,14 +467,18 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header stri
 	var b strings.Builder
 	b.WriteString(header)
 	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 artifact-store 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
-	b.WriteString(renderUserInstructions(anchors, 12000, ownHistoryTool))
-	b.WriteString(renderReferenceIndex(anchors))
+	b.WriteString(renderUserInstructions(anchors, instructionBudget, ownHistoryTool))
+	referenceIndex := renderReferenceIndex(anchors)
+	if compact && len([]rune(referenceIndex)) > 3000 {
+		referenceIndex = historyExcerpt(referenceIndex, 3000, ownHistoryTool) + "\n\n"
+	}
+	b.WriteString(referenceIndex)
 	if total > int64(len(recent)) {
 		fmt.Fprintf(&b, "（较早的 %d 条对话正文未逐字附上；用户要求与更正已单独整理在上方，工具过程与完整原文通过 get_history 回查。）\n\n", total-int64(len(recent)))
 	}
 	// Keep complete recent turns when they fit. Very large individual messages
 	// are explicitly marked as excerpts with a stable ID for full retrieval.
-	budget := 32000 - len([]rune(b.String()))
+	budget := promptBudget - len([]rune(b.String()))
 	var parts []string
 	for _, row := range recent {
 		if budget <= 500 {
@@ -485,8 +507,12 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header stri
 			fmt.Fprintf(&part, "工具结果：%s [%s] %s\n", tool.Title, tool.Status, historyExcerpt(tool.Text, 1000, ownHistoryTool))
 		}
 		part.WriteString("\n")
-		parts = append(parts, part.String())
-		budget -= len([]rune(part.String()))
+		partText := part.String()
+		if compact && len([]rune(partText)) > budget {
+			partText = historyExcerpt(partText, budget-100, ownHistoryTool) + "\n\n"
+		}
+		parts = append(parts, partText)
+		budget -= len([]rune(partText))
 	}
 	for i := len(parts) - 1; i >= 0; i-- {
 		b.WriteString(parts[i])

@@ -1,5 +1,7 @@
 #!/bin/bash
-# In-sandbox VNC preview stack (Xvfb + headed Chromium + x11vnc + websockify).
+# In-sandbox VNC preview stack (Xvfb + headed Chromium + x11vnc + grasp-desktop
+# vnc-ws, which also streams the PulseAudio sink on /audio; websockify when the
+# runtime has no grasp-desktop).
 # On the desktop image (/etc/grasp-desktop) desktop-session.sh first brings up
 # the desktop shell on the same display; if it fails the stack falls back to
 # browser mode (fallbackReason in /run/grasp-desktop/state).
@@ -16,6 +18,12 @@ WS_PORT="${WS_PORT:-6080}"
 PID_DIR="${VNC_PID_DIR:-/tmp/sandbox-vnc}"
 # Fixed profile so cookies and logins survive a Chromium restart.
 PROFILE_DIR="${VNC_CHROME_PROFILE_DIR:-${HOME:-/root}/.grasp-preview-chrome}"
+RUNTIME_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+DESKTOP_BIN="${GRASP_DESKTOP_BIN:-$RUNTIME_DIR/bin/grasp-desktop}"
+# Fixed socket so Chromium, desktop apps and parec find one daemon without
+# XDG_RUNTIME_DIR.
+PULSE_DIR="${GRASP_PULSE_DIR:-/tmp/grasp-pulse}"
+export PULSE_SERVER="unix:${PULSE_DIR}/native"
 mkdir -p "$PID_DIR"
 
 LOCK_FILE="${PID_DIR}/start.lock"
@@ -40,6 +48,25 @@ ws_ok() {
   (echo >/dev/tcp/127.0.0.1/"${WS_PORT}") >/dev/null 2>&1
 }
 
+# Desktop sound: a null sink apps play into; vnc-ws records its monitor.
+# Images without pulseaudio keep a silent desktop.
+start_pulse() {
+  command -v pulseaudio >/dev/null 2>&1 || return 0
+  if pactl info >/dev/null 2>&1; then
+    return 0
+  fi
+  mkdir -p "$PULSE_DIR"
+  pulseaudio --daemonize=yes --exit-idle-time=-1 --disallow-exit -n \
+    --load="module-native-protocol-unix socket=${PULSE_DIR}/native auth-anonymous=1" \
+    --load="module-null-sink sink_name=grasp sink_properties=device.description=Grasp" \
+    --load="module-always-sink" \
+    9>&- >/tmp/sandbox-vnc-pulse.log 2>&1 || {
+    echo "vnc-preview: pulseaudio failed to start, desktop stays silent" >&2
+    return 0
+  }
+  pactl set-default-sink grasp >/dev/null 2>&1 || true
+}
+
 if curl -fsS "http://127.0.0.1:${CDP_PORT}/json/version" >/dev/null 2>&1 \
   && tab_ok && ws_ok; then
   exit 0
@@ -60,6 +87,8 @@ find_chrome() {
   done
   return 1
 }
+
+start_pulse
 
 if ! curl -fsS "http://127.0.0.1:${CDP_LOOPBACK_PORT}/json/version" >/dev/null 2>&1; then
   CHROME_BIN=$(find_chrome) || {
@@ -148,8 +177,13 @@ if ! pgrep -f "x11vnc .* -rfbport ${VNC_PORT}" >/dev/null 2>&1; then
   echo $! >"$PID_DIR/x11vnc.pid"
 fi
 
-if ! pgrep -f "websockify ${WS_PORT}" >/dev/null 2>&1; then
-  websockify "$WS_PORT" "localhost:${VNC_PORT}" 9>&- >/tmp/sandbox-vnc-websockify.log 2>&1 &
+if ! ws_ok; then
+  if [ -x "$DESKTOP_BIN" ]; then
+    "$DESKTOP_BIN" vnc-ws -addr "0.0.0.0:${WS_PORT}" -vnc "127.0.0.1:${VNC_PORT}" \
+      9>&- >/tmp/sandbox-vnc-ws.log 2>&1 &
+  else
+    websockify "$WS_PORT" "localhost:${VNC_PORT}" 9>&- >/tmp/sandbox-vnc-websockify.log 2>&1 &
+  fi
   echo $! >"$PID_DIR/websockify.pid"
 fi
 
@@ -167,11 +201,11 @@ for i in $(seq 1 60); do
     tab_ok_flag=1
   fi
   if [ "$cdp_ok" = 1 ] && [ "$ws_ok_flag" = 1 ] && [ "$tab_ok_flag" = 1 ]; then
-    echo "vnc-preview: ready (CDP :${CDP_PORT}, websockify :${WS_PORT})"
+    echo "vnc-preview: ready (CDP :${CDP_PORT}, vnc-ws :${WS_PORT})"
     exit 0
   fi
   sleep 0.5
 done
 
-echo "vnc-preview: CDP :${CDP_PORT} / websockify :${WS_PORT} not reachable" >&2
+echo "vnc-preview: CDP :${CDP_PORT} / vnc-ws :${WS_PORT} not reachable" >&2
 exit 1

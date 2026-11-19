@@ -624,7 +624,7 @@ else
     service ssh start
 fi
 
-# 预览栈（headed Chromium + CDP:9222 + websockify:6080；桌面镜像另起桌面壳）始终启动。
+# 预览栈（headed Chromium + CDP:9222 + vnc-ws:6080 画面与声音；桌面镜像另起桌面壳）始终启动。
 # 浏览器 MCP 等全部 MCP 由平台写入的 $CONFIG_ROOT/mcp.json 决定，这里不改写。
 if [ -x /usr/local/bin/vnc-preview.sh ]; then
   echo "启动沙箱内预览栈…"

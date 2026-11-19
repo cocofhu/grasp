@@ -208,6 +208,13 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	// 附件不随本轮删除：后续追问和切换模型后仍需按同一路径读取。
 	text := item.Text
 	images := item.Images
+	if item.Action == UserChatCommand {
+		var handled bool
+		text, handled = b.executeChatCommand(turnCtx, p, item, oid)
+		if handled {
+			return
+		}
+	}
 	if len(images) > 0 {
 		files, merr := provider.MaterializeAttachments(images)
 		if merr != nil {
@@ -226,10 +233,16 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 		images = nil
 	}
 
+	text = b.prependCompactContext(text)
 	idle, max := b.turnLimits(item)
 	stopWatch := b.watchTurn(p, th, idle, max)
 	res, err := p.Prompt(turnCtx, text, images)
 	stopWatch()
+	if err == nil && res.StopReason == "end_turn" {
+		b.mu.Lock()
+		b.compactPreamble = ""
+		b.mu.Unlock()
+	}
 	stopReason := res.StopReason
 	// 已经正常收尾（只是子进程没退出）就不续跑，也不要杀掉预览服务。
 	if finishedBeforeExit(stopReason, err) {

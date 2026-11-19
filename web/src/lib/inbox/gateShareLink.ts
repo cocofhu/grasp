@@ -1,5 +1,5 @@
 import type { LiveCtx, LiveEvent } from '@/lib/inbox/liveVariants'
-import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
+import type { AgentPart, Artifact, ClarifyImage, ClarifyInboxItem, ClarifyTurn, GateInboxItem, GateShareInboxStatus, InboxItem, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { EmbedTicket } from '@/lib/inbox/embedChat'
 import type { AgentInteraction, ReferenceInput } from '@/lib/api/apiTypes'
 import { localizedErrorText } from '@/lib/api/httpCore'
@@ -271,6 +271,7 @@ export type PublicGatePreviewTurn = {
   text?: string
   at?: string
   interrupted?: boolean
+  contextCommand?: ClarifyTurn['contextCommand']
   images?: PublicGatePreviewImage[]
   annotations?: Array<{
     selector?: string

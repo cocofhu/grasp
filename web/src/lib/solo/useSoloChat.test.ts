@@ -332,6 +332,29 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('settles an optimistic slash command as one system message', async () => {
+    const { chat, app } = mountChat()
+    try {
+      await flushPromises()
+      const ws = FakeSocket.all[0]!
+      ws.open()
+      await flushPromises()
+      mocks.sendSoloTurn.mockResolvedValue({ waiting: 0 })
+      expect(await chat.send('/new chat')).toBe(true)
+      ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'reset', text: '/new chat', images: [] } })
+      mocks.listSoloMessages.mockResolvedValue([
+        { id: 'reset', sessionId: 's1', role: 'system', content: '/new chat', status: 'context_new', createdAt: '' },
+      ])
+      ws.emit({ type: 'session', event: 'turn_done' })
+      await flushPromises()
+      expect(chat.turns.value.map(row => row.id)).toEqual(['s:reset'])
+      expect(chat.turns.value[0]?.contextCommand).toBe('new')
+      expect(chat.queued.value).toEqual([])
+    } finally {
+      app.unmount()
+    }
+  })
+
   it('applies status frames and blocks sending once closed', async () => {
     const { chat, app } = mountChat()
     await flushPromises()

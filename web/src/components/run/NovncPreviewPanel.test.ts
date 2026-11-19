@@ -123,6 +123,7 @@ const resizeObserverMocks = vi.hoisted(() => {
 const browserStatus = { mode: 'browser', shellReady: false, agentActive: false, holder: 'agent', apps: [] }
 const apiMocks = vi.hoisted(() => ({
   sandboxVncWsUrl: vi.fn(() => 'ws://localhost/sandbox-vnc/1/ws'),
+  sandboxAudioWsUrl: vi.fn((id: number) => `ws://localhost/sandbox-audio/${id}/ws`),
   sandboxDesktop: vi.fn(),
   setSandboxDesktopControl: vi.fn(),
 }))
@@ -134,6 +135,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       sandboxVncWsUrl: apiMocks.sandboxVncWsUrl,
+      sandboxAudioWsUrl: apiMocks.sandboxAudioWsUrl,
       sandboxDesktop: apiMocks.sandboxDesktop,
       setSandboxDesktopControl: apiMocks.setSandboxDesktopControl,
     },
@@ -259,7 +261,42 @@ describe('NovncPreviewPanel', () => {
     try {
       await flushPromises()
       const icons = wrapper.findAll('button > svg[data-icon]').map(icon => icon.attributes('data-icon'))
-      expect(icons).toEqual(['arrow-left', 'arrow-right', 'refresh'])
+      expect(icons).toEqual(['arrow-left', 'arrow-right', 'refresh', 'volume-off'])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('turns desktop sound on and off from the toolbar', async () => {
+    const ctx = { currentTime: 0, resume: vi.fn(() => Promise.resolve()), close: vi.fn(() => Promise.resolve()) }
+    vi.stubGlobal('AudioContext', vi.fn(function () {
+      return ctx
+    }))
+    const wrapper = mountNovnc()
+    try {
+      await flushPromises()
+      const btn = wrapper.get('[data-testid="novnc-audio-toggle"]')
+      expect(btn.attributes('aria-pressed')).toBe('false')
+      const before = MockWebSocket.instances.length
+      await btn.trigger('click')
+      expect(apiMocks.sandboxAudioWsUrl).toHaveBeenCalledWith(1)
+      expect(MockWebSocket.instances.length).toBe(before + 1)
+      expect(wrapper.get('[data-testid="novnc-audio-toggle"]').attributes('aria-pressed')).toBe('true')
+      expect(wrapper.find('[data-testid="novnc-audio-toggle"] svg[data-icon="volume"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="novnc-audio-toggle"]').trigger('click')
+      expect(wrapper.get('[data-testid="novnc-audio-toggle"]').attributes('aria-pressed')).toBe('false')
+      expect(ctx.close).toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('has no sound button for public share tickets', async () => {
+    const wrapper = mountNovnc({ wsUrl: 'wss://example.test/public/approvals/preview-vnc/ws?ticket=t', sandboxId: undefined })
+    try {
+      await flushPromises()
+      expect(wrapper.find('[data-testid="novnc-audio-toggle"]').exists()).toBe(false)
     } finally {
       wrapper.unmount()
     }

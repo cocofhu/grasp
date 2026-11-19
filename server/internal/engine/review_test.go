@@ -407,6 +407,19 @@ func TestGateReactReviseInPlace(t *testing.T) {
 	if !sawAnn {
 		t.Fatalf("annotation not persisted on gate-react human turn: %+v", conv.Messages)
 	}
+	if err := eng.GateReactRevise(run.ID, "select", "/compact", nil, nil); err != nil {
+		t.Fatalf("queue context command: %v", err)
+	}
+	if err := eng.waitReviewReadyForTest(run.ID, "prop", 5*time.Second); err != nil {
+		t.Fatalf("wait context command: %v", err)
+	}
+	if err := db.First(&conv, conv.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	last := conv.Messages[len(conv.Messages)-1]
+	if conv.Done || last.GateNodeID != "select" || last.ContextCommand != "compact" || provider.reviseCalls["prop"] != 1 {
+		t.Fatalf("context command changed the review: done=%v, last=%+v, provider calls=%d", conv.Done, last, provider.reviseCalls["prop"])
+	}
 
 	// Approve retires the upstream parked session.
 	if err := eng.ResumeGate(run.ID, "select", "approve", nil); err != nil {

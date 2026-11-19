@@ -92,6 +92,14 @@ func chatMessage(text string, images []models.PromptImage, opID string) map[stri
 	return msg
 }
 
+type userChatCommandKey struct{}
+
+// WithUserChatCommand routes the validated user command to the bridge's
+// console command handler. Normal workflow and Solo prompts remain opaque.
+func WithUserChatCommand(ctx context.Context) context.Context {
+	return context.WithValue(ctx, userChatCommandKey{}, true)
+}
+
 // turnLimitFields adds the per-turn limits the bridge enforces: idleSec (the
 // no-activity limit N) and deadlineSec (the turn's hard stop, a minute past
 // ctx's deadline so the platform reports the node budget first).
@@ -563,13 +571,34 @@ func hasContent(r *ChatResult) bool {
 // MCP servers stay. The new process has an empty resume id, so the next chat
 // does not --resume a session the provider can no longer continue.
 func (c *ACPClient) RestartAgent(ctx context.Context) error {
+	return c.restartAgent(ctx, false)
+}
+
+// RestartChatContext opens a new native session while keeping the bridge's
+// visible transcript. A failed handshake is retried on a fresh connection.
+func (c *ACPClient) RestartChatContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	err := c.restartAgent(ctx, true)
+	if err != nil {
+		c.Close()
+	}
+	return err
+}
+
+func (c *ACPClient) restartAgent(ctx context.Context, preserveHistory bool) error {
 	if !c.IsConnected() {
 		return fmt.Errorf("%w: not connected", ErrConnClosed)
 	}
 	release := c.acquireReader()
 	defer release()
 	c.drainEvents()
-	if err := c.send(map[string]any{"op": "restart_agent"}); err != nil {
+	message := map[string]any{"op": "restart_agent"}
+	if preserveHistory {
+		message["preserveHistory"] = true
+	}
+	if err := c.send(message); err != nil {
 		c.mu.Lock()
 		c.connected = false
 		c.mu.Unlock()

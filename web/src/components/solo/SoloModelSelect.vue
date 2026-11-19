@@ -180,7 +180,6 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
     </template>
     <template #label>
       <span class="solo-model-name" :title="label">{{ label }}</span>
-      <span v-if="multipleGroups && current?.configurationName" class="truncate text-[10px] text-txt3">{{ current.configurationName }}</span>
       <span v-if="efforts.length" class="solo-model-effort" data-testid="solo-model-effort-label">{{ effortLabel }}</span>
       <span v-if="fastMode" class="solo-model-fast-label" data-testid="solo-model-fast-label">Fast</span>
     </template>

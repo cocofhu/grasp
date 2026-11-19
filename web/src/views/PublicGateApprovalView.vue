@@ -27,6 +27,7 @@ import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { isFeedbackArtifactName } from '@/lib/run/reactArtifactPreview'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createWsHeartbeat } from '@/lib/run/wsHeartbeat'
+import { isPlatformSlashCommand } from '@/lib/chat/chatCommands'
 import { clearDialogues, dialogueKey, getDialogue, ingestDialogue, setDialogueFetcher } from '@/lib/chat/dialogueStore'
 import {
   publicShareErrorText,
@@ -321,6 +322,7 @@ const turns = computed<ClarifyTurn[]>(() =>
         quote: a.quote,
       })),
     }
+    if (turn.contextCommand) mapped.contextCommand = turn.contextCommand
     const liveRef = parseLiveRef(turn.live)
     if (liveRef) mapped.live = liveRef
     const tools = (turn.tools || []).filter((x) => x?.title).map((x) => ({ title: x.title as string, status: x.status }))
@@ -1067,12 +1069,14 @@ async function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotatio
   let accepted = false
   try {
     // Snapshot the displayed variant and its parameters at send time.
-    const liveCtx = chatOnly.value ? live.activeCtx() : null
-    if (candidateIntent && chatOnly.value && pageCandidateMode.value) {
+    const useLiveContext = chatOnly.value && !isPlatformSlashCommand(text)
+    const liveCtx = useLiveContext ? live.activeCtx() : null
+    const generateCandidate = candidateIntent && useLiveContext && pageCandidateMode.value
+    if (generateCandidate) {
       if (!showPageCandidateMode.value) throw new Error(t('pages.embedChat.live.previewUnavailable'))
       if (liveCtx && live.store.sessions[liveCtx.sid]?.state !== 'ready') throw new Error(t('pages.embedChat.live.pendingCandidates'))
     }
-    if (candidateIntent && chatOnly.value && pageCandidateMode.value && !liveCtx && !references?.length) {
+    if (generateCandidate && !liveCtx && !references?.length) {
       const open = Object.values(live.store.sessions).filter((session) => session.mode !== 'steer' && isLiveOpen(session.state))
       if (open.some((session) => isLiveBusy(session.state))) throw new Error(t('pages.embedChat.live.candidatesBusy'))
       if (Array.from(text).length > 2000) throw new Error(t('pages.embedChat.live.promptTooLong'))

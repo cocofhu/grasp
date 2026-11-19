@@ -791,6 +791,24 @@ describe('useGateApproval actions', () => {
     app.unmount()
   })
 
+  it('queues preview chat commands without recording them as feedback issues', async () => {
+    const { approval, app } = withApproval({ run: pageGateRun() })
+    await flushPromises()
+    const flush = vi.fn()
+    approval.feedbackChatRef.value = { flush, send: vi.fn(), reload: vi.fn(), clearDraft: vi.fn() }
+
+    for (const command of ['/new chat', '/compact', '/skill review check this']) {
+      approval.reactText.value = command
+      await approval.recordFeedbackIssue()
+      await approval.sendHotReject()
+      expect(mocks.gateReactRevise).toHaveBeenLastCalledWith('run-1', 'gate-1', command, [], [])
+      expect(approval.reactTurns.value.at(-1)?.historySynced).toBe(false)
+    }
+    expect(flush).not.toHaveBeenCalled()
+    expect(mocks.createPreviewIssue).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
   it('loads plan artifacts and tolerates malformed content', async () => {
     const planRun = run({
       nodes: [{ id: 'gate-1', type: 'human_gate', config: {} }],

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import type { ClarifyImage } from '@/lib/shared/types'
@@ -18,6 +19,7 @@ import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
+import { contextSlashCommand, type ContextCommand } from '@/lib/chat/chatCommands'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import type { Project, RepoChoice } from '@/lib/api/apiTypes'
@@ -39,6 +41,7 @@ import { createWsReconnectController } from '@/lib/run/wsReconnect'
 // when a host page already provides its own chrome.
 const props = defineProps<{
   profile: string
+  skills?: readonly string[]
   attachId?: number
   embedded?: boolean
   /**
@@ -60,6 +63,7 @@ type Turn = {
   id: string
   role: 'user' | 'agent'
   text: string
+  contextCommand?: ContextCommand
   thought: string
   tools: Tool[]
   steps?: Step[]
@@ -389,7 +393,10 @@ function newItemId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+const commandMenu = ref<InstanceType<typeof SlashCommandMenu>>()
+const commandTextarea = ref<HTMLTextAreaElement | null>(null)
 function onComposerKeydown(event: KeyboardEvent) {
+  if (commandMenu.value?.handleKeydown(event)) return
   if (!isPlainEnter(event)) return
   event.preventDefault()
   send()
@@ -669,7 +676,7 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
     } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
       const ended = isoStamp(ev.at)
       if (ended && agent) agent.endedAt = ended
-    } else if ((ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
+    } else if (ev.type === 'context_command' || (ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
       if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
       applyAcp(ev, agent)
     }
@@ -880,6 +887,10 @@ function applyAcp(envelope: any, turn: Turn) {
     return
   }
   const ev = envelope?.data ?? envelope
+  if (ev?.type === 'context_command') {
+    turn.contextCommand = contextSlashCommand(String(ev.command ?? ''))
+    return
+  }
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
@@ -1313,9 +1324,18 @@ onBeforeUnmount(() => {
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
-      <div class="chat-composer tester-composer flex min-w-0 flex-col gap-2 p-2.5">
+      <div class="chat-composer tester-composer relative flex min-w-0 flex-col gap-2 p-2.5">
+        <SlashCommandMenu
+          ref="commandMenu"
+          v-model="input"
+          :textarea="commandTextarea"
+          :skills="skills"
+          :disabled="status !== 'ready' && status !== 'thinking'"
+          test-prefix="tester"
+        />
         <input ref="fileInput" type="file" multiple class="hidden" @change="onPickFiles" />
         <textarea
+          ref="commandTextarea"
           v-model="input"
           rows="2"
           :disabled="status !== 'ready' && status !== 'thinking'"

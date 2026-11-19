@@ -2265,6 +2265,12 @@
           "closed": "Disconnected",
           "reconnecting": "Reconnecting…",
           "error": "Error"
+        },
+        "audio": {
+          "off": "Turn sound on",
+          "connecting": "Connecting sound…",
+          "on": "Turn sound off",
+          "error": "Sound unavailable (sandbox image has no audio stack or the connection failed). Click to retry"
         }
       },
       "feedback": {
@@ -3222,6 +3228,31 @@
       "duration": "Duration",
       "notReported": "Not reported"
     },
+    "chatCommands": {
+      "menu": "Slash commands",
+      "new": {
+        "title": "New chat",
+        "description": "Start a fresh context in this workspace",
+        "status": "New chat started",
+        "detail": "The next message starts with a fresh conversation context."
+      },
+      "compact": {
+        "title": "Compact context",
+        "description": "Continue with key requirements and recent messages",
+        "status": "Context compaction scheduled",
+        "detail": "The next message will carry key requirements and recent messages."
+      },
+      "skill": {
+        "title": "Use a skill",
+        "description": "Choose a skill for this turn"
+      },
+      "chooseSkill": "Choose a skill",
+      "skillHint": "Enter a configured skill name, followed by an optional task.",
+      "back": "Back to commands",
+      "move": "Navigate",
+      "insert": "Insert",
+      "close": "Close"
+    },
     "solo": {
       "title": "Solo chats",
       "capacity": "All sandbox usage: {n} / {max}",
@@ -3374,6 +3405,10 @@
         "session_closed": "The session is closed. Restart it first.",
         "session_error": "The sandbox is unavailable. Restart the session.",
         "content_required": "The message is empty",
+        "command_has_attachments": "Remove attachments, references, and annotations before sending /new or /compact",
+        "command_context_shared": "Reset context from a workspace chat or an isolated conversation",
+        "skill_required": "Enter /skill followed by a skill name and an optional task",
+        "skill_not_found": "This Agent has no skill named {skill}",
         "agent_not_found": "Agent not found",
         "model_not_in_configuration": "That model is not in this Agent's model configuration",
         "model_unavailable": "That model is no longer available",

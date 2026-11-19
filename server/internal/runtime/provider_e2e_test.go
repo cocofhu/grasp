@@ -282,6 +282,42 @@ func TestReactReplyRestartsPoisonedResumeInPlace(t *testing.T) {
 	}
 }
 
+func TestWorkflowContextCommandsPreserveNodePrompt(t *testing.T) {
+	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(int) turnAction { return turnAction{narration: "reply"} }
+	})
+	req.Config["prompt"] = "required node task"
+	clarifyFirstTurn(p, req)
+	history := []models.ReactMessage{
+		{Role: "human", Text: "earlier requirement"},
+		{Role: "human", Text: "/compact", ContextCommand: "compact"},
+		{Role: "agent", Text: "compaction scheduled", ContextCommand: "compact"},
+		{Role: "human", Text: "continue"},
+	}
+	if got := p.ReactReply(context.Background(), req, history, "continue", nil, false); got.Err != nil {
+		t.Fatal(got.Err)
+	}
+	history = append(history,
+		models.ReactMessage{Role: "agent", Text: "reply"},
+		models.ReactMessage{Role: "human", Text: "/new", ContextCommand: "new"},
+		models.ReactMessage{Role: "agent", Text: "started", ContextCommand: "new"},
+		models.ReactMessage{Role: "human", Text: "another task"},
+	)
+	if got := p.ReactReply(context.Background(), req, history, "another task", nil, false); got.Err != nil {
+		t.Fatal(got.Err)
+	}
+	if mgr.createCount() != 1 || mgr.bridge(0).restartCount() != 2 {
+		t.Fatal("expected two context resets in the same sandbox")
+	}
+	compact, fresh := mgr.bridge(0).promptAt(1), mgr.bridge(0).promptAt(2)
+	if !strings.Contains(compact, "earlier requirement") || !strings.Contains(compact, "required node task") || strings.Contains(compact, "compaction scheduled") {
+		t.Fatalf("compacted workflow prompt = %q", compact)
+	}
+	if !strings.Contains(fresh, "required node task") || !strings.Contains(fresh, "another task") || strings.Contains(fresh, "earlier requirement") {
+		t.Fatalf("fresh workflow prompt = %q", fresh)
+	}
+}
+
 func TestReactReplyKeepsSessionWhenFailureHadOutput(t *testing.T) {
 	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
 		return func(turn int) turnAction {
