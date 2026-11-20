@@ -14,6 +14,7 @@
     "workspaceRetry": "Retry",
     "stats": "Usage",
     "board": "Board",
+    "runs": "Run history",
     "workflows": "Workflows",
     "pendingApprovals": "Pending",
     "pendingWorkflowView": "Workflow view",
