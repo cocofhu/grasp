@@ -34,10 +34,8 @@ func TestCodeBuddyModelInspectionStopsAtFilesystemRoot(t *testing.T) {
 	c := connection(Chat)
 	p := Prepared{Connection: &c}
 	opts := provider.OpenOptions{Cwd: cwd, FSRoot: workspace}
-	for _, tool := range []provider.Name{provider.CodeBuddy, provider.CodeBuddyACP} {
-		if err := p.ValidateOptions(tool, opts); err != nil {
-			t.Fatalf("inspected an ancestor outside the filesystem root: %v", err)
-		}
+	if err := p.ValidateOptions(provider.CodeBuddy, opts); err != nil {
+		t.Fatalf("inspected an ancestor outside the filesystem root: %v", err)
 	}
 	content := `{"models":[{"id":"vendor/model/with/slashes"}]}`
 	for _, dir := range []string{workspace, filepath.Dir(cwd), cwd} {

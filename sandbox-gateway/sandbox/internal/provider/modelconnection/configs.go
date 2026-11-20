@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 func prepareClaude(p Prepared, root string) (Prepared, error) {
@@ -17,12 +17,12 @@ func prepareClaude(p Prepared, root string) (Prepared, error) {
 		return p, err
 	}
 	p.Cleanup = cleanup
-	p.Env = common.UpsertEnv(p.Env, "CLAUDE_CONFIG_DIR", dir)
-	p.Env = common.UpsertEnv(p.Env, "ANTHROPIC_BASE_URL", nativeBaseURL(c))
+	p.Env = envutil.Upsert(p.Env, "CLAUDE_CONFIG_DIR", dir)
+	p.Env = envutil.Upsert(p.Env, "ANTHROPIC_BASE_URL", nativeBaseURL(c))
 	if c.Auth.Scheme == "bearer" {
-		p.Env = common.UpsertEnv(p.Env, "ANTHROPIC_AUTH_TOKEN", common.GetEnvValue(p.Env, EnvAPIKey))
+		p.Env = envutil.Upsert(p.Env, "ANTHROPIC_AUTH_TOKEN", envutil.Get(p.Env, EnvAPIKey))
 	} else {
-		p.Env = common.UpsertEnv(p.Env, "ANTHROPIC_API_KEY", common.GetEnvValue(p.Env, EnvAPIKey))
+		p.Env = envutil.Upsert(p.Env, "ANTHROPIC_API_KEY", envutil.Get(p.Env, EnvAPIKey))
 	}
 	for variable, model := range map[string]string{
 		"ANTHROPIC_MODEL":                          p.Model,
@@ -36,7 +36,7 @@ func prepareClaude(p Prepared, root string) (Prepared, error) {
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE":         "1",
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
 	} {
-		p.Env = common.UpsertEnv(p.Env, variable, model)
+		p.Env = envutil.Upsert(p.Env, variable, model)
 	}
 	// Restrict native aliases and project settings to the selected connection.
 	ids := modelIDs(c.Models)
@@ -54,16 +54,16 @@ func prepareCodeBuddy(p Prepared, root string) (Prepared, error) {
 		return p, err
 	}
 	p.Cleanup = cleanup
-	p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_CONFIG_DIR", dir)
-	p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_API_KEY", common.GetEnvValue(p.Env, EnvAPIKey))
-	p.Env = common.UpsertEnv(p.Env, "CODEBUDDY_BASE_URL", c.BaseURL)
+	p.Env = envutil.Upsert(p.Env, "CODEBUDDY_CONFIG_DIR", dir)
+	p.Env = envutil.Upsert(p.Env, "CODEBUDDY_API_KEY", envutil.Get(p.Env, EnvAPIKey))
+	p.Env = envutil.Upsert(p.Env, "CODEBUDDY_BASE_URL", c.BaseURL)
 	for variable, model := range map[string]string{
 		"CODEBUDDY_MODEL":               p.Model,
 		"CODEBUDDY_SMALL_FAST_MODEL":    c.role("fast"),
 		"CODEBUDDY_BIG_SLOW_MODEL":      c.role("reasoning"),
 		"CODEBUDDY_CODE_SUBAGENT_MODEL": c.role("subagent"),
 	} {
-		p.Env = common.UpsertEnv(p.Env, variable, model)
+		p.Env = envutil.Upsert(p.Env, variable, model)
 	}
 	ids := modelIDs(c.Models)
 	settings := map[string]any{"model": p.Model, "availableModels": ids,
@@ -153,7 +153,7 @@ func prepareOpenCode(p Prepared, root string) (Prepared, error) {
 	if err != nil {
 		return p, err
 	}
-	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
+	p.Env = envutil.Upsert(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
 	return p, nil
 }
 

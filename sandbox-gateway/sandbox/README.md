@@ -234,7 +234,6 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `ACP_CURSOR_API_KEY` | `CURSOR_API_KEY` | Cursor 后端鉴权 |
 | `ACP_CLAUDE_API_KEY` | `ANTHROPIC_API_KEY` | Claude Code 后端鉴权 |
 | `ACP_CODEBUDDY_API_KEY` | `CODEBUDDY_API_KEY` | CodeBuddy 后端鉴权 |
-| `ACP_CODEBUDDY_REGION` | `CODEBUDDY_INTERNET_ENVIRONMENT` | CodeBuddy 区域：`public` / `internal` / `ioa` |
 | `ACP_TRAE_API_KEY` | `TRAECLI_PERSONAL_ACCESS_TOKEN` | Trae 后端鉴权 |
 | `ACP_TRAE_REGION` | `TRAECLI_HOST` | Trae 区域：`intl` → `https://www.trae.ai`；`cn` 用默认 |
 | `ACP_DEEPSEEK_API_KEY` / `ACP_DEEPSEEK_HARNESS_API_KEY` / `GRASP_DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` | DeepSeek Harness API Key |

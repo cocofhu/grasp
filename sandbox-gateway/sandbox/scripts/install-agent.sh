@@ -141,14 +141,12 @@ install_one() {
   local provider="$1"
   log "安装 provider=$provider"
   case "$provider" in
-    cursor|cursor_acp)
-      install_cursor ;;                                      # 同一 cursor-agent 二进制（stream-json / ACP 两用）
+    cursor)
+      install_cursor ;;
     claude_code)
-      install_claude_native ;;                               # 原生 claude CLI（stream-json，默认）
-    claude_code_acp)
-      install_claude_native && npm_global @zed-industries/claude-code-acp ;;
-    codebuddy|codebuddy_acp)
-      npm_global @tencent-ai/codebuddy-code ;;               # 同一 codebuddy 二进制（stream-json / ACP 两用）
+      install_claude_native ;;
+    codebuddy)
+      npm_global @tencent-ai/codebuddy-code ;;
     trae)
       install_trae ;;
     opencode)

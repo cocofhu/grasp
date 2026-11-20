@@ -112,9 +112,9 @@ done <"$STAGE/env"
 # Same provider → CONFIG_ROOT mapping as startup.sh.
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
-  cursor|cursor_acp)           CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.cursor} ;;
-  claude_code|claude_code_acp) CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
-  codebuddy|codebuddy_acp)     CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
+  cursor)                      CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.cursor} ;;
+  claude_code)                 CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
+  codebuddy)                   CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
   opencode)                    CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.config/opencode} ;;
   deepseek_harness)            CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.dsh} ;;
   kimi_code)                   CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.kimi-code} ;;

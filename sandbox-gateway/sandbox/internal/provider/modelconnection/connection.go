@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 )
 
@@ -79,7 +79,7 @@ type Prepared struct {
 
 // Catalog exposes upstream IDs to the UI, rather than a CLI-specific route.
 func Catalog(name provider.Name, env []string) ([]provider.Model, bool, error) {
-	raw := strings.TrimSpace(common.GetEnvValue(env, EnvConfig))
+	raw := strings.TrimSpace(envutil.Get(env, EnvConfig))
 	if raw == "" {
 		return nil, false, nil
 	}
@@ -105,21 +105,21 @@ func Catalog(name provider.Name, env []string) ([]provider.Model, bool, error) {
 // after legacy AuthEnv normalization so old aliases cannot restore an old key.
 func Prepare(name provider.Name, env []string, model, configRoot string) (Prepared, error) {
 	p := Prepared{Env: env, Cleanup: func() {}}
-	raw := strings.TrimSpace(common.GetEnvValue(env, EnvConfig))
+	raw := strings.TrimSpace(envutil.Get(env, EnvConfig))
 	if raw == "" {
 		// No catalog: the request model stays on the platform path and is not
 		// written into a connection command line.
 		p.Model = model
-		if name == provider.OpenCode && common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") == "opencode" {
+		if name == provider.OpenCode && envutil.Get(env, "GRASP_OPENCODE_PROVIDER") == "opencode" {
 			return prepareOpenCodePlatform(p, configRoot)
 		}
 		if name == provider.DeepSeekHarness {
-			key := common.GetEnvValue(env, "DEEPSEEK_API_KEY")
+			key := envutil.Get(env, "DEEPSEEK_API_KEY")
 			if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
 				return p, errors.New("DeepSeek Harness official authorization: selected API key is missing or invalid")
 			}
 			p.Env = cleanEnv(env)
-			p.Env = common.UpsertEnv(p.Env, "DEEPSEEK_API_KEY", key)
+			p.Env = envutil.Upsert(p.Env, "DEEPSEEK_API_KEY", key)
 		}
 		return p, nil
 	}
@@ -130,7 +130,7 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	if err := c.validate(name); err != nil {
 		return p, err
 	}
-	key := common.GetEnvValue(env, EnvAPIKey)
+	key := envutil.Get(env, EnvAPIKey)
 	if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
 		return p, errors.New("model connection: selected API key is missing or invalid")
 	}
@@ -140,15 +140,15 @@ func Prepare(name provider.Name, env []string, model, configRoot string) (Prepar
 	// stale platform model id, stays on the configuration primary.
 	p.Model = sessionModelID(c, model)
 	p.Env = cleanEnv(env)
-	p.Env = common.UpsertEnv(p.Env, EnvAPIKey, key)
-	if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
+	p.Env = envutil.Upsert(p.Env, EnvAPIKey, key)
+	if root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT")); root != "" {
 		configRoot = root
 	}
 	var err error
 	switch name {
-	case provider.ClaudeCode, provider.ClaudeCodeACP:
+	case provider.ClaudeCode:
 		p, err = prepareClaude(p, configRoot)
-	case provider.CodeBuddy, provider.CodeBuddyACP:
+	case provider.CodeBuddy:
 		p, err = prepareCodeBuddy(p, configRoot)
 	case provider.OpenCode:
 		p, err = prepareOpenCode(p, configRoot)
@@ -245,11 +245,11 @@ func (c Connection) validate(name provider.Name) error {
 			return fail("main role disagrees with selected model")
 		}
 		switch name {
-		case provider.ClaudeCode, provider.ClaudeCodeACP:
+		case provider.ClaudeCode:
 			if role != "main" && role != "fast" && role != "subagent" && role != "opus" && role != "sonnet" && role != "haiku" {
 				return fail("unsupported Claude model role")
 			}
-		case provider.CodeBuddy, provider.CodeBuddyACP:
+		case provider.CodeBuddy:
 			if role != "main" && role != "fast" && role != "subagent" && role != "reasoning" {
 				return fail("unsupported CodeBuddy model role")
 			}
@@ -271,7 +271,7 @@ func (c Connection) validate(name provider.Name) error {
 		return fail("DeepSeek native profile requires the official DeepSeek Messages service")
 	}
 	switch name {
-	case provider.ClaudeCode, provider.ClaudeCodeACP:
+	case provider.ClaudeCode:
 		if c.Protocol != Messages {
 			return fail("Claude Code requires Anthropic Messages")
 		}
@@ -279,7 +279,7 @@ func (c Connection) validate(name provider.Name) error {
 		if c.Protocol != Responses {
 			return fail("Codex requires OpenAI Responses")
 		}
-	case provider.CodeBuddy, provider.CodeBuddyACP:
+	case provider.CodeBuddy:
 		// The reviewed 2.162.0 CLI routes both its environment-based and
 		// custom models.json requests through Chat Completions. An `api`
 		// metadata field does not switch the HTTP transport.
@@ -291,7 +291,7 @@ func (c Connection) validate(name provider.Name) error {
 		return fail("this tool does not support model connections")
 	}
 	if c.Protocol == Messages {
-		if c.Auth.Scheme != "x-api-key" && !(c.Auth.Scheme == "bearer" && (name == provider.ClaudeCode || name == provider.ClaudeCodeACP)) {
+		if c.Auth.Scheme != "x-api-key" && !(c.Auth.Scheme == "bearer" && name == provider.ClaudeCode) {
 			return fail("this Messages adapter requires x-api-key authentication")
 		}
 	} else if c.Auth.Scheme != "bearer" {

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"backend/internal/acp"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/acpx"
 	"backend/internal/provider/modelconnection"
@@ -78,16 +78,16 @@ func (*Provider) ListModels(context.Context) ([]provider.Model, error) {
 
 func (*Provider) AuthEnv(env []string) []string {
 	for _, key := range []string{"DEEPSEEK_API_KEY", "GRASP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY"} {
-		if value := common.GetEnvValue(env, key); value != "" {
-			env = common.UpsertEnv(env, "DEEPSEEK_API_KEY", value)
+		if value := envutil.Get(env, key); value != "" {
+			env = envutil.Upsert(env, "DEEPSEEK_API_KEY", value)
 			break
 		}
 	}
-	root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT"))
+	root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT"))
 	if root == "" {
 		root = configRoot
 	}
-	env = common.UpsertEnv(env, "DSH_HOME", root)
+	env = envutil.Upsert(env, "DSH_HOME", root)
 	return env
 }
 
@@ -165,7 +165,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		}
 	}
 	currentEffort, efforts := reasoningOptions(panel.ConfigOptions)
-	home := common.GetEnvValue(prepared.Env, "DSH_HOME")
+	home := envutil.Get(prepared.Env, "DSH_HOME")
 	if strings.TrimSpace(home) == "" {
 		home = p.DefaultConfigRoot()
 	}

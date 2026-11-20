@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 const openCodeCatalogTTL = 5 * time.Minute
@@ -134,15 +134,15 @@ func openCodeCatalogModelActive(model *openCodeCatalogModel, env []string) bool 
 	if model.Status != "alpha" {
 		return true
 	}
-	flag := strings.ToLower(common.GetEnvValue(env, "OPENCODE_ENABLE_EXPERIMENTAL_MODELS"))
+	flag := strings.ToLower(envutil.Get(env, "OPENCODE_ENABLE_EXPERIMENTAL_MODELS"))
 	return flag == "true" || flag == "1"
 }
 
 func openCodeCatalogPath(env []string) (string, error) {
-	cache := common.GetEnvValue(env, "XDG_CACHE_HOME")
+	cache := envutil.Get(env, "XDG_CACHE_HOME")
 	// xdg-basedir ignores relative XDG paths, as required by the XDG spec.
 	if !filepath.IsAbs(cache) {
-		home := common.GetEnvValue(env, "HOME")
+		home := envutil.Get(env, "HOME")
 		if home == "" {
 			var err error
 			home, err = os.UserHomeDir()

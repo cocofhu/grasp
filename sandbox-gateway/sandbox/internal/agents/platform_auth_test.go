@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
 )
@@ -162,7 +162,7 @@ func TestOfficialOpenCodeAuthAliasesCannotHideMalformedCredentials(t *testing.T)
 	for _, alias := range []string{"OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"} {
 		for _, value := range []string{"", " \t ", "synthetic\r", "synthetic\n", "synthetic\x00"} {
 			env := Get(provider.OpenCode).AuthEnv([]string{"GRASP_OPENCODE_PROVIDER=opencode", alias + "=" + value})
-			if value != "" && common.GetEnvValue(env, "OPENCODE_API_KEY") != value {
+			if value != "" && envutil.Get(env, "OPENCODE_API_KEY") != value {
 				t.Fatal("auth normalization hid a malformed selected credential")
 			}
 			if _, err := modelconnection.Prepare(provider.OpenCode, env, "", t.TempDir()); err == nil {

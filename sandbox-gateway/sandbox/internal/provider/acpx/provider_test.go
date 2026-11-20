@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"backend/internal/backend/claude"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
 )
@@ -47,29 +46,6 @@ func TestAgentArgvUsesCatalogIDAndLiteralProgram(t *testing.T) {
 		assertArgvOmits(t, argv, foreign)
 	})
 
-	t.Run("claude program", func(t *testing.T) {
-		claudeCatalog := catalog
-		claudeCatalog.Protocol = modelconnection.Messages
-		claudeCatalog.Auth.Scheme = "x-api-key"
-		hit := prepareConnection(t, provider.ClaudeCodeACP, claudeCatalog, "beta")
-		argv := agentArgv((claude.Backend{}).Argv(hit.Model), hit, nil)
-		if argv[0] != "npx" || !containsArg(argv, "beta") {
-			t.Fatalf("hit argv = %q", argv)
-		}
-		assertArgvOmits(t, argv, foreign)
-
-		miss := prepareConnection(t, provider.ClaudeCodeACP, claudeCatalog, foreign)
-		argv = agentArgv((claude.Backend{}).Argv(miss.Model), miss, nil)
-		if argv[0] != "npx" || !containsArg(argv, "alpha") {
-			t.Fatalf("miss argv = %q", argv)
-		}
-		assertArgvOmits(t, argv, foreign)
-		for _, item := range miss.Env {
-			if strings.Contains(item, foreign) {
-				t.Fatalf("request leaked into env %q", item)
-			}
-		}
-	})
 }
 
 func prepareConnection(t *testing.T, name provider.Name, c modelconnection.Connection, requested string) modelconnection.Prepared {

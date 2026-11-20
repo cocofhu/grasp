@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"backend/internal/acp"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 // Opt-in proof against the pinned real CLI, with a local model endpoint and a
@@ -69,10 +69,10 @@ func TestNativeKimiReasoningRequests(t *testing.T) {
 				env = append(env, item)
 			}
 		}
-		env = common.UpsertEnv(env, "KIMI_CODE_HOME", home.Name())
-		env = common.UpsertEnv(env, APIKeyEnv, "synthetic-kimi-native-test")
-		env = common.UpsertEnv(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
-		env = common.UpsertEnv(env, "KIMI_DISABLE_TELEMETRY", "1")
+		env = envutil.Upsert(env, "KIMI_CODE_HOME", home.Name())
+		env = envutil.Upsert(env, APIKeyEnv, "synthetic-kimi-native-test")
+		env = envutil.Upsert(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
+		env = envutil.Upsert(env, "KIMI_DISABLE_TELEMETRY", "1")
 		cwd := t.TempDir()
 		panel, err := acp.NewPanel(ctx, ctx, []string{cli, "acp"}, env, cwd, cwd, nil, nil, nil)
 		if err != nil {

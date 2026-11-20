@@ -30,7 +30,7 @@
 - 经网关时只传 `provider`，网关注入 `AGENT_PROVIDER`（默认用同一张 `universal-sandbox`）。
 - 全部取值见文末「默认 transport」表（`cursor` / `claude_code` / `codebuddy` / `gemini` / `codex` /
   `opencode` / `deveco` / `copilot` / `pi` / `openclaw` / `antigravity` / `kimi` / `hermes` / `kiro` /
-  `qoder` / `grok` / `trae` 及 `*_acp` 回退）。
+  `qoder` / `grok` / `trae`）。
 
 ### 2) 配密钥 —— 环境变量（首选）或注入登录态
 
@@ -39,9 +39,9 @@
 
 | provider | 归一化后的原生变量 | 也接受的别名 |
 | --- | --- | --- |
-| `cursor` / `cursor_acp` | `CURSOR_API_KEY` | `ACP_CURSOR_API_KEY` |
-| `claude_code` / `claude_code_acp` | `ANTHROPIC_API_KEY` | `ACP_CLAUDE_API_KEY` |
-| `codebuddy` / `codebuddy_acp` | `CODEBUDDY_API_KEY` | `ACP_CODEBUDDY_API_KEY` |
+| `cursor` | `CURSOR_API_KEY` | `ACP_CURSOR_API_KEY` |
+| `claude_code` | `ANTHROPIC_API_KEY` | `ACP_CLAUDE_API_KEY` |
+| `codebuddy` | `CODEBUDDY_API_KEY` | `ACP_CODEBUDDY_API_KEY` |
 | `gemini` | `GEMINI_API_KEY` | `ACP_GEMINI_API_KEY` / `GOOGLE_API_KEY` |
 | `codex` | `CODEX_HOME/auth.json`（默认 `/root/.codex/auth.json`） | 不接受 API Key；`OPENAI_API_KEY` / `ACP_CODEX_API_KEY` / `CODEX_API_KEY` 会被丢弃 |
 | `opencode` | `OPENCODE_API_KEY` | `ACP_OPENCODE_API_KEY` |
@@ -293,7 +293,6 @@ web/                  # 前端（ESM + 静态资源）
   | `codex` | 长驻 app-server | `codex app-server`（JSON-RPC）；`thread/start` / `thread/resume` 续接，`turn/steer` 引导，`turn/interrupt` 中断 |
   | `deepseek_harness` | 长驻 ACP | `dsh --profile acp`；模型从分组选项解析并通过 `session/set_config_option` 选择 |
   | `kimi` / `hermes` / `kiro` / `qoder` / `grok` / `trae` | 长驻 ACP | CLI 原生 ACP over stdio（`… acp` / `--acp` / `agent … stdio`） |
-  | `cursor_acp` / `claude_code_acp` / `codebuddy_acp` | 长驻 ACP（可选回退） | 强制走 stdio 的备选项，默认不单独出镜像 |
 
 - **能力契约**：每个会话以 `Capabilities()` 声明桥接据以决策的能力，只放桥接真正读取的字段：
   - `Steer`：会话实现 `provider.Steerer`，运行中的这一轮能直接接收追加输入。
