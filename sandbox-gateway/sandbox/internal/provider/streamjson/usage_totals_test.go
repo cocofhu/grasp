@@ -65,6 +65,34 @@ func TestTerminalUsageTotalsReplaceStreamedSamples(t *testing.T) {
 	}
 }
 
+func TestClaudeSessionModelUsageIsReportedPerTurnAcrossResume(t *testing.T) {
+	root := t.TempDir()
+	counter := filepath.Join(root, "n")
+	result := `{"type":"result","subtype":"success","session_id":"native-session","usage":{"input_tokens":100,"output_tokens":10},"modelUsage":{"route:gpt-5":{"inputTokens":%d,"outputTokens":%d}}}`
+	script := fmt.Sprintf("#!/bin/sh\nn=$(cat '%[1]s' 2>/dev/null || echo 0); n=$((n+1)); echo $n > '%[1]s'\nprintf '%[2]s\\n' $((n*100)) $((n*10))\n", counter, result)
+	binary := filepath.Join(root, "claude")
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := New(Config{AgentName: provider.ClaudeCode, Bin: binary, ResumeFlag: "--resume"})
+	want := map[string]provider.TokenUsage{"route:gpt-5": {InputTokens: 100, OutputTokens: 10}}
+	resume := ""
+	for open := range 2 {
+		session, err := p.Open(context.Background(), context.Background(), provider.OpenOptions{Cwd: root, ResumeSessionID: resume}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for turn := range 2 {
+			res, err := session.Prompt(context.Background(), "continue", nil)
+			if err != nil || !reflect.DeepEqual(res.Usage, want) {
+				t.Fatalf("open %d turn %d: usage=%+v err=%v", open, turn, res.Usage, err)
+			}
+		}
+		resume = session.SessionID()
+		session.Close()
+	}
+}
+
 func TestCodeBuddySessionTotalsKeepMissingRequestsAndPartialTurns(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(root, "turn")

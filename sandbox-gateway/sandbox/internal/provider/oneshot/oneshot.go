@@ -60,6 +60,10 @@ type ParseResult struct {
 	// UsageIsTotal marks an authoritative per-turn snapshot. A nonempty total
 	// replaces prior streamed samples, which may use different model aliases.
 	UsageIsTotal bool
+	// UsageIsSessionTotal marks a total as the native session's running
+	// per-model counters, which a resumed CLI continues from its previous
+	// process. The engine reports the difference from the session's last total.
+	UsageIsSessionTotal bool
 	// SessionUsage is a separate canonical native-session total. Some CLIs
 	// report per-process model buckets alongside cumulative flat counters.
 	SessionUsage *provider.TokenUsage
@@ -151,7 +155,10 @@ type LogFileCodec interface {
 }
 
 // Provider is a one-shot provider backed by a Codec.
-type Provider struct{ c Codec }
+type Provider struct {
+	c      Codec
+	ledger sessionLedger
+}
 
 // NewProvider wraps a Codec as a provider.Provider.
 func NewProvider(c Codec) provider.Provider { return &Provider{c: c} }
@@ -230,6 +237,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		env:      prepared.Env,
 		cleanup:  prepared.Cleanup,
 		onEvent:  onEvent,
+		ledger:   &p.ledger,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
 		bgGrace:  BackgroundGrace(),
@@ -266,12 +274,12 @@ type engine struct {
 	cleanup      func()
 	displayModel string
 
-	mu                sync.Mutex
-	sessionID         string
-	cumUsage          map[string]provider.TokenUsage
-	flatUsageSession  string
-	flatUsageBaseline provider.TokenUsage
-	curCancel         context.CancelFunc
+	ledger *sessionLedger
+
+	mu        sync.Mutex
+	sessionID string
+	cumUsage  map[string]provider.TokenUsage
+	curCancel context.CancelFunc
 	// agentPID is the running CLI's pid (0 between turns), for the bridge's
 	// CPU / IO liveness sampling.
 	agentPID atomic.Int64
@@ -1001,52 +1009,6 @@ func addUsage(a, b provider.TokenUsage) provider.TokenUsage {
 		CacheReadTokens:  a.CacheReadTokens + b.CacheReadTokens,
 		CacheWriteTokens: a.CacheWriteTokens + b.CacheWriteTokens,
 	}
-}
-
-// Reconcile process-local model buckets against a native-session counter. The
-// baseline includes already reported partial turns, so a later cumulative
-// snapshot cannot ledger those failed/cancelled attempts a second time.
-func (e *engine) reconcileFlatSessionUsage(session string, current *provider.TokenUsage, usage map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	previous := provider.TokenUsage{}
-	if session != "" && session == e.flatUsageSession {
-		previous = e.flatUsageBaseline
-	}
-	known := sumUsage(usage)
-	var uncertain bool
-	if current != nil {
-		if current.InputTokens < previous.InputTokens || current.OutputTokens < previous.OutputTokens || current.CacheReadTokens < previous.CacheReadTokens || current.CacheWriteTokens < previous.CacheWriteTokens {
-			previous = provider.TokenUsage{}
-			uncertain = true
-		}
-		delta := provider.TokenUsage{
-			InputTokens:      current.InputTokens - previous.InputTokens,
-			OutputTokens:     current.OutputTokens - previous.OutputTokens,
-			CacheReadTokens:  current.CacheReadTokens - previous.CacheReadTokens,
-			CacheWriteTokens: current.CacheWriteTokens - previous.CacheWriteTokens,
-		}
-		missing := provider.TokenUsage{
-			InputTokens:      max(delta.InputTokens-known.InputTokens, 0),
-			OutputTokens:     max(delta.OutputTokens-known.OutputTokens, 0),
-			CacheReadTokens:  max(delta.CacheReadTokens-known.CacheReadTokens, 0),
-			CacheWriteTokens: max(delta.CacheWriteTokens-known.CacheWriteTokens, 0),
-		}
-		if missing != (provider.TokenUsage{}) {
-			uncertain = uncertain || len(usage) > 0
-			if usage == nil {
-				usage = map[string]provider.TokenUsage{}
-			}
-			usage["default"] = addUsage(usage["default"], missing)
-		}
-		uncertain = uncertain || known.InputTokens > delta.InputTokens || known.OutputTokens > delta.OutputTokens || known.CacheReadTokens > delta.CacheReadTokens || known.CacheWriteTokens > delta.CacheWriteTokens
-		if len(usage) == 0 {
-			usage = map[string]provider.TokenUsage{"default": {}}
-		}
-	}
-	e.flatUsageSession = session
-	e.flatUsageBaseline = addUsage(previous, sumUsage(usage))
-	return usage, uncertain
 }
 
 func sumUsage(usage map[string]provider.TokenUsage) provider.TokenUsage {
