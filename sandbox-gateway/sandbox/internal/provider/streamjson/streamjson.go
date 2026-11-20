@@ -455,6 +455,9 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 				uu := u
 				addUsage(&uu, model, false)
 			}
+			// Claude Code's modelUsage runs over the whole session: --resume
+			// restores the counters of the last completed turn.
+			res.UsageIsSessionTotal = d.c.AgentName == provider.ClaudeCode
 		} else if !res.TracksSessionUsage {
 			addUsage(ev.Usage, ev.Model, d.c.AgentName == provider.CodeBuddy)
 		}

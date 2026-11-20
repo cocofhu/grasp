@@ -21,14 +21,15 @@ type turnAccumulator struct {
 	bg    *backgroundShells
 	input *turnInput
 
-	usage              map[string]provider.TokenUsage
-	usagePartial       bool
-	tracksSessionUsage bool
-	sessionUsage       *provider.TokenUsage
-	newSID             string
-	stop               string
-	diagnostics        []Msg
-	hasText            bool
+	usage               map[string]provider.TokenUsage
+	usagePartial        bool
+	usageIsSessionTotal bool
+	tracksSessionUsage  bool
+	sessionUsage        *provider.TokenUsage
+	newSID              string
+	stop                string
+	diagnostics         []Msg
+	hasText             bool
 
 	// resultSeen closes on the final stop reason; resultStop is written before
 	// it closes, so a reader that observed the close may read it. With turn
@@ -64,6 +65,7 @@ func (a *turnAccumulator) apply(pr ParseResult) {
 		} else {
 			a.usage = make(map[string]provider.TokenUsage, len(pr.Usage))
 			a.usagePartial = pr.UsagePartial
+			a.usageIsSessionTotal = pr.UsageIsSessionTotal
 		}
 	} else if len(pr.Usage) > 0 {
 		a.usagePartial = a.usagePartial || pr.UsagePartial
@@ -108,9 +110,14 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 	if sid == "" {
 		sid = resumeID
 	}
+	if a.usageIsSessionTotal {
+		var uncertain bool
+		a.usage, uncertain = a.e.ledger.modelDelta(sid, a.usage)
+		a.usagePartial = a.usagePartial || uncertain
+	}
 	if a.tracksSessionUsage {
 		var uncertain bool
-		a.usage, uncertain = a.e.reconcileFlatSessionUsage(sid, a.sessionUsage, a.usage)
+		a.usage, uncertain = a.e.ledger.reconcileFlat(sid, a.sessionUsage, a.usage)
 		a.usagePartial = a.usagePartial || uncertain
 	}
 	a.e.mergeCumulative(a.usage)
