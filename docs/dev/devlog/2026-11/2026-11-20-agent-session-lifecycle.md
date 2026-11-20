@@ -9,7 +9,9 @@
   - 长驻进程在下一轮开始前重建：检测到沙箱休眠恢复（墙上时间相对单调时钟跳变超过 30s），或进程运行超过 `SANDBOX_AGENT_MAX_AGE`（默认 6h）。
   - 重启或重建未能接回原会话时，下一轮 `prompt_done` 带 `sessionReset` 与 `previousSessionId`，复用服务端已有的对话记录补发逻辑。
   - Codex `thread/resume` 遇到 JSON-RPC 错误（线程已不存在）时改走 `thread/start`。`acp.RPCError` 导出供判别。
+  - 正在复活的 Agent 期间到达的消息照常排队，复活失败才清空队列并拒收。复活或新上下文成功后清掉上一次的 `sessionReset` 标记，避免对新对话误报重置。
+  - Claude Code 接模型连接时使用临时 `CLAUDE_CONFIG_DIR`，其中 `projects`、`sessions` 软链到持久配置目录，进程重开后 `--resume` 仍能找到会话记录。`--resume` 被拒（结果为错误且 `num_turns` 为 0）时不再沿用旧会话 ID，桥接据此新开会话并上报 `sessionReset`。
   - 服务端 `SetChatModel*` 返回 `resumed`；`AlignChatModel` 删除，三个对齐接口合并为 `AlignChatSettings` 返回 `ChatSwitch{Restarted, Resumed}`。Solo 切换模型若原生接回会话且路由未变，不再补发上下文前言。
 - 为什么：常驻 Agent（Codex app-server、ACP）以前换模型、崩溃或沙箱休眠恢复后都会丢掉原生会话，只能靠平台补发截断的对话记录。这是 #1311 的第二阶段（生命周期）。
-- 如何验证：沙箱与服务端模块全量 Go 测试（沙箱带 `-race`）、golangci-lint、`gen-configdoc -check`、服务端覆盖率 90.5%。新增桥接生命周期测试覆盖换模型接回 / 不接回、新上下文不接回、崩溃复活与预算、复活丢会话上报 `sessionReset`、休眠与超龄重建。实测：沙箱运行时以 Claude Code 接 DeepSeek，切换思考强度后 `resumed=true`，Agent 仍记得切换前约定的口令。
+- 如何验证：沙箱与服务端模块全量 Go 测试（沙箱带 `-race`）、golangci-lint、`gen-configdoc -check`、服务端覆盖率 90.5%。新增桥接生命周期测试覆盖换模型接回 / 不接回、新上下文不接回、崩溃复活与预算、复活丢会话上报 `sessionReset`、休眠与超龄重建。实测（真实沙箱运行时 + 服务端 `ACPClient`，DeepSeek 模型）：Claude Code 回合中引导生效，切换模型后 `resumed=true` 且记得切换前的口令，`restart_agent` 新开会话。
 - 后续：ACP `session/load` 接回会话、OpenCode serve、移除 `*_acp` 回退、切换 Agent 时的上下文交接组件，见 #1311。
