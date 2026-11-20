@@ -323,9 +323,19 @@ func cleanEnv(env []string) []string {
 	return out
 }
 
+// historyDirs hold conversation transcripts. They are created in root before
+// linking, otherwise the CLI writes them inside the temporary directory and a
+// replaced process can no longer resume the conversation.
+var historyDirs = []string{"projects", "sessions"}
+
 // isolatedConfig keeps skills, rules and session history while omitting login,
 // provider and settings files that could override the selected service.
 func isolatedConfig(root string) (string, func(), error) {
+	for _, entry := range historyDirs {
+		if err := os.MkdirAll(filepath.Join(root, entry), 0o700); err != nil {
+			return "", func() {}, errors.New("model connection: cannot create agent history directory")
+		}
+	}
 	dir, err := os.MkdirTemp("", "grasp-model-")
 	if err != nil {
 		return "", func() {}, errors.New("model connection: cannot create isolated config")
