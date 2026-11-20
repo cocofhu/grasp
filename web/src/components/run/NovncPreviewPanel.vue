@@ -2,6 +2,8 @@
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import { api } from '@/lib/api/api'
 import { PreviewVncChannel } from '@/lib/shared/previewVncChannel'
 import { createPreviewFpsCounter } from '@/lib/shared/previewFps'
@@ -97,6 +99,8 @@ const audioOn = computed(() => audio.state.value === 'on' || audio.state.value =
 const audioLabel = computed(() => t(`pages.appPreview.novnc.audio.${audio.state.value}`))
 /** 电脑 view on the desktop image: the screen is a framed card with a control dock, no browser toolbar. */
 const desktopShell = computed(() => props.computer && desktop.isDesktop.value)
+/** Taking over while the Agent is mid-turn fails its mouse and keyboard tools, so ask first. */
+const takeoverConfirmOpen = ref(false)
 const desktopTakeoverText = computed(() => {
   if (!desktop.agentBusy.value) return ''
   return t(control.value ? 'pages.appPreview.desktop.takeoverTip' : 'pages.appPreview.desktop.takeoverHint')
@@ -714,22 +718,26 @@ function canArmTakeoverFromScreen(): boolean {
   return status.value === 'live' && !control.value && !inspect.value
 }
 
-function beginTakeoverGesture(pointer: 'mouse' | 'touch') {
+function swallowTakeoverGesture(pointer: 'mouse' | 'touch') {
   endTakeoverGesture()
   const gesture: TakeoverGesture = { pointer, sawUp: false }
   takeoverGesture = gesture
   for (const type of TAKEOVER_WINDOW_EVENTS) {
     window.addEventListener(type, onTakeoverGestureTail, { capture: true, passive: false })
   }
-  control.value = true
-  focusRemoteScreen()
 }
 
 function onScreenPointerDown(ev: Event) {
   if (!canArmTakeoverFromScreen()) return
   if (ev.type !== 'mousedown' && ev.type !== 'touchstart') return
   blockGestureEvent(ev)
-  beginTakeoverGesture(ev.type === 'touchstart' ? 'touch' : 'mouse')
+  swallowTakeoverGesture(ev.type === 'touchstart' ? 'touch' : 'mouse')
+  if (desktop.agentBusy.value) {
+    takeoverConfirmOpen.value = true
+    return
+  }
+  control.value = true
+  focusRemoteScreen()
 }
 
 function isTrailingMouseEvent(type: string): boolean {
@@ -804,7 +812,22 @@ function unbindScreenTakeoverListeners() {
 }
 
 function toggleControl() {
+  if (!control.value && desktop.agentBusy.value) {
+    takeoverConfirmOpen.value = true
+    return
+  }
   control.value = !control.value
+}
+
+function confirmTakeover() {
+  takeoverConfirmOpen.value = false
+  if (control.value) return
+  control.value = true
+  focusRemoteScreen()
+}
+
+function cancelTakeover() {
+  takeoverConfirmOpen.value = false
 }
 
 watch(desktopShell, (on) => {
@@ -1387,6 +1410,27 @@ onBeforeUnmount(() => {
         </span>
       </div>
     </div>
+    <AppModal
+      :open="takeoverConfirmOpen"
+      :title="t('pages.appPreview.desktop.takeoverConfirmTitle')"
+      :width="420"
+      :close-label="t('common.buttons.close')"
+      close-on-esc
+      trap-focus
+      @close="cancelTakeover"
+    >
+      <p class="text-[13px] text-txt2" data-testid="desktop-takeover-confirm">
+        {{ t('pages.appPreview.desktop.takeoverConfirmBody') }}
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" data-testid="desktop-takeover-cancel" @click="cancelTakeover">
+          {{ t('common.buttons.cancel') }}
+        </AppButton>
+        <AppButton variant="primary" autofocus data-testid="desktop-takeover-ok" @click="confirmTakeover">
+          {{ t('pages.appPreview.desktop.takeoverConfirmOk') }}
+        </AppButton>
+      </template>
+    </AppModal>
   </div>
 </template>
 

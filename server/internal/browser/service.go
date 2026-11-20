@@ -502,17 +502,9 @@ func (s *Service) reuseDesktopLocked(ctx context.Context, sandboxName, targetURL
 			log.Warn().Str("sandbox", sandboxName).Str("url", targetURL).Err(err).Msg("sandbox desktop goto failed")
 		}
 	}
-	if p, ok := d.page.(desktopPresenter); ok {
-		if err := p.presentDesktop(); err != nil {
-			log.Debug().Str("sandbox", sandboxName).Err(err).Msg("sandbox desktop re-present")
-		}
-	}
+	// Viewers attach to the screen as it is: no raise, refocus or resize.
+	// Inspect places the window itself (SetInspect).
 	return d
-}
-
-// desktopPresenter brings a reused page back to the front of the Xvfb screen.
-type desktopPresenter interface {
-	presentDesktop() error
 }
 
 // needsNavigate reports whether a reused page at cur must go to target.
