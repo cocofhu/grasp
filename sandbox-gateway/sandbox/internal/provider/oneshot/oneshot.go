@@ -290,7 +290,7 @@ func (e *engine) SessionID() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.sessionID == "" {
-		return "oneshot-pending"
+		return provider.SessionPending
 	}
 	return e.sessionID
 }

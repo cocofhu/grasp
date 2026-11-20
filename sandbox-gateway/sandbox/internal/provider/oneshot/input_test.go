@@ -110,7 +110,7 @@ func steerDuring(t *testing.T, sess provider.Session, prompt, steer string) (pro
 
 func TestSteerJoinsRunningTurn(t *testing.T) {
 	sess, text := openSteerable(t, inputFake{acks: true})
-	if !provider.CanSteer(sess) {
+	if !sess.Capabilities().Steer {
 		t.Fatal("a turn-input codec must be steerable")
 	}
 	if err := sess.(provider.Steerer).Steer("early"); !errors.Is(err, provider.ErrNoActiveTurn) {
@@ -144,7 +144,7 @@ func TestUnacknowledgedInputDoesNotHoldTheTurn(t *testing.T) {
 
 func TestStdinPromptWithoutTurnInputIsNotSteerable(t *testing.T) {
 	sess, _ := openSteerable(t, stdinOnlyFake{})
-	if provider.CanSteer(sess) {
+	if sess.Capabilities().Steer {
 		t.Fatal("stdin prompt alone does not make a codec steerable")
 	}
 	if err := sess.(provider.Steerer).Steer("x"); !errors.Is(err, provider.ErrNoActiveTurn) {

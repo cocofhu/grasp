@@ -76,16 +76,12 @@ type tierSettingsAligner struct {
 	tier   string
 }
 
-func (*tierSettingsAligner) AlignChatModel(context.Context, uint, string) (bool, error) {
-	return false, errors.New("model-only align must not handle service tiers")
-}
-
-func (a *tierSettingsAligner) AlignChatSettings(_ context.Context, _ uint, _, _, tier string) (bool, error) {
+func (a *tierSettingsAligner) AlignChatSettings(_ context.Context, _ uint, _, _, tier string) (ChatSwitch, error) {
 	a.tier = tier
 	if a.before != nil {
 		a.before()
 	}
-	return true, a.err
+	return ChatSwitch{Restarted: true}, a.err
 }
 
 func TestSoloServiceTierAppliesAndRollsBackWithoutClobberingANewerChoice(t *testing.T) {

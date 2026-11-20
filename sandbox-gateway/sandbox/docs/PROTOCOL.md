@@ -45,7 +45,7 @@
 {
   "protocol": "wsp/1",
   "agent":   { "runtime": "cursor-agent", "name": "...", "version": "..." },
-  "session": { "ws": "/ws", "events": "/api/events", "tokenUsage": false },
+  "session": { "ws": "/ws", "events": "/api/events", "tokenUsage": false, "steer": false, "resume": true },
   "ide":     { "codeServer": true, "port": 8744 },
   "preview": {
     "vnc": true,
@@ -67,6 +67,9 @@
 ```
 
 - `protocol`:协议版本。客户端对未知大版本仅告警、不阻断(向前兼容)。
+- `session.steer`:运行中的一轮能否直接接收追加消息(`op:steer`);为 `false` 时平台中断当前轮,再把消息作为下一轮发送。
+- `session.resume`:重启 Agent 进程(换模型、进程意外退出、休眠恢复后重建)后能否接回同一原生会话。
+  接不回时,下一轮 `prompt_done` 带 `sessionReset: true`,平台据此补发对话记录。
 - `session.tokenUsage`:会话事件/连接负载是否携带用量(token)字段。参考实现据实为
   `false`(当前 cursor-agent ACP 不上报用量);未来 agent 能报时在事件里透出 `usage`
   并置 `true`。
@@ -162,6 +165,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 
 - `SANDBOX_TURN_IDLE_TIMEOUT`(默认 `20m`,可被 `chat.idleSec` 按轮覆盖):连续这么久没有任何活动;
 - `SANDBOX_TURN_MAX_DURATION`(默认 `0` 不限,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;工作流节点通过 `deadlineSec` 传入节点时限,Solo 不传;
+- `SANDBOX_AGENT_MAX_AGE`(默认 `6h`):长驻 Agent 进程服务一个会话的最长时间,到点后在下一轮开始前重建并接回原会话;`0` 不限。
 - `SANDBOX_LIVENESS_CPU_MS`(默认 `300`)/ `SANDBOX_LIVENESS_IO_BYTES`(默认 `4096`):一个采样周期内算作有活动的 CPU / IO 阈值。
 - `SANDBOX_BG_TASK_GRACE`(默认 `2m`):cursor-agent `-p` 要等它起的所有后台 shell 结束才给出结果、退出,
   Agent 用后台任务起的常驻服务会让这一轮一直不结束。没有前台工具在跑、只剩后台 shell、输出也安静了这么久,

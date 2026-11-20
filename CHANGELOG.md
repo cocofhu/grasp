@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 切换模型、思考强度或速度档位后，Codex 和 Claude Code 等编码工具会继续原来的会话，Agent 记得之前的对话和工作，不用再补发截断的聊天记录。常驻的 Agent 进程意外退出时自动重启并接回原会话，排队消息继续执行。沙箱休眠恢复后，或进程运行超过 6 小时（`SANDBOX_AGENT_MAX_AGE`），会在下一轮开始前重建 Agent 进程。接不回原会话时，平台照旧补发对话记录。需要沙箱运行时更新后生效。
+
 - Agent 回合进行中可以「立即引导」：在 Solo、Agent Studio、工作流澄清 / 复审 / 审批和访客分享链接的排队消息上点闪电按钮，消息直接进入正在进行的回合，Agent 接着当前工作处理，不用等这一轮结束。Codex、Claude Code 和 CodeBuddy 原生支持；其他 Agent 会先停下当前回合，再把这条消息作为下一轮发送。引导内容显示在对话中，也会保留在历史记录和上下文里。Codex 改为常驻 `app-server` 运行，需要沙箱运行时更新后生效。
 
 - E2B 沙箱运行期间持续把内存还给主机：沙箱内常驻服务把页面缓存压在约 512 MiB，并整理碎片化的空闲内存。它与下文模型回合结束后的空闲清理（`sandbox.memory_trim_*`）同时生效，互不替代。实测客户机已用约 1.5 GiB 的 16 GiB 沙箱，写读 3 GiB 文件后主机占用 30 秒内从 6.2 GiB 回落到 3.4 GiB。不动进程内存，重复读同一批文件时可能多读几次磁盘。可用 `GRASP_MEMORY_CAP_MIB` 调整（`0` 关闭）；Docker/K8s 不执行。运行中的沙箱在服务端推送新运行时包后生效。

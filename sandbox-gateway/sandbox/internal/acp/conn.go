@@ -334,7 +334,7 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (json.RawMes
 		}
 		var env struct {
 			Result json.RawMessage `json:"result"`
-			Error  *rpcError       `json:"error"`
+			Error  *RPCError       `json:"error"`
 		}
 		if err := json.Unmarshal(raw, &env); err != nil {
 			log.Printf("acp %s: Call 响应 JSON 无效 method=%q id=%d: %v", c.logTag(), method, id, err)
@@ -342,7 +342,7 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (json.RawMes
 		}
 		if env.Error != nil {
 			log.Printf("acp %s: Call RPC 错误 method=%q id=%d code=%d msg=%q", c.logTag(), method, id, env.Error.Code, env.Error.Message)
-			return nil, fmt.Errorf("rpc error %d: %s", env.Error.Code, env.Error.Message)
+			return nil, env.Error
 		}
 		return env.Result, nil
 	}

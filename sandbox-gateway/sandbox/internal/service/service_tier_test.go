@@ -51,7 +51,7 @@ func TestServiceTierRestartRollbackAndChatIsolation(t *testing.T) {
 		}
 		return nil, errors.New("fixture restart rejected")
 	}
-	if _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("fast")); err == nil {
+	if _, _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("fast")); err == nil {
 		t.Fatal("expected restart failure")
 	}
 	if bridge.Model() != "original" || bridge.ServiceTier() != "" {
@@ -60,22 +60,22 @@ func TestServiceTierRestartRollbackAndChatIsolation(t *testing.T) {
 	bridge.testConnect = func(string, string, json.RawMessage, *bool) (provider.Session, error) {
 		return &stubSess{id: "next"}, nil
 	}
-	if _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("fast")); err != nil {
+	if _, _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("fast")); err != nil {
 		t.Fatal(err)
 	}
 	if bridge.ServiceTier() != "fast" || manager.Default().ServiceTier() != "" {
 		t.Fatal("speed selection leaked between chats")
 	}
-	if _, err := bridge.SwitchModelSettings("next", "low", nil); err != nil || bridge.ServiceTier() != "fast" {
+	if _, _, err := bridge.SwitchModelSettings("next", "low", nil); err != nil || bridge.ServiceTier() != "fast" {
 		t.Fatalf("omitted tier did not keep the current one: %v", err)
 	}
-	if _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("turbo")); !errors.Is(err, ErrServiceTierUnavailable) || bridge.ServiceTier() != "fast" {
+	if _, _, err := bridge.SwitchModelSettings("next", "ultra", tierPtr("turbo")); !errors.Is(err, ErrServiceTierUnavailable) || bridge.ServiceTier() != "fast" {
 		t.Fatalf("undeclared tier was accepted: %v", err)
 	}
-	if _, err := bridge.SwitchModelSettings("standard", "ultra", nil); err != nil || bridge.ServiceTier() != "" {
+	if _, _, err := bridge.SwitchModelSettings("standard", "ultra", nil); err != nil || bridge.ServiceTier() != "" {
 		t.Fatalf("unsupported target retained its service tier: %v", err)
 	}
-	if _, err := bridge.SwitchModelSettings("standard", "ultra", tierPtr("fast")); !errors.Is(err, ErrServiceTierUnavailable) || bridge.ServiceTier() != "" {
+	if _, _, err := bridge.SwitchModelSettings("standard", "ultra", tierPtr("fast")); !errors.Is(err, ErrServiceTierUnavailable) || bridge.ServiceTier() != "" {
 		t.Fatalf("unsupported explicit tier was accepted: %v", err)
 	}
 	t.Setenv("ACP_BRIDGE_SERVICE_TIER", "fast")

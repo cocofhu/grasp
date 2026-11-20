@@ -61,6 +61,7 @@ func (s *stubSess) Prompt(context.Context, string, []provider.PromptImage) (prov
 }
 func (s *stubSess) ReportsUsage() bool                              { return false }
 func (s *stubSess) CumulativeUsage() map[string]provider.TokenUsage { return nil }
+func (s *stubSess) Capabilities() provider.Capabilities             { return provider.Capabilities{} }
 func (s *stubSess) Cancel() error                                   { return nil }
 func (s *stubSess) Close() error                                    { return nil }
 func (s *stubSess) Done() <-chan struct{} {

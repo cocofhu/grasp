@@ -295,10 +295,20 @@ web/                  # 前端（ESM + 静态资源）
   | `kimi` / `hermes` / `kiro` / `qoder` / `grok` / `trae` | 长驻 ACP | CLI 原生 ACP over stdio（`… acp` / `--acp` / `agent … stdio`） |
   | `cursor_acp` / `claude_code_acp` / `codebuddy_acp` | 长驻 ACP（可选回退） | 强制走 stdio 的备选项，默认不单独出镜像 |
 
-- **运行中引导（steer）**：会话实现 `provider.Steerer` 且 `SteerSupported()` 为真时，可把一条输入送进正在运行的这一轮（`provider.CanSteer`）。
+- **能力契约**：每个会话以 `Capabilities()` 声明桥接据以决策的能力，只放桥接真正读取的字段：
+  - `Steer`：会话实现 `provider.Steerer`，运行中的这一轮能直接接收追加输入。
+  - `Resume`：用本会话的 `SessionID` 作为 `OpenOptions.ResumeSessionID` 重新打开，能接回同一原生对话（one-shot 各 codec 与 `codex` 为真，ACP 家族为假）。
+  - 两项都随 `connected` 帧的 `capabilities` 与 `/capabilities` 的 `session.steer` / `session.resume` 下发。
+- **运行中引导（steer）**：`Capabilities().Steer` 为真时，可把一条输入送进正在运行的这一轮。
   - 原生实现：`codex` 走 `turn/steer`；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
   - WS 协议：`{"op":"steer","opId":<目标轮>,"steerId":…,"text":…,"images":[…]}` → `op:steer_ack`（`status`：`delivered` / `unsupported` / `no_turn` / `failed`）；送达后在目标轮的事件流里追加 `user_steer`（文本与附件预览），随该轮持久化。
-  - 能力声明：`connected` 帧与 `/capabilities` 的 `session.steer`。不支持的会话由平台改为"中断当前轮并把这条输入排到队首"。
+  - 不支持的会话由平台改为"中断当前轮并把这条输入排到队首"。
+- **会话生命周期**：更换 Agent 进程时，桥接按用途决定是否接回原生对话。
+  - 换模型 / 思考强度 / 速度档位（`POST /api/model`）：`Resume` 为真则带原会话 ID 重开，响应里 `resumed: true`，平台不再补发对话记录；可见聊天记录保留。
+  - 新开上下文（`/new`、`/compact`、`restart_agent`）：总是新对话。
+  - 长驻进程意外退出：`Resume` 为真时 10 分钟内最多自动重启 3 次并接回原会话，正在跑的那一轮按失败收尾，排队消息在新进程上继续；否则照旧广播 `agentExited`。
+  - 长驻进程回合前重建：沙箱从休眠中恢复（墙上时间比单调时钟多走 30s 以上，即 E2B 暂停又恢复），或进程已运行超过 `SANDBOX_AGENT_MAX_AGE`（默认 `6h`，`0` 不限）时，下一轮开始前重建进程并接回原会话，避免沿用已经断开的模型 / MCP 连接。不能接回会话的 Agent 不重建。
+  - 自动重启或重建没能接回原会话（如原会话文件已不在）时，下一轮的 `prompt_done` 带 `sessionReset: true` 与 `previousSessionId`，平台据此补发对话记录，与 one-shot 的 resume 回退一致。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：
   - ✅ **已验真**：`cursor`（端到端跑通）、`gemini`/qwen 系（对真实 stream-json 抓样解析全绿）。stream-json codec 已同时兼容两种方言：顶层 thinking + camelCase 用量（cursor），以及 content-block thinking（`thinking` 字段）+ `tool_use_id` 关联 + snake_case 用量（claude/codebuddy/qwen）。
   - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）。这些 codec 结构已对齐公开字段，仍建议真机各跑一轮抓样复核。

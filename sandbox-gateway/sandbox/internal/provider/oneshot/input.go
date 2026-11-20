@@ -111,10 +111,11 @@ func (t *turnInput) closeLocked() {
 	}
 }
 
-// SteerSupported reports whether the codec takes input into a running turn.
-func (e *engine) SteerSupported() bool {
-	_, ok := turnInputCodec(e.c)
-	return ok
+// Capabilities: every one-shot codec continues its conversation through a
+// resume pointer; steering needs a codec that keeps the turn's stdin open.
+func (e *engine) Capabilities() provider.Capabilities {
+	_, steer := turnInputCodec(e.c)
+	return provider.Capabilities{Steer: steer, Resume: true}
 }
 
 // Steer writes text to the running turn's stdin.

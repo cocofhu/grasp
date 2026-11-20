@@ -44,13 +44,14 @@ func (b *Bridge) pumpPromptQueue() {
 	b.turnMu.Unlock()
 	if !busy {
 		b.ensureSelectableModel()
+		b.recycleStaleAgent()
 	}
 	// Model fallback may reconnect under ensureMu, so take enqueueMu only
 	// after it finishes. Keep the queue pop / restore / turn reservation
 	// atomic with Connect and watcher cleanup.
 	b.enqueueMu.Lock()
 	b.turnMu.Lock()
-	if b.activeTurn != nil {
+	if b.activeTurn != nil || b.recycling {
 		b.turnMu.Unlock()
 		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
@@ -430,7 +431,7 @@ func (b *Bridge) ensureSelectableModel() {
 	if !ReasoningEffortSelectable(primary, effort) {
 		effort = ""
 	}
-	sess, err := b.SwitchModelSettings("", effort, nil)
+	sess, _, err := b.SwitchModelSettings("", effort, nil)
 	if err != nil {
 		log.Printf("acp-bridge: 当前模型已不可用，回到主模型失败: %v", err)
 		return

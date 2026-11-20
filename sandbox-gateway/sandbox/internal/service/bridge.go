@@ -62,6 +62,24 @@ type Bridge struct {
 	// 最近一次 session/new 使用的 MCP 列表（JSON），重启 Agent 时复用
 	lastMCP json.RawMessage
 
+	// sessOpened / sessThaw: when sess was opened, and thawCount() then.
+	sessOpened time.Time
+	sessThaw   int64
+	// maxAgentAge recycles a long-lived Agent process between turns once it is
+	// this old (0 = never).
+	maxAgentAge time.Duration
+	// revivals bounds automatic restarts after the Agent exits on its own.
+	revivals revivalBudget
+	// lostSession is the native session (string) a replacement failed to
+	// resume; the next prompt_done reports it as sessionReset.
+	lostSession atomic.Value
+	// recycling holds off new turns while recycleStaleAgent swaps the process.
+	// Guarded by turnMu.
+	recycling bool
+
+	// agentProvider replaces agents.Current() (unit tests only).
+	agentProvider provider.Provider
+
 	// testConnect, when non-nil, replaces Connect inside EnsureAgent (unit tests only).
 	testConnect func(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error)
 
@@ -159,6 +177,7 @@ func NewBridge() *Bridge {
 		evLog:           eventLog{},
 		turnIdle:        idle,
 		turnMax:         max,
+		maxAgentAge:     agentMaxAgeFromEnv(),
 	}
 }
 
