@@ -109,6 +109,11 @@ type Session interface {
 	// connected payload). nil when usage is not reported.
 	CumulativeUsage() map[string]TokenUsage
 
+	// Capabilities is what this live session supports. It comes from the
+	// session rather than the provider because some agents only settle it
+	// during the handshake.
+	Capabilities() Capabilities
+
 	Cancel() error // cancel the in-flight turn
 	Close() error  // end the session (restart / reconnect)
 
@@ -118,24 +123,31 @@ type Session interface {
 	ExitInfo() (exitMsg string, err error)
 }
 
+// SessionPending is the SessionID of a session whose agent has not reported
+// its native session yet (a one-shot CLI before its first turn).
+const SessionPending = "oneshot-pending"
+
 // ErrNoActiveTurn is returned by Steer when no turn is running, or the
 // running turn has already reported its result.
 var ErrNoActiveTurn = errors.New("no active turn")
 
-// Steerer is an optional Session extension for agents that take additional
-// user input while a turn is running and fold it into that same turn, without
-// interrupting it. Sessions without it are steered by the platform cancelling
-// the turn and running the input as the next one.
+// Capabilities drives the bridge's policy for a session. Only fields the
+// bridge acts on belong here.
+type Capabilities struct {
+	// Steer means the session implements Steerer: input sent while a turn is
+	// running joins that turn. Without it the platform cancels the turn and
+	// runs the input as the next one.
+	Steer bool
+	// Resume means opening with OpenOptions.ResumeSessionID set to this
+	// session's SessionID continues the same native conversation, so the
+	// bridge may replace the process without losing context.
+	Resume bool
+}
+
+// Steerer delivers input into the running turn of a session whose
+// Capabilities report Steer.
 type Steerer interface {
-	// SteerSupported reports whether this session's agent accepts Steer.
-	SteerSupported() bool
 	// Steer delivers text to the running turn. Attachments must already be
 	// materialized and referenced in text.
 	Steer(text string) error
-}
-
-// CanSteer reports whether s accepts input into a running turn.
-func CanSteer(s Session) bool {
-	st, ok := s.(Steerer)
-	return ok && st.SteerSupported()
 }

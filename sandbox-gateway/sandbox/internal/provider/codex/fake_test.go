@@ -100,6 +100,10 @@ func runFakeAppServer() {
 		case "thread/start":
 			reply(map[string]any{"thread": map[string]any{"id": f.thread}, "model": "fake-model"})
 		case "thread/resume":
+			if msg.Params.ThreadID == "thread-gone" {
+				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "no rollout found for thread id thread-gone"}})
+				continue
+			}
 			f.thread = msg.Params.ThreadID
 			reply(map[string]any{"thread": map[string]any{"id": f.thread}, "model": "fake-model"})
 		case "turn/start":

@@ -15,21 +15,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// soloModelAligner applies a model to the sandbox default chat. changed is
-// false when the chat was already on that model. A true result means the
-// coding agent was restarted and the next prompt must carry prior dialogue.
+// soloModelAligner applies model, effort and speed tier to the sandbox
+// default chat in one switch. A restart that did not resume the native
+// conversation means the next prompt must carry the prior dialogue.
 type soloModelAligner interface {
-	AlignChatModel(ctx context.Context, sandboxID uint, model string) (changed bool, err error)
-}
-
-// soloSettingsAligner atomically applies both chat-local model settings.
-type soloSettingsAligner interface {
-	AlignChatSettings(ctx context.Context, sandboxID uint, model, effort string) (changed bool, err error)
-}
-
-// soloTierSettingsAligner also applies the chat's speed tier in the same switch.
-type soloTierSettingsAligner interface {
-	AlignChatSettings(ctx context.Context, sandboxID uint, model, effort, tier string) (changed bool, err error)
+	AlignChatSettings(ctx context.Context, sandboxID uint, model, effort, tier string) (ChatSwitch, error)
 }
 
 func (s *SoloService) modelAligner() soloModelAligner {
@@ -350,7 +340,7 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	desiredEffort := s.resolveChatEffort(ctx, row, desired, storedEffort)
 	appliedEffort := strings.TrimSpace(row.AppliedReasoningEffort)
 	desiredTier, appliedTier := row.CurrentServiceTier, row.AppliedServiceTier
-	var changed bool
+	var changed, resumed bool
 	var err error
 	if s.sbx != nil && s.modelAlign == nil {
 		var agent Agent
@@ -377,19 +367,10 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", true).Error; err != nil {
 			return false, err
 		}
-		var modelChanged bool
-		if settings, ok := aligner.(soloTierSettingsAligner); ok {
-			modelChanged, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort, desiredTier)
-		} else if desiredTier != appliedTier {
-			err = errors.New("sandbox service tier settings unavailable")
-		} else if settings, ok := aligner.(soloSettingsAligner); ok {
-			modelChanged, err = settings.AlignChatSettings(ctx, sandboxID, desired, desiredEffort)
-		} else if desiredEffort != appliedEffort {
-			err = errors.New("sandbox reasoning settings unavailable")
-		} else {
-			modelChanged, err = aligner.AlignChatModel(ctx, sandboxID, desired)
-		}
-		changed = changed || modelChanged
+		var sw ChatSwitch
+		sw, err = aligner.AlignChatSettings(ctx, sandboxID, desired, desiredEffort, desiredTier)
+		changed = changed || sw.Restarted
+		resumed = sw.Resumed
 	}
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, ErrChatModelUnknown) {
@@ -421,6 +402,19 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 		}
 		log.Warn().Err(err).Str("session", row.ID).Str("configuration", desiredConfiguration).Str("model", desired).Msg("solo model switch rolled back")
 		return false, err
+	}
+	// The coding agent carried its native conversation into the new settings,
+	// so there is nothing to replay. A route change replaced the whole runtime,
+	// and a switch still pending from an earlier turn left the resumed
+	// conversation without the dialogue; both still replay it.
+	if resumed && !routeChanged && !row.ModelContextPending {
+		if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Update("model_context_pending", false).Error; err != nil {
+			return false, err
+		}
+		if err := s.persistResolvedEffort(row, storedEffort, desiredEffort); err != nil {
+			return false, err
+		}
+		return false, s.rememberAppliedRoute(row.ID, desiredConfiguration, desired, desiredEffort, desiredTier)
 	}
 	changed = changed || row.ModelContextPending || desired != applied || desiredEffort != appliedEffort || desiredTier != appliedTier || desiredConfiguration != appliedConfiguration
 	if changed {

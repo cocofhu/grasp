@@ -151,7 +151,7 @@ func await(t *testing.T, ch <-chan provider.TurnResult) provider.TurnResult {
 
 func TestPromptMapsItemsAndUsage(t *testing.T) {
 	s, rec := open(t, provider.OpenOptions{})
-	if s.SessionID() != "thread-new" || s.Info().ModelID != "fake-model" || !s.ReportsUsage() || !s.SteerSupported() {
+	if s.SessionID() != "thread-new" || s.Info().ModelID != "fake-model" || !s.ReportsUsage() || !s.Capabilities().Steer || !s.Capabilities().Resume {
 		t.Fatalf("session identity: id=%q info=%+v", s.SessionID(), s.Info())
 	}
 	if len(s.AgentPIDs()) != 1 || s.CWD() == "" || s.FSRoot() != s.CWD() {
@@ -414,6 +414,16 @@ func TestResumeUsesExistingThread(t *testing.T) {
 	}
 	if res, err := prompt(t, s, nil, "hello"); err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("resumed turn = %+v %v", res, err)
+	}
+}
+
+func TestResumeOfAMissingThreadStartsFresh(t *testing.T) {
+	s, _ := open(t, provider.OpenOptions{ResumeSessionID: "thread-gone"})
+	if s.SessionID() != "thread-new" {
+		t.Fatalf("a rejected resume must start a new thread, got %q", s.SessionID())
+	}
+	if res, err := prompt(t, s, nil, "hello"); err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("fresh turn = %+v %v", res, err)
 	}
 }
 

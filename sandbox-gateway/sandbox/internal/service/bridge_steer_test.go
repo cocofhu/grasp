@@ -22,7 +22,9 @@ type steerSess struct {
 	steered     []string
 }
 
-func (s *steerSess) SteerSupported() bool { return !s.unsupported }
+func (s *steerSess) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Steer: !s.unsupported}
+}
 
 func (s *steerSess) Steer(text string) error {
 	s.mu.Lock()

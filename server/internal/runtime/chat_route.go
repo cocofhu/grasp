@@ -259,10 +259,8 @@ func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession,
 	if chatSettingsMatch(cur, model, effort, tier) {
 		return nil
 	}
-	if err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantTier); err != nil {
-		return err
-	}
-	return nil
+	_, err = sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantTier)
+	return err
 }
 
 func chatSettingsMatch(cur sandbox.ChatModelSettings, model, effort, tier string) bool {

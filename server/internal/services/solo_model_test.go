@@ -81,6 +81,49 @@ func TestSoloSetCurrentModelRejectsOutsideConfiguration(t *testing.T) {
 	}
 }
 
+func TestSoloModelSwitchThatResumesSendsNoPreamble(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	insertSoloModelConfig(t, db)
+	ctx := context.Background()
+	v, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA", InitialModelID: "aux"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "sandbox running", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	gate := newGateChat(false)
+	align := &recordAligner{resumed: true}
+	solo.SetChatterForTest(gate)
+	solo.SetModelAlignerForTest(align)
+
+	if _, err := solo.SendWithReferences(v.ID, "alice", "one", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "first turn", func() bool { return gate.count() >= 1 && solo.lookup(v.ID).sess.Ready() })
+	if _, err := solo.SetCurrentModelSettings(ctx, v.ID, "alice", new("aux2"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.SendWithReferences(v.ID, "alice", "two", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "second turn", func() bool { return gate.count() >= 2 && solo.lookup(v.ID).sess.Ready() })
+
+	if got := align.snapshot(); len(got) != 1 || got[0] != "aux2" {
+		t.Fatalf("applied models: %+v", got)
+	}
+	if second := gate.snapshot()[1]; second != "two" {
+		t.Fatalf("the agent kept its conversation, yet the turn replayed history: %q", second)
+	}
+	row, _ := solo.Require(v.ID, "alice")
+	if row.ModelContextPending || row.AppliedModelID != "aux2" {
+		t.Fatalf("pending=%v applied=%q", row.ModelContextPending, row.AppliedModelID)
+	}
+}
+
 func TestSoloModelSwitchWaitsForTurnBoundary(t *testing.T) {
 	acp, port := fakeACPServer(t)
 	defer acp.Close()
@@ -350,19 +393,20 @@ func insertSoloModelConfig(t *testing.T, db *gorm.DB) {
 }
 
 type recordAligner struct {
-	mu     sync.Mutex
-	models []string
-	err    error
+	mu      sync.Mutex
+	models  []string
+	err     error
+	resumed bool
 }
 
-func (r *recordAligner) AlignChatModel(_ context.Context, _ uint, model string) (bool, error) {
+func (r *recordAligner) AlignChatSettings(_ context.Context, _ uint, model, _, _ string) (ChatSwitch, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.models = append(r.models, model)
 	if r.err != nil {
-		return false, r.err
+		return ChatSwitch{}, r.err
 	}
-	return true, nil
+	return ChatSwitch{Restarted: true, Resumed: r.resumed}, nil
 }
 
 func (r *recordAligner) count() int {

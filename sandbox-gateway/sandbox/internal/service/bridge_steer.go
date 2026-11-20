@@ -47,7 +47,7 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 		return SteerNoTurn, ""
 	}
 	steerer, ok := sess.(provider.Steerer)
-	if !ok || !steerer.SteerSupported() {
+	if !ok || !sess.Capabilities().Steer {
 		return SteerUnsupported, ""
 	}
 	if opID == "" || !b.turnRunning(opID) {

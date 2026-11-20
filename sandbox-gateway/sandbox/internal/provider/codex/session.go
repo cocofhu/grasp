@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os/exec"
 	"strings"
 	"sync"
@@ -94,11 +95,22 @@ func (s *session) handshake(ctx context.Context, opts provider.OpenOptions) erro
 	if s.model == "" && opts.Model != "" && opts.Model != "auto" {
 		params["model"] = opts.Model
 	}
-	method := "thread/start"
 	if opts.ResumeSessionID != "" {
-		method = "thread/resume"
-		params["threadId"] = opts.ResumeSessionID
+		resume := maps.Clone(params)
+		resume["threadId"] = opts.ResumeSessionID
+		err := s.openThread(ctx, "thread/resume", resume)
+		var rpcErr *acp.RPCError
+		if err == nil || !errors.As(err, &rpcErr) {
+			return err
+		}
+		// The thread is gone (e.g. its rollout did not survive a cold restore).
+		// A fresh thread reports a new SessionID, which tells the bridge.
+		log.Printf("codex: thread/resume %s 被拒绝，改用新线程: %v", opts.ResumeSessionID, err)
 	}
+	return s.openThread(ctx, "thread/start", params)
+}
+
+func (s *session) openThread(ctx context.Context, method string, params map[string]any) error {
 	raw, err := s.conn.Call(ctx, method, params)
 	if err != nil {
 		return fmt.Errorf("codex %s: %w", method, err)
@@ -159,7 +171,11 @@ func (s *session) AgentPIDs() []int {
 	return nil
 }
 
-func (s *session) SteerSupported() bool { return true }
+// Capabilities: turn/steer joins the running turn; thread/resume reopens the
+// thread in a new app-server.
+func (s *session) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Steer: true, Resume: true}
+}
 
 // Steer appends input to the running turn (turn/steer).
 func (s *session) Steer(text string) error {
