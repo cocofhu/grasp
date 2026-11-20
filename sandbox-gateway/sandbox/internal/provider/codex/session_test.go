@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -414,6 +415,30 @@ func TestResumeUsesExistingThread(t *testing.T) {
 	}
 	if res, err := prompt(t, s, nil, "hello"); err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("resumed turn = %+v %v", res, err)
+	}
+}
+
+// Naming the model is what makes a resumed thread take this process's
+// reasoning effort and speed instead of the ones it was recorded with.
+func TestResumeNamesTheModelANewThreadWouldUse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts provider.OpenOptions
+		want string
+	}{
+		{"selected model", provider.OpenOptions{Model: "gpt-x"}, "gpt-x"},
+		{"configured model", provider.OpenOptions{CustomArgs: []string{"-c", `model="cfg-model"`}}, "cfg-model"},
+		{"catalog default", provider.OpenOptions{}, "fake-default"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := filepath.Join(t.TempDir(), "model")
+			t.Setenv("GRASP_FAKE_CODEX_RESUME_MODEL", record)
+			tc.opts.ResumeSessionID = "thread-old"
+			open(t, tc.opts)
+			if got, _ := os.ReadFile(record); string(got) != tc.want {
+				t.Fatalf("thread/resume model = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

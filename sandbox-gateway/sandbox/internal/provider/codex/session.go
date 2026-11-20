@@ -98,6 +98,14 @@ func (s *session) handshake(ctx context.Context, opts provider.OpenOptions) erro
 	if opts.ResumeSessionID != "" {
 		resume := maps.Clone(params)
 		resume["threadId"] = opts.ResumeSessionID
+		// A resumed thread keeps its recorded model and reasoning effort
+		// unless the model is named; naming it applies this process's -c
+		// settings, so a changed or cleared effort takes effect.
+		if _, named := resume["model"]; !named {
+			if model := s.effectiveModel(ctx); model != "" {
+				resume["model"] = model
+			}
+		}
 		err := s.openThread(ctx, "thread/resume", resume)
 		var rpcErr *acp.RPCError
 		if err == nil || !errors.As(err, &rpcErr) {
@@ -108,6 +116,39 @@ func (s *session) handshake(ctx context.Context, opts provider.OpenOptions) erro
 		log.Printf("codex: thread/resume %s 被拒绝，改用新线程: %v", opts.ResumeSessionID, err)
 	}
 	return s.openThread(ctx, "thread/start", params)
+}
+
+// effectiveModel is the model a new thread would use: the configured one,
+// else the catalog default. Empty when Codex reports neither.
+func (s *session) effectiveModel(ctx context.Context) string {
+	if raw, err := s.conn.Call(ctx, "config/read", map[string]any{}); err == nil {
+		var res struct {
+			Config struct {
+				Model string `json:"model"`
+			} `json:"config"`
+		}
+		if json.Unmarshal(raw, &res) == nil && res.Config.Model != "" {
+			return res.Config.Model
+		}
+	}
+	raw, err := s.conn.Call(ctx, "model/list", map[string]any{})
+	if err != nil {
+		log.Printf("codex: 无法确定当前模型，接回的线程沿用原设置: %v", err)
+		return ""
+	}
+	var res struct {
+		Data []struct {
+			ID        string `json:"id"`
+			IsDefault bool   `json:"isDefault"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(raw, &res)
+	for _, m := range res.Data {
+		if m.IsDefault {
+			return m.ID
+		}
+	}
+	return ""
 }
 
 func (s *session) openThread(ctx context.Context, method string, params map[string]any) error {
