@@ -63,6 +63,7 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
       expect.objectContaining({ status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc' }),
     )
     expect(wrapper.get('[data-testid="sidebar-recent"] h3').text()).toBe('历史执行')
+    expect(wrapper.find('[data-testid="sidebar-recent"] h3 a').exists()).toBe(false)
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
     expect(order(wrapper)).toEqual(['c', 'd', 'e'])
     expect(rows[0].attributes('href')).toBe('/runs/c/live')
