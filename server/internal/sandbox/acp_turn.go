@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,12 +114,8 @@ func (c *ACPClient) setDesynced() {
 	c.stateMu.Unlock()
 }
 
-// observeQueueState updates the bridge mirror from a queue_state frame. Called
-// from readLoop for every frame, so it must stay cheap for everything else.
+// observeQueueState updates the bridge mirror from a queue_state frame.
 func (c *ACPClient) observeQueueState(raw []byte) {
-	if !bytes.Contains(raw, []byte(`"queue_state"`)) {
-		return
-	}
 	var m struct {
 		Op          string `json:"op"`
 		Busy        *bool  `json:"busy"`

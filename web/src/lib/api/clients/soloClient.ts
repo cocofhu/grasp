@@ -10,6 +10,7 @@ import type {
   SoloResources,
   SoloSession,
   SoloSessionList,
+  SteerOutcome,
 } from '../apiTypes'
 import type { EmbedTicket } from '../../inbox/embedChat'
 
@@ -47,6 +48,9 @@ export function createSoloChatClient(req: <T>(path: string, init?: RequestInit) 
       req<{ ok: boolean }>(`${path(id)}/turns/cancel`, { method: 'POST' }),
     removeSoloQueued: (id: string, turnId: string) =>
       req<{ ok: boolean }>(`${path(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
+    /** joined: the running turn took it; next: that turn was interrupted and this one runs next. */
+    steerSoloQueued: (id: string, turnId: string) =>
+      req<{ steer: SteerOutcome }>(`${path(id)}/queue/${enc(turnId)}/steer`, { method: 'POST' }),
     reorderSoloQueue: (id: string, ids: string[]) =>
       req<{ ok: boolean }>(`${path(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
     soloChatWsUrl: (id: string, afterSeq?: number) =>

@@ -120,7 +120,15 @@ func (r *ChatResult) sealSegment() {
 	r.Segments = append(r.Segments, ChatSegment{Thought: r.Thought, Narration: r.Narration})
 	r.Thought = ""
 	r.Narration = ""
-	r.Timeline = nil
+	// Only the open row has a timeline; steers move on to it so the user's
+	// input survives the boundary.
+	var steers []ChatStep
+	for _, st := range r.Timeline {
+		if st.Kind == models.AcpPartSteer {
+			steers = append(steers, st)
+		}
+	}
+	r.Timeline = steers
 }
 
 // appendErrorText records a provider/bridge error body on the turn. Multiple

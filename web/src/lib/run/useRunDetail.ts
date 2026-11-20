@@ -860,6 +860,16 @@ async function onClarifyQueueRemove(itemId: string | undefined) {
   }
 }
 
+async function onClarifyQueueSteer(itemId: string) {
+  const conv = selClarify.value
+  if (!conv || conv.done) return
+  try {
+    await api.reactQueueSteer(runId.value, conv.nodeId, itemId)
+  } catch (e: any) {
+    console.warn('reactQueueSteer failed', e?.message || e)
+  }
+}
+
 async function onClarifyQueueReorder(itemIds: string[]) {
   if (!itemIds.length) return
   const conv = selClarify.value
@@ -1620,6 +1630,7 @@ function locateExecution(nodeId: string, idx: number) {
   onClarifyRetryLast,
   onClarifyCancel,
   onClarifyQueueRemove,
+  onClarifyQueueSteer,
   onClarifyQueueReorder,
   onClarifyFinish,
   onClarifyFinishAbort,

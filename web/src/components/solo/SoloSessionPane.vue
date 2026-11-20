@@ -331,6 +331,11 @@ function cancelQueued(index: number) {
   if (item && !item.local) void chat.removeQueued(item.id)
 }
 
+function steerQueued(index: number) {
+  const item = displayQueued.value[index]
+  if (item && !item.local) void chat.steerQueued(item.id)
+}
+
 let editingQueued = false
 /** Withdraw a queued message into the composer; an unsent draft is queued first. */
 async function editQueued(index: number) {
@@ -613,6 +618,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <PendingSendQueuePanel
             :items="queueRows"
             panel-test-id="solo-queue-panel"
+            :steerable="busy"
+            @steer="steerQueued"
             @cancel="cancelQueued"
             @edit="editQueued"
             @reorder="(from: number, to: number) => chat.reorderQueued(from, to)"

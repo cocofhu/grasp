@@ -33,6 +33,7 @@ const {
   onClarifyFinishAbort,
   onClarifyCancel,
   onClarifyQueueRemove,
+  onClarifyQueueSteer,
   onClarifyQueueReorder,
   listErrorMessage,
   listTotal,
@@ -244,6 +245,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   @cancel="onClarifyCancel"
                   @takeover="takeoverFollow"
                   @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
+                  @queue-steer="(itemId) => onClarifyQueueSteer(itemId)"
                   @queue-reorder="onClarifyQueueReorder"
                 />
               </template>

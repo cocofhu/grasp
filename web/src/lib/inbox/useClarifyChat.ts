@@ -106,6 +106,7 @@ type ClarifyChatEmit = {
   (e: 'finish-abort'): void
   (e: 'cancel'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
+  (e: 'queue-steer', itemId: string, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
 }
 
@@ -584,6 +585,12 @@ function cancelQueuedItem(index: number) {
   const preview = truncateQueueText(removed.text || '', 18)
   showQueueToast(translate('pages.clarify.queueCancelled', { text: preview }))
   if (removed.id) emit('queue-remove', removed.id, index)
+}
+
+/** Handle an acknowledged queued message now; the next queue snapshot shows where it went. */
+function steerQueuedItem(index: number) {
+  const item = queued.value[index]
+  if (item?.id && !item.local) emit('queue-steer', item.id, index)
 }
 
 function reorderQueuedItems(fromIndex: number, toIndex: number) {
@@ -1707,6 +1714,7 @@ onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
     queueToast,
     hasComposerDraft,
     cancelQueuedItem,
+    steerQueuedItem,
     reorderQueuedItems,
     editQueuedItem,
     activeQuestions,

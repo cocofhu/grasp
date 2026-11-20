@@ -204,6 +204,12 @@ type ACPClient struct {
 	// flight, plus the local desync flag (cancel never acknowledged).
 	stateMu sync.Mutex
 	bridge  BridgeState
+
+	// steerable mirrors capabilities.steer of the latest connected frame;
+	// steerWaits routes op:steer_ack to the Steer call waiting for it.
+	steerable  atomic.Bool
+	steerMu    sync.Mutex
+	steerWaits map[string]chan steerAck
 }
 
 // NewACPClient builds a client targeting host:port (the published 8765).
@@ -730,6 +736,10 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		}
 		return false
 	}
+	if ev.Type == "user_steer" {
+		result.addSteer(ev.Text)
+		return false
+	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {
 		kind, flat := normalizeSessionUpdate(ev.Update)
 		dispatchSessionUpdate(kind, flat, result)
@@ -808,7 +818,7 @@ func (c *ACPClient) readLoop(conn *websocket.Conn, done chan struct{}, stop <-ch
 			}
 			return
 		}
-		c.observeQueueState(message)
+		c.observeBridgeFrame(message)
 		c.readerMu.Lock()
 		readersDone := c.readersDone
 		reading := c.readers.Load() > 0

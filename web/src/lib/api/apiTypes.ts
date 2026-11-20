@@ -783,6 +783,12 @@ export interface ReferenceSearchResult<T> {
   error?: { code: string; message: string; retryAfterMs?: number }
 }
 
+/**
+ * How a steered queue item was handled: joined the running turn, or that turn
+ * was interrupted and the item runs next.
+ */
+export type SteerOutcome = 'joined' | 'next'
+
 export interface SoloMessage {
   files?: ArtifactAttachment[]
   turnId?: string

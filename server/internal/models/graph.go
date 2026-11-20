@@ -122,9 +122,13 @@ type AcpLiveness struct {
 // the flat thought/tool_call/message events, which stay for older consumers.
 const AcpKindTimeline = "timeline"
 
+// AcpPartSteer is a reply step holding user input the running turn took
+// mid-flight (a steer); Text is what the user sent.
+const AcpPartSteer = "steer"
+
 // AcpPart is one step of an agent reply.
 type AcpPart struct {
-	Kind string `json:"kind"` // thought|message|tool
+	Kind string `json:"kind"` // thought|message|tool|steer
 	Text string `json:"text,omitempty"`
 	// Tool steps only. Summary is the redacted one-line argument (command,
 	// path, URL…); Input / Output are redacted, truncated details.
@@ -172,6 +176,17 @@ func eventsForReply(events []AcpEvent) []AcpEvent {
 		}
 	}
 	return events
+}
+
+// SteerTexts lists the input a reply's turn took mid-flight, in order.
+func SteerTexts(parts []AcpPart) []string {
+	var out []string
+	for _, p := range parts {
+		if p.Kind == AcpPartSteer && strings.TrimSpace(p.Text) != "" {
+			out = append(out, strings.TrimSpace(p.Text))
+		}
+	}
+	return out
 }
 
 // PartsForReply returns the steps of this reply's last timeline event (the row the

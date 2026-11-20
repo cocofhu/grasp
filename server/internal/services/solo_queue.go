@@ -64,6 +64,16 @@ func (s *SoloService) newChat(id string) *soloChat {
 				s.chat.Cancel(sid)
 			}
 		},
+		SteerTurn: func(ctx context.Context, _, q *soloTurn) chatsession.SteerResult {
+			c.mu.Lock()
+			sid, running := c.sandboxID, c.phase == SoloPhaseRunning
+			c.mu.Unlock()
+			// A turn still preparing has not reached the agent yet.
+			if !running || !q.joinsRunningTurn() {
+				return chatsession.SteerRejected
+			}
+			return steerSandboxTurn(ctx, s.chat, sid, q.Text, q.Images)
+		},
 	})
 	return c
 }
@@ -295,6 +305,45 @@ func (s *SoloService) CancelPreviewTurn(id, user, turnID string) error {
 		return nil
 	}
 	return soloErr(http.StatusConflict, "turn_changed", "当前回复已变化，请重试")
+}
+
+// SendAndSteer queues a user turn and handles it at once (SteerQueued).
+func (s *SoloService) SendAndSteer(id, user, text string, images []models.PromptImage, refs []ReferenceInput, picks ...models.ReactAnnotation) (chatsession.SteerOutcome, error) {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return "", err
+	}
+	turn := &soloTurn{Text: text, Images: images, Annotations: picks}
+	if _, err := s.sendSoloTurn(row, turn, refs); err != nil {
+		return "", err
+	}
+	return s.steer(id, turn.ID)
+}
+
+// SteerQueued handles a pending turn now: the running turn takes it when the
+// agent supports that, otherwise the running turn is interrupted and this one
+// runs next.
+func (s *SoloService) SteerQueued(id, user, turnID string) (chatsession.SteerOutcome, error) {
+	if _, err := s.Require(id, user); err != nil {
+		return "", err
+	}
+	return s.steer(id, turnID)
+}
+
+func (s *SoloService) steer(id, turnID string) (chatsession.SteerOutcome, error) {
+	c := s.lookup(id)
+	if c == nil {
+		return "", soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
+	}
+	out, err := c.sess.Steer(context.Background(), turnID)
+	switch {
+	case errors.Is(err, chatsession.ErrItemActive):
+		// It started on its own meanwhile; that is what steering asked for.
+		return chatsession.SteerOutcomeNext, nil
+	case errors.Is(err, chatsession.ErrNotFound):
+		return "", soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
+	}
+	return out, err
 }
 
 // RemoveQueued drops one pending turn.

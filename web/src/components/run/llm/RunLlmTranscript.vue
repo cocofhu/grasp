@@ -209,6 +209,11 @@ async function onQueueRemove(id: string | undefined) {
   if (current && id) await api.reactQueueRemove(props.run.id, current.nodeId, id)
 }
 
+async function onQueueSteer(id: string) {
+  const current = thread.value.current
+  if (current) await api.reactQueueSteer(props.run.id, current.nodeId, id)
+}
+
 async function onQueueReorder(ids: string[]) {
   const current = thread.value.current
   if (current) await api.reactQueueReorder(props.run.id, current.nodeId, ids)
@@ -243,6 +248,7 @@ async function onQueueReorder(ids: string[]) {
         @cancel="onCancel"
         @retry-last="onRetryLast"
         @queue-remove="onQueueRemove"
+        @queue-steer="onQueueSteer"
         @queue-reorder="onQueueReorder"
         @finish="onFinish"
       />

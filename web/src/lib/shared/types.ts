@@ -522,10 +522,11 @@ export interface AcpLiveness {
 
 /**
  * One step of an agent reply in arrival order. Tool steps carry a redacted
- * one-line summary and truncated input/output (absent on public pages).
+ * one-line summary and truncated input/output (absent on public pages). A
+ * steer step is user input the running turn took mid-flight.
  */
 export interface AgentPart {
-  kind: 'thought' | 'message' | 'tool'
+  kind: 'thought' | 'message' | 'tool' | 'steer'
   text?: string
   title?: string
   status?: string

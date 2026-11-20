@@ -1363,6 +1363,17 @@ async function cancelReactQueuedItem(index: number) {
   }
 }
 
+/** Handle a queued revision now; the next queue_state shows where it went. */
+async function steerReactQueuedItem(index: number) {
+  const item = reactQueued.value[index]
+  if (!item?.id || !props.run?.id) return
+  try {
+    await api.reactQueueSteer(props.run.id, props.gate.nodeId, item.id)
+  } catch (e: any) {
+    reactError.value = e?.message || t('pages.gateApproval.reactRevise.failed')
+  }
+}
+
 async function reorderReactQueuedItems(fromIndex: number, toIndex: number) {
   if (
     fromIndex < 0 ||
@@ -2052,6 +2063,7 @@ provide(gateApprovalKey, {
     reactQueueNotice,
     reactQueueToast,
     cancelReactQueuedItem,
+    steerReactQueuedItem,
     reorderReactQueuedItems,
     editReactQueuedItem,
     reactThinking,
@@ -2184,6 +2196,7 @@ provide(gateApprovalKey, {
     reactQueued,
     reactQueueToast,
     cancelReactQueuedItem,
+    steerReactQueuedItem,
     reorderReactQueuedItems,
     editReactQueuedItem,
     reactThinking,
