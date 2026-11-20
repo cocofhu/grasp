@@ -74,7 +74,7 @@ func TestNativeKimiReasoningRequests(t *testing.T) {
 		env = envutil.Upsert(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
 		env = envutil.Upsert(env, "KIMI_DISABLE_TELEMETRY", "1")
 		cwd := t.TempDir()
-		panel, err := acp.NewPanel(ctx, ctx, []string{cli, "acp"}, env, cwd, cwd, nil, nil, nil)
+		panel, err := acp.NewPanel(ctx, ctx, acp.PanelSpec{Argv: []string{cli, "acp"}, Env: env, Cwd: cwd})
 		if err != nil {
 			t.Fatal(err)
 		}

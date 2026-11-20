@@ -122,8 +122,11 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		cleanup()
 		return nil, fmt.Errorf("dsh startup overlay: %w", err)
 	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, []string{"dsh", "--profile", "acp", "--patch", patchPath},
-		prepared.Env, opts.Cwd, opts.FSRoot, mcp, onEvent, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, acp.PanelSpec{
+		Argv: []string{"dsh", "--profile", "acp", "--patch", patchPath}, Env: prepared.Env,
+		Cwd: opts.Cwd, FSRoot: opts.FSRoot, MCPServers: mcp,
+		OnEvent: onEvent, Permissions: acp.PermissionChooser(perm), ResumeSessionID: opts.ResumeSessionID,
+	})
 	if err != nil {
 		cleanup()
 		return nil, err

@@ -66,8 +66,8 @@ func agentArgv(base []string, prepared modelconnection.Prepared, custom []string
 	return argv
 }
 
-// Open spawns the CLI, performs the ACP handshake + session/new, and wraps the
-// panel as a provider.Session.
+// Open spawns the CLI, performs the ACP handshake and opens (or reloads) the
+// session, and wraps the panel as a provider.Session.
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
 	prepared, err := modelconnection.Prepare(p.Name(), p.AuthEnv(os.Environ()), opts.Model, p.DefaultConfigRoot())
@@ -85,13 +85,10 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		}
 	}
 	argv := agentArgv(p.spec.ArgvFn(prepared.Model), prepared, opts.CustomArgs)
-	env := prepared.Env
-	fsRoot := opts.FSRoot
-	if fsRoot == "" {
-		fsRoot = opts.Cwd
-	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, argv, env, opts.Cwd, fsRoot, opts.McpServers,
-		onEvent, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, acp.PanelSpec{
+		Argv: argv, Env: prepared.Env, Cwd: opts.Cwd, FSRoot: opts.FSRoot, MCPServers: opts.McpServers,
+		OnEvent: onEvent, Permissions: acp.PermissionChooser(perm), ResumeSessionID: opts.ResumeSessionID,
+	})
 	if err != nil {
 		prepared.Cleanup()
 		return nil, err
