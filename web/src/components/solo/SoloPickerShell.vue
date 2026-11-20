@@ -43,10 +43,14 @@ function place() {
   const r = el.getBoundingClientRect()
   const width = Math.min(props.panelWidth, window.innerWidth - 16)
   const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
-  const below = window.innerHeight - r.bottom
+  // On mobile the visual viewport excludes the soft keyboard and browser chrome; 100vh does not.
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+  const below = viewportHeight - r.bottom
   const style: Record<string, string> = { position: 'fixed', left: `${Math.round(left)}px`, width: `${Math.round(width)}px` }
-  if (below < 280 && r.top > below) style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`
+  const up = below < 280 && r.top > below
+  if (up) style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`
   else style.top = `${Math.round(r.bottom + 6)}px`
+  style.maxHeight = `${Math.round(Math.max(160, Math.min(420, (up ? r.top : below) - 14)))}px`
   panelStyle.value = style
   // Vue flushes the binding on a later tick. Viewport checks read geometry immediately after resize.
   const node = panel.value
@@ -56,6 +60,12 @@ function place() {
   node.style.width = style.width
   node.style.top = style.top || ''
   node.style.bottom = style.bottom || ''
+  node.style.maxHeight = style.maxHeight || ''
+}
+
+// Focusing the search on touch devices raises the keyboard, which hides the list and hijacks swipes.
+function coarsePointer() {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
 }
 
 async function show() {
@@ -65,6 +75,7 @@ async function show() {
   query.value = ''
   await nextTick()
   place()
+  if (coarsePointer()) return
   if (search.value) search.value.focus()
   else focusOpt(0)
 }
@@ -132,11 +143,13 @@ onMounted(() => {
   document.addEventListener('pointerdown', onDocPointer)
   window.addEventListener('resize', onReflow)
   window.addEventListener('scroll', onReflow, true)
+  window.visualViewport?.addEventListener('resize', onReflow)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocPointer)
   window.removeEventListener('resize', onReflow)
   window.removeEventListener('scroll', onReflow, true)
+  window.visualViewport?.removeEventListener('resize', onReflow)
 })
 
 defineExpose({ close, show })
@@ -316,6 +329,9 @@ defineExpose({ close, show })
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 .solo-picker__panel--compact .solo-picker__list {
   max-height: 240px;
