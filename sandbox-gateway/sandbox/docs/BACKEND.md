@@ -294,7 +294,7 @@ web/                  # 前端（ESM + 静态资源）
 
 - **能力契约**：每个会话以 `Capabilities()` 声明桥接据以决策的能力，只放桥接真正读取的字段：
   - `Steer`：会话实现 `provider.Steerer`，运行中的这一轮能直接接收追加输入。
-  - `Resume`：用本会话的 `SessionID` 作为 `OpenOptions.ResumeSessionID` 重新打开，能接回同一原生对话（one-shot 各 codec 与 `codex` 为真，ACP 家族为假）。
+  - `Resume`：用本会话的 `SessionID` 作为 `OpenOptions.ResumeSessionID` 重新打开，能接回同一原生对话。one-shot 各 codec 与 `codex` 恒为真；ACP 家族取决于 `initialize` 的声明：有 `sessionCapabilities.resume` 时用 `session/resume`（不回放历史，如 `deepseek_harness`、`kimi`），否则有 `loadSession` 时用 `session/load`（回放的历史不转发给客户端，如 `trae`），都没有则为假。Agent 拒绝接回（会话已不存在）时改开新会话。
   - 两项都随 `connected` 帧的 `capabilities` 与 `/capabilities` 的 `session.steer` / `session.resume` 下发。
 - **运行中引导（steer）**：`Capabilities().Steer` 为真时，可把一条输入送进正在运行的这一轮。
   - 原生实现：`codex` 走 `turn/steer`；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。

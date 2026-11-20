@@ -134,7 +134,10 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	if onEvent != nil {
 		wrapped = func(ev json.RawMessage) { onEvent(RewriteEvent(ev, secret)) }
 	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), cleanEnv, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, acp.PanelSpec{
+		Argv: LaunchArgv(model), Env: cleanEnv, Cwd: opts.Cwd, FSRoot: opts.FSRoot, MCPServers: opts.McpServers,
+		OnEvent: wrapped, Permissions: acp.PermissionChooser(perm), ResumeSessionID: opts.ResumeSessionID,
+	})
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("%s", Explain(err.Error(), secret))
@@ -190,15 +193,6 @@ func reasoningOption(options []acp.ConfigOption, effort string) (acp.ConfigOptio
 		}
 	}
 	return acp.ConfigOption{}, false
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 type explainingSession struct {

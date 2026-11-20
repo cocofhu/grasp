@@ -243,9 +243,14 @@ func TestBridgeRecoversAfterACPProtocolFailure(t *testing.T) {
 	var watcherDone chan struct{}
 	b.testConnect = func(string, string, json.RawMessage, *bool) (provider.Session, error) {
 		ctx, cancel := context.WithCancel(context.Background())
-		p, err := acp.NewPanel(ctx, ctx, []string{exe, "-test.run=^TestBridgeACPHelperProcess$"}, append(os.Environ(), "GRASP_BRIDGE_ACP_HELPER="+mode), t.TempDir(), "", nil, func(ev json.RawMessage) {
-			b.Broadcast(eventEnvelope(ev, b.touchActiveTurn(ev)))
-		}, nil)
+		p, err := acp.NewPanel(ctx, ctx, acp.PanelSpec{
+			Argv: []string{exe, "-test.run=^TestBridgeACPHelperProcess$"},
+			Env:  append(os.Environ(), "GRASP_BRIDGE_ACP_HELPER="+mode),
+			Cwd:  t.TempDir(),
+			OnEvent: func(ev json.RawMessage) {
+				b.Broadcast(eventEnvelope(ev, b.touchActiveTurn(ev)))
+			},
+		})
 		if err != nil {
 			cancel()
 			return nil, err
