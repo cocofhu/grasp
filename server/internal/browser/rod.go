@@ -98,12 +98,16 @@ func (e *rodEngine) OpenDesktop(_ context.Context, url string) (Page, error) {
 		page = created
 	}
 	rp := &rodPage{engine: e, page: page, adopted: adopted}
-	// Headed Chromium on Xvfb (no window manager) opens NewTab as another
-	// window. presentDesktop covers the framebuffer with that window and pins
-	// the CSS viewport to its content area (DSF 1). Tab open stays best-effort;
+	// An adopted page is left where the user and the Agent put it: attaching a
+	// viewer must not raise, refocus or resize existing windows. Only a page we
+	// just created is placed: headed Chromium on Xvfb (no window manager) opens
+	// it as another window, which presentDesktop covers the framebuffer with
+	// and pins the CSS viewport to (DSF 1). Tab open stays best-effort;
 	// SetInspect(on) hard-gates on readiness.
-	if err := rp.presentDesktop(); err != nil {
-		log.Warn().Err(err).Msg("preview NewTab content area does not cover desktop; inspect stays disabled")
+	if !adopted {
+		if err := rp.presentDesktop(); err != nil {
+			log.Warn().Err(err).Msg("preview NewTab content area does not cover desktop; inspect stays disabled")
+		}
 	}
 	rp.installPickListener()
 	return rp, nil
