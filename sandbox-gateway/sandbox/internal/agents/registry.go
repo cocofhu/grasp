@@ -40,7 +40,7 @@ type Name = provider.Name
 //     a resume pointer. These are the primary transports.
 //   - run --format json (one-shot NDJSON): opencode / deveco.
 //   - json event lines (one-shot): copilot / pi / openclaw / antigravity.
-//   - JSONL exec (one-shot): codex.
+//   - app-server (long-lived, JSON-RPC over stdio): codex.
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
 //     grok / trae — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
@@ -137,8 +137,12 @@ var registry = map[Name]provider.Provider{
 		AuthEnvFn:     genericAuthEnv("DEVECO_API_KEY", "ACP_DEVECO_API_KEY"),
 	}),
 
-	// --- other one-shot CLIs (dedicated codecs) ----------------------------
+	// --- app-server (long-lived) ------------------------------------------
+	// codex: `codex app-server`; one thread per session, turns steered with
+	// turn/steer and stopped with turn/interrupt.
 	provider.Codex: codex.New(),
+
+	// --- other one-shot CLIs (dedicated codecs) ----------------------------
 	// copilot: `-p <prompt> --output-format json --allow-all --no-ask-user`,
 	// resume via `--resume <id>`. JSONL envelope { type: "dotted.name", data }
 	// with a synthetic "result" line; parsed by the dedicated copilot codec.

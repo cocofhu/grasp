@@ -33,7 +33,9 @@ const (
 	// PromptStdinRaw keeps `-p` standalone and feeds the prompt raw on stdin.
 	PromptStdinRaw
 	// PromptStdinJSON keeps `-p` standalone, adds `--input-format stream-json`,
-	// and feeds a `{"type":"user","message":{...}}` envelope on stdin.
+	// and feeds a `{"type":"user","message":{...}}` envelope on stdin. stdin
+	// stays open for the turn: further envelopes steer it, and
+	// `--replay-user-messages` acknowledges each one as it is consumed.
 	PromptStdinJSON
 )
 
@@ -114,6 +116,9 @@ func (d *codec) PromptViaStdin() bool     { return d.c.PromptMode != PromptArg }
 // Anthropic image content blocks; argv / raw-stdin modes cannot.
 func (d *codec) SupportsImages() bool { return d.c.PromptMode == PromptStdinJSON }
 
+// TurnInput reports whether the CLI takes steering envelopes mid-turn.
+func (d *codec) TurnInput() bool { return d.c.PromptMode == PromptStdinJSON }
+
 // StdinBytes is the payload written to stdin when PromptViaStdin is true. For
 // PromptStdinJSON it is a stream-json user message (optionally with images);
 // otherwise the raw prompt (images must already have been rejected by oneshot).
@@ -145,7 +150,7 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	}
 	args = append(args, "--output-format", "stream-json")
 	if d.c.PromptMode == PromptStdinJSON {
-		args = append(args, "--input-format", "stream-json")
+		args = append(args, "--input-format", "stream-json", "--replay-user-messages")
 	}
 	args = append(args, d.c.BaseArgs...)
 	// --strict-mcp-config means "only MCP from --mcp-config". Without a path,
@@ -343,6 +348,8 @@ type streamEvent struct {
 	Result     string               `json:"result"`
 	IsError    bool                 `json:"is_error"`
 	StopReason string               `json:"stop_reason"`
+	// IsReplay marks a stdin user message echoed by --replay-user-messages.
+	IsReplay bool `json:"isReplay"`
 }
 
 func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
@@ -417,6 +424,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		addUsage(ev.Message.Usage, ev.Message.Model, d.c.AgentName == provider.CodeBuddy)
 		res.UsagePartial = len(res.Usage) > 0
 	case "user":
+		if ev.IsReplay {
+			res.UserMessagesConsumed = 1
+			break
+		}
 		if ev.Message == nil {
 			break
 		}

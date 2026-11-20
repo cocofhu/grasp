@@ -106,38 +106,40 @@ func (b *Bridge) pumpPromptQueue() {
 		"text":       item.Text,
 		"promptText": item.Text,
 	}
-	// 图片 → data URL 供前端重放气泡预览；非图片只记文件名（附件已统一落盘，不嵌入 prompt）。
-	if len(item.Images) > 0 {
-		urls := make([]string, 0, len(item.Images))
-		fileNames := make([]string, 0, len(item.Images))
-		for _, img := range item.Images {
-			if img.Data == "" || img.History {
-				continue
-			}
-			mime := img.MimeType
-			if mime == "" {
-				mime = "application/octet-stream"
-			}
-			if strings.HasPrefix(strings.ToLower(mime), "image/") {
-				urls = append(urls, "data:"+mime+";base64,"+img.Data)
-				continue
-			}
-			name := strings.TrimSpace(img.Name)
-			if name == "" {
-				name = "attachment" + provider.ExtForMIME(mime)
-			}
-			fileNames = append(fileNames, name)
-		}
-		if len(urls) > 0 {
-			promptBeginData["imageURLs"] = urls
-		}
-		if len(fileNames) > 0 {
-			promptBeginData["fileNames"] = fileNames
-		}
-	}
+	addAttachmentPreview(promptBeginData, item.Images)
 	b.Broadcast(eventEnvelope(promptBeginData, oid))
 
 	go b.executePrompt(p, turnCtx, item, th, cancelTurn)
+}
+
+// addAttachmentPreview 让前端重放用户气泡：图片转 data URL，非图片只记文件名
+// （附件已统一落盘，不嵌入 prompt）。
+func addAttachmentPreview(data map[string]any, images []PromptImage) {
+	var urls, fileNames []string
+	for _, img := range images {
+		if img.Data == "" || img.History {
+			continue
+		}
+		mime := img.MimeType
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		if strings.HasPrefix(strings.ToLower(mime), "image/") {
+			urls = append(urls, "data:"+mime+";base64,"+img.Data)
+			continue
+		}
+		name := strings.TrimSpace(img.Name)
+		if name == "" {
+			name = "attachment" + provider.ExtForMIME(mime)
+		}
+		fileNames = append(fileNames, name)
+	}
+	if len(urls) > 0 {
+		data["imageURLs"] = urls
+	}
+	if len(fileNames) > 0 {
+		data["fileNames"] = fileNames
+	}
 }
 
 // stallContinuePrompt / loopContinuePrompt are shown only to the agent. The

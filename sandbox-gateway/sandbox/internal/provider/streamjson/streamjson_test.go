@@ -229,8 +229,8 @@ func TestArgsStdinRawMode(t *testing.T) {
 	if containsStr(args, "the prompt") {
 		t.Fatalf("prompt must not be in argv: %v", args)
 	}
-	if containsStr(args, "--input-format") {
-		t.Fatalf("stdin-raw must not add --input-format: %v", args)
+	if containsStr(args, "--input-format") || c.TurnInput() {
+		t.Fatalf("stdin-raw must not add --input-format or take turn input: %v", args)
 	}
 	for _, want := range []string{"-p", "--output-format", "stream-json", "--yolo", "--approve-mcps", "--workspace", "/w"} {
 		if !containsStr(args, want) {
@@ -257,6 +257,15 @@ func TestArgsStdinJSONMode(t *testing.T) {
 	}
 	if !c.SupportsImages() {
 		t.Fatal("stdin-json must support images")
+	}
+	if !containsStr(args, "--replay-user-messages") || !c.TurnInput() {
+		t.Fatalf("stdin-json must keep turn input open and acknowledged: %v", args)
+	}
+	if res := c.ParseLine([]byte(`{"type":"user","isReplay":true,"message":{"content":[{"type":"text","text":"more"}]}}`)); res.UserMessagesConsumed != 1 || len(res.Msgs) != 0 {
+		t.Fatalf("replayed user message = %+v", res)
+	}
+	if res := c.ParseLine([]byte(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}}`)); res.UserMessagesConsumed != 0 {
+		t.Fatalf("tool results are not user input: %+v", res)
 	}
 	env := string(c.StdinBytes("hi", nil))
 	if !containsSub(env, `"type":"user"`) || !containsSub(env, `"text":"hi"`) {

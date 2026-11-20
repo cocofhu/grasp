@@ -81,6 +81,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 	m["serviceTier"] = b.ServiceTier()
 	m["serviceTiers"] = ServiceTiers(b.EffectiveModel())
 	m["chatId"] = b.id
+	m["capabilities"] = map[string]any{"steer": provider.CanSteer(p)}
 	// 协议已预留的可选 usage：仅当该会话上报用量时携带累计量，否则完全省略（帧不变）。
 	if p.ReportsUsage() {
 		if u := p.CumulativeUsage(); len(u) > 0 {
