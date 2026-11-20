@@ -33,13 +33,11 @@ func TestEveryNameResolves(t *testing.T) {
 
 func TestTransportSplit(t *testing.T) {
 	// ACP-native CLIs run long-lived (persistent JSON-RPC over stdio). Every
-	// other agent is one-shot (fresh process per turn + resume). cursor /
-	// claude_code / codebuddy default to one-shot stream-json; their *_acp
-	// aliases are the opt-in long-lived fallbacks.
+	// other agent is one-shot (fresh process per turn + resume), except the
+	// codex app-server.
 	long := map[provider.Name]bool{
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
-		provider.CursorACP: true, provider.ClaudeCodeACP: true, provider.CodeBuddyACP: true,
 		provider.DeepSeekHarness: true, provider.Codex: true,
 	}
 	for n, p := range registry {

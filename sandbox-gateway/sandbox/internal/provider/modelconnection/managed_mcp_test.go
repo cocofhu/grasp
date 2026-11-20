@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 )
 
@@ -40,7 +40,7 @@ func TestConnectedOpenCodeKeepsCurrentManagedMCPWithoutOldRouting(t *testing.T) 
 			}
 			defer p.Cleanup()
 			var config map[string]any
-			if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
+			if err := json.Unmarshal([]byte(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(config["mcp"], managed["mcp"]) || !reflect.DeepEqual(config["instructions"], managed["instructions"]) {
@@ -71,7 +71,7 @@ func TestOpenCodeManagedConfigMissingOrInvalidIsNotImported(t *testing.T) {
 			t.Fatal(err)
 		}
 		var config map[string]any
-		if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
+		if err := json.Unmarshal([]byte(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
 			t.Fatal(err)
 		}
 		p.Cleanup()

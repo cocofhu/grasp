@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 
 	"gopkg.in/yaml.v3"
@@ -138,7 +138,7 @@ func TestOpenCodePreservesDeclaredReasoningCapability(t *testing.T) {
 func nativeModelDeclarations(t *testing.T, tool provider.Name, p Prepared) (map[string]any, map[string]any) {
 	t.Helper()
 	if tool == provider.CodeBuddy {
-		path := filepath.Join(common.GetEnvValue(p.Env, "CODEBUDDY_CONFIG_DIR"), "models.json")
+		path := filepath.Join(envutil.Get(p.Env, "CODEBUDDY_CONFIG_DIR"), "models.json")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +153,7 @@ func nativeModelDeclarations(t *testing.T, tool provider.Name, p Prepared) (map[
 		var doc struct {
 			Provider map[string]struct{ Models map[string]map[string]any }
 		}
-		if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &doc); err != nil {
+		if err := json.Unmarshal([]byte(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")), &doc); err != nil {
 			t.Fatal(err)
 		}
 		models := doc.Provider[p.RouteID].Models

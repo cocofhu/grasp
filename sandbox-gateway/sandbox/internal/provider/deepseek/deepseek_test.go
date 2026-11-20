@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"backend/internal/acp"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
 
@@ -33,7 +33,7 @@ func TestMetadataAndAuthIsolation(t *testing.T) {
 		env := []string{alias + "=selected-test-key", "CONFIG_ROOT=/tmp/role-dsh", "DSH_HOME=/tmp/old"}
 		before := append([]string(nil), env...)
 		got := p.AuthEnv(env)
-		if common.GetEnvValue(got, "DEEPSEEK_API_KEY") != "selected-test-key" || common.GetEnvValue(got, "DSH_HOME") != "/tmp/role-dsh" {
+		if envutil.Get(got, "DEEPSEEK_API_KEY") != "selected-test-key" || envutil.Get(got, "DSH_HOME") != "/tmp/role-dsh" {
 			t.Fatalf("alias %s not normalized: %v", alias, got)
 		}
 		if !reflect.DeepEqual(env, before) {
@@ -41,7 +41,7 @@ func TestMetadataAndAuthIsolation(t *testing.T) {
 		}
 	}
 	env := p.AuthEnv([]string{"DEEPSEEK_API_KEY=native-test-key", "GRASP_DEEPSEEK_API_KEY=other-test-key"})
-	if common.GetEnvValue(env, "DEEPSEEK_API_KEY") != "native-test-key" || common.GetEnvValue(env, "DSH_HOME") != configRoot {
+	if envutil.Get(env, "DEEPSEEK_API_KEY") != "native-test-key" || envutil.Get(env, "DSH_HOME") != configRoot {
 		t.Fatalf("native key/default home lost: %v", env)
 	}
 }

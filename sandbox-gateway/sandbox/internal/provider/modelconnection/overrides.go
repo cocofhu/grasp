@@ -31,7 +31,7 @@ func (p Prepared) ValidateOptions(tool provider.Name, opts provider.OpenOptions)
 			}
 		}
 	}
-	if tool != provider.CodeBuddy && tool != provider.CodeBuddyACP {
+	if tool != provider.CodeBuddy {
 		return nil
 	}
 	workspace, dir, err := codeBuddyWorkspace(opts)

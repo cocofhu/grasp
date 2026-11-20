@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 //go:embed opencode_variants.json
@@ -158,7 +158,7 @@ func googleOverlay(effort string) map[string]any {
 }
 
 func writeOpenCodeVariant(p Prepared, effort string, overlay map[string]any) (Prepared, error) {
-	raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+	raw := envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")
 	if raw == "" {
 		return p, errors.New("OpenCode variant: configuration is missing")
 	}
@@ -175,7 +175,7 @@ func writeOpenCodeVariant(p Prepared, effort string, overlay map[string]any) (Pr
 	if err != nil {
 		return p, err
 	}
-	p.Env = common.UpsertEnv(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
+	p.Env = envutil.Upsert(p.Env, "OPENCODE_CONFIG_CONTENT", string(data))
 	return p, nil
 }
 

@@ -27,14 +27,6 @@ const (
 	Antigravity     Name = "antigravity"
 	Pi              Name = "pi"
 	DeepSeekHarness Name = "deepseek_harness"
-
-	// *_acp are opt-in fallbacks that force the long-lived JSON-RPC-over-stdio
-	// transport for CLIs whose default here is one-shot stream-json. They are
-	// not built as dedicated images by default; select via AGENT_PROVIDER when a
-	// deployment prefers the stdio path.
-	CursorACP     Name = "cursor_acp"
-	ClaudeCodeACP Name = "claude_code_acp"
-	CodeBuddyACP  Name = "codebuddy_acp"
 )
 
 // TransportKind distinguishes a long-lived session process from a one-shot CLI

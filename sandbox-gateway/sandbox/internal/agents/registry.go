@@ -14,8 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"backend/internal/backend"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/acpx"
 	"backend/internal/provider/antigravity"
@@ -44,10 +43,6 @@ type Name = provider.Name
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
 //     grok / trae — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
-//
-// The *_acp entries are opt-in fallbacks that force the long-lived stdio path
-// for the stream-json CLIs (reusing the proven common.Backend logic). They are
-// not built as dedicated images by default.
 var registry = map[Name]provider.Provider{
 	// --- stream-json family (one-shot; primary) ----------------------------
 	// cursor-agent: `-p --output-format stream-json --yolo --workspace <cwd>`,
@@ -186,16 +181,11 @@ var registry = map[Name]provider.Provider{
 	// --- ACP family (long-lived, JSON-RPC over stdio) ----------------------
 	provider.DeepSeekHarness: deepseek.New(),
 	provider.KimiCode:        kimicode.New(),
-	provider.Trae:            acpx.FromBackend(backend.Get(backend.Trae)),
+	provider.Trae:            traeProvider(),
 	provider.Hermes:          acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
 	provider.Kiro:            acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
 	provider.Qoder:           acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),
 	provider.Grok:            acpSpec(provider.Grok, "grok-acp", "/root/.grok", []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}, "XAI_API_KEY"),
-
-	// --- opt-in ACP fallbacks for the stream-json CLIs ---------------------
-	provider.CursorACP:     acpx.FromBackend(backend.Get(backend.Cursor)),
-	provider.ClaudeCodeACP: acpx.FromBackend(backend.Get(backend.ClaudeCode)),
-	provider.CodeBuddyACP:  acpx.FromBackend(backend.Get(backend.CodeBuddy)),
 }
 
 // acpSpec builds a long-lived ACP provider for a CLI without a bespoke backend
@@ -217,19 +207,19 @@ func acpSpec(name provider.Name, runtime, configRoot string, argv []string, apiK
 func genericAuthEnv(nativeVar string, aliases ...string) func(env []string) []string {
 	keys := append([]string{nativeVar}, aliases...)
 	return func(env []string) []string {
-		return common.SetIfEmpty(env, nativeVar, common.FirstNonEmptyEnv(keys...))
+		return envutil.SetIfEmpty(env, nativeVar, envutil.FirstNonEmpty(keys...))
 	}
 }
 
 func openCodeAuthEnv(env []string) []string {
-	if common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") != "opencode" {
+	if envutil.Get(env, "GRASP_OPENCODE_PROVIDER") != "opencode" {
 		return genericAuthEnv("OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY")(env)
 	}
 	// Preserve the selected value so the official adapter can reject malformed
 	// authorization before any config writes; trimming here would hide CR/LF.
 	for _, key := range []string{"OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"} {
-		if value := common.GetEnvValue(env, key); value != "" {
-			return common.UpsertEnv(env, "OPENCODE_API_KEY", value)
+		if value := envutil.Get(env, key); value != "" {
+			return envutil.Upsert(env, "OPENCODE_API_KEY", value)
 		}
 	}
 	return env

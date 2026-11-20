@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"backend/internal/acp"
-	"backend/internal/backend/common"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
 )
@@ -30,41 +29,6 @@ type Provider struct{ spec Spec }
 
 // New builds an ACP provider from a Spec.
 func New(s Spec) provider.Provider { return &Provider{spec: s} }
-
-// FromBackend adapts an existing common.Backend into an ACP provider, reusing
-// its proven argv/AuthEnv/OnEvent logic.
-func FromBackend(be common.Backend) provider.Provider {
-	return &backendProvider{Provider: Provider{spec: Spec{
-		AgentName:  provider.Name(be.Name()),
-		Runtime:    be.Runtime(),
-		ConfigRoot: be.DefaultConfigRoot(),
-		ArgvFn:     be.Argv,
-		AuthEnvFn:  be.AuthEnv,
-	}}, be: be}
-}
-
-// backendProvider wraps Provider so Backend.OnEvent can filter/rewrite frames
-// before they reach the bridge.
-type backendProvider struct {
-	Provider
-	be common.Backend
-}
-
-func (p *backendProvider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
-	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
-	wrapped := onEvent
-	if onEvent != nil {
-		be := p.be
-		wrapped = func(ev json.RawMessage) {
-			out, keep := be.OnEvent(ev)
-			if !keep || onEvent == nil {
-				return
-			}
-			onEvent(out)
-		}
-	}
-	return p.Provider.Open(procCtx, handshakeCtx, opts, wrapped, perm)
-}
 
 func (p *Provider) Name() provider.Name               { return p.spec.AgentName }
 func (p *Provider) Runtime() string                   { return p.spec.Runtime }

@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/oneshot"
 )
@@ -134,8 +134,8 @@ func (d *codec) AuthEnv(env []string) []string {
 		env = d.c.AuthEnvFn(env)
 	}
 	if d.c.AgentName == provider.Cursor {
-		if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
-			env = common.UpsertEnv(env, "CURSOR_CONFIG_DIR", root)
+		if root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT")); root != "" {
+			env = envutil.Upsert(env, "CURSOR_CONFIG_DIR", root)
 		}
 	}
 	return env
@@ -514,9 +514,9 @@ func extractText(raw json.RawMessage) string {
 // then it kills them) at SANDBOX_BG_TASK_GRACE, the limit cursor-agent gets;
 // an explicit CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS wins.
 func ClaudeAuthEnv(env []string) []string {
-	env = common.SetIfEmpty(env, "ANTHROPIC_API_KEY",
-		common.FirstNonEmptyEnv("ACP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"))
-	return common.SetIfEmpty(env, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
+	env = envutil.SetIfEmpty(env, "ANTHROPIC_API_KEY",
+		envutil.FirstNonEmpty("ACP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"))
+	return envutil.SetIfEmpty(env, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
 		strconv.FormatInt(oneshot.BackgroundGrace().Milliseconds(), 10))
 }
 

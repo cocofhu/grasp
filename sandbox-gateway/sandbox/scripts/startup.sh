@@ -66,9 +66,9 @@ CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 # 未设置时回落 cursor。运行时 AGENT_PROVIDER 单活。
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
-  cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
-  claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
-  codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
+  cursor)                                         CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
+  claude_code)                                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
+  codebuddy)                                      CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
   deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
   kimi_code)                                      CONFIG_ROOT=${CONFIG_ROOT:-/root/.kimi-code} ;;
