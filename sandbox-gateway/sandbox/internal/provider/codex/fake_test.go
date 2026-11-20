@@ -79,6 +79,7 @@ func runFakeAppServer() {
 			Method string          `json:"method"`
 			Params struct {
 				ThreadID string `json:"threadId"`
+				Model    string `json:"model"`
 				Input    []struct {
 					Text string `json:"text"`
 				} `json:"input"`
@@ -104,8 +105,21 @@ func runFakeAppServer() {
 				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "no rollout found for thread id thread-gone"}})
 				continue
 			}
+			if path := os.Getenv("GRASP_FAKE_CODEX_RESUME_MODEL"); path != "" {
+				_ = os.WriteFile(path, []byte(msg.Params.Model), 0o600)
+			}
 			f.thread = msg.Params.ThreadID
 			reply(map[string]any{"thread": map[string]any{"id": f.thread}, "model": "fake-model"})
+		case "config/read":
+			model := any(nil)
+			for i, arg := range os.Args {
+				if arg == "-c" && i+1 < len(os.Args) && strings.HasPrefix(os.Args[i+1], "model=") {
+					model = strings.Trim(strings.TrimPrefix(os.Args[i+1], "model="), `"`)
+				}
+			}
+			reply(map[string]any{"config": map[string]any{"model": model}})
+		case "model/list":
+			reply(map[string]any{"data": []any{map[string]any{"id": "fake-other"}, map[string]any{"id": "fake-default", "isDefault": true}}})
 		case "turn/start":
 			f.n++
 			f.turn = fmt.Sprintf("turn-%d", f.n)
