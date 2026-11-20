@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"backend/internal/provider"
@@ -34,12 +35,12 @@ func TestConsoleCommandsReuseWorkspaceAndKeepQueue(t *testing.T) {
 	t.Setenv("CONFIG_ROOT", home)
 	initial := &commandSession{stubSess: stubSess{id: "initial"}, prompts: make(chan string, 8)}
 	b := newTestBridge(initial)
-	restarts := 0
+	var restarts atomic.Int32
 	b.testConnect = func(cwd, fsRoot string, _ json.RawMessage, _ *bool) (provider.Session, error) {
 		if cwd != initial.CWD() || fsRoot != initial.FSRoot() {
 			t.Errorf("workspace changed during reset: %q %q", cwd, fsRoot)
 		}
-		restarts++
+		restarts.Add(1)
 		next := &commandSession{stubSess: stubSess{id: "fresh"}, prompts: initial.prompts}
 		b.mu.Lock()
 		b.sess = next
@@ -52,8 +53,8 @@ func TestConsoleCommandsReuseWorkspaceAndKeepQueue(t *testing.T) {
 		}
 	}
 	waitIdle(t, b)
-	if restarts != 2 || len(initial.prompts) != 4 {
-		t.Fatalf("resets=%d, provider prompts=%d", restarts, len(initial.prompts))
+	if restarts.Load() != 2 || len(initial.prompts) != 4 {
+		t.Fatalf("resets=%d, provider prompts=%d", restarts.Load(), len(initial.prompts))
 	}
 	<-initial.prompts
 	if prompt := <-initial.prompts; !strings.Contains(prompt, "old requirement") || !strings.HasSuffix(prompt, "continue") {
