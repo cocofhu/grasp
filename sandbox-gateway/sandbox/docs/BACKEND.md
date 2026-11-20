@@ -240,9 +240,7 @@ internal/
     antigravity/      # codec：纯文本 stdout + 从 --log-file 回收 conversation id
     codex/            # 长驻 transport：codex app-server（JSON-RPC thread/turn，turn/steer 引导、turn/interrupt 软中断）
   agents/             # provider 注册表：AGENT_PROVIDER 选型 + FromEnv/Current/ConfigRoot（唯一选型入口）
-  backend/            # 长驻 ACP 的 argv/configRoot/authEnv（仅供 acpx.FromBackend，不是选型入口）
-    common/           # Backend 接口、Base、env 助手
-    cursor/ claude/ codebuddy/ trae/
+  envutil/            # KEY=VALUE 环境变量切片读写，供凭据别名归一化
   service/            # Bridge：Agent 生命周期、WS 广播、排队与 prompt（依赖 provider.Session）
   handler/            # HTTP / WebSocket
   router/             # Gin 路由与优雅退出
