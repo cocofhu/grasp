@@ -48,7 +48,7 @@ function queueItem(raw: any): SoloQueueItem {
  * turn on reconnect, so a dropped socket only pauses the view).
  */
 type SoloChatTransport = Pick<typeof api, 'getSoloSession' | 'listSoloMessages' | 'sendSoloTurn' | 'cancelSoloTurn' | 'soloChatWsUrl'
-  | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'setSoloSessionServiceTier' | 'removeSoloQueued' | 'reorderSoloQueue'> & {
+  | 'setSoloSessionModel' | 'setSoloSessionReasoningEffort' | 'setSoloSessionServiceTier' | 'removeSoloQueued' | 'steerSoloQueued' | 'reorderSoloQueue'> & {
   soloChatProtocols?: string[]
 }
 
@@ -1100,6 +1100,17 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   }
 
   /**
+   * Handle a queued item now. The server's queue_state and the turn's
+   * user_steer frame show the result; a failure leaves the queue as it was.
+   */
+  async function steerQueued(turnId: string) {
+    const id = sessionId.value
+    const target = queued.value.find((q) => q.id === turnId)
+    if (!id || !target || target.local) return
+    await run(() => transport.steerSoloQueued(id, turnId))
+  }
+
+  /**
    * Withdraw a queued item for editing. Returns its content only once the
    * server removed it; an item that already began is never handed back.
    */
@@ -1210,6 +1221,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     setCurrentServiceTier,
     cancel,
     removeQueued,
+    steerQueued,
     takeQueued,
     reorderQueued,
     close,

@@ -55,8 +55,8 @@ const { t, te } = useI18n()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 type Tool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
-/** Arrival order of the reply: text runs, or an index into Turn.tools. */
-type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
+/** Arrival order of the reply: text runs, steers, or an index into Turn.tools. */
+type Step = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
 type ImageAtt = ClarifyImage
 type QueueItem = { id: string; text: string; images: ImageAtt[] }
 type Turn = {
@@ -429,6 +429,11 @@ function send() {
     }),
   )
   scrollDown()
+}
+
+/** Handle a queued message now; the next queue_state shows where it went. */
+function steerQueued(id: string) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'steer', id }))
 }
 
 function cancel() {
@@ -891,6 +896,10 @@ function applyAcp(envelope: any, turn: Turn) {
     turn.contextCommand = contextSlashCommand(String(ev.command ?? ''))
     return
   }
+  if (ev?.type === 'user_steer') {
+    if (typeof ev.text === 'string' && ev.text.trim()) (turn.steps ??= []).push({ kind: 'steer', text: ev.text })
+    return
+  }
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
@@ -1292,7 +1301,18 @@ onBeforeUnmount(() => {
         >
           <span class="chat-meta flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line">{{ qi + 1 }}</span>
           <span v-if="q.images.length" class="chat-meta shrink-0">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
-          <span class="truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
+          <button
+            v-if="status === 'thinking'"
+            type="button"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
+            :title="t('pages.clarify.queueSteerTitle')"
+            :aria-label="t('pages.clarify.queueSteerAria')"
+            data-testid="tester-queue-steer"
+            @click="steerQueued(q.id)"
+          >
+            <Icon name="priority-bolt" :size="13" />
+          </button>
         </div>
       </div>
       </div>

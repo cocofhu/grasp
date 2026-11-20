@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"github.com/gorilla/websocket"
@@ -209,6 +210,21 @@ func TestSandboxChatWS(t *testing.T) {
 	}
 	if !sawError {
 		t.Fatal("expected an error frame for a stopped-container chat")
+	}
+	// Steering an item that already ran is silent; a steered chat still runs.
+	_ = c.WriteJSON(map[string]any{"type": "steer", "id": "gone"})
+	_ = c.WriteJSON(map[string]any{"type": "chat", "content": "now", "steer": true})
+	for {
+		_, msg, err := c.ReadMessage()
+		if err != nil {
+			t.Fatalf("steered chat never ran: %v", err)
+		}
+		if strings.Contains(string(msg), `"event":"error"`) {
+			if strings.Contains(string(msg), chatsession.ErrNotFound.Error()) {
+				t.Fatalf("stale steer surfaced: %s", msg)
+			}
+			break
+		}
 	}
 	// Exercise the cancel branch too.
 	_ = c.WriteJSON(map[string]any{"type": "cancel"})

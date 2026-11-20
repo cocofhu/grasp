@@ -174,6 +174,27 @@ func TestConversationHistoryIncludesVisibleToolResults(t *testing.T) {
 	}
 }
 
+func TestContextPreambleReplaysSteers(t *testing.T) {
+	_, db, sb := conversationHistoryFixture(t)
+	steer := json.RawMessage(`{"op":"event","data":{"type":"user_steer","text":"顺便加上测试"}}`)
+	rows := []models.SoloMessage{
+		{ID: "u1", SessionID: sb.ThreadID, Role: "user", Content: "实现登录", CreatedAt: time.Date(2026, 10, 28, 1, 0, 0, 0, time.UTC)},
+		{ID: "reply:u1", SessionID: sb.ThreadID, Role: "assistant", Content: "登录和测试都完成了", Events: []json.RawMessage{steer}, CreatedAt: time.Date(2026, 10, 28, 1, 0, 1, 0, time.UTC)},
+	}
+	for _, row := range rows {
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	pre, _, err := (&SoloService{db: db}).contextPreambleChecked(sb.ThreadID, "", "handoff\n", "", false)
+	if err != nil || !strings.Contains(pre, "[用户·回合中补充] 顺便加上测试\n[助手] 登录和测试都完成了") {
+		t.Fatalf("steer missing from the preamble: %s %v", pre, err)
+	}
+	if got := conversationMessage(rows[1]).Steers; len(got) != 1 || got[0] != "顺便加上测试" {
+		t.Fatalf("history steers = %v", got)
+	}
+}
+
 func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	svc, db, sb := conversationHistoryFixture(t)
 	for i := 0; i < 30; i++ {

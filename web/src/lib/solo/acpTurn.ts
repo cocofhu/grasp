@@ -4,8 +4,8 @@ import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, 
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
-/** Arrival order of a reply: text runs, or an index into SoloTurn.tools. */
-export type SoloStep = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
+/** Arrival order of a reply: text runs, steers, or an index into SoloTurn.tools. */
+export type SoloStep = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
 
 export type SoloTurn = ChatMessageMetadata & {
   files?: ArtifactAttachment[]
@@ -119,6 +119,11 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
     return
   }
   const ev = envelope?.data ?? envelope
+  if (ev?.type === 'user_steer') {
+    // Each steer is its own user message; never merge it into a neighbour.
+    if (typeof ev.text === 'string' && ev.text.trim()) turn.steps.push({ kind: 'steer', text: ev.text })
+    return
+  }
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')

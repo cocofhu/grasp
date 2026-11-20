@@ -493,6 +493,25 @@ func (c *acpProvider) CancelSessionTurn(runID, nodeID string) {
 	}
 }
 
+// SteerSessionTurn delivers input into the in-flight turn of the node's parked
+// session (lane "") or of one visitor lane.
+func (c *acpProvider) SteerSessionTurn(ctx context.Context, runID, nodeID, lane, text string, images []models.PromptImage) (sandbox.SteerStatus, error) {
+	var acp *sandbox.ACPClient
+	c.mu.Lock()
+	if lane == "" {
+		if sess := c.sessions[runID+"|"+nodeID]; sess != nil {
+			acp = sess.acp
+		}
+	} else if vl := c.visitors[visitorKey(runID, nodeID, lane)]; vl != nil {
+		acp = vl.acp
+	}
+	c.mu.Unlock()
+	if acp == nil {
+		return sandbox.SteerNoTurn, nil
+	}
+	return acp.Steer(ctx, text, images)
+}
+
 // abortTurnWait bounds how long AbortSessionTurn waits for the bridge.
 var abortTurnWait = 20 * time.Second
 
@@ -834,6 +853,7 @@ func renderRecoveryTranscript(history []models.ReactMessage) string {
 		if isClarifyFailedOpenText(m.Text) {
 			continue
 		}
+		writeSteers(&b, m)
 		b.WriteString(m.Role)
 		b.WriteString(": ")
 		b.WriteString(strings.TrimSpace(m.Text))

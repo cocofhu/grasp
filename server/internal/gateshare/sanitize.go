@@ -436,7 +436,7 @@ func SanitizeParts(parts []models.AcpPart) []models.AcpPart {
 		switch p.Kind {
 		case "tool":
 			out = append(out, models.AcpPart{Kind: "tool", Title: SanitizeToolTitle(p.Title), Status: SanitizeToolStatus(p.Status)})
-		case "thought", "message":
+		case "thought", "message", models.AcpPartSteer:
 			if strings.TrimSpace(p.Text) != "" {
 				out = append(out, models.AcpPart{Kind: p.Kind, Text: p.Text})
 			}

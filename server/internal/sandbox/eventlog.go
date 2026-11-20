@@ -448,6 +448,7 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 	var ev struct {
 		Type   string          `json:"type"`
 		Update json.RawMessage `json:"update"`
+		Text   string          `json:"text"`
 	}
 	if json.Unmarshal(data, &ev) != nil {
 		return
@@ -456,6 +457,10 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 		if result != nil {
 			result.sealSegment()
 		}
+		return
+	}
+	if ev.Type == "user_steer" {
+		result.addSteer(ev.Text)
 		return
 	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {

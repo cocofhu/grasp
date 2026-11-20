@@ -28,6 +28,9 @@ type ConversationHistoryMessage struct {
 	Images      []models.PromptImage            `json:"attachments,omitempty"`
 	CreatedAt   time.Time                       `json:"createdAt"`
 	ToolResults []ConversationHistoryToolResult `json:"tool_results,omitempty"`
+	// Steers are user messages this reply's turn took mid-flight; they have no
+	// message of their own.
+	Steers []string `json:"steers,omitempty"`
 }
 
 type ConversationHistoryToolResult struct {

@@ -156,6 +156,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/solo/sessions/:id/turns/cancel", h.CancelSoloTurn)
 		api.PUT("/solo/sessions/:id/queue", h.ReorderSoloQueue)
 		api.DELETE("/solo/sessions/:id/queue/:turnId", h.RemoveSoloQueued)
+		api.POST("/solo/sessions/:id/queue/:turnId/steer", h.SteerSoloQueued)
 		api.GET("/solo/sessions/:id/chat", h.SoloChat)
 
 		api.GET("/workflows/catalog", h.ListWorkflowCatalog)
@@ -219,6 +220,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/runs/:id/nodes/:nodeId/cancel", h.NodeCancel)
 		api.POST("/runs/:id/nodes/:nodeId/queue/remove", h.NodeQueueRemove)
 		api.POST("/runs/:id/nodes/:nodeId/queue/reorder", h.NodeQueueReorder)
+		api.POST("/runs/:id/nodes/:nodeId/queue/steer", h.NodeQueueSteer)
 		api.GET("/runs/:id/nodes/:nodeId/primary-artifacts", h.ListGatePrimaryArtifacts)
 		api.PUT("/runs/:id/nodes/:nodeId/artifacts/:name", h.SaveGateArtifact)
 		api.PUT("/runs/:id/nodes/:nodeId/annotation-artifact", h.SaveAnnotationArtifact)
@@ -294,6 +296,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 	soloEmbed.GET("/references/search", h.SearchSoloReferences)
 	soloEmbed.PUT("/queue", h.ReorderSoloQueue)
 	soloEmbed.DELETE("/queue/:turnId", h.RemoveSoloQueued)
+	soloEmbed.POST("/queue/:turnId/steer", h.SteerSoloQueued)
 	soloEmbed.GET("/artifacts", h.SoloEmbedArtifacts)
 	soloEmbed.POST("/turns", h.StartSoloTurn)
 	soloEmbed.POST("/turns/cancel", h.CancelSoloTurn)
@@ -385,6 +388,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.POST("/cancel", h.PublicGateCancel)
 		pub.POST("/queue/remove", h.PublicGateQueueRemove)
 		pub.POST("/queue/reorder", h.PublicGateQueueReorder)
+		pub.POST("/queue/steer", h.PublicGateQueueSteer)
 		pub.OPTIONS("/preview", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/images/:index", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/artifacts", func(c *gin.Context) { c.Status(http.StatusNoContent) })
@@ -399,6 +403,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		pub.OPTIONS("/cancel", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/queue/remove", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 		pub.OPTIONS("/queue/reorder", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+		pub.OPTIONS("/queue/steer", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	}
 
 	// SPA fallback: serve index.html for unknown non-API paths so vue-router

@@ -12,7 +12,7 @@ import (
 // ChatStep is one entry of the open row's timeline: a run of thought or
 // narration text, or a pointer into ToolCalls.
 type ChatStep struct {
-	Kind string // thought|message|tool
+	Kind string // thought|message|tool|steer
 	Text string
 	Tool int
 }
@@ -40,6 +40,15 @@ func (r *ChatResult) addText(kind, text string) {
 		return
 	}
 	r.Timeline = append(r.Timeline, ChatStep{Kind: kind, Text: text})
+}
+
+// addSteer records input the running turn took mid-flight. Steers never merge:
+// each one is a separate user message.
+func (r *ChatResult) addSteer(text string) {
+	if r == nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	r.Timeline = append(r.Timeline, ChatStep{Kind: models.AcpPartSteer, Text: text})
 }
 
 func (r *ChatResult) addTool(idx int) {

@@ -3601,6 +3601,16 @@ async function onClarifyQueueRemove(itemId: string | undefined) {
   }
 }
 
+async function onClarifyQueueSteer(itemId: string) {
+  const it = active.value
+  if (!it || it.type !== 'clarify' || it.done) return
+  try {
+    await api.reactQueueSteer(it.runId, it.nodeId, itemId)
+  } catch (e: any) {
+    console.warn('reactQueueSteer failed', e?.message || e)
+  }
+}
+
 async function onClarifyQueueReorder(itemIds: string[]) {
   if (!itemIds.length) return
   const it = active.value
@@ -3729,6 +3739,7 @@ onUnmounted(() => {
     onClarifyFinishAbort,
     onClarifyCancel,
     onClarifyQueueRemove,
+    onClarifyQueueSteer,
     onClarifyQueueReorder,
     onFocus,
     onVisible,
