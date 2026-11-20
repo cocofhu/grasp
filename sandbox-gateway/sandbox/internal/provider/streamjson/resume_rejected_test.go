@@ -20,6 +20,7 @@ while [ $# -gt 0 ]; do
   if [ "$1" = "--resume" ]; then resume="$2"; fi
   shift
 done
+read -r _message
 case "$resume" in
 gone)
   echo "No conversation found with session ID: gone" >&2

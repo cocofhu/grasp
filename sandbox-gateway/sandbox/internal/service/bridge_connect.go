@@ -288,7 +288,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		logging.WarnErr(sess.Close(), "agent session close for deleted chat", nil)
 		return nil, ErrChatNotFound
 	}
-	b.sess = sess
+	b.sess, b.reviving = sess, false
 	b.sessOpened, b.sessThaw = time.Now(), thawCount()
 	if len(mcp) > 0 && string(mcp) != "null" {
 		b.lastMCP = append(json.RawMessage(nil), mcp...)
@@ -320,7 +320,7 @@ func (b *Bridge) watchAgentConn(watched provider.Session) {
 	generation := b.agentGeneration
 	revive := still && !b.closed && resumePointer(watched) != "" && b.revivals.allow(time.Now())
 	if still {
-		b.sess = nil
+		b.sess, b.reviving = nil, revive
 		cancel = b.agentCancel
 	}
 	b.mu.Unlock()
@@ -356,6 +356,9 @@ func (b *Bridge) watchAgentConn(watched provider.Session) {
 	b.ensureMu.Lock()
 	b.mu.Lock()
 	notify := b.sess == nil && b.agentGeneration == generation
+	if !notify {
+		b.reviving = false
+	}
 	b.mu.Unlock()
 	if notify && revive {
 		if b.reviveLocked(watched, exitMsg) {
@@ -363,7 +366,12 @@ func (b *Bridge) watchAgentConn(watched provider.Session) {
 			b.pumpPromptQueue()
 			return
 		}
+		b.enqueueMu.Lock()
+		b.mu.Lock()
+		b.reviving = false
+		b.mu.Unlock()
 		b.clearPromptQueue()
+		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
 	}
 	defer b.ensureMu.Unlock()

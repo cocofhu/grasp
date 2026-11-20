@@ -20,6 +20,10 @@ type lifeAgent struct {
 	transport provider.TransportKind
 	noResume  bool // sessions do not report Capabilities.Resume
 	forget    bool // a resume pointer is not found: a new conversation starts
+	// hold, when set, blocks resuming opens until closed; failResume then
+	// makes them fail.
+	hold       chan struct{}
+	failResume bool
 
 	mu    sync.Mutex
 	opens []provider.OpenOptions
@@ -34,6 +38,12 @@ func (a *lifeAgent) ListModels(context.Context) ([]provider.Model, error) { retu
 func (a *lifeAgent) AuthEnv(env []string) []string                        { return env }
 
 func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEvent func(json.RawMessage), _ provider.PermissionChooser) (provider.Session, error) {
+	if opts.ResumeSessionID != "" && a.hold != nil {
+		<-a.hold
+		if a.failResume {
+			return nil, errors.New("agent failed to start")
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.opens = append(a.opens, opts)
@@ -227,6 +237,57 @@ func TestRevivalThatLosesTheSessionReportsSessionReset(t *testing.T) {
 	}
 	if lost, _ := b.lostSession.Load().(string); lost != "" {
 		t.Fatalf("session reset reported more than once: %q", lost)
+	}
+}
+
+func isReviving(b *Bridge) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.reviving
+}
+
+func awaitReviving(t *testing.T, b *Bridge) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !isReviving(b) {
+		if time.Now().After(deadline) {
+			t.Fatal("the bridge never started reviving the agent")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestPromptDuringRevivalWaitsForTheRevivedAgent(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived, hold: make(chan struct{})}
+	b, first := lifeBridge(t, agent)
+	first.die()
+	awaitReviving(t, b)
+	if err := b.ChatWithLimits("while reviving", "t1", "chat", nil, 0, 0); err != nil {
+		t.Fatalf("a prompt during revival was rejected: %v", err)
+	}
+	close(agent.hold)
+	_, sessions := awaitOpens(t, agent, 2)
+	if got := awaitPrompt(t, sessions[1]); got != "while reviving" {
+		t.Fatalf("revived agent ran %q", got)
+	}
+	if isReviving(b) {
+		t.Fatal("still reviving after the agent came back")
+	}
+}
+
+func TestFailedRevivalStopsAcceptingPrompts(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived, hold: make(chan struct{}), failResume: true}
+	b, first := lifeBridge(t, agent)
+	c := dialBridge(t, b)
+	first.die()
+	awaitReviving(t, b)
+	close(agent.hold)
+	readFrame(t, c, func(f map[string]any) bool { return f["agentExited"] == true })
+	if isReviving(b) {
+		t.Fatal("still reviving after the restart failed")
+	}
+	if err := b.ChatWithLimits("after", "t2", "chat", nil, 0, 0); err == nil {
+		t.Fatal("a prompt was accepted with no agent")
 	}
 }
 

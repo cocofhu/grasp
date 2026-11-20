@@ -458,7 +458,7 @@ func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage,
 	b.enqueueMu.Lock()
 
 	b.mu.Lock()
-	ok := sessionUsable(b.sess)
+	ok := sessionUsable(b.sess) || b.reviving
 	b.mu.Unlock()
 	if !ok {
 		b.enqueueMu.Unlock()

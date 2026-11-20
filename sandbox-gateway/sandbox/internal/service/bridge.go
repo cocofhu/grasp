@@ -70,6 +70,9 @@ type Bridge struct {
 	maxAgentAge time.Duration
 	// revivals bounds automatic restarts after the Agent exits on its own.
 	revivals revivalBudget
+	// reviving: sess is nil only because the exited Agent is being restarted
+	// on its session; prompts keep queueing meanwhile. Guarded by mu.
+	reviving bool
 	// lostSession is the native session (string) a replacement failed to
 	// resume; the next prompt_done reports it as sessionReset.
 	lostSession atomic.Value
