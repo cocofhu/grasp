@@ -347,6 +347,7 @@ type streamEvent struct {
 	ModelUsage map[string]wireUsage `json:"modelUsage"`
 	Result     string               `json:"result"`
 	IsError    bool                 `json:"is_error"`
+	NumTurns   *int                 `json:"num_turns"`
 	StopReason string               `json:"stop_reason"`
 	// IsReplay marks a stdin user message echoed by --replay-user-messages.
 	IsReplay bool `json:"isReplay"`
@@ -462,6 +463,12 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		res.UsageIsTotal = len(res.Usage) > 0
 		if ev.IsError || strings.HasPrefix(ev.Subtype, "error") {
 			res.StopReason = "failed"
+			if ev.NumTurns != nil && *ev.NumTurns == 0 {
+				// A failure before any turn ran (Claude Code rejecting --resume
+				// of a missing conversation) echoes the requested session id;
+				// it is not evidence that the session exists.
+				res.SessionID = ""
+			}
 			if ev.Result != "" {
 				res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: ev.Result})
 			}

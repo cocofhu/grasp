@@ -547,3 +547,22 @@ func TestIsolatedConfigPreservesAssetsWithoutLogin(t *testing.T) {
 		t.Fatal("login file copied into connection config")
 	}
 }
+
+func TestIsolatedConfigKeepsHistoryOutsideTheTemporaryDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir, cleanup, err := isolatedConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := filepath.Join(dir, "projects", "workspace", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(transcript, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if _, err := os.Stat(filepath.Join(root, "projects", "workspace", "session.jsonl")); err != nil {
+		t.Fatalf("the transcript did not survive the process: %v", err)
+	}
+}
