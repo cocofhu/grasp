@@ -238,7 +238,7 @@ internal/
     pi/               # codec：assistantMessageEvent.delta 事件流；会话为 --session 日志文件
     openclaw/         # codec：单个整块 JSON 结果文档（payloads + meta.agentMeta），NDJSON 兜底
     antigravity/      # codec：纯文本 stdout + 从 --log-file 回收 conversation id
-    codex/            # codec：codex exec --json（thread/item JSONL，兼容 msg 包裹）
+    codex/            # 长驻 transport：codex app-server（JSON-RPC thread/turn，turn/steer 引导、turn/interrupt 软中断）
   agents/             # provider 注册表：AGENT_PROVIDER 选型 + FromEnv/Current/ConfigRoot（唯一选型入口）
   backend/            # 长驻 ACP 的 argv/configRoot/authEnv（仅供 acpx.FromBackend，不是选型入口）
     common/           # Backend 接口、Base、env 助手
@@ -283,21 +283,25 @@ web/                  # 前端（ESM + 静态资源）
   | provider | 默认 transport | 启动 / 续接要点 |
   | --- | --- | --- |
   | `cursor` | stream-json（one-shot） | `-p --output-format stream-json --yolo --workspace <cwd>`，prompt 走 stdin 原文；`--resume` |
-  | `claude_code` / `codebuddy` | stream-json（one-shot） | `-p --output-format stream-json --input-format stream-json`，prompt 走 stdin stream-json 信封；`--resume` |
+  | `claude_code` / `codebuddy` | stream-json（one-shot） | `-p --output-format stream-json --input-format stream-json --replay-user-messages`，prompt 走 stdin stream-json 信封，本轮 stdin 保持打开以接收引导；`--resume` |
   | `gemini` | stream-json（one-shot） | `-p <prompt> --output-format stream-json`；`-r` |
   | `opencode` / `deveco` | run --format json（one-shot） | `run --format json --dangerously-skip-permissions <prompt>`；`--session` |
   | `copilot` | dotted 事件 JSONL（one-shot，专用 codec） | `-p <prompt> --output-format json --allow-all --no-ask-user`；`--resume`；delta 与 result 去重 |
   | `pi` | assistantMessageEvent 事件流（one-shot，专用 codec） | `-p --mode json --session <path>`；会话即 `--session` 日志文件（首轮分配、逐轮复用） |
   | `openclaw` | 整块 JSON 结果文档（one-shot，专用 codec） | `agent --local --json --session-id <id> --message <prompt>`；整块解析 payloads+meta，NDJSON 兜底 |
   | `antigravity` | 纯文本 stdout（one-shot，专用 codec） | `-p <prompt> --dangerously-skip-permissions --log-file <tmp>`；从日志回收 `--conversation` id |
-  | `codex` | JSONL（one-shot） | `codex exec --json`（`resume <id>` 续接） |
+  | `codex` | 长驻 app-server | `codex app-server`（JSON-RPC）；`thread/start` / `thread/resume` 续接，`turn/steer` 引导，`turn/interrupt` 中断 |
   | `deepseek_harness` | 长驻 ACP | `dsh --profile acp`；模型从分组选项解析并通过 `session/set_config_option` 选择 |
   | `kimi` / `hermes` / `kiro` / `qoder` / `grok` / `trae` | 长驻 ACP | CLI 原生 ACP over stdio（`… acp` / `--acp` / `agent … stdio`） |
   | `cursor_acp` / `claude_code_acp` / `codebuddy_acp` | 长驻 ACP（可选回退） | 强制走 stdio 的备选项，默认不单独出镜像 |
 
+- **运行中引导（steer）**：会话实现 `provider.Steerer` 且 `SteerSupported()` 为真时，可把一条输入送进正在运行的这一轮（`provider.CanSteer`）。
+  - 原生实现：`codex` 走 `turn/steer`；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
+  - WS 协议：`{"op":"steer","opId":<目标轮>,"steerId":…,"text":…,"images":[…]}` → `op:steer_ack`（`status`：`delivered` / `unsupported` / `no_turn` / `failed`）；送达后在目标轮的事件流里追加 `user_steer`（文本与附件预览），随该轮持久化。
+  - 能力声明：`connected` 帧与 `/capabilities` 的 `session.steer`。不支持的会话由平台改为"中断当前轮并把这条输入排到队首"。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：
   - ✅ **已验真**：`cursor`（端到端跑通）、`gemini`/qwen 系（对真实 stream-json 抓样解析全绿）。stream-json codec 已同时兼容两种方言：顶层 thinking + camelCase 用量（cursor），以及 content-block thinking（`thinking` 字段）+ `tool_use_id` 关联 + snake_case 用量（claude/codebuddy/qwen）。
-  - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）、`codex`（`exec --json` 的 `thread.*` / `item.*` JSONL，对照官方 exec 事件字段：`thread_id` 续接、`command_execution` / `file_change` / `mcp_tool_call`、`turn.completed` 用量、`turn.failed` 改写成重新粘贴登录文件；旧的 `msg` 包裹事件仍解析）。这些 codec 结构已对齐公开字段，仍建议真机各跑一轮抓样复核。
+  - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）。这些 codec 结构已对齐公开字段，仍建议真机各跑一轮抓样复核。
   - 🟡 **结构对、待真机确认**：`claude_code` / `codebuddy`（与 qwen 同族方言，已按其字段解析）、`opencode` / `deveco`（`run --format json` 的 `type`+嵌套 `part`；tool_use 事件含 `state` 时同时透出 tool_result）。
   - ⚙️ **ACP 家族**（`kimi`/`hermes`/`kiro`/`qoder`/`grok`/`trae`）：走已验证的长驻 ACP 通道；其中非 `trae` 的 argv/config 为按公开事实拼装，需真机校准。
 

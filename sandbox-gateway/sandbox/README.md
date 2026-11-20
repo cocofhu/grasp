@@ -5,7 +5,7 @@
 - **运行环境**（来自 ai-tool/sandbox）：Ubuntu 22.04、多语言工具链、容器内 **Docker（DinD）**、**SSH**、**code-server**（浏览器 IDE）、DB 客户端（mysql/redis/psql/mongosh）、Cursor CLI、Claude Code、glab、gh。
 - **agent 与代码能力**（来自 code-flow/sandbox）：多后端 **backend**（ACP 桥接服务）、**多仓库 PULL**、多托管商 **git 凭据路由**、**Playwright（Chromium）+ noVNC 预览栈**。
 
-七类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）、`codex`（`@openai/codex`，`exec --json`）、`deepseek_harness`（`@deepseek-ai/dsh@0.2.1-rc.2`，`--profile acp`）。Codex 使用 `CODEX_HOME/auth.json`，不使用 API Key。
+七类 agent 后端 CLI 均已预装，`AGENT_PROVIDER` 单活切换：`cursor`（Cursor CLI）、`claude_code`（原生 Claude CLI）、`codebuddy`（`@tencent-ai/codebuddy-code`）、`trae`（Trae CLI）、`opencode`（`opencode-ai`，`run --format json`）、`codex`（`@openai/codex`，常驻 `app-server`）、`deepseek_harness`（`@deepseek-ai/dsh@0.2.1-rc.2`，`--profile acp`）。Codex 使用 `CODEX_HOME/auth.json`，不使用 API Key。
 发布一张图 `ghcr.io/cocofhu/universal-sandbox`。本地打薄镜像：`--build-arg AGENT_PROVIDERS=cursor`。
 
 ## 镜像与运行时包

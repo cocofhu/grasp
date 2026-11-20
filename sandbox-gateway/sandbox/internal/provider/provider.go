@@ -117,3 +117,25 @@ type Session interface {
 	// ExitInfo reaps the session and returns the operator-facing exit banner.
 	ExitInfo() (exitMsg string, err error)
 }
+
+// ErrNoActiveTurn is returned by Steer when no turn is running, or the
+// running turn has already reported its result.
+var ErrNoActiveTurn = errors.New("no active turn")
+
+// Steerer is an optional Session extension for agents that take additional
+// user input while a turn is running and fold it into that same turn, without
+// interrupting it. Sessions without it are steered by the platform cancelling
+// the turn and running the input as the next one.
+type Steerer interface {
+	// SteerSupported reports whether this session's agent accepts Steer.
+	SteerSupported() bool
+	// Steer delivers text to the running turn. Attachments must already be
+	// materialized and referenced in text.
+	Steer(text string) error
+}
+
+// CanSteer reports whether s accepts input into a running turn.
+func CanSteer(s Session) bool {
+	st, ok := s.(Steerer)
+	return ok && st.SteerSupported()
+}

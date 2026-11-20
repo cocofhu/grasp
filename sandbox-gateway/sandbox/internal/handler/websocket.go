@@ -114,6 +114,18 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 				}
 				_ = json.Unmarshal(payload, &body)
 				bridge.CancelPromptOp(body.OpID)
+			case "steer":
+				var body struct {
+					OpID    string                `json:"opId"`
+					SteerID string                `json:"steerId"`
+					Text    string                `json:"text"`
+					Images  []service.PromptImage `json:"images"`
+				}
+				if err := json.Unmarshal(payload, &body); err != nil {
+					writeWSError(bridge, conn, "引导消息格式错误")
+					continue
+				}
+				bridge.SteerTurn(body.OpID, body.SteerID, body.Text, body.Images)
 			case "restart_agent":
 				var body struct {
 					PreserveHistory bool `json:"preserveHistory"`

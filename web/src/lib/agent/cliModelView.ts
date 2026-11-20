@@ -6,7 +6,7 @@ const LAUNCH_HEAD: Record<string, string> = {
   claude_code: 'claude',
   codebuddy: 'codebuddy',
   trae: 'traecli acp serve',
-  codex: 'codex exec',
+  codex: 'codex app-server',
   deepseek_harness: 'dsh --profile acp',
   kimi_code: 'kimi acp',
 }
@@ -123,7 +123,10 @@ export function launchCommand(backend: string, modelId: string): string {
   const head = LAUNCH_HEAD[backend] || backend
   // DeepSeek and Kimi Code write the model into their own config, not a CLI flag.
   if (backend === 'deepseek_harness' || backend === 'kimi_code') return head
-  return modelId ? `${head} --model ${modelId}` : head
+  if (!modelId) return head
+  // The Codex app-server takes its model as a config override.
+  if (backend === 'codex') return `${head} -c model="${modelId}"`
+  return `${head} --model ${modelId}`
 }
 
 function hasTag(m: CliCatalogModel | null | undefined, tag: CliModelTag): boolean {

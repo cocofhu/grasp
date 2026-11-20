@@ -60,9 +60,6 @@ type ParseResult struct {
 	// UsageIsTotal marks an authoritative per-turn snapshot. A nonempty total
 	// replaces prior streamed samples, which may use different model aliases.
 	UsageIsTotal bool
-	// UsageIsSessionTotal is an authoritative cumulative native-session report,
-	// as returned by Codex exec resume. It must be differenced across turns.
-	UsageIsSessionTotal bool
 	// SessionUsage is a separate canonical native-session total. Some CLIs
 	// report per-process model buckets alongside cumulative flat counters.
 	SessionUsage *provider.TokenUsage
@@ -71,9 +68,9 @@ type ParseResult struct {
 	TracksSessionUsage bool
 	UsagePartial       bool
 	StopReason         string
-	// RetryDiagnostic describes a transport retry. Preserve it in case the CLI
-	// exits before producing a new message or reporting the turn outcome.
-	RetryDiagnostic string
+	// UserMessagesConsumed counts stdin user messages the CLI acknowledged
+	// (TurnInputCodec only).
+	UserMessagesConsumed int
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its
@@ -124,12 +121,6 @@ type LineParser interface {
 // singleton codec never leaks state between concurrent sessions or turns.
 type StatefulCodec interface {
 	NewTurnParser(opts provider.OpenOptions) LineParser
-}
-
-// RecoverableDiagnosticCodec identifies a CLI's documented nonfatal messages.
-// A diagnostic is suppressed only after a successful turn with assistant text.
-type RecoverableDiagnosticCodec interface {
-	IsRecoverableDiagnostic(Msg) bool
 }
 
 // WholeOutputCodec is an optional Codec extension for CLIs that emit a single
@@ -278,8 +269,6 @@ type engine struct {
 	mu                sync.Mutex
 	sessionID         string
 	cumUsage          map[string]provider.TokenUsage
-	usageSession      string
-	usageBaseline     map[string]provider.TokenUsage
 	flatUsageSession  string
 	flatUsageBaseline provider.TokenUsage
 	curCancel         context.CancelFunc
@@ -290,6 +279,8 @@ type engine struct {
 	// they are ended (0 = never). bg is the running turn's tracker.
 	bgGrace time.Duration
 	bg      atomic.Pointer[backgroundShells]
+	// input is the running turn's open stdin (TurnInputCodec only).
+	input atomic.Pointer[turnInput]
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -423,9 +414,6 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// diagnostics, so an error from the abandoned attempt cannot fail that turn.
 	errorReported := false
 	for _, diagnostic := range res.diagnostics {
-		if recoverable, ok := e.c.(RecoverableDiagnosticCodec); ok && err == nil && res.stopReason == "end_turn" && res.hasText && recoverable.IsRecoverableDiagnostic(diagnostic) {
-			continue
-		}
 		if strings.TrimSpace(diagnostic.Text) != "" {
 			e.emitUpdate(diagnostic)
 			errorReported = true
@@ -486,12 +474,19 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	disarmKiller := killGroupOnCancel(turnCtx, proc.cmd)
 	defer disarmKiller()
 
-	waitStdin, err := e.feedStdin(proc, text, images)
+	waitStdin, input, err := e.feedStdin(proc, text, images)
 	if err != nil {
 		return turnOutcome{stopReason: "failed"}, err
 	}
+	if input != nil {
+		e.input.Store(input)
+		defer func() {
+			e.input.CompareAndSwap(input, nil)
+			input.close()
+		}()
+	}
 
-	acc := newTurnAccumulator(e, bg)
+	acc := newTurnAccumulator(e, bg, input)
 	tail := newStderrTail(64 * 1024)
 	var streamErr error
 	stdoutPipe := newOutPipe(proc.stdout, outputDrainGrace)
@@ -641,26 +636,33 @@ func killGroupOnCancel(ctx context.Context, cmd *exec.Cmd) (disarm func()) {
 
 // feedStdin writes the prompt in a goroutine so large prompts cannot deadlock
 // against a child that is simultaneously filling the stdout pipe buffer. The
-// returned wait blocks until the write finished and reports its error. When the
-// prompt cannot be encoded the process is reaped and its pipes closed.
-func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.PromptImage) (wait func() error, err error) {
+// returned wait blocks until the write finished and reports its error. A
+// TurnInputCodec keeps stdin open behind the returned turnInput; otherwise
+// stdin closes after the prompt. When the prompt cannot be encoded the process
+// is reaped and its pipes closed.
+func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.PromptImage) (wait func() error, input *turnInput, err error) {
 	stdin := proc.stdin
 	if stdin == nil {
-		return func() error { return nil }, nil
+		return func() error { return nil }, nil, nil
 	}
-	if _, ok := e.c.(StdinEncoder); !ok && len(images) > 0 {
+	enc, encodes := e.c.(StdinEncoder)
+	if !encodes && len(images) > 0 {
 		_ = stdin.Close()
 		_ = proc.cmd.Process.Kill()
 		_ = proc.cmd.Wait()
 		closeFiles(proc.stdout, proc.stderr)
-		return nil, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+		return nil, nil, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+	}
+	if _, ok := turnInputCodec(e.c); ok {
+		input, wait = openTurnInput(stdin, enc.StdinBytes(text, images))
+		return wait, input, nil
 	}
 	var stdinErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		var werr error
-		if enc, ok := e.c.(StdinEncoder); ok {
+		if encodes {
 			_, werr = stdin.Write(enc.StdinBytes(text, images))
 		} else {
 			_, werr = io.WriteString(stdin, text)
@@ -677,7 +679,7 @@ func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.Pro
 	return func() error {
 		<-done
 		return stdinErr
-	}, nil
+	}, input, nil
 }
 
 // waitTurnProcess waits for the CLI to exit under superviseTurn. The turn ends
@@ -833,7 +835,7 @@ func (e *engine) emitUpdate(m Msg) {
 		}
 		update = map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": m.Text}}
 	case KindError:
-		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": redactDiagnostic(m.Text, e.env)})
+		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": provider.RedactDiagnostic(m.Text, e.env)})
 		return
 	default:
 		return
@@ -999,32 +1001,6 @@ func addUsage(a, b provider.TokenUsage) provider.TokenUsage {
 		CacheReadTokens:  a.CacheReadTokens + b.CacheReadTokens,
 		CacheWriteTokens: a.CacheWriteTokens + b.CacheWriteTokens,
 	}
-}
-
-func (e *engine) sessionUsageDelta(session string, current map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	delta := make(map[string]provider.TokenUsage, len(current))
-	var reset bool
-	for model, u := range current {
-		previous := provider.TokenUsage{}
-		if session != "" && session == e.usageSession {
-			previous = e.usageBaseline[model]
-		}
-		if u.InputTokens < previous.InputTokens || u.OutputTokens < previous.OutputTokens || u.CacheReadTokens < previous.CacheReadTokens || u.CacheWriteTokens < previous.CacheWriteTokens {
-			reset = true
-		}
-		delta[model] = provider.TokenUsage{InputTokens: u.InputTokens - previous.InputTokens, OutputTokens: u.OutputTokens - previous.OutputTokens, CacheReadTokens: u.CacheReadTokens - previous.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens - previous.CacheWriteTokens}
-	}
-	e.usageSession = session
-	e.usageBaseline = make(map[string]provider.TokenUsage, len(current))
-	for model, u := range current {
-		e.usageBaseline[model] = u
-	}
-	if reset {
-		return current, true
-	}
-	return delta, false
 }
 
 // Reconcile process-local model buckets against a native-session counter. The

@@ -40,7 +40,7 @@ func TestTransportSplit(t *testing.T) {
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
 		provider.CursorACP: true, provider.ClaudeCodeACP: true, provider.CodeBuddyACP: true,
-		provider.DeepSeekHarness: true,
+		provider.DeepSeekHarness: true, provider.Codex: true,
 	}
 	for n, p := range registry {
 		want := provider.OneShot
