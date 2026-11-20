@@ -236,6 +236,24 @@ describe('SoloModelSelect', () => {
     expect(list?.contains(heading!)).toBe(false)
   })
 
+  it('leaves the search unfocused on touch devices and fits the panel to the visible viewport', async () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({ matches: query === '(pointer: coarse)', media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia
+    try {
+      const wrapper = mountSelect()
+      await open(wrapper)
+      expect(element('solo-model-select-search')).not.toBeNull()
+      expect(document.activeElement).not.toBe(element('solo-model-select-search'))
+      expect(element('solo-model-select-panel')!.style.maxHeight).toMatch(/^\d+px$/)
+    } finally {
+      window.matchMedia = matchMedia
+    }
+    const shell = source('SoloPickerShell.vue')
+    const listRule = shell.match(/\.solo-picker__list \{[^}]*\}/)?.[0] || ''
+    expect(listRule).toMatch(/overscroll-behavior:\s*contain/)
+    expect(listRule).toMatch(/touch-action:\s*pan-y/)
+  })
+
   it('keeps the trigger disabled when there are no models', () => {
     const wrapper = mountSelect({ models: [], modelValue: '' })
     expect((wrapper.get('[data-testid="solo-model-select-trigger"]').element as HTMLButtonElement).disabled).toBe(true)
