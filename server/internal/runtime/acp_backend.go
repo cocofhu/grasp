@@ -447,20 +447,20 @@ func firstNonEmpty(vals ...string) string {
 func AgentRuntimeLabel(b AcpBackend) string {
 	switch b {
 	case BackendClaudeCode:
-		return "claude-code-acp"
+		return "claude-stream-json"
 	case BackendCodeBuddy:
-		return "codebuddy-acp"
+		return "codebuddy-stream-json"
 	case BackendTrae:
 		return "trae-acp"
 	case BackendOpenCode:
 		return "opencode-json"
 	case BackendCodex:
-		return "codex-cli"
+		return "codex-app-server"
 	case BackendDeepSeekHarness:
 		return "dsh-acp"
 	case BackendKimiCode:
 		return "kimi-code-acp"
 	default:
-		return "cursor-agent"
+		return "cursor-agent-stream-json"
 	}
 }

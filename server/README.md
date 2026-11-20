@@ -62,9 +62,9 @@ Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
-| `cursor` | `cursor-agent … acp` | `/root/.cursor` | `CURSOR_API_KEY` |
-| `claude_code` | `npx @zed-industries/claude-code-acp` | `/root/.claude` | `ANTHROPIC_API_KEY` |
-| `codebuddy` | `codebuddy --acp` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
+| `cursor` | `cursor-agent -p --output-format stream-json` | `/root/.cursor` | `CURSOR_API_KEY` |
+| `claude_code` | `claude -p --output-format stream-json` | `/root/.claude` | `ANTHROPIC_API_KEY` |
+| `codebuddy` | `codebuddy -p --output-format stream-json` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
 | `opencode` | `opencode run --format json` | `/root/.config/opencode` | 厂商原生 Key(由 `OPENCODE_API_KEY` 映射) |
 | `codex` | `codex app-server`（常驻，JSON-RPC） | `/root/.codex` | 登录文件 `{configRoot}/auth.json`（不注入环境变量） |

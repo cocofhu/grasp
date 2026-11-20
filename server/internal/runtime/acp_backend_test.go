@@ -64,12 +64,12 @@ func TestDefaultConfigRootAndResolve(t *testing.T) {
 
 func TestAgentRuntimeLabel(t *testing.T) {
 	cases := map[AcpBackend]string{
-		BackendCursor:          "cursor-agent",
-		BackendClaudeCode:      "claude-code-acp",
-		BackendCodeBuddy:       "codebuddy-acp",
+		BackendCursor:          "cursor-agent-stream-json",
+		BackendClaudeCode:      "claude-stream-json",
+		BackendCodeBuddy:       "codebuddy-stream-json",
 		BackendTrae:            "trae-acp",
 		BackendOpenCode:        "opencode-json",
-		BackendCodex:           "codex-cli",
+		BackendCodex:           "codex-app-server",
 		BackendDeepSeekHarness: "dsh-acp",
 		BackendKimiCode:        "kimi-code-acp",
 	}
