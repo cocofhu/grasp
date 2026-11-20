@@ -230,6 +230,22 @@ func TestRevivalThatLosesTheSessionReportsSessionReset(t *testing.T) {
 	}
 }
 
+func TestNewContextAfterALostSessionDoesNotReportAReset(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived, forget: true}
+	b, first := lifeBridge(t, agent)
+	first.die()
+	awaitOpens(t, agent, 2)
+	if err := waitConnected(b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.RestartChatContext(); err != nil {
+		t.Fatal(err)
+	}
+	if lost, _ := b.lostSession.Load().(string); lost != "" {
+		t.Fatalf("a new context still reports the lost session %q", lost)
+	}
+}
+
 func TestAgentWithoutResumeIsNotRevived(t *testing.T) {
 	agent := &lifeAgent{transport: provider.LongLived, noResume: true}
 	b, first := lifeBridge(t, agent)

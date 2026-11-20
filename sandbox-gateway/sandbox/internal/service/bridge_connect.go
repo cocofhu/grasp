@@ -236,6 +236,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	}
 	b.agentCtx, b.agentCancel = context.WithCancel(context.Background())
 	b.agentGeneration++
+	b.lostSession.Store("")
 	if auto != nil {
 		b.autoPermission = *auto
 	}
