@@ -56,14 +56,14 @@ func (c *ACPClient) AwaitTurn(ctx context.Context, opID string) error {
 	for {
 		select {
 		case raw := <-c.eventCh:
-			f := parseTurnFrame(raw)
+			f := c.decode(raw)
 			switch f.Op {
 			case "event":
 				if f.OpID != opID {
 					continue
 				}
 				idleReset()
-				if f.dataType() == "prompt_done" {
+				if f.ev.Type == "prompt_done" {
 					c.lastDoneOpID.Store(opID)
 					return nil
 				}
@@ -108,18 +108,7 @@ func (c *ACPClient) ReplayTurn(frames []json.RawMessage) (*ChatResult, error) {
 	result := &ChatResult{}
 	done := false
 	for _, raw := range frames {
-		env := raw
-		var probe struct {
-			Op string `json:"op"`
-		}
-		if json.Unmarshal(raw, &probe) != nil || probe.Op != "event" {
-			wrapped, err := json.Marshal(map[string]any{"op": "event", "data": raw})
-			if err != nil {
-				continue
-			}
-			env = wrapped
-		}
-		if c.dispatchEventData(env, result) {
+		if c.dispatchEventData(raw, result) {
 			done = true
 		}
 	}

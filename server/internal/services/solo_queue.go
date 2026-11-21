@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -51,8 +52,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 			c.mu.Lock()
 			c.turnID = q.ID
 			c.phase = SoloPhasePreparing
-			c.text.Reset()
-			c.textBreak = false
+			c.reply = sandbox.Reply{}
 			c.events = nil
 			c.execution = nil
 			c.mu.Unlock()

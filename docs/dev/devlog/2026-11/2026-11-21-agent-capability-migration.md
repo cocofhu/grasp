@@ -38,6 +38,10 @@
     - 删除重构遗留的死代码：`Bridge.Connect`（生产改走 `connect(openSpec)` 后只剩测试调用）、服务端 `sandbox.GetChatModel`（唯一调用方已改用 `GetChatModelSettings`）。
     - 合并重复实现：Codex / OpenCode / Pi 的帧构造与附件引用改用 `provider` 包的 `SendFrame`、`UpdateFrame`、`ChunkUpdate`、`ErrorFrame`、`PromptDoneFrame`、`WithAttachments`，`prompt_done` 只在一处定义；会话指针、用量基线与附件落盘共用 `provider.WriteFileAtomic`。
     - `handoff.Render` 直接返回文本。原 `Result` 的 `Included` / `Omitted` / `Tokens` 只有测试在读，测试改为从文本解析条目编号。
+    - Bridge 帧的解析两端各收敛为一处。服务端 `sandbox/frame.go` 的 `decodeFrame` 解析包装帧（`{op:"event", opId, data}`）和事件日志里的裸事件，`ChatResult.apply` 是唯一的折叠逻辑；实时回合、接回、回放、展示聚合、Solo 回复文本与对话历史都用它，删除了各自的信封解析与 Solo 的 `replyText`。前端 `lib/run/acpReply.ts` 的 `applyAcp` 由 Solo 和 Agent 测试对话共用，删除测试对话里整套重复的工具摘要、计划和工具名本地化代码，回复全文也按上面的段落规则拼接。
+    - 统一后顺带修掉两个问题：
+      - Solo 对话历史（`get_history` 与上下文前言）原来按并不存在的 `params.update` 形状读工具结果，工具输出从未进入历史。
+      - 各 Provider 按 ACP 把工具输出放在 `content` 块（`{type:"content", content:{type:"text", text}}`）里。服务端时间线原来把它显示成 JSON，Solo 与测试对话完全不显示工具输出；现在两端都只取文本，跳过图片。
     - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：

@@ -15,6 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/solobackup"
 
 	"github.com/google/uuid"
@@ -159,8 +160,7 @@ type soloChat struct {
 	phase     string
 	sandboxID uint
 	turnID    string
-	text      strings.Builder
-	textBreak bool // the next reply text starts a new paragraph
+	reply     sandbox.Reply
 	events    []json.RawMessage
 	execution *models.ChatExecution
 }
@@ -748,7 +748,7 @@ func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
 	for i, event := range c.events {
 		events[i] = append(json.RawMessage(nil), event...)
 	}
-	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}, true
+	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.reply.Text(), Events: events, Execution: c.execution}, true
 }
 
 // PreviewPending reads the authoritative FIFO without querying stored history.

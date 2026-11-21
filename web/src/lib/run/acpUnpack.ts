@@ -35,8 +35,10 @@ export function contentText(v: unknown): string {
   if (typeof v === 'string') return v
   if (Array.isArray(v)) return v.map(contentText).join('')
   if (typeof v === 'object') {
-    const o = v as { text?: unknown; parts?: unknown }
+    const o = v as { text?: unknown; content?: unknown; parts?: unknown }
     if (typeof o.text === 'string') return o.text
+    // ACP tool call content: {type:"content", content:{type:"text", text}}.
+    if (o.content !== undefined) return contentText(o.content)
     if (Array.isArray(o.parts)) return o.parts.map(contentText).join('')
   }
   return ''

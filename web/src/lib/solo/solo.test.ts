@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SoloMessage } from '@/lib/api/apiTypes'
-import { applyAcp, emptyAgentTurn, partsOf, turnsFromMessages } from './acpTurn'
+import { turnsFromMessages } from './acpTurn'
 import { draftFromProject, draftProblems, emptyDraft, inputFromDraft, isRepoUrl, repoNameFromUrl } from './projectForm'
 import { repoShort } from './soloPrefs'
 import { soloErrorText } from './soloErrors'
@@ -10,44 +10,6 @@ const label = () => ''
 const chunk = (kind: string, text: string) => ({ op: 'event', data: { type: 'session_update', update: { sessionUpdate: kind, content: { type: 'text', text } } } })
 
 describe('acpTurn', () => {
-  it('folds message, thought and tool frames in arrival order', () => {
-    const turn = emptyAgentTurn('live:1', true)
-    applyAcp(chunk('agent_thought_chunk', 'think '), turn, label, 'Tool')
-    applyAcp(chunk('agent_thought_chunk', 'more'), turn, label, 'Tool')
-    applyAcp(
-      { data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'run_shell', status: 'in_progress', rawInput: { command: 'ls -la', token: 'x' } } } },
-      turn,
-      label,
-      'Tool',
-    )
-    applyAcp({ data: { type: 'session_update', update: { sessionUpdate: 'tool_call_update', toolCallId: 't1', status: 'completed', rawOutput: { stdout: 'ok' } } } }, turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'Hello'), turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', ' world'), turn, label, 'Tool')
-
-    expect(turn.text).toBe('Hello world')
-    expect(turn.tools).toHaveLength(1)
-    expect(turn.tools[0]).toMatchObject({ id: 't1', title: 'Run Shell', status: 'completed', summary: 'ls -la', output: 'ok' })
-    expect(turn.tools[0]!.input).toContain('****')
-    expect(partsOf(turn).map((p) => p.kind)).toEqual(['thought', 'tool', 'message'])
-    expect(partsOf(turn)[0]!.text).toBe('think more')
-  })
-
-  it('keeps each steer as its own step between the reply text', () => {
-    const turn = emptyAgentTurn('live:1', true)
-    applyAcp(chunk('agent_message_chunk', 'a'), turn, label, 'Tool')
-    applyAcp({ op: 'event', data: { type: 'user_steer', text: 'one' } }, turn, label, 'Tool')
-    applyAcp({ data: { type: 'user_steer', text: 'two' } }, turn, label, 'Tool')
-    applyAcp({ data: { type: 'user_steer', text: '  ' } }, turn, label, 'Tool')
-    applyAcp(chunk('agent_message_chunk', 'b'), turn, label, 'Tool')
-    expect(partsOf(turn)).toEqual([
-      { kind: 'message', text: 'a' },
-      { kind: 'steer', text: 'one' },
-      { kind: 'steer', text: 'two' },
-      { kind: 'message', text: 'b' },
-    ])
-    expect(turn.text).toBe('ab')
-  })
-
   it('rebuilds turns from persisted messages, replaying events', () => {
     const messages: SoloMessage[] = [
       { id: 'u1', sessionId: 's', role: 'user', content: 'hi', createdAt: '2026-01-01T00:00:00Z' },
@@ -65,18 +27,6 @@ describe('acpTurn', () => {
     expect(turns[3]!.steps).toEqual([{ kind: 'message', text: 'partial' }])
     expect(turns[3]!.status).toBe('stopped')
     expect(turns[4]!.role).toBe('system')
-  })
-
-  it('keeps provider diagnostics and partial output when the turn fails', () => {
-    const turn = emptyAgentTurn('live:failed', true)
-    applyAcp(chunk('agent_message_chunk', 'Partial reply'), turn, label, 'Tool')
-    for (const text of ['Quota exhausted', 'Check the selected model']) {
-      applyAcp({ op: 'event', data: { type: 'error_text', text } }, turn, label, 'Tool')
-    }
-    applyAcp({ data: { type: 'prompt_done', stopReason: 'failed' } }, turn, label, 'Tool')
-    expect(turn.status).toBe('failed')
-    expect(turn.error).toBe('Quota exhausted\nCheck the selected model')
-    expect(partsOf(turn)).toEqual([{ kind: 'message', text: 'Partial reply' }])
   })
 
   it.each<{ events: NonNullable<SoloMessage['events']>; error?: string }>([

@@ -672,98 +672,36 @@ func (c *ACPClient) Cancel() error {
 	return nil
 }
 
+// decode decodes one frame read from the bridge, logging malformed input.
+func (c *ACPClient) decode(raw json.RawMessage) frame {
+	f := decodeFrame(raw)
+	if f.Op == "" {
+		c.lg.Warn().Str("raw", textutil.TruncateBytes(string(raw), 200, "...")).Msg("malformed frame")
+	}
+	return f
+}
+
+// dispatchEventData decodes and applies one frame of this client's turn.
 func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) bool {
-	var envelope struct {
-		Op   string          `json:"op"`
-		OpID string          `json:"opId"`
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		c.lg.Warn().Err(err).Str("raw", textutil.TruncateBytes(string(raw), 200, "...")).Msg("malformed envelope")
-		return false
-	}
-	if envelope.Op != "event" || len(envelope.Data) == 0 {
-		return false
-	}
+	return c.applyFrame(c.decode(raw), result)
+}
 
-	var ev struct {
-		Type         string          `json:"type"`
-		OpID         string          `json:"opId"`
-		ReportedAt   time.Time       `json:"reportedAt"`
-		Update       json.RawMessage `json:"update"`
-		Usage        json.RawMessage `json:"usage"`
-		UsagePartial bool            `json:"usagePartial"`
-		Text         string          `json:"text"`
-		StopReason   string          `json:"stopReason"`
-		SessionReset bool            `json:"sessionReset"`
-	}
-	if err := json.Unmarshal(envelope.Data, &ev); err != nil {
-		c.lg.Warn().Err(err).Msg("malformed event data")
+// applyFrame records an event frame on the turn and folds it in; it reports
+// whether the frame ended the turn.
+func (c *ACPClient) applyFrame(f frame, result *ChatResult) bool {
+	if f.Op != "event" || len(f.Data) == 0 {
 		return false
 	}
-
 	if result != nil {
 		if result.OpID == "" {
-			result.OpID = envelope.OpID
+			result.OpID = f.OpID
 			if result.OpID == "" {
-				result.OpID = ev.OpID
+				result.OpID = f.ev.OpID
 			}
 		}
-		dup := make(json.RawMessage, len(envelope.Data))
-		copy(dup, envelope.Data)
-		result.RawEvents = append(result.RawEvents, dup)
+		result.RawEvents = append(result.RawEvents, append(json.RawMessage(nil), f.Data...))
 	}
-
-	if ev.Type == "turn_segment" {
-		if result != nil {
-			result.sealSegment()
-		}
-		return false
-	}
-	if ev.Type == "prompt_done" {
-		// Per-turn usage only — never session CumulativeUsage (cross-node reuse
-		// would otherwise bleed prior nodes into this turn).
-		if result != nil {
-			if result.doneSeen {
-				return true
-			}
-			result.doneSeen = true
-			result.SessionReset = ev.SessionReset
-			result.UsagePartial = ev.UsagePartial
-			result.EndedAt = ev.ReportedAt
-			if u, byModel := parsePromptDoneUsage(ev.Usage, c.usageModel()); u != nil {
-				result.Usage = models.AddTokenUsage(result.Usage, u)
-				result.UsageByModel = models.AddTokenUsageByModel(result.UsageByModel, byModel)
-			}
-			stop := strings.ToLower(strings.TrimSpace(ev.StopReason))
-			result.StopReason = stop
-			switch stop {
-			case "failed", "refusal":
-				result.Failed = true
-			case stopReasonTimeout, "cancelled":
-				result.Interrupted = true
-			}
-		}
-		return true
-	}
-	if ev.Type == "error_text" {
-		// oneshot provider surfaces model/CLI failures as raw error_text frames
-		// before prompt_done{stopReason:failed}. Capture the body so React can
-		// show it instead of an empty agent bubble.
-		if result != nil {
-			result.appendErrorText(ev.Text)
-		}
-		return false
-	}
-	if ev.Type == "user_steer" {
-		result.addSteer(envelope.Data)
-		return false
-	}
-	if ev.Type == "session_update" && len(ev.Update) > 0 {
-		kind, flat := normalizeSessionUpdate(ev.Update)
-		dispatchSessionUpdate(kind, flat, result)
-	}
-	return false
+	return result.apply(f, c.usageModel())
 }
 
 // Close shuts down the WebSocket. Safe to call multiple times.

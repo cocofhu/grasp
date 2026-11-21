@@ -423,6 +423,10 @@ func extractContentText(v any) string {
 		if s, ok := m["text"].(string); ok {
 			return s
 		}
+		if inner, ok := m["content"]; ok {
+			// ACP tool call content: {type:"content", content:{type:"text", text}}.
+			return extractContentText(inner)
+		}
 		if parts, ok := m["parts"].([]any); ok {
 			var b strings.Builder
 			for _, p := range parts {

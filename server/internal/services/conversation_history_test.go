@@ -161,9 +161,9 @@ func TestContextPreambleResendsRecentAttachments(t *testing.T) {
 func TestConversationHistoryIncludesVisibleToolResults(t *testing.T) {
 	row := models.SoloMessage{Events: []json.RawMessage{
 		json.RawMessage(`not JSON`),
-		json.RawMessage(`{"params":{"update":{"sessionUpdate":"agent_thought_chunk","toolCallId":"ignored"}}}`),
-		json.RawMessage(`{"params":{"update":{"sessionUpdate":"tool_call","toolCallId":"test","title":"npm test","status":"in_progress"}}}`),
-		json.RawMessage(`{"params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"test","status":"completed","content":[{"content":{"type":"text","text":"42 tests passed"}},{"content":{"type":"image","data":"binary must not appear"}}]}}}`),
+		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","toolCallId":"ignored"}}}`),
+		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"test","title":"npm test","status":"in_progress"}}}`),
+		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"test","status":"completed","content":[{"content":{"type":"text","text":"42 tests passed"}},{"content":{"type":"image","data":"binary must not appear"}}]}}}`),
 	}}
 	message := conversationMessage(row)
 	if len(message.ToolResults) != 1 || message.ToolResults[0].Title != "npm test" || message.ToolResults[0].Status != "completed" || message.ToolResults[0].Text != "42 tests passed" {
@@ -241,8 +241,8 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 func TestConversationHistoryDoesNotRecursivelyEmbedHistoryToolResponses(t *testing.T) {
 	for _, title := range []string{"mcp__artifact-store__get_history", "MCP tool"} {
 		row := models.SoloMessage{Events: []json.RawMessage{
-			json.RawMessage(fmt.Sprintf(`{"params":{"update":{"sessionUpdate":"tool_call","toolCallId":"history","title":%q}}}`, title)),
-			json.RawMessage(`{"params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),
+			json.RawMessage(fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"history","title":%q}}}`, title)),
+			json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),
 		}}
 		tools := conversationMessage(row).ToolResults
 		if len(tools) != 1 || tools[0].ID != "history" || tools[0].Status != "completed" || strings.Contains(tools[0].Text, "nested old history") || !strings.Contains(tools[0].Text, "已省略") {

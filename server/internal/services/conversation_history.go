@@ -301,54 +301,17 @@ func soloHistoryContent(row models.SoloMessage) string {
 	return models.RenderAnnotatedPrompt(row.Content, row.Annotations)
 }
 
-// Read only visible tool text/status from ACP updates, not the provider's raw
-// event envelope or inline image bytes. Updates merge into their tool call.
+// conversationTools reads a reply's tool calls with their visible output text
+// (no inline image bytes), as the transcript showed them.
 func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolResult {
-	var tools []mcp.ConversationHistoryToolResult
-	indices := map[string]int{}
+	var reply sandbox.Reply
 	for _, raw := range events {
-		var event struct {
-			Params struct {
-				Update struct {
-					Kind    string `json:"sessionUpdate"`
-					ID      string `json:"toolCallId"`
-					Title   string `json:"title"`
-					Status  string `json:"status"`
-					Content []struct {
-						Content struct {
-							Text string `json:"text"`
-						} `json:"content"`
-					} `json:"content"`
-				} `json:"update"`
-			} `json:"params"`
-		}
-		if json.Unmarshal(raw, &event) != nil {
-			continue
-		}
-		update := event.Params.Update
-		if (update.Kind != "tool_call" && update.Kind != "tool_call_update") || update.ID == "" {
-			continue
-		}
-		index, exists := indices[update.ID]
-		if !exists {
-			index = len(tools)
-			indices[update.ID] = index
-			tools = append(tools, mcp.ConversationHistoryToolResult{ID: update.ID})
-		}
-		if update.Title != "" {
-			tools[index].Title = update.Title
-		}
-		if update.Status != "" {
-			tools[index].Status = update.Status
-		}
-		var text []string
-		for _, block := range update.Content {
-			if block.Content.Text != "" {
-				text = append(text, block.Content.Text)
-			}
-		}
-		if len(text) > 0 {
-			tools[index].Text = strings.Join(text, "\n")
+		reply.Add(raw)
+	}
+	var tools []mcp.ConversationHistoryToolResult
+	for _, tc := range reply.Tools() {
+		if tc.ID != "" {
+			tools = append(tools, mcp.ConversationHistoryToolResult{ID: tc.ID, Title: tc.Title, Status: tc.Status, Text: tc.Output})
 		}
 	}
 	for i := range tools {

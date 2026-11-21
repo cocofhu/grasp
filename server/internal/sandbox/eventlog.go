@@ -415,56 +415,12 @@ func hasPromptBegin(frames []json.RawMessage) bool {
 }
 
 func frameIsPromptBegin(raw json.RawMessage) bool {
-	data := raw
-	var env struct {
-		Op   string          `json:"op"`
-		Data json.RawMessage `json:"data"`
-	}
-	if json.Unmarshal(raw, &env) == nil && env.Op == "event" && len(env.Data) > 0 {
-		data = env.Data
-	}
-	var probe struct {
-		Type string `json:"type"`
-	}
-	if json.Unmarshal(data, &probe) != nil {
-		return false
-	}
-	return probe.Type == "prompt_begin"
+	return decodeFrame(raw).ev.Type == "prompt_begin"
 }
 
-// dispatchFrame folds one persisted event frame into the timeline aggregate.
-// Frames may arrive either as a full {op:"event", data:{...}} envelope or as
-// the bare event payload {type, update}; both are handled. Usage is ledgered
-// from live turns and ReplayTurn only, never from these display reads.
+// dispatchFrame folds one persisted frame (wrapped or bare) into a display
+// aggregate. Usage is ledgered from live turns and ReplayTurn only, never
+// from these display reads.
 func dispatchFrame(raw json.RawMessage, result *ChatResult) {
-	data := raw
-	var env struct {
-		Op   string          `json:"op"`
-		Data json.RawMessage `json:"data"`
-	}
-	if json.Unmarshal(raw, &env) == nil && env.Op == "event" && len(env.Data) > 0 {
-		data = env.Data
-	}
-	var ev struct {
-		Type   string          `json:"type"`
-		Update json.RawMessage `json:"update"`
-		Text   string          `json:"text"`
-	}
-	if json.Unmarshal(data, &ev) != nil {
-		return
-	}
-	if ev.Type == "turn_segment" {
-		if result != nil {
-			result.sealSegment()
-		}
-		return
-	}
-	if ev.Type == "user_steer" {
-		result.addSteer(data)
-		return
-	}
-	if ev.Type == "session_update" && len(ev.Update) > 0 {
-		kind, flat := normalizeSessionUpdate(ev.Update)
-		dispatchSessionUpdate(kind, flat, result)
-	}
+	result.apply(decodeFrame(raw), "")
 }

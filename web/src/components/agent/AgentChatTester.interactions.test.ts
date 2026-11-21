@@ -339,13 +339,6 @@ describe('AgentChatTester interactions', () => {
     vm.send()
     expect(vm.errorMsg).toContain('huge.bin')
     expect(socket!.send).not.toHaveBeenCalled()
-
-    const turn = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
-    vm.applyAcp({}, turn)
-    vm.applyAcp({ type: 'other' }, turn)
-    expect(vm.humanizeTool('工具')).toBe('工具')
-    expect(vm.humanizeTool('tool_12345678')).toBe('')
-    expect(vm.planEntries({ steps: 'bad' })).toEqual([])
     w.unmount()
   })
 

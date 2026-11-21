@@ -29,6 +29,7 @@ describe('acpUnpack', () => {
     expect(contentText(null)).toBe('')
     expect(contentText({ parts: ['a', { text: 'b' }] })).toBe('ab')
     expect(contentText({ nope: true })).toBe('')
+    expect(contentText([{ type: 'content', content: { type: 'text', text: 'out' } }, { type: 'content', content: { type: 'image', data: 'x' } }])).toBe('out')
     expect(normalizeKind('toolCall-Update')).toBe('tool_call_update')
     expect(unwrapFrame(null)).toBeNull()
   })
