@@ -15,6 +15,7 @@ import { api, type SandboxView } from '@/lib/api/api'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { useToast } from '@/lib/composables/useToast'
+import { useDesktopImage } from '@/lib/composables/useDesktopImage'
 import { theme } from '@/lib/shared/theme'
 import { EMBED_THEME_MESSAGE } from '@/lib/inbox/embedChat'
 
@@ -62,24 +63,26 @@ const acpFrame = ref<HTMLIFrameElement | null>(null)
 const acpFrameTheme = ref(theme.value)
 const acpSrc = computed(() => `${api.sandboxBridgeUrl(id)}#theme=${acpFrameTheme.value}`)
 
-/** Desktop image: a 电脑 tab next to the browser shows the whole desktop. */
-const desktopImage = ref(false)
-
-async function detectDesktopImage() {
-  try {
-    desktopImage.value = (await api.sandboxDesktop(id)).mode === 'desktop'
-    if (!desktopImage.value && tab.value === 'computer') tab.value = 'novnc'
-  } catch {
-    /* stopped sandbox or old runtime: keep the browser label */
-  }
-}
+/** Desktop image: a 电脑 tab replaces the browser tab and shows the whole desktop. */
+const { desktopImage } = useDesktopImage(() => id, {
+  refreshKey: () => sandbox.value?.status === 'running' && !!sandbox.value?.connected,
+  onBrowser: () => {
+    if (tab.value === 'computer') tab.value = 'novnc'
+  },
+})
+watch(desktopImage, (desktop) => {
+  if (!desktop) return
+  novncMounted.value = false
+  if (tab.value === 'novnc') tab.value = 'computer'
+})
 
 const tabItems = computed(() => [
   { k: 'terminal', l: t('pages.sandboxConsole.tabs.terminal'), i: 'terminal' },
   { k: 'ide', l: t('pages.sandboxConsole.tabs.ide'), i: 'stage-ide' },
   { k: 'acp', l: t('pages.sandboxConsole.tabs.acp'), i: 'robot' },
-  { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
-  ...(desktopImage.value ? [{ k: 'computer', l: t('pages.sandboxConsole.tabs.computer'), i: 'monitor' }] : []),
+  desktopImage.value
+    ? { k: 'computer', l: t('pages.sandboxConsole.tabs.computer'), i: 'monitor' }
+    : { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
   { k: 'log', l: t('pages.sandboxConsole.tabs.log'), i: 'stage-log' },
 ])
 
@@ -306,7 +309,6 @@ watch(tab, (t) => {
 onMounted(async () => {
   window.addEventListener('message', onAcpMessage)
   tab.value = initialConsoleTab()
-  void detectDesktopImage()
   if (isMobile.value) {
     await loadMeta()
     return

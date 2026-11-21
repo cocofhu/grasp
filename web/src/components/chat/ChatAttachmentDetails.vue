@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import Icon from '@/components/ui/Icon.vue'
-import { attachmentDetails, attachmentDisplayName } from '@/lib/shared/attachments'
+import { attachmentDetails, attachmentDisplayName, attachmentSizeLabel } from '@/lib/shared/attachments'
 import type { ClarifyImage } from '@/lib/shared/types'
 defineProps<{ attachment: ClarifyImage; index: number }>()
 </script>
 
 <template>
-  <div class="mt-1 max-w-[140px] text-[10px] text-txt3" :title="attachmentDisplayName(attachment, index)">
+  <!-- w-0 min-w-full: follow the thumbnail width instead of widening the remove-button anchor. -->
+  <div class="mt-1 w-0 min-w-full text-[10px] text-txt3" :title="`${attachmentDisplayName(attachment, index)}\n${attachmentDetails(attachment)}`">
     <span class="block truncate text-[11px] text-txt2">{{ attachmentDisplayName(attachment, index) }}</span>
-    <span class="flex items-center gap-1"><Icon name="image" :size="11" />{{ attachmentDetails(attachment) }}</span>
+    <span class="block truncate">{{ attachmentSizeLabel(attachment) }}</span>
   </div>
 </template>
