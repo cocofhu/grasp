@@ -389,36 +389,15 @@ func planStatus(status string) string {
 	return status
 }
 
-func (s *session) emitUpdate(update map[string]any) {
-	s.emit(map[string]any{"type": "session_update", "sessionId": s.threadID, "update": update})
-}
+func (s *session) emitUpdate(update map[string]any) { s.emit(provider.UpdateFrame(s.threadID, update)) }
 
-func (s *session) emitError(text string) {
-	s.emit(map[string]any{"op": "raw", "type": "error_text", "text": text})
-}
+func (s *session) emitError(text string) { s.emit(provider.ErrorFrame(text)) }
 
 func (s *session) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage, partial bool) {
-	frame := map[string]any{"type": "prompt_done", "sessionId": s.threadID, "stopReason": stopReason}
-	if len(usage) > 0 {
-		frame["usage"] = usage
-		if partial {
-			frame["usagePartial"] = true
-		}
-	}
-	s.emit(frame)
+	s.emit(provider.PromptDoneFrame(s.threadID, stopReason, usage, partial))
 }
 
-func (s *session) emit(ev map[string]any) {
-	if s.onEvent == nil {
-		return
-	}
-	b, err := json.Marshal(ev)
-	if err != nil {
-		log.Printf("codex: 事件序列化失败: %v", err)
-		return
-	}
-	s.onEvent(b)
-}
+func (s *session) emit(frame map[string]any) { provider.SendFrame(s.onEvent, frame) }
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

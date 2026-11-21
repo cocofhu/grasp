@@ -92,22 +92,7 @@ func (f *pointerFile) write(p sessionPointer) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(f.path), ".agent-session-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err := tmp.Write(raw); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), f.path)
+	return provider.WriteFileAtomic(f.path, raw)
 }
 
 // PersistSession keeps this chat's native session across backend restarts:

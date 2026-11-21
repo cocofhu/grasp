@@ -21,7 +21,7 @@ func TestReactHandoffEntriesKeepStructuredParts(t *testing.T) {
 	if len(entries) != 3 {
 		t.Fatalf("entries = %+v", entries)
 	}
-	got := handoff.Render(entries, handoff.Options{TokenCap: 4000}).Text
+	got := handoff.Render(entries, handoff.Options{TokenCap: 4000})
 	for _, want := range []string{
 		"[#1 Agent] 用亮色吗\n  问题: 配色\n    - 亮色\n  表单: 环境\n    - DB_URL: set\n    - TOKEN\n  工具: read main.go\n",
 		"[#2 用户] 先看截图\n  附件: shot.png（需要时请让用户重新上传）\n  附件: 未命名附件（需要时请让用户重新上传）\n  批注: $.title — 改短\n  批注: only note\n",

@@ -120,26 +120,6 @@ func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effo
 	return true, err
 }
 
-// GetChatModel reads the default chat's explicit model. Empty means the
-// sandbox is following its primary model.
-func GetChatModel(ctx context.Context, host string, port int, password string) (string, error) {
-	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, "/api/models?chat=default", nil)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("get chat model: status %d", resp.StatusCode)
-	}
-	var info struct {
-		Selected string `json:"selected"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
-		return "", fmt.Errorf("get chat model: %w", err)
-	}
-	return strings.TrimSpace(info.Selected), nil
-}
-
 // SetChatModel selects the default chat's model and restarts that chat's
 // coding agent. Empty restores the primary model. The caller must not invoke
 // this while a turn is still generating. resumed reports that the restarted

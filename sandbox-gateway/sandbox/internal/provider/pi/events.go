@@ -214,37 +214,16 @@ func (z *sanitizer) flush() string {
 	return out
 }
 
-func (s *session) emitChunk(kind, text string) {
-	s.emitUpdate(map[string]any{"sessionUpdate": kind, "content": map[string]any{"type": "text", "text": text}})
-}
+func (s *session) emitChunk(kind, text string) { s.emitUpdate(provider.ChunkUpdate(kind, text)) }
 
 func (s *session) emitUpdate(update map[string]any) {
-	s.emit(map[string]any{"type": "session_update", "sessionId": s.sessionFile, "update": update})
+	s.emit(provider.UpdateFrame(s.sessionFile, update))
 }
 
-func (s *session) emitError(text string) {
-	s.emit(map[string]any{"op": "raw", "type": "error_text", "text": text})
-}
+func (s *session) emitError(text string) { s.emit(provider.ErrorFrame(text)) }
 
 func (s *session) emitPromptDone(stopReason string, usage map[string]provider.TokenUsage, partial bool) {
-	frame := map[string]any{"type": "prompt_done", "sessionId": s.sessionFile, "stopReason": stopReason}
-	if len(usage) > 0 {
-		frame["usage"] = usage
-		if partial {
-			frame["usagePartial"] = true
-		}
-	}
-	s.emit(frame)
+	s.emit(provider.PromptDoneFrame(s.sessionFile, stopReason, usage, partial))
 }
 
-func (s *session) emit(ev map[string]any) {
-	if s.onEventFrame == nil {
-		return
-	}
-	b, err := json.Marshal(ev)
-	if err != nil {
-		log.Printf("pi: 事件序列化失败: %v", err)
-		return
-	}
-	s.onEventFrame(b)
-}
+func (s *session) emit(frame map[string]any) { provider.SendFrame(s.onEventFrame, frame) }

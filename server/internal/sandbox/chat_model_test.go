@@ -43,9 +43,9 @@ func TestChatModelGetAndSet(t *testing.T) {
 	defer srv.Close()
 	host, port := splitTestHost(t, srv.URL)
 
-	got, err := GetChatModel(context.Background(), host, port, "secret")
-	if err != nil || got != "aux" {
-		t.Fatalf("get: %q %v", got, err)
+	got, err := GetChatModelSettings(context.Background(), host, port, "secret")
+	if err != nil || got.Selected != "aux" {
+		t.Fatalf("get: %q %v", got.Selected, err)
 	}
 	if resumed, err := SetChatModel(context.Background(), host, port, "secret", "aux-2"); err != nil || !resumed {
 		t.Fatalf("set: resumed=%v err=%v", resumed, err)
@@ -59,9 +59,9 @@ func TestChatModelGetAndSet(t *testing.T) {
 	if posted != "aux-2" {
 		t.Fatalf("posted %q", posted)
 	}
-	got, err = GetChatModel(context.Background(), host, port, "secret")
-	if err != nil || got != "aux-2" {
-		t.Fatalf("get after set: %q %v", got, err)
+	got, err = GetChatModelSettings(context.Background(), host, port, "secret")
+	if err != nil || got.Selected != "aux-2" {
+		t.Fatalf("get after set: %q %v", got.Selected, err)
 	}
 }
 

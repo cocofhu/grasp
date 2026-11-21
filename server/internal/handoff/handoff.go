@@ -52,20 +52,12 @@ type Options struct {
 	Notes []string
 }
 
-// Result is the rendered handoff and what it carried.
-type Result struct {
-	Text string
-	// Included and Omitted are entry numbers (1-based), oldest first.
-	Included, Omitted []int
-	Tokens            int
-}
-
 // Render renders entries within the budget. When they do not all fit, entries
 // are kept in priority order: the last user message, the last agent reply,
 // the first user message (the original request), then the rest newest first.
 // Kept entries stay in dialogue order and the omitted ones are listed by
 // number so the recipient knows the record has gaps.
-func Render(entries []Entry, o Options) Result {
+func Render(entries []Entry, o Options) string {
 	limit := o.TokenCap
 	if limit <= 0 {
 		limit = DefaultTokenCap
@@ -84,8 +76,8 @@ func Render(entries []Entry, o Options) Result {
 		blocks[i] = block(i+1, e)
 	}
 	all := strings.Join(blocks, "")
-	if t := Tokens(head.String() + all); t <= limit {
-		return Result{Text: head.String() + all, Included: span(1, len(entries)), Tokens: t}
+	if Tokens(head.String()+all) <= limit {
+		return head.String() + all
 	}
 
 	budget := limit - Tokens(head.String()) - longestNote(len(entries))
@@ -105,17 +97,15 @@ func Render(entries []Entry, o Options) Result {
 		budget -= need
 	}
 	var body strings.Builder
-	var included, omitted []int
+	var omitted []int
 	for i, b := range kept {
 		if b == "" {
 			omitted = append(omitted, i+1)
 			continue
 		}
-		included = append(included, i+1)
 		body.WriteString(b)
 	}
-	text := head.String() + omissionNote(omitted) + body.String()
-	return Result{Text: text, Included: included, Omitted: omitted, Tokens: Tokens(text)}
+	return head.String() + omissionNote(omitted) + body.String()
 }
 
 func block(n int, e Entry) string {
@@ -216,17 +206,6 @@ func runs(nums []int) []string {
 		i = j + 1
 	}
 	return parts
-}
-
-func span(from, to int) []int {
-	if to < from {
-		return nil
-	}
-	out := make([]int, 0, to-from+1)
-	for i := from; i <= to; i++ {
-		out = append(out, i)
-	}
-	return out
 }
 
 // excerpt keeps the head of s within budget tokens, mark included.

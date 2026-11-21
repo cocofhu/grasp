@@ -15,7 +15,7 @@ const handoffProductsNote = "已写入的平台产物若存在，请先用 get_c
 // renderHandoff is the dialogue a native session gets when it has not seen
 // it: a fresh sandbox, a dropped resume id, or a compacted context.
 func renderHandoff(history []models.ReactMessage) string {
-	return handoff.Render(reactHandoffEntries(history), handoff.Options{Notes: []string{handoffProductsNote}}).Text
+	return handoff.Render(reactHandoffEntries(history), handoff.Options{Notes: []string{handoffProductsNote}})
 }
 
 // reactHandoffEntries flattens persisted rows into handoff entries. A steer

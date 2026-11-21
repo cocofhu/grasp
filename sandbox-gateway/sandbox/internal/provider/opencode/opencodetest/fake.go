@@ -32,6 +32,9 @@ type Options struct {
 	SessionStore string
 	// IgnoreAbort plays a server that never confirms an abort.
 	IgnoreAbort bool
+	// SlowStart plays a server still starting: it never answers the first
+	// health check.
+	SlowStart bool
 	// OnPrompt, when set, sees each prompt first; an error rejects it.
 	OnPrompt func(Prompt) error
 }
@@ -95,6 +98,7 @@ type fake struct {
 	mu          sync.Mutex
 	seq         int
 	statusReads int
+	healthReads int
 	sessions    map[string]*fakeSession
 	subs        map[chan []byte]bool
 }
@@ -121,6 +125,14 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/global/health":
+		f.mu.Lock()
+		f.healthReads++
+		first := f.healthReads == 1
+		f.mu.Unlock()
+		if first && f.o.SlowStart {
+			<-r.Context().Done()
+			return
+		}
 		writeJSON(w, map[string]any{"healthy": true, "version": f.o.Version})
 	case r.Method == http.MethodGet && r.URL.Path == "/event":
 		f.stream(w, r)

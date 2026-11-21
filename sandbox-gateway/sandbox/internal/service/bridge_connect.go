@@ -223,11 +223,7 @@ func mcpServerSummary(mcp json.RawMessage) (count int, names []string) {
 	return 0, nil
 }
 
-// Connect 启动或替换 Agent 会话（由 AGENT_PROVIDER 选定的 provider 负责拉起对应 transport）。
-func (b *Bridge) Connect(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
-	return b.connect(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto})
-}
-
+// connect 启动或替换 Agent 会话（由 AGENT_PROVIDER 选定的 provider 负责拉起对应 transport）。
 func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	cwd, fsRoot, mcp := b.inheritFromDefault(spec.cwd, spec.fsRoot, spec.mcp)
 	auto := spec.auto

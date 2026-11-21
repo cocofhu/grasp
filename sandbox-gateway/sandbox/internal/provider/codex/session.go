@@ -330,14 +330,11 @@ func (s *session) ExitInfo() (string, error) {
 func (s *session) Prompt(ctx context.Context, text string, images []provider.PromptImage) (provider.TurnResult, error) {
 	s.turnMu.Lock()
 	defer s.turnMu.Unlock()
-	if len(images) > 0 {
-		files, err := provider.MaterializeAttachments(images)
-		if err != nil {
-			s.emitError(err.Error())
-			s.emitPromptDone("failed", nil, false)
-			return provider.TurnResult{StopReason: "failed"}, err
-		}
-		text = provider.AppendAttachmentRefs(text, files)
+	text, err := provider.WithAttachments(text, images)
+	if err != nil {
+		s.emitError(err.Error())
+		s.emitPromptDone("failed", nil, false)
+		return provider.TurnResult{StopReason: "failed"}, err
 	}
 	t := &activeTurn{done: make(chan turnEnd, 1), streamed: map[string]bool{}}
 	s.mu.Lock()

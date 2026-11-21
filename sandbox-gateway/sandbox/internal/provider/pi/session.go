@@ -134,7 +134,7 @@ func (s *session) ConfigFiles() []string {
 func (s *session) Prompt(ctx context.Context, text string, images []provider.PromptImage) (provider.TurnResult, error) {
 	s.turnMu.Lock()
 	defer s.turnMu.Unlock()
-	text, err := withAttachments(text, images)
+	text, err := provider.WithAttachments(text, images)
 	if err != nil {
 		return s.finishFailed(ctx, err)
 	}
@@ -443,15 +443,4 @@ func (s *session) ExitInfo() (string, error) {
 		msg += " " + provider.RedactDiagnostic(text, s.env) + "。"
 	}
 	return msg, s.proc.waitErr
-}
-
-func withAttachments(text string, images []provider.PromptImage) (string, error) {
-	if len(images) == 0 {
-		return text, nil
-	}
-	files, err := provider.MaterializeAttachments(images)
-	if err != nil {
-		return "", err
-	}
-	return provider.AppendAttachmentRefs(text, files), nil
 }

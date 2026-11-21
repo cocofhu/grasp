@@ -79,6 +79,7 @@ func TestFakeOpenCodeProcess(t *testing.T) {
 		Version: "1.19.4", Reply: "hello from opencode", Reasoning: "thinking it over",
 		RequestLog: os.Getenv("GRASP_FAKE_OPENCODE_LOG"), SessionStore: os.Getenv("GRASP_FAKE_OPENCODE_STORE"),
 		IgnoreAbort: os.Getenv("GRASP_FAKE_OPENCODE_IGNORE_ABORT") != "",
+		SlowStart:   os.Getenv("GRASP_FAKE_OPENCODE_SLOW_START") != "",
 	})
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(2)
@@ -147,6 +148,15 @@ func promptCtx(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestOpenRetriesAHealthCheckTheStartingServerNeverAnswers(t *testing.T) {
+	f := installFake(t, "GRASP_FAKE_OPENCODE_SLOW_START=1")
+	start := time.Now()
+	s, _ := f.open(t, "", "", "")
+	if s.version != "1.19.4" || time.Since(start) > 6*time.Second {
+		t.Fatalf("ready after %s, version %q", time.Since(start), s.version)
+	}
 }
 
 func TestPromptStreamsTheTurnAndItsUsage(t *testing.T) {

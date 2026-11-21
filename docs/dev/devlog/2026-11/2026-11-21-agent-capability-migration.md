@@ -31,10 +31,18 @@
     - OpenCode 后台任务的子会话创建后要过一会儿才报 busy，`/session/status` 在此之前查不到它；收到 `session.created` 后、子会话报出任何状态前（最多 30s）算作仍在运行。
     - Codex 换登录账号后接回的线程会因 `invalid_encrypted_content` 每轮失败；服务端把它和 Cursor 的卡死会话一样识别，在同一沙箱开新会话并交接对话后重试。
     - 已知未处理：Kimi Code 2.5.3 / 2.6.1 失败的回合仍回 `end_turn`（真实结果只在 `wire.jsonl`），我们钉在 2.4.0，升级前需补；Pi 断线重流同一推理块时转录里会重复部分文本（ACP 分片无法撤回）。
+  - 全量实测后的修正与收敛：
+    - `opencode serve` 启动期间收到的请求既不应答也不断开。健康检查原来沿用 30s 的通用请求超时，每次启动、切模型、崩溃重建都白等 30s；改为单次探测 2s 超时后重试，实测切模型从 32s 降到 9s。
+    - 沙箱自带聊天页显示 `user_steer` 的文本与附件，原来只显示「事件 · user_steer」。
+    - 删除重构遗留的死代码：`Bridge.Connect`（生产改走 `connect(openSpec)` 后只剩测试调用）、服务端 `sandbox.GetChatModel`（唯一调用方已改用 `GetChatModelSettings`）。
+    - 合并重复实现：Codex / OpenCode / Pi 的帧构造与附件引用改用 `provider` 包的 `SendFrame`、`UpdateFrame`、`ChunkUpdate`、`ErrorFrame`、`PromptDoneFrame`、`WithAttachments`，`prompt_done` 只在一处定义；会话指针、用量基线与附件落盘共用 `provider.WriteFileAtomic`。
+    - `handoff.Render` 直接返回文本。原 `Result` 的 `Included` / `Omitted` / `Tokens` 只有测试在读，测试改为从文本解析条目编号。
+    - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：
   - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。
   - 服务端 `go test ./...`、golangci-lint、`cover-check-server.sh 90`。`handoff` 包覆盖率 100%。新增测试覆盖优先级选择、超长条目截取、省略说明、未确认交接后开新会话并清除状态。
   - OpenCode 与 Pi 的事件回放测试取自真实抓包（工具回合、引导、中断）。
   - 实测 DeepSeek：OpenCode（模型连接 `api.deepseek.com/v1`）与 Pi（`deepseek/deepseek-v4-flash`）跑通工具回合、回合中引导、约 1s 内中断、新进程接回会话。交接文本在 1500 token 预算下省略 55/63 条后，模型仍答出最初需求的约束、最新决定和省略条数。
+  - 全量实测（真实 Bridge + 服务端 `ACPClient`）：Claude Code、CodeBuddy、Codex、OpenCode、Pi、DeepSeek Harness 走 DeepSeek（模型连接或官方 key），Cursor 走 Cursor key。每个 Agent 依次验证工具调用、回合中引导（不支持原生引导的 DeepSeek Harness 与 Cursor 走中断后重发）、取消、切换模型后接回、杀掉 Agent 进程后自动复活接回、重启后端后按会话指针接回、新开上下文。除上述 Claude 自动记忆外全部通过。
 - 后续：可选的冷恢复会话文件备份未做；Solo 的上下文前言（`services/conversation_history.go`）有自己的 `get_history` 回查机制，暂未改用 `handoff`。

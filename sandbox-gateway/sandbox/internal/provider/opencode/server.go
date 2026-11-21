@@ -39,6 +39,9 @@ type server struct {
 
 const (
 	readyTimeout = 60 * time.Second
+	// healthProbeTimeout bounds one health check: a request that reaches
+	// `opencode serve` while it is still starting is never answered.
+	healthProbeTimeout = 2 * time.Second
 	// requestTimeout bounds request/response calls; the event stream is not
 	// bounded.
 	requestTimeout = 30 * time.Second
@@ -87,7 +90,10 @@ func (s *server) ready(ctx context.Context) (string, error) {
 		var health struct {
 			Version string `json:"version"`
 		}
-		if err := s.call(ctx, http.MethodGet, "/global/health", nil, &health); err == nil {
+		probe, cancelProbe := context.WithTimeout(ctx, healthProbeTimeout)
+		err := s.call(probe, http.MethodGet, "/global/health", nil, &health)
+		cancelProbe()
+		if err == nil {
 			return health.Version, nil
 		}
 		select {

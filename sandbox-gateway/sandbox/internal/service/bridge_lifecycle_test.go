@@ -109,7 +109,7 @@ func lifeBridge(t *testing.T, agent *lifeAgent) (*Bridge, *lifeSess) {
 	b.agentProvider = agent
 	b.turnIdle, b.turnMax = 0, 0
 	auto := true
-	if _, err := b.Connect(t.TempDir(), "", nil, &auto); err != nil {
+	if _, err := b.connect(openSpec{cwd: t.TempDir(), auto: &auto}); err != nil {
 		t.Fatal(err)
 	}
 	_, sessions := agent.opened()
