@@ -139,6 +139,9 @@ type acpProvider struct {
 	sessions map[string]*reactSession    // runID|nodeID -> live react session
 	visitors map[string]*visitorLane     // runID|nodeID|lane -> share-link visitor chat
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
+	// handoffs marks nodes whose last dialogue handoff has no confirmed
+	// delivery (see handOff). Created on first use.
+	handoffs map[string]bool
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
 	// in sessions). AbortRun closes these so Cancel-during-agent unblocks
 	// streamChat instead of waiting out the node budget.

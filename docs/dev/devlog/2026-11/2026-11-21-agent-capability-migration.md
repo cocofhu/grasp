@@ -1,0 +1,21 @@
+# 2026-11-21 Agent 能力迁移收尾（#1311）
+
+- 日期：2026-11-21
+- 范围：`sandbox-gateway/sandbox/internal/provider`（`opencode`、`pi`、`oneshot`、`opencodejson`、`tail.go`）、`sandbox-gateway/sandbox/internal/agents`、`sandbox-gateway/sandbox/internal/service`、`sandbox-gateway/sandbox/internal/modelconnection`、`server/internal/handoff`、`server/internal/runtime`
+- 做了什么：
+  - 看门狗：回合中断后长驻会话等 Agent 真正停下再返回；`provider.InterruptGrace`（15s）内不响应则关闭进程，走崩溃复活路径接回原会话。
+  - 会话指针：default 会话的原生会话指针写入 `~/.grasp/agent-session.json`，后端重启后的第一个 Agent 在同一 Agent 与目录下接回，`connected` 帧带 `resumed: true`。
+  - 配置变更：`connect` 带来不同 MCP 列表，或 `provider.ConfigReader` 声明的启动配置文件变化时，下一轮前重建进程并接回原会话。
+  - 子 Agent：Codex（`spawnAgent` 子线程）与 OpenCode（子会话）仍在运行时不发 `prompt_done`，工作流节点不会提前完成。
+  - OpenCode 改为常驻 `opencode serve`：回环地址 + 随机 basic auth 密码，`prompt_async` 发起与引导，`abort` 中断，SSE `/event` 汇总事件；一轮在每条已发送的用户消息都有回复且会话空闲后结束。删除 one-shot 里的 OpenCode 分支和 `--title`。
+  - Pi 改为常驻 `pi --mode rpc`：会话文件即接回指针，带 `streamingBehavior: steer` 的 `prompt` 引导，`abort` 中断；滞留的引导用 `get_state` 识别后收尾，扩展对话框一律取消。
+  - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用。
+  - 新增 `server/internal/handoff`，取代 `renderRecoveryTranscript`：对话先转成统一条目（回合中补充的引导单列为用户条目），按约 12000 token 预算挑选，优先级为最新用户消息、最新 Agent 回复、最初需求，其余从新到旧；放不下的条目给出条数与编号，单条过长时截取开头并标注。开头声明历史只作参考、不是新指令，工具输出与思考过程未保留。工作流的重建、原会话接不回、`/compact` 三处共用。
+  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认；恢复时若保留下来的原生会话（warm 或 resumed）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除。
+- 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
+- 如何验证：
+  - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。
+  - 服务端 `go test ./...`、golangci-lint、`cover-check-server.sh 90`。`handoff` 包覆盖率 100%。新增测试覆盖优先级选择、超长条目截取、省略说明、未确认交接后开新会话并清除状态。
+  - OpenCode 与 Pi 的事件回放测试取自真实抓包（工具回合、引导、中断）。
+  - 实测 DeepSeek：OpenCode（模型连接 `api.deepseek.com/v1`）与 Pi（`deepseek/deepseek-v4-flash`）跑通工具回合、回合中引导、约 1s 内中断、新进程接回会话。交接文本在 1500 token 预算下省略 55/63 条后，模型仍答出最初需求的约束、最新决定和省略条数。
+- 后续：可选的冷恢复会话文件备份未做；Solo 的上下文前言（`services/conversation_history.go`）有自己的 `get_history` 回查机制，暂未改用 `handoff`。

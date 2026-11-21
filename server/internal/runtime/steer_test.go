@@ -72,8 +72,8 @@ func TestTranscriptsReplaySteers(t *testing.T) {
 	if got := renderTranscript(history); got != want {
 		t.Fatalf("transcript = %q", got)
 	}
-	if got := renderRecoveryTranscript(history); !strings.Contains(got, want) {
-		t.Fatalf("recovery transcript = %q", got)
+	if got := renderHandoff(history); !strings.Contains(got, "[#1 用户] build it\n[#2 用户] add tests too\n  （回合进行中补充）\n[#3 Agent] built, with tests\n") {
+		t.Fatalf("handoff = %q", got)
 	}
 }
 

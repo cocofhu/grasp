@@ -29,7 +29,7 @@ func (c *acpProvider) skillPrompt(req NodeReq, sb *sandbox.Sandbox, home, human 
 
 func workflowContextPrompt(base string, state models.ChatContext, human string) string {
 	if state.Pending == chatcmd.Compact && len(state.Messages) > 0 {
-		base += "\n\n## 对话上下文摘录\n" + renderRecoveryTranscript(state.Messages)
+		base += "\n\n## 对话上下文摘录\n" + renderHandoff(state.Messages)
 	}
 	return strings.TrimSpace(base) + "\n\n## 用户消息\n" + human
 }

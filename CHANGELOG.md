@@ -4,13 +4,20 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Agent 会话更稳：
+  - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
+  - 沙箱后端重启后，Agent 接回重启前的会话。
+  - 凭据、模型连接或 MCP 配置变化后，Agent 在下一轮前重启以加载新配置，并接回原会话。
+  - Codex 和 OpenCode 派生的子 Agent 仍在运行时，回合不会提前结束，工作流节点也不会提前判定完成。
+  - 工作流对话需要在新会话里补发对话记录时（沙箱重建、原会话接不回、`/compact`），记录按约 12000 token 的预算挑选：优先保留最新的用户消息、最新的 Agent 回复和最初的需求，再从新到旧补充其余记录。放不下的记录会注明条数和编号。记录会标明只作参考、不是新指令。上一次补发没能确认送达时，会先开新会话再补发，避免 Agent 看到重复的历史。
+
 - DeepSeek Harness、Kimi Code 和 Trae 也能继续原来的会话：Agent 进程意外退出、沙箱休眠恢复后重建或切换模型设置时，Agent 仍记得之前的对话，不再从空白会话开始。需要沙箱运行时更新后生效。
 
 - 自托管沙箱不再支持 `AGENT_PROVIDER=cursor_acp` / `claude_code_acp` / `codebuddy_acp`，请改用 `cursor` / `claude_code` / `codebuddy`。这三个旧取值现在会回落到 `cursor`。平台创建的沙箱从未使用这些取值，不受影响。沙箱环境变量 `ACP_CODEBUDDY_REGION` 同时移除，CodeBuddy 区域请用服务端的 `GRASP_CODEBUDDY_REGION` 或官方变量 `CODEBUDDY_INTERNET_ENVIRONMENT`。
 
 - 切换模型、思考强度或速度档位后，Codex 和 Claude Code 等编码工具会继续原来的会话，Agent 记得之前的对话和工作，不用再补发截断的聊天记录。常驻的 Agent 进程意外退出时自动重启并接回原会话，排队消息继续执行。沙箱休眠恢复后，或进程运行超过 6 小时（`SANDBOX_AGENT_MAX_AGE`），会在下一轮开始前重建 Agent 进程。接不回原会话时，平台照旧补发对话记录。Claude Code 同一会话的后续回合不再把之前回合的用量重复计入。需要沙箱运行时更新后生效。
 
-- Agent 回合进行中可以「立即引导」：在 Solo、Agent Studio、工作流澄清 / 复审 / 审批和访客分享链接的排队消息上点闪电按钮，消息直接进入正在进行的回合，Agent 接着当前工作处理，不用等这一轮结束。Codex、Claude Code 和 CodeBuddy 原生支持；其他 Agent 会先停下当前回合，再把这条消息作为下一轮发送。引导内容显示在对话中，也会保留在历史记录和上下文里。Codex 改为常驻 `app-server` 运行，需要沙箱运行时更新后生效。
+- Agent 回合进行中可以「立即引导」：在 Solo、Agent Studio、工作流澄清 / 复审 / 审批和访客分享链接的排队消息上点闪电按钮，消息直接进入正在进行的回合，Agent 接着当前工作处理，不用等这一轮结束。Codex、Claude Code、CodeBuddy、OpenCode 和 Pi 原生支持；其他 Agent 会先停下当前回合，再把这条消息作为下一轮发送。引导内容显示在对话中，也会保留在历史记录和上下文里。Codex 改为常驻 `app-server` 运行，OpenCode 改为常驻 `opencode serve`，Pi 改为常驻 `pi --mode rpc`，需要沙箱运行时更新后生效。
 
 - 桌面镜像的沙箱只显示「电脑」，不再同时显示「浏览器」。修复沙箱启动期间打开资源面板时检测不到桌面、启动完成后也不出现「电脑」的问题：Agent 连上后会自动重新检测，检测失败时每 3 秒重试。已打开的「浏览器」标签会换成「电脑」，打开预览和聊天里的 localhost 链接也在「电脑」里打开。沙箱控制台同样适用。
 

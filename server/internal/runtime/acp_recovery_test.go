@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -169,5 +170,50 @@ func TestWorkflowCapacityRejectsBeforeProvisioning(t *testing.T) {
 	_, _, _, _, err := h.p.openNodeSandbox(context.Background(), h.req("n1"))
 	if err == nil || h.mgr.createCount() != 0 {
 		t.Fatalf("capacity rejection created workload: %v", err)
+	}
+}
+
+func TestReactRestoreOpensFreshSessionAfterUnconfirmedHandoff(t *testing.T) {
+	var failing atomic.Bool
+	h := newSharedHarness(t, func(int) chatFunc {
+		return func(int) turnAction {
+			if failing.Load() {
+				return turnAction{errorText: "upstream reset", failed: true}
+			}
+			return turnAction{narration: "ok"}
+		}
+	})
+	h.run(t, h.req("n1"))
+	h.p.registry = &recoveryRegistry{sb: h.p.shared.get(h.runID).sb}
+	bridge := h.mgr.bridge(0)
+	history := []models.ReactMessage{{Role: "human", Text: "keep edited files"}}
+	key := reactKey(h.req("n1"))
+
+	failing.Store(true)
+	if sess, _, _ := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history); sess != nil {
+		sess.acp.Close()
+	}
+	failing.Store(false)
+	if !h.p.handoffUnconfirmed(key) {
+		t.Fatal("a failed handoff turn was treated as delivered")
+	}
+	bridge.mu.Lock()
+	bridge.resumes = true
+	bridge.mu.Unlock()
+	before := bridge.promptCount()
+	sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history)
+	if err != nil || !found || sess == nil {
+		t.Fatalf("restore=%+v %v %v", sess, found, err)
+	}
+	defer sess.acp.Close()
+	if bridge.restartCount() != 1 || bridge.promptCount()-before != 1 {
+		t.Fatalf("restarts=%d replays=%d; want a fresh native session with one handoff", bridge.restartCount(), bridge.promptCount()-before)
+	}
+	if h.p.handoffUnconfirmed(key) {
+		t.Fatal("a delivered handoff stayed unconfirmed")
+	}
+	h.p.closeSession(key)
+	if len(h.p.handoffs) != 0 {
+		t.Fatal("closing the node kept its handoff state")
 	}
 }
