@@ -220,6 +220,10 @@ func (f *fakeServer) play(text string) {
 	case strings.Contains(text, "unknown-request"):
 		f.send(map[string]any{"id": 96, "method": "item/tool/requestUserInput", "params": map[string]any{}})
 		f.complete("completed", "")
+	case strings.Contains(text, "delegate"):
+		f.item("item/completed", map[string]any{"type": "subAgentActivity", "id": "call_1", "kind": "started",
+			"agentThreadId": "child-1", "agentPath": "/root/helper"})
+		f.complete("completed", "")
 	case strings.Contains(text, "spawn"):
 		spawn := map[string]any{"type": "collabAgentToolCall", "id": "s1", "tool": "spawnAgent", "senderThreadId": f.thread,
 			"receiverThreadIds": []string{"child-1"}, "status": "completed", "agentsStates": map[string]any{"child-1": map[string]any{"status": "pendingInit"}}}

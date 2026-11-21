@@ -55,6 +55,10 @@ func TestIsPoisonedResumeFailure(t *testing.T) {
 	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: phrase, Failed: true, ToolCalls: []sandbox.ACPToolCall{{Title: "Read"}}}, nil) {
 		t.Fatal("a turn that already called a tool must keep its session")
 	}
+	codex := `unexpected status 400 Bad Request: {"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"Encrypted content could not be decrypted or parsed."}}`
+	if !isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: codex, Failed: true}, nil) {
+		t.Fatal("Codex history encrypted for another login should restart")
+	}
 	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: "quota exceeded", Failed: true}, nil) {
 		t.Fatal("quota is not a poisoned resume")
 	}

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -116,6 +117,27 @@ func (s *session) onEvent(raw json.RawMessage) {
 		if json.Unmarshal(ev.Properties, &p) == nil && p.SessionID == s.id && p.Field == "text" {
 			s.partDelta(p.MessageID, p.PartID, p.Delta)
 		}
+	case "session.created":
+		var p struct {
+			Info struct {
+				ID       string `json:"id"`
+				ParentID string `json:"parentID"`
+			} `json:"info"`
+		}
+		if json.Unmarshal(ev.Properties, &p) == nil && p.Info.ParentID == s.id && p.Info.ID != "" {
+			s.mu.Lock()
+			s.unstarted[p.Info.ID] = time.Now()
+			s.mu.Unlock()
+		}
+	case "session.deleted":
+		var p struct {
+			Info struct {
+				ID string `json:"id"`
+			} `json:"info"`
+		}
+		if json.Unmarshal(ev.Properties, &p) == nil {
+			s.started(p.Info.ID)
+		}
 	case "session.status":
 		var p struct {
 			SessionID string `json:"sessionID"`
@@ -124,7 +146,11 @@ func (s *session) onEvent(raw json.RawMessage) {
 				Message string `json:"message"`
 			} `json:"status"`
 		}
-		if json.Unmarshal(ev.Properties, &p) != nil || p.SessionID != s.id {
+		if json.Unmarshal(ev.Properties, &p) != nil {
+			return
+		}
+		if p.SessionID != s.id {
+			s.started(p.SessionID)
 			return
 		}
 		switch p.Status.Type {
@@ -143,8 +169,13 @@ func (s *session) onEvent(raw json.RawMessage) {
 		var p struct {
 			SessionID string `json:"sessionID"`
 		}
-		if json.Unmarshal(ev.Properties, &p) == nil && p.SessionID == s.id {
+		if json.Unmarshal(ev.Properties, &p) != nil {
+			return
+		}
+		if p.SessionID == s.id {
 			s.idle()
+		} else {
+			s.started(p.SessionID)
 		}
 	case "session.error":
 		var p struct {
@@ -159,6 +190,13 @@ func (s *session) onEvent(raw json.RawMessage) {
 	case "question.asked":
 		s.answer(ev.Properties, "/question/%s/reject", nil)
 	}
+}
+
+// started forgets a child session once it reports a status of its own.
+func (s *session) started(id string) {
+	s.mu.Lock()
+	delete(s.unstarted, id)
+	s.mu.Unlock()
 }
 
 func (s *session) messageUpdated(info messageInfo) {

@@ -4,7 +4,8 @@
 //
 // The prompt text selects the script: "hang" keeps the run going until it is
 // aborted or steered, "fail" ends it with a model error, "subagent" leaves a
-// child session busy for a few status polls. Any other prompt gets Reply.
+// child session busy for a few status polls, "background" starts a child that
+// reports busy only after a moment. Any other prompt gets Reply.
 package opencodetest
 
 import (
@@ -215,6 +216,20 @@ func (f *fake) publish(typ string, props map[string]any) {
 	}
 }
 
+// background starts a child session the way a background task does: it is
+// created at once but reports busy only a moment later.
+func (f *fake) background(parent string) {
+	child := f.create(parent)
+	f.publish("session.created", map[string]any{"info": map[string]string{"id": child.id, "parentID": parent}})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		f.mu.Lock()
+		child.statusLeft = 2
+		f.mu.Unlock()
+		f.publish("session.status", map[string]any{"sessionID": child.id, "status": map[string]string{"type": "busy"}})
+	}()
+}
+
 func (f *fake) nextID(prefix string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -355,6 +370,9 @@ func (f *fake) run(s *fakeSession, text string) {
 			f.finish(s)
 			return
 		default:
+			if strings.Contains(text, "background") {
+				f.background(sid)
+			}
 			if strings.Contains(text, "subagent") {
 				child := f.create(sid)
 				f.mu.Lock()

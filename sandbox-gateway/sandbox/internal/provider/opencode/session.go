@@ -47,6 +47,10 @@ type session struct {
 	// openTools are tool calls shown as running; a turn that ends before
 	// they report closes them as failed.
 	openTools map[string]bool
+	// unstarted are child sessions created but not yet reporting a status,
+	// by creation time: a background task returns before its child turns
+	// busy, and /session/status does not list it until then.
+	unstarted map[string]time.Time
 
 	streamCancel context.CancelFunc
 	done         chan struct{}
@@ -86,7 +90,7 @@ func newSession(srv *server, opts provider.OpenOptions, env []string, onEvent fu
 	return &session{
 		srv: srv, opts: opts, env: env, onEventFrame: onEvent, cleanup: cleanup, cwd: opts.Cwd, fsRoot: fsRoot,
 		roles: map[string]string{}, parts: map[string]*partState{}, cumUsage: map[string]provider.TokenUsage{},
-		openTools: map[string]bool{}, done: make(chan struct{}),
+		openTools: map[string]bool{}, unstarted: map[string]time.Time{}, done: make(chan struct{}),
 	}
 }
 
@@ -353,6 +357,10 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 	return nil
 }
 
+// childStartGrace bounds how long a created child that has reported no
+// status yet counts as running.
+const childStartGrace = 30 * time.Second
+
 var errSubagentHostExited = errors.New("opencode serve exited while subagents were running")
 
 // busyChildren counts this session's child sessions that are still running.
@@ -372,9 +380,12 @@ func (s *session) busyChildren(ctx context.Context) (int, error) {
 	if err := s.srv.call(ctx, http.MethodGet, "/session/status", nil, &status); err != nil {
 		return 0, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	busy := 0
 	for _, child := range children {
-		if st, ok := status[child.ID]; ok && st.Type != "idle" {
+		created, unstarted := s.unstarted[child.ID]
+		if st, ok := status[child.ID]; (ok && st.Type != "idle") || (unstarted && time.Since(created) < childStartGrace) {
 			busy++
 		}
 	}

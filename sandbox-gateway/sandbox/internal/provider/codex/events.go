@@ -78,6 +78,9 @@ type threadItem struct {
 	AgentsStates      map[string]struct {
 		Status string `json:"status"`
 	} `json:"agentsStates"`
+	// subAgentActivity (multi-agent v2): a subagent thread started or ended.
+	Kind          string `json:"kind"`
+	AgentThreadID string `json:"agentThreadId"`
 }
 
 // currentTurn returns the active turn when ref belongs to it. A notification
@@ -184,7 +187,7 @@ func (s *session) onNotification(raw json.RawMessage) error {
 		s.mu.Lock()
 		streamed := t.streamed[p.Item.ID]
 		s.mu.Unlock()
-		if p.Item.Type == "collabAgentToolCall" {
+		if p.Item.Type == "collabAgentToolCall" || p.Item.Type == "subAgentActivity" {
 			s.trackSubagents(p.Item)
 		}
 		if n.Method == "item/started" {
@@ -233,11 +236,16 @@ func (s *session) onNotification(raw json.RawMessage) error {
 	return nil
 }
 
-// trackSubagents follows the agents this thread spawned through the collab
-// tool calls that report on them.
+// trackSubagents follows the agents this thread spawned: through the collab
+// tool calls that report on them, or with multi-agent v2 (the default for
+// newer models) through subAgentActivity items. Whether one still runs is
+// asked of the app-server when the turn ends.
 func (s *session) trackSubagents(item threadItem) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if item.Type == "subAgentActivity" && item.Kind == "started" && item.AgentThreadID != "" {
+		s.subagents[item.AgentThreadID] = true
+	}
 	if item.Tool == "spawnAgent" {
 		for _, id := range item.ReceiverThreadIDs {
 			s.subagents[id] = true

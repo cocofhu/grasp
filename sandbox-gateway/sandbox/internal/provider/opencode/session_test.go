@@ -332,6 +332,21 @@ func TestTurnWaitsForBusySubagents(t *testing.T) {
 	}
 }
 
+func TestTurnWaitsForABackgroundSubagentThatHasNotStarted(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	res, err := s.Prompt(promptCtx(t), "start a background task", nil)
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+	if calls := rec.updates("tool_call"); len(calls) != 1 || calls[0]["title"] != "等待 1 个子 Agent 完成" {
+		t.Fatalf("the turn ended before its background subagent ran: %v", calls)
+	}
+}
+
 func TestResumeContinuesTheSessionInANewServer(t *testing.T) {
 	f := installFake(t)
 	first, _ := f.open(t, "", "", "")

@@ -26,6 +26,11 @@
     - 回合前回收 Agent 进程失败时清空队列并广播 Agent 退出。
     - `OutputTail` 跨写入拼接整行，先脱敏再截断。
     - 交接文本中行首的 `[#` 改写为全角，历史内容不能冒充条目头。
+  - 对照 t3code 已修复的问题：
+    - Codex multi-agent v2（新模型默认）用 `subAgentActivity` 条目报告子 Agent，不再有 `spawnAgent`；`kind: started` 的 `agentThreadId` 也登记为待等子线程。
+    - OpenCode 后台任务的子会话创建后要过一会儿才报 busy，`/session/status` 在此之前查不到它；收到 `session.created` 后、子会话报出任何状态前（最多 30s）算作仍在运行。
+    - Codex 换登录账号后接回的线程会因 `invalid_encrypted_content` 每轮失败；服务端把它和 Cursor 的卡死会话一样识别，在同一沙箱开新会话并交接对话后重试。
+    - 已知未处理：Kimi Code 2.5.3 / 2.6.1 失败的回合仍回 `end_turn`（真实结果只在 `wire.jsonl`），我们钉在 2.4.0，升级前需补；Pi 断线重流同一推理块时转录里会重复部分文本（ACP 分片无法撤回）。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：
   - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。

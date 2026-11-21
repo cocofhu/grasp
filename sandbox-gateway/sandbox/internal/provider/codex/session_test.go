@@ -517,6 +517,20 @@ func TestTurnEndsOnlyAfterItsSubagentsStop(t *testing.T) {
 	}
 }
 
+func TestTurnWaitsForMultiAgentV2Subagents(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	s, rec := open(t, provider.OpenOptions{})
+	res, err := prompt(t, s, nil, "delegate")
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if calls := rec.updates("tool_call"); len(calls) != 1 || calls[0]["title"] != "等待 1 个子 Agent 完成" {
+		t.Fatalf("the turn ended before its subagent stopped: %v", calls)
+	}
+}
+
 func TestInterruptWhileWaitingForSubagents(t *testing.T) {
 	old := subagentPoll
 	subagentPoll = time.Hour
