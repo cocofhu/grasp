@@ -671,13 +671,13 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
     } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
       const ended = isoStamp(ev.at)
       if (ended && agent) agent.endedAt = ended
-    } else if (ev.type === 'context_command' || (ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
+    } else if (ev.type === 'context_command' || ev.type === 'user_steer' || (ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
       if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
       applyFrame(ev, agent)
     }
   }
   const last = rebuilt[rebuilt.length - 1]
-  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length && !last.error) {
+  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length && !last.steps?.length && !last.error) {
     rebuilt.pop()
   }
   return rebuilt

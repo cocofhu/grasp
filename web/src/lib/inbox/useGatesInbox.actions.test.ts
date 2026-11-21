@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   reactReply: vi.fn(),
   reactCancel: vi.fn(),
   reactQueueRemove: vi.fn(),
+  reactQueueSteer: vi.fn(),
   reactQueueReorder: vi.fn(),
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
@@ -149,6 +150,7 @@ vi.mock('@/lib/api/api', async () => {
       reactReply: mocks.reactReply,
       reactCancel: mocks.reactCancel,
       reactQueueRemove: mocks.reactQueueRemove,
+      reactQueueSteer: mocks.reactQueueSteer,
       reactQueueReorder: mocks.reactQueueReorder,
       nodeEvents: mocks.nodeEvents,
       takeoverNode: mocks.takeoverNode,
@@ -290,6 +292,7 @@ describe('useGatesInbox actions', () => {
     mocks.reactReply.mockResolvedValue({})
     mocks.reactCancel.mockResolvedValue({})
     mocks.reactQueueRemove.mockResolvedValue({})
+    mocks.reactQueueSteer.mockResolvedValue({})
     mocks.reactQueueReorder.mockResolvedValue({})
     mocks.nodeEvents.mockResolvedValue({ events: [], hasMore: false })
     mocks.runArtifacts.mockResolvedValue([])
@@ -1298,6 +1301,8 @@ describe('useGatesInbox actions', () => {
     await inbox.onClarifyCancel()
     await inbox.onClarifyQueueRemove('item-1')
     await inbox.onClarifyQueueReorder(['a', 'b'])
+    await inbox.onClarifyQueueSteer('item-2')
+    expect(mocks.reactQueueSteer).toHaveBeenCalledWith('run-chat', 'react', 'item-2')
     expect(mocks.reactCancel).toHaveBeenCalledWith('run-chat', 'react')
     expect(mocks.reactQueueRemove).toHaveBeenCalledWith('run-chat', 'react', 'item-1')
     expect(mocks.reactQueueReorder).toHaveBeenCalledWith('run-chat', 'react', ['a', 'b'])
@@ -1305,6 +1310,8 @@ describe('useGatesInbox actions', () => {
     mocks.reactCancel.mockRejectedValueOnce(new Error('cancel failed'))
     mocks.reactQueueRemove.mockRejectedValueOnce(new Error('remove failed'))
     mocks.reactQueueReorder.mockRejectedValueOnce(new Error('reorder failed'))
+    mocks.reactQueueSteer.mockRejectedValueOnce(new Error('steer failed'))
+    await inbox.onClarifyQueueSteer('item-2')
     await inbox.onClarifyCancel()
     await inbox.onClarifyQueueRemove('item-1')
     await inbox.onClarifyQueueReorder(['a'])
@@ -1321,6 +1328,9 @@ describe('useGatesInbox actions', () => {
     await inbox.onClarifyCancel()
     await inbox.onClarifyQueueRemove('x')
     await inbox.onClarifyQueueReorder(['x'])
+    mocks.reactQueueSteer.mockClear()
+    await inbox.onClarifyQueueSteer('x')
+    expect(mocks.reactQueueSteer).not.toHaveBeenCalled()
     app.unmount()
   })
 

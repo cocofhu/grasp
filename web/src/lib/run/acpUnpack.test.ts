@@ -7,6 +7,7 @@ import {
   steerText,
   unwrapFrame,
 } from './acpUnpack'
+import steerTextCases from './__fixtures__/steer_text.json'
 
 describe('acpUnpack', () => {
   it('unwrapFrame peels op:event', () => {
@@ -78,10 +79,9 @@ describe('acpUnpack', () => {
     expect(extractAgentMessageDelta(frame)?.text).toBe('AB')
   })
 
-  it('names the attachments of a steer, including attachment-only ones', () => {
-    expect(steerText({ text: ' 看这个 ' })).toBe('看这个')
-    expect(steerText({ text: '看这个', fileNames: ['a.pdf', ' '] })).toBe('看这个\n[附件] a.pdf')
-    expect(steerText({ text: '', fileNames: ['diagram.pdf'], imageURLs: ['data:image/png;base64,AAAA'] })).toBe('[附件] diagram.pdf、图片 ×1')
-    expect(steerText({ text: ' ' })).toBe('')
+  it('names the attachments of a steer exactly as the server does', () => {
+    // Shared with server/internal/sandbox/steer_timeline_test.go (models.SteerText).
+    expect(steerTextCases.length).toBeGreaterThan(0)
+    for (const c of steerTextCases) expect(steerText(c.event)).toBe(c.want)
   })
 })

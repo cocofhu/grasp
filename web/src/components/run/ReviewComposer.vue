@@ -121,6 +121,8 @@ const props = withDefaults(
     serviceTier?: string
     serviceTiers?: string[]
     modelNotice?: string
+    /** Gate mode: a revision turn is running, so queued rows may steer into it. */
+    turnRunning?: boolean
   }>(),
   {
     iteration: 1,
@@ -145,6 +147,7 @@ const props = withDefaults(
     queueNotice: null,
     queueToast: null,
     thinking: false,
+    turnRunning: false,
     streamText: '',
     streamThought: '',
     streamTools: () => [],
@@ -609,7 +612,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           :items="gateQueued"
           :notice="queueNotice"
           :toast="queueToast"
-          :steerable="thinking"
+          :steerable="turnRunning"
           @steer="(i) => emit('queue-steer-item', i)"
           @cancel="(i) => emit('queue-cancel-item', i)"
           @edit="(i) => emit('queue-edit', i)"

@@ -259,7 +259,10 @@ func (c *acpProvider) alignChatSettings(ctx context.Context, sess *reactSession,
 	if chatSettingsMatch(cur, model, effort, tier) {
 		return nil
 	}
-	_, err = sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantTier)
+	resumed, err := sandbox.SetChatModelSettingsFor(ctx, sess.sb.Host, sess.sb.Port, sess.sb.Password, chat, model, effort, wantTier)
+	if err == nil && !resumed {
+		sess.contextLost = true
+	}
 	return err
 }
 
@@ -309,6 +312,9 @@ func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *
 		WithExecution(c.executionForEnvironment(req, want.Env))
 	if err := next.Connect(ctx); err != nil {
 		return err
+	}
+	if resumed, _ := next.Resumed(); !resumed {
+		sess.contextLost = true
 	}
 	sess.acp = next
 	sess.primedEnvKeys = sandbox.ReprimeEnvKeys(want)

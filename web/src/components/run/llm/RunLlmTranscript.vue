@@ -204,19 +204,27 @@ async function onRetryLast() {
   if (current) await api.reactReply(props.run.id, current.nodeId, '', [], false, [], true)
 }
 
-async function onQueueRemove(id: string | undefined) {
+/** Queue edits race the running turn (the item may already be handled); the next queue_state shows the outcome. */
+async function queueAction(name: string, call: (nodeId: string) => Promise<unknown>) {
   const current = thread.value.current
-  if (current && id) await api.reactQueueRemove(props.run.id, current.nodeId, id)
+  if (!current) return
+  try {
+    await call(current.nodeId)
+  } catch (e: any) {
+    console.warn(`${name} failed`, e?.message || e)
+  }
 }
 
-async function onQueueSteer(id: string) {
-  const current = thread.value.current
-  if (current) await api.reactQueueSteer(props.run.id, current.nodeId, id)
+function onQueueRemove(id: string | undefined) {
+  if (id) return queueAction('reactQueueRemove', (nodeId) => api.reactQueueRemove(props.run.id, nodeId, id))
 }
 
-async function onQueueReorder(ids: string[]) {
-  const current = thread.value.current
-  if (current) await api.reactQueueReorder(props.run.id, current.nodeId, ids)
+function onQueueSteer(id: string) {
+  return queueAction('reactQueueSteer', (nodeId) => api.reactQueueSteer(props.run.id, nodeId, id))
+}
+
+function onQueueReorder(ids: string[]) {
+  return queueAction('reactQueueReorder', (nodeId) => api.reactQueueReorder(props.run.id, nodeId, ids))
 }
 </script>
 

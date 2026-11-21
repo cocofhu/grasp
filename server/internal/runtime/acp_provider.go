@@ -326,6 +326,9 @@ type reactSession struct {
 	routeConfigurationID string
 	// primedEnvKeys are the env names last written into this sandbox.
 	primedEnvKeys []string
+	// contextLost: a model or tool switch restarted the agent without its
+	// native conversation; the next reply hands the dialogue over first.
+	contextLost bool
 }
 
 func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecProvider {

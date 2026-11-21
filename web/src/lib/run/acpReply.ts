@@ -1,9 +1,10 @@
 import { contentText, flattenUpdate, normalizeKind, steerText } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import { contextSlashCommand, type ContextCommand } from '@/lib/chat/chatCommands'
-import type { AgentPart } from '@/lib/shared/types'
+import type { AgentPart, AgentTool } from '@/lib/shared/types'
 
-export type ReplyTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
+/** A reply's tool row: the shared tool shape plus the id its updates key on. */
+export type ReplyTool = AgentTool & { id: string; status: string }
 /** Arrival order of a reply: text runs, steers, or an index into AcpReply.tools. */
 export type ReplyStep = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
 export type PlanEntry = { content: string; status: string }

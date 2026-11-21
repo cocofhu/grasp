@@ -337,6 +337,11 @@ describe('useClarifyChat actions', () => {
     expect(chat.queued.value.map((q) => q.id)).toEqual(['b', 'a'])
     expect(emit).toHaveBeenCalledWith('queue-reorder', ['b', 'a'])
 
+    chat.steerQueuedItem(0)
+    expect(emit).toHaveBeenCalledWith('queue-steer', 'b', 0)
+    chat.steerQueuedItem(9)
+    expect(emit.mock.calls.filter(([name]) => name === 'queue-steer')).toHaveLength(1)
+
     chat.editQueuedItem(1)
     await nextTick()
     expect(models.draft.value).toBe('first')

@@ -11,10 +11,12 @@ const mocks = vi.hoisted(() => ({
   getRun: vi.fn(), nodeEvents: vi.fn(), takeoverNode: vi.fn(),
   runConversationChain: vi.fn(), reactReply: vi.fn(), show: vi.fn(), error: vi.fn(),
   armSidebarHandoff: vi.fn(), clearSidebarHandoff: vi.fn(),
+  reactQueueRemove: vi.fn(), reactQueueSteer: vi.fn(), reactQueueReorder: vi.fn(),
 }))
 vi.mock('@/lib/api/api', () => ({ api: {
   getRun: mocks.getRun, nodeEvents: mocks.nodeEvents, takeoverNode: mocks.takeoverNode,
   runConversationChain: mocks.runConversationChain, reactReply: mocks.reactReply,
+  reactQueueRemove: mocks.reactQueueRemove, reactQueueSteer: mocks.reactQueueSteer, reactQueueReorder: mocks.reactQueueReorder,
   runEventsWsUrl: (id: string) => `ws://test/api/runs/${id}/events`,
 } }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ show: mocks.show, error: mocks.error }) }))
@@ -106,6 +108,26 @@ afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+describe('useRunLive queue actions', () => {
+  it('reach the continued chat node, and do nothing while observing', async () => {
+    const { live, continueChat } = await setup()
+    await live.queueSteer('q1')
+    expect(mocks.reactQueueSteer).not.toHaveBeenCalled()
+    await continueChat()
+    mocks.reactQueueSteer.mockRejectedValueOnce(new Error('no session'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await live.queueSteer('q1')
+    await live.queueRemove('q2')
+    await live.queueRemove(undefined)
+    await live.queueReorder(['q3', 'q4'])
+    expect(mocks.reactQueueSteer).toHaveBeenCalledWith('A', 'accept', 'q1')
+    expect(mocks.reactQueueRemove).toHaveBeenCalledTimes(1)
+    expect(mocks.reactQueueRemove).toHaveBeenCalledWith('A', 'accept', 'q2')
+    expect(mocks.reactQueueReorder).toHaveBeenCalledWith('A', 'accept', ['q3', 'q4'])
+    expect(warn).toHaveBeenCalledWith('reactQueueSteer failed', 'no session')
+  })
 })
 
 describe('useRunLive action responses belong to the originating visit', () => {

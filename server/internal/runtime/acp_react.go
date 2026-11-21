@@ -172,6 +172,12 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
+	if sess.contextLost && dialogue.Pending == "" && len(history) > 0 {
+		if _, err := c.handOff(chatCtx, sess.acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), history, sess.sb), req.PromptImages); err != nil {
+			return ReactTurn{Msg: "(切换模型后交接上下文失败:" + err.Error() + ")", Err: err}
+		}
+	}
+	sess.contextLost = false
 	human, skillErr := c.skillPrompt(req, sess.sb, sess.home, human)
 	if skillErr != nil {
 		return ReactTurn{Msg: skillErr.Error(), Err: skillErr}

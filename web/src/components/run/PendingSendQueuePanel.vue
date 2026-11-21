@@ -23,7 +23,8 @@ const props = defineProps<{
   panelTestId?: string
   /** Messages the platform sends on its own (no edit / cancel / reorder). */
   readonly?: boolean
-  /** A turn is running that a queued message can be steered into. */
+  /** A turn is running that a queued message can be steered into. Only rows
+   * the server acknowledged (with an id) can be steered. */
   steerable?: boolean
 }>()
 
@@ -131,7 +132,7 @@ function onDrop(toIndex: number, e: DragEvent) {
         </span>
         <span v-if="!readonly && !q.locked" class="flex shrink-0 gap-0.5">
           <button
-            v-if="steerable"
+            v-if="steerable && q.id"
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
             :title="t('pages.clarify.queueSteerTitle')"

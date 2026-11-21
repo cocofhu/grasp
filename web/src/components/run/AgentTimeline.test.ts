@@ -65,6 +65,9 @@ describe('AgentTimeline', () => {
     const settled = mountTimeline({ parts: steered, completed: true, startedAt, endedAt })
     expect(order(settled)).toEqual(['agent-timeline-elapsed', 'agent-timeline-steer', 'agent-timeline-rule', 'agent-timeline-message', 'chat-message-meta'])
     expect(settled.findAll('[data-testid="agent-timeline-message"]').map((m) => m.text())).toEqual(['done with tests'])
+
+    const late = mountTimeline({ parts: [{ kind: 'message', text: 'done' }, { kind: 'steer', text: 'also fix X' }], completed: true, startedAt, endedAt })
+    expect(order(late).filter((id) => id !== 'chat-message-meta')).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message', 'agent-timeline-steer'])
   })
 
   it('streams only the last message and keeps the caret on it', () => {

@@ -199,6 +199,7 @@ describe('gateShareLink additional coverage', () => {
       [() => publicGateApi.cancel('t'), '/public/approvals/cancel', { token: 't' }],
       [() => publicGateApi.queueRemove('t', 'q1'), '/public/approvals/queue/remove', { token: 't', itemId: 'q1' }],
       [() => publicGateApi.queueReorder('t', ['q2', 'q1']), '/public/approvals/queue/reorder', { token: 't', itemIds: ['q2', 'q1'] }],
+      [() => publicGateApi.queueSteer('t', 'q1'), '/public/approvals/queue/steer', { token: 't', itemId: 'q1' }],
     ]
     for (const [invoke, url, body] of calls) {
       fetchMock.mockResolvedValueOnce(response({ status: 'ok' }))

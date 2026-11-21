@@ -81,8 +81,9 @@ export function extractAgentMessageDelta(raw: unknown): AcpMessageDelta | null {
 
 /**
  * How a user_steer event reads in the reply: its text, then what it attached,
- * so input that is only attachments still shows. Mirrors the server's
- * models.SteerText, which the persisted timeline uses.
+ * so input that is only attachments still shows. Must match the server's
+ * models.SteerText, which the persisted timeline uses; both are tested against
+ * __fixtures__/steer_text.json.
  */
 export function steerText(ev: any): string {
   const attached: string[] = (Array.isArray(ev?.fileNames) ? ev.fileNames : [])

@@ -282,6 +282,45 @@ func TestReactReplyRestartsPoisonedResumeInPlace(t *testing.T) {
 	}
 }
 
+func TestReactReplyHandsOffTheDialogueAfterAnUnresumedSwitch(t *testing.T) {
+	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "need info"}
+			}
+			return turnAction{narration: "继续"}
+		}
+	})
+	clarifyFirstTurn(p, req)
+	hist := []models.ReactMessage{
+		{Role: "agent", Text: "need info", Questions: []models.ReactQuestion{{ID: "q1", Prompt: "用亮色吗", Options: []models.ReactOption{{ID: "a", Label: "亮色"}}}}},
+		{Role: "human", Text: "默认用亮色主题"},
+	}
+	p.mu.Lock()
+	p.sessions[reactKey(req)].contextLost = true
+	p.mu.Unlock()
+	if reply := p.ReactReply(context.Background(), req, hist, "默认用亮色主题", nil, false); reply.Err != nil || reply.Msg != "继续" {
+		t.Fatalf("reply = msg %q err %v", reply.Msg, reply.Err)
+	}
+	br := mgr.bridge(0)
+	if br.promptCount() != 3 {
+		t.Fatalf("prompts = %d, want 3 (open, handoff, reply)", br.promptCount())
+	}
+	if prime := br.promptAt(1); !strings.Contains(prime, "会话恢复") || !strings.Contains(prime, "用亮色吗") {
+		t.Errorf("handoff prompt = %q", prime)
+	}
+	if !strings.Contains(br.promptAt(2), "默认用亮色主题") {
+		t.Errorf("reply prompt = %q", br.promptAt(2))
+	}
+	hist = append(hist, models.ReactMessage{Role: "agent", Text: "继续"}, models.ReactMessage{Role: "human", Text: "好"})
+	if reply := p.ReactReply(context.Background(), req, hist, "好", nil, false); reply.Err != nil {
+		t.Fatal(reply.Err)
+	}
+	if br.promptCount() != 4 {
+		t.Fatalf("prompts = %d, want 4: the handoff happens once", br.promptCount())
+	}
+}
+
 func TestWorkflowContextCommandsPreserveNodePrompt(t *testing.T) {
 	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
 		return func(int) turnAction { return turnAction{narration: "reply"} }

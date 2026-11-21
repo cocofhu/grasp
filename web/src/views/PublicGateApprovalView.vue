@@ -329,7 +329,7 @@ const turns = computed<ClarifyTurn[]>(() =>
     if (mapped.role === 'agent' && tools.length) mapped.tools = tools
     if (mapped.role === 'agent' && turn.parts?.length) {
       mapped.parts = turn.parts
-        .filter((p) => p && (p.kind === 'thought' || p.kind === 'message' || p.kind === 'tool'))
+        .filter((p) => p && (p.kind === 'thought' || p.kind === 'message' || p.kind === 'steer' || p.kind === 'tool'))
         .map((p) => (p.kind === 'tool' ? { kind: 'tool', title: p.title, status: p.status } : { kind: p.kind, text: p.text }))
     }
     // Only attach structured prompts when present so plain turns stay unchanged.

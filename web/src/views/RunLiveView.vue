@@ -52,6 +52,9 @@ const {
   takeover,
   send,
   confirm,
+  queueRemove,
+  queueSteer,
+  queueReorder,
   reload,
 } = useRunLive(runId, requestedNode, chatRef)
 /**
@@ -167,6 +170,9 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :done-note="doneNote"
                   @takeover="takeover"
                   @send="onSend"
+                  @queue-remove="(itemId) => queueRemove(itemId)"
+                  @queue-steer="(itemId) => queueSteer(itemId)"
+                  @queue-reorder="queueReorder"
                   @finish="confirm"
                 />
               </template>

@@ -181,6 +181,11 @@ describe('runsClient request coverage', () => {
     await runsClient.reactCancel('r', 'n')
     await runsClient.reactQueueRemove('r', 'n', 'q1')
     await runsClient.reactQueueReorder('r', 'n', ['q2', 'q1'])
+    await runsClient.reactQueueSteer('r', 'n', 'q1')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r/nodes/n/queue/steer', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ itemId: 'q1' }),
+    }))
     await runsClient.reactReply('r', 'n', '@s', [], false, [], false, false, 'cm-1', [{ kind: 'solo', target: 's1' }])
     expect(JSON.parse(String(fetchMock.mock.calls.at(-1)![1].body))).toMatchObject({ clientMessageId: 'cm-1', references: [{ kind: 'solo', target: 's1' }] })
     await runsClient.gateReactRevise('r', 'n', 'revise')

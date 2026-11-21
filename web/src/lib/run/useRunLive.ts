@@ -775,6 +775,25 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
   }
 
+  /** Queue actions of the continued chat; the next queue snapshot shows the result. */
+  async function queueAction(name: string, call: (id: string, node: string) => Promise<unknown>) {
+    if (mode.value !== 'chat' || !nodeId.value) return
+    try {
+      await call(runId.value, nodeId.value)
+    } catch (e) {
+      console.warn(`${name} failed`, e instanceof Error ? e.message : e)
+    }
+  }
+  function queueRemove(itemId: string | undefined) {
+    if (itemId) return queueAction('reactQueueRemove', (id, node) => api.reactQueueRemove(id, node, itemId))
+  }
+  function queueSteer(itemId: string) {
+    return queueAction('reactQueueSteer', (id, node) => api.reactQueueSteer(id, node, itemId))
+  }
+  function queueReorder(itemIds: string[]) {
+    if (itemIds.length) return queueAction('reactQueueReorder', (id, node) => api.reactQueueReorder(id, node, itemIds))
+  }
+
   function stop() {
     reconnect.reset()
     heartbeat.stop()
@@ -865,6 +884,9 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     takeover,
     send,
     confirm,
+    queueRemove,
+    queueSteer,
+    queueReorder,
     reload: load,
     onFrame,
   }

@@ -33,8 +33,9 @@ describe('PendingSendQueuePanel', () => {
     expect(rows[1]!.find('[data-testid="clarify-queue-references"]').exists()).toBe(false)
   })
 
-  it('offers steer only while a turn runs, never on locked or readonly rows', async () => {
+  it('offers steer only while a turn runs, never on locked, readonly or unacknowledged rows', async () => {
     expect(mountPanel({ items: [row('a')] }).find('[data-testid="clarify-queue-steer"]').exists()).toBe(false)
+    expect(mountPanel({ items: [row('', { id: undefined })], steerable: true }).find('[data-testid="clarify-queue-steer"]').exists()).toBe(false)
     expect(mountPanel({ items: [row('a')], steerable: true, readonly: true }).find('[data-testid="clarify-queue-steer"]').exists()).toBe(false)
     const w = mountPanel({ items: [row('a', { locked: true }), row('b')], steerable: true })
     const buttons = w.findAll('[data-testid="clarify-queue-steer"]')

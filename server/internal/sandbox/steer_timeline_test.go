@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 
@@ -80,20 +81,30 @@ func TestAttachmentOnlySteerIsRecorded(t *testing.T) {
 	}
 }
 
+// steerTextFixture is shared with web/src/lib/run/acpUnpack.test.ts, so the
+// live user_steer rendering and the persisted timeline cannot drift apart.
+const steerTextFixture = "../../../web/src/lib/run/__fixtures__/steer_text.json"
+
 func TestSteerTextNamesItsAttachments(t *testing.T) {
-	for _, c := range []struct {
-		text   string
-		files  []string
-		images int
-		want   string
-	}{
-		{"看这个", nil, 0, "看这个"},
-		{" 看这个 ", []string{"a.pdf", " "}, 0, "看这个\n[附件] a.pdf"},
-		{"", nil, 2, "[附件] 图片 ×2"},
-		{" ", nil, 0, ""},
-	} {
-		if got := models.SteerText(c.text, c.files, c.images); got != c.want {
-			t.Errorf("SteerText(%q, %v, %d) = %q, want %q", c.text, c.files, c.images, got, c.want)
+	raw, err := os.ReadFile(steerTextFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Event struct {
+			Text      string   `json:"text"`
+			FileNames []string `json:"fileNames"`
+			ImageURLs []string `json:"imageURLs"`
+		} `json:"event"`
+		Want string `json:"want"`
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil || len(cases) == 0 {
+		t.Fatalf("fixture: %d cases, err %v", len(cases), err)
+	}
+	for _, c := range cases {
+		e := c.Event
+		if got := models.SteerText(e.Text, e.FileNames, len(e.ImageURLs)); got != c.Want {
+			t.Errorf("SteerText(%q, %v, %d) = %q, want %q", e.Text, e.FileNames, len(e.ImageURLs), got, c.Want)
 		}
 	}
 }

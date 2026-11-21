@@ -131,23 +131,34 @@ const elapsedName = computed(() =>
  * even when tools follow it. Earlier messages stay in the fold, once.
  * Failed-tool counts still come from every tool block, including those after the reply.
  */
-const tailBlock = computed(() => {
-  if (!settled.value) return null
+const tailAt = computed(() => {
+  if (!settled.value) return -1
   for (let i = blocks.value.length - 1; i >= 0; i--) {
-    const block = blocks.value[i]
-    if (block?.kind === 'message') return block
+    if (blocks.value[i]?.kind === 'message') return i
   }
-  return null
+  return -1
+})
+const tailBlock = computed(() => {
+  const block = blocks.value[tailAt.value]
+  return block?.kind === 'message' ? block : null
 })
 const workBlocks = computed(() => {
   if (!settled.value) return []
   const tail = tailBlock.value
   return blocks.value.filter((block) => block.kind !== 'steer' && block.key !== tail?.key)
 })
-/** What the user added mid-turn is theirs, not process: it never folds away. */
-const steerBlocks = computed(() =>
-  settled.value ? blocks.value.flatMap((block) => (block.kind === 'steer' ? [block] : [])) : [],
-)
+/**
+ * What the user added mid-turn is theirs, not process: it never folds away.
+ * Steers keep their place around the reply: before it above the rule, after
+ * it below.
+ */
+const steers = (after: boolean) =>
+  computed(() => (settled.value
+    ? blocks.value.flatMap((block, i) =>
+      block.kind === 'steer' && (tailAt.value >= 0 && i > tailAt.value) === after ? [block] : [])
+    : []))
+const steersBeforeTail = steers(false)
+const steersAfterTail = steers(true)
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
 const manualOpen = ref<boolean | null>(null)
@@ -286,12 +297,15 @@ function onToggle(index: number, last: boolean, e: Event) {
           </div>
         </template>
       </div>
-      <div v-for="b in steerBlocks" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+      <div v-for="b in steersBeforeTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
         <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
       </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
+      </div>
+      <div v-for="b in steersAfterTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+        <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
       </div>
     </template>
     <template v-else>

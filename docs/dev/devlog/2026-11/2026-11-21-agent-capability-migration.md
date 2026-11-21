@@ -87,6 +87,17 @@
       - 脚本：`reprime.sh` 在 backend 重启成功后才标记交接完成，失败时 EXIT trap 仍会拉起 backend；`test-agent-connect.sh` 失败时也清理临时目录，`docker start` 失败输出容器日志。
       - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
       - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
+    - 评审第五轮：
+      - 澄清 / 审批会话切模型：沙箱切换配置（或跨工具切换）后 Agent 若未接回原生会话（`resumed: false`），下一次回复原来只发新消息，Agent 丢了前文。现在会话记下「上下文已丢失」，下一次回复先用恢复时的交接提示把对话交给新会话，再发用户消息；交接失败保留标记，下次重试。
+      - 前端引导：
+        - 审批的引导按钮原来绑 `reactThinking`（有排队即为真），现在只在修订回合真正运行（`reactInFlight`）时出现，同一条的引导请求未返回前不重复发送。
+        - 还没有服务端 id 的本地排队行不显示引导按钮（尚未入队，无从引导，可取消）。
+        - Run Live 页补上排队的删除、引导、重排。
+        - 控制面 Agent 测试页重建回放时保留引导步骤。
+        - 回复结束后的引导按位置显示在回复之前或之后。
+        - 公开审批页的时间线不再丢引导。
+        - 运行记录页的排队操作失败只记警告，不再变成未处理的 Promise 拒绝。
+      - 一致性：前端 `steerText` 与服务端 `models.SteerText` 共用 `web/src/lib/run/__fixtures__/steer_text.json` 测试，措辞变动任一侧都会失败。`ReplyTool` 改由 `AgentTool` 派生。
     - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。
     - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
