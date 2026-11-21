@@ -72,6 +72,12 @@ type threadItem struct {
 	} `json:"changes"`
 	Content []string `json:"content"`
 	Summary []string `json:"summary"`
+	// collabAgentToolCall: the agents a collab tool targets and their last
+	// known status.
+	ReceiverThreadIDs []string `json:"receiverThreadIds"`
+	AgentsStates      map[string]struct {
+		Status string `json:"status"`
+	} `json:"agentsStates"`
 }
 
 // currentTurn returns the active turn when ref belongs to it. A notification
@@ -178,6 +184,9 @@ func (s *session) onNotification(raw json.RawMessage) error {
 		s.mu.Lock()
 		streamed := t.streamed[p.Item.ID]
 		s.mu.Unlock()
+		if p.Item.Type == "collabAgentToolCall" {
+			s.trackSubagents(p.Item)
+		}
 		if n.Method == "item/started" {
 			s.itemStarted(p.Item)
 		} else {
@@ -222,6 +231,26 @@ func (s *session) onNotification(raw json.RawMessage) error {
 		log.Printf("codex: %s %s", n.Method, truncate(string(n.Params), 300))
 	}
 	return nil
+}
+
+// trackSubagents follows the agents this thread spawned through the collab
+// tool calls that report on them.
+func (s *session) trackSubagents(item threadItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if item.Tool == "spawnAgent" {
+		for _, id := range item.ReceiverThreadIDs {
+			s.subagents[id] = true
+		}
+	}
+	for id, state := range item.AgentsStates {
+		switch state.Status {
+		case "pendingInit", "running":
+			s.subagents[id] = true
+		default:
+			delete(s.subagents, id)
+		}
+	}
 }
 
 func (s *session) itemStarted(item threadItem) {

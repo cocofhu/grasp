@@ -309,6 +309,10 @@ web/                  # 前端（ESM + 静态资源）
   - 后端进程重启：default 会话的原生会话指针（Agent、工作目录、会话 ID）存于 `~/.grasp/agent-session.json`，与各 Agent 的会话文件同在家目录；重启后的第一个 Agent 在同一 Agent 与目录下接回它，`connected` 帧带 `resumed: true`，平台据此不再补发对话记录。新对话会覆盖指针，不能接回的会话不留指针。
   - 配置变更：`connect` 带来不同的 MCP 列表时重开进程并接回原会话，可见聊天记录保留（不带 MCP 的 connect 沿用现有列表）；会话声明的启动配置文件（`provider.ConfigReader`，`codex` 为 `CODEX_HOME` 下的 `auth.json` 与 `config.toml`）有变化时，下一轮开始前重建进程并接回原会话，平台续期的 Codex 设备码登录因此立即生效。凭据环境变量与模型连接由 reprime 重启后端下发，靠上面的会话指针接回；工作流换节点的 reprime 会删除指针，下一个节点总是新对话。
   - 自动重启或重建没能接回原会话（如原会话文件已不在）时，下一轮的 `prompt_done` 带 `sessionReset: true` 与 `previousSessionId`，平台据此补发对话记录，与 one-shot 的 resume 回退一致。
+- **回合终态**：`prompt_done` 表示 Agent 与它派生的子 Agent 都已停下，工作流据此判定节点完成。
+  - `codex`：`turn/completed` 后，若本线程经 `spawnAgent` 派生、按 `collabAgentToolCall.agentsStates` 仍在运行的子 Agent 用 `thread/read` 查到还是 `active`，就等它们停下再发 `prompt_done`，期间显示"等待 N 个子 Agent 完成"；等待中被中断则按中断收尾（子 Agent 不随之停止）。子线程自己的通知不会结束父回合。
+  - one-shot：回合以 CLI 进程退出为界，`claude_code` 在 `-p` 下会先等后台任务（上限 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`）。
+  - ACP 家族：以 `session/prompt` 的应答为界。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：
   - ✅ **已验真**：`cursor`（端到端跑通）、`gemini`/qwen 系（对真实 stream-json 抓样解析全绿）。stream-json codec 已同时兼容两种方言：顶层 thinking + camelCase 用量（cursor），以及 content-block thinking（`thinking` 字段）+ `tool_use_id` 关联 + snake_case 用量（claude/codebuddy/qwen）。
   - 🟢 **专用 codec 已落地（按各 CLI 的真实无头契约实现，附单测）**：`copilot`（dotted 事件 + `data.deltaContent`/`content`，delta 与最终 message 去重、toolRequests/tool.execution_complete、合成 result 取 session/exit）、`pi`（`assistantMessageEvent.delta` 文本/thinking、tool 起止、turn_end 用量、控制标记清洗；会话为 `--session` 日志文件）、`openclaw`（整块 JSON 结果文档：payloads[].text + meta.agentMeta 的 session/model/usage，NDJSON 事件兜底）、`antigravity`（纯文本 stdout 逐行透出 + 从 `--log-file` 回收 conversation id，并把仅写日志的 print-timeout/provider error 提升为失败）。这些 codec 结构已对齐公开字段，仍建议真机各跑一轮抓样复核。

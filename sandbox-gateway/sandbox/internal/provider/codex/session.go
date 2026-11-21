@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,8 @@ type session struct {
 	mu       sync.Mutex
 	turn     *activeTurn
 	cumUsage map[string]provider.TokenUsage
+	// subagents are the threads this thread spawned that may still run.
+	subagents map[string]bool
 
 	closeOnce sync.Once
 }
@@ -70,7 +73,7 @@ func newSession(conn *acp.Conn, opts provider.OpenOptions, env []string, onEvent
 		fsRoot = opts.Cwd
 	}
 	s := &session{conn: conn, opts: opts, env: env, onEvent: onEvent, cleanup: cleanup, cwd: opts.Cwd, fsRoot: fsRoot,
-		cumUsage: map[string]provider.TokenUsage{}}
+		cumUsage: map[string]provider.TokenUsage{}, subagents: map[string]bool{}}
 	conn.SetNotificationHandler(s.onNotification)
 	conn.SetRequestHandler(s.onRequest)
 	go func() { <-conn.Done(); s.release() }()
@@ -363,6 +366,9 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	var end turnEnd
 	select {
 	case end = <-t.done:
+		if end.status == "completed" && !s.awaitSubagents(ctx, t) {
+			end = turnEnd{status: "interrupted"}
+		}
 	case <-ctx.Done():
 		s.interrupt(t.id)
 		select {
@@ -378,6 +384,82 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 		return s.finishFailed(ctx, errors.New("codex app-server exited during the turn"))
 	}
 	return s.finishTurn(ctx, t, end)
+}
+
+// subagentPoll is how often a finished turn re-checks the subagents it waits
+// for. A var so tests can shrink it.
+var subagentPoll = time.Second
+
+// awaitSubagents holds a completed turn until every subagent the thread
+// spawned has stopped, so prompt_done never reports work as finished while
+// background agents still change the workspace. It is false when ctx ends
+// first.
+func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) bool {
+	running := s.runningSubagents(ctx)
+	if len(running) == 0 {
+		return true
+	}
+	callID := "subagents-" + t.id
+	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress",
+		"title": fmt.Sprintf("等待 %d 个子 Agent 完成", len(running))})
+	tick := time.NewTicker(subagentPoll)
+	defer tick.Stop()
+	for len(running) > 0 {
+		select {
+		case <-ctx.Done():
+			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
+			return false
+		case <-s.conn.Done():
+			return true
+		case <-tick.C:
+			running = s.runningSubagents(ctx)
+		}
+	}
+	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
+	return true
+}
+
+// runningSubagents asks the app-server which tracked subagents are still
+// active and forgets the others. A thread it cannot read is not waited for.
+func (s *session) runningSubagents(ctx context.Context) []string {
+	s.mu.Lock()
+	ids := slices.Sorted(maps.Keys(s.subagents))
+	s.mu.Unlock()
+	var running []string
+	for _, id := range ids {
+		active, err := s.threadActive(ctx, id)
+		if err != nil {
+			log.Printf("codex: 读取子 Agent %s 状态失败，不再等待: %v", id, err)
+		}
+		if active {
+			running = append(running, id)
+			continue
+		}
+		s.mu.Lock()
+		delete(s.subagents, id)
+		s.mu.Unlock()
+	}
+	return running
+}
+
+func (s *session) threadActive(ctx context.Context, threadID string) (bool, error) {
+	rctx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+	raw, err := s.conn.Call(rctx, "thread/read", map[string]any{"threadId": threadID})
+	if err != nil {
+		return false, err
+	}
+	var out struct {
+		Thread struct {
+			Status struct {
+				Type string `json:"type"`
+			} `json:"status"`
+		} `json:"thread"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return false, err
+	}
+	return out.Thread.Status.Type == "active", nil
 }
 
 // finishTurn settles usage and stop reason, emits prompt_done and returns the

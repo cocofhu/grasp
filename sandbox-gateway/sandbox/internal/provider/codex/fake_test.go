@@ -33,6 +33,9 @@ type fakeServer struct {
 	turn   string
 	mode   string
 	n      int
+	// childReads counts thread/read calls for the "spawn" subagent, which
+	// stays active for the first two.
+	childReads int
 }
 
 func (f *fakeServer) send(v any) {
@@ -122,6 +125,15 @@ func runFakeAppServer() {
 				}
 			}
 			reply(map[string]any{"config": config})
+		case "thread/read":
+			status := "idle"
+			if msg.Params.ThreadID == "child-1" {
+				f.childReads++
+				if f.childReads <= 2 {
+					status = "active"
+				}
+			}
+			reply(map[string]any{"thread": map[string]any{"id": msg.Params.ThreadID, "status": map[string]any{"type": status}}})
 		case "model/list":
 			reply(map[string]any{"data": []any{map[string]any{"id": "fake-other"}, map[string]any{"id": "fake-default", "isDefault": true}}})
 		case "turn/start":
@@ -193,6 +205,14 @@ func (f *fakeServer) play(text string) {
 		f.send(map[string]any{"id": 97, "method": "execCommandApproval", "params": map[string]any{}})
 	case strings.Contains(text, "unknown-request"):
 		f.send(map[string]any{"id": 96, "method": "item/tool/requestUserInput", "params": map[string]any{}})
+		f.complete("completed", "")
+	case strings.Contains(text, "spawn"):
+		spawn := map[string]any{"type": "collabAgentToolCall", "id": "s1", "tool": "spawnAgent", "senderThreadId": f.thread,
+			"receiverThreadIds": []string{"child-1"}, "status": "completed", "agentsStates": map[string]any{"child-1": map[string]any{"status": "pendingInit"}}}
+		f.item("item/completed", spawn)
+		f.item("item/completed", map[string]any{"type": "collabAgentToolCall", "id": "s2", "tool": "spawnAgent", "senderThreadId": f.thread,
+			"receiverThreadIds": []string{"child-2"}, "status": "completed", "agentsStates": map[string]any{"child-2": map[string]any{"status": "completed"}}})
+		f.notify("turn/completed", map[string]any{"threadId": "child-0", "turn": map[string]any{"id": "child-turn", "status": "completed"}})
 		f.complete("completed", "")
 	case strings.Contains(text, "die"):
 		os.Exit(3)

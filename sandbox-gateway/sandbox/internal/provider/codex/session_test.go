@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -486,5 +487,45 @@ func TestOpenFailures(t *testing.T) {
 	cancel()
 	if _, err := New().Open(context.Background(), ctx, provider.OpenOptions{Cwd: t.TempDir()}, nil, nil); err == nil || !strings.Contains(err.Error(), "codex initialize") {
 		t.Fatalf("cancelled handshake: %v", err)
+	}
+}
+
+func TestTurnEndsOnlyAfterItsSubagentsStop(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	s, rec := open(t, provider.OpenOptions{})
+	res, err := prompt(t, s, nil, "spawn")
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	var order []string
+	for _, f := range rec.snapshot() {
+		if u, ok := f["update"].(map[string]any); ok && u["toolCallId"] == "subagents-turn-1" {
+			order = append(order, fmt.Sprint(u["sessionUpdate"], ":", u["status"], ":", u["title"]))
+		}
+		if f["type"] == "prompt_done" {
+			order = append(order, "prompt_done")
+		}
+	}
+	want := []string{"tool_call:in_progress:等待 1 个子 Agent 完成", "tool_call_update:completed:<nil>", "prompt_done"}
+	if fmt.Sprint(order) != fmt.Sprint(want) {
+		t.Fatalf("order = %q, want %q", order, want)
+	}
+	if len(s.subagents) != 0 {
+		t.Fatalf("finished subagents still tracked: %v", s.subagents)
+	}
+}
+
+func TestInterruptWhileWaitingForSubagents(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = time.Hour
+	t.Cleanup(func() { subagentPoll = old })
+	s, _ := open(t, provider.OpenOptions{})
+	ctx, cancel := context.WithCancelCause(context.Background())
+	time.AfterFunc(100*time.Millisecond, func() { cancel(provider.ErrTurnTimeout) })
+	res, err := prompt(t, s, ctx, "spawn")
+	if !errors.Is(err, provider.ErrTurnTimeout) || res.StopReason != provider.StopReasonTimeout {
+		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
