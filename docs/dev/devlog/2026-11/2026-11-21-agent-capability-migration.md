@@ -59,7 +59,7 @@
       - 共享沙箱切换节点：
         - reprime 原来在清理会话指针之后才重启 backend，旧回合收尾时会写回指针，下一节点就接上了旧对话。现在先停 backend、等它退出，再清理；中途任何失败都由 EXIT trap 把 backend 拉起来。
       - Provider 的取消与启动：
-        - 回合启动阶段（OpenCode 的 HTTP 回执、Pi 的 `prompt` 回执、Codex 的 `turn/start`）被看门狗打断时，原来一律报「已取消」，丢了 recover、超时和卡死的原因。recover 本应保持回合开放。三家的取消原因映射收敛为 `provider.InterruptionFor`，回合结束和启动失败两条路径都用它。
+        - 回合启动阶段（OpenCode 的 HTTP 回执、Pi 的 `prompt` 回执、Codex 的 `turn/start`）被看门狗打断时，原来一律报「已取消」，丢了 recover、超时和卡死的原因。recover 本应保持回合开放。三家的回合收尾收敛到 `provider.EndInterrupted` / `EndFailed`，回合结束和启动失败两条路径都用它。
         - OpenCode 提交回合时如果没收到回执（连接断开），服务端可能已经在跑。现在先中断并确认空闲，再结束回合；明确拒绝（HTTP 错误）照旧直接失败。
         - 等子 Agent 时停止，原来只异步中断父会话或父回合，子会话、子线程可能还在跑，`prompt_done(cancelled)` 却已发出。现在 OpenCode 的 `halt` 中断本会话和忙碌的子会话，Codex 的 `haltSubagents` 用 `thread/turns/list` 取子线程进行中的回合并 `turn/interrupt`；两者都轮询到确认停止，`InterruptGrace` 内确认不了就结束宿主进程，由 Bridge 像崩溃一样复活。
         - OpenCode 长驻会话原来保留每个已结束回合的完整正文。现在回合结束时把它的 part 换成共享的「已结算」标记，只留 ID 用于去重，之后重发或迟到的更新都忽略。
@@ -71,6 +71,7 @@
         - Pi 发出 `agent_end` 后可能还在收尾，紧接着的下一轮 `prompt` 会被以「Agent is already processing」拒绝。现在遇到这个拒绝就等 Pi 空闲后重发一次。
       - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
       - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
+    - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。
     - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：

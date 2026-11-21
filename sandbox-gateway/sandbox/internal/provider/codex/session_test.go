@@ -513,9 +513,7 @@ func TestOpenFailures(t *testing.T) {
 }
 
 func TestTurnEndsOnlyAfterItsSubagentsStop(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	s, rec := open(t, provider.OpenOptions{})
 	res, err := prompt(t, s, nil, "spawn")
 	if err != nil || res.StopReason != "end_turn" {
@@ -540,9 +538,7 @@ func TestTurnEndsOnlyAfterItsSubagentsStop(t *testing.T) {
 }
 
 func TestTurnWaitsForMultiAgentV2Subagents(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	for _, text := range []string{"delegate", "delegate followup"} {
 		t.Run(text, func(t *testing.T) {
 			s, rec := open(t, provider.OpenOptions{})
@@ -558,9 +554,7 @@ func TestTurnWaitsForMultiAgentV2Subagents(t *testing.T) {
 }
 
 func TestASubagentReadErrorKeepsWaitingUnlessTheThreadIsGone(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	for _, failing := range []string{"1", "2"} {
 		t.Run("internal error on read "+failing, func(t *testing.T) {
 			t.Setenv("GRASP_FAKE_CODEX_CHILD_READ_FAIL", failing)
@@ -585,9 +579,7 @@ func TestASubagentReadErrorKeepsWaitingUnlessTheThreadIsGone(t *testing.T) {
 }
 
 func TestInterruptWhileWaitingForSubagents(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = time.Hour
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, time.Hour)
 	s, _ := open(t, provider.OpenOptions{})
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(provider.ErrTurnTimeout) })
@@ -598,9 +590,7 @@ func TestInterruptWhileWaitingForSubagents(t *testing.T) {
 }
 
 func TestAppServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = time.Hour
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, time.Hour)
 	s, rec := open(t, provider.OpenOptions{})
 	time.AfterFunc(200*time.Millisecond, func() { _ = s.conn.Close() })
 	res, err := prompt(t, s, nil, "spawn")
@@ -619,9 +609,7 @@ func TestAppServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 }
 
 func TestAppServerExitDuringASubagentReadFailsTheTurn(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	t.Setenv("GRASP_FAKE_CODEX_EXIT_ON_CHILD_READ", "2")
 	s, _ := open(t, provider.OpenOptions{})
 	res, err := prompt(t, s, nil, "spawn")
@@ -666,22 +654,23 @@ func TestUnansweredTurnStartStopsTheAppServer(t *testing.T) {
 func TestAnUnansweredTurnStartKeepsTheCancelCause(t *testing.T) {
 	defer func(d time.Duration) { rpcTimeout = d }(rpcTimeout)
 	rpcTimeout = 100 * time.Millisecond
-	for _, cause := range []error{provider.ErrTurnRecover, provider.ErrTurnTimeout, provider.ErrTurnStuck} {
+	for _, c := range []struct {
+		cause error
+		stop  string
+		done  bool
+	}{{provider.ErrTurnRecover, "recover", false}, {provider.ErrTurnTimeout, "timeout", true}, {provider.ErrTurnStuck, "stuck", true}} {
 		s, rec := open(t, provider.OpenOptions{})
 		ctx, cancel := context.WithCancelCause(context.Background())
-		cancel(cause)
+		cancel(c.cause)
 		res, err := prompt(t, s, ctx, "slowstart")
-		want := provider.InterruptionFor(cause)
-		if !errors.Is(err, cause) || res.StopReason != want.StopReason || (len(rec.ofType("prompt_done")) == 1) != want.Final {
-			t.Fatalf("cause %v: %+v %v", cause, res, err)
+		if !errors.Is(err, c.cause) || res.StopReason != c.stop || (len(rec.ofType("prompt_done")) == 1) != c.done {
+			t.Fatalf("cause %v: %+v %v", c.cause, res, err)
 		}
 	}
 }
 
 func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	s, rec := open(t, provider.OpenOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -700,4 +689,10 @@ func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
 	if running := s.runningSubagents(context.Background()); len(running) != 0 {
 		t.Fatalf("prompt_done sent with subagents running: %v", running)
 	}
+}
+
+func pollSubagents(t *testing.T, every time.Duration) {
+	old := provider.SubagentPoll
+	provider.SubagentPoll = every
+	t.Cleanup(func() { provider.SubagentPoll = old })
 }

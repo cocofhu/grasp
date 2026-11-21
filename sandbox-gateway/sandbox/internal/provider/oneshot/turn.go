@@ -70,9 +70,7 @@ func (a *turnAccumulator) apply(pr ParseResult) {
 	} else if len(pr.Usage) > 0 {
 		a.usagePartial = a.usagePartial || pr.UsagePartial
 	}
-	for model, u := range pr.Usage {
-		a.usage[model] = addUsage(a.usage[model], u)
-	}
+	provider.AddUsage(a.usage, pr.Usage)
 	for _, m := range pr.Msgs {
 		switch m.Kind {
 		case KindText:

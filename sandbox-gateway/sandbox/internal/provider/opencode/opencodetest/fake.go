@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +38,9 @@ type Options struct {
 	// DropPromptReceipt plays a connection lost after the server took a
 	// prompt: the run starts, the response never arrives.
 	DropPromptReceipt bool
+	// ExitOnStatus and FailStatus, when positive, make the server exit at, or
+	// answer 503 to, that numbered session status read.
+	ExitOnStatus, FailStatus int
 	// OnPrompt, when set, sees each prompt first; an error rejects it.
 	OnPrompt func(Prompt) error
 }
@@ -145,8 +147,8 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/session/status":
 		f.mu.Lock()
 		f.statusReads++
-		exit := os.Getenv("GRASP_FAKE_OPENCODE_EXIT_ON_STATUS") == strconv.Itoa(f.statusReads)
-		fail := os.Getenv("GRASP_FAKE_OPENCODE_FAIL_STATUS") == strconv.Itoa(f.statusReads)
+		exit := f.o.ExitOnStatus == f.statusReads
+		fail := f.o.FailStatus == f.statusReads
 		f.mu.Unlock()
 		if exit {
 			os.Exit(0)

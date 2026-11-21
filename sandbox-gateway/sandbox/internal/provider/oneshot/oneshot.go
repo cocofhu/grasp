@@ -310,14 +310,7 @@ func (e *engine) ReportsUsage() bool { return e.c.ReportsUsage() }
 func (e *engine) CumulativeUsage() map[string]provider.TokenUsage {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.cumUsage) == 0 {
-		return nil
-	}
-	out := make(map[string]provider.TokenUsage, len(e.cumUsage))
-	for k, v := range e.cumUsage {
-		out[k] = v
-	}
-	return out
+	return provider.CopyUsage(e.cumUsage)
 }
 
 // Prompt runs one turn, spawning the CLI with a --resume pointer when available.
@@ -757,9 +750,7 @@ func (e *engine) mergeCumulative(turn map[string]provider.TokenUsage) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for model, u := range turn {
-		e.cumUsage[model] = addUsage(e.cumUsage[model], u)
-	}
+	provider.AddUsage(e.cumUsage, turn)
 }
 
 func (e *engine) Cancel() error {
@@ -989,19 +980,10 @@ func closeFiles(files ...*os.File) {
 
 // --- helpers ---------------------------------------------------------------
 
-func addUsage(a, b provider.TokenUsage) provider.TokenUsage {
-	return provider.TokenUsage{
-		InputTokens:      a.InputTokens + b.InputTokens,
-		OutputTokens:     a.OutputTokens + b.OutputTokens,
-		CacheReadTokens:  a.CacheReadTokens + b.CacheReadTokens,
-		CacheWriteTokens: a.CacheWriteTokens + b.CacheWriteTokens,
-	}
-}
-
 func sumUsage(usage map[string]provider.TokenUsage) provider.TokenUsage {
 	var total provider.TokenUsage
 	for _, bucket := range usage {
-		total = addUsage(total, bucket)
+		total = total.Plus(bucket)
 	}
 	return total
 }
@@ -1015,7 +997,7 @@ func mergeUsage(a, b map[string]provider.TokenUsage) map[string]provider.TokenUs
 		out[model] = usage
 	}
 	for model, usage := range b {
-		out[model] = addUsage(out[model], usage)
+		out[model] = out[model].Plus(usage)
 	}
 	return out
 }

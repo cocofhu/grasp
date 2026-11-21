@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -82,9 +83,16 @@ func TestFakeOpenCodeProcess(t *testing.T) {
 		SlowStart:   os.Getenv("GRASP_FAKE_OPENCODE_SLOW_START") != "",
 
 		DropPromptReceipt: os.Getenv("GRASP_FAKE_OPENCODE_DROP_RECEIPT") != "",
+		ExitOnStatus:      envInt("GRASP_FAKE_OPENCODE_EXIT_ON_STATUS"),
+		FailStatus:        envInt("GRASP_FAKE_OPENCODE_FAIL_STATUS"),
 	})
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(2)
+}
+
+func envInt(name string) int {
+	n, _ := strconv.Atoi(os.Getenv(name))
+	return n
 }
 
 type fakeEnv struct {
@@ -329,9 +337,7 @@ func TestModelErrorFailsTheTurn(t *testing.T) {
 }
 
 func TestTurnWaitsForBusySubagents(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")
 	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
@@ -345,9 +351,7 @@ func TestTurnWaitsForBusySubagents(t *testing.T) {
 }
 
 func TestAnUnreadableSubagentStateIsAskedAgain(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t, "GRASP_FAKE_OPENCODE_FAIL_STATUS=1")
 	s, rec := f.open(t, "", "", "")
 	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
@@ -361,9 +365,7 @@ func TestAnUnreadableSubagentStateIsAskedAgain(t *testing.T) {
 }
 
 func TestTurnWaitsForABackgroundSubagentThatHasNotStarted(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")
 	res, err := s.Prompt(promptCtx(t), "start a background task", nil)
@@ -442,9 +444,7 @@ func waitFor(t *testing.T, cond func() bool) {
 }
 
 func TestServerExitDuringASubagentReadFailsTheTurn(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t, "GRASP_FAKE_OPENCODE_EXIT_ON_STATUS=2")
 	s, _ := f.open(t, "", "", "")
 	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
@@ -454,9 +454,7 @@ func TestServerExitDuringASubagentReadFailsTheTurn(t *testing.T) {
 }
 
 func TestServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = time.Hour
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, time.Hour)
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")
 	time.AfterFunc(500*time.Millisecond, s.srv.stop)
@@ -470,9 +468,7 @@ func TestServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 }
 
 func TestALostPromptReceiptStopsTheRunBeforeTheTurnEnds(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t, "GRASP_FAKE_OPENCODE_DROP_RECEIPT=1")
 	s, _ := f.open(t, "", "", "")
 	if res, err := s.Prompt(promptCtx(t), "hang", nil); err == nil || res.StopReason != "failed" {
@@ -487,9 +483,7 @@ func TestALostPromptReceiptStopsTheRunBeforeTheTurnEnds(t *testing.T) {
 }
 
 func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
-	old := subagentPoll
-	subagentPoll = 10 * time.Millisecond
-	t.Cleanup(func() { subagentPoll = old })
+	pollSubagents(t, 10*time.Millisecond)
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -506,15 +500,18 @@ func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
 }
 
 func TestStartupInterruptionsKeepTheirCause(t *testing.T) {
-	for _, cause := range []error{provider.ErrTurnRecover, provider.ErrTurnTimeout, provider.ErrTurnStuck} {
+	for _, c := range []struct {
+		cause error
+		stop  string
+		done  bool
+	}{{provider.ErrTurnRecover, "recover", false}, {provider.ErrTurnTimeout, "timeout", true}, {provider.ErrTurnStuck, "stuck", true}} {
 		f := installFake(t)
 		s, rec := f.open(t, "", "", "")
 		ctx, cancel := context.WithCancelCause(context.Background())
-		cancel(cause)
+		cancel(c.cause)
 		res, err := s.Prompt(ctx, "hello", nil)
-		want := provider.InterruptionFor(cause)
-		if !errors.Is(err, cause) || res.StopReason != want.StopReason || (len(rec.ofType("prompt_done")) == 1) != want.Final {
-			t.Fatalf("cause %v: %+v %v, prompt_done %v", cause, res, err, rec.ofType("prompt_done"))
+		if !errors.Is(err, c.cause) || res.StopReason != c.stop || (len(rec.ofType("prompt_done")) == 1) != c.done {
+			t.Fatalf("cause %v: %+v %v, prompt_done %v", c.cause, res, err, rec.ofType("prompt_done"))
 		}
 	}
 }
@@ -538,4 +535,10 @@ func TestAnEndedTurnKeepsOnlyItsPartIDs(t *testing.T) {
 	if n == 0 || rec.text("agent_message_chunk") != "hello from opencodehello from opencode" {
 		t.Fatalf("parts=%d reply %q", n, rec.text("agent_message_chunk"))
 	}
+}
+
+func pollSubagents(t *testing.T, every time.Duration) {
+	old := provider.SubagentPoll
+	provider.SubagentPoll = every
+	t.Cleanup(func() { provider.SubagentPoll = old })
 }

@@ -129,7 +129,7 @@ func (l *sessionLedger) reconcileFlat(dir, session string, current *provider.Tok
 			if usage == nil {
 				usage = map[string]provider.TokenUsage{}
 			}
-			usage["default"] = addUsage(usage["default"], missing)
+			usage["default"] = usage["default"].Plus(missing)
 		}
 		uncertain = uncertain || known.InputTokens > delta.InputTokens || known.OutputTokens > delta.OutputTokens || known.CacheReadTokens > delta.CacheReadTokens || known.CacheWriteTokens > delta.CacheWriteTokens
 		if len(usage) == 0 {
@@ -137,7 +137,7 @@ func (l *sessionLedger) reconcileFlat(dir, session string, current *provider.Tok
 		}
 	}
 	if b != nil {
-		b.Flat = addUsage(previous, sumUsage(usage))
+		b.Flat = previous.Plus(sumUsage(usage))
 		saveBaseline(dir, session, b)
 	}
 	return usage, uncertain

@@ -210,14 +210,7 @@ func (s *session) ReportsUsage() bool { return true }
 func (s *session) CumulativeUsage() map[string]provider.TokenUsage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.cumUsage) == 0 {
-		return nil
-	}
-	out := make(map[string]provider.TokenUsage, len(s.cumUsage))
-	for k, v := range s.cumUsage {
-		out[k] = v
-	}
-	return out
+	return provider.CopyUsage(s.cumUsage)
 }
 
 // AgentPIDs is the app-server; the commands it runs are its descendants.
@@ -388,9 +381,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	defer s.turnMu.Unlock()
 	text, err := provider.WithAttachments(text, images)
 	if err != nil {
-		s.emitError(err.Error())
-		s.emitPromptDone("failed", nil, false)
-		return provider.TurnResult{StopReason: "failed"}, err
+		return s.finishFailed(ctx, err)
 	}
 	t := &activeTurn{done: make(chan turnEnd, 1), streamed: map[string]bool{}}
 	s.mu.Lock()
@@ -434,8 +425,8 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	select {
 	case end = <-t.done:
 		if end.status == "completed" {
-			if err := s.awaitSubagents(ctx, t); errors.Is(err, errSubagentHostExited) {
-				end = turnEnd{status: "failed", errText: err.Error()}
+			if err := s.awaitSubagents(ctx, t); errors.Is(err, provider.ErrSubagentHostExited) {
+				end = turnEnd{status: "failed", errText: "codex app-server exited while subagents were running"}
 			} else if err != nil {
 				end = turnEnd{status: "interrupted"}
 			}
@@ -458,45 +449,17 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	return s.finishTurn(ctx, t, end)
 }
 
-// subagentPoll is how often a finished turn re-checks the subagents it waits
-// for. A var so tests can shrink it.
-var subagentPoll = time.Second
-
-// haltPoll is how often a halt re-checks that what it interrupted stopped.
-const haltPoll = 100 * time.Millisecond
-
 // awaitSubagents holds a completed turn until every subagent the thread
-// spawned has stopped, so prompt_done never reports work as finished while
-// background agents still change the workspace. It fails when ctx ends or the
-// app-server exits first.
+// spawned has stopped. A subagent whose state is unknown counts as running.
 func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
-	running := s.runningSubagents(ctx)
-	if len(running) == 0 {
-		return nil
-	}
-	callID := "subagents-" + t.id
-	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress",
-		"title": fmt.Sprintf("等待 %d 个子 Agent 完成", len(running))})
-	tick := time.NewTicker(subagentPoll)
-	defer tick.Stop()
-	for len(running) > 0 {
-		select {
-		case <-ctx.Done():
-			s.haltSubagents()
-			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return ctx.Err()
-		case <-s.conn.Done():
-			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return errSubagentHostExited
-		case <-tick.C:
-			running = s.runningSubagents(ctx)
-		}
-	}
-	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
-	return nil
+	return provider.AwaitSubagents(ctx, provider.SubagentWait{
+		CallID:   "subagents-" + t.id,
+		Running:  func(ctx context.Context) (int, error) { return len(s.runningSubagents(ctx)), nil },
+		Halt:     s.haltSubagents,
+		HostDone: s.conn.Done(),
+		Emit:     s.emitUpdate,
+	})
 }
-
-var errSubagentHostExited = errors.New("codex app-server exited while subagents were running")
 
 // haltSubagents interrupts every tracked subagent still running and returns
 // once none is. Interrupts repeat on each poll, so a lost request is retried;
@@ -521,7 +484,7 @@ func (s *session) haltSubagents() {
 			log.Printf("codex: 子 Agent %v 未在 %s 内停止，结束 app-server", running, provider.InterruptGrace)
 			_ = s.conn.Close()
 			return
-		case <-time.After(haltPoll):
+		case <-time.After(provider.HaltPoll):
 		}
 	}
 }
@@ -605,7 +568,9 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 	usage, errText := t.usage(), t.errText
 	s.mu.Unlock()
 	partial := end.status != "completed"
-	s.addCumulative(usage)
+	s.mu.Lock()
+	provider.AddUsage(s.cumUsage, usage)
+	s.mu.Unlock()
 	res := provider.TurnResult{Usage: usage, UsagePartial: partial}
 	switch end.status {
 	case "completed":
@@ -613,7 +578,7 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 		s.emitPromptDone(res.StopReason, usage, partial)
 		return res, nil
 	case "interrupted":
-		return s.finishInterrupted(ctx, usage)
+		return provider.EndInterrupted(ctx, s.emit, s.threadID, usage)
 	default:
 		res.StopReason = "failed"
 		msg := s.diagnostic(firstNonEmpty(end.errText, errText, "Codex 本轮执行失败"))
@@ -623,41 +588,8 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 	}
 }
 
-// finishInterrupted ends a turn stopped before it finished, by the cause its
-// ctx was cancelled with.
-func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
-	in := provider.InterruptionFor(context.Cause(ctx))
-	if in.Diagnostic != "" {
-		s.emitError(in.Diagnostic)
-	}
-	partial := len(usage) > 0
-	if in.Final {
-		s.emitPromptDone(in.StopReason, usage, partial)
-	}
-	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
-}
-
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
-	if ctx.Err() != nil {
-		return s.finishInterrupted(ctx, nil)
-	}
-	msg := s.diagnostic(err.Error())
-	s.emitError(msg)
-	s.emitPromptDone("failed", nil, false)
-	return provider.TurnResult{StopReason: "failed"}, errors.New(msg)
-}
-
-func (s *session) addCumulative(usage map[string]provider.TokenUsage) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for model, u := range usage {
-		c := s.cumUsage[model]
-		c.InputTokens += u.InputTokens
-		c.OutputTokens += u.OutputTokens
-		c.CacheReadTokens += u.CacheReadTokens
-		c.CacheWriteTokens += u.CacheWriteTokens
-		s.cumUsage[model] = c
-	}
+	return provider.EndFailed(ctx, s.emit, s.threadID, s.diagnostic(err.Error()))
 }
 
 // onRequest answers server requests. Approval policy "never" means the

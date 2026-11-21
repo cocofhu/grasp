@@ -76,15 +76,6 @@ func hasArgPair(args []string, flag, value string) bool {
 	return false
 }
 
-func containsArg(args []string, want string) bool {
-	for _, arg := range args {
-		if arg == want {
-			return true
-		}
-	}
-	return false
-}
-
 func assertArgvOmits(t *testing.T, argv []string, forbidden string) {
 	t.Helper()
 	for _, arg := range argv {

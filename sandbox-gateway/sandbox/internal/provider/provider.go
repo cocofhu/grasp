@@ -89,6 +89,16 @@ type TokenUsage struct {
 	CacheWriteTokens int64 `json:"cacheWriteTokens,omitempty"`
 }
 
+// Plus is u with o's counters added.
+func (u TokenUsage) Plus(o TokenUsage) TokenUsage {
+	return TokenUsage{
+		InputTokens:      u.InputTokens + o.InputTokens,
+		OutputTokens:     u.OutputTokens + o.OutputTokens,
+		CacheReadTokens:  u.CacheReadTokens + o.CacheReadTokens,
+		CacheWriteTokens: u.CacheWriteTokens + o.CacheWriteTokens,
+	}
+}
+
 // TurnResult summarizes one completed prompt turn.
 type TurnResult struct {
 	StopReason   string

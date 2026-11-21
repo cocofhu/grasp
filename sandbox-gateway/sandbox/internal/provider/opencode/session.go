@@ -185,11 +185,7 @@ func (s *session) ReportsUsage() bool { return true }
 func (s *session) CumulativeUsage() map[string]provider.TokenUsage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make(map[string]provider.TokenUsage, len(s.cumUsage))
-	for k, v := range s.cumUsage {
-		out[k] = v
-	}
-	return out
+	return provider.CopyUsage(s.cumUsage)
 }
 
 // AgentPIDs is the server; the commands it runs are its descendants.
@@ -221,9 +217,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	defer s.turnMu.Unlock()
 	text, err := provider.WithAttachments(text, images)
 	if err != nil {
-		s.emitError(err.Error())
-		s.emitPromptDone("failed", nil, false)
-		return provider.TurnResult{StopReason: "failed"}, err
+		return s.finishFailed(ctx, err)
 	}
 	t := &activeTurn{done: make(chan struct{}), since: time.Now().UnixMilli(), posted: 1,
 		users: map[string]bool{}, answered: map[string]bool{}}
@@ -260,9 +254,9 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	aborted, failed := t.aborted, t.errText != ""
 	s.mu.Unlock()
 	if !aborted && !failed {
-		if err := s.awaitSubagents(ctx); errors.Is(err, errSubagentHostExited) {
+		if err := s.awaitSubagents(ctx); errors.Is(err, provider.ErrSubagentHostExited) {
 			s.endTurn()
-			return s.finishFailed(ctx, fmt.Errorf("%w: %s", err, s.srv.exitText()))
+			return s.finishFailed(ctx, fmt.Errorf("opencode serve exited while subagents were running: %s", s.srv.exitText()))
 		} else if err != nil {
 			return s.finishTurn(ctx, t, true)
 		}
@@ -346,63 +340,29 @@ func (s *session) halt() {
 			log.Printf("opencode: 会话 %s 及其子 Agent 未在 %s 内停止，结束 serve 进程", s.id, provider.InterruptGrace)
 			s.srv.stop()
 			return
-		case <-time.After(haltPoll):
+		case <-time.After(provider.HaltPoll):
 		}
 	}
 }
 
-// subagentPoll is how often a finished turn re-checks the subagents it waits
-// for. A var so tests can shrink it.
-var subagentPoll = time.Second
-
-// haltPoll is how often a halt re-checks that what it interrupted stopped.
-const haltPoll = 100 * time.Millisecond
-
 // awaitSubagents holds a finished turn while a child session (subagent) of
-// this session is still busy, so prompt_done never reports work as finished
-// while background agents still change the workspace. It fails when ctx ends
-// or the server exits first. Unknown is not idle: a state that cannot be read
-// is asked again, until the turn's own deadline.
+// this session is still busy.
 func (s *session) awaitSubagents(ctx context.Context) error {
-	_, children, err := s.running(ctx)
-	if err == nil && len(children) == 0 {
-		return nil
-	}
-	title := fmt.Sprintf("等待 %d 个子 Agent 完成", len(children))
-	if err != nil {
-		log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
-		title = "等待子 Agent 完成"
-	}
-	callID := "subagents-" + s.id
-	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress", "title": title})
-	tick := time.NewTicker(subagentPoll)
-	defer tick.Stop()
-	for busy := true; busy; {
-		select {
-		case <-ctx.Done():
-			s.halt()
-			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return ctx.Err()
-		case <-s.done:
-			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return errSubagentHostExited
-		case <-tick.C:
-			if _, children, err := s.running(ctx); err != nil {
-				log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
-			} else {
-				busy = len(children) > 0
-			}
-		}
-	}
-	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
-	return nil
+	return provider.AwaitSubagents(ctx, provider.SubagentWait{
+		CallID: "subagents-" + s.id,
+		Running: func(ctx context.Context) (int, error) {
+			_, children, err := s.running(ctx)
+			return len(children), err
+		},
+		Halt:     s.halt,
+		HostDone: s.done,
+		Emit:     s.emitUpdate,
+	})
 }
 
 // childStartGrace bounds how long a created child that has reported no
 // status yet counts as running.
 const childStartGrace = 30 * time.Second
-
-var errSubagentHostExited = errors.New("opencode serve exited while subagents were running")
 
 // running reports whether this session is still running and which of its
 // child sessions are.
@@ -440,21 +400,15 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	var usage map[string]provider.TokenUsage
 	if t.reported {
 		usage = map[string]provider.TokenUsage{"default": t.usage}
-		c := s.cumUsage["default"]
-		c.InputTokens += t.usage.InputTokens
-		c.OutputTokens += t.usage.OutputTokens
-		c.CacheReadTokens += t.usage.CacheReadTokens
-		c.CacheWriteTokens += t.usage.CacheWriteTokens
-		s.cumUsage["default"] = c
+		provider.AddUsage(s.cumUsage, usage)
 	}
 	errText := t.errText
 	s.mu.Unlock()
 	if interrupted {
-		return s.finishInterrupted(ctx, usage)
+		return provider.EndInterrupted(ctx, s.emit, s.id, usage)
 	}
 	res := provider.TurnResult{Usage: usage}
-	switch {
-	case errText != "":
+	if errText != "" {
 		res.StopReason = "failed"
 		msg := provider.RedactDiagnostic(errText, s.env)
 		s.emitError(msg)
@@ -486,28 +440,8 @@ func (s *session) endTurn() {
 	}
 }
 
-// finishInterrupted ends a turn stopped before it finished, by the cause its
-// ctx was cancelled with.
-func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
-	in := provider.InterruptionFor(context.Cause(ctx))
-	if in.Diagnostic != "" {
-		s.emitError(in.Diagnostic)
-	}
-	partial := len(usage) > 0
-	if in.Final {
-		s.emitPromptDone(in.StopReason, usage, partial)
-	}
-	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
-}
-
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
-	if ctx.Err() != nil {
-		return s.finishInterrupted(ctx, nil)
-	}
-	msg := provider.RedactDiagnostic(err.Error(), s.env)
-	s.emitError(msg)
-	s.emitPromptDone("failed", nil, false)
-	return provider.TurnResult{StopReason: "failed"}, errors.New(msg)
+	return provider.EndFailed(ctx, s.emit, s.id, provider.RedactDiagnostic(err.Error(), s.env))
 }
 
 func (s *session) Done() <-chan struct{} { return s.done }

@@ -110,11 +110,7 @@ func (s *session) ReportsUsage() bool { return true }
 func (s *session) CumulativeUsage() map[string]provider.TokenUsage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make(map[string]provider.TokenUsage, len(s.cumUsage))
-	for k, v := range s.cumUsage {
-		out[k] = v
-	}
-	return out
+	return provider.CopyUsage(s.cumUsage)
 }
 
 func (s *session) AgentPIDs() []int { return []int{s.proc.pid()} }
@@ -376,23 +372,15 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	var usage map[string]provider.TokenUsage
 	if len(t.usage) > 0 {
 		usage = t.usage
-		for model, u := range t.usage {
-			c := s.cumUsage[model]
-			c.InputTokens += u.InputTokens
-			c.OutputTokens += u.OutputTokens
-			c.CacheReadTokens += u.CacheReadTokens
-			c.CacheWriteTokens += u.CacheWriteTokens
-			s.cumUsage[model] = c
-		}
+		provider.AddUsage(s.cumUsage, usage)
 	}
 	errText := t.errText
 	s.mu.Unlock()
 	if interrupted {
-		return s.finishInterrupted(ctx, usage)
+		return provider.EndInterrupted(ctx, s.emit, s.sessionFile, usage)
 	}
 	res := provider.TurnResult{Usage: usage}
-	switch {
-	case errText != "":
+	if errText != "" {
 		res.StopReason = "failed"
 		msg := provider.RedactDiagnostic(errText, s.env)
 		s.emitError(msg)
@@ -404,28 +392,8 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	return res, nil
 }
 
-// finishInterrupted ends a turn stopped before it finished, by the cause its
-// ctx was cancelled with.
-func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
-	in := provider.InterruptionFor(context.Cause(ctx))
-	if in.Diagnostic != "" {
-		s.emitError(in.Diagnostic)
-	}
-	partial := len(usage) > 0
-	if in.Final {
-		s.emitPromptDone(in.StopReason, usage, partial)
-	}
-	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
-}
-
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
-	if ctx.Err() != nil {
-		return s.finishInterrupted(ctx, nil)
-	}
-	msg := provider.RedactDiagnostic(err.Error(), s.env)
-	s.emitError(msg)
-	s.emitPromptDone("failed", nil, false)
-	return provider.TurnResult{StopReason: "failed"}, errors.New(msg)
+	return provider.EndFailed(ctx, s.emit, s.sessionFile, provider.RedactDiagnostic(err.Error(), s.env))
 }
 
 // endTurn detaches the turn, flushes held-back text and closes the tool
