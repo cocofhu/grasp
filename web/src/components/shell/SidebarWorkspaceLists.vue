@@ -212,7 +212,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="workspace-lists" data-testid="sidebar-workspace-lists">
     <section class="workspace-recents" data-testid="sidebar-recent">
-      <h3 class="workspace-list-heading grasp-status-host" data-icon-motion-span="history-title"><RouterLink to="/runs" class="grasp-status-host" data-testid="sidebar-recent-heading" @click="emit('navigate')"><Icon name="history-back" :size="14" class="workspace-list-heading-icon grasp-status" aria-hidden="true" /><span>{{ t('nav.runHistory') }}</span></RouterLink><button type="button" class="workspace-list-toggle" data-testid="sidebar-recent-toggle" :aria-expanded="!historyCollapsed" :aria-label="t(historyCollapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t('nav.runHistory') })" @click="toggleSection('history')"><Icon :interactive="false" name="chevron-down" :size="12" class="workspace-list-chevron" :class="{ 'is-collapsed': historyCollapsed }" aria-hidden="true" /></button></h3>
+      <h3 class="workspace-list-heading grasp-status-host" data-icon-motion-span="history-title"><button type="button" class="workspace-list-label grasp-status-host" data-testid="sidebar-recent-toggle" :aria-expanded="!historyCollapsed" :aria-label="t(historyCollapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t('nav.runHistory') })" @click="toggleSection('history')"><Icon name="history-back" :size="14" class="workspace-list-heading-icon grasp-status" aria-hidden="true" /><span>{{ t('nav.runHistory') }}</span><Icon :interactive="false" name="chevron-down" :size="12" class="workspace-list-chevron" :class="{ 'is-collapsed': historyCollapsed }" aria-hidden="true" /></button></h3>
       <div v-show="!historyCollapsed" data-testid="sidebar-recent-body">
       <div v-if="runsFailed" class="workspace-list-state" role="alert"><span>{{ t('nav.workspaceLoadFailed') }}</span><button type="button" @click="loadRuns">{{ t('nav.workspaceRetry') }}</button></div>
       <p v-else-if="!entries.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
@@ -273,12 +273,11 @@ onBeforeUnmount(() => {
 .workspace-lists { min-width: 0; font-size: 13px; }
 .recent-row-menu__item { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 12px; color: rgb(var(--c-txt2)); font-size: 12px; text-align: start; white-space: nowrap; cursor: pointer; }
 .recent-row-menu__item:hover, .recent-row-menu__item:focus-visible { color: rgb(var(--c-txt)); background: rgb(var(--c-overlay)); outline: none; }
-.workspace-list-heading { display: flex; align-items: center; justify-content: flex-start; gap: 1px; margin: 0 0 4px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
+.workspace-list-heading { display: flex; align-items: center; margin: 0 0 4px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
 .workspace-list-heading:hover { color: rgb(var(--c-txt)); }
-.workspace-list-heading > a:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; color: inherit; }
+.workspace-list-label { display: flex; width: 100%; align-items: center; gap: 6px; min-width: 0; min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .workspace-list-heading-icon { flex: none; }
-.workspace-list-toggle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: inherit; background: transparent; }
-.workspace-list-chevron { opacity: .7; transition: transform 160ms ease, opacity 160ms ease; }
+.workspace-list-chevron { flex: none; margin-left: -1px; opacity: .7; transition: transform 160ms ease, opacity 160ms ease; }
 .workspace-list-heading:hover .workspace-list-chevron { opacity: 1; }
 .workspace-list-chevron.is-collapsed { transform: rotate(-90deg); }
 .workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }

@@ -4,6 +4,7 @@ export type SettingsNavItem = SidebarNavItem & { exact?: boolean; query?: Record
 
 export const settingsNavItems: SettingsNavItem[] = [
   { to: '/board', icon: 'board', labelKey: 'nav.board', groupKey: 'nav.groupWorkspaceTools' },
+  { to: '/runs', icon: 'runs', labelKey: 'nav.runs' },
   { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },

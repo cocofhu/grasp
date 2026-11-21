@@ -88,10 +88,17 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
   await expect(lists.getByRole('button', { name: /新建工作流|置顶 / })).toHaveCount(0)
   await expect(lists.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
-  await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
+  await expect(lists.getByTestId('sidebar-recent-toggle')).toHaveText('历史执行')
+  await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toHaveCount(0)
   // Finished runs only. Waiting-human stays under 正在执行; the automatic agent run is 自动过程.
   await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
   await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-3/live')
+  const heading = lists.getByRole('heading', { name: /历史执行/ })
+  const width = await heading.evaluate(el => el.clientWidth)
+  await heading.click({ position: { x: width - 3, y: 12 } })
+  await expect(lists.getByTestId('sidebar-recent-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await heading.click({ position: { x: 3, y: 12 } })
+  await expect(lists.getByTestId('sidebar-recent-body')).toBeVisible()
   const running = page.getByTestId('app-desktop-sidebar').getByTestId('nav-pending-approvals')
   await expect(running).toContainText('正在执行')
   await expect(running.getByTestId('nav-pending-row')).toHaveCount(1)
@@ -134,13 +141,14 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
   await expect(drawer.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(drawer.locator('input[type="search"]')).toHaveCount(0)
   await expect(drawer.getByTestId('sidebar-recent-run')).toHaveCount(4)
-  await expect(drawer.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
+  await expect(drawer.getByTestId('sidebar-recent-toggle')).toHaveText('历史执行')
+  await expect(drawer.getByRole('link', { name: '历史执行', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
 test('settings tool links keep the settings directory until explicitly leaving it', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings')
-  for (const path of ['/board', '/workflows', '/settings/audit']) {
+  for (const path of ['/board', '/runs', '/workflows', '/settings/audit']) {
     const settings = page.getByTestId('nav-settings-chrome')
     await settings.locator(`a[href="${path}"]`).click()
     await expect(settings).toBeVisible()

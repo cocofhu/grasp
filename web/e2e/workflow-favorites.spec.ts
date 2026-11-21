@@ -17,7 +17,7 @@ async function expectNoQuickWorkflows(page: Page) {
   await expect(rail.getByRole('link', { name: '看板' })).toBeVisible()
   await expect(rail.getByRole('link', { name: '工作流' })).toBeVisible()
   await expect(rail.getByRole('link', { name: '设置' })).toBeVisible()
-  await expect(page.getByTestId('sidebar-recent-heading')).toBeVisible()
+  await expect(page.getByTestId('sidebar-recent-toggle')).toBeVisible()
 }
 
 test.describe('workflow favorites stay off the sidebar', () => {
