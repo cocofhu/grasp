@@ -232,14 +232,18 @@ func (s *session) Capabilities() provider.Capabilities {
 func (s *session) Steer(text string) error {
 	s.mu.Lock()
 	t := s.turn
+	var id string
+	if t != nil {
+		id = t.id
+	}
 	s.mu.Unlock()
-	if t == nil || t.id == "" {
+	if id == "" {
 		return provider.ErrNoActiveTurn
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
 	_, err := s.conn.Call(ctx, "turn/steer", map[string]any{
-		"threadId": s.threadID, "expectedTurnId": t.id, "input": textInput(text),
+		"threadId": s.threadID, "expectedTurnId": id, "input": textInput(text),
 	})
 	if err != nil && !s.turnActive(t) {
 		return provider.ErrNoActiveTurn
@@ -256,12 +260,14 @@ func (s *session) turnActive(t *activeTurn) bool {
 // Cancel interrupts the running turn. Prompt waits for its turn/completed.
 func (s *session) Cancel() error {
 	s.mu.Lock()
-	t := s.turn
-	s.mu.Unlock()
-	if t == nil || t.id == "" {
-		return nil
+	var id string
+	if s.turn != nil {
+		id = s.turn.id
 	}
-	go s.interrupt(t.id)
+	s.mu.Unlock()
+	if id != "" {
+		go s.interrupt(id)
+	}
 	return nil
 }
 
@@ -366,8 +372,12 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	var end turnEnd
 	select {
 	case end = <-t.done:
-		if end.status == "completed" && !s.awaitSubagents(ctx, t) {
-			end = turnEnd{status: "interrupted"}
+		if end.status == "completed" {
+			if err := s.awaitSubagents(ctx, t); errors.Is(err, errSubagentHostExited) {
+				end = turnEnd{status: "failed", errText: err.Error()}
+			} else if err != nil {
+				end = turnEnd{status: "interrupted"}
+			}
 		}
 	case <-ctx.Done():
 		s.interrupt(t.id)
@@ -392,12 +402,12 @@ var subagentPoll = time.Second
 
 // awaitSubagents holds a completed turn until every subagent the thread
 // spawned has stopped, so prompt_done never reports work as finished while
-// background agents still change the workspace. It is false when ctx ends
-// first.
-func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) bool {
+// background agents still change the workspace. It fails when ctx ends or the
+// app-server exits first.
+func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
 	running := s.runningSubagents(ctx)
 	if len(running) == 0 {
-		return true
+		return nil
 	}
 	callID := "subagents-" + t.id
 	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress",
@@ -408,16 +418,19 @@ func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) bool {
 		select {
 		case <-ctx.Done():
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return false
+			return ctx.Err()
 		case <-s.conn.Done():
-			return true
+			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
+			return errSubagentHostExited
 		case <-tick.C:
 			running = s.runningSubagents(ctx)
 		}
 	}
 	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
-	return true
+	return nil
 }
+
+var errSubagentHostExited = errors.New("codex app-server exited while subagents were running")
 
 // runningSubagents asks the app-server which tracked subagents are still
 // active and forgets the others. A thread it cannot read is not waited for.
@@ -465,7 +478,10 @@ func (s *session) threadActive(ctx context.Context, threadID string) (bool, erro
 // finishTurn settles usage and stop reason, emits prompt_done and returns the
 // error contract the bridge expects for each cancel cause.
 func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (provider.TurnResult, error) {
-	usage := t.usage()
+	// Late notifications for this turn may still be applied under s.mu.
+	s.mu.Lock()
+	usage, errText := t.usage(), t.errText
+	s.mu.Unlock()
 	partial := end.status != "completed"
 	s.addCumulative(usage)
 	res := provider.TurnResult{Usage: usage, UsagePartial: partial}
@@ -492,7 +508,7 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 		return res, context.Canceled
 	default:
 		res.StopReason = "failed"
-		msg := s.diagnostic(firstNonEmpty(end.errText, t.errText, "Codex 本轮执行失败"))
+		msg := s.diagnostic(firstNonEmpty(end.errText, errText, "Codex 本轮执行失败"))
 		s.emitError(msg)
 		s.emitPromptDone(res.StopReason, usage, partial)
 		return res, errors.New(msg)

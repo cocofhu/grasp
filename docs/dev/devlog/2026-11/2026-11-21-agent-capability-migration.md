@@ -9,9 +9,10 @@
   - 子 Agent：Codex（`spawnAgent` 子线程）与 OpenCode（子会话）仍在运行时不发 `prompt_done`，工作流节点不会提前完成。
   - OpenCode 改为常驻 `opencode serve`：回环地址 + 随机 basic auth 密码，`prompt_async` 发起与引导，`abort` 中断，SSE `/event` 汇总事件；一轮在每条已发送的用户消息都有回复且会话空闲后结束。删除 one-shot 里的 OpenCode 分支和 `--title`。
   - Pi 改为常驻 `pi --mode rpc`：会话文件即接回指针，带 `streamingBehavior: steer` 的 `prompt` 引导，`abort` 中断；滞留的引导用 `get_state` 识别后收尾，扩展对话框一律取消。
-  - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用。
+  - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用；镜像到日志的每一行按子进程环境脱敏。
+  - 子 Agent 等待期间 Codex app-server 或 OpenCode serve 退出时，回合按失败收尾，「等待子 Agent」工具调用标为失败。Codex 会话的 `Steer` / `Cancel` / `finishTurn` 在锁内读取回合 ID、用量与错误。
   - 新增 `server/internal/handoff`，取代 `renderRecoveryTranscript`：对话先转成统一条目（回合中补充的引导单列为用户条目），按约 12000 token 预算挑选，优先级为最新用户消息、最新 Agent 回复、最初需求，其余从新到旧；放不下的条目给出条数与编号，单条过长时截取开头并标注。开头声明历史只作参考、不是新指令，工具输出与思考过程未保留。工作流的重建、原会话接不回、`/compact` 三处共用。
-  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认；恢复时若保留下来的原生会话（warm 或 resumed）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除。
+  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认；恢复时若保留下来的原生会话（warm 或 resumed）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除；服务端恰在交接回合中崩溃时这一标记会丢失，下次恢复按原会话接回。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：
   - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。

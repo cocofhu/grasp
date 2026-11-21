@@ -55,7 +55,7 @@ func startProcess(ctx context.Context, bin, dir string, env, args []string, onEv
 	if err != nil {
 		return nil, err
 	}
-	tail := &provider.OutputTail{Max: 4096, LogPrefix: "pi stderr"}
+	tail := &provider.OutputTail{Max: 4096, LogPrefix: "pi stderr", Env: cmd.Env}
 	cmd.Stderr = tail
 	if err := cmd.Start(); err != nil {
 		return nil, err

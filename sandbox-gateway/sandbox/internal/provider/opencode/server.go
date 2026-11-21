@@ -22,8 +22,10 @@ import (
 )
 
 // server is one `opencode serve` process bound to loopback. Every request
-// carries the random password the process was started with, so other
-// processes in the sandbox (including the agent's own shell) cannot drive it.
+// carries the random password the process was started with, so a local client
+// that only reaches the port (a forwarded preview, a browser page) cannot
+// drive it. Commands the agent runs inherit the environment and can; they
+// already run with the same rights in the sandbox.
 type server struct {
 	cmd      *exec.Cmd
 	base     string
@@ -60,7 +62,7 @@ func startServer(ctx context.Context, bin, dir string, env, extra []string) (*se
 	// Its own group, so stopping the server also stops the shells it runs.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	tail := &provider.OutputTail{Max: 4096, LogPrefix: "opencode serve"}
+	tail := &provider.OutputTail{Max: 4096, LogPrefix: "opencode serve", Env: cmd.Env}
 	cmd.Stdout, cmd.Stderr = tail, tail
 	if err := cmd.Start(); err != nil {
 		return nil, err

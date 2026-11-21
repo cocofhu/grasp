@@ -397,3 +397,19 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = time.Hour
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	time.AfterFunc(500*time.Millisecond, s.srv.stop)
+	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
+	if err == nil || res.StopReason != "failed" || !strings.Contains(err.Error(), "exited while subagents were running") {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+	if updates := rec.updates("tool_call_update"); len(updates) == 0 || updates[len(updates)-1]["status"] != "failed" {
+		t.Fatalf("subagent wait not closed as failed: %v", updates)
+	}
+}

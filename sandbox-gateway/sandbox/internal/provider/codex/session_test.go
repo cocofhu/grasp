@@ -529,3 +529,24 @@ func TestInterruptWhileWaitingForSubagents(t *testing.T) {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
+
+func TestAppServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = time.Hour
+	t.Cleanup(func() { subagentPoll = old })
+	s, rec := open(t, provider.OpenOptions{})
+	time.AfterFunc(200*time.Millisecond, func() { _ = s.conn.Close() })
+	res, err := prompt(t, s, nil, "spawn")
+	if err == nil || res.StopReason != "failed" || !strings.Contains(err.Error(), "exited while subagents were running") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	var last string
+	for _, f := range rec.snapshot() {
+		if u, ok := f["update"].(map[string]any); ok && u["toolCallId"] == "subagents-turn-1" {
+			last = fmt.Sprint(u["status"])
+		}
+	}
+	if last != "failed" {
+		t.Fatalf("subagent wait left as %q", last)
+	}
+}

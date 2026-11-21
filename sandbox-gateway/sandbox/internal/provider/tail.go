@@ -8,10 +8,12 @@ import (
 
 // OutputTail keeps the last Max bytes a child process wrote, so a crash
 // surfaces a diagnostic instead of a bare exit status. With a LogPrefix each
-// line is also mirrored to the log.
+// line is also mirrored to the log, redacted against Env.
 type OutputTail struct {
 	Max       int
 	LogPrefix string
+	// Env is the child's environment; its credential values never reach the log.
+	Env []string
 
 	mu   sync.Mutex
 	data []byte
@@ -24,7 +26,7 @@ func (t *OutputTail) Write(p []byte) (int, error) {
 				if len(line) > 500 {
 					line = line[:500] + "…"
 				}
-				log.Printf("%s: %s", t.LogPrefix, line)
+				log.Printf("%s: %s", t.LogPrefix, RedactDiagnostic(line, t.Env))
 			}
 		}
 	}

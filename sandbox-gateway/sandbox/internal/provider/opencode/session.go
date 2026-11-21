@@ -249,8 +249,13 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	s.mu.Lock()
 	aborted, failed := t.aborted, t.errText != ""
 	s.mu.Unlock()
-	if !aborted && !failed && !s.awaitSubagents(ctx) {
-		return s.finishTurn(ctx, t, true)
+	if !aborted && !failed {
+		if err := s.awaitSubagents(ctx); errors.Is(err, errSubagentHostExited) {
+			s.endTurn()
+			return s.finishFailed(ctx, fmt.Errorf("%w: %s", err, s.srv.exitText()))
+		} else if err != nil {
+			return s.finishTurn(ctx, t, true)
+		}
 	}
 	return s.finishTurn(ctx, t, aborted)
 }
@@ -312,12 +317,12 @@ var subagentPoll = time.Second
 
 // awaitSubagents holds a finished turn while a child session (subagent) of
 // this session is still busy, so prompt_done never reports work as finished
-// while background agents still change the workspace. It is false when ctx
-// ends first.
-func (s *session) awaitSubagents(ctx context.Context) bool {
+// while background agents still change the workspace. It fails when ctx ends
+// or the server exits first.
+func (s *session) awaitSubagents(ctx context.Context) error {
 	busy := s.busyChildren(ctx)
 	if busy == 0 {
-		return true
+		return nil
 	}
 	callID := "subagents-" + s.id
 	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress",
@@ -328,16 +333,19 @@ func (s *session) awaitSubagents(ctx context.Context) bool {
 		select {
 		case <-ctx.Done():
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
-			return false
+			return ctx.Err()
 		case <-s.done:
-			return true
+			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
+			return errSubagentHostExited
 		case <-tick.C:
 			busy = s.busyChildren(ctx)
 		}
 	}
 	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
-	return true
+	return nil
 }
+
+var errSubagentHostExited = errors.New("opencode serve exited while subagents were running")
 
 // busyChildren counts this session's child sessions that are still running.
 // A failed lookup is not waited on.
