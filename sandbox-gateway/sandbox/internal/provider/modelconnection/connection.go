@@ -73,8 +73,10 @@ type Prepared struct {
 	Connection *Connection
 	RouteID    string
 	DSHPatch   []byte
-	Platform   bool
-	Cleanup    func()
+	// Variant is the OpenCode model variant (reasoning effort) to request.
+	Variant  string
+	Platform bool
+	Cleanup  func()
 }
 
 // Catalog exposes upstream IDs to the UI, rather than a CLI-specific route.

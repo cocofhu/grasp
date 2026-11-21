@@ -16,6 +16,7 @@ import (
 
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
+	"backend/internal/provider/opencode/opencodetest"
 )
 
 // Exercise real registry -> provider -> subprocess wiring against a local model
@@ -193,10 +194,11 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 		providers := doc["provider"].(map[string]any)
 		for route, entry := range providers {
 			p := entry.(map[string]any)
-			if !strings.HasPrefix(argModel(), route+"/") {
+			routed, _ := doc["model"].(string)
+			if !strings.HasPrefix(routed, route+"/") {
 				fail("wrong CLI route")
 			}
-			model = strings.TrimPrefix(argModel(), route+"/")
+			model = strings.TrimPrefix(routed, route+"/")
 			if p["models"].(map[string]any)[model] == nil {
 				fail("upstream model was split")
 			}
@@ -281,14 +283,20 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 		serveCodexAppServer(request)
 		os.Exit(0)
 	}
+	if provider.Name(tool) == provider.OpenCode {
+		serveFakeOpenCode(opencodetest.Options{Reply: "connected", OnPrompt: func(p opencodetest.Prompt) error {
+			if p.Model == nil || p.Model.ModelID != model {
+				return fmt.Errorf("prompt routed to %+v, want %s", p.Model, model)
+			}
+			request()
+			return nil
+		}})
+	}
 	request()
 	switch provider.Name(tool) {
 	case provider.ClaudeCode, provider.CodeBuddy:
 		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"text","text":"connected"}]}}`)
 		fmt.Println(`{"type":"result","subtype":"success","session_id":"fixture","result":"connected"}`)
-	case provider.OpenCode:
-		fmt.Println(`{"type":"text","part":{"text":"connected"}}`)
-		fmt.Println(`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":1,"output":1}}}`)
 	}
 	os.Exit(0)
 }
@@ -317,4 +325,18 @@ func serveCodexAppServer(request func()) {
 			fmt.Printf(`{"id":%d,"result":{}}`+"\n", *msg.ID)
 		}
 	}
+}
+
+// serveFakeOpenCode runs the fake `opencode serve` for this helper process's
+// native arguments and exits.
+func serveFakeOpenCode(o opencodetest.Options) {
+	args := os.Args
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	fmt.Fprintln(os.Stderr, opencodetest.Serve(args, o))
+	os.Exit(2)
 }

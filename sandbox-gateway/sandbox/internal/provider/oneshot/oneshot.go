@@ -200,21 +200,8 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		return nil, fmt.Errorf("one-shot agent %q not found on PATH (sandbox image lacks this CLI; rebuild it with AGENT_PROVIDERS including %q): %w",
 			bin, p.c.AgentName(), err)
 	}
-	if prepared.Platform || (prepared.Connection != nil && p.Name() != provider.OpenCode) {
+	if prepared.Platform || prepared.Connection != nil {
 		if err := modelconnection.CheckVersion(procCtx, p.Name(), path, prepared.Env); err != nil {
-			prepared.Cleanup()
-			return nil, err
-		}
-	}
-	if p.Name() == provider.OpenCode {
-		// Validate the native directory before custom variants can declare an
-		// otherwise unknown official model in the generated configuration.
-		if err := modelconnection.CheckOpenCodeCatalog(handshakeCtx, path, prepared, opts.Cwd); err != nil {
-			prepared.Cleanup()
-			return nil, err
-		}
-		prepared, err = modelconnection.ApplyOpenCodeVariant(prepared, opts.ReasoningEffort)
-		if err != nil {
 			prepared.Cleanup()
 			return nil, err
 		}

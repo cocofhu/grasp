@@ -31,9 +31,8 @@ func mustOpenCodeVariantCatalog() map[string]openCodeVariantModel {
 var effortTokenPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$`)
 
 // ApplyOpenCodeVariant attaches the effort for this run. An empty effort leaves
-// the model unchanged so OpenCode uses its own default. The CLI selects the
-// variant with --variant; appending it to the model makes it a different model
-// ID. A custom variant, and every variant on a connected service, is declared
+// the model unchanged so OpenCode uses its own default. Each prompt requests
+// Variant; appending it to the model would make it a different model ID. A custom variant, and every variant on a connected service, is declared
 // on that model for this run.
 func ApplyOpenCodeVariant(p Prepared, effort string) (Prepared, error) {
 	effort = strings.TrimSpace(effort)
@@ -45,7 +44,7 @@ func ApplyOpenCodeVariant(p Prepared, effort string) (Prepared, error) {
 		return p, errors.New("OpenCode reasoning effort is not a valid variant")
 	}
 	p.Model = base
-	p.Args = append(append([]string(nil), p.Args...), "--variant", effort)
+	p.Variant = effort
 	var overlay map[string]any
 	if p.Connection == nil {
 		if !platformCatalogVariant(base, effort) {

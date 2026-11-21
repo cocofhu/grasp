@@ -66,7 +66,7 @@ Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 | `claude_code` | `claude -p --output-format stream-json` | `/root/.claude` | `ANTHROPIC_API_KEY` |
 | `codebuddy` | `codebuddy -p --output-format stream-json` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
-| `opencode` | `opencode run --format json` | `/root/.config/opencode` | 厂商原生 Key(由 `OPENCODE_API_KEY` 映射) |
+| `opencode` | `opencode serve`（常驻） | `/root/.config/opencode` | 厂商原生 Key(由 `OPENCODE_API_KEY` 映射) |
 | `codex` | `codex app-server`（常驻，JSON-RPC） | `/root/.codex` | 登录文件 `{configRoot}/auth.json`（不注入环境变量） |
 | `deepseek_harness` | `dsh --profile acp` | `/root/.dsh` | `DEEPSEEK_API_KEY` |
 

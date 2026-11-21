@@ -34,11 +34,11 @@ func TestEveryNameResolves(t *testing.T) {
 func TestTransportSplit(t *testing.T) {
 	// ACP-native CLIs run long-lived (persistent JSON-RPC over stdio). Every
 	// other agent is one-shot (fresh process per turn + resume), except the
-	// codex app-server.
+	// codex app-server and opencode serve.
 	long := map[provider.Name]bool{
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
-		provider.DeepSeekHarness: true, provider.Codex: true,
+		provider.DeepSeekHarness: true, provider.Codex: true, provider.OpenCode: true,
 	}
 	for n, p := range registry {
 		want := provider.OneShot

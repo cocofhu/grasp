@@ -2,7 +2,6 @@ package modelconnection
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -40,8 +39,8 @@ func TestOpenCodeDefaultDoesNotAttachVariant(t *testing.T) {
 	if next.Model != "opencode/gpt-5.5" || strings.Contains(next.Model, "#") {
 		t.Fatalf("default attached a variant: %s", next.Model)
 	}
-	if len(next.Args) != 0 {
-		t.Fatalf("default attached CLI arguments: %v", next.Args)
+	if next.Variant != "" {
+		t.Fatalf("default attached a variant: %q", next.Variant)
 	}
 	raw := envutil.Get(next.Env, "OPENCODE_CONFIG_CONTENT")
 	if strings.Contains(raw, "#") || strings.Contains(raw, "variants") {
@@ -55,7 +54,7 @@ func TestOpenCodeCatalogVariantIsPassedThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "high"}) {
+	if next.Model != "opencode/gpt-5.5" || next.Variant != "high" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
@@ -74,7 +73,7 @@ func TestOpenCodeCustomVariantIsDeclaredForTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "turbo"}) {
+	if next.Model != "opencode/gpt-5.5" || next.Variant != "turbo" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
@@ -129,7 +128,7 @@ func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash") || !reflect.DeepEqual(next.Args, []string{"--variant", "low"}) {
+	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash") || next.Variant != "low" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)

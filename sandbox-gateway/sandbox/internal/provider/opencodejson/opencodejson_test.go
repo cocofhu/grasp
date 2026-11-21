@@ -18,7 +18,7 @@ func has(list []string, s string) bool {
 
 func TestArgsPositionalPrompt(t *testing.T) {
 	c := &codec{c: Config{
-		Bin:           "opencode",
+		Bin:           "deveco",
 		BaseArgs:      []string{"run", "--format", "json", "--dangerously-skip-permissions"},
 		WorkspaceFlag: "--dir",
 		ResumeFlag:    "--session",
@@ -29,18 +29,10 @@ func TestArgsPositionalPrompt(t *testing.T) {
 	if args[len(args)-1] != "do it" {
 		t.Fatalf("prompt not last: %v", args)
 	}
-	for _, want := range []string{"opencode", "run", "--format", "json", "--dir", "/w", "--model", "m", "--session", "S9"} {
+	for _, want := range []string{"deveco", "run", "--format", "json", "--dir", "/w", "--model", "m", "--session", "S9"} {
 		if !has(args, want) {
 			t.Fatalf("missing %q in %v", want, args)
 		}
-	}
-}
-
-func TestNativeTitleDoesNotSpendUnreportedTokens(t *testing.T) {
-	c := &codec{c: Config{AgentName: provider.OpenCode, Bin: "opencode", BaseArgs: []string{"run", "--format", "json"}}}
-	args := c.Args(provider.OpenOptions{}, "hello", "")
-	if !has(args, "--title") || !has(args, "Grasp") || args[len(args)-1] != "hello" {
-		t.Fatalf("unaccounted title generation was enabled: %v", args)
 	}
 }
 
@@ -94,7 +86,7 @@ func TestParseToolUseFinished(t *testing.T) {
 
 func TestParseStepFinishUsage(t *testing.T) {
 	c := &codec{}
-	pr := c.ParseLine([]byte(`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":10,"output":20,"cache":{"read":3,"write":4}}}}`))
+	pr := c.ParseLine([]byte(`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":10,"output":15,"reasoning":5,"cache":{"read":3,"write":4}}}}`))
 	if pr.StopReason != "end_turn" {
 		t.Fatalf("stop=%q", pr.StopReason)
 	}

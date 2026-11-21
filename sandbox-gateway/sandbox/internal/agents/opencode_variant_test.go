@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,35 +12,68 @@ import (
 
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
+	"backend/internal/provider/opencode/opencodetest"
 )
 
-const openCodeVariantFixture = `#!/bin/sh
-set -eu
-if [ "${1:-}" = "--version" ]; then
-  printf '1.19.4\n'
-  exit 0
-fi
-if [ "${1:-}" = "models" ]; then
-  [ "$#" -eq 3 ] && [ "$2" = "opencode" ] && [ "$3" = "--refresh" ]
-  printf 'models\n' >> "$GRASP_VARIANT_TEST_CALLS_OUT"
-  mkdir -p "$XDG_CACHE_HOME/opencode"
-  printf '%s' '{"opencode":{"id":"opencode","models":{"gpt-5.5":{"id":"gpt-5.5","name":"GPT-5.5","status":"active"}}}}' > "$XDG_CACHE_HOME/opencode/models.json"
-  printf 'opencode/gpt-5.5\n'
-  exit 0
-fi
-printf 'run\n' >> "$GRASP_VARIANT_TEST_CALLS_OUT"
-printf '%s\n' "$@" > "$GRASP_VARIANT_TEST_ARGV_OUT"
-printf '%s' "$OPENCODE_CONFIG_CONTENT" > "$GRASP_VARIANT_TEST_CONFIG_OUT"
-for arg in "$@"; do
-  if [ "$arg" = "--thinking" ]; then
-    printf '%s\n' '{"type":"reasoning","part":{"type":"reasoning","text":"fixture model thought"}}'
-  fi
-done
-printf '%s\n' '{"type":"text","part":{"text":"connected"}}' '{"type":"step_finish","part":{"reason":"stop"}}'
-`
+// TestOpenCodeVariantCLIProcess is the fake `opencode` of the variant tests:
+// it refreshes a one-model catalog and serves prompts, recording the
+// generated configuration and each prompt. It never contacts a model service.
+func TestOpenCodeVariantCLIProcess(t *testing.T) {
+	if os.Getenv("GRASP_VARIANT_TEST_BINARY") == "" {
+		return
+	}
+	args := os.Args
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	record := func(call string) {
+		f, err := os.OpenFile(os.Getenv("GRASP_VARIANT_TEST_CALLS_OUT"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintln(f, call)
+			_ = f.Close()
+		}
+	}
+	switch {
+	case len(args) > 0 && args[0] == "--version":
+		fmt.Println("1.19.4")
+		os.Exit(0)
+	case len(args) == 3 && args[0] == "models" && args[1] == "opencode" && args[2] == "--refresh":
+		record("models")
+		dir := filepath.Join(os.Getenv("XDG_CACHE_HOME"), "opencode")
+		_ = os.MkdirAll(dir, 0o700)
+		_ = os.WriteFile(filepath.Join(dir, "models.json"), []byte(`{"opencode":{"id":"opencode","models":{"gpt-5.5":{"id":"gpt-5.5","name":"GPT-5.5","status":"active"}}}}`), 0o600)
+		fmt.Println("opencode/gpt-5.5")
+		os.Exit(0)
+	}
+	_ = os.WriteFile(os.Getenv("GRASP_VARIANT_TEST_CONFIG_OUT"), []byte(os.Getenv("OPENCODE_CONFIG_CONTENT")), 0o600)
+	serveFakeOpenCode(opencodetest.Options{Version: "1.19.4", Reply: "connected", Reasoning: "fixture model thought",
+		OnPrompt: func(p opencodetest.Prompt) error {
+			record("prompt")
+			data, _ := json.Marshal(p)
+			return os.WriteFile(os.Getenv("GRASP_VARIANT_TEST_PROMPT_OUT"), data, 0o600)
+		}})
+}
 
-// Record the subprocess boundary so a valid variant declaration cannot hide an
-// invalid --model argument. The fixture never contacts a model service.
+func installOpenCodeVariantFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\nexec \"$GRASP_VARIANT_TEST_BINARY\" -test.run=^TestOpenCodeVariantCLIProcess$ -- \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GRASP_VARIANT_TEST_BINARY", os.Args[0])
+	t.Setenv("GRASP_VARIANT_TEST_PROMPT_OUT", filepath.Join(dir, "prompt.json"))
+	t.Setenv("GRASP_VARIANT_TEST_CONFIG_OUT", filepath.Join(dir, "config.json"))
+	t.Setenv("GRASP_VARIANT_TEST_CALLS_OUT", filepath.Join(dir, "calls"))
+	return dir
+}
+
+// Record the prompt boundary so a valid variant declaration cannot hide an
+// invalid model reference.
 func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
 	for _, tc := range []struct {
 		name, protocol, effort string
@@ -52,16 +86,8 @@ func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
 		{"connection/messages", modelconnection.Messages, "low"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			argvPath := filepath.Join(dir, "argv")
-			configPath := filepath.Join(dir, "config.json")
-			if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(openCodeVariantFixture), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			t.Setenv("GRASP_VARIANT_TEST_ARGV_OUT", argvPath)
-			t.Setenv("GRASP_VARIANT_TEST_CONFIG_OUT", configPath)
-			t.Setenv("GRASP_VARIANT_TEST_CALLS_OUT", filepath.Join(dir, "calls"))
+			dir := installOpenCodeVariantFixture(t)
+			promptPath, configPath := filepath.Join(dir, "prompt.json"), filepath.Join(dir, "config.json")
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			t.Setenv("CONFIG_ROOT", t.TempDir())
 			t.Setenv(modelconnection.EnvConfig, "")
@@ -116,24 +142,22 @@ func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
 			if err != nil || result.StopReason != "end_turn" {
 				t.Fatalf("fixture turn: %+v, %v", result, err)
 			}
-			if len(thoughts) != 1 || thoughts[0] != "fixture model thought" {
+			if strings.Join(thoughts, "") != "fixture model thought" {
 				t.Fatalf("native reasoning did not reach chat events: %q", thoughts)
 			}
-			data, err := os.ReadFile(argvPath)
+			data, err := os.ReadFile(promptPath)
 			if err != nil {
 				t.Fatal(err)
 			}
-			args := strings.Split(strings.TrimSpace(string(data)), "\n")
-			modelAt, variantAt := indexOfArg(args, "--model"), indexOfArg(args, "--variant")
-			if modelAt < 0 || modelAt+1 >= len(args) || args[modelAt+1] != modelID {
-				t.Fatalf("model ID changed at the subprocess boundary: %v", args)
+			var prompt opencodetest.Prompt
+			if err := json.Unmarshal(data, &prompt); err != nil {
+				t.Fatal(err)
 			}
-			if tc.effort == "" {
-				if variantAt >= 0 {
-					t.Fatalf("default forced a variant: %v", args)
-				}
-			} else if variantAt < 0 || variantAt+1 >= len(args) || args[variantAt+1] != tc.effort {
-				t.Fatalf("variant missing at the subprocess boundary: %v", args)
+			if prompt.Model == nil || prompt.Model.ProviderID+"/"+prompt.Model.ModelID != modelID {
+				t.Fatalf("model ID changed at the prompt boundary: %s", data)
+			}
+			if prompt.Variant != tc.effort {
+				t.Fatalf("variant %q at the prompt boundary, want %q", prompt.Variant, tc.effort)
 			}
 			data, err = os.ReadFile(configPath)
 			if err != nil {
@@ -159,20 +183,13 @@ func TestOpenCodeVariantSubprocessKeepsModelID(t *testing.T) {
 }
 
 func TestOfficialOpenCodeCustomVariantCannotFabricateModel(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(openCodeVariantFixture), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	dir := installOpenCodeVariantFixture(t)
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("CONFIG_ROOT", t.TempDir())
 	t.Setenv(modelconnection.EnvConfig, "")
 	t.Setenv("GRASP_OPENCODE_PROVIDER", "opencode")
 	t.Setenv("GRASP_CONFIGURED_MODELS", "")
 	t.Setenv("OPENCODE_API_KEY", "official-test-key")
-	t.Setenv("GRASP_VARIANT_TEST_CALLS_OUT", filepath.Join(dir, "calls"))
-	t.Setenv("GRASP_VARIANT_TEST_ARGV_OUT", filepath.Join(dir, "argv"))
-	t.Setenv("GRASP_VARIANT_TEST_CONFIG_OUT", filepath.Join(dir, "config.json"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	sess, err := Get(provider.OpenCode).Open(ctx, ctx, provider.OpenOptions{
@@ -186,7 +203,7 @@ func TestOfficialOpenCodeCustomVariantCannotFabricateModel(t *testing.T) {
 		t.Fatalf("missing official model diagnostic lost selected ID: %v", err)
 	}
 	assertOfficialOpenCodeCalls(t, filepath.Join(dir, "calls"), 1, 0)
-	for _, file := range []string{"argv", "config.json"} {
+	for _, file := range []string{"prompt.json", "config.json"} {
 		if _, err := os.Stat(filepath.Join(dir, file)); !os.IsNotExist(err) {
 			t.Fatalf("catalog validation reached native run: file=%s err=%v", file, err)
 		}

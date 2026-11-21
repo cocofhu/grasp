@@ -68,7 +68,7 @@ func TestAgentRuntimeLabel(t *testing.T) {
 		BackendClaudeCode:      "claude-stream-json",
 		BackendCodeBuddy:       "codebuddy-stream-json",
 		BackendTrae:            "trae-acp",
-		BackendOpenCode:        "opencode-json",
+		BackendOpenCode:        "opencode-serve",
 		BackendCodex:           "codex-app-server",
 		BackendDeepSeekHarness: "dsh-acp",
 		BackendKimiCode:        "kimi-code-acp",

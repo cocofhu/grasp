@@ -23,6 +23,7 @@ import (
 	"backend/internal/provider/deepseek"
 	"backend/internal/provider/kimicode"
 	"backend/internal/provider/openclaw"
+	"backend/internal/provider/opencode"
 	"backend/internal/provider/opencodejson"
 	"backend/internal/provider/pi"
 	"backend/internal/provider/streamjson"
@@ -37,7 +38,7 @@ type Name = provider.Name
 //   - stream-json (one-shot, spawn per turn + --resume): cursor / claude_code /
 //     codebuddy / gemini. Fresh subprocess each turn; multi-turn continuity via
 //     a resume pointer. These are the primary transports.
-//   - run --format json (one-shot NDJSON): opencode / deveco.
+//   - run --format json (one-shot NDJSON): deveco.
 //   - json event lines (one-shot): copilot / pi / openclaw / antigravity.
 //   - app-server (long-lived, JSON-RPC over stdio): codex.
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
@@ -107,19 +108,8 @@ var registry = map[Name]provider.Provider{
 	}),
 
 	// --- run --format json family (one-shot NDJSON) ------------------------
-	// opencode/deveco: `run --format json --dangerously-skip-permissions
-	// <prompt>`, resume via `--session <id>`; deveco speaks the same protocol.
-	provider.OpenCode: opencodejson.New(opencodejson.Config{
-		AgentName:     provider.OpenCode,
-		Bin:           "opencode",
-		Runtime:       "opencode-json",
-		ConfigRoot:    "/root/.config/opencode",
-		BaseArgs:      []string{"run", "--format", "json", "--thinking", "--dangerously-skip-permissions"},
-		WorkspaceFlag: "--dir",
-		ResumeFlag:    "--session",
-		ModelFlag:     "--model",
-		AuthEnvFn:     openCodeAuthEnv,
-	}),
+	// deveco: `run --format json --dangerously-skip-permissions <prompt>`,
+	// resume via `--session <id>`.
 	provider.DevEco: opencodejson.New(opencodejson.Config{
 		AgentName:     provider.DevEco,
 		Bin:           "deveco",
@@ -136,6 +126,9 @@ var registry = map[Name]provider.Provider{
 	// codex: `codex app-server`; one thread per session, turns steered with
 	// turn/steer and stopped with turn/interrupt.
 	provider.Codex: codex.New(),
+	// opencode: `opencode serve`; prompts and steering over HTTP, the
+	// transcript from its event stream, abort without stopping the server.
+	provider.OpenCode: opencode.New(opencode.Config{AuthEnvFn: openCodeAuthEnv}),
 
 	// --- other one-shot CLIs (dedicated codecs) ----------------------------
 	// copilot: `-p <prompt> --output-format json --allow-all --no-ask-user`,

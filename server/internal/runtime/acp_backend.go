@@ -453,7 +453,7 @@ func AgentRuntimeLabel(b AcpBackend) string {
 	case BackendTrae:
 		return "trae-acp"
 	case BackendOpenCode:
-		return "opencode-json"
+		return "opencode-serve"
 	case BackendCodex:
 		return "codex-app-server"
 	case BackendDeepSeekHarness:
