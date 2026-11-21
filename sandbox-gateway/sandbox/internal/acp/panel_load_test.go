@@ -4,16 +4,21 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"backend/internal/provider"
 )
 
 // TestPanelAgentHelperProcess is a minimal ACP agent. It knows one stored
 // session, "stored", whose history it replays on session/load. Modes pick the
-// advertised reopen capability: "load", "resume" or "none".
+// advertised reopen capability: "load", "resume" or "none". A prompt "hang"
+// runs until session/cancel, which the agent obeys unless
+// GRASP_ACP_PANEL_CANCEL is "ignore".
 func TestPanelAgentHelperProcess(t *testing.T) {
 	mode := os.Getenv("GRASP_ACP_PANEL_HELPER")
 	if mode == "" {
@@ -33,12 +38,16 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 	}
 	s := bufio.NewScanner(os.Stdin)
 	sid := ""
+	var hanging int64
 	for s.Scan() {
 		var req struct {
 			ID     int64  `json:"id"`
 			Method string `json:"method"`
 			Params struct {
 				SessionID string `json:"sessionId"`
+				Prompt    []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
 			} `json:"params"`
 		}
 		_ = json.Unmarshal(s.Bytes(), &req)
@@ -66,8 +75,17 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 			sid = "fresh"
 			reply(map[string]any{"sessionId": sid})
 		case "session/prompt":
+			if len(req.Params.Prompt) > 0 && req.Params.Prompt[0].Text == "hang" {
+				hanging = req.ID
+				continue
+			}
 			update(sid, "live reply")
 			reply(map[string]any{"stopReason": "end_turn"})
+		case "session/cancel":
+			if hanging != 0 && os.Getenv("GRASP_ACP_PANEL_CANCEL") != "ignore" {
+				send(map[string]any{"jsonrpc": "2.0", "id": hanging, "result": map[string]any{"stopReason": "cancelled"}})
+				hanging = 0
+			}
 		}
 	}
 	os.Exit(0)
@@ -85,7 +103,7 @@ func (r *panelRun) texts() []string {
 	return append([]string(nil), r.events...)
 }
 
-func openHelperPanel(t *testing.T, mode, resume string) *panelRun {
+func openHelperPanel(t *testing.T, mode, resume string, env ...string) *panelRun {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
@@ -96,7 +114,7 @@ func openHelperPanel(t *testing.T, mode, resume string) *panelRun {
 	run := &panelRun{}
 	p, err := NewPanel(context.Background(), ctx, PanelSpec{
 		Argv: []string{exe, "-test.run=^TestPanelAgentHelperProcess$"},
-		Env:  append(os.Environ(), "GRASP_ACP_PANEL_HELPER="+mode),
+		Env:  append(append(os.Environ(), "GRASP_ACP_PANEL_HELPER="+mode), env...),
 		Cwd:  t.TempDir(),
 		OnEvent: func(ev json.RawMessage) {
 			var frame struct {
@@ -157,5 +175,34 @@ func TestPanelStartsFreshWhenTheSessionCannotBeLoaded(t *testing.T) {
 				t.Fatalf("events = %q", got)
 			}
 		})
+	}
+}
+
+func TestCancelledPromptWaitsForTheAgentToStop(t *testing.T) {
+	run := openHelperPanel(t, "none", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	if _, err := run.panel.Prompt(ctx, "hang", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if _, err := run.panel.Prompt(context.Background(), "next", nil); err != nil {
+		t.Fatalf("the agent that stopped must keep serving: %v", err)
+	}
+}
+
+func TestAgentThatIgnoresTheInterruptIsClosed(t *testing.T) {
+	old := provider.InterruptGrace
+	provider.InterruptGrace = 100 * time.Millisecond
+	t.Cleanup(func() { provider.InterruptGrace = old })
+	run := openHelperPanel(t, "none", "", "GRASP_ACP_PANEL_CANCEL=ignore")
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	if _, err := run.panel.Prompt(ctx, "hang", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	select {
+	case <-run.panel.Conn().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("an agent that ignored the interrupt was left running")
 	}
 }

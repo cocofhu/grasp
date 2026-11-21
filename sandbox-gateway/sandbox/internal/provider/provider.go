@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrTurnTimeout is the cancel cause the bridge watchdog attaches to a turn ctx
@@ -25,6 +26,13 @@ var ErrTurnRecover = errors.New("turn recover")
 // same tool call. It wraps ErrTurnTimeout so transports treat it the same way
 // apart from the stop reason.
 var ErrTurnStuck = fmt.Errorf("%w: agent stuck", ErrTurnTimeout)
+
+// InterruptGrace bounds how long a cancelled turn may take to stop. A
+// long-lived transport whose agent ignores the interrupt closes the process;
+// the bridge then revives it on the native session like a crash. Prompt
+// therefore returns only once the agent has stopped. A var so tests can
+// shrink it.
+var InterruptGrace = 15 * time.Second
 
 // StopReasonTimeout is the prompt_done stopReason for a turn that ran past
 // its deadline; StopReasonStuck for one stopped as stuck.

@@ -314,9 +314,9 @@ func TestContextCancelCauses(t *testing.T) {
 }
 
 func TestUnresponsiveInterruptStopsProcess(t *testing.T) {
-	old := interruptGrace
-	interruptGrace = 100 * time.Millisecond
-	t.Cleanup(func() { interruptGrace = old })
+	old := provider.InterruptGrace
+	provider.InterruptGrace = 100 * time.Millisecond
+	t.Cleanup(func() { provider.InterruptGrace = old })
 	s, _ := open(t, provider.OpenOptions{})
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := startTurn(t, s, ctx, "hang")

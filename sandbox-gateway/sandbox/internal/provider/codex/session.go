@@ -18,11 +18,6 @@ import (
 
 const clientName = "grasp"
 
-// interruptGrace bounds how long a cancelled turn may take to report
-// turn/completed before the app-server is presumed hung and stopped. A var so
-// tests can shrink it.
-var interruptGrace = 15 * time.Second
-
 // rpcTimeout bounds request/response calls that do not wait for a turn.
 var rpcTimeout = 30 * time.Second
 
@@ -360,8 +355,8 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 		s.interrupt(t.id)
 		select {
 		case end = <-t.done:
-		case <-time.After(interruptGrace):
-			log.Printf("codex: turn %s 未在 %s 内响应中断，结束 app-server", t.id, interruptGrace)
+		case <-time.After(provider.InterruptGrace):
+			log.Printf("codex: turn %s 未在 %s 内响应中断，结束 app-server", t.id, provider.InterruptGrace)
 			_ = s.conn.Close()
 			end = turnEnd{status: "interrupted"}
 		case <-s.conn.Done():

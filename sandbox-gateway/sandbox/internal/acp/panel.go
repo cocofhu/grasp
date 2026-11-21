@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -701,7 +702,7 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 		"sessionId": p.SessionID,
 		"prompt":    prompt,
 	}
-	res, err := p.conn.Call(ctx, "session/prompt", params)
+	res, err := p.callPrompt(ctx, params)
 	if err != nil {
 		return "", err
 	}
@@ -723,6 +724,38 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 	}
 	p.emit(frame)
 	return out.StopReason, nil
+}
+
+// callPrompt runs session/prompt until the agent answers. Once ctx is
+// cancelled it asks the agent to stop and still waits for that answer, so the
+// next prompt never overlaps a turn that is still running; an agent that has
+// not answered within provider.InterruptGrace is closed.
+func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, error) {
+	type reply struct {
+		raw json.RawMessage
+		err error
+	}
+	answered := make(chan reply, 1)
+	go func() {
+		raw, err := p.conn.Call(context.WithoutCancel(ctx), "session/prompt", params)
+		answered <- reply{raw, err}
+	}()
+	select {
+	case r := <-answered:
+		return r.raw, r.err
+	case <-ctx.Done():
+	}
+	if err := p.Cancel(); err != nil {
+		log.Printf("acp: session %s 取消通知失败: %v", p.SessionID, err)
+	}
+	select {
+	case <-answered:
+	case <-time.After(provider.InterruptGrace):
+		log.Printf("acp: session %s 未在 %s 内响应中断，结束 Agent", p.SessionID, provider.InterruptGrace)
+		_ = p.conn.Close()
+		<-answered
+	}
+	return nil, ctx.Err()
 }
 
 // Cancel sends session/cancel (and $/cancel_request for the in-flight prompt id when applicable).
