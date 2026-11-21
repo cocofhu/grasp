@@ -273,9 +273,9 @@ onBeforeUnmount(() => {
 .workspace-lists { min-width: 0; font-size: 13px; }
 .recent-row-menu__item { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 12px; color: rgb(var(--c-txt2)); font-size: 12px; text-align: start; white-space: nowrap; cursor: pointer; }
 .recent-row-menu__item:hover, .recent-row-menu__item:focus-visible { color: rgb(var(--c-txt)); background: rgb(var(--c-overlay)); outline: none; }
-.workspace-list-heading { display: flex; align-items: center; justify-content: flex-start; gap: 1px; margin: 0 0 4px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
+.workspace-list-heading { display: flex; align-items: center; margin: 0 0 4px; font-size: 11.5px; font-weight: 600; color: light-dark(#3f3f46, color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))); transition: color 160ms ease; }
 .workspace-list-heading:hover { color: rgb(var(--c-txt)); }
-.workspace-list-label { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; padding: 0; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.workspace-list-label { display: flex; width: 100%; align-items: center; gap: 6px; min-width: 0; min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .workspace-list-heading-icon { flex: none; }
 .workspace-list-chevron { flex: none; margin-left: -1px; opacity: .7; transition: transform 160ms ease, opacity 160ms ease; }
 .workspace-list-heading:hover .workspace-list-chevron { opacity: 1; }

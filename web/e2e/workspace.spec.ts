@@ -93,6 +93,12 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
   // Finished runs only. Waiting-human stays under 正在执行; the automatic agent run is 自动过程.
   await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
   await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-3/live')
+  const heading = lists.getByRole('heading', { name: /历史执行/ })
+  const width = await heading.evaluate(el => el.clientWidth)
+  await heading.click({ position: { x: width - 3, y: 12 } })
+  await expect(lists.getByTestId('sidebar-recent-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await heading.click({ position: { x: 3, y: 12 } })
+  await expect(lists.getByTestId('sidebar-recent-body')).toBeVisible()
   const running = page.getByTestId('app-desktop-sidebar').getByTestId('nav-pending-approvals')
   await expect(running).toContainText('正在执行')
   await expect(running.getByTestId('nav-pending-row')).toHaveCount(1)
