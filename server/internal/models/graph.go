@@ -178,6 +178,29 @@ func eventsForReply(events []AcpEvent) []AcpEvent {
 	return events
 }
 
+// SteerText is how a steer reads in the record: its text, then what it
+// attached, so input that is only attachments still shows.
+func SteerText(text string, fileNames []string, images int) string {
+	var attached []string
+	for _, name := range fileNames {
+		if name = strings.TrimSpace(name); name != "" {
+			attached = append(attached, name)
+		}
+	}
+	if images > 0 {
+		attached = append(attached, fmt.Sprintf("图片 ×%d", images))
+	}
+	text = strings.TrimSpace(text)
+	if len(attached) == 0 {
+		return text
+	}
+	line := "[附件] " + strings.Join(attached, "、")
+	if text == "" {
+		return line
+	}
+	return text + "\n" + line
+}
+
 // SteerTexts lists the input a reply's turn took mid-flight, in order.
 func SteerTexts(parts []AcpPart) []string {
 	var out []string

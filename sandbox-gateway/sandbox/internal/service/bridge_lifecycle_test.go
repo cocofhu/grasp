@@ -132,6 +132,31 @@ func awaitPrompt(t *testing.T, s *lifeSess) string {
 	return ""
 }
 
+// takeTurn runs one chat turn on s and waits until the bridge settled it.
+func takeTurn(t *testing.T, b *Bridge, s *lifeSess) {
+	t.Helper()
+	if err := b.ChatWithLimits("earlier", "turn-"+s.id, "chat", nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	awaitPrompt(t, s)
+	close(s.release)
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		b.mu.Lock()
+		history := b.sessHistory
+		b.mu.Unlock()
+		b.turnMu.Lock()
+		idle := b.activeTurn == nil
+		b.turnMu.Unlock()
+		if history && idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the turn never settled")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func awaitOpens(t *testing.T, agent *lifeAgent, n int) ([]provider.OpenOptions, []*lifeSess) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -150,7 +175,8 @@ func awaitOpens(t *testing.T, agent *lifeAgent, n int) ([]provider.OpenOptions, 
 func TestModelSwitchResumesTheNativeSession(t *testing.T) {
 	agent := &lifeAgent{transport: provider.LongLived}
 	b, first := lifeBridge(t, agent)
-	b.evLog.append(json.RawMessage(`{"type":"prompt_begin","promptText":"earlier"}`))
+	takeTurn(t, b, first)
+	visible := len(b.evLog.snapshot())
 
 	sess, resumed, err := b.SwitchModelSettings("next-model", "", nil)
 	if err != nil || !resumed || sess.SessionID() != first.id {
@@ -160,7 +186,7 @@ func TestModelSwitchResumesTheNativeSession(t *testing.T) {
 	if got := opens[1]; got.ResumeSessionID != first.id || got.Model != "next-model" {
 		t.Fatalf("reopen options = %+v", got)
 	}
-	if len(b.evLog.snapshot()) != 1 {
+	if visible == 0 || len(b.evLog.snapshot()) != visible {
 		t.Fatal("a model switch must keep the visible conversation")
 	}
 	select {

@@ -29,7 +29,7 @@ import {
   isImageAttachment,
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
-import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
+import { contentText, flattenUpdate, normalizeKind, steerText, unwrapFrame } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { AgentPart } from '@/lib/shared/types'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
@@ -897,7 +897,8 @@ function applyAcp(envelope: any, turn: Turn) {
     return
   }
   if (ev?.type === 'user_steer') {
-    if (typeof ev.text === 'string' && ev.text.trim()) (turn.steps ??= []).push({ kind: 'steer', text: ev.text })
+    const text = steerText(ev)
+    if (text) (turn.steps ??= []).push({ kind: 'steer', text })
     return
   }
   if (!ev || ev.type !== 'session_update' || !ev.update) return

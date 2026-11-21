@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,7 @@ type activeTurn struct {
 	posted   int // inputs sent into the turn
 	inflight int // steers not yet answered
 	users    int // user messages the agent took in
+	steers   []string
 	ended    bool
 	checking bool
 	aborted  bool
@@ -199,6 +201,8 @@ func (s *session) Steer(text string) error {
 	t.inflight--
 	if err != nil {
 		t.posted--
+	} else {
+		t.steers = append(t.steers, text)
 	}
 	s.evaluateLocked(t)
 	s.mu.Unlock()
@@ -247,7 +251,8 @@ func (s *session) evaluateLocked(t *activeTurn) {
 
 // checkQueued resolves a run that ended with a steer not taken in: either
 // the steer started the next run, or it reached the queue just after the
-// agent's last check and waits there for the next prompt.
+// agent's last check. A queued steer would only reach the model with the
+// next prompt, so it is withdrawn and sent again as a run of this turn.
 func (s *session) checkQueued(t *activeTurn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -260,15 +265,47 @@ func (s *session) checkQueued(t *activeTurn) {
 		_ = json.Unmarshal(r.Data, &state)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	t.checking = false
 	if t.settled || !t.ended || (err == nil && state.IsStreaming) {
+		s.mu.Unlock()
 		return
 	}
-	if state.PendingCount > 0 {
-		log.Printf("pi: 回合结束时仍有 %d 条引导排队，将随下一条消息送达", state.PendingCount)
+	n := min(state.PendingCount, len(t.steers))
+	if n == 0 {
+		s.settleLocked(t)
+		s.mu.Unlock()
+		return
 	}
-	s.settleLocked(t)
+	stranded := strings.Join(t.steers[len(t.steers)-n:], "\n\n")
+	t.posted += 1 - n
+	t.inflight++
+	s.mu.Unlock()
+
+	err = s.redeliver(ctx, stranded)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t.inflight--
+	if err != nil && t.errText == "" {
+		t.errText = fmt.Sprintf("pi: 回合结束时排队的引导无法送达: %v", err)
+	}
+	s.evaluateLocked(t)
+}
+
+// redeliver clears the agent's queue by reloading its own session, which
+// keeps the history, and sends the withdrawn input as a prompt.
+func (s *session) redeliver(ctx context.Context, text string) error {
+	r, err := s.proc.call(ctx, map[string]any{"type": "switch_session", "sessionPath": s.sessionFile})
+	if err != nil {
+		return err
+	}
+	var res struct {
+		Cancelled bool `json:"cancelled"`
+	}
+	if json.Unmarshal(r.Data, &res) == nil && res.Cancelled {
+		return errors.New("session reload was cancelled")
+	}
+	_, err = s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
+	return err
 }
 
 func (s *session) settleLocked(t *activeTurn) {

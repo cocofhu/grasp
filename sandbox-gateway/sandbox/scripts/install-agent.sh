@@ -141,11 +141,11 @@ install_one() {
   local provider="$1"
   log "安装 provider=$provider"
   case "$provider" in
-    cursor)
+    cursor|cursor_acp)
       install_cursor ;;
-    claude_code)
+    claude_code|claude_code_acp)
       install_claude_native ;;
-    codebuddy)
+    codebuddy|codebuddy_acp)
       npm_global @tencent-ai/codebuddy-code ;;
     trae)
       install_trae ;;

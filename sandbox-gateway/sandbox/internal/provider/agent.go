@@ -66,6 +66,9 @@ type OpenOptions struct {
 	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
 	CustomArgs      []string
 	AutoPermission  bool
+	// StateDir keeps what a provider needs to continue a native session after
+	// the backend restarts; empty keeps it in memory only.
+	StateDir string
 }
 
 // Model is one entry of a provider's model catalog.

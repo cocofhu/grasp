@@ -40,6 +40,10 @@ const minExcerptTokens = 64
 
 const excerptMark = "…（本条过长，已截断）"
 
+// maxListedRuns bounds the omission note: past it the runs of omitted
+// numbers are summarised, so the note cannot outgrow its reserved room.
+const maxListedRuns = 20
+
 // Options shape one rendering.
 type Options struct {
 	// TokenCap bounds the rendered text; zero means DefaultTokenCap.
@@ -84,8 +88,7 @@ func Render(entries []Entry, o Options) Result {
 		return Result{Text: head.String() + all, Included: span(1, len(entries)), Tokens: t}
 	}
 
-	// Reserve room for the omission note at its longest.
-	budget := limit - Tokens(head.String()) - Tokens(omissionNote(span(1, len(entries))))
+	budget := limit - Tokens(head.String()) - longestNote(len(entries))
 	kept := make([]string, len(entries))
 	for rank, i := range priority(entries) {
 		need := Tokens(blocks[i])
@@ -165,11 +168,30 @@ func omissionNote(omitted []int) string {
 	if len(omitted) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("（为控制长度，省略了 %d 条记录：%s。涉及其中的约束时，请向用户确认，不要凭推测补全。）\n\n", len(omitted), ranges(omitted))
+	return noteText(len(omitted), runs(omitted))
 }
 
-// ranges writes ascending numbers as compact runs: #2、#4–#7.
-func ranges(nums []int) string {
+func noteText(count int, runs []string) string {
+	list := strings.Join(runs, "、")
+	if len(runs) > maxListedRuns {
+		list = strings.Join(runs[:maxListedRuns], "、") + " 等"
+	}
+	return fmt.Sprintf("（为控制长度，省略了 %d 条记录：%s。涉及其中的约束时，请向用户确认，不要凭推测补全。）\n\n", count, list)
+}
+
+// longestNote is the token size of the longest omission note n entries can
+// produce: every listed run a range of the widest numbers.
+func longestNote(n int) int {
+	widest := fmt.Sprintf("#%d–#%d", n, n)
+	worst := make([]string, maxListedRuns+1)
+	for i := range worst {
+		worst[i] = widest
+	}
+	return Tokens(noteText(n, worst))
+}
+
+// runs writes ascending numbers as compact runs: #2, #4–#7.
+func runs(nums []int) []string {
 	var parts []string
 	for i := 0; i < len(nums); {
 		j := i
@@ -183,7 +205,7 @@ func ranges(nums []int) string {
 		}
 		i = j + 1
 	}
-	return strings.Join(parts, "、")
+	return parts
 }
 
 func span(from, to int) []int {

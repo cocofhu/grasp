@@ -64,3 +64,36 @@ func TestLiveTurnRecordsUserSteer(t *testing.T) {
 		t.Fatalf("steers = %v", s)
 	}
 }
+
+func TestAttachmentOnlySteerIsRecorded(t *testing.T) {
+	data := `{"type":"user_steer","opId":"g-1","text":" ","fileNames":["diagram.pdf"],"imageURLs":["data:image/png;base64,AAAA"]}`
+	want := []string{"[附件] diagram.pdf、图片 ×1"}
+
+	replayed := AggregateFrames(steerFrames(`{"op":"event","data":` + data + `}`))
+	if s := models.SteerTexts(timelineParts(t, replayed)); !reflect.DeepEqual(s, want) {
+		t.Fatalf("replayed steers = %v", s)
+	}
+	res := &ChatResult{}
+	(&ACPClient{}).dispatchEventData(json.RawMessage(`{"op":"event","opId":"g-1","data":`+data+`}`), res)
+	if s := models.SteerTexts(timelineParts(t, res.AcpEvents())); !reflect.DeepEqual(s, want) {
+		t.Fatalf("live steers = %v", s)
+	}
+}
+
+func TestSteerTextNamesItsAttachments(t *testing.T) {
+	for _, c := range []struct {
+		text   string
+		files  []string
+		images int
+		want   string
+	}{
+		{"看这个", nil, 0, "看这个"},
+		{" 看这个 ", []string{"a.pdf", " "}, 0, "看这个\n[附件] a.pdf"},
+		{"", nil, 2, "[附件] 图片 ×2"},
+		{" ", nil, 0, ""},
+	} {
+		if got := models.SteerText(c.text, c.files, c.images); got != c.want {
+			t.Errorf("SteerText(%q, %v, %d) = %q, want %q", c.text, c.files, c.images, got, c.want)
+		}
+	}
+}

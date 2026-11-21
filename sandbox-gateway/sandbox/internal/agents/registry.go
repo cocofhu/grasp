@@ -219,10 +219,21 @@ func openCodeAuthEnv(env []string) []string {
 	return env
 }
 
+// legacyNames are earlier AGENT_PROVIDER values that named a transport of
+// the same tool; deployed configurations keep selecting that tool.
+var legacyNames = map[Name]Name{
+	"cursor_acp":      provider.Cursor,
+	"claude_code_acp": provider.ClaudeCode,
+	"codebuddy_acp":   provider.CodeBuddy,
+}
+
 // FromEnv resolves the active provider name from AGENT_PROVIDER, defaulting to
 // cursor. Unknown values are logged and ignored (cursor is used).
 func FromEnv() Name {
 	if v := strings.TrimSpace(os.Getenv("AGENT_PROVIDER")); v != "" {
+		if n, ok := legacyNames[Name(v)]; ok {
+			return n
+		}
 		if _, ok := registry[Name(v)]; ok {
 			return Name(v)
 		}

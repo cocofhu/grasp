@@ -113,6 +113,10 @@ done <"$STAGE/env"
 
 # Same provider → CONFIG_ROOT mapping as startup.sh.
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
+# 旧取值 *_acp 是同一工具的旧 transport 名，沿用对应工具与配置目录。
+case "$AGENT_PROVIDER" in
+  cursor_acp|claude_code_acp|codebuddy_acp) AGENT_PROVIDER=${AGENT_PROVIDER%_acp} ;;
+esac
 case "$AGENT_PROVIDER" in
   cursor)                      CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.cursor} ;;
   claude_code)                 CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;

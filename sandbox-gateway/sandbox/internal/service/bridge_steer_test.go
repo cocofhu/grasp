@@ -18,6 +18,9 @@ type steerSess struct {
 	blockingSess
 	unsupported bool
 	err         error
+	// beforeReply runs inside Steer, like events the agent streams before
+	// it answers the steer request.
+	beforeReply func()
 	mu          sync.Mutex
 	steered     []string
 }
@@ -27,6 +30,9 @@ func (s *steerSess) Capabilities() provider.Capabilities {
 }
 
 func (s *steerSess) Steer(text string) error {
+	if s.beforeReply != nil {
+		s.beforeReply()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
@@ -143,5 +149,23 @@ func TestSteerTurnStatuses(t *testing.T) {
 				t.Fatalf("ack = %+v", ack)
 			}
 		})
+	}
+}
+
+func TestSteerReplyBehindTurnEventsIsDelivered(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	sess := &steerSess{blockingSess: blockingSess{stubSess: stubSess{id: "s1"}}}
+	b := newTestBridge(sess)
+	sess.beforeReply = func() { b.touchActiveTurn(json.RawMessage(`{"type":"agent_message_chunk"}`)) }
+	startBlockingTurn(t, b, "op-A")
+	done := make(chan string, 1)
+	go func() { done <- b.SteerTurn("op-A", "steer-1", "also check tests", nil) }()
+	select {
+	case got := <-done:
+		if got != SteerDelivered {
+			t.Fatalf("status = %q", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a turn event streamed before the steer reply blocked delivery")
 	}
 }

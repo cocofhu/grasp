@@ -1,4 +1,4 @@
-import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
+import { contentText, flattenUpdate, normalizeKind, steerText } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
@@ -121,7 +121,8 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
   const ev = envelope?.data ?? envelope
   if (ev?.type === 'user_steer') {
     // Each steer is its own user message; never merge it into a neighbour.
-    if (typeof ev.text === 'string' && ev.text.trim()) turn.steps.push({ kind: 'steer', text: ev.text })
+    const text = steerText(ev)
+    if (text) turn.steps.push({ kind: 'steer', text })
     return
   }
   if (!ev || ev.type !== 'session_update' || !ev.update) return

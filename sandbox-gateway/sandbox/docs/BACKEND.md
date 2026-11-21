@@ -30,7 +30,7 @@
 - 经网关时只传 `provider`，网关注入 `AGENT_PROVIDER`（默认用同一张 `universal-sandbox`）。
 - 全部取值见文末「默认 transport」表（`cursor` / `claude_code` / `codebuddy` / `gemini` / `codex` /
   `opencode` / `deveco` / `copilot` / `pi` / `openclaw` / `antigravity` / `kimi` / `hermes` / `kiro` /
-  `qoder` / `grok` / `trae`）。
+  `qoder` / `grok` / `trae`）。旧取值 `cursor_acp` / `claude_code_acp` / `codebuddy_acp` 是对应工具的别名。
 
 ### 2) 配密钥 —— 环境变量（首选）或注入登录态
 

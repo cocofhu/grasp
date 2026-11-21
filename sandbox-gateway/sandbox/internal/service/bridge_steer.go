@@ -61,19 +61,20 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 		}
 		prompt = provider.AppendAttachmentRefs(prompt, files)
 	}
-	// Hold turnMu across the write: the session's running turn is opID's for
-	// as long as activeTurn is, so the input cannot reach a later turn.
+	// steerMu keeps the next turn from starting until this write returns, so
+	// the input reaches opID's turn or none.
+	b.steerMu.Lock()
+	defer b.steerMu.Unlock()
 	b.turnMu.Lock()
 	th := b.activeTurn
+	b.turnMu.Unlock()
 	if th == nil || th.opID != opID {
-		b.turnMu.Unlock()
 		return SteerNoTurn, ""
 	}
 	err := steerer.Steer(prompt)
 	if err == nil {
 		th.lastActivity.Store(time.Now().UnixNano())
 	}
-	b.turnMu.Unlock()
 	if errors.Is(err, provider.ErrNoActiveTurn) {
 		return SteerNoTurn, ""
 	}

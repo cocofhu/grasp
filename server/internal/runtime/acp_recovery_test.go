@@ -217,3 +217,30 @@ func TestReactRestoreOpensFreshSessionAfterUnconfirmedHandoff(t *testing.T) {
 		t.Fatal("closing the node kept its handoff state")
 	}
 }
+
+func TestReactRestoreKeepsACancelledHandoffUnconfirmed(t *testing.T) {
+	var cancelling atomic.Bool
+	h := newSharedHarness(t, func(int) chatFunc {
+		return func(int) turnAction {
+			if cancelling.Load() {
+				return turnAction{stopReason: "cancelled"}
+			}
+			return turnAction{narration: "ok"}
+		}
+	})
+	h.run(t, h.req("n1"))
+	h.p.registry = &recoveryRegistry{sb: h.p.shared.get(h.runID).sb}
+	history := []models.ReactMessage{{Role: "human", Text: "keep edited files"}}
+
+	cancelling.Store(true)
+	sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history)
+	if sess != nil {
+		sess.acp.Close()
+	}
+	if !errors.Is(err, errHandoffInterrupted) || !found || sess != nil {
+		t.Fatalf("restore=%+v %v %v; want a retryable interrupted handoff", sess, found, err)
+	}
+	if !h.p.handoffUnconfirmed(reactKey(h.req("n1"))) {
+		t.Fatal("a cancelled handoff was treated as delivered")
+	}
+}

@@ -47,8 +47,10 @@ type Bridge struct {
 	agentCtx        context.Context
 	agentCancel     context.CancelFunc
 	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
-	// sessResumed: sess continues the native session it was opened to resume.
-	sessResumed bool
+	// sessHistory: sess holds earlier dialogue, because it took a turn or
+	// continues a session that had. A resumed session that never took one
+	// knows nothing the platform would otherwise replay.
+	sessHistory bool
 	// sessConfig stamps the files sess read at start (provider.ConfigReader).
 	sessConfig string
 	// pointer persists the native session across backend restarts; nil keeps
@@ -96,6 +98,11 @@ type Bridge struct {
 	// 当前 session/prompt 一轮：取消时结束 Conn.Call 等待，并配合 session/cancel 通知 Agent
 	turnMu     sync.Mutex
 	activeTurn *promptTurn
+	// steerMu is held across a steer RPC and taken before a new turn is
+	// reserved, so a steer meant for one turn never reaches the next. turnMu
+	// cannot serve: the session's reader takes it for every event, and the
+	// steer's own reply arrives behind those events.
+	steerMu sync.Mutex
 
 	// 等待中的用户消息（Agent 正回复时后续发送先入队，按 FIFO 逐个 session/prompt）
 	queueMu     sync.Mutex

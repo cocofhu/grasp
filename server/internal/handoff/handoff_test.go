@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -40,7 +41,7 @@ func TestRenderSelectsByPriorityWithinBudget(t *testing.T) {
 		{Role: Agent, Text: "最新回复 " + filler}, // 6: last agent reply
 		{Role: User, Text: "最新要求 " + filler},  // 7: last user message
 	}
-	limit := Tokens(Notice+"\n") + Tokens(omissionNote(span(1, 7))) + 4*320
+	limit := Tokens(Notice+"\n") + longestNote(7) + 4*320
 	got := Render(entries, Options{TokenCap: limit})
 	if !reflect.DeepEqual(got.Included, []int{1, 5, 6, 7}) || !reflect.DeepEqual(got.Omitted, []int{2, 3, 4}) {
 		t.Fatalf("included %v omitted %v", got.Included, got.Omitted)
@@ -86,7 +87,7 @@ func TestRenderOmitsWhatCannotBeExcerpted(t *testing.T) {
 		{Role: Agent, Text: strings.Repeat("b", 4000)},
 		{Role: User, Text: "latest"},
 	}
-	limit := Tokens(Notice+"\n") + Tokens(omissionNote(span(1, 3))) + 20
+	limit := Tokens(Notice+"\n") + longestNote(3) + 20
 	got := Render(entries, Options{TokenCap: limit})
 	if !reflect.DeepEqual(got.Included, []int{3}) || !reflect.DeepEqual(got.Omitted, []int{1, 2}) {
 		t.Fatalf("included %v omitted %v", got.Included, got.Omitted)
@@ -108,8 +109,28 @@ func TestTokensEstimate(t *testing.T) {
 	}
 }
 
-func TestRanges(t *testing.T) {
-	if got := ranges([]int{1, 3, 4, 5, 8, 9}); got != "#1、#3–#5、#8–#9" {
+func TestOmissionNoteListsCompactRuns(t *testing.T) {
+	if got := omissionNote([]int{1, 3, 4, 5, 8, 9}); !strings.Contains(got, "省略了 6 条记录：#1、#3–#5、#8–#9。") {
 		t.Fatal(got)
+	}
+}
+
+// Scattered omissions are the longest note: kept long and short entries
+// alternate, so every omitted number is a run of its own.
+func TestRenderStaysWithinTheCapWithScatteredOmissions(t *testing.T) {
+	long := strings.Repeat("长", 2500)
+	entries := make([]Entry, 1000)
+	for i := range entries {
+		entries[i] = Entry{Role: User, Text: long}
+		if i%2 == 1 {
+			entries[i] = Entry{Role: Agent, Text: "OK"}
+		}
+	}
+	r := Render(entries, Options{})
+	if r.Tokens > DefaultTokenCap || Tokens(r.Text) != r.Tokens {
+		t.Fatalf("tokens = %d, cap %d", r.Tokens, DefaultTokenCap)
+	}
+	if len(r.Omitted) == 0 || !strings.Contains(r.Text, "省略了 "+strconv.Itoa(len(r.Omitted))+" 条记录") || !strings.Contains(r.Text, " 等。") {
+		t.Fatalf("omission note: %.300s", r.Text)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -26,12 +27,31 @@ func persistedBridge(t *testing.T, agent *lifeAgent, path string) *Bridge {
 	return b
 }
 
+// awaitPointer waits until the pointer at path records the dialogue.
+func awaitPointer(t *testing.T, path string) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		var p sessionPointer
+		if raw, err := os.ReadFile(path); err == nil && json.Unmarshal(raw, &p) == nil && p.History {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pointer never recorded the dialogue")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestRestartedBackendContinuesThePersistedSession(t *testing.T) {
 	agent := &lifeAgent{transport: provider.LongLived}
 	path, cwd := filepath.Join(t.TempDir(), "agent-session.json"), t.TempDir()
-	if _, err := persistedBridge(t, agent, path).EnsureAgent(cwd, "", nil, nil); err != nil {
+	prev := persistedBridge(t, agent, path)
+	first, err := prev.EnsureAgent(cwd, "", nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
+	takeTurn(t, prev, first.(*lifeSess))
+	awaitPointer(t, path)
 
 	next := persistedBridge(t, agent, path)
 	sess, err := next.EnsureAgent(cwd, "", nil, nil)
@@ -40,9 +60,30 @@ func TestRestartedBackendContinuesThePersistedSession(t *testing.T) {
 	}
 	if opens, _ := agent.opened(); opens[1].ResumeSessionID != "native-1" || sess.SessionID() != "native-1" {
 		t.Fatalf("restart opened %+v as %q, want native-1 resumed", opens[1], sess.SessionID())
+	} else if opens[1].StateDir != filepath.Dir(path) {
+		t.Fatalf("state dir = %q, want the pointer's directory", opens[1].StateDir)
 	}
 	if next.ConnectedPayload(sess)["resumed"] != true {
 		t.Fatal("connected must report that the native session was resumed")
+	}
+}
+
+func TestRestartedBackendDoesNotReportAnUnusedSessionAsResumed(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived}
+	path, cwd := filepath.Join(t.TempDir(), "agent-session.json"), t.TempDir()
+	if _, err := persistedBridge(t, agent, path).EnsureAgent(cwd, "", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	next := persistedBridge(t, agent, path)
+	sess, err := next.EnsureAgent(cwd, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opens, _ := agent.opened(); opens[1].ResumeSessionID != "native-1" {
+		t.Fatalf("restart opened %+v, want native-1 resumed", opens[1])
+	}
+	if next.ConnectedPayload(sess)["resumed"] != false {
+		t.Fatal("a session that never took a turn holds no dialogue to keep")
 	}
 }
 
@@ -107,7 +148,8 @@ func TestMCPUpgradeKeepsTheConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.evLog.append(json.RawMessage(`{"type":"prompt_begin","promptText":"earlier"}`))
+	takeTurn(t, b, first.(*lifeSess))
+	visible := len(b.evLog.snapshot())
 	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"artifact-store"}]`), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +158,32 @@ func TestMCPUpgradeKeepsTheConversation(t *testing.T) {
 	if sess.SessionID() != first.SessionID() || b.ConnectedPayload(sess)["resumed"] != true {
 		t.Fatalf("upgrade opened %q, want %q resumed", sess.SessionID(), first.SessionID())
 	}
-	if len(b.evLog.snapshot()) != 1 {
+	if visible == 0 || len(b.evLog.snapshot()) != visible {
 		t.Fatal("adding MCP servers must keep the visible conversation")
+	}
+}
+
+// A sandbox starts its agent before the platform connects with MCP servers;
+// continuing that unused session must not read as keeping the dialogue, or a
+// cold restore would skip replaying it.
+func TestMCPUpgradeOfAnUnusedSessionIsNotResumed(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived}
+	b := NewBridge()
+	b.agentProvider = agent
+	cwd := t.TempDir()
+	first, err := b.EnsureAgent(cwd, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"artifact-store"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { first.(*lifeSess).die(); sess.(*lifeSess).die() })
+	if sess.SessionID() != first.SessionID() {
+		t.Fatalf("upgrade opened %q, want %q", sess.SessionID(), first.SessionID())
+	}
+	if b.ConnectedPayload(sess)["resumed"] != false {
+		t.Fatal("an unused session must not be reported as resumed")
 	}
 }

@@ -18,6 +18,8 @@ type sessionPointer struct {
 	Agent   string `json:"agent"`
 	CWD     string `json:"cwd"`
 	Session string `json:"session"`
+	// History: the session took a turn, so resuming it keeps the dialogue.
+	History bool `json:"history,omitempty"`
 }
 
 // pointerFile keeps the default chat's sessionPointer on disk. Agents store
@@ -39,26 +41,26 @@ func DefaultPointerPath() (string, error) {
 	return filepath.Join(home, ".grasp", "agent-session.json"), nil
 }
 
-func (f *pointerFile) load(agent provider.Name, cwd string) string {
+func (f *pointerFile) load(agent provider.Name, cwd string) (string, bool) {
 	if f == nil {
-		return ""
+		return "", false
 	}
 	raw, err := os.ReadFile(f.path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			log.Printf("acp: 读取会话指针失败: %v", err)
 		}
-		return ""
+		return "", false
 	}
 	var p sessionPointer
 	if err := json.Unmarshal(raw, &p); err != nil {
 		log.Printf("acp: 会话指针 %s 无法解析，忽略: %v", f.path, err)
-		return ""
+		return "", false
 	}
 	if p.Agent != string(agent) || p.CWD != cwd {
-		return ""
+		return "", false
 	}
-	return p.Session
+	return p.Session, p.History
 }
 
 // store records p; an empty Session removes the pointer, so a new
@@ -120,15 +122,26 @@ func (b *Bridge) PersistSession(path string) {
 // still this chat's session.
 func (b *Bridge) rememberSession(sess provider.Session) {
 	b.mu.Lock()
-	f, current := b.pointer, b.sess == sess
+	f, current, history := b.pointer, b.sess == sess, b.sessHistory
 	b.mu.Unlock()
 	if f == nil || !current {
 		return
 	}
-	f.store(sessionPointer{Agent: string(b.agent().Name()), CWD: sess.CWD(), Session: resumePointer(sess)})
+	f.store(sessionPointer{Agent: string(b.agent().Name()), CWD: sess.CWD(), Session: resumePointer(sess), History: history})
 }
 
-func (b *Bridge) storedSession(cwd string) string {
+// stateDir is where the agent keeps what resuming the persisted session
+// needs besides its id; empty when this chat does not persist its session.
+func (b *Bridge) stateDir() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.pointer == nil {
+		return ""
+	}
+	return filepath.Dir(b.pointer.path)
+}
+
+func (b *Bridge) storedSession(cwd string) (string, bool) {
 	b.mu.Lock()
 	f := b.pointer
 	b.mu.Unlock()

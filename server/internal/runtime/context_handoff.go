@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/handoff"
@@ -117,11 +118,19 @@ func (c *acpProvider) handOff(ctx context.Context, acp *sandbox.ACPClient, req N
 	c.mu.Unlock()
 	res, err := c.streamChat(ctx, acp, req, prompt, images)
 	c.carryChatUsage(key, res)
-	if err == nil && chatFailure(res) == "" {
-		c.forgetHandoff(key)
+	if err != nil || chatFailure(res) != "" {
+		return res, err
 	}
-	return res, err
+	if res != nil && res.Interrupted {
+		return res, errHandoffInterrupted
+	}
+	c.forgetHandoff(key)
+	return res, nil
 }
+
+// errHandoffInterrupted: the agent stopped while taking in the dialogue, so
+// the recovery has not restored the context and must be retried.
+var errHandoffInterrupted = errors.New("上下文交接被中断，未确认送达")
 
 func (c *acpProvider) handoffUnconfirmed(key string) bool {
 	c.mu.Lock()

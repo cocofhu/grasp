@@ -195,6 +195,14 @@ func TestContextPreambleReplaysSteers(t *testing.T) {
 	}
 }
 
+func TestHistoryKeepsAttachmentOnlySteers(t *testing.T) {
+	steer := json.RawMessage(`{"op":"event","data":{"type":"user_steer","text":"","fileNames":["diagram.pdf"]}}`)
+	row := models.SoloMessage{ID: "reply:u1", Role: "assistant", Content: "看过了", Events: []json.RawMessage{steer}}
+	if got := conversationMessage(row).Steers; len(got) != 1 || got[0] != "[附件] diagram.pdf" {
+		t.Fatalf("history steers = %v", got)
+	}
+}
+
 func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	svc, db, sb := conversationHistoryFixture(t)
 	for i := 0; i < 30; i++ {

@@ -191,8 +191,10 @@ func TestSteerJoinsTheRunningTurn(t *testing.T) {
 	}
 }
 
-func TestSteerQueuedAfterTheRunEndedDoesNotHangTheTurn(t *testing.T) {
+func TestSteerQueuedAfterTheRunEndedIsTakenInOnce(t *testing.T) {
 	installFake(t)
+	users := filepath.Join(t.TempDir(), "users")
+	t.Setenv("GRASP_FAKE_PI_USERS", users)
 	s, rec := open(t, provider.OpenOptions{})
 	out := make(chan error, 1)
 	go func() {
@@ -205,6 +207,20 @@ func TestSteerQueuedAfterTheRunEndedDoesNotHangTheTurn(t *testing.T) {
 	}
 	if err := <-out; err != nil {
 		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(users)
+	if string(got) != "\"strand\"\n\"too late\"\n" {
+		t.Fatalf("user messages taken in:\n%s", got)
+	}
+	if n := len(rec.ofType("prompt_done")); n != 1 {
+		t.Fatalf("prompt_done = %d", n)
+	}
+	if res, err := s.Prompt(turnCtx(t), "hello", nil); err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("next turn: %+v %v", res, err)
+	}
+	got, _ = os.ReadFile(users)
+	if strings.Count(string(got), "too late") != 1 {
+		t.Fatalf("steer taken in again:\n%s", got)
 	}
 }
 

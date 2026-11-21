@@ -550,3 +550,22 @@ func TestAppServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 		t.Fatalf("subagent wait left as %q", last)
 	}
 }
+
+func TestCancelBeforeTheTurnIDArrivesInterruptsTheTurn(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "interrupts")
+	t.Setenv("GRASP_FAKE_CODEX_INTERRUPTS", log)
+	s, _ := open(t, provider.OpenOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	res, err := prompt(t, s, ctx, "slowstart")
+	if !errors.Is(err, context.Canceled) || res.StopReason != "cancelled" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	got, _ := os.ReadFile(log)
+	if strings.TrimSpace(string(got)) != "turn-1" {
+		t.Fatalf("interrupted turns = %q, want turn-1", got)
+	}
+	if res, err := prompt(t, s, nil, "hello"); err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("next turn: %+v %v", res, err)
+	}
+}

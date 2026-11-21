@@ -112,12 +112,12 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 	}
 	if a.usageIsSessionTotal {
 		var uncertain bool
-		a.usage, uncertain = a.e.ledger.modelDelta(sid, a.usage)
+		a.usage, uncertain = a.e.ledger.modelDelta(a.e.opts.StateDir, sid, a.usage)
 		a.usagePartial = a.usagePartial || uncertain
 	}
 	if a.tracksSessionUsage {
 		var uncertain bool
-		a.usage, uncertain = a.e.ledger.reconcileFlat(sid, a.sessionUsage, a.usage)
+		a.usage, uncertain = a.e.ledger.reconcileFlat(a.e.opts.StateDir, sid, a.sessionUsage, a.usage)
 		a.usagePartial = a.usagePartial || uncertain
 	}
 	a.e.mergeCumulative(a.usage)

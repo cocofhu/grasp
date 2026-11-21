@@ -4,6 +4,7 @@ import {
   extractAgentMessageDelta,
   flattenUpdate,
   normalizeKind,
+  steerText,
   unwrapFrame,
 } from './acpUnpack'
 
@@ -74,5 +75,12 @@ describe('acpUnpack', () => {
       },
     }
     expect(extractAgentMessageDelta(frame)?.text).toBe('AB')
+  })
+
+  it('names the attachments of a steer, including attachment-only ones', () => {
+    expect(steerText({ text: ' 看这个 ' })).toBe('看这个')
+    expect(steerText({ text: '看这个', fileNames: ['a.pdf', ' '] })).toBe('看这个\n[附件] a.pdf')
+    expect(steerText({ text: '', fileNames: ['diagram.pdf'], imageURLs: ['data:image/png;base64,AAAA'] })).toBe('[附件] diagram.pdf、图片 ×1')
+    expect(steerText({ text: ' ' })).toBe('')
   })
 })

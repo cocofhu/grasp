@@ -171,3 +171,14 @@ func TestFromEnvSelection(t *testing.T) {
 		t.Fatalf("unknown provider should default to cursor: %s", FromEnv())
 	}
 }
+
+func TestLegacyACPNamesSelectTheirTool(t *testing.T) {
+	for legacy, want := range map[string]provider.Name{
+		"cursor_acp": provider.Cursor, "claude_code_acp": provider.ClaudeCode, "codebuddy_acp": provider.CodeBuddy,
+	} {
+		t.Setenv("AGENT_PROVIDER", legacy)
+		if got := Current().Name(); got != want {
+			t.Errorf("AGENT_PROVIDER=%s selected %s, want %s", legacy, got, want)
+		}
+	}
+}

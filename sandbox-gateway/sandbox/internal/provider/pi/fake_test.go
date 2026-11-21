@@ -13,7 +13,8 @@ import (
 // TestFakePiProcess is a scripted `pi --mode rpc`. The prompt text selects
 // the run: "hang" waits in a tool call for a steer or an abort, "fail" ends
 // with a model error, "dialog" asks an extension dialog first, "strand"
-// leaves a steer queued after the run ends. Anything else gets a reply.
+// leaves a steer queued after the run ends; reloading the session drops the
+// queue. Anything else gets a reply.
 func TestFakePiProcess(t *testing.T) {
 	if os.Getenv("GRASP_FAKE_PI") == "" {
 		return
@@ -110,12 +111,22 @@ func (f *fakePi) handle(cmd map[string]any) {
 			}
 			f.respond(cmd, true, nil, "")
 		}()
+	case "switch_session":
+		f.mu.Lock()
+		f.queued = 0
+		f.mu.Unlock()
+		f.respond(cmd, true, map[string]any{"cancelled": false}, "")
 	case "extension_ui_response":
 		f.dialog <- cmd["cancelled"] == true
 	}
 }
 
 func (f *fakePi) user(text string) {
+	if path := os.Getenv("GRASP_FAKE_PI_USERS"); path != "" {
+		fh, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		_, _ = fmt.Fprintf(fh, "%q\n", text)
+		_ = fh.Close()
+	}
 	m := map[string]any{"role": "user", "content": text}
 	f.write(map[string]any{"type": "message_start", "message": m})
 	f.write(map[string]any{"type": "message_end", "message": m})

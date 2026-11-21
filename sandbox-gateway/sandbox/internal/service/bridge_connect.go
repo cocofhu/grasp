@@ -62,7 +62,7 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 		agentInfo["modelName"] = info.ModelName
 	}
 	b.mu.Lock()
-	resumed := b.sess == p && b.sessResumed
+	resumed := b.sess == p && b.sessHistory
 	b.mu.Unlock()
 	m := map[string]any{
 		"op":        "connected",
@@ -139,9 +139,10 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 			return p, nil
 		}
 		log.Printf("acp: connect 带来新的 MCP 列表，重开 Agent 并接回会话")
-		resume := resumePointer(b.sess)
+		resume, history := resumePointer(b.sess), b.sessHistory
 		b.mu.Unlock()
-		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, keepHistory: true, resumeID: resume})
+		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, keepHistory: true,
+			resumeID: resume, resumeHistory: history})
 	}
 	first := b.agentGeneration == 0
 	b.mu.Unlock()
@@ -158,6 +159,8 @@ type openSpec struct {
 	keepHistory bool
 	// resumeID continues that native session; empty starts a new one.
 	resumeID string
+	// resumeHistory: the session resumeID names holds earlier dialogue.
+	resumeHistory bool
 	// resumeStored continues the persisted session when resumeID is empty:
 	// the first agent of this backend process picks up where the previous
 	// process left off.
@@ -240,7 +243,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		fsEff = cwd
 	}
 	if spec.resumeID == "" && spec.resumeStored {
-		spec.resumeID = b.storedSession(cwd)
+		spec.resumeID, spec.resumeHistory = b.storedSession(cwd)
 	}
 	count, names := mcpServerSummary(mcp)
 	log.Printf("acp: 实际使用目录 cwd=%q fsRoot=%q（前端留空时已用服务端当前目录或默认与 cwd 相同） mcp_servers_count=%d names=%v", cwd, fsEff, count, names)
@@ -300,6 +303,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		McpServers:         mcp,
 		AutoPermission:     autoPerm,
 		ResumeSessionID:    spec.resumeID,
+		StateDir:           b.stateDir(),
 	}, onEvent, perm)
 	if err != nil {
 		return nil, err
@@ -312,7 +316,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		return nil, ErrChatNotFound
 	}
 	b.sess, b.reviving = sess, false
-	b.sessResumed = spec.resumeID != "" && sess.SessionID() == spec.resumeID
+	b.sessHistory = spec.resumeHistory && spec.resumeID != "" && sess.SessionID() == spec.resumeID
 	b.sessConfig = configStamp(sess)
 	b.sessOpened, b.sessThaw = time.Now(), thawCount()
 	if len(mcp) > 0 && string(mcp) != "null" {
@@ -422,7 +426,7 @@ func (b *Bridge) reviveLocked(dead provider.Session, exitMsg string) bool {
 }
 
 // replaceLocked swaps the process behind the conversation without the
-// client asking for it. When the native session could not be resumed, the
+// client asking for it. When the new process does not hold the dialogue, the
 // next prompt_done says so (sessionReset), the same signal a one-shot agent
 // gives, so the platform restores the context.
 func (b *Bridge) replaceLocked(prev provider.Session) (provider.Session, error) {
@@ -431,7 +435,7 @@ func (b *Bridge) replaceLocked(prev provider.Session) (provider.Session, error) 
 		return nil, err
 	}
 	if !resumed {
-		log.Printf("acp: 未能接回会话 %s，已改用新会话 %s", prev.SessionID(), sess.SessionID())
+		log.Printf("acp: 新进程未带上会话 %s 的对话（当前会话 %s）", prev.SessionID(), sess.SessionID())
 		b.lostSession.Store(prev.SessionID())
 	}
 	return sess, nil
@@ -565,8 +569,7 @@ func (b *Bridge) restartChatContext(preamble string, markBoundary bool) (provide
 // SwitchModelSettings updates model, effort and speed tier as one operation.
 // A nil tier keeps the current one. A rejected restart restores every choice,
 // and concurrent changes cannot interleave. resumed reports that the new
-// process continues the native conversation, so the agent still has its
-// context.
+// process holds the earlier dialogue, so the agent still has its context.
 func (b *Bridge) SwitchModelSettings(model, effort string, serviceTier *string) (session provider.Session, resumed bool, err error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
@@ -612,6 +615,7 @@ func (b *Bridge) reopenLocked(prev provider.Session, mode restartMode) (provider
 	b.mu.Lock()
 	mcp := append(json.RawMessage(nil), b.lastMCP...)
 	auto := b.autoPermission
+	history := b.sessHistory
 	b.mu.Unlock()
 	var cwd, fsRoot string
 	if prev != nil {
@@ -632,14 +636,17 @@ func (b *Bridge) reopenLocked(prev provider.Session, mode restartMode) (provider
 	}
 	spec := openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: &auto, keepHistory: mode != restartFresh}
 	if mode == restartContinue {
-		spec.resumeID = resumePointer(prev)
+		spec.resumeID, spec.resumeHistory = resumePointer(prev), history
 	}
 	log.Printf("acp: 重建 Agent（cwd=%q fsRoot=%q resume=%q）", cwd, fsRoot, spec.resumeID)
 	session, err := b.connectOrTest(spec)
 	if err != nil {
 		return nil, false, err
 	}
-	return session, spec.resumeID != "" && session.SessionID() == spec.resumeID, nil
+	b.mu.Lock()
+	kept := b.sess == session && b.sessHistory
+	b.mu.Unlock()
+	return session, kept, nil
 }
 
 // resumePointer is prev's native session when a new process can continue it.

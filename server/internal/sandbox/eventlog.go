@@ -460,7 +460,7 @@ func dispatchFrame(raw json.RawMessage, result *ChatResult) {
 		return
 	}
 	if ev.Type == "user_steer" {
-		result.addSteer(ev.Text)
+		result.addSteer(data)
 		return
 	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {

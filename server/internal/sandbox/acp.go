@@ -751,7 +751,7 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		return false
 	}
 	if ev.Type == "user_steer" {
-		result.addSteer(ev.Text)
+		result.addSteer(envelope.Data)
 		return false
 	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {

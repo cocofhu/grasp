@@ -82,6 +82,7 @@ func runFakeAppServer() {
 			Method string          `json:"method"`
 			Params struct {
 				ThreadID    string `json:"threadId"`
+				TurnID      string `json:"turnId"`
 				Model       string `json:"model"`
 				ServiceTier string `json:"serviceTier"`
 				Input       []struct {
@@ -139,6 +140,10 @@ func runFakeAppServer() {
 		case "turn/start":
 			f.n++
 			f.turn = fmt.Sprintf("turn-%d", f.n)
+			if strings.Contains(text, "slowstart") {
+				// The turn runs before its id reaches the client.
+				time.Sleep(500 * time.Millisecond)
+			}
 			reply(map[string]any{"turn": map[string]any{"id": f.turn, "status": "inProgress"}})
 			f.notify("turn/started", map[string]any{"turn": map[string]any{"id": f.turn}})
 			f.play(text)
@@ -153,6 +158,11 @@ func runFakeAppServer() {
 			f.item("item/completed", map[string]any{"type": "agentMessage", "id": "steered", "text": "steered: " + text})
 			f.complete("completed", "")
 		case "turn/interrupt":
+			if path := os.Getenv("GRASP_FAKE_CODEX_INTERRUPTS"); path != "" {
+				fh, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+				_, _ = fmt.Fprintln(fh, msg.Params.TurnID)
+				_ = fh.Close()
+			}
 			reply(map[string]any{})
 			if f.mode != "hang" {
 				f.complete("interrupted", "")

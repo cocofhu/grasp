@@ -351,7 +351,9 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 		s.mu.Unlock()
 	}()
 
-	startCtx, cancelStart := context.WithTimeout(ctx, rpcTimeout)
+	// Not bound to ctx: once sent, the app-server may already run the turn,
+	// so a cancel must wait for its id, interrupt it and wait for the end.
+	startCtx, cancelStart := context.WithTimeout(context.Background(), rpcTimeout)
 	raw, err := s.conn.Call(startCtx, "turn/start", map[string]any{"threadId": s.threadID, "input": textInput(text)})
 	cancelStart()
 	if err != nil {

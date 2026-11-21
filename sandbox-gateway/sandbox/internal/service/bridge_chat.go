@@ -49,6 +49,8 @@ func (b *Bridge) pumpPromptQueue() {
 	// Model fallback may reconnect under ensureMu, so take enqueueMu only
 	// after it finishes. Keep the queue pop / restore / turn reservation
 	// atomic with Connect and watcher cleanup.
+	b.steerMu.Lock()
+	defer b.steerMu.Unlock()
 	b.enqueueMu.Lock()
 	b.turnMu.Lock()
 	if b.activeTurn != nil || b.recycling {
@@ -242,6 +244,11 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	stopWatch := b.watchTurn(p, th, idle, max)
 	res, err := p.Prompt(turnCtx, text, images)
 	stopWatch()
+	b.mu.Lock()
+	if b.sess == p {
+		b.sessHistory = true
+	}
+	b.mu.Unlock()
 	if err == nil && res.StopReason == "end_turn" {
 		b.mu.Lock()
 		b.compactPreamble = ""

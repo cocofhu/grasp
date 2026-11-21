@@ -3,6 +3,7 @@ package oneshot
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -49,14 +50,14 @@ func TestSessionTotalsBecomeTurnUsageAcrossProcessReplacement(t *testing.T) {
 
 func TestSessionTotalThatGoesBackwardsIsTakenAsTheTurn(t *testing.T) {
 	var l sessionLedger
-	if _, reset := l.modelDelta("s", map[string]provider.TokenUsage{"m": {InputTokens: 10}}); reset {
+	if _, reset := l.modelDelta("", "s", map[string]provider.TokenUsage{"m": {InputTokens: 10}}); reset {
 		t.Fatal("first total flagged")
 	}
-	usage, reset := l.modelDelta("s", map[string]provider.TokenUsage{"m": {InputTokens: 4}})
+	usage, reset := l.modelDelta("", "s", map[string]provider.TokenUsage{"m": {InputTokens: 4}})
 	if !reset || usage["m"].InputTokens != 4 {
 		t.Fatalf("usage=%+v reset=%v", usage, reset)
 	}
-	if usage, reset := l.modelDelta("", map[string]provider.TokenUsage{"m": {InputTokens: 4}}); reset || usage["m"].InputTokens != 4 {
+	if usage, reset := l.modelDelta("", "", map[string]provider.TokenUsage{"m": {InputTokens: 4}}); reset || usage["m"].InputTokens != 4 {
 		t.Fatalf("sessionless usage=%+v reset=%v", usage, reset)
 	}
 }
@@ -64,9 +65,65 @@ func TestSessionTotalThatGoesBackwardsIsTakenAsTheTurn(t *testing.T) {
 func TestSessionLedgerForgetsTheOldestSessions(t *testing.T) {
 	var l sessionLedger
 	for i := range ledgerSessions + 1 {
-		l.modelDelta(strconv.Itoa(i), map[string]provider.TokenUsage{"m": {InputTokens: 1}})
+		l.modelDelta("", strconv.Itoa(i), map[string]provider.TokenUsage{"m": {InputTokens: 1}})
 	}
 	if _, kept := l.sessions["0"]; kept || len(l.sessions) != ledgerSessions {
 		t.Fatalf("kept %d sessions, oldest kept=%v", len(l.sessions), kept)
+	}
+}
+
+func TestSessionTotalsStayPerTurnAcrossBackendRestart(t *testing.T) {
+	counter, state := filepath.Join(t.TempDir(), "n"), t.TempDir()
+	want := provider.TokenUsage{InputTokens: 8, OutputTokens: 2}
+	resume := ""
+	for backend := range 2 {
+		p := NewProvider(sessionTotalCodec{counter: counter})
+		session, err := p.Open(context.Background(), context.Background(), provider.OpenOptions{Cwd: t.TempDir(), ResumeSessionID: resume, StateDir: state}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := session.Prompt(context.Background(), "continue", nil)
+		if err != nil || result.Usage["m"] != want || result.UsagePartial {
+			t.Fatalf("backend %d: usage=%+v partial=%v err=%v", backend, result.Usage, result.UsagePartial, err)
+		}
+		resume = session.SessionID()
+		session.Close()
+	}
+}
+
+func TestFlatSessionBaselineSurvivesBackendRestart(t *testing.T) {
+	state := t.TempDir()
+	var before, after sessionLedger
+	before.reconcileFlat(state, "s", &provider.TokenUsage{InputTokens: 8}, nil)
+	usage, uncertain := after.reconcileFlat(state, "s", &provider.TokenUsage{InputTokens: 16}, nil)
+	if uncertain || usage["default"].InputTokens != 8 {
+		t.Fatalf("usage=%+v uncertain=%v", usage, uncertain)
+	}
+}
+
+func TestSavedBaselinesAreBounded(t *testing.T) {
+	state := t.TempDir()
+	var l sessionLedger
+	for i := range ledgerSessions + 3 {
+		l.modelDelta(state, strconv.Itoa(i), map[string]provider.TokenUsage{"m": {InputTokens: 1}})
+	}
+	entries, err := os.ReadDir(filepath.Join(state, "usage"))
+	if err != nil || len(entries) != ledgerSessions {
+		t.Fatalf("saved %d baselines (%v), want %d", len(entries), err, ledgerSessions)
+	}
+}
+
+func TestUnreadableBaselineStartsOver(t *testing.T) {
+	state := t.TempDir()
+	path := baselinePath(state, "s")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var l sessionLedger
+	if usage, _ := l.modelDelta(state, "s", map[string]provider.TokenUsage{"m": {InputTokens: 5}}); usage["m"].InputTokens != 5 {
+		t.Fatalf("usage=%+v", usage)
 	}
 }
