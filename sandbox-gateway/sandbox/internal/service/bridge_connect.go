@@ -60,8 +60,12 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 		agentInfo["modelId"] = info.ModelID
 		agentInfo["modelName"] = info.ModelName
 	}
+	b.mu.Lock()
+	resumed := b.sess == p && b.sessResumed
+	b.mu.Unlock()
 	m := map[string]any{
 		"op":        "connected",
+		"resumed":   resumed,
 		"sessionId": p.SessionID(),
 		"cwd":       p.CWD(),
 		"fsRoot":    p.FSRoot(),
@@ -135,12 +139,14 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 			return p, nil
 		}
 		log.Printf("acp: connect 带来非空 MCP，重建此前空 MCP 会话")
+		resume := resumePointer(b.sess)
 		b.mu.Unlock()
-		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto})
+		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, keepHistory: true, resumeID: resume})
 	}
+	first := b.agentGeneration == 0
 	b.mu.Unlock()
 
-	return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto})
+	return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, resumeStored: first})
 }
 
 // openSpec is what one connect opens.
@@ -152,6 +158,10 @@ type openSpec struct {
 	keepHistory bool
 	// resumeID continues that native session; empty starts a new one.
 	resumeID string
+	// resumeStored continues the persisted session when resumeID is empty:
+	// the first agent of this backend process picks up where the previous
+	// process left off.
+	resumeStored bool
 }
 
 func (b *Bridge) connectOrTest(spec openSpec) (provider.Session, error) {
@@ -218,6 +228,9 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	fsEff := fsRoot
 	if fsEff == "" {
 		fsEff = cwd
+	}
+	if spec.resumeID == "" && spec.resumeStored {
+		spec.resumeID = b.storedSession(cwd)
 	}
 	count, names := mcpServerSummary(mcp)
 	log.Printf("acp: 实际使用目录 cwd=%q fsRoot=%q（前端留空时已用服务端当前目录或默认与 cwd 相同） mcp_servers_count=%d names=%v", cwd, fsEff, count, names)
@@ -289,6 +302,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		return nil, ErrChatNotFound
 	}
 	b.sess, b.reviving = sess, false
+	b.sessResumed = spec.resumeID != "" && sess.SessionID() == spec.resumeID
 	b.sessOpened, b.sessThaw = time.Now(), thawCount()
 	if len(mcp) > 0 && string(mcp) != "null" {
 		b.lastMCP = append(json.RawMessage(nil), mcp...)
@@ -299,6 +313,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	b.exitNoticeMu.Lock()
 	b.lastExitBroadcast = time.Time{}
 	b.exitNoticeMu.Unlock()
+	b.rememberSession(sess)
 	go b.watchAgentConn(sess)
 	b.BroadcastQueueState()
 	return sess, nil

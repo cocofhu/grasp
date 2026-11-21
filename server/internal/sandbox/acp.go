@@ -179,6 +179,9 @@ type ACPClient struct {
 	conn      *websocket.Conn
 	sessionID string
 	connected bool
+	// resumed: the last connect continued the agent's native session, so the
+	// agent still holds the conversation.
+	resumed bool
 
 	eventCh chan json.RawMessage
 	done    chan struct{}
@@ -320,6 +323,14 @@ func (c *ACPClient) SessionID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sessionID
+}
+
+// Resumed reports whether the last connect continued the agent's native
+// session instead of starting a new conversation.
+func (c *ACPClient) Resumed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.resumed
 }
 
 func (c *ACPClient) setConnected(sessionID string) {
@@ -489,6 +500,9 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 			op, sessionID := parseOpAndSession(raw)
 			if op == "connected" && sessionID != "" {
 				c.setConnected(sessionID)
+				c.mu.Lock()
+				c.resumed = connectedResumed(raw)
+				c.mu.Unlock()
 				c.lg.Info().Str("session", sessionID).Msg("acp connected")
 				return nil
 			}
@@ -864,6 +878,14 @@ func parseOpAndSession(raw json.RawMessage) (string, string) {
 	}
 	_ = json.Unmarshal(raw, &m)
 	return m.Op, m.SessionID
+}
+
+func connectedResumed(raw json.RawMessage) bool {
+	var m struct {
+		Resumed bool `json:"resumed"`
+	}
+	_ = json.Unmarshal(raw, &m)
+	return m.Resumed
 }
 
 func parseErrorMessage(raw json.RawMessage) string {

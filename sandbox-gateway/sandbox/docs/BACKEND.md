@@ -305,6 +305,9 @@ web/                  # 前端（ESM + 静态资源）
   - 新开上下文（`/new`、`/compact`、`restart_agent`）：总是新对话。
   - 长驻进程意外退出：`Resume` 为真时 10 分钟内最多自动重启 3 次并接回原会话，正在跑的那一轮按失败收尾，排队消息在新进程上继续；否则照旧广播 `agentExited`。
   - 长驻进程回合前重建：沙箱从休眠中恢复（墙上时间比单调时钟多走 30s 以上，即 E2B 暂停又恢复），或进程已运行超过 `SANDBOX_AGENT_MAX_AGE`（默认 `6h`，`0` 不限）时，下一轮开始前重建进程并接回原会话，避免沿用已经断开的模型 / MCP 连接。不能接回会话的 Agent 不重建。
+  - 回合被中断（用户停止或看门狗）后，长驻会话等 Agent 真正停下再返回，下一条消息不会与仍在运行的回合重叠；Agent 在 15s 内不响应中断则关闭进程，按上一条接回原会话（`codex` 与 ACP 家族一致）。
+  - 后端进程重启：default 会话的原生会话指针（Agent、工作目录、会话 ID）存于 `~/.grasp/agent-session.json`，与各 Agent 的会话文件同在家目录；重启后的第一个 Agent 在同一 Agent 与目录下接回它，`connected` 帧带 `resumed: true`，平台据此不再补发对话记录。新对话会覆盖指针，不能接回的会话不留指针。
+  - `connect` 把此前为空的 MCP 列表补全时，重开进程并接回原会话，可见聊天记录保留。
   - 自动重启或重建没能接回原会话（如原会话文件已不在）时，下一轮的 `prompt_done` 带 `sessionReset: true` 与 `previousSessionId`，平台据此补发对话记录，与 one-shot 的 resume 回退一致。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：
   - ✅ **已验真**：`cursor`（端到端跑通）、`gemini`/qwen 系（对真实 stream-json 抓样解析全绿）。stream-json codec 已同时兼容两种方言：顶层 thinking + camelCase 用量（cursor），以及 content-block thinking（`thinking` 字段）+ `tool_use_id` 关联 + snake_case 用量（claude/codebuddy/qwen）。

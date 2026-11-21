@@ -77,6 +77,26 @@ func TestReactRestoreKeepsEnvironmentAndOnlyReplaysColdHistory(t *testing.T) {
 	}
 }
 
+func TestReactRestoreSkipsReplayWhenTheAgentKeptItsSession(t *testing.T) {
+	h := newSharedHarness(t, nil)
+	h.run(t, h.req("n1"))
+	saved := h.p.shared.get(h.runID).sb
+	h.p.registry = &recoveryRegistry{sb: saved}
+	bridge := h.mgr.bridge(0)
+	bridge.mu.Lock()
+	bridge.resumes = true
+	bridge.mu.Unlock()
+	before := bridge.promptCount()
+	sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), []models.ReactMessage{{Role: "human", Text: "keep edited files"}})
+	if err != nil || !found || sess == nil {
+		t.Fatalf("restore=%+v %v %v", sess, found, err)
+	}
+	defer sess.acp.Close()
+	if delta := bridge.promptCount() - before; delta != 0 {
+		t.Fatalf("an agent that resumed its session got %d replay prompts", delta)
+	}
+}
+
 func TestReactRestoreErrorNeverFallsBackToEmptySandbox(t *testing.T) {
 	h := newSharedHarness(t, nil)
 	registry := &recoveryRegistry{failure: io.ErrUnexpectedEOF}

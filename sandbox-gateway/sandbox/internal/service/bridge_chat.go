@@ -203,6 +203,7 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			stop()
 		}
 		b.recordUserTurnDone(item)
+		b.rememberSession(p)
 		b.pumpPromptQueue()
 	}()
 

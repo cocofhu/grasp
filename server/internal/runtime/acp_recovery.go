@@ -96,7 +96,7 @@ func (c *acpProvider) restoreReactEnvironment(ctx context.Context, req NodeReq, 
 	if previous != nil && previous.acp != nil {
 		previous.acp.Close()
 	}
-	if !warm && len(history) > 0 {
+	if !warm && !acp.Resumed() && len(history) > 0 {
 		chatCtx, cancel := c.turnCtx(ctx, req)
 		result, err := c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), history, sb), req.PromptImages)
 		cancel()

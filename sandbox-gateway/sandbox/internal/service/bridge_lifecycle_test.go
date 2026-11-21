@@ -51,7 +51,7 @@ func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEven
 	if opts.ResumeSessionID != "" && !a.forget {
 		id = opts.ResumeSessionID
 	}
-	s := &lifeSess{stubSess: stubSess{id: id}, resume: !a.noResume, onEvent: onEvent,
+	s := &lifeSess{stubSess: stubSess{id: id}, cwd: opts.Cwd, resume: !a.noResume, onEvent: onEvent,
 		done: make(chan struct{}), started: make(chan string, 8), release: make(chan struct{})}
 	a.sess = append(a.sess, s)
 	return s, nil
@@ -66,6 +66,7 @@ func (a *lifeAgent) opened() ([]provider.OpenOptions, []*lifeSess) {
 // lifeSess runs a turn until released or until its process "dies".
 type lifeSess struct {
 	stubSess
+	cwd     string
 	resume  bool
 	onEvent func(json.RawMessage)
 
@@ -78,6 +79,7 @@ type lifeSess struct {
 func (s *lifeSess) Capabilities() provider.Capabilities {
 	return provider.Capabilities{Resume: s.resume}
 }
+func (s *lifeSess) CWD() string           { return s.cwd }
 func (s *lifeSess) Done() <-chan struct{} { return s.done }
 func (s *lifeSess) Close() error          { s.die(); return nil }
 func (s *lifeSess) die()                  { s.closeOnce.Do(func() { close(s.done) }) }

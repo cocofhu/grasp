@@ -47,8 +47,13 @@ type Bridge struct {
 	agentCtx        context.Context
 	agentCancel     context.CancelFunc
 	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
-	permWait        map[string]chan string
-	autoPermission  bool
+	// sessResumed: sess continues the native session it was opened to resume.
+	sessResumed bool
+	// pointer persists the native session across backend restarts; nil keeps
+	// it in memory only.
+	pointer        *pointerFile
+	permWait       map[string]chan string
+	autoPermission bool
 	// 每连接 *wsClient 一把写锁，禁止并发 Write、禁止双 map 维护。
 	clients map[*websocket.Conn]*wsClient
 
