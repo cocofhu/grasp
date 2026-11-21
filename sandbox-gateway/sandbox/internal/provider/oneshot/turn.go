@@ -17,8 +17,9 @@ import (
 // consumer goroutine and, for LogFile codecs, once more on the turn goroutine
 // after that consumer has been joined; it is never called concurrently.
 type turnAccumulator struct {
-	e  *engine
-	bg *backgroundShells
+	e     *engine
+	bg    *backgroundShells
+	input *turnInput
 
 	usage               map[string]provider.TokenUsage
 	usagePartial        bool
@@ -28,25 +29,22 @@ type turnAccumulator struct {
 	newSID              string
 	stop                string
 	diagnostics         []Msg
-	retryDiagnostic     string
 	hasText             bool
 
-	// resultSeen closes on the first stop reason; resultStop is written before
-	// it closes, so a reader that observed the close may read it.
+	// resultSeen closes on the final stop reason; resultStop is written before
+	// it closes, so a reader that observed the close may read it. With turn
+	// input a result is final only once no steer is left unanswered.
 	resultSeen chan struct{}
 	resultOnce sync.Once
 	resultStop string
 }
 
-func newTurnAccumulator(e *engine, bg *backgroundShells) *turnAccumulator {
-	return &turnAccumulator{e: e, bg: bg, usage: map[string]provider.TokenUsage{}, resultSeen: make(chan struct{})}
+func newTurnAccumulator(e *engine, bg *backgroundShells, input *turnInput) *turnAccumulator {
+	return &turnAccumulator{e: e, bg: bg, input: input, usage: map[string]provider.TokenUsage{}, resultSeen: make(chan struct{})}
 }
 
 func (a *turnAccumulator) apply(pr ParseResult) {
 	a.bg.event()
-	if pr.RetryDiagnostic != "" || len(pr.Msgs) > 0 {
-		a.retryDiagnostic = pr.RetryDiagnostic
-	}
 	a.tracksSessionUsage = a.tracksSessionUsage || pr.TracksSessionUsage
 	if pr.SessionUsage != nil {
 		copy := *pr.SessionUsage
@@ -89,8 +87,14 @@ func (a *turnAccumulator) apply(pr ParseResult) {
 		}
 		a.e.emitUpdate(m)
 	}
+	if a.input != nil && pr.UserMessagesConsumed > 0 {
+		a.input.consume(pr.UserMessagesConsumed)
+	}
 	if pr.StopReason != "" {
 		a.stop = pr.StopReason
+		if a.input != nil && !a.input.settle() {
+			return
+		}
 		a.resultOnce.Do(func() {
 			a.resultStop = pr.StopReason
 			close(a.resultSeen)
@@ -99,7 +103,7 @@ func (a *turnAccumulator) apply(pr ParseResult) {
 }
 
 // settleUsage turns what the CLI reported into this turn's own usage
-// (differencing native session totals against the previous turn) and adds it
+// (reconciling native session counters against the previous turn) and adds it
 // to the engine's cumulative usage.
 func (a *turnAccumulator) settleUsage(resumeID string) {
 	sid := a.newSID
@@ -108,12 +112,12 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 	}
 	if a.usageIsSessionTotal {
 		var uncertain bool
-		a.usage, uncertain = a.e.sessionUsageDelta(sid, a.usage)
+		a.usage, uncertain = a.e.ledger.modelDelta(a.e.opts.StateDir, sid, a.usage)
 		a.usagePartial = a.usagePartial || uncertain
 	}
 	if a.tracksSessionUsage {
 		var uncertain bool
-		a.usage, uncertain = a.e.reconcileFlatSessionUsage(sid, a.sessionUsage, a.usage)
+		a.usage, uncertain = a.e.ledger.reconcileFlat(a.e.opts.StateDir, sid, a.sessionUsage, a.usage)
 		a.usagePartial = a.usagePartial || uncertain
 	}
 	a.e.mergeCumulative(a.usage)
@@ -121,12 +125,9 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 
 // outcome decides the turn's stop reason and error. A stop reason the CLI
 // reported wins; otherwise any wait or stream error means failed.
-func (a *turnAccumulator) outcome(waitErr, streamErr error, tail *stderrTail) (turnOutcome, error) {
+func (a *turnAccumulator) outcome(waitErr, streamErr error, tail *provider.OutputTail) (turnOutcome, error) {
 	stop := a.stop
 	if stop == "" {
-		if a.retryDiagnostic != "" && streamErr == nil {
-			streamErr = fmt.Errorf("CLI exited during network retry: %s", a.retryDiagnostic)
-		}
 		if waitErr != nil || streamErr != nil {
 			stop = "failed"
 		} else {

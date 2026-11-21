@@ -34,6 +34,20 @@ for source_script in "$STARTUP" "$ROOT/sandbox/scripts/reprime.sh"; do
 done
 echo "OK: Kimi Code startup/reprime config roots"
 
+for source_script in "$STARTUP" "$ROOT/sandbox/scripts/reprime.sh"; do
+  sed -n '/^AGENT_PROVIDER=/,/^export AGENT_PROVIDER CONFIG_ROOT$/p' "$source_script" >"$TMP/provider-root.sh"
+  for legacy in cursor:.cursor claude_code:.claude codebuddy:.codebuddy; do
+    tool="${legacy%%:*}"
+    mapped="$(AGENT_PROVIDER="${tool}_acp" HOME_DIR=/root bash -c '
+      unset CONFIG_ROOT
+      source "$1"
+      printf "%s %s" "$AGENT_PROVIDER" "${CONFIG_ROOT#"$HOME_DIR"}"
+    ' _ "$TMP/provider-root.sh")"
+    [ "$mapped" = "$tool /${legacy#*:}" ] || { echo "FAIL: ${tool}_acp in $source_script: $mapped" >&2; exit 1; }
+  done
+done
+echo "OK: legacy *_acp provider names"
+
 # Lines covering inject_one() through the SANDBOX_INJECT for-loop (inclusive).
 sed -n '/^inject_one() {/,/^fi$/p' "$STARTUP" | awk '
   BEGIN {keep=1}

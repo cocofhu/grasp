@@ -122,9 +122,13 @@ type AcpLiveness struct {
 // the flat thought/tool_call/message events, which stay for older consumers.
 const AcpKindTimeline = "timeline"
 
+// AcpPartSteer is a reply step holding user input the running turn took
+// mid-flight (a steer); Text is what the user sent.
+const AcpPartSteer = "steer"
+
 // AcpPart is one step of an agent reply.
 type AcpPart struct {
-	Kind string `json:"kind"` // thought|message|tool
+	Kind string `json:"kind"` // thought|message|tool|steer
 	Text string `json:"text,omitempty"`
 	// Tool steps only. Summary is the redacted one-line argument (command,
 	// path, URL…); Input / Output are redacted, truncated details.
@@ -172,6 +176,40 @@ func eventsForReply(events []AcpEvent) []AcpEvent {
 		}
 	}
 	return events
+}
+
+// SteerText is how a steer reads in the record: its text, then what it
+// attached, so input that is only attachments still shows.
+func SteerText(text string, fileNames []string, images int) string {
+	var attached []string
+	for _, name := range fileNames {
+		if name = strings.TrimSpace(name); name != "" {
+			attached = append(attached, name)
+		}
+	}
+	if images > 0 {
+		attached = append(attached, fmt.Sprintf("图片 ×%d", images))
+	}
+	text = strings.TrimSpace(text)
+	if len(attached) == 0 {
+		return text
+	}
+	line := "[附件] " + strings.Join(attached, "、")
+	if text == "" {
+		return line
+	}
+	return text + "\n" + line
+}
+
+// SteerTexts lists the input a reply's turn took mid-flight, in order.
+func SteerTexts(parts []AcpPart) []string {
+	var out []string
+	for _, p := range parts {
+		if p.Kind == AcpPartSteer && strings.TrimSpace(p.Text) != "" {
+			out = append(out, strings.TrimSpace(p.Text))
+		}
+	}
+	return out
 }
 
 // PartsForReply returns the steps of this reply's last timeline event (the row the

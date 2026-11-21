@@ -114,3 +114,12 @@ describe('hasFailedTool', () => {
     expect(hasFailedTool([{ kind: 'tool', title: 'Shell', status: 'FAILED' }])).toBe(true)
   })
 })
+
+describe('steer parts', () => {
+  it('are their own blocks and make a settled reply fold', () => {
+    const parts = [{ kind: 'message' as const, text: 'a' }, { kind: 'steer' as const, text: 'b' }, { kind: 'steer' as const, text: ' ' }]
+    expect(timelineBlocks(parts).map((b) => b.kind)).toEqual(['message', 'steer'])
+    expect(timelineFolds(parts)).toBe(true)
+    expect(timelineFolds([{ kind: 'message', text: 'a' }])).toBe(false)
+  })
+})

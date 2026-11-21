@@ -776,6 +776,21 @@ export const publicGateApi = {
       return body
     })
   },
+  /** Handle one waiting item now (the link must allow replying and cancelling). */
+  queueSteer(token: string, itemId: string): Promise<PublicGateReplyResult> {
+    return fetch('/public/approvals/queue/steer', {
+      method: 'POST',
+      credentials: 'omit',
+      headers: publicShareHeaders(undefined, true),
+      body: JSON.stringify({ token, itemId }),
+    }).then(async (res) => {
+      const body = await readJson<PublicGateReplyResult>(res)
+      if (!res.ok) {
+        throw publicShareError(res, body)
+      }
+      return body
+    })
+  },
   queueReorder(token: string, itemIds: string[]): Promise<PublicGateReplyResult> {
     return fetch('/public/approvals/queue/reorder', {
       method: 'POST',

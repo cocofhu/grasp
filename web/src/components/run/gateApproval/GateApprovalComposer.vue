@@ -59,6 +59,7 @@ const producerConversation = computed(() => s.run?.clarifyByNode?.[s.gate.reactU
     @cancel="s.cancelReactRevise"
     @queue-edit="s.editReactQueuedItem"
     @queue-cancel-item="s.cancelReactQueuedItem"
+    @queue-steer-item="s.steerReactQueuedItem"
     @queue-reorder-indexes="s.reorderReactQueuedItems"
   />
 </template>

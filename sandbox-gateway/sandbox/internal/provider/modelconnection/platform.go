@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 // OpenCode's native catalog owns each official model's SDK and endpoint. Keep
@@ -16,9 +16,9 @@ import (
 // an inline allowlist alone would deep-merge their base URLs and model routes.
 func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	p.Platform = true
-	key := common.GetEnvValue(p.Env, "OPENCODE_API_KEY")
+	key := envutil.Get(p.Env, "OPENCODE_API_KEY")
 	if key == "" {
-		key = common.GetEnvValue(p.Env, "GRASP_OPENCODE_API_KEY")
+		key = envutil.Get(p.Env, "GRASP_OPENCODE_API_KEY")
 	}
 	if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\r\n\x00") {
 		return p, errors.New("OpenCode official authorization: selected API key is missing or invalid")
@@ -35,7 +35,7 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 	if err != nil {
 		return p, err
 	}
-	if configured := strings.TrimSpace(common.GetEnvValue(p.Env, "CONFIG_ROOT")); configured != "" {
+	if configured := strings.TrimSpace(envutil.Get(p.Env, "CONFIG_ROOT")); configured != "" {
 		root = configured
 	}
 	assets, cleanup, err := isolatedConfig(root)
@@ -85,7 +85,7 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 		// HOME stays intact for Git/SSH and commands run by the agent.
 		"OPENCODE_TEST_HOME": xdg, "OPENCODE_TEST_MANAGED_CONFIG_DIR": filepath.Join(xdg, "managed"),
 		"OPENCODE_CONFIG_DIR": configDir, "OPENCODE_DISABLE_PROJECT_CONFIG": "true", "OPENCODE_CONFIG_CONTENT": string(data)} {
-		p.Env = common.UpsertEnv(p.Env, name, value)
+		p.Env = envutil.Upsert(p.Env, name, value)
 	}
 	return p, nil
 }
@@ -94,7 +94,7 @@ func prepareOpenCodePlatform(p Prepared, root string) (Prepared, error) {
 // An empty primary is skipped so auxiliary OpenCode Go models can still select
 // that family. Invalid JSON fails closed instead of enabling the wrong provider.
 func configuredOfficialModelIDs(env []string) ([]string, error) {
-	raw := strings.TrimSpace(common.GetEnvValue(env, "GRASP_CONFIGURED_MODELS"))
+	raw := strings.TrimSpace(envutil.Get(env, "GRASP_CONFIGURED_MODELS"))
 	if raw == "" {
 		return nil, nil
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -162,6 +163,10 @@ func (e *Engine) CancelVisitorTurn(runID, producerID, lane string) error {
 
 func (e *Engine) RemoveVisitorQueuedItem(runID, producerID, lane, itemID string) error {
 	return e.removeLaneQueuedItem(runID, producerID, lane, itemID)
+}
+
+func (e *Engine) SteerVisitorQueuedItem(runID, producerID, lane, itemID string) (chatsession.SteerOutcome, error) {
+	return e.steerLaneQueuedItem(runID, producerID, lane, itemID)
 }
 
 func (e *Engine) ReorderVisitorQueuedItems(runID, producerID, lane string, itemIDs []string) error {

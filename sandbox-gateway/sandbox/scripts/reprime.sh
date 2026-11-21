@@ -76,6 +76,8 @@ case "$OLD_CONFIG_ROOT" in
   "$HOME_DIR"/.?*) rm -rf "$OLD_CONFIG_ROOT" ;;
 esac
 if [ "$reprime_tool_only" = 0 ]; then
+  # The next node is a new task: its agent must not resume this one's session.
+  rm -f "$HOME_DIR/.grasp/agent-session.json"
   rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" "$HOME_DIR/.grasp/git-credentials" \
     "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/known_hosts" "$HOME_DIR/.ssh/grasp_repos_config" \
     "$HOME_DIR/.config/gh/hosts.yml" "$HOME_DIR/.config/glab-cli/config.yml"
@@ -111,10 +113,14 @@ done <"$STAGE/env"
 
 # Same provider → CONFIG_ROOT mapping as startup.sh.
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
+# 旧取值 *_acp 是同一工具的旧 transport 名，沿用对应工具与配置目录。
 case "$AGENT_PROVIDER" in
-  cursor|cursor_acp)           CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.cursor} ;;
-  claude_code|claude_code_acp) CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
-  codebuddy|codebuddy_acp)     CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
+  cursor_acp|claude_code_acp|codebuddy_acp) AGENT_PROVIDER=${AGENT_PROVIDER%_acp} ;;
+esac
+case "$AGENT_PROVIDER" in
+  cursor)                      CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.cursor} ;;
+  claude_code)                 CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
+  codebuddy)                   CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
   opencode)                    CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.config/opencode} ;;
   deepseek_harness)            CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.dsh} ;;
   kimi_code)                   CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.kimi-code} ;;

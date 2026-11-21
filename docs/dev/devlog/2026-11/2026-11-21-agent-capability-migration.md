@@ -1,0 +1,48 @@
+# 2026-11-21 Agent 能力迁移收尾（#1311）
+
+- 日期：2026-11-21
+- 范围：`sandbox-gateway/sandbox/internal/provider`（`opencode`、`pi`、`oneshot`、`opencodejson`、`tail.go`）、`sandbox-gateway/sandbox/internal/agents`、`sandbox-gateway/sandbox/internal/service`、`sandbox-gateway/sandbox/internal/modelconnection`、`server/internal/handoff`、`server/internal/runtime`
+- 做了什么：
+  - 看门狗：回合中断后长驻会话等 Agent 真正停下再返回；`provider.InterruptGrace`（15s）内不响应则关闭进程，走崩溃复活路径接回原会话。
+  - 会话指针：default 会话的原生会话指针写入 `~/.grasp/agent-session.json`，后端重启后的第一个 Agent 在同一 Agent 与目录下接回。`connected` 帧与切换模型的 `resumed` 表示「新进程带着此前的对话」：只有跑过回合的会话（或接回这样的会话）才算，指针随之记录 `history`。沙箱启动时预建的空会话在平台带 MCP 连接时被接回，仍报 `resumed: false`，冷恢复照常补发对话记录。
+  - 用量基线：one-shot 的会话累计用量基线随指针存到 `~/.grasp/usage/`（`OpenOptions.StateDir`，按会话 ID 哈希命名，最多 256 个），后端重启后接回的会话不会把此前的累计用量记到新一轮。
+  - 配置变更：`connect` 带来不同 MCP 列表，或 `provider.ConfigReader` 声明的启动配置文件变化时，下一轮前重建进程并接回原会话。
+  - 子 Agent：Codex（`spawnAgent` 子线程）与 OpenCode（子会话）仍在运行时不发 `prompt_done`，工作流节点不会提前完成。
+  - OpenCode 改为常驻 `opencode serve`：回环地址 + 随机 basic auth 密码，`prompt_async` 发起与引导，`abort` 中断，SSE `/event` 汇总事件；一轮在每条已发送的用户消息都有回复且会话空闲后结束。删除 one-shot 里的 OpenCode 分支和 `--title`。
+  - Pi 改为常驻 `pi --mode rpc`：会话文件即接回指针，带 `streamingBehavior: steer` 的 `prompt` 引导，`abort` 中断；运行结束后仍滞留在 Pi 队列里的引导，用 `switch_session` 重载同一会话文件撤回（Pi 的 RPC 没有清空队列或继续的命令），再作为本回合的一次 `prompt` 发出，保证恰好送达一次。扩展对话框一律取消。
+  - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用；镜像到日志的每一行按子进程环境脱敏。
+  - 子 Agent 等待期间 Codex app-server 或 OpenCode serve 退出时，回合按失败收尾，「等待子 Agent」工具调用标为失败。Codex 会话的 `Steer` / `Cancel` / `finishTurn` 在锁内读取回合 ID、用量与错误。
+  - 新增 `server/internal/handoff`，取代 `renderRecoveryTranscript`：对话先转成统一条目（回合中补充的引导单列为用户条目），按约 12000 token 预算挑选，优先级为最新用户消息、最新 Agent 回复、最初需求，其余从新到旧；放不下的条目给出条数与编号（最多列 20 段区间，其余以「等」概括，预留按最坏情况计算，渲染结果不超过预算），单条过长时截取开头并标注。开头声明历史只作参考、不是新指令，工具输出与思考过程未保留。工作流的重建、原会话接不回、`/compact` 三处共用。
+  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认，被中断（`stopReason=cancelled` 等）的交接保持未确认并返回可重试错误；恢复时若保留下来的原生会话（以本次 `connect` 应答的 `resumed` 为准；不带该字段的旧 Bridge 才按 warm 判断）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除；服务端恰在交接回合中崩溃时这一标记会丢失，下次恢复按原会话接回。
+  - PR 评审修正：Bridge 引导改由 `steerMu` 串行，`turnMu` 只在读取当前回合时持有，避免会话读循环与引导回执互相等待；Codex 的 `turn/start` 不再绑回合 ctx，取消时等拿到回合 ID 后中断并等终态；只带附件的引导在时间线、刷新回放、`get_history` 与交接里显示为「[附件] 文件名、图片 ×N」；`cursor_acp` / `claude_code_acp` / `codebuddy_acp` 在 `startup.sh`、`reprime.sh`、`install-agent.sh` 与 `agents.FromEnv` 中统一映射为对应工具。
+  - 第二轮评审修正：
+    - 原生引导限时 `provider.SteerTimeout`（20s），平台等待 30s，慢送达不会被当成失败而重放；两端的 WebSocket 读循环异步处理引导，取消不排在引导之后。
+    - 引导在途时 Bridge 暂扣 `prompt_done`，保证 `user_steer` 先于回合结束到达。
+    - Codex `turn/start` 无应答时关闭 app-server（回合可能已在跑），由复活路径接回线程。
+    - Codex / OpenCode 子 Agent 状态查询失败视为状态未知继续等待，宿主退出时回合失败，不再当作完成。
+    - Pi 回合结束后的队列检查最多复查 5s（`agent_end` 后仍短暂报告 streaming、`get_state` 失败）；仍无法确认时回合失败。
+    - 交接回合失败或拒绝（`chatFailure`）返回错误，不再当作恢复成功。
+    - WebSocket 建立时补发的 `connected` 快照带 `snapshot: true`，服务端只采用应答本次 `connect` 的帧。
+    - 回合前回收 Agent 进程失败时清空队列并广播 Agent 退出。
+    - `OutputTail` 跨写入拼接整行，先脱敏再截断。
+    - 交接文本中行首的 `[#` 改写为全角，历史内容不能冒充条目头。
+  - 对照 t3code 已修复的问题：
+    - Codex multi-agent v2（新模型默认）用 `subAgentActivity` 条目报告子 Agent，不再有 `spawnAgent`；`kind: started` 的 `agentThreadId` 也登记为待等子线程。
+    - OpenCode 后台任务的子会话创建后要过一会儿才报 busy，`/session/status` 在此之前查不到它；收到 `session.created` 后、子会话报出任何状态前（最多 30s）算作仍在运行。
+    - Codex 换登录账号后接回的线程会因 `invalid_encrypted_content` 每轮失败；服务端把它和 Cursor 的卡死会话一样识别，在同一沙箱开新会话并交接对话后重试。
+    - 已知未处理：Kimi Code 2.5.3 / 2.6.1 失败的回合仍回 `end_turn`（真实结果只在 `wire.jsonl`），我们钉在 2.4.0，升级前需补；Pi 断线重流同一推理块时转录里会重复部分文本（ACP 分片无法撤回）。
+  - 全量实测后的修正与收敛：
+    - `opencode serve` 启动期间收到的请求既不应答也不断开。健康检查原来沿用 30s 的通用请求超时，每次启动、切模型、崩溃重建都白等 30s；改为单次探测 2s 超时后重试，实测切模型从 32s 降到 9s。启动变快后暴露出 CI 连接测试的时序问题：脚本在 backend 已经拉起 OpenCode 之后才写 `opencode.json`，原来靠那 30s 空等才赶在握手前写完。现在改为 `docker create` 后先注入配置再 `docker start`，与平台随配置包下发的顺序一致。
+    - 沙箱自带聊天页显示 `user_steer` 的文本与附件，原来只显示「事件 · user_steer」。
+    - 删除重构遗留的死代码：`Bridge.Connect`（生产改走 `connect(openSpec)` 后只剩测试调用）、服务端 `sandbox.GetChatModel`（唯一调用方已改用 `GetChatModelSettings`）。
+    - 合并重复实现：Codex / OpenCode / Pi 的帧构造与附件引用改用 `provider` 包的 `SendFrame`、`UpdateFrame`、`ChunkUpdate`、`ErrorFrame`、`PromptDoneFrame`、`WithAttachments`，`prompt_done` 只在一处定义；会话指针、用量基线与附件落盘共用 `provider.WriteFileAtomic`。
+    - `handoff.Render` 直接返回文本。原 `Result` 的 `Included` / `Omitted` / `Tokens` 只有测试在读，测试改为从文本解析条目编号。
+    - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
+- 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
+- 如何验证：
+  - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。
+  - 服务端 `go test ./...`、golangci-lint、`cover-check-server.sh 90`。`handoff` 包覆盖率 100%。新增测试覆盖优先级选择、超长条目截取、省略说明、未确认交接后开新会话并清除状态。
+  - OpenCode 与 Pi 的事件回放测试取自真实抓包（工具回合、引导、中断）。
+  - 实测 DeepSeek：OpenCode（模型连接 `api.deepseek.com/v1`）与 Pi（`deepseek/deepseek-v4-flash`）跑通工具回合、回合中引导、约 1s 内中断、新进程接回会话。交接文本在 1500 token 预算下省略 55/63 条后，模型仍答出最初需求的约束、最新决定和省略条数。
+  - 全量实测（真实 Bridge + 服务端 `ACPClient`）：Claude Code、CodeBuddy、Codex、OpenCode、Pi、DeepSeek Harness 走 DeepSeek（模型连接或官方 key），Cursor 走 Cursor key。每个 Agent 依次验证工具调用、回合中引导（不支持原生引导的 DeepSeek Harness 与 Cursor 走中断后重发）、取消、切换模型后接回、杀掉 Agent 进程后自动复活接回、重启后端后按会话指针接回、新开上下文。除上述 Claude 自动记忆外全部通过。
+- 后续：可选的冷恢复会话文件备份未做；Solo 的上下文前言（`services/conversation_history.go`）有自己的 `get_history` 回查机制，暂未改用 `handoff`。

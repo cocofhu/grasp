@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 
 	"gopkg.in/yaml.v3"
@@ -61,11 +61,11 @@ func TestSelectedConnectionIsolationAndIdentity(t *testing.T) {
 	c := connection(Chat)
 	p := prepare(t, provider.OpenCode, c)
 	for _, name := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GRASP_OPENCODE_PROVIDER", "CLAUDE_CODE_USE_BEDROCK"} {
-		if common.GetEnvValue(p.Env, name) != "" {
+		if envutil.Get(p.Env, name) != "" {
 			t.Errorf("old auth survived: %s", name)
 		}
 	}
-	if common.GetEnvValue(p.Env, EnvAPIKey) != "selected-secret-12345" || common.GetEnvValue(p.Env, "PATH") != "/bin" {
+	if envutil.Get(p.Env, EnvAPIKey) != "selected-secret-12345" || envutil.Get(p.Env, "PATH") != "/bin" {
 		t.Fatal("selected secret or process environment lost")
 	}
 	other := c
@@ -83,7 +83,7 @@ func TestOpenCodeUsesExplicitProtocolAndEnvironmentReference(t *testing.T) {
 		t.Run(protocol, func(t *testing.T) {
 			c := connection(protocol)
 			p := prepare(t, provider.OpenCode, c)
-			raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+			raw := envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")
 			if strings.Contains(raw, "selected-secret") || strings.Contains(raw, "old-") {
 				t.Fatal("inline config leaked a key or retained another provider")
 			}
@@ -125,7 +125,7 @@ func TestMessagesRootsKeepGatewayPrefixAcrossNativeClients(t *testing.T) {
 			c.BaseURL = test.base
 			for _, tool := range []provider.Name{provider.ClaudeCode, provider.DeepSeekHarness} {
 				p := prepare(t, tool, c)
-				base := common.GetEnvValue(p.Env, "ANTHROPIC_BASE_URL")
+				base := envutil.Get(p.Env, "ANTHROPIC_BASE_URL")
 				if tool == provider.DeepSeekHarness {
 					var rows []map[string]any
 					if err := yaml.Unmarshal(p.DSHPatch, &rows); err != nil {
@@ -165,7 +165,7 @@ func TestClaudePinsEveryRoleWithoutStoredAuthentication(t *testing.T) {
 			c.ToolSettings.ModelRoles = map[string]string{"fast": "fast/model", "haiku": "fast/model", "subagent": "fast/model"}
 			p := prepare(t, provider.ClaudeCode, c)
 			for variable, model := range map[string]string{"ANTHROPIC_DEFAULT_OPUS_MODEL": c.SelectedModelID, "ANTHROPIC_DEFAULT_SONNET_MODEL": c.SelectedModelID, "ANTHROPIC_DEFAULT_HAIKU_MODEL": "fast/model", "ANTHROPIC_SMALL_FAST_MODEL": "fast/model", "CLAUDE_CODE_SUBAGENT_MODEL": "fast/model"} {
-				if common.GetEnvValue(p.Env, variable) != model {
+				if envutil.Get(p.Env, variable) != model {
 					t.Errorf("%s not pinned", variable)
 				}
 			}
@@ -173,10 +173,10 @@ func TestClaudePinsEveryRoleWithoutStoredAuthentication(t *testing.T) {
 			if auth == "bearer" {
 				nativeKey, otherKey = otherKey, nativeKey
 			}
-			if common.GetEnvValue(p.Env, nativeKey) != "selected-secret-12345" || common.GetEnvValue(p.Env, otherKey) != "" {
+			if envutil.Get(p.Env, nativeKey) != "selected-secret-12345" || envutil.Get(p.Env, otherKey) != "" {
 				t.Fatal("conflicting Claude auth")
 			}
-			dir := common.GetEnvValue(p.Env, "CLAUDE_CONFIG_DIR")
+			dir := envutil.Get(p.Env, "CLAUDE_CONFIG_DIR")
 			data, err := os.ReadFile(filepath.Join(dir, "settings.json"))
 			if err != nil {
 				t.Fatal(err)
@@ -199,11 +199,11 @@ func TestCodeBuddyModelsAndRoles(t *testing.T) {
 			c.ToolSettings.ModelRoles = map[string]string{"fast": "fast/model", "reasoning": "fast/model", "subagent": "fast/model"}
 			p := prepare(t, provider.CodeBuddy, c)
 			for _, variable := range []string{"CODEBUDDY_SMALL_FAST_MODEL", "CODEBUDDY_BIG_SLOW_MODEL", "CODEBUDDY_CODE_SUBAGENT_MODEL"} {
-				if common.GetEnvValue(p.Env, variable) != "fast/model" {
+				if envutil.Get(p.Env, variable) != "fast/model" {
 					t.Errorf("%s not pinned", variable)
 				}
 			}
-			dir := common.GetEnvValue(p.Env, "CODEBUDDY_CONFIG_DIR")
+			dir := envutil.Get(p.Env, "CODEBUDDY_CONFIG_DIR")
 			data, err := os.ReadFile(filepath.Join(dir, "models.json"))
 			if err != nil {
 				t.Fatal(err)
@@ -240,7 +240,7 @@ func TestCodexUsesResponsesProviderAndPreservesPlatformHome(t *testing.T) {
 			t.Errorf("missing %s", want)
 		}
 	}
-	if strings.Contains(args, "selected-secret") || common.GetEnvValue(p.Env, "CODEX_HOME") != "/original-auth-home" || p.Model != c.SelectedModelID {
+	if strings.Contains(args, "selected-secret") || envutil.Get(p.Env, "CODEX_HOME") != "/original-auth-home" || p.Model != c.SelectedModelID {
 		t.Fatal("custom provider must use separate env credential and preserve auth home")
 	}
 }
@@ -284,7 +284,7 @@ func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
 				if p.Model != p.RouteID+"/"+session {
 					t.Fatalf("OpenCode model = %q", p.Model)
 				}
-				raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+				raw := envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")
 				var doc struct {
 					Model      string
 					SmallModel string `json:"small_model"`
@@ -296,13 +296,13 @@ func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
 					t.Fatalf("OpenCode main/fast slots: %s", raw)
 				}
 			case provider.ClaudeCode:
-				if common.GetEnvValue(p.Env, "ANTHROPIC_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_MODEL") != session || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_FABLE_MODEL") != session {
+				if envutil.Get(p.Env, "ANTHROPIC_MODEL") != session || envutil.Get(p.Env, "ANTHROPIC_DEFAULT_MODEL") != session || envutil.Get(p.Env, "ANTHROPIC_DEFAULT_FABLE_MODEL") != session {
 					t.Fatal("Claude main model stayed on the primary")
 				}
-				if common.GetEnvValue(p.Env, "ANTHROPIC_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "ANTHROPIC_DEFAULT_HAIKU_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CLAUDE_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+				if envutil.Get(p.Env, "ANTHROPIC_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || envutil.Get(p.Env, "ANTHROPIC_DEFAULT_HAIKU_MODEL") != toolConnection.SelectedModelID || envutil.Get(p.Env, "CLAUDE_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
 					t.Fatal("Claude role models followed the chat model")
 				}
-				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CLAUDE_CONFIG_DIR"), "settings.json"))
+				data, err := os.ReadFile(filepath.Join(envutil.Get(p.Env, "CLAUDE_CONFIG_DIR"), "settings.json"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -311,13 +311,13 @@ func TestCatalogSessionModelOverridesPrimary(t *testing.T) {
 					t.Fatalf("Claude settings model: %s", data)
 				}
 			case provider.CodeBuddy:
-				if common.GetEnvValue(p.Env, "CODEBUDDY_MODEL") != session {
+				if envutil.Get(p.Env, "CODEBUDDY_MODEL") != session {
 					t.Fatal("CodeBuddy main model stayed on the primary")
 				}
-				if common.GetEnvValue(p.Env, "CODEBUDDY_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_BIG_SLOW_MODEL") != toolConnection.SelectedModelID || common.GetEnvValue(p.Env, "CODEBUDDY_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
+				if envutil.Get(p.Env, "CODEBUDDY_SMALL_FAST_MODEL") != toolConnection.SelectedModelID || envutil.Get(p.Env, "CODEBUDDY_BIG_SLOW_MODEL") != toolConnection.SelectedModelID || envutil.Get(p.Env, "CODEBUDDY_CODE_SUBAGENT_MODEL") != toolConnection.SelectedModelID {
 					t.Fatal("CodeBuddy role models followed the chat model")
 				}
-				data, err := os.ReadFile(filepath.Join(common.GetEnvValue(p.Env, "CODEBUDDY_CONFIG_DIR"), "settings.json"))
+				data, err := os.ReadFile(filepath.Join(envutil.Get(p.Env, "CODEBUDDY_CONFIG_DIR"), "settings.json"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -497,7 +497,6 @@ func TestRejectsInvalidConnectionWithoutFallback(t *testing.T) {
 		{"Claude Chat", provider.ClaudeCode, func(*Connection) {}},
 		{"CodeBuddy Responses", provider.CodeBuddy, func(c *Connection) { c.Protocol = Responses }},
 		{"CodeBuddy Messages", provider.CodeBuddy, func(c *Connection) { c.Protocol = Messages; c.Auth.Scheme = "x-api-key" }},
-		{"CodeBuddy ACP Messages", provider.CodeBuddyACP, func(c *Connection) { c.Protocol = Messages; c.Auth.Scheme = "x-api-key" }},
 		{"unknown auth", provider.OpenCode, func(c *Connection) { c.Auth.Scheme = "custom-header"; c.Auth.HeaderName = "X-Secret" }},
 		{"unknown route profile", provider.OpenCode, func(c *Connection) { c.ToolSettings.RouteProfile = "native" }},
 		{"native nonofficial service", provider.DeepSeekHarness, func(c *Connection) {
@@ -545,5 +544,24 @@ func TestIsolatedConfigPreservesAssetsWithoutLogin(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "auth.json")); !os.IsNotExist(err) {
 		t.Fatal("login file copied into connection config")
+	}
+}
+
+func TestIsolatedConfigKeepsHistoryOutsideTheTemporaryDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir, cleanup, err := isolatedConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := filepath.Join(dir, "projects", "workspace", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(transcript, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if _, err := os.Stat(filepath.Join(root, "projects", "workspace", "session.jsonl")); err != nil {
+		t.Fatalf("the transcript did not survive the process: %v", err)
 	}
 }

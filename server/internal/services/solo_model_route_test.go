@@ -335,16 +335,16 @@ type ambiguousSoloModelAligner struct {
 	calls int
 }
 
-func (a *ambiguousSoloModelAligner) AlignChatModel(context.Context, uint, string) (bool, error) {
+func (a *ambiguousSoloModelAligner) AlignChatSettings(context.Context, uint, string, string, string) (ChatSwitch, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls++
 	if a.calls == 1 {
 		// The CLI accepted the new model but its response was lost.
-		return false, ErrChatModelUnknown
+		return ChatSwitch{}, ErrChatModelUnknown
 	}
 	// The retry observes that the desired model is already selected.
-	return false, nil
+	return ChatSwitch{}, nil
 }
 
 func (a *ambiguousSoloModelAligner) count() int {

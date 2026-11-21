@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
 )
@@ -26,6 +27,7 @@ var (
 	_ LiveMarkerScanner    = (*ProviderRegistry)(nil)
 	_ LiveBaselinePreparer = (*ProviderRegistry)(nil)
 	_ VisitorLaneProvider  = (*ProviderRegistry)(nil)
+	_ SessionTurnSteerer   = (*ProviderRegistry)(nil)
 )
 
 // ProviderRegistry routes agent/react execution to the ExecProvider matching
@@ -257,6 +259,21 @@ func (r *ProviderRegistry) CancelSessionTurn(runID, nodeID string) {
 			cp.CancelSessionTurn(runID, nodeID)
 		}
 	}
+}
+
+// SteerSessionTurn asks every backend that can steer; the one holding the
+// session answers, the others report no turn.
+func (r *ProviderRegistry) SteerSessionTurn(ctx context.Context, runID, nodeID, lane, text string, images []models.PromptImage) (sandbox.SteerStatus, error) {
+	for _, p := range r.providers {
+		sp, ok := p.(SessionTurnSteerer)
+		if !ok {
+			continue
+		}
+		if status, err := sp.SteerSessionTurn(ctx, runID, nodeID, lane, text, images); err != nil || status != sandbox.SteerNoTurn {
+			return status, err
+		}
+	}
+	return sandbox.SteerNoTurn, nil
 }
 
 // VisitorTurn runs a share-link visitor turn on the backend holding the node's

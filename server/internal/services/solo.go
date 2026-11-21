@@ -176,6 +176,13 @@ type soloTurn struct {
 	References []models.MessageReference `json:",omitempty"`
 }
 
+// joinsRunningTurn reports whether the turn is plain input the running turn
+// can take as is. Commands, references and preview picks are rendered and
+// recorded per turn, so they run as a turn of their own.
+func (q *soloTurn) joinsRunningTurn() bool {
+	return q.Command.Name == "" && len(q.References) == 0 && len(q.Annotations) == 0 && !q.PreviewShared
+}
+
 // NewSoloService builds the service. sbx may be nil in tests that only touch
 // persistence.
 func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, projects *ProjectService) *SoloService {

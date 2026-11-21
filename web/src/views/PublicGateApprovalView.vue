@@ -1164,6 +1164,15 @@ async function onQueueRemove(itemId: string | undefined) {
   }
 }
 
+async function onQueueSteer(itemId: string) {
+  try {
+    await publicGateApi.queueSteer(token.value, itemId)
+    await loadPreview({ silent: true })
+  } catch (e) {
+    errorText.value = e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
+  }
+}
+
 async function onQueueReorder(itemIds: string[]) {
   if (!itemIds.length) return
   try {
@@ -1684,6 +1693,7 @@ defineExpose({
                   @finish-abort="onComposerFinishAbort"
                   @cancel="onCancel"
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
+                  @queue-steer="(itemId) => onQueueSteer(itemId)"
                   @queue-reorder="onQueueReorder"
                 >
                   <template #composer-controls="{ compact }">

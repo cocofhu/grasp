@@ -83,6 +83,7 @@ const {
   onClarifyRetryLast,
   onClarifyCancel,
   onClarifyQueueRemove,
+  onClarifyQueueSteer,
   onClarifyQueueReorder,
   onClarifyFinish,
   onClarifyFinishAbort,
@@ -817,6 +818,7 @@ onMounted(() => {
               @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
+              @queue-steer="(itemId) => onClarifyQueueSteer(itemId)"
               @queue-reorder="onClarifyQueueReorder"
             />
             <RunReviewPanel
@@ -841,6 +843,7 @@ onMounted(() => {
               @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
+              @queue-steer="(itemId) => onClarifyQueueSteer(itemId)"
               @queue-reorder="onClarifyQueueReorder"
               @pick="onAppPreviewReviewPick"
               @staged-pick="onAppPreviewStagedPick"

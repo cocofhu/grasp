@@ -64,14 +64,16 @@ func isTransientACPTransportErr(err error) bool {
 		strings.Contains(msg, "ENETUNREACH")
 }
 
-// poisonedResumePhrase is the Cursor CLI failure that sticks to one resumed
-// chat id. A brand-new session in the same sandbox succeeds, so the dialogue
-// can drop that id and continue. It is intentionally not a sandbox-retry
-// signal: RunAgent uses isRetryableSandboxErr and would destroy the container.
-const poisonedResumePhrase = "trouble connecting to the model provider"
+// poisonedResumePhrases are failures that stick to one resumed native
+// session while a brand-new session in the same sandbox succeeds, so the
+// dialogue can drop that session and continue: Cursor CLI's stuck chat id,
+// and Codex history encrypted for another login (after the account changed).
+// They are intentionally not a sandbox-retry signal: RunAgent uses
+// isRetryableSandboxErr and would destroy the container.
+var poisonedResumePhrases = []string{"trouble connecting to the model provider", "invalid_encrypted_content"}
 
 // isPoisonedResumeFailure reports a resume that died before producing any
-// narration or tool call, with Cursor's stuck-session provider error. A turn
+// narration or tool call, with one of poisonedResumePhrases. A turn
 // that already did work is left alone: that can be a one-off upstream blip,
 // and dropping the session would throw away the tool context it just built.
 func isPoisonedResumeFailure(res *sandbox.ChatResult, err error) bool {
@@ -85,7 +87,12 @@ func isPoisonedResumeFailure(res *sandbox.ChatResult, err error) bool {
 	if res != nil {
 		text += "\n" + res.ErrorText
 	}
-	return strings.Contains(text, poisonedResumePhrase)
+	for _, phrase := range poisonedResumePhrases {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // isChatTimeoutErr reports whether err is the per-turn chat deadline (context
@@ -139,6 +146,9 @@ type acpProvider struct {
 	sessions map[string]*reactSession    // runID|nodeID -> live react session
 	visitors map[string]*visitorLane     // runID|nodeID|lane -> share-link visitor chat
 	live     map[string]*sandbox.Sandbox // runID|nodeID -> in-flight sandbox (for live event-log reads)
+	// handoffs marks nodes whose last dialogue handoff has no confirmed
+	// delivery (see handOff). Created on first use.
+	handoffs map[string]bool
 	// inflightACP tracks the ACP client for in-flight agent turns (not parked
 	// in sessions). AbortRun closes these so Cancel-during-agent unblocks
 	// streamChat instead of waiting out the node budget.

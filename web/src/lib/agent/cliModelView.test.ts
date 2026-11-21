@@ -132,7 +132,8 @@ describe('formatting', () => {
 
   it('previews the launch command per backend', () => {
     expect(launchCommand('cursor', 'gpt-5')).toBe('cursor-agent --model gpt-5')
-    expect(launchCommand('codex', 'gpt-5-codex')).toBe('codex exec --model gpt-5-codex')
+    expect(launchCommand('codex', 'gpt-5-codex')).toBe('codex app-server -c model="gpt-5-codex"')
+    expect(launchCommand('codex', '')).toBe('codex app-server')
     expect(launchCommand('claude_code', '')).toBe('claude')
     expect(launchCommand('kimi_code', 'kimi-k3.1-pro')).toBe('kimi acp')
     expect(launchCommand('kimi_code', '')).toBe('kimi acp')

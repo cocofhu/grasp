@@ -61,6 +61,11 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 func (s *session) ReportsUsage() bool                              { return false }
 func (s *session) CumulativeUsage() map[string]provider.TokenUsage { return nil }
 
+// Capabilities: ACP has no mid-turn input; resume depends on the agent.
+func (s *session) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Resume: s.p.CanResume()}
+}
+
 // AgentPIDs are the ACP agent subprocess and its terminals.
 func (s *session) AgentPIDs() []int { return s.p.ProcessPIDs() }
 

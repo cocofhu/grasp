@@ -27,14 +27,6 @@ const (
 	Antigravity     Name = "antigravity"
 	Pi              Name = "pi"
 	DeepSeekHarness Name = "deepseek_harness"
-
-	// *_acp are opt-in fallbacks that force the long-lived JSON-RPC-over-stdio
-	// transport for CLIs whose default here is one-shot stream-json. They are
-	// not built as dedicated images by default; select via AGENT_PROVIDER when a
-	// deployment prefers the stdio path.
-	CursorACP     Name = "cursor_acp"
-	ClaudeCodeACP Name = "claude_code_acp"
-	CodeBuddyACP  Name = "codebuddy_acp"
 )
 
 // TransportKind distinguishes a long-lived session process from a one-shot CLI
@@ -74,6 +66,9 @@ type OpenOptions struct {
 	ResumeSessionID string // one-shot resume pointer; empty for a fresh session
 	CustomArgs      []string
 	AutoPermission  bool
+	// StateDir keeps what a provider needs to continue a native session after
+	// the backend restarts; empty keeps it in memory only.
+	StateDir string
 }
 
 // Model is one entry of a provider's model catalog.

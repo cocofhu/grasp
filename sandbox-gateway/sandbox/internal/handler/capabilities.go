@@ -7,6 +7,7 @@ import (
 
 	"backend/internal/agents"
 	"backend/internal/desktop"
+	"backend/internal/provider"
 	"backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -27,8 +28,10 @@ func BuildCapabilities(bridge *service.Bridge) gin.H {
 	root := agents.ConfigRoot()
 	agent := gin.H{"runtime": agents.RuntimeLabel(b)}
 	tokenUsage := false
+	var caps provider.Capabilities
 	if bridge != nil {
 		if p := bridge.Session(); p != nil {
+			caps = p.Capabilities()
 			info := p.Info()
 			if info.Name != "" {
 				agent["name"] = info.Name
@@ -49,6 +52,10 @@ func BuildCapabilities(bridge *service.Bridge) gin.H {
 			"events": "/api/events",
 			// tokenUsage 反映当前会话是否透出用量；不报用量的后端为 false。
 			"tokenUsage": tokenUsage,
+			// steer: 运行中的回合能否直接接收追加消息（op:steer）；为 false 时平台中断后重发。
+			"steer": caps.Steer,
+			// resume: 重启 Agent 进程（换模型、崩溃）后能否接回同一原生会话，无需平台补发对话记录。
+			"resume": caps.Resume,
 		},
 		"ide": gin.H{
 			"codeServer": true,

@@ -179,6 +179,9 @@ type ACPClient struct {
 	conn      *websocket.Conn
 	sessionID string
 	connected bool
+	// resumed: the last connect continued the agent's native session, so the
+	// agent still holds the conversation. Nil when the bridge did not say.
+	resumed *bool
 
 	eventCh chan json.RawMessage
 	done    chan struct{}
@@ -204,6 +207,12 @@ type ACPClient struct {
 	// flight, plus the local desync flag (cancel never acknowledged).
 	stateMu sync.Mutex
 	bridge  BridgeState
+
+	// steerable mirrors capabilities.steer of the latest connected frame;
+	// steerWaits routes op:steer_ack to the Steer call waiting for it.
+	steerable  atomic.Bool
+	steerMu    sync.Mutex
+	steerWaits map[string]chan steerAck
 }
 
 // NewACPClient builds a client targeting host:port (the published 8765).
@@ -314,6 +323,18 @@ func (c *ACPClient) SessionID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sessionID
+}
+
+// Resumed reports whether the last connect continued the agent's native
+// session instead of starting a new conversation; reported is false for a
+// bridge that predates the field.
+func (c *ACPClient) Resumed() (resumed, reported bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.resumed == nil {
+		return false, false
+	}
+	return *c.resumed, true
 }
 
 func (c *ACPClient) setConnected(sessionID string) {
@@ -481,8 +502,12 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 		select {
 		case raw := <-c.eventCh:
 			op, sessionID := parseOpAndSession(raw)
-			if op == "connected" && sessionID != "" {
+			resumed, snapshot := parseConnected(raw)
+			if op == "connected" && sessionID != "" && !snapshot {
 				c.setConnected(sessionID)
+				c.mu.Lock()
+				c.resumed = resumed
+				c.mu.Unlock()
 				c.lg.Info().Str("session", sessionID).Msg("acp connected")
 				return nil
 			}
@@ -730,6 +755,10 @@ func (c *ACPClient) dispatchEventData(raw json.RawMessage, result *ChatResult) b
 		}
 		return false
 	}
+	if ev.Type == "user_steer" {
+		result.addSteer(envelope.Data)
+		return false
+	}
 	if ev.Type == "session_update" && len(ev.Update) > 0 {
 		kind, flat := normalizeSessionUpdate(ev.Update)
 		dispatchSessionUpdate(kind, flat, result)
@@ -808,7 +837,7 @@ func (c *ACPClient) readLoop(conn *websocket.Conn, done chan struct{}, stop <-ch
 			}
 			return
 		}
-		c.observeQueueState(message)
+		c.observeBridgeFrame(message)
 		c.readerMu.Lock()
 		readersDone := c.readersDone
 		reading := c.readers.Load() > 0
@@ -854,6 +883,17 @@ func parseOpAndSession(raw json.RawMessage) (string, string) {
 	}
 	_ = json.Unmarshal(raw, &m)
 	return m.Op, m.SessionID
+}
+
+// parseConnected reads what a connected frame says about our connect. A
+// snapshot is the state a new socket is shown before its connect runs.
+func parseConnected(raw json.RawMessage) (resumed *bool, snapshot bool) {
+	var m struct {
+		Resumed  *bool `json:"resumed"`
+		Snapshot bool  `json:"snapshot"`
+	}
+	_ = json.Unmarshal(raw, &m)
+	return m.Resumed, m.Snapshot
 }
 
 func parseErrorMessage(raw json.RawMessage) string {

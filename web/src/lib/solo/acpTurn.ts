@@ -1,11 +1,11 @@
-import { contentText, flattenUpdate, normalizeKind } from '@/lib/run/acpUnpack'
+import { contentText, flattenUpdate, normalizeKind, steerText } from '@/lib/run/acpUnpack'
 import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
 import type { ArtifactAttachment, AgentPart, ChatMessageMetadata, ClarifyImage, ReactAnnotation, ReactForm, ReactQuestion } from '@/lib/shared/types'
 import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 
 export type SoloTool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
-/** Arrival order of a reply: text runs, or an index into SoloTurn.tools. */
-export type SoloStep = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
+/** Arrival order of a reply: text runs, steers, or an index into SoloTurn.tools. */
+export type SoloStep = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
 
 export type SoloTurn = ChatMessageMetadata & {
   files?: ArtifactAttachment[]
@@ -119,6 +119,12 @@ export function applyAcp(envelope: any, turn: SoloTurn, label: ToolLabeler, tool
     return
   }
   const ev = envelope?.data ?? envelope
+  if (ev?.type === 'user_steer') {
+    // Each steer is its own user message; never merge it into a neighbour.
+    const text = steerText(ev)
+    if (text) turn.steps.push({ kind: 'steer', text })
+    return
+  }
   if (!ev || ev.type !== 'session_update' || !ev.update) return
   const u = flattenUpdate(ev.update)
   const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')

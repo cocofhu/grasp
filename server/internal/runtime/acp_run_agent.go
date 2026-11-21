@@ -523,6 +523,7 @@ func (c *acpProvider) closeSession(key string) {
 	sess := c.sessions[key]
 	delete(c.sessions, key)
 	delete(c.live, key)
+	delete(c.handoffs, key)
 	runID, nodeID := "", ""
 	if i := strings.IndexByte(key, '|'); i >= 0 {
 		runID, nodeID = key[:i], key[i+1:]

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -46,15 +47,30 @@ func (r *recoveryRegistry) AcquireRunSandbox(context.Context, string) (func(), e
 func (r *recoveryRegistry) ParkRunSandbox(string)                { r.parks++ }
 func (r *recoveryRegistry) BeginRunSandbox(RunSandboxInfo) error { return r.admissionFailure }
 
-func TestReactRestoreKeepsEnvironmentAndOnlyReplaysColdHistory(t *testing.T) {
-	for _, warm := range []bool{false, true} {
-		t.Run(map[bool]string{false: "file", true: "snapshot"}[warm], func(t *testing.T) {
+func TestReactRestoreReplaysUnlessTheAgentKeptItsSession(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		warm, resumes, legacy bool
+		wantPrompts           int
+	}{
+		{name: "cold", wantPrompts: 1},
+		{name: "kept", warm: true, resumes: true},
+		{name: "warm sandbox, new native session", warm: true, wantPrompts: 1},
+		{name: "resumed from file", resumes: true},
+		{name: "legacy bridge, cold", legacy: true, wantPrompts: 1},
+		{name: "legacy bridge, warm", warm: true, legacy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			h := newSharedHarness(t, nil)
 			h.run(t, h.req("n1"))
 			saved := h.p.shared.get(h.runID).sb
-			registry := &recoveryRegistry{sb: saved, warm: warm}
+			registry := &recoveryRegistry{sb: saved, warm: tc.warm}
 			h.p.registry = registry
-			before := h.mgr.bridge(0).promptCount()
+			bridge := h.mgr.bridge(0)
+			bridge.mu.Lock()
+			bridge.resumes, bridge.legacy = tc.resumes, tc.legacy
+			bridge.mu.Unlock()
+			before := bridge.promptCount()
 			sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), []models.ReactMessage{{Role: "human", Text: "keep edited files"}})
 			if err != nil || !found || sess == nil || sess.sb.Name != saved.Name {
 				t.Fatalf("restore=%+v %v %v", sess, found, err)
@@ -63,12 +79,8 @@ func TestReactRestoreKeepsEnvironmentAndOnlyReplaysColdHistory(t *testing.T) {
 			if h.mgr.createCount() != 1 || registry.unregistered != 0 {
 				t.Fatal("restore replaced or destroyed retained environment")
 			}
-			wantPrompts := 1
-			if warm {
-				wantPrompts = 0
-			}
-			if delta := h.mgr.bridge(0).promptCount() - before; delta != wantPrompts {
-				t.Fatalf("replay prompts=%d want=%d", delta, wantPrompts)
+			if delta := bridge.promptCount() - before; delta != tc.wantPrompts {
+				t.Fatalf("replay prompts=%d want=%d", delta, tc.wantPrompts)
 			}
 			if registry.acquired != registry.released || registry.parks != 1 {
 				t.Fatalf("task ownership=%+v", registry)
@@ -149,5 +161,109 @@ func TestWorkflowCapacityRejectsBeforeProvisioning(t *testing.T) {
 	_, _, _, _, err := h.p.openNodeSandbox(context.Background(), h.req("n1"))
 	if err == nil || h.mgr.createCount() != 0 {
 		t.Fatalf("capacity rejection created workload: %v", err)
+	}
+}
+
+func TestReactRestoreOpensFreshSessionAfterUnconfirmedHandoff(t *testing.T) {
+	var failing atomic.Bool
+	h := newSharedHarness(t, func(int) chatFunc {
+		return func(int) turnAction {
+			if failing.Load() {
+				return turnAction{errorText: "upstream reset", failed: true}
+			}
+			return turnAction{narration: "ok"}
+		}
+	})
+	h.run(t, h.req("n1"))
+	h.p.registry = &recoveryRegistry{sb: h.p.shared.get(h.runID).sb}
+	bridge := h.mgr.bridge(0)
+	history := []models.ReactMessage{{Role: "human", Text: "keep edited files"}}
+	key := reactKey(h.req("n1"))
+
+	failing.Store(true)
+	if sess, _, _ := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history); sess != nil {
+		sess.acp.Close()
+	}
+	failing.Store(false)
+	if !h.p.handoffUnconfirmed(key) {
+		t.Fatal("a failed handoff turn was treated as delivered")
+	}
+	bridge.mu.Lock()
+	bridge.resumes = true
+	bridge.mu.Unlock()
+	before := bridge.promptCount()
+	sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history)
+	if err != nil || !found || sess == nil {
+		t.Fatalf("restore=%+v %v %v", sess, found, err)
+	}
+	defer sess.acp.Close()
+	if bridge.restartCount() != 1 || bridge.promptCount()-before != 1 {
+		t.Fatalf("restarts=%d replays=%d; want a fresh native session with one handoff", bridge.restartCount(), bridge.promptCount()-before)
+	}
+	if h.p.handoffUnconfirmed(key) {
+		t.Fatal("a delivered handoff stayed unconfirmed")
+	}
+	h.p.closeSession(key)
+	if len(h.p.handoffs) != 0 {
+		t.Fatal("closing the node kept its handoff state")
+	}
+}
+
+func TestReactRestoreFailsOnAFailedOrRefusedHandoff(t *testing.T) {
+	for name, fail := range map[string]turnAction{
+		"failed":  {failed: true, errorText: "upstream down"},
+		"refusal": {stopReason: "refusal"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var failing atomic.Bool
+			h := newSharedHarness(t, func(int) chatFunc {
+				return func(int) turnAction {
+					if failing.Load() {
+						return fail
+					}
+					return turnAction{narration: "ok"}
+				}
+			})
+			h.run(t, h.req("n1"))
+			h.p.registry = &recoveryRegistry{sb: h.p.shared.get(h.runID).sb}
+			failing.Store(true)
+			sess, _, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), []models.ReactMessage{{Role: "human", Text: "go on"}})
+			if sess != nil {
+				sess.acp.Close()
+			}
+			if err == nil || sess != nil {
+				t.Fatalf("restore=%+v %v; a %s handoff restored the session", sess, err, name)
+			}
+			if !h.p.handoffUnconfirmed(reactKey(h.req("n1"))) {
+				t.Fatalf("a %s handoff was treated as delivered", name)
+			}
+		})
+	}
+}
+
+func TestReactRestoreKeepsACancelledHandoffUnconfirmed(t *testing.T) {
+	var cancelling atomic.Bool
+	h := newSharedHarness(t, func(int) chatFunc {
+		return func(int) turnAction {
+			if cancelling.Load() {
+				return turnAction{stopReason: "cancelled"}
+			}
+			return turnAction{narration: "ok"}
+		}
+	})
+	h.run(t, h.req("n1"))
+	h.p.registry = &recoveryRegistry{sb: h.p.shared.get(h.runID).sb}
+	history := []models.ReactMessage{{Role: "human", Text: "keep edited files"}}
+
+	cancelling.Store(true)
+	sess, found, err := h.p.restoreReactEnvironment(context.Background(), h.req("n1"), history)
+	if sess != nil {
+		sess.acp.Close()
+	}
+	if !errors.Is(err, errHandoffInterrupted) || !found || sess != nil {
+		t.Fatalf("restore=%+v %v %v; want a retryable interrupted handoff", sess, found, err)
+	}
+	if !h.p.handoffUnconfirmed(reactKey(h.req("n1"))) {
+		t.Fatal("a cancelled handoff was treated as delivered")
 	}
 }

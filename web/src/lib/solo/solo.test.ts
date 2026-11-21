@@ -32,6 +32,22 @@ describe('acpTurn', () => {
     expect(partsOf(turn)[0]!.text).toBe('think more')
   })
 
+  it('keeps each steer as its own step between the reply text', () => {
+    const turn = emptyAgentTurn('live:1', true)
+    applyAcp(chunk('agent_message_chunk', 'a'), turn, label, 'Tool')
+    applyAcp({ op: 'event', data: { type: 'user_steer', text: 'one' } }, turn, label, 'Tool')
+    applyAcp({ data: { type: 'user_steer', text: 'two' } }, turn, label, 'Tool')
+    applyAcp({ data: { type: 'user_steer', text: '  ' } }, turn, label, 'Tool')
+    applyAcp(chunk('agent_message_chunk', 'b'), turn, label, 'Tool')
+    expect(partsOf(turn)).toEqual([
+      { kind: 'message', text: 'a' },
+      { kind: 'steer', text: 'one' },
+      { kind: 'steer', text: 'two' },
+      { kind: 'message', text: 'b' },
+    ])
+    expect(turn.text).toBe('ab')
+  })
+
   it('rebuilds turns from persisted messages, replaying events', () => {
     const messages: SoloMessage[] = [
       { id: 'u1', sessionId: 's', role: 'user', content: 'hi', createdAt: '2026-01-01T00:00:00Z' },

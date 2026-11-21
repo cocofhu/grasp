@@ -1,320 +1,117 @@
 package codex
 
 import (
-	"encoding/json"
-	"strconv"
+	"slices"
 	"strings"
 	"testing"
 
 	"backend/internal/provider"
-	"backend/internal/provider/modelconnection"
-	"backend/internal/provider/oneshot"
 )
 
-// The server's engine (no auto-retry) and web failure banner key on this
-// phrase (server runtime.CodexLoginRepasteMark); copy changes must keep it.
-func TestLoginRepasteKeepsServerMark(t *testing.T) {
-	if !strings.Contains(codexLoginRepaste, "请重新粘贴登录文件") {
-		t.Fatalf("codexLoginRepaste lost the server mark: %q", codexLoginRepaste)
+func TestProviderIdentity(t *testing.T) {
+	p := New()
+	if p.Name() != provider.Codex || p.Runtime() != runtime || p.DefaultConfigRoot() != configRoot || p.Transport() != provider.LongLived {
+		t.Fatalf("identity: %s %s %s %v", p.Name(), p.Runtime(), p.DefaultConfigRoot(), p.Transport())
 	}
 }
 
-func TestModelConnectionAuthFailureDoesNotRequestPlatformLogin(t *testing.T) {
-	t.Setenv("GRASP_MODEL_CONNECTION", `{"connectionId":"selected"}`)
-	got := rewriteCodexAuthError("401 Unauthorized from https://api.openai.com/v1/responses")
-	if strings.Contains(got, "auth.json") || !strings.Contains(got, "模型 API Key") {
-		t.Fatalf("wrong credential advice: %s", got)
-	}
-	env := (codec{}).AuthEnv([]string{"GRASP_MODEL_API_KEY=selected-secret", "OPENAI_API_KEY=old"})
-	if len(env) != 1 || env[0] != "GRASP_MODEL_API_KEY=selected-secret" {
-		t.Fatal("custom provider env_key was stripped")
+func TestAuthEnvDropsPlatformKeys(t *testing.T) {
+	got := New().AuthEnv([]string{"OPENAI_API_KEY=a", "CODEX_API_KEY=b", "ACP_CODEX_API_KEY=c", "HOME=/root", "GRASP_MODEL_API_KEY=d"})
+	if !slices.Equal(got, []string{"HOME=/root", "GRASP_MODEL_API_KEY=d"}) {
+		t.Fatalf("AuthEnv = %v", got)
 	}
 }
 
-func TestParseAgentMessage(t *testing.T) {
-	var c codec
-	pr := c.ParseLine([]byte(`{"msg":{"type":"agent_message","message":"hello"}}`))
-	if len(pr.Msgs) != 1 || pr.Msgs[0].Kind != oneshot.KindText || pr.Msgs[0].Text != "hello" {
-		t.Fatalf("pr=%+v", pr)
-	}
-}
-
-func TestParseSessionAndUsageAndComplete(t *testing.T) {
-	var c codec
-	if sid := c.ParseLine([]byte(`{"msg":{"type":"session_configured","session_id":"S9"}}`)).SessionID; sid != "S9" {
-		t.Fatalf("sid=%q", sid)
-	}
-	u := c.ParseLine([]byte(`{"msg":{"type":"token_count","info":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":2}}}`)).Usage
-	if u["default"].InputTokens != 8 || u["default"].OutputTokens != 4 || u["default"].CacheReadTokens != 2 {
-		t.Fatalf("usage=%+v", u)
-	}
-	if stop := c.ParseLine([]byte(`{"msg":{"type":"task_complete"}}`)).StopReason; stop != "end_turn" {
-		t.Fatalf("stop=%q", stop)
-	}
-}
-
-func TestAuthEnvDropsAPIKey(t *testing.T) {
-	var c codec
-	got := c.AuthEnv([]string{"OPENAI_API_KEY=sk-test", "CODEX_API_KEY=sk-2", "FOO=bar", "ACP_CODEX_API_KEY=sk-3"})
-	if len(got) != 1 || got[0] != "FOO=bar" {
-		t.Fatalf("env=%v", got)
-	}
-}
-
-func TestArgsReasoningEffort(t *testing.T) {
-	var c codec
-	opts := provider.OpenOptions{Model: "gpt-5"}
-
-	t.Setenv(envReasoningEffort, "")
-	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
-		t.Fatalf("unset effort leaked into argv: %s", got)
-	}
-
-	t.Setenv(envReasoningEffort, " high ")
-	got := strings.Join(c.Args(opts, "hi", "S1"), " ")
-	want := "codex exec resume S1 --json --skip-git-repo-check --model gpt-5 -c model_reasoning_effort=high hi"
-	if got != want {
-		t.Fatalf("argv=%q\nwant %q", got, want)
-	}
-
-	t.Setenv(envReasoningEffort, "auto")
-	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
-		t.Fatalf("auto effort leaked into argv: %s", got)
-	}
-	t.Setenv(envReasoningEffort, "high")
-	opts.ReasoningEffortSet = true
-	opts.ReasoningEffort = "ultra"
-	if got := strings.Join(c.Args(opts, "hi", ""), " "); !strings.Contains(got, "model_reasoning_effort=ultra") || strings.Contains(got, "model_reasoning_effort=high") {
-		t.Fatalf("chat effort did not override legacy process default: %s", got)
-	}
-	opts.ReasoningEffort = ""
-	if got := strings.Join(c.Args(opts, "hi", ""), " "); strings.Contains(got, "model_reasoning_effort") {
-		t.Fatalf("explicit tool-default reset fell back to legacy environment: %s", got)
-	}
-}
-
-func TestServiceTierIsAnIndependentSessionSettingAndExplicitStandardOverridesDefaults(t *testing.T) {
-	t.Setenv(envServiceTier, "fast")
-	t.Setenv(envReasoningEffort, "low")
-	c := codec{}
-	opts := provider.OpenOptions{ReasoningEffort: "ultra", ReasoningEffortSet: true, ServiceTier: "fast", ServiceTierSet: true,
-		CustomArgs: []string{"-c", "service_tier=default", "-c", "features.fast_mode=false"}}
-	args := strings.Join(c.Args(opts, "hello", "resume-id"), " ")
-	if !strings.Contains(args, "model_reasoning_effort=ultra") || !strings.HasSuffix(args, "-c features.fast_mode=true -c service_tier=fast hello") {
-		t.Fatalf("fast tier did not override custom defaults independently of effort: %s", args)
-	}
-	opts.ServiceTier = ""
-	args = strings.Join(c.Args(opts, "hello", ""), " ")
-	if !strings.HasSuffix(args, "-c model_reasoning_effort=ultra -c service_tier=default hello") || strings.Contains(args, "service_tier=fast") {
-		t.Fatalf("explicit standard reset inherited Fast or changed effort: %s", args)
-	}
-	opts.ServiceTier = "unknown-tier"
-	if args = strings.Join(c.Args(opts, "hello", ""), " "); !strings.HasSuffix(args, "-c service_tier=default hello") {
-		t.Fatalf("an unmapped tier was not reset to standard: %s", args)
-	}
-	opts = provider.OpenOptions{}
-	if args = strings.Join(c.Args(opts, "hello", ""), " "); !strings.Contains(args, "service_tier=fast") {
-		t.Fatalf("legacy tier environment was ignored: %s", args)
-	}
-	t.Setenv(envServiceTier, "default")
-	if args = strings.Join(c.Args(opts, "hello", ""), " "); !strings.Contains(args, "service_tier=default") {
-		t.Fatalf("legacy explicit standard environment was ignored: %s", args)
-	}
-	t.Setenv(envServiceTier, "")
-	if args = strings.Join(c.Args(opts, "hello", ""), " "); strings.Contains(args, "service_tier") {
-		t.Fatalf("an unset legacy caller changed CLI defaults: %s", args)
-	}
-}
-
-func TestParseThreadEvents(t *testing.T) {
-	var c codec
-	sid := c.ParseLine([]byte(`{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}`))
-	if sid.SessionID != "0199a213-81c0-7800-8aa1-bbab2a035a53" {
-		t.Fatalf("sid=%q", sid.SessionID)
-	}
-	started := c.ParseLine([]byte(`{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","aggregated_output":"","status":"in_progress"}}`))
-	if len(started.Msgs) != 1 || started.Msgs[0].Kind != oneshot.KindToolUse || started.Msgs[0].ToolCallID != "item_1" || started.Msgs[0].ToolTitle != "bash -lc ls" {
-		t.Fatalf("start=%+v", started.Msgs)
-	}
-	done := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"bash -lc ls","aggregated_output":"docs\n","exit_code":0,"status":"completed"}}`))
-	if len(done.Msgs) != 1 || done.Msgs[0].Kind != oneshot.KindToolResult || done.Msgs[0].Text != "docs\n" {
-		t.Fatalf("done=%+v", done.Msgs)
-	}
-	msg := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Repo contains docs."}}`))
-	if len(msg.Msgs) != 1 || msg.Msgs[0].Kind != oneshot.KindText || msg.Msgs[0].Text != "Repo contains docs." {
-		t.Fatalf("msg=%+v", msg.Msgs)
-	}
-	think := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"planning"}}`))
-	if len(think.Msgs) != 1 || think.Msgs[0].Kind != oneshot.KindThinking {
-		t.Fatalf("think=%+v", think.Msgs)
-	}
-	mcp := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_9","type":"mcp_tool_call","server":"github","tool":"search_issues","status":"completed"}}`))
-	if len(mcp.Msgs) != 1 || mcp.Msgs[0].ToolTitle != "github/search_issues" {
-		t.Fatalf("mcp=%+v", mcp.Msgs)
-	}
-	patch := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_4","type":"file_change","changes":[{"path":"a.go","kind":"update"}],"status":"completed"}}`))
-	if len(patch.Msgs) != 2 || patch.Msgs[0].Kind != oneshot.KindToolUse || patch.Msgs[1].Text != "a.go" {
-		t.Fatalf("patch=%+v", patch.Msgs)
-	}
-	usage := c.ParseLine([]byte(`{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122,"reasoning_output_tokens":0}}`))
-	if usage.StopReason != "end_turn" || !usage.UsageIsTotal || usage.Usage["default"].InputTokens != 315 || usage.Usage["default"].CacheReadTokens != 24448 || usage.Usage["default"].OutputTokens != 122 {
-		t.Fatalf("usage=%+v stop=%s", usage.Usage, usage.StopReason)
-	}
-	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"failed to refresh token"}}`))
-	if fail.StopReason != "failed" || len(fail.Msgs) != 1 || fail.Msgs[0].Text != codexLoginRepaste {
-		t.Fatalf("fail=%+v", fail)
-	}
-}
-
-func TestSessionEffortOverridesCustomFlagWithoutChangingLegacyDefaultOrder(t *testing.T) {
-	t.Setenv(envReasoningEffort, "high")
-	var c codec
-	opts := provider.OpenOptions{ReasoningEffortSet: true, ReasoningEffort: "ultra", CustomArgs: []string{"-c", "model_reasoning_effort=low"}}
-	got := strings.Join(c.Args(opts, "hi", ""), " ")
-	if !strings.HasSuffix(got, "-c model_reasoning_effort=low -c model_reasoning_effort=ultra hi") {
-		t.Fatalf("custom flag overrode session choice: %s", got)
-	}
-	opts.ReasoningEffort = ""
-	got = strings.Join(c.Args(opts, "hi", ""), " ")
-	if !strings.HasSuffix(got, "-c model_reasoning_effort=low hi") || strings.Contains(got, "model_reasoning_effort=high") {
-		t.Fatalf("tool default reset changed custom defaults: %s", got)
-	}
-	opts.ReasoningEffortSet = false
-	got = strings.Join(c.Args(opts, "hi", ""), " ")
-	if !strings.HasSuffix(got, "-c model_reasoning_effort=high -c model_reasoning_effort=low hi") {
-		t.Fatalf("legacy default precedence changed: %s", got)
-	}
-}
-
-func TestParseCapturedUnauthenticatedExec(t *testing.T) {
-	// Captured from codex-cli 0.160.1: `codex exec --json --skip-git-repo-check`
-	// with no ChatGPT login. The CLI emits thread.started, then 401s against
-	// api.openai.com, and ends with turn.failed. Request ids are omitted.
-	t.Setenv(modelconnection.EnvConfig, "")
-	var c codec
-	lines := []string{
-		`{"type":"thread.started","thread_id":"01a111df-5174-7100-b248-f5a9d4076a15"}`,
-		`{"type":"turn.started"}`,
-		`{"type":"error","message":"Reconnecting... 1/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses)"}`,
-		`{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses"}}`,
-		`{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"}}`,
-	}
-	started := c.ParseLine([]byte(lines[0]))
-	if started.SessionID != "01a111df-5174-7100-b248-f5a9d4076a15" {
-		t.Fatalf("sid=%q", started.SessionID)
-	}
-	if turn := c.ParseLine([]byte(lines[1])); turn.StopReason != "" || len(turn.Msgs) != 0 {
-		t.Fatalf("turn.started=%+v", turn)
-	}
-	for _, line := range lines[2:4] {
-		got := c.ParseLine([]byte(line))
-		if got.StopReason != "" || len(got.Msgs) != 0 {
-			t.Fatalf("transport progress became an authentication failure: %+v", got)
-		}
-	}
-	got := c.ParseLine([]byte(lines[4]))
-	if got.StopReason != "failed" || len(got.Msgs) != 1 || got.Msgs[0].Kind != oneshot.KindError || got.Msgs[0].Text != codexLoginRepaste {
-		t.Fatalf("lost final authentication failure: %+v", got)
-	}
-}
-
-func TestRefreshMentionIsNotLoginFailure(t *testing.T) {
-	var c codec
-	msg := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Rotated the refresh token and kept the session"}}`))
-	if len(msg.Msgs) != 1 || msg.Msgs[0].Kind != oneshot.KindText || msg.Msgs[0].Text != "Rotated the refresh token and kept the session" {
-		t.Fatalf("msg=%+v", msg.Msgs)
-	}
-	tool := c.ParseLine([]byte(`{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"echo","aggregated_output":"codex login refreshed the refresh token","status":"completed"}}`))
-	if len(tool.Msgs) != 1 || strings.Contains(tool.Msgs[0].Text, "请重新粘贴登录文件") {
-		t.Fatalf("tool=%+v", tool.Msgs)
-	}
-	fail := c.ParseLine([]byte(`{"type":"turn.failed","error":{"message":"Rotated the refresh token and kept the session"}}`))
-	if len(fail.Msgs) != 1 || fail.Msgs[0].Text == codexLoginRepaste || strings.Contains(fail.Msgs[0].Text, "请重新粘贴登录文件") {
-		t.Fatalf("success wording must not be rewritten: %+v", fail.Msgs)
-	}
-}
-
-func TestArgsResume(t *testing.T) {
-	var c codec
-	fresh := c.Args(provider.OpenOptions{Model: "gpt-5"}, "hi", "")
-	if fresh[0] != "codex" || fresh[1] != "exec" || fresh[len(fresh)-1] != "hi" {
-		t.Fatalf("fresh=%v", fresh)
-	}
-	res := c.Args(provider.OpenOptions{}, "hi", "S1")
-	if !(res[2] == "resume" && res[3] == "S1") {
-		t.Fatalf("resume args=%v", res)
-	}
-}
-
-func TestCodexLaunchUsesCatalogIDNotRequestText(t *testing.T) {
-	const foreign = "request-body-not-in-catalog"
-	raw, err := json.Marshal(modelconnection.Connection{
-		ConnectionID:    "connection-team-a",
-		ProviderID:      "gateway",
-		Protocol:        modelconnection.Responses,
-		BaseURL:         "https://gateway.example/v1",
-		Auth:            modelconnection.Auth{Scheme: "bearer"},
-		Models:          []modelconnection.Model{{ID: "alpha"}, {ID: "beta"}},
-		SelectedModelID: "alpha",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := []string{modelconnection.EnvConfig + "=" + string(raw), modelconnection.EnvAPIKey + "=selected-secret-12345", "PATH=/usr/bin:/bin"}
-	for _, step := range []struct {
-		requested string
-		model     string
+func TestAppServerArgv(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		opts      provider.OpenOptions
+		env       map[string]string
+		want, not []string
 	}{
-		{requested: "beta", model: "beta"},
-		{requested: foreign, model: "alpha"},
-		{requested: "", model: "alpha"},
-		{requested: "auto", model: "alpha"},
+		{name: "plain", not: []string{"model_reasoning_effort", "service_tier"}},
+		{name: "auto effort", opts: provider.OpenOptions{ReasoningEffort: "auto"}, not: []string{"model_reasoning_effort"}},
+		{name: "env fallback", env: map[string]string{envReasoningEffort: "medium", envServiceTier: "fast"},
+			want: []string{`model_reasoning_effort="medium"`, "features.fast_mode=true"}},
+		{name: "explicit clear beats env", opts: provider.OpenOptions{ReasoningEffortSet: true, ServiceTierSet: true},
+			env:  map[string]string{envReasoningEffort: "medium", envServiceTier: "fast"},
+			want: []string{`service_tier="default"`}, not: []string{"model_reasoning_effort", "fast_mode"}},
+		{name: "unknown tier is standard", opts: provider.OpenOptions{ServiceTier: "turbo"}, want: []string{`service_tier="default"`}},
 	} {
-		prepared, err := modelconnection.Prepare(provider.Codex, env, step.requested, t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(prepared.Cleanup)
-		opts := provider.OpenOptions{Model: prepared.Model, CustomArgs: append([]string(nil), prepared.Args...)}
-		args := (codec{}).Args(opts, "prompt", "")
-		if args[0] != bin {
-			t.Fatalf("program = %q args=%q", args[0], args)
-		}
-		if !hasArgPair(args, "--model", step.model) || !hasArgPair(args, "-c", "model="+strconv.Quote(step.model)) {
-			t.Fatalf("requested %q args=%q", step.requested, args)
-		}
-		for _, arg := range args {
-			if strings.Contains(arg, foreign) {
-				t.Fatalf("request leaked into %q", args)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envReasoningEffort, tc.env[envReasoningEffort])
+			t.Setenv(envServiceTier, tc.env[envServiceTier])
+			argv := strings.Join(appServerArgv("/bin/codex", tc.opts, []string{"-c", "model=\"m\""}), " ")
+			if !strings.HasPrefix(argv, `/bin/codex app-server -c model="m"`) {
+				t.Fatalf("argv = %q", argv)
 			}
-		}
+			for _, w := range tc.want {
+				if !strings.Contains(argv, w) {
+					t.Fatalf("argv %q lacks %q", argv, w)
+				}
+			}
+			for _, n := range tc.not {
+				if strings.Contains(argv, n) {
+					t.Fatalf("argv %q must not contain %q", argv, n)
+				}
+			}
+		})
 	}
 }
 
-func hasArgPair(args []string, flag, value string) bool {
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == flag && args[i+1] == value {
-			return true
-		}
+func TestSandboxMode(t *testing.T) {
+	if sandboxMode(true) != "danger-full-access" || sandboxMode(false) != "workspace-write" {
+		t.Fatal("sandbox mode mapping")
 	}
-	return false
 }
 
-func TestCodexAuthRejectedPlatformRefreshPhrases(t *testing.T) {
+func TestCodexAuthRejected(t *testing.T) {
 	for _, text := range []string{
-		"refresh_token_reused: Your refresh token has already been used",
-		"Your access token could not be refreshed. Please sign in again.",
-		"Token data is not available.",
-		"ChatGPT auth is missing a refresh token",
-		"No more recovery steps available.",
-		"ERROR: Failed to refresh token: 400 Bad Request",
-		"unexpected status 401 Unauthorized: {\"detail\":\"Unauthorized\"}, url: https://chatgpt.com/backend-api/codex/responses",
+		"Not logged in", "refresh_token_reused", "401 Unauthorized at https://chatgpt.com/backend-api/codex",
+		codexLoginRepaste, "请重新粘贴登录文件",
 	} {
 		if !codexAuthRejected(text) {
-			t.Fatalf("not recognized: %q", text)
+			t.Fatalf("%q should be an auth rejection", text)
 		}
 	}
-	if codexAuthRejected("unexpected status 401 Unauthorized, url: https://api.github.com/user") {
-		t.Fatal("a 401 from an unrelated host is not a Codex login refusal")
+	for _, text := range []string{"", "401 Unauthorized at https://example.com", "rate limited"} {
+		if codexAuthRejected(text) {
+			t.Fatalf("%q is not an auth rejection", text)
+		}
+	}
+	if rewriteCodexAuthError("boom") != "boom" {
+		t.Fatal("non-auth errors pass through")
+	}
+}
+
+func TestToolMappingHelpers(t *testing.T) {
+	if toolTitle(threadItem{Type: "dynamicToolCall", Tool: "lookup"}) != "lookup" || toolTitle(threadItem{Type: "imageGeneration"}) != "imageGeneration" {
+		t.Fatal("tool title fallbacks")
+	}
+	if toolStatus("declined") != "failed" || toolStatus("completed") != "completed" {
+		t.Fatal("tool status mapping")
+	}
+	if toolOutput(threadItem{Error: &turnError{Message: "nope"}}) != "nope" {
+		t.Fatal("tool error output")
+	}
+	if planStatus("pending") != "pending" {
+		t.Fatal("plan status passthrough")
+	}
+	if truncate("abcdef", 3) != "abc…" || truncate("ab", 3) != "ab" {
+		t.Fatal("truncate")
+	}
+	if firstNonEmpty(" ", "", "x") != "x" || firstNonEmpty() != "" {
+		t.Fatal("firstNonEmpty")
+	}
+}
+
+func TestConfigFilesFollowCodexHome(t *testing.T) {
+	var _ provider.ConfigReader = (*session)(nil)
+	s := &session{env: []string{"PATH=/bin", "CODEX_HOME=/tmp/conn-home"}}
+	if got := s.ConfigFiles(); len(got) != 2 || got[0] != "/tmp/conn-home/auth.json" || got[1] != "/tmp/conn-home/config.toml" {
+		t.Fatalf("ConfigFiles = %v", got)
+	}
+	if got := (&session{}).ConfigFiles(); got[0] != configRoot+"/auth.json" {
+		t.Fatalf("default ConfigFiles = %v", got)
 	}
 }

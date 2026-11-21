@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -101,6 +102,9 @@ type Panel struct {
 	// Agent 返回的所有 configOptions（含 model / mode / thinking 等）
 	ConfigOptions []ConfigOption
 
+	// reopenMethod 是 Agent 声明的接回旧会话方式：session/resume（不回放历史）优先，其次 session/load。
+	reopenMethod string
+
 	OnEvent func(ev json.RawMessage)
 
 	// PromptUsage 可选：在本轮 session/prompt 返回后、prompt_done 发出前调用，
@@ -110,20 +114,26 @@ type Panel struct {
 	Permissions PermissionChooser
 }
 
-// NewPanel 启动 argv 子进程（ACP JSON-RPC over stdio），再执行 initialize + session/new。
+// PanelSpec describes the agent subprocess and the session a Panel opens.
+type PanelSpec struct {
+	Argv, Env   []string
+	Cwd, FSRoot string
+	// MCPServers is a JSON array (nil or "null" for none).
+	MCPServers  json.RawMessage
+	OnEvent     func(json.RawMessage)
+	Permissions PermissionChooser
+	// ResumeSessionID reopens that session when the agent can (see
+	// CanResume); otherwise, or when the agent rejects it, a new session is
+	// started and Panel.SessionID differs from it.
+	ResumeSessionID string
+}
+
+// NewPanel 启动子进程（ACP JSON-RPC over stdio），再执行 initialize，接回旧会话或 session/new。
 // procCtx 绑定 exec.CommandContext：必须在整段会话期间保持有效，Connect 返回后仍不得取消（否则会 SIGKILL 子进程）。
 // rpcCtx 仅用于握手阶段 Call 的超时/取消（例如 WithTimeout 子 context）。
-// mcpServersJSON should be a JSON array (or "null" / empty for none).
 // Callers may select an advertised model after startup with SetConfigOption.
-func NewPanel(
-	procCtx context.Context,
-	rpcCtx context.Context,
-	argv, procEnv []string,
-	cwd, fsRoot string,
-	mcpServersJSON json.RawMessage,
-	onEvent func(json.RawMessage),
-	perm PermissionChooser,
-) (*Panel, error) {
+func NewPanel(procCtx, rpcCtx context.Context, spec PanelSpec) (*Panel, error) {
+	argv, cwd, fsRoot := spec.Argv, spec.Cwd, spec.FSRoot
 	if fsRoot == "" {
 		fsRoot = cwd
 	}
@@ -137,7 +147,7 @@ func NewPanel(
 	}
 	log.Printf("acp: 路径已规范化 cwd=%q fsRoot=%q", cwd, fsRoot)
 
-	conn, err := StartAgent(procCtx, argv, procEnv)
+	conn, err := StartAgent(procCtx, argv, spec.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -149,8 +159,8 @@ func NewPanel(
 		term:        NewTerminalManager(cwd),
 		CWD:         cwd,
 		FSRoot:      fsRoot,
-		OnEvent:     onEvent,
-		Permissions: perm,
+		OnEvent:     spec.OnEvent,
+		Permissions: spec.Permissions,
 	}
 	conn.SetNotificationHandler(p.onAgentNotification)
 	conn.SetRequestHandler(p.onAgentRequest)
@@ -177,9 +187,14 @@ func NewPanel(
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
 	var initOut struct {
-		ProtocolVersion   int             `json:"protocolVersion"`
-		AgentCapabilities json.RawMessage `json:"agentCapabilities"`
-		AgentInfo         struct {
+		ProtocolVersion   int `json:"protocolVersion"`
+		AgentCapabilities struct {
+			LoadSession         bool `json:"loadSession"`
+			SessionCapabilities struct {
+				Resume json.RawMessage `json:"resume"`
+			} `json:"sessionCapabilities"`
+		} `json:"agentCapabilities"`
+		AgentInfo struct {
 			Name    string `json:"name"`
 			Title   string `json:"title"`
 			Version string `json:"version"`
@@ -192,11 +207,29 @@ func NewPanel(
 	p.AgentName = initOut.AgentInfo.Name
 	p.AgentTitle = initOut.AgentInfo.Title
 	p.AgentVersion = initOut.AgentInfo.Version
-	log.Printf("acp: initialize 完成 agent name=%q version=%q", p.AgentName, p.AgentVersion)
+	switch caps := initOut.AgentCapabilities; {
+	case len(caps.SessionCapabilities.Resume) > 0 && string(caps.SessionCapabilities.Resume) != "null":
+		p.reopenMethod = "session/resume"
+	case caps.LoadSession:
+		p.reopenMethod = "session/load"
+	}
+	log.Printf("acp: initialize 完成 agent name=%q version=%q reopen=%q", p.AgentName, p.AgentVersion, p.reopenMethod)
 
 	mcp := json.RawMessage(`[]`)
-	if len(mcpServersJSON) > 0 && string(mcpServersJSON) != "null" {
-		mcp = mcpServersJSON
+	if len(spec.MCPServers) > 0 && string(spec.MCPServers) != "null" {
+		mcp = spec.MCPServers
+	}
+	if spec.ResumeSessionID != "" && p.CanResume() {
+		err := p.reopenSession(rpcCtx, spec.ResumeSessionID, cwd, mcp)
+		if err == nil {
+			return p, nil
+		}
+		var rpcErr *RPCError
+		if !errors.As(err, &rpcErr) {
+			_ = conn.Close()
+			return nil, err
+		}
+		log.Printf("acp: 接回会话 %q 失败，改开新会话: %v", spec.ResumeSessionID, err)
 	}
 	snParams := map[string]any{
 		"cwd":        cwd,
@@ -227,6 +260,39 @@ func NewPanel(
 	p.parseAndSyncConfigOptions(sn.ConfigOptions)
 
 	return p, nil
+}
+
+// CanResume reports whether the agent can reopen an earlier session.
+func (p *Panel) CanResume() bool { return p.reopenMethod != "" }
+
+// reopenSession attaches to sessionID. session/load replays the conversation
+// as session/update notifications before answering; they are dropped because
+// the panel adopts the session id only after the call returns, and the read
+// loop delivers notifications in order ahead of the response.
+func (p *Panel) reopenSession(ctx context.Context, sessionID, cwd string, mcp json.RawMessage) error {
+	method := p.reopenMethod
+	log.Printf("acp: 等待 JSON-RPC 应答 method=%s sessionId=%q …", method, sessionID)
+	res, err := p.conn.Call(ctx, method, map[string]any{
+		"sessionId":  sessionID,
+		"cwd":        cwd,
+		"mcpServers": mcp,
+	})
+	if err != nil {
+		return fmt.Errorf("%s: %w", method, err)
+	}
+	var out struct {
+		ConfigOptions json.RawMessage `json:"configOptions"`
+	}
+	if len(res) > 0 && string(res) != "null" {
+		if err := json.Unmarshal(res, &out); err != nil {
+			return fmt.Errorf("%s result: %w", method, err)
+		}
+	}
+	p.SessionID = sessionID
+	p.conn.SetLogSID(sessionID)
+	log.Printf("acp: %s 完成 sessionId=%q", method, sessionID)
+	p.parseAndSyncConfigOptions(out.ConfigOptions)
+	return nil
 }
 
 // parseAndSyncConfigOptions 解析 session/new（或 config_option_update）返回的 configOptions，
@@ -636,7 +702,7 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 		"sessionId": p.SessionID,
 		"prompt":    prompt,
 	}
-	res, err := p.conn.Call(ctx, "session/prompt", params)
+	res, err := p.callPrompt(ctx, params)
 	if err != nil {
 		return "", err
 	}
@@ -658,6 +724,38 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 	}
 	p.emit(frame)
 	return out.StopReason, nil
+}
+
+// callPrompt runs session/prompt until the agent answers. Once ctx is
+// cancelled it asks the agent to stop and still waits for that answer, so the
+// next prompt never overlaps a turn that is still running; an agent that has
+// not answered within provider.InterruptGrace is closed.
+func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, error) {
+	type reply struct {
+		raw json.RawMessage
+		err error
+	}
+	answered := make(chan reply, 1)
+	go func() {
+		raw, err := p.conn.Call(context.WithoutCancel(ctx), "session/prompt", params)
+		answered <- reply{raw, err}
+	}()
+	select {
+	case r := <-answered:
+		return r.raw, r.err
+	case <-ctx.Done():
+	}
+	if err := p.Cancel(); err != nil {
+		log.Printf("acp: session %s 取消通知失败: %v", p.SessionID, err)
+	}
+	select {
+	case <-answered:
+	case <-time.After(provider.InterruptGrace):
+		log.Printf("acp: session %s 未在 %s 内响应中断，结束 Agent", p.SessionID, provider.InterruptGrace)
+		_ = p.conn.Close()
+		<-answered
+	}
+	return nil, ctx.Err()
 }
 
 // Cancel sends session/cancel (and $/cancel_request for the in-flight prompt id when applicable).

@@ -316,17 +316,14 @@ type settingsAligner struct {
 	before  func()
 }
 
-func (a *settingsAligner) AlignChatModel(context.Context, uint, string) (bool, error) {
-	return false, errors.New("model-only aligner used for settings")
-}
-func (a *settingsAligner) AlignChatSettings(_ context.Context, _ uint, model, effort string) (bool, error) {
+func (a *settingsAligner) AlignChatSettings(_ context.Context, _ uint, model, effort, _ string) (ChatSwitch, error) {
 	a.mu.Lock()
 	a.choices = append(a.choices, [2]string{model, effort})
 	a.mu.Unlock()
 	if a.before != nil {
 		a.before()
 	}
-	return a.err == nil, a.err
+	return ChatSwitch{Restarted: a.err == nil}, a.err
 }
 func (a *settingsAligner) snapshot() [][2]string {
 	a.mu.Lock()

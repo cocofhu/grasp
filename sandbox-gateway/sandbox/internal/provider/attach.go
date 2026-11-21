@@ -72,12 +72,17 @@ func attachmentKey(ref string, raw []byte) string {
 	return "sha256-" + hex.EncodeToString(sum[:16])
 }
 
-// writeAttachment publishes raw at p via rename so a concurrent reader never
-// sees a partial file.
+// writeAttachment publishes raw at p unless a file is already there.
 func writeAttachment(p string, raw []byte) error {
 	if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 		return nil
 	}
+	return WriteFileAtomic(p, raw)
+}
+
+// WriteFileAtomic writes raw to p via rename, creating p's directory, so a
+// concurrent reader never sees a partial file.
+func WriteFileAtomic(p string, raw []byte) error {
 	dir := filepath.Dir(p)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

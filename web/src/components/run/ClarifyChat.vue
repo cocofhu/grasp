@@ -330,6 +330,7 @@ const emit = defineEmits<{
   (e: 'cancel'): void
   (e: 'takeover'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
+  (e: 'queue-steer', itemId: string, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
 }>()
 
@@ -449,6 +450,7 @@ const {
   queueToast,
   hasComposerDraft,
   cancelQueuedItem,
+  steerQueuedItem,
   reorderQueuedItems,
   editQueuedItem,
 } = chat
@@ -1640,6 +1642,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         :items="queued"
         :notice="queueNotice"
         :toast="queueToast"
+        :steerable="thinking"
+        @steer="steerQueuedItem"
         @cancel="cancelQueuedItem"
         @edit="editQueuedItem"
         @reorder="reorderQueuedItems"

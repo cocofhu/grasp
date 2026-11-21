@@ -128,7 +128,7 @@ func TestDeletedChatRejectsClientsAndConnect(t *testing.T) {
 	if err := m.Delete(a.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Connect(t.TempDir(), "", nil, nil); !errors.Is(err, ErrChatNotFound) {
+	if _, err := a.connect(openSpec{cwd: t.TempDir()}); !errors.Is(err, ErrChatNotFound) {
 		t.Fatalf("connect on deleted chat err = %v", err)
 	}
 	if a.Session() != nil {

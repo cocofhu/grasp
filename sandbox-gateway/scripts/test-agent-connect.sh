@@ -91,19 +91,20 @@ start_mock_chat() {
   log "mock chat model 就绪 port=${mock_port}（容器经 host.docker.internal 访问）"
 }
 
+# Runs between docker create and docker start: the platform ships
+# opencode.json in the config bundle before the backend starts, and the
+# default agent reads it once at launch.
 install_opencode_mock_config() {
   [ -n "$mock_port" ] || die "provider=opencode: mock chat model 未启动"
-  local base="http://host.docker.internal:${mock_port}/v1" cfg
-  cfg="$(mktemp)"
-  node "$mock_chat" --print-opencode-config --base-url "$base" >"$cfg" \
+  local base="http://host.docker.internal:${mock_port}/v1" root
+  root="$(mktemp -d)"
+  mkdir -p "$root/root/.config/opencode"
+  node "$mock_chat" --print-opencode-config --base-url "$base" >"$root/root/.config/opencode/opencode.json" \
     || die "provider=opencode: 生成 opencode.json 失败"
-  docker exec "$name" mkdir -p /root/.config/opencode \
-    || die "provider=opencode: 无法创建 OpenCode 配置目录"
-  docker cp "$cfg" "$name:/root/.config/opencode/opencode.json" \
+  [ -s "$root/root/.config/opencode/opencode.json" ] || die "provider=opencode: opencode.json 为空"
+  tar -C "$root" --owner=0 --group=0 -cf - root/.config/opencode/opencode.json | docker cp - "$name:/" \
     || die "provider=opencode: 无法写入 opencode.json"
-  rm -f "$cfg"
-  docker exec "$name" test -s /root/.config/opencode/opencode.json \
-    || die "provider=opencode: opencode.json 为空"
+  rm -rf "$root"
   log "provider=opencode: GRASP_OPENCODE_BASE_URL=${base}（custom / OpenAI 兼容适配器）"
 }
 
@@ -155,8 +156,12 @@ check_provider() {
     # condition below must still read the caller's unmodified environment.
     env+=(-e "DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-ci-e2e-handshake-only}")
   fi
-  docker run -d --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" "${env[@]}" \
+  docker create --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" "${env[@]}" \
     -p 127.0.0.1::8765 -p 127.0.0.1::8744 "$image" >/dev/null
+  if [ "$provider" = opencode ]; then
+    install_opencode_mock_config
+  fi
+  docker start "$name" >/dev/null
 
   local api="" ide="" deadline=$((SECONDS + ready_timeout))
   until [ -n "$api" ] && curl -fsS "http://127.0.0.1:$api/api/capabilities" -o /tmp/agent-e2e-caps.json 2>/dev/null; do
@@ -198,10 +203,6 @@ check_provider() {
   if [ -n "$probe" ]; then
     docker exec "$name" bash -lc "$probe" >/dev/null 2>&1 || die "provider=$provider: \`$probe\` 执行失败"
     log "provider=$provider: \`$probe\` 正常"
-  fi
-
-  if [ "$provider" = opencode ]; then
-    install_opencode_mock_config
   fi
 
   if [ "$provider" = trae ] && [ -z "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then

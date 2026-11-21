@@ -19,7 +19,7 @@ var versionChecks sync.Map
 // CheckVersion refuses adapters whose CLI cannot enforce their managed routing.
 // OpenCode calls this gate only for its isolated official platform mode.
 func CheckVersion(ctx context.Context, tool provider.Name, binary string, env []string) error {
-	if tool != provider.ClaudeCode && tool != provider.ClaudeCodeACP && tool != provider.OpenCode {
+	if tool != provider.ClaudeCode && tool != provider.OpenCode {
 		return nil
 	}
 	minimum := "Claude Code >=2.1.257"

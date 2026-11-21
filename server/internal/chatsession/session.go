@@ -96,6 +96,10 @@ type Config[T any] struct {
 	// CancelTurn asks the runtime to stop its turn (e.g. ACP cancel). Cancel
 	// calls it even with no active item, to stop a turn started elsewhere.
 	CancelTurn func()
+	// SteerTurn (optional) offers a pending item to the active turn (Steer).
+	// It runs under the transition gate, so it must be bounded; without it
+	// every steer interrupts the active turn.
+	SteerTurn func(ctx context.Context, active, item T) SteerResult
 	// ErrorExtra (optional) adds fields to the error frame for a failed turn,
 	// e.g. a machine-readable code. Its keys override message/interrupted.
 	ErrorExtra func(err error) map[string]any
@@ -261,13 +265,7 @@ func (s *Session[T]) Remove(id string) error {
 		s.mu.Unlock()
 		return errors.New("cannot remove active item")
 	}
-	idx := -1
-	for i, it := range s.queue {
-		if s.cfg.View(it).ID == id {
-			idx = i
-			break
-		}
-	}
+	idx := s.indexLocked(id)
 	if idx < 0 {
 		s.mu.Unlock()
 		return ErrNotFound

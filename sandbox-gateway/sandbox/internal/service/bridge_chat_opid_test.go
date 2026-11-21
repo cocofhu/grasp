@@ -111,12 +111,20 @@ func dataType(f wsFrame) string {
 	return d.Type
 }
 
+// waitIdle waits until no turn runs and none is queued. The queue is read
+// first: the pump holds turnMu from popping a prompt until its turn is active.
 func waitIdle(t *testing.T, b *Bridge) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
-	for b.activeOpID() != "" {
+	for {
+		b.queueMu.Lock()
+		queued := len(b.promptQueue)
+		b.queueMu.Unlock()
+		if queued == 0 && b.activeOpID() == "" {
+			return
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("turn %q never ended", b.activeOpID())
+			t.Fatalf("still busy: turn %q, %d queued", b.activeOpID(), queued)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

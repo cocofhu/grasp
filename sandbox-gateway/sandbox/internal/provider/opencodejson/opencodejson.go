@@ -58,11 +58,6 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	if d.c.ResumeFlag != "" && resumeID != "" {
 		args = append(args, d.c.ResumeFlag, resumeID)
 	}
-	if d.c.AgentName == provider.OpenCode {
-		// Grasp owns the displayed conversation title. Supplying a native
-		// title avoids OpenCode's separate, unreported title-generation call.
-		args = append(args, "--title", "Grasp")
-	}
 	args = append(args, opts.CustomArgs...)
 	args = append(args, prompt) // positional prompt, last
 	return args
@@ -73,7 +68,9 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 type tokens struct {
 	Input  int64 `json:"input"`
 	Output int64 `json:"output"`
-	Cache  *struct {
+	// Reasoning is billed as output but not included in Output.
+	Reasoning int64 `json:"reasoning"`
+	Cache     *struct {
 		Read  int64 `json:"read"`
 		Write int64 `json:"write"`
 	} `json:"cache"`
@@ -155,7 +152,7 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		}
 	case "step_finish":
 		if t := ev.Part.Tokens; t != nil {
-			u := provider.TokenUsage{InputTokens: t.Input, OutputTokens: t.Output}
+			u := provider.TokenUsage{InputTokens: t.Input, OutputTokens: t.Output + t.Reasoning}
 			if t.Cache != nil {
 				u.CacheReadTokens = t.Cache.Read
 				u.CacheWriteTokens = t.Cache.Write

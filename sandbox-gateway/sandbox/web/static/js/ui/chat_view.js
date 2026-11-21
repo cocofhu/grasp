@@ -1353,6 +1353,11 @@ export class ChatView {
             } else if (u.type === 'error_text') {
                 /* 错误正文（模型不存在 / 鉴权失败等）走兜底分支只会留下一张空卡片，必须原样展示。 */
                 this.appendMetaInAssistantTurn('error', String(u.text || '') || '事件 · error_text');
+            } else if (u.type === 'user_steer') {
+                const parts = [String(u.text || '').trim()];
+                if (u.fileNames && u.fileNames.length) parts.push(`[附件] ${u.fileNames.join('、')}`);
+                if (u.imageURLs && u.imageURLs.length) parts.push(`图片 ×${u.imageURLs.length}`);
+                this.appendMetaInAssistantTurn('notice', `引导 · ${parts.filter(Boolean).join(' ')}`);
             } else {
                 this.appendMetaInAssistantTurn('notice', `事件 · ${u.type || 'unknown'}`);
             }

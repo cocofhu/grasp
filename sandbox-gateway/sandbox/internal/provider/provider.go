@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrTurnTimeout is the cancel cause the bridge watchdog attaches to a turn ctx
@@ -25,6 +26,18 @@ var ErrTurnRecover = errors.New("turn recover")
 // same tool call. It wraps ErrTurnTimeout so transports treat it the same way
 // apart from the stop reason.
 var ErrTurnStuck = fmt.Errorf("%w: agent stuck", ErrTurnTimeout)
+
+// InterruptGrace bounds how long a cancelled turn may take to stop. A
+// long-lived transport whose agent ignores the interrupt closes the process;
+// the bridge then revives it on the native session like a crash. Prompt
+// therefore returns only once the agent has stopped. A var so tests can
+// shrink it.
+var InterruptGrace = 15 * time.Second
+
+// SteerTimeout bounds one native steer. The platform waits longer for the
+// bridge's answer, so a slow delivery that succeeds is never taken for a
+// failed one and run a second time.
+const SteerTimeout = 20 * time.Second
 
 // StopReasonTimeout is the prompt_done stopReason for a turn that ran past
 // its deadline; StopReasonStuck for one stopped as stuck.
@@ -109,6 +122,11 @@ type Session interface {
 	// connected payload). nil when usage is not reported.
 	CumulativeUsage() map[string]TokenUsage
 
+	// Capabilities is what this live session supports. It comes from the
+	// session rather than the provider because some agents only settle it
+	// during the handshake.
+	Capabilities() Capabilities
+
 	Cancel() error // cancel the in-flight turn
 	Close() error  // end the session (restart / reconnect)
 
@@ -116,4 +134,41 @@ type Session interface {
 	Done() <-chan struct{}
 	// ExitInfo reaps the session and returns the operator-facing exit banner.
 	ExitInfo() (exitMsg string, err error)
+}
+
+// SessionPending is the SessionID of a session whose agent has not reported
+// its native session yet (a one-shot CLI before its first turn).
+const SessionPending = "oneshot-pending"
+
+// ErrNoActiveTurn is returned by Steer when no turn is running, or the
+// running turn has already reported its result.
+var ErrNoActiveTurn = errors.New("no active turn")
+
+// Capabilities drives the bridge's policy for a session. Only fields the
+// bridge acts on belong here.
+type Capabilities struct {
+	// Steer means the session implements Steerer: input sent while a turn is
+	// running joins that turn. Without it the platform cancels the turn and
+	// runs the input as the next one.
+	Steer bool
+	// Resume means opening with OpenOptions.ResumeSessionID set to this
+	// session's SessionID continues the same native conversation, so the
+	// bridge may replace the process without losing context.
+	Resume bool
+}
+
+// ConfigReader is implemented by sessions whose process reads credentials or
+// settings from files only when it starts. Once any of them changes, the
+// bridge replaces the process before the next turn, resuming the native
+// session, so a renewed login or edited config takes effect.
+type ConfigReader interface {
+	ConfigFiles() []string
+}
+
+// Steerer delivers input into the running turn of a session whose
+// Capabilities report Steer.
+type Steerer interface {
+	// Steer delivers text to the running turn. Attachments must already be
+	// materialized and referenced in text.
+	Steer(text string) error
 }

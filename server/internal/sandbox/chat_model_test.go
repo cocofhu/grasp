@@ -35,7 +35,7 @@ func TestChatModelGetAndSet(t *testing.T) {
 			posted = body.Model
 			selected = body.Model
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"selected":"` + body.Model + `"}`))
+			_, _ = w.Write([]byte(`{"selected":"` + body.Model + `","resumed":` + strconv.FormatBool(body.Model == "aux-2") + `}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -43,19 +43,25 @@ func TestChatModelGetAndSet(t *testing.T) {
 	defer srv.Close()
 	host, port := splitTestHost(t, srv.URL)
 
-	got, err := GetChatModel(context.Background(), host, port, "secret")
-	if err != nil || got != "aux" {
-		t.Fatalf("get: %q %v", got, err)
+	got, err := GetChatModelSettings(context.Background(), host, port, "secret")
+	if err != nil || got.Selected != "aux" {
+		t.Fatalf("get: %q %v", got.Selected, err)
 	}
-	if err := SetChatModel(context.Background(), host, port, "secret", "aux-2"); err != nil {
-		t.Fatal(err)
+	if resumed, err := SetChatModel(context.Background(), host, port, "secret", "aux-2"); err != nil || !resumed {
+		t.Fatalf("set: resumed=%v err=%v", resumed, err)
+	}
+	if resumed, err := SetChatModel(context.Background(), host, port, "secret", "aux-3"); err != nil || resumed {
+		t.Fatalf("a fresh conversation reported resumed=%v err=%v", resumed, err)
+	}
+	if resumed, err := SetChatModel(context.Background(), host, port, "secret", "aux-2"); err != nil || !resumed {
+		t.Fatalf("set back: resumed=%v err=%v", resumed, err)
 	}
 	if posted != "aux-2" {
 		t.Fatalf("posted %q", posted)
 	}
-	got, err = GetChatModel(context.Background(), host, port, "secret")
-	if err != nil || got != "aux-2" {
-		t.Fatalf("get after set: %q %v", got, err)
+	got, err = GetChatModelSettings(context.Background(), host, port, "secret")
+	if err != nil || got.Selected != "aux-2" {
+		t.Fatalf("get after set: %q %v", got.Selected, err)
 	}
 }
 
@@ -71,7 +77,7 @@ func TestSetChatModelRejects(t *testing.T) {
 	}))
 	defer srv.Close()
 	host, port := splitTestHost(t, srv.URL)
-	err := SetChatModel(context.Background(), host, port, "secret", "nope")
+	_, err := SetChatModel(context.Background(), host, port, "secret", "nope")
 	if err == nil || !strings.Contains(err.Error(), "不在当前配置中") {
 		t.Fatalf("err = %v", err)
 	}

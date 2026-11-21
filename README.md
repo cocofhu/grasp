@@ -57,7 +57,7 @@ Coding-agent CLIs do the work: **Cursor, Claude Code, Codex, CodeBuddy, Trae, Op
 | --- | --- | --- |
 | Best for | Repeatable delivery with fixed stages, tests and sign-off | Exploring, debugging, one-off changes |
 | How it runs | The FSM engine walks agent, branch and human-gate nodes along explicit `success` / `failure` / `rollback` edges; the nodes of a run share one sandbox | One agent in its own sandbox with an IDE, terminal and browser; idle sandboxes are saved and resumed on your next message |
-| You stay in control by | Answering clarification cards, approving at gates or sending work back, sharing a one-time review link with people who have no account | Answering the agent's question cards and steering the chat |
+| You stay in control by | Answering clarification cards, approving at gates or sending work back, sharing a one-time review link with people who have no account | Answering the agent's question cards; steering a queued message into the running turn (Codex, Claude Code, CodeBuddy, OpenCode and Pi take it in place; other agents stop the turn and pick it up next) |
 | Delivers | Spec, plan, page mock, test results, review and a PR / MR | Code changes, artifacts and previews in the side panel |
 
 Both modes share the same agents, credentials, artifact panel and token accounting.

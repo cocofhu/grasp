@@ -65,18 +65,18 @@ export function sameParts(a: AgentPart[] | undefined, b: AgentPart[] | undefined
 
 type TimelineBlock =
   | { kind: 'tools'; tools: AgentTool[]; key: string; last: boolean }
-  | { kind: 'thought' | 'message'; text: string; key: string; last: boolean; index: number }
+  | { kind: 'thought' | 'message' | 'steer'; text: string; key: string; last: boolean; index: number }
 
 /**
- * A settled reply folds when it has process: a thought, a tool group, or more
- * than one message. A single message stays bare. Thought hiding does not
+ * A settled reply folds when it has process: a thought, a tool group, a steer,
+ * or more than one message. A single message stays bare. Thought hiding does not
  * remove the fold; the caller omits thought text while rendering.
  */
 export function timelineFolds(parts: readonly AgentPart[] | undefined): boolean {
   const blocks = timelineBlocks(parts)
   let messages = 0
   for (const b of blocks) {
-    if (b.kind === 'thought' || b.kind === 'tools') return true
+    if (b.kind === 'thought' || b.kind === 'tools' || b.kind === 'steer') return true
     if (b.kind === 'message') messages++
   }
   return messages > 1
@@ -101,7 +101,7 @@ export function timelineBlocks(parts: readonly AgentPart[] | undefined): Timelin
       if (p.durationMs) tool.durationMs = p.durationMs
       if (prev?.kind === 'tools') prev.tools.push(tool)
       else out.push({ kind: 'tools', tools: [tool], key: `g${index}`, last: false })
-    } else if ((p.kind === 'thought' || p.kind === 'message') && p.text?.trim()) {
+    } else if ((p.kind === 'thought' || p.kind === 'message' || p.kind === 'steer') && p.text?.trim()) {
       out.push({ kind: p.kind, text: p.text, key: `${p.kind[0]}${index}`, last: false, index })
     }
   })

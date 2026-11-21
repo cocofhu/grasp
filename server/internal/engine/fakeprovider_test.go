@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 // fakeProvider is a deterministic test double for runtime.ExecProvider used
@@ -176,6 +177,9 @@ type fakeProvider struct {
 	// reviseHold (test-only): when non-nil, ReviseInPlace blocks until the
 	// channel is closed (simulates a long in-flight turn for Cancel/ready tests).
 	reviseHold <-chan struct{}
+	// steerStatus (test-only): SteerSessionTurn's answer, recorded in steered.
+	steerStatus sandbox.SteerStatus
+	steered     []string
 	// reviseHook (test-only): called with the human prompt on every
 	// ReviseInPlace, e.g. to simulate the agent calling live_update.
 	reviseHook func(req runtime.NodeReq, human string)

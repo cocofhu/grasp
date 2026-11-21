@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -284,7 +285,13 @@ func conversationMessage(row models.SoloMessage) mcp.ConversationHistoryMessage 
 		images[i].Data = ""
 	}
 	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status, Files: row.Files,
-		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events)}
+		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events), Steers: soloSteerTexts(row.Events)}
+}
+
+// soloSteerTexts is the input a reply's turn took mid-flight. A joined steer
+// has no message row of its own; the reply's frames are its only record.
+func soloSteerTexts(events []json.RawMessage) []string {
+	return models.SteerTexts(models.PartsForReply(sandbox.AggregateFrames(events), ""))
 }
 
 func soloHistoryContent(row models.SoloMessage) string {
@@ -490,6 +497,9 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 		role := "用户"
 		if row.Role == "assistant" {
 			role = "助手"
+			for _, steer := range soloSteerTexts(row.Events) {
+				fmt.Fprintf(&part, "[用户·回合中补充] %s\n", historyExcerpt(steer, 2000, ownHistoryTool))
+			}
 		}
 		fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
 		for _, image := range row.Images {

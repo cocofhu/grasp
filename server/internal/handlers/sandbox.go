@@ -15,10 +15,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -285,6 +287,17 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		<-writeDone
 	}()
 
+	// steer runs beside the read loop: it waits for the native delivery, and
+	// a cancel on this socket must not wait behind it. A missing item already
+	// ran or was removed: nothing left to steer.
+	steer := func(itemID string) {
+		go func() {
+			if _, err := h.SbxChats.Steer(id, itemID); err != nil && !errors.Is(err, chatsession.ErrNotFound) {
+				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
+			}
+		}()
+	}
+
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -295,6 +308,8 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 			ID      string               `json:"id"`
 			Content string               `json:"content"`
 			Images  []models.PromptImage `json:"images"`
+			// Steer asks for the turn to be handled now (SandboxChats.Steer).
+			Steer bool `json:"steer"`
 		}
 		if json.Unmarshal(data, &m) != nil {
 			continue
@@ -302,13 +317,23 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		switch m.Type {
 		case "cancel":
 			h.SbxChats.Cancel(id)
+		case "steer":
+			steer(strings.TrimSpace(m.ID))
 		case "chat", "":
 			if m.Content == "" && len(m.Images) == 0 {
 				continue
 			}
 			h.Sbx.TouchActivity(id)
-			if _, err := h.SbxChats.Enqueue(id, services.SandboxChatItem{ID: strings.TrimSpace(m.ID), Content: m.Content, Images: m.Images}); err != nil {
+			itemID := strings.TrimSpace(m.ID)
+			if itemID == "" {
+				itemID = uuid.NewString()
+			}
+			if _, err := h.SbxChats.Enqueue(id, services.SandboxChatItem{ID: itemID, Content: m.Content, Images: m.Images}); err != nil {
 				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
+				continue
+			}
+			if m.Steer {
+				steer(itemID)
 			}
 		}
 	}

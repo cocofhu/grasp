@@ -35,6 +35,7 @@ func TestSanitizeLiveEventsTimelineDropsToolDetails(t *testing.T) {
 	ev := SanitizeLiveEvents([]models.AcpEvent{{Kind: models.AcpKindTimeline, Parts: []models.AcpPart{
 		{Kind: "thought", Text: "想一下"},
 		{Kind: "tool", Title: "Shell curl http://10.0.0.1", Status: "completed", Summary: "curl http://10.0.0.1", Input: "{}", Output: "secret body"},
+		{Kind: models.AcpPartSteer, Text: "顺便改标题"},
 		{Kind: "message", Text: "好了"},
 		{Kind: "message", Text: "  "},
 		{Kind: "weird", Text: "x"},
@@ -42,7 +43,7 @@ func TestSanitizeLiveEventsTimelineDropsToolDetails(t *testing.T) {
 	if len(ev) != 1 || ev[0].Kind != models.AcpKindTimeline {
 		t.Fatalf("events: %+v", ev)
 	}
-	want := []models.AcpPart{{Kind: "thought", Text: "想一下"}, {Kind: "tool", Title: "Shell", Status: "completed"}, {Kind: "message", Text: "好了"}}
+	want := []models.AcpPart{{Kind: "thought", Text: "想一下"}, {Kind: "tool", Title: "Shell", Status: "completed"}, {Kind: models.AcpPartSteer, Text: "顺便改标题"}, {Kind: "message", Text: "好了"}}
 	if len(ev[0].Parts) != len(want) {
 		t.Fatalf("parts: %+v", ev[0].Parts)
 	}

@@ -1578,7 +1578,8 @@ func TestAlignChatModelDoesNotRestartWhenUnread(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	changed, err := svc.AlignChatModel(ctx, row.ID, "aux2")
+	sw, err := svc.AlignChatSettings(ctx, row.ID, "aux2", "", "")
+	changed := sw.Restarted
 	if err == nil || !errors.Is(err, ErrChatModelUnknown) {
 		t.Fatalf("unread: changed=%v err=%v", changed, err)
 	}
@@ -1587,7 +1588,8 @@ func TestAlignChatModelDoesNotRestartWhenUnread(t *testing.T) {
 	}
 
 	failGet = false
-	changed, err = svc.AlignChatModel(ctx, row.ID, "aux")
+	sw, err = svc.AlignChatSettings(ctx, row.ID, "aux", "", "")
+	changed = sw.Restarted
 	if err != nil || changed {
 		t.Fatalf("matching model: changed=%v err=%v", changed, err)
 	}
@@ -1595,8 +1597,8 @@ func TestAlignChatModelDoesNotRestartWhenUnread(t *testing.T) {
 		t.Fatalf("matching model posted: %d", posts)
 	}
 
-	changed, err = svc.AlignChatModel(ctx, row.ID, "aux2")
-	if err != nil || !changed || posts != 1 || selected != "aux2" {
+	sw, err = svc.AlignChatSettings(ctx, row.ID, "aux2", "", "")
+	if changed = sw.Restarted; err != nil || !changed || sw.Resumed || posts != 1 || selected != "aux2" {
 		t.Fatalf("switch: changed=%v posts=%d selected=%q err=%v", changed, posts, selected, err)
 	}
 	if gets < 2 {

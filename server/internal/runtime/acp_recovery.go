@@ -96,11 +96,24 @@ func (c *acpProvider) restoreReactEnvironment(ctx context.Context, req NodeReq, 
 	if previous != nil && previous.acp != nil {
 		previous.acp.Close()
 	}
-	if !warm && len(history) > 0 {
+	resumed, reported := acp.Resumed()
+	fresh := !resumed
+	if !reported {
+		fresh = !warm
+	}
+	if !fresh && c.handoffUnconfirmed(key) {
+		// The kept native session may hold part of an earlier handoff;
+		// replaying the dialogue into it would show the agent history twice.
+		if err := acp.RestartAgent(ctx); err != nil {
+			acp.Close()
+			return nil, true, err
+		}
+		fresh = true
+	}
+	if fresh && len(history) > 0 {
 		chatCtx, cancel := c.turnCtx(ctx, req)
-		result, err := c.streamChat(chatCtx, acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), history, sb), req.PromptImages)
+		_, err := c.handOff(chatCtx, acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), history, sb), req.PromptImages)
 		cancel()
-		c.carryChatUsage(key, result)
 		if err != nil {
 			acp.Close()
 			return nil, true, err

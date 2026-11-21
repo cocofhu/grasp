@@ -2,11 +2,10 @@ package modelconnection
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 )
 
@@ -25,7 +24,7 @@ func officialPrepared(t *testing.T, model string) Prepared {
 func configJSON(t *testing.T, p Prepared) map[string]any {
 	t.Helper()
 	var config map[string]any
-	if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
+	if err := json.Unmarshal([]byte(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
 		t.Fatal(err)
 	}
 	return config
@@ -40,10 +39,10 @@ func TestOpenCodeDefaultDoesNotAttachVariant(t *testing.T) {
 	if next.Model != "opencode/gpt-5.5" || strings.Contains(next.Model, "#") {
 		t.Fatalf("default attached a variant: %s", next.Model)
 	}
-	if len(next.Args) != 0 {
-		t.Fatalf("default attached CLI arguments: %v", next.Args)
+	if next.Variant != "" {
+		t.Fatalf("default attached a variant: %q", next.Variant)
 	}
-	raw := common.GetEnvValue(next.Env, "OPENCODE_CONFIG_CONTENT")
+	raw := envutil.Get(next.Env, "OPENCODE_CONFIG_CONTENT")
 	if strings.Contains(raw, "#") || strings.Contains(raw, "variants") {
 		t.Fatalf("default rewrote the request: %s", raw)
 	}
@@ -55,14 +54,14 @@ func TestOpenCodeCatalogVariantIsPassedThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "high"}) {
+	if next.Model != "opencode/gpt-5.5" || next.Variant != "high" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
 	if config["model"] != "opencode/gpt-5.5" || config["small_model"] != "opencode/gpt-5.5" {
 		t.Fatalf("config model: %v / %v", config["model"], config["small_model"])
 	}
-	raw := common.GetEnvValue(next.Env, "OPENCODE_CONFIG_CONTENT")
+	raw := envutil.Get(next.Env, "OPENCODE_CONFIG_CONTENT")
 	if strings.Contains(raw, "variants") || strings.Contains(raw, "reasoningEffort") {
 		t.Fatalf("catalog variant rewrote the protocol body: %s", raw)
 	}
@@ -74,7 +73,7 @@ func TestOpenCodeCustomVariantIsDeclaredForTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Model != "opencode/gpt-5.5" || !reflect.DeepEqual(next.Args, []string{"--variant", "turbo"}) {
+	if next.Model != "opencode/gpt-5.5" || next.Variant != "turbo" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
@@ -95,7 +94,7 @@ func TestOpenCodeGoVariantIsDeclaredOnTheGoProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if passed.Model != "opencode-go/gpt-5.5" || strings.Contains(common.GetEnvValue(passed.Env, "OPENCODE_CONFIG_CONTENT"), "variants") {
+	if passed.Model != "opencode-go/gpt-5.5" || strings.Contains(envutil.Get(passed.Env, "OPENCODE_CONFIG_CONTENT"), "variants") {
 		t.Fatal("catalog variant was declared instead of passed through")
 	}
 	next, err := ApplyOpenCodeVariant(p, "turbo")
@@ -122,14 +121,14 @@ func TestConnectedOpenCodeDeclaresEffortWithoutForcingDefault(t *testing.T) {
 	c.Models = []Model{{ID: "deepseek-v4-flash"}, {ID: "fast/model"}}
 	c.ToolSettings.ModelRoles = map[string]string{"fast": "fast/model"}
 	p := prepare(t, provider.OpenCode, c)
-	if strings.Contains(p.Model, "#") || strings.Contains(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT"), "reasoningEffort") {
+	if strings.Contains(p.Model, "#") || strings.Contains(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT"), "reasoningEffort") {
 		t.Fatal("preparing a connection forced a reasoning effort")
 	}
 	next, err := ApplyOpenCodeVariant(p, "low")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash") || !reflect.DeepEqual(next.Args, []string{"--variant", "low"}) {
+	if !strings.HasSuffix(next.Model, "/deepseek-v4-flash") || next.Variant != "low" {
 		t.Fatalf("model: %s", next.Model)
 	}
 	config := configJSON(t, next)
