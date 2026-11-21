@@ -76,7 +76,8 @@ describe('shared reply information', () => {
 
     await wrapper.setProps({ metadata: { execution: { startedAt: start } } })
     expect(wrapper.get('time').attributes('datetime')).toBe(start)
-    expect(panel()?.querySelector('[data-info-row="started"]')).toBeNull()
+    expect(panel()?.querySelector('[data-info-row="time"]')).toBeNull()
+    expect(panel()?.querySelector('[data-info-row="started"] dd')?.textContent).toBe(at(start).full)
   })
 
   it('distinguishes absent token reports from explicit zeros and can total reported model buckets', async () => {

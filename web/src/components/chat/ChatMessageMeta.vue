@@ -22,12 +22,14 @@ const tipId = `chat-reply-info-${useId().replace(/:/g, '')}`
 let closeTimer: ReturnType<typeof setTimeout> | undefined
 
 const validStamp = (values: (string | undefined)[]) => values.find(value => value && Number.isFinite(Date.parse(value))) || ''
-const stamp = computed(() => validStamp([props.metadata?.endedAt, props.metadata?.createdAt, props.metadata?.at, props.metadata?.execution?.startedAt, props.metadata?.startedAt]))
+const endStamp = computed(() => validStamp([props.metadata?.endedAt, props.metadata?.createdAt, props.metadata?.at]))
 const startStamp = computed(() => validStamp([props.metadata?.execution?.startedAt, props.metadata?.startedAt]))
-const fullTime = computed(() => stamp.value ? fmtTime(stamp.value) : '')
+const stamp = computed(() => endStamp.value || startStamp.value)
+const fullTime = computed(() => endStamp.value ? fmtTime(endStamp.value) : '')
 const startTime = computed(() => {
-  if (!startStamp.value || !stamp.value) return ''
-  const start = new Date(startStamp.value), end = new Date(stamp.value)
+  if (!startStamp.value) return ''
+  if (!endStamp.value) return fmtTime(startStamp.value)
+  const start = new Date(startStamp.value), end = new Date(endStamp.value)
   const long = end.getTime() - start.getTime() >= 3600_000 || start.toDateString() !== end.toDateString()
   return long && end > start ? fmtTime(startStamp.value) : ''
 })
@@ -52,7 +54,7 @@ const duration = computed(() => {
 })
 const rows = computed(() => [
   ...(startTime.value ? [{ key: 'started', label: t('pages.chatMessageInfo.started'), value: startTime.value, mono: true }] : []),
-  { key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value, mono: Boolean(fullTime.value) },
+  ...(fullTime.value || !startTime.value ? [{ key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value, mono: Boolean(fullTime.value) }] : []),
   { key: 'agent', label: 'Agent', value: props.metadata?.execution?.agentName || notReported.value, mono: false },
   { key: 'tool', label: t('pages.chatMessageInfo.tool'), value: tool.value, mono: false },
   { key: 'model', label: t('pages.chatMessageInfo.model'), value: model.value, mono: false },
