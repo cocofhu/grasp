@@ -409,3 +409,17 @@ func TestConfigFiles(t *testing.T) {
 		t.Fatalf("config files %s", got)
 	}
 }
+
+func TestAnInterruptedPromptRequestKeepsTheCancelCause(t *testing.T) {
+	for _, cause := range []error{provider.ErrTurnRecover, provider.ErrTurnTimeout, provider.ErrTurnStuck} {
+		installFake(t)
+		s, rec := open(t, provider.OpenOptions{})
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(cause)
+		res, err := s.Prompt(ctx, "hello", nil)
+		want := provider.InterruptionFor(cause)
+		if !errors.Is(err, cause) || res.StopReason != want.StopReason || (len(rec.ofType("prompt_done")) == 1) != want.Final {
+			t.Fatalf("cause %v: %+v %v", cause, res, err)
+		}
+	}
+}

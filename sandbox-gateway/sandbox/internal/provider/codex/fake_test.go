@@ -35,8 +35,14 @@ type fakeServer struct {
 	mode   string
 	n      int
 	// childReads counts thread/read calls for the "spawn" subagent, which
-	// stays active for the first two.
-	childReads int
+	// stays active for the first two; a "stubborn" one stays active until its
+	// turn is interrupted.
+	childReads              int
+	childStubborn, childOff bool
+}
+
+func (f *fakeServer) childActive() bool {
+	return !f.childOff && (f.childReads <= 2 || f.childStubborn)
 }
 
 func (f *fakeServer) send(v any) {
@@ -134,7 +140,7 @@ func runFakeAppServer() {
 				if os.Getenv("GRASP_FAKE_CODEX_EXIT_ON_CHILD_READ") == strconv.Itoa(f.childReads) {
 					os.Exit(0)
 				}
-				if f.childReads <= 2 {
+				if f.childActive() {
 					status = "active"
 				}
 			}
@@ -161,7 +167,18 @@ func runFakeAppServer() {
 			reply(map[string]any{"turnId": f.turn})
 			f.item("item/completed", map[string]any{"type": "agentMessage", "id": "steered", "text": "steered: " + text})
 			f.complete("completed", "")
+		case "thread/turns/list":
+			status := "completed"
+			if msg.Params.ThreadID == "child-1" && f.childActive() {
+				status = "inProgress"
+			}
+			reply(map[string]any{"data": []any{map[string]any{"id": msg.Params.ThreadID + "-turn", "status": status}}})
 		case "turn/interrupt":
+			if msg.Params.ThreadID == "child-1" {
+				f.childOff = msg.Params.TurnID == "child-1-turn"
+				reply(map[string]any{})
+				continue
+			}
 			if path := os.Getenv("GRASP_FAKE_CODEX_INTERRUPTS"); path != "" {
 				fh, _ := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				_, _ = fmt.Fprintln(fh, msg.Params.TurnID)
@@ -225,6 +242,7 @@ func (f *fakeServer) play(text string) {
 			"agentThreadId": "child-1", "agentPath": "/root/helper"})
 		f.complete("completed", "")
 	case strings.Contains(text, "spawn"):
+		f.childStubborn = strings.Contains(text, "stubborn")
 		spawn := map[string]any{"type": "collabAgentToolCall", "id": "s1", "tool": "spawnAgent", "senderThreadId": f.thread,
 			"receiverThreadIds": []string{"child-1"}, "status": "completed", "agentsStates": map[string]any{"child-1": map[string]any{"status": "pendingInit"}}}
 		f.item("item/completed", spawn)

@@ -83,6 +83,28 @@ func TestSetChatModelRejects(t *testing.T) {
 	}
 }
 
+func TestSetChatModelReadsTheAnswer(t *testing.T) {
+	var answer string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/login" {
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-cookie", Path: "/"})
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(answer))
+	}))
+	defer srv.Close()
+	host, port := splitTestHost(t, srv.URL)
+	answer = `{"selected":"aux"}`
+	if resumed, err := SetChatModel(context.Background(), host, port, "secret", "aux"); err != nil || resumed {
+		t.Fatalf("a runtime without resume: resumed=%v err=%v", resumed, err)
+	}
+	answer = `{"resumed":tru`
+	if _, err := SetChatModel(context.Background(), host, port, "secret", "aux"); err == nil {
+		t.Fatal("a truncated answer read as a fresh conversation")
+	}
+}
+
 func splitTestHost(t *testing.T, raw string) (string, int) {
 	t.Helper()
 	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(raw, "http://"))

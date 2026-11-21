@@ -80,6 +80,8 @@ func TestFakeOpenCodeProcess(t *testing.T) {
 		RequestLog: os.Getenv("GRASP_FAKE_OPENCODE_LOG"), SessionStore: os.Getenv("GRASP_FAKE_OPENCODE_STORE"),
 		IgnoreAbort: os.Getenv("GRASP_FAKE_OPENCODE_IGNORE_ABORT") != "",
 		SlowStart:   os.Getenv("GRASP_FAKE_OPENCODE_SLOW_START") != "",
+
+		DropPromptReceipt: os.Getenv("GRASP_FAKE_OPENCODE_DROP_RECEIPT") != "",
 	})
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(2)
@@ -448,5 +450,76 @@ func TestServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 	}
 	if updates := rec.updates("tool_call_update"); len(updates) == 0 || updates[len(updates)-1]["status"] != "failed" {
 		t.Fatalf("subagent wait not closed as failed: %v", updates)
+	}
+}
+
+func TestALostPromptReceiptStopsTheRunBeforeTheTurnEnds(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t, "GRASP_FAKE_OPENCODE_DROP_RECEIPT=1")
+	s, _ := f.open(t, "", "", "")
+	if res, err := s.Prompt(promptCtx(t), "hang", nil); err == nil || res.StopReason != "failed" {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+	if self, _, err := s.running(promptCtx(t)); err != nil || self {
+		t.Fatalf("the run the server took is still going: self=%v err=%v", self, err)
+	}
+	if log, _ := os.ReadFile(f.log); !strings.Contains(string(log), "/abort") {
+		t.Fatal("the run was not aborted")
+	}
+}
+
+func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+		cancel()
+	}()
+	if res, err := s.Prompt(ctx, "start a stubborn subagent", nil); !errors.Is(err, context.Canceled) || res.StopReason != "cancelled" {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+	if _, children, err := s.running(promptCtx(t)); err != nil || len(children) != 0 {
+		t.Fatalf("prompt_done sent with subagents running: %v %v", children, err)
+	}
+}
+
+func TestStartupInterruptionsKeepTheirCause(t *testing.T) {
+	for _, cause := range []error{provider.ErrTurnRecover, provider.ErrTurnTimeout, provider.ErrTurnStuck} {
+		f := installFake(t)
+		s, rec := f.open(t, "", "", "")
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(cause)
+		res, err := s.Prompt(ctx, "hello", nil)
+		want := provider.InterruptionFor(cause)
+		if !errors.Is(err, cause) || res.StopReason != want.StopReason || (len(rec.ofType("prompt_done")) == 1) != want.Final {
+			t.Fatalf("cause %v: %+v %v, prompt_done %v", cause, res, err, rec.ofType("prompt_done"))
+		}
+	}
+}
+
+func TestAnEndedTurnKeepsOnlyItsPartIDs(t *testing.T) {
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	for range 2 {
+		if _, err := s.Prompt(promptCtx(t), "hello", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.mu.Lock()
+	n := len(s.parts)
+	for id, st := range s.parts {
+		if st != settledPart {
+			t.Errorf("part %s of an ended turn keeps %q", id, st.emitted)
+		}
+	}
+	s.mu.Unlock()
+	if n == 0 || rec.text("agent_message_chunk") != "hello from opencodehello from opencode" {
+		t.Fatalf("parts=%d reply %q", n, rec.text("agent_message_chunk"))
 	}
 }

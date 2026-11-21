@@ -37,9 +37,15 @@ declare -x BASE_VAR="keep-me"
 declare -x WORKSPACE_DIR="$H/workspace"
 EOF
 
+# Stopping backend lets the previous node's last turn settle, which writes its
+# session pointer.
 cat >"$TMP/services.sh" <<EOF
 #!/bin/bash
 echo "\$*" >>"$TMP/services.log"
+if [ "\$*" = 'stop backend' ]; then
+  mkdir -p "$H/.grasp"
+  printf '{"agent":"cursor","cwd":"/w","session":"settled"}\n' >"$H/.grasp/agent-session.json"
+fi
 EOF
 chmod +x "$TMP/services.sh"
 
@@ -82,7 +88,8 @@ echo "OK: previous node wiped, next node config applied"
 grep -qx GRASP_NODE_ID "$RUN/reprime-keys" || die "keys file missing GRASP_NODE_ID"
 echo "OK: env file replaced"
 
-grep -qx 'restart backend' "$TMP/services.log" || die "backend not restarted"
+[ "$(grep backend "$TMP/services.log" | tr '\n' ,)" = 'stop backend,restart backend,' ] || die "backend not stopped before the wipe and restarted after"
+[ ! -e "$H/.grasp/agent-session.json" ] || die "the previous node's settled turn left its session pointer"
 grep -qx 'stop preview-inject' "$TMP/services.log" || die "preview-inject not stopped"
 echo "OK: services restarted"
 
@@ -265,6 +272,7 @@ HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
   GRASP_REPRIME_SERVICES="$TMP/services.sh" bash "$REPRIME" <"$TMP/unavailable.tgz" >"$TMP/unavailable.log" 2>&1 || rc=$?
 [ "$rc" = 1 ] || die "shared node ignored clone failure (exit=$rc)"
 grep -q 'clone unavailable failed' "$TMP/unavailable.log" || die "missing shared-node clone failure detail"
+[ "$(tail -n 1 "$TMP/services.log")" = 'restart backend' ] || die "a failed reprime left backend stopped"
 echo "OK: shared workflow still clones required repos and fails on unavailable repos"
 
 # Bad bundles are refused before anything changes.

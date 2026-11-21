@@ -145,7 +145,8 @@ func SetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 }
 
 // setChatSettings posts the settings. A runtime that predates native resume
-// omits "resumed", which reads as a fresh conversation.
+// omits "resumed", which reads as a fresh conversation; an unreadable answer
+// is an error, since the agent may have resumed either way.
 func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]any) (bool, error) {
 	body, err := json.Marshal(settings)
 	if err != nil {
@@ -162,7 +163,10 @@ func setChatSettings(ctx context.Context, host string, port int, password, path 
 	}
 	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&info)
 	if resp.StatusCode == http.StatusOK {
-		return decodeErr == nil && info.Resumed, nil
+		if decodeErr != nil {
+			return false, fmt.Errorf("set chat model: unreadable response: %w", decodeErr)
+		}
+		return info.Resumed, nil
 	}
 	if strings.TrimSpace(info.Error) == "" || resp.StatusCode >= http.StatusBadGateway {
 		return false, &ChatHTTPError{StatusCode: resp.StatusCode, op: "set chat model"}

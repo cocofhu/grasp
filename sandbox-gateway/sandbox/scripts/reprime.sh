@@ -2,6 +2,7 @@
 # Re-prime a running sandbox for the next node of a shared-sandbox run: swap the
 # agent env, config home and Git/SSH credentials of the previous node for the
 # next node's, then restart backend (and preview-inject) so they pick it up.
+# backend is stopped before the previous node's state is wiped.
 # Grasp calls it over SSH with a tar.gz on stdin for shared workflow node
 # handoffs or, with --tool-only, user tool switches. startup.sh is not run.
 #
@@ -55,6 +56,13 @@ valid_name() {
 }
 
 # --- previous node -----------------------------------------------------------
+# Stop the previous node's backend before wiping its state: a turn it is still
+# settling would write its session pointer back. From here on, any exit leaves
+# a backend running.
+"$SERVICES" stop backend || exit 1
+backend_handed_over=0
+trap 'rm -rf "$STAGE"; [ "$backend_handed_over" = 1 ] || "$SERVICES" restart backend >/dev/null 2>&1' EXIT
+
 if [ -r "$ENV_FILE" ]; then
   # shellcheck disable=SC1090
   . "$ENV_FILE"
@@ -226,6 +234,7 @@ chmod 700 "$RUN_DIR"
 ) && mv -f "$ENV_FILE.tmp" "$ENV_FILE" || { echo "reprime: write env failed" >&2; exit 1; }
 cp -f "$STAGE/keys" "$KEYS_FILE"
 
+backend_handed_over=1
 "$SERVICES" restart backend || exit 1
 if [ "${PREVIEW_DIRECT:-}" = "1" ] || [ "${PREVIEW_DIRECT:-}" = "true" ]; then
   "$SERVICES" restart preview-inject || echo "reprime: preview-inject restart failed" >&2

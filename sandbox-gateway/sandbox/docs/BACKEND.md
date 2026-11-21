@@ -312,8 +312,8 @@ web/                  # 前端（ESM + 静态资源）
   - 配置变更：`connect` 带来不同的 MCP 列表时重开进程并接回原会话，可见聊天记录保留（不带 MCP 的 connect 沿用现有列表）；会话声明的启动配置文件（`provider.ConfigReader`，`codex` 为 `CODEX_HOME` 下的 `auth.json` 与 `config.toml`，`opencode` 为其配置目录下的 `opencode.json(c)` / `config.json` 与数据目录下的 `auth.json`）有变化时，下一轮开始前重建进程并接回原会话，平台续期的 Codex 设备码登录因此立即生效。凭据环境变量与模型连接由 reprime 重启后端下发，靠上面的会话指针接回；工作流换节点的 reprime 会删除指针，下一个节点总是新对话。
   - 自动重启或重建没能接回原会话（如原会话文件已不在）时，下一轮的 `prompt_done` 带 `sessionReset: true` 与 `previousSessionId`，平台据此补发对话记录，与 one-shot 的 resume 回退一致。
 - **回合终态**：`prompt_done` 表示 Agent 与它派生的子 Agent 都已停下，工作流据此判定节点完成。
-  - `codex`：`turn/completed` 后，若本线程经 `spawnAgent` 派生、按 `collabAgentToolCall.agentsStates` 仍在运行的子 Agent 用 `thread/read` 查到还是 `active`，就等它们停下再发 `prompt_done`，期间显示"等待 N 个子 Agent 完成"；等待中被中断则按中断收尾（子 Agent 不随之停止）。子线程自己的通知不会结束父回合。
-  - `opencode`：会话空闲后，若本会话的子会话（子 Agent）在 `/session/status` 里仍在运行，就等它们停下再发 `prompt_done`，提示与中断语义同 `codex`。
+  - `codex`：`turn/completed` 后，若本线程经 `spawnAgent` 派生、按 `collabAgentToolCall.agentsStates` 仍在运行的子 Agent 用 `thread/read` 查到还是 `active`，就等它们停下再发 `prompt_done`，期间显示"等待 N 个子 Agent 完成"。回合被中断时，先用 `thread/turns/list` 取各子线程进行中的回合并 `turn/interrupt`，确认都停下后才发 `prompt_done`；`InterruptGrace` 内确认不了就结束 app-server，由 Bridge 复活。子线程自己的通知不会结束父回合。
+  - `opencode`：会话空闲后，若本会话的子会话（子 Agent）在 `/session/status` 里仍在运行，就等它们停下再发 `prompt_done`，提示与中断语义同 `codex`（逐个 `abort` 本会话与忙碌的子会话并轮询到空闲）。提交回合没收到回执时，同样先中断并确认空闲再结束回合。
   - one-shot：回合以 CLI 进程退出为界，`claude_code` 在 `-p` 下会先等后台任务（上限 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`）。
   - ACP 家族：以 `session/prompt` 的应答为界。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：

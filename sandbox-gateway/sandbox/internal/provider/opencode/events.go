@@ -80,6 +80,10 @@ type partState struct {
 	started bool // tool parts: the tool_call was emitted
 }
 
+// settledPart stands for every part of an ended turn. Only the part's id is
+// kept, so a part the server publishes again is not forwarded twice.
+var settledPart = &partState{}
+
 // onEvent handles one event of the server's stream. Only this session's
 // events shape the transcript; a child session (subagent) shows through the
 // parent's tool call.
@@ -232,6 +236,10 @@ func (s *session) partUpdated(p part) {
 		return
 	}
 	st := s.parts[p.ID]
+	if st == settledPart {
+		s.mu.Unlock()
+		return
+	}
 	if st == nil {
 		st = &partState{}
 		s.parts[p.ID] = st
@@ -259,7 +267,7 @@ func (s *session) partUpdated(p part) {
 func (s *session) partDelta(messageID, partID, delta string) {
 	s.mu.Lock()
 	st := s.parts[partID]
-	if s.turn == nil || s.roles[messageID] == "user" || st == nil || st.kind == "" || delta == "" {
+	if s.turn == nil || s.roles[messageID] == "user" || st == nil || st == settledPart || st.kind == "" || delta == "" {
 		s.mu.Unlock()
 		return
 	}

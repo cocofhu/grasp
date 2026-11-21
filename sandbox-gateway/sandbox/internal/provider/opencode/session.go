@@ -231,13 +231,18 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	s.turn = t
 	s.mu.Unlock()
 	if err := s.post(ctx, text); err != nil {
+		if rejected := (*httpError)(nil); !errors.As(err, &rejected) {
+			// No answer: the server may have taken the prompt. Whatever it
+			// started must stop before the next turn may run.
+			s.halt()
+		}
 		s.endTurn()
 		return s.finishFailed(ctx, err)
 	}
 	select {
 	case <-t.done:
 	case <-ctx.Done():
-		s.abort()
+		s.abort(s.id)
 		select {
 		case <-t.done:
 		case <-s.done:
@@ -245,6 +250,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 			log.Printf("opencode: 会话 %s 未在 %s 内响应中断，结束 serve 进程", s.id, provider.InterruptGrace)
 			s.srv.stop()
 		}
+		s.halt()
 		return s.finishTurn(ctx, t, true)
 	case <-s.done:
 		s.endTurn()
@@ -304,14 +310,44 @@ func (s *session) Cancel() error {
 	running := s.turn != nil
 	s.mu.Unlock()
 	if running {
-		go s.abort()
+		go s.abort(s.id)
 	}
 	return nil
 }
 
-func (s *session) abort() {
-	if err := s.srv.call(context.Background(), http.MethodPost, sprintfPath("/session/%s/abort", s.id), nil, nil); err != nil {
-		log.Printf("opencode: 中断会话 %s 失败: %v", s.id, err)
+func (s *session) abort(id string) {
+	if err := s.srv.call(context.Background(), http.MethodPost, sprintfPath("/session/%s/abort", id), nil, nil); err != nil {
+		log.Printf("opencode: 中断会话 %s 失败: %v", id, err)
+	}
+}
+
+// halt aborts this session's run and every subagent still running, and
+// returns once the server reports all of them idle. Aborts repeat on each
+// poll, so a lost request is retried; a server that does not confirm within
+// InterruptGrace is stopped, and the bridge revives it on the native session
+// like a crash.
+func (s *session) halt() {
+	deadline := time.After(provider.InterruptGrace)
+	for {
+		self, children, err := s.running(context.Background())
+		if err == nil && !self && len(children) == 0 {
+			return
+		}
+		if self || err != nil {
+			s.abort(s.id)
+		}
+		for _, id := range children {
+			s.abort(id)
+		}
+		select {
+		case <-s.srv.done:
+			return
+		case <-deadline:
+			log.Printf("opencode: 会话 %s 及其子 Agent 未在 %s 内停止，结束 serve 进程", s.id, provider.InterruptGrace)
+			s.srv.stop()
+			return
+		case <-time.After(haltPoll):
+		}
 	}
 }
 
@@ -319,15 +355,19 @@ func (s *session) abort() {
 // for. A var so tests can shrink it.
 var subagentPoll = time.Second
 
+// haltPoll is how often a halt re-checks that what it interrupted stopped.
+const haltPoll = 100 * time.Millisecond
+
 // awaitSubagents holds a finished turn while a child session (subagent) of
 // this session is still busy, so prompt_done never reports work as finished
 // while background agents still change the workspace. It fails when ctx ends
 // or the server exits first.
 func (s *session) awaitSubagents(ctx context.Context) error {
-	busy, err := s.busyChildren(ctx)
+	_, children, err := s.running(ctx)
 	if err != nil {
 		log.Printf("opencode: 读取子会话失败，不等待子 Agent: %v", err)
 	}
+	busy := len(children)
 	if busy == 0 {
 		return nil
 	}
@@ -339,6 +379,7 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 	for busy > 0 {
 		select {
 		case <-ctx.Done():
+			s.halt()
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
 			return ctx.Err()
 		case <-s.done:
@@ -346,10 +387,10 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 			return errSubagentHostExited
 		case <-tick.C:
 			// Unknown is not idle: keep waiting on the last known count.
-			if n, err := s.busyChildren(ctx); err != nil {
+			if _, children, err := s.running(ctx); err != nil {
 				log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
 			} else {
-				busy = n
+				busy = len(children)
 			}
 		}
 	}
@@ -363,33 +404,32 @@ const childStartGrace = 30 * time.Second
 
 var errSubagentHostExited = errors.New("opencode serve exited while subagents were running")
 
-// busyChildren counts this session's child sessions that are still running.
-func (s *session) busyChildren(ctx context.Context) (int, error) {
-	var children []struct {
+// running reports whether this session is still running and which of its
+// child sessions are.
+func (s *session) running(ctx context.Context) (self bool, children []string, err error) {
+	var all []struct {
 		ID string `json:"id"`
 	}
-	if err := s.srv.call(ctx, http.MethodGet, sprintfPath("/session/%s/children", s.id), nil, &children); err != nil {
-		return 0, err
-	}
-	if len(children) == 0 {
-		return 0, nil
+	if err := s.srv.call(ctx, http.MethodGet, sprintfPath("/session/%s/children", s.id), nil, &all); err != nil {
+		return false, nil, err
 	}
 	var status map[string]struct {
 		Type string `json:"type"`
 	}
 	if err := s.srv.call(ctx, http.MethodGet, "/session/status", nil, &status); err != nil {
-		return 0, err
+		return false, nil, err
 	}
+	st, ok := status[s.id]
+	self = ok && st.Type != "idle"
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	busy := 0
-	for _, child := range children {
+	for _, child := range all {
 		created, unstarted := s.unstarted[child.ID]
 		if st, ok := status[child.ID]; (ok && st.Type != "idle") || (unstarted && time.Since(created) < childStartGrace) {
-			busy++
+			children = append(children, child.ID)
 		}
 	}
-	return busy, nil
+	return self, children, nil
 }
 
 // finishTurn settles usage and stop reason, emits prompt_done and returns the
@@ -409,22 +449,11 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	}
 	errText := t.errText
 	s.mu.Unlock()
-	res := provider.TurnResult{Usage: usage, UsagePartial: interrupted}
-	cause := context.Cause(ctx)
+	if interrupted {
+		return s.finishInterrupted(ctx, usage)
+	}
+	res := provider.TurnResult{Usage: usage}
 	switch {
-	case interrupted && errors.Is(cause, provider.ErrTurnRecover):
-		// The bridge continues this turn; it must not look finished.
-		res.StopReason = "recover"
-		return res, cause
-	case interrupted && errors.Is(cause, provider.ErrTurnTimeout):
-		res.StopReason = provider.TimeoutStopReason(cause)
-		s.emitError(cause.Error())
-		s.emitPromptDone(res.StopReason, usage, true)
-		return res, cause
-	case interrupted:
-		res.StopReason = "cancelled"
-		s.emitPromptDone(res.StopReason, usage, true)
-		return res, context.Canceled
 	case errText != "":
 		res.StopReason = "failed"
 		msg := provider.RedactDiagnostic(errText, s.env)
@@ -438,10 +467,13 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 }
 
 // endTurn detaches the turn, so late events of an aborted run stay out of
-// the transcript, and closes the tool calls it left running.
+// the transcript, settles its parts and closes the tool calls it left running.
 func (s *session) endTurn() {
 	s.mu.Lock()
 	s.turn = nil
+	for id := range s.parts {
+		s.parts[id] = settledPart
+	}
 	open := make([]string, 0, len(s.openTools))
 	for id := range s.openTools {
 		open = append(open, id)
@@ -454,10 +486,23 @@ func (s *session) endTurn() {
 	}
 }
 
+// finishInterrupted ends a turn stopped before it finished, by the cause its
+// ctx was cancelled with.
+func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
+	in := provider.InterruptionFor(context.Cause(ctx))
+	if in.Diagnostic != "" {
+		s.emitError(in.Diagnostic)
+	}
+	partial := len(usage) > 0
+	if in.Final {
+		s.emitPromptDone(in.StopReason, usage, partial)
+	}
+	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
+}
+
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
 	if ctx.Err() != nil {
-		s.emitPromptDone("cancelled", nil, false)
-		return provider.TurnResult{StopReason: "cancelled"}, context.Canceled
+		return s.finishInterrupted(ctx, nil)
 	}
 	msg := provider.RedactDiagnostic(err.Error(), s.env)
 	s.emitError(msg)

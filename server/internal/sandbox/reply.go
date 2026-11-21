@@ -20,9 +20,14 @@ func (p *Reply) Add(raw json.RawMessage) {
 	dispatchFrame(raw, &p.r)
 }
 
-// Text is the visible reply.
+// Text is the visible reply, across same-turn continuations.
 func (p *Reply) Text() string {
-	return p.r.Narration
+	return p.r.VisibleText()
+}
+
+// Steers is the input the turn took mid-flight, in order.
+func (p *Reply) Steers() []string {
+	return append([]string(nil), p.r.Steers...)
 }
 
 // Tools lists the tool calls in the order they started.

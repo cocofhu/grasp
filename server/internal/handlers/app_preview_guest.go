@@ -370,7 +370,7 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 		execution.StartedAt = started
 	}
 	frame := func(kind string, result *sandbox.ChatResult) gin.H {
-		narration := previewGuestNarration(result)
+		narration := result.VisibleText()
 		return gin.H{"type": kind, "text": narration,
 			"parts":     gateshare.SanitizeParts(models.PartsForReply(result.AcpEvents(), narration)),
 			"startedAt": started.Format(time.RFC3339Nano), "execution": previewExecution(execution)}
@@ -401,7 +401,7 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 		}
 	})
 	failed := err != nil || result == nil || result.Failed || result.Interrupted || result.ErrorText != ""
-	narration := previewGuestNarration(result)
+	narration := result.VisibleText()
 	done := frame("done", result)
 	done["failed"] = failed
 	done["interrupted"] = (result != nil && result.Interrupted) || errors.Is(ctx.Err(), context.Canceled)
@@ -411,19 +411,6 @@ func writePreviewGuestTurn(ctx context.Context, cancel context.CancelFunc, conn 
 		done["usage"], done["usageByModel"] = result.Usage, result.UsageByModel
 	}
 	return narration, !failed, writeChatJSON(conn, done) == nil
-}
-
-func previewGuestNarration(result *sandbox.ChatResult) string {
-	if result == nil {
-		return ""
-	}
-	parts := make([]string, 0, len(result.Segments)+1)
-	for _, segment := range result.Segments {
-		if segment.Narration != "" {
-			parts = append(parts, segment.Narration)
-		}
-	}
-	return strings.Join(append(parts, result.Narration), "\n\n")
 }
 
 // Tier-only guest settings preserve the independent chat's actual model and effort.

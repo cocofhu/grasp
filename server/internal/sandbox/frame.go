@@ -10,9 +10,11 @@ import (
 
 // frame is one bridge frame, decoded once for every reader. Live event frames
 // arrive wrapped ({op:"event", opId, data:{type,...}}); the bridge event log
-// keeps only the data, so a frame without op is that bare event.
+// keeps only the data, so a frame with a type and no data is that bare event
+// (a diagnostic still carries its own op:"raw").
 type frame struct {
 	Op     string          `json:"op"`
+	Type   string          `json:"type"`
 	OpID   string          `json:"opId"`
 	Status string          `json:"status"`
 	Busy   *bool           `json:"busy"`
@@ -40,7 +42,7 @@ func decodeFrame(raw json.RawMessage) frame {
 	if json.Unmarshal(raw, &f) != nil {
 		return frame{}
 	}
-	if f.Op == "" {
+	if f.Op == "" || (f.Type != "" && len(f.Data) == 0) {
 		f.Op, f.Data = "event", raw
 	}
 	if f.Op == "event" {

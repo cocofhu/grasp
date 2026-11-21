@@ -609,3 +609,42 @@ func TestUnansweredTurnStartStopsTheAppServer(t *testing.T) {
 		t.Fatal("an app-server that may still run the turn was kept")
 	}
 }
+
+func TestAnUnansweredTurnStartKeepsTheCancelCause(t *testing.T) {
+	defer func(d time.Duration) { rpcTimeout = d }(rpcTimeout)
+	rpcTimeout = 100 * time.Millisecond
+	for _, cause := range []error{provider.ErrTurnRecover, provider.ErrTurnTimeout, provider.ErrTurnStuck} {
+		s, rec := open(t, provider.OpenOptions{})
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(cause)
+		res, err := prompt(t, s, ctx, "slowstart")
+		want := provider.InterruptionFor(cause)
+		if !errors.Is(err, cause) || res.StopReason != want.StopReason || (len(rec.ofType("prompt_done")) == 1) != want.Final {
+			t.Fatalf("cause %v: %+v %v", cause, res, err)
+		}
+	}
+}
+
+func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	s, rec := open(t, provider.OpenOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer cancel()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			for _, u := range rec.updates("tool_call") {
+				if u["toolCallId"] == "subagents-turn-1" {
+					return
+				}
+			}
+		}
+	}()
+	if res, err := prompt(t, s, ctx, "spawn stubborn"); !errors.Is(err, context.Canceled) || res.StopReason != "cancelled" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if running := s.runningSubagents(context.Background()); len(running) != 0 {
+		t.Fatalf("prompt_done sent with subagents running: %v", running)
+	}
+}

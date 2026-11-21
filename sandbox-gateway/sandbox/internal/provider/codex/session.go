@@ -266,15 +266,15 @@ func (s *session) Cancel() error {
 	}
 	s.mu.Unlock()
 	if id != "" {
-		go s.interrupt(id)
+		go s.interrupt(s.threadID, id)
 	}
 	return nil
 }
 
-func (s *session) interrupt(turnID string) {
+func (s *session) interrupt(threadID, turnID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
-	if _, err := s.conn.Call(ctx, "turn/interrupt", map[string]any{"threadId": s.threadID, "turnId": turnID}); err != nil {
+	if _, err := s.conn.Call(ctx, "turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID}); err != nil {
 		log.Printf("codex: turn/interrupt %s: %v", turnID, err)
 	}
 }
@@ -385,7 +385,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 			}
 		}
 	case <-ctx.Done():
-		s.interrupt(t.id)
+		s.interrupt(s.threadID, t.id)
 		select {
 		case end = <-t.done:
 		case <-time.After(provider.InterruptGrace):
@@ -395,6 +395,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 		case <-s.conn.Done():
 			end = turnEnd{status: "interrupted"}
 		}
+		s.haltSubagents()
 	case <-s.conn.Done():
 		return s.finishFailed(ctx, errors.New("codex app-server exited during the turn"))
 	}
@@ -404,6 +405,9 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 // subagentPoll is how often a finished turn re-checks the subagents it waits
 // for. A var so tests can shrink it.
 var subagentPoll = time.Second
+
+// haltPoll is how often a halt re-checks that what it interrupted stopped.
+const haltPoll = 100 * time.Millisecond
 
 // awaitSubagents holds a completed turn until every subagent the thread
 // spawned has stopped, so prompt_done never reports work as finished while
@@ -422,6 +426,7 @@ func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
 	for len(running) > 0 {
 		select {
 		case <-ctx.Done():
+			s.haltSubagents()
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
 			return ctx.Err()
 		case <-s.conn.Done():
@@ -436,6 +441,55 @@ func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
 }
 
 var errSubagentHostExited = errors.New("codex app-server exited while subagents were running")
+
+// haltSubagents interrupts every tracked subagent still running and returns
+// once none is. Interrupts repeat on each poll, so a lost request is retried;
+// subagents that do not stop within InterruptGrace take the app-server down,
+// and the bridge revives the thread like a crash.
+func (s *session) haltSubagents() {
+	deadline := time.After(provider.InterruptGrace)
+	for {
+		running := s.runningSubagents(context.Background())
+		if len(running) == 0 {
+			return
+		}
+		for _, id := range running {
+			if turn := s.activeTurnOf(id); turn != "" {
+				s.interrupt(id, turn)
+			}
+		}
+		select {
+		case <-s.conn.Done():
+			return
+		case <-deadline:
+			log.Printf("codex: 子 Agent %v 未在 %s 内停止，结束 app-server", running, provider.InterruptGrace)
+			_ = s.conn.Close()
+			return
+		case <-time.After(haltPoll):
+		}
+	}
+}
+
+// activeTurnOf is the id of the thread's turn in progress, or "".
+func (s *session) activeTurnOf(threadID string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+	raw, err := s.conn.Call(ctx, "thread/turns/list", map[string]any{"threadId": threadID, "limit": 1, "itemsView": "notLoaded"})
+	if err != nil {
+		log.Printf("codex: 读取子 Agent %s 的回合失败: %v", threadID, err)
+		return ""
+	}
+	var page struct {
+		Data []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &page) != nil || len(page.Data) == 0 || page.Data[0].Status != "inProgress" {
+		return ""
+	}
+	return page.Data[0].ID
+}
 
 // runningSubagents asks the app-server which tracked subagents are still
 // active and forgets the others. A thread the app-server refuses to read is
@@ -496,27 +550,13 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 	partial := end.status != "completed"
 	s.addCumulative(usage)
 	res := provider.TurnResult{Usage: usage, UsagePartial: partial}
-	cause := context.Cause(ctx)
 	switch end.status {
 	case "completed":
 		res.StopReason = "end_turn"
 		s.emitPromptDone(res.StopReason, usage, partial)
 		return res, nil
 	case "interrupted":
-		switch {
-		case errors.Is(cause, provider.ErrTurnRecover):
-			// The bridge continues this turn; it must not look finished.
-			res.StopReason = "recover"
-			return res, cause
-		case errors.Is(cause, provider.ErrTurnTimeout):
-			res.StopReason = provider.TimeoutStopReason(cause)
-			s.emitError(cause.Error())
-			s.emitPromptDone(res.StopReason, usage, partial)
-			return res, cause
-		}
-		res.StopReason = "cancelled"
-		s.emitPromptDone(res.StopReason, usage, partial)
-		return res, context.Canceled
+		return s.finishInterrupted(ctx, usage)
 	default:
 		res.StopReason = "failed"
 		msg := s.diagnostic(firstNonEmpty(end.errText, errText, "Codex 本轮执行失败"))
@@ -526,10 +566,23 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, end turnEnd) (p
 	}
 }
 
+// finishInterrupted ends a turn stopped before it finished, by the cause its
+// ctx was cancelled with.
+func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
+	in := provider.InterruptionFor(context.Cause(ctx))
+	if in.Diagnostic != "" {
+		s.emitError(in.Diagnostic)
+	}
+	partial := len(usage) > 0
+	if in.Final {
+		s.emitPromptDone(in.StopReason, usage, partial)
+	}
+	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
+}
+
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
 	if ctx.Err() != nil {
-		s.emitPromptDone("cancelled", nil, false)
-		return provider.TurnResult{StopReason: "cancelled"}, context.Canceled
+		return s.finishInterrupted(ctx, nil)
 	}
 	msg := s.diagnostic(err.Error())
 	s.emitError(msg)

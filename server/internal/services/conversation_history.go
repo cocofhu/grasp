@@ -313,14 +313,19 @@ func conversationMessage(row models.SoloMessage) mcp.ConversationHistoryMessage 
 	for i := range images {
 		images[i].Data = ""
 	}
+	reply := replyOf(row.Events)
 	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status, Files: row.Files,
-		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events), Steers: soloSteerTexts(row.Events)}
+		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(reply), Steers: reply.Steers()}
 }
 
-// soloSteerTexts is the input a reply's turn took mid-flight. A joined steer
-// has no message row of its own; the reply's frames are its only record.
-func soloSteerTexts(events []json.RawMessage) []string {
-	return models.SteerTexts(models.PartsForReply(sandbox.AggregateFrames(events), ""))
+// replyOf folds a reply's persisted frames. A steer the turn joined has no
+// message row of its own; these frames are its only record.
+func replyOf(events []json.RawMessage) *sandbox.Reply {
+	var reply sandbox.Reply
+	for _, raw := range events {
+		reply.Add(raw)
+	}
+	return &reply
 }
 
 func soloHistoryContent(row models.SoloMessage) string {
@@ -332,11 +337,7 @@ func soloHistoryContent(row models.SoloMessage) string {
 
 // conversationTools reads a reply's tool calls as the transcript showed them,
 // with an excerpt of the output of failed ones (never inline image bytes).
-func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolResult {
-	var reply sandbox.Reply
-	for _, raw := range events {
-		reply.Add(raw)
-	}
+func conversationTools(reply *sandbox.Reply) []mcp.ConversationHistoryToolResult {
 	var tools []mcp.ConversationHistoryToolResult
 	for _, tc := range reply.Tools() {
 		if tc.ID == "" || isHistoryRead(tc) {
@@ -356,14 +357,12 @@ func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolRe
 
 // isHistoryRead reports a call that read conversation history back. Such reads
 // carry nothing new, and listing them would make every page of a long
-// conversation larger than the last.
+// conversation larger than the last. A call through a generic tool runner is
+// known by its page, which Output may have truncated into invalid JSON.
 func isHistoryRead(tc sandbox.ReplyTool) bool {
 	title := strings.ToLower(tc.Title)
-	if strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") {
-		return true
-	}
-	var result map[string]json.RawMessage
-	return json.Unmarshal([]byte(tc.Output), &result) == nil && result["history_version"] != nil && result["messages"] != nil
+	return strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") ||
+		strings.Contains(tc.Output, `"history_version"`) && strings.Contains(tc.Output, `"messages"`)
 }
 
 // ownHistoryTool reads the current conversation back; a referenced one is
@@ -495,11 +494,12 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 			break
 		}
 		var part strings.Builder
+		reply := replyOf(row.Events)
 		content := historyExcerpt(strings.TrimSpace(soloHistoryContent(row)), min(budget-200, 8000), ownHistoryTool)
 		role := "用户"
 		if row.Role == "assistant" {
 			role = "助手"
-			for _, steer := range soloSteerTexts(row.Events) {
+			for _, steer := range reply.Steers() {
 				fmt.Fprintf(&part, "[用户·回合中补充] %s\n", historyExcerpt(steer, 2000, ownHistoryTool))
 			}
 		}
@@ -514,7 +514,7 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 		if row.Status == "failed" || row.Status == "stopped" {
 			fmt.Fprintf(&part, "本轮状态：%s %s\n", row.Status, row.Error)
 		}
-		tools := conversationTools(row.Events)
+		tools := conversationTools(reply)
 		for _, tool := range tools[max(0, len(tools)-3):] {
 			fmt.Fprintf(&part, "工具结果：%s [%s] %s\n", tool.Title, tool.Status, historyExcerpt(tool.Text, 1000, ownHistoryTool))
 		}

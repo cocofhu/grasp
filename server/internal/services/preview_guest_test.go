@@ -43,6 +43,7 @@ func TestOpenPreviewGuestUsesSeparateBridgeChats(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/model":
 			selected.Store("guest-model")
 			modelWrites <- r.URL.Query().Get("chat")
+			_, _ = w.Write([]byte(`{"selected":"guest-model","resumed":false}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/chats/"):
 			deleted <- strings.TrimPrefix(r.URL.Path, "/api/chats/")
 		default:

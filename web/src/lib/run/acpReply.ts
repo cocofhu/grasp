@@ -18,6 +18,8 @@ export type AcpReply = {
   contextCommand?: ContextCommand
   status?: string
   error?: string
+  /** A tool, thought or steer arrived since the last reply text, which therefore starts a new paragraph. A tool update changes its row in place, so steps alone cannot tell. */
+  paragraph?: boolean
 }
 
 /** Localizes tool names; returns '' when the key is unknown. */
@@ -72,17 +74,17 @@ function addStep(turn: AcpReply, kind: 'thought' | 'message', s: string) {
   if (!s) return
   const steps = (turn.steps ??= [])
   const last = steps[steps.length - 1]
-  if (last && last.kind === kind) last.text += s
+  if (last && last.kind === kind && !(kind === 'message' && turn.paragraph)) last.text += s
   else steps.push({ kind, text: s })
 }
 
 /** Reply text that resumes after a tool call, thought or steer starts a new paragraph, matching the server's narration. */
 function addText(turn: AcpReply, s: string) {
   if (!s) return
-  const last = turn.steps?.[turn.steps.length - 1]
-  if (last && last.kind !== 'message' && turn.text) turn.text = `${turn.text.replace(/\n+$/, '')}\n\n`
+  if (turn.paragraph && turn.text) turn.text = `${turn.text.replace(/\n+$/, '')}\n\n`
   turn.text += s
   addStep(turn, 'message', s)
+  turn.paragraph = false
 }
 
 function applyTool(u: any, turn: AcpReply, label: ToolLabeler, fallback: string) {
@@ -106,6 +108,7 @@ function applyTool(u: any, turn: AcpReply, label: ToolLabeler, fallback: string)
     tool.input = toolDetail(rawIn, false) || undefined
   }
   if (rawOut !== undefined) tool.output = toolDetail(rawOut, true) || undefined
+  turn.paragraph = true
 }
 
 /** Folds one acp-bridge frame ({op:"event",data:{...}}, its data, or an error frame) into a reply. */
@@ -124,7 +127,10 @@ export function applyAcp(envelope: any, turn: AcpReply, label: ToolLabeler, tool
   if (ev?.type === 'user_steer') {
     // Each steer is its own user message; never merge it into a neighbour.
     const text = steerText(ev)
-    if (text) (turn.steps ??= []).push({ kind: 'steer', text })
+    if (text) {
+      ;(turn.steps ??= []).push({ kind: 'steer', text })
+      turn.paragraph = true
+    }
     return
   }
   if (!ev || ev.type !== 'session_update' || !ev.update) return
@@ -134,7 +140,10 @@ export function applyAcp(envelope: any, turn: AcpReply, label: ToolLabeler, tool
     addText(turn, contentText(u.content))
   } else if (kind === 'agent_thought_chunk') {
     const s = contentText(u.content)
-    if (s) turn.thought = (turn.thought ?? '') + s
+    if (s) {
+      turn.thought = (turn.thought ?? '') + s
+      turn.paragraph = true
+    }
     addStep(turn, 'thought', s)
   } else if (kind === 'plan') {
     const raw = u.entries || u.steps || []

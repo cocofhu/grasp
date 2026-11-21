@@ -68,6 +68,19 @@ describe('acpReply', () => {
     ])
   })
 
+  it('starts a new paragraph after an update to a tool that started earlier', () => {
+    const turn = reply()
+    fold(
+      turn,
+      update({ sessionUpdate: 'tool_call', toolCallId: 'a', title: 'x', status: 'in_progress' }),
+      chunk('agent_message_chunk', 'Working.'),
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'a', status: 'completed' }),
+      chunk('agent_message_chunk', 'Done.'),
+    )
+    expect(turn.text).toBe('Working.\n\nDone.')
+    expect(partsOf(turn).map((p) => p.text ?? p.kind)).toEqual(['tool', 'Working.', 'Done.'])
+  })
+
   it('keeps provider diagnostics and partial output when the turn fails', () => {
     const turn = reply()
     fold(turn, chunk('agent_message_chunk', 'Partial reply'))

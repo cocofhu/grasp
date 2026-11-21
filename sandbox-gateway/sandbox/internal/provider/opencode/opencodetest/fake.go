@@ -4,8 +4,9 @@
 //
 // The prompt text selects the script: "hang" keeps the run going until it is
 // aborted or steered, "fail" ends it with a model error, "subagent" leaves a
-// child session busy for a few status polls, "background" starts a child that
-// reports busy only after a moment. Any other prompt gets Reply.
+// child session busy for a few status polls, "stubborn" leaves one busy until
+// it is aborted, "background" starts a child that reports busy only after a
+// moment. Any other prompt gets Reply.
 package opencodetest
 
 import (
@@ -35,6 +36,9 @@ type Options struct {
 	// SlowStart plays a server still starting: it never answers the first
 	// health check.
 	SlowStart bool
+	// DropPromptReceipt plays a connection lost after the server took a
+	// prompt: the run starts, the response never arrives.
+	DropPromptReceipt bool
 	// OnPrompt, when set, sees each prompt first; an error rejects it.
 	OnPrompt func(Prompt) error
 }
@@ -168,6 +172,12 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		f.prompt(parts[1], p.Text())
+		if f.o.DropPromptReceipt {
+			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				_ = conn.Close()
+			}
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case len(parts) == 3 && parts[0] == "session" && parts[2] == "abort":
 		f.abort(parts[1])
@@ -330,9 +340,13 @@ func (f *fake) abort(sid string) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if s := f.sessions[sid]; s != nil && s.busy && s.abort != nil {
+	s := f.sessions[sid]
+	if s != nil && s.busy && s.abort != nil {
 		close(s.abort)
 		s.abort = nil
+	}
+	if s != nil && s.parent != "" {
+		s.statusLeft = 0
 	}
 }
 
@@ -385,10 +399,13 @@ func (f *fake) run(s *fakeSession, text string) {
 			if strings.Contains(text, "background") {
 				f.background(sid)
 			}
-			if strings.Contains(text, "subagent") {
+			if strings.Contains(text, "subagent") || strings.Contains(text, "stubborn") {
 				child := f.create(sid)
 				f.mu.Lock()
 				child.statusLeft = 2
+				if strings.Contains(text, "stubborn") {
+					child.statusLeft = 1 << 30
+				}
 				f.mu.Unlock()
 			}
 			if f.o.Reasoning != "" {

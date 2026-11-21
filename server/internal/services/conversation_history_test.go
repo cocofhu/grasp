@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"gorm.io/gorm"
 )
 
@@ -287,6 +288,25 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	ledger := renderUserInstructions(users, 3000, ownHistoryTool)
 	if !strings.Contains(ledger, "条用户消息未装入") || !strings.Contains(ledger, "[用户要求 · 19]") {
 		t.Fatalf("missing budget disclosure/latest decision: %s", ledger)
+	}
+}
+
+func TestConversationHistoryKeepsSteersPastTheTimelineCap(t *testing.T) {
+	events := []json.RawMessage{json.RawMessage(`{"op":"event","data":{"type":"user_steer","text":"keep the API stable"}}`)}
+	for i := range sandbox.MaxTimelineSteps {
+		events = append(events, json.RawMessage(fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"t%d","title":"ls","status":"completed"}}}`, i)))
+	}
+	if steers := conversationMessage(models.SoloMessage{Role: "assistant", Events: events}).Steers; len(steers) != 1 || steers[0] != "keep the API stable" {
+		t.Fatalf("steers = %q", steers)
+	}
+}
+
+func TestConversationHistoryOmitsHistoryReadThroughARunner(t *testing.T) {
+	page := `{"conversationId":"c","history_version":"v1","messages":[{"content":"` + strings.Repeat("old ", 2000) + `"}]}`
+	row := models.SoloMessage{Events: []json.RawMessage{json.RawMessage(fmt.Sprintf(
+		`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"d","title":"DeferExecuteTool","status":"failed","content":[{"type":"content","content":{"type":"text","text":%q}}]}}}`, page))}}
+	if tools := conversationMessage(row).ToolResults; len(tools) != 0 {
+		t.Fatalf("truncated history page listed: %+v", tools)
 	}
 }
 

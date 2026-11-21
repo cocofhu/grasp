@@ -52,7 +52,7 @@ func TestAlignChatRoutePostsOnTheNextTurnAndRollsBack(t *testing.T) {
 				return
 			}
 			selected, effort = body.Model, body.ReasoningEffort
-			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resumed":false}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -189,7 +189,7 @@ func TestParkReactSessionRecordsLaunchedModelGroup(t *testing.T) {
 		}
 		if r.URL.Path == "/api/model" {
 			posts++
-			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resumed":false}`))
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"selected": "aux", "reasoningEffort": "high"})
@@ -269,7 +269,7 @@ func TestResetLiveChatModelUsesTheSessionChat(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			posts = append(posts, body.Model)
 			selected = body.Model
-			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resumed":false}`))
 		default:
 			http.NotFound(w, r)
 		}

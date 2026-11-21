@@ -35,20 +35,22 @@ const (
 // addText appends a thought/message chunk, extending the last step when it is
 // of the same kind.
 func (r *ChatResult) addText(kind, text string) {
-	if n := len(r.Timeline); n > 0 && r.Timeline[n-1].Kind == kind {
+	if n := len(r.Timeline); n > 0 && r.Timeline[n-1].Kind == kind && !(kind == "message" && r.paragraph) {
 		r.Timeline[n-1].Text += text
 		return
 	}
 	r.Timeline = append(r.Timeline, ChatStep{Kind: kind, Text: text})
 }
 
-// addNarration appends to the visible reply. Text that resumes after a tool
-// call, a thought or a steer is a new paragraph, not a run-on of the last one.
-func (r *ChatResult) addNarration(text string) {
-	if n := len(r.Timeline); n > 0 && r.Timeline[n-1].Kind != "message" && r.Narration != "" {
+// addMessage appends reply text. Text that resumes after a tool call, a
+// thought or a steer is a new paragraph, not a run-on of the last one.
+func (r *ChatResult) addMessage(text string) {
+	if r.paragraph && r.Narration != "" {
 		r.Narration = strings.TrimRight(r.Narration, "\n") + "\n\n"
 	}
 	r.Narration += text
+	r.addText("message", text)
+	r.paragraph = false
 }
 
 // addSteer records input the running turn took mid-flight, from its
@@ -67,6 +69,8 @@ func (r *ChatResult) addSteer(data json.RawMessage) {
 	}
 	if text := models.SteerText(ev.Text, ev.FileNames, len(ev.ImageURLs)); text != "" {
 		r.Timeline = append(r.Timeline, ChatStep{Kind: models.AcpPartSteer, Text: text})
+		r.Steers = append(r.Steers, text)
+		r.paragraph = true
 	}
 }
 
@@ -270,6 +274,7 @@ func secretKey(k string) bool {
 	return false
 }
 
+// maskKeys hides secret-named values and inline media bytes.
 func maskKeys(v any, depth int) any {
 	if depth > 8 {
 		return "…"
@@ -277,8 +282,11 @@ func maskKeys(v any, depth int) any {
 	switch t := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(t))
+		media := t["type"] == "image" || t["type"] == "audio"
 		for k, x := range t {
-			if secretKey(k) {
+			if media && k == "data" {
+				out[k] = "…"
+			} else if secretKey(k) {
 				out[k] = textutil.SecretMask
 			} else {
 				out[k] = maskKeys(x, depth+1)

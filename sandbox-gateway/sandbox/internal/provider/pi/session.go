@@ -359,21 +359,11 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	}
 	errText := t.errText
 	s.mu.Unlock()
-	res := provider.TurnResult{Usage: usage, UsagePartial: interrupted}
-	cause := context.Cause(ctx)
+	if interrupted {
+		return s.finishInterrupted(ctx, usage)
+	}
+	res := provider.TurnResult{Usage: usage}
 	switch {
-	case interrupted && errors.Is(cause, provider.ErrTurnRecover):
-		res.StopReason = "recover"
-		return res, cause
-	case interrupted && errors.Is(cause, provider.ErrTurnTimeout):
-		res.StopReason = provider.TimeoutStopReason(cause)
-		s.emitError(cause.Error())
-		s.emitPromptDone(res.StopReason, usage, true)
-		return res, cause
-	case interrupted:
-		res.StopReason = "cancelled"
-		s.emitPromptDone(res.StopReason, usage, true)
-		return res, context.Canceled
 	case errText != "":
 		res.StopReason = "failed"
 		msg := provider.RedactDiagnostic(errText, s.env)
@@ -386,10 +376,23 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	return res, nil
 }
 
+// finishInterrupted ends a turn stopped before it finished, by the cause its
+// ctx was cancelled with.
+func (s *session) finishInterrupted(ctx context.Context, usage map[string]provider.TokenUsage) (provider.TurnResult, error) {
+	in := provider.InterruptionFor(context.Cause(ctx))
+	if in.Diagnostic != "" {
+		s.emitError(in.Diagnostic)
+	}
+	partial := len(usage) > 0
+	if in.Final {
+		s.emitPromptDone(in.StopReason, usage, partial)
+	}
+	return provider.TurnResult{StopReason: in.StopReason, Usage: usage, UsagePartial: partial}, in.Err
+}
+
 func (s *session) finishFailed(ctx context.Context, err error) (provider.TurnResult, error) {
 	if ctx.Err() != nil {
-		s.emitPromptDone("cancelled", nil, false)
-		return provider.TurnResult{StopReason: "cancelled"}, context.Canceled
+		return s.finishInterrupted(ctx, nil)
 	}
 	msg := provider.RedactDiagnostic(err.Error(), s.env)
 	s.emitError(msg)
