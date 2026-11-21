@@ -814,7 +814,8 @@ function syncDrawerMode(next: 'resources' | 'artifacts') {
   newTabOpen.value = false
   if (next === 'resources') {
     const view = resourceView.value
-    if (view === 'home') {
+    if (view === 'home' || (view === 'app' && !showAppCard.value)) {
+      resourceView.value = 'home'
       activeTab.value = REACT_STAGE_TAB_GRID
       return
     }

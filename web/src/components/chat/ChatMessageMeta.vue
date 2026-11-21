@@ -21,8 +21,18 @@ const position = ref({ left: '0px', top: '0px', maxHeight: 'calc(100dvh - 24px)'
 const tipId = `chat-reply-info-${useId().replace(/:/g, '')}`
 let closeTimer: ReturnType<typeof setTimeout> | undefined
 
-const stamp = computed(() => [props.metadata?.execution?.startedAt, props.metadata?.createdAt, props.metadata?.at, props.metadata?.endedAt, props.metadata?.startedAt].find(value => value && Number.isFinite(Date.parse(value))) || '')
-const fullTime = computed(() => stamp.value ? fmtTime(stamp.value) : '')
+const validStamp = (values: (string | undefined)[]) => values.find(value => value && Number.isFinite(Date.parse(value))) || ''
+const endStamp = computed(() => validStamp([props.metadata?.endedAt, props.metadata?.createdAt, props.metadata?.at]))
+const startStamp = computed(() => validStamp([props.metadata?.execution?.startedAt, props.metadata?.startedAt]))
+const stamp = computed(() => endStamp.value || startStamp.value)
+const fullTime = computed(() => endStamp.value ? fmtTime(endStamp.value) : '')
+const startTime = computed(() => {
+  if (!startStamp.value) return ''
+  if (!endStamp.value) return fmtTime(startStamp.value)
+  const start = new Date(startStamp.value), end = new Date(endStamp.value)
+  const long = end.getTime() - start.getTime() >= 3600_000 || start.toDateString() !== end.toDateString()
+  return long && end > start ? fmtTime(startStamp.value) : ''
+})
 const clockTime = computed(() => stamp.value ? new Date(stamp.value).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '')
 const modelRows = computed(() => effectiveModelUsageRows(props.metadata?.usage, props.metadata?.usageByModel))
 const usage = computed<TokenUsage | null>(() => props.metadata?.usage ?? (modelRows.value.length ? modelRows.value.reduce((sum, row) => ({
@@ -43,7 +53,8 @@ const duration = computed(() => {
   return sec == null ? notReported.value : ms === 0 ? '0s' : fmtTurnElapsed(sec)
 })
 const rows = computed(() => [
-  { key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value, mono: Boolean(fullTime.value) },
+  ...(startTime.value ? [{ key: 'started', label: t('pages.chatMessageInfo.started'), value: startTime.value, mono: true }] : []),
+  ...(fullTime.value || !startTime.value ? [{ key: 'time', label: t('pages.chatMessageInfo.time'), value: fullTime.value || notReported.value, mono: Boolean(fullTime.value) }] : []),
   { key: 'agent', label: 'Agent', value: props.metadata?.execution?.agentName || notReported.value, mono: false },
   { key: 'tool', label: t('pages.chatMessageInfo.tool'), value: tool.value, mono: false },
   { key: 'model', label: t('pages.chatMessageInfo.model'), value: model.value, mono: false },
