@@ -361,22 +361,23 @@ const haltPoll = 100 * time.Millisecond
 // awaitSubagents holds a finished turn while a child session (subagent) of
 // this session is still busy, so prompt_done never reports work as finished
 // while background agents still change the workspace. It fails when ctx ends
-// or the server exits first.
+// or the server exits first. Unknown is not idle: a state that cannot be read
+// is asked again, until the turn's own deadline.
 func (s *session) awaitSubagents(ctx context.Context) error {
 	_, children, err := s.running(ctx)
-	if err != nil {
-		log.Printf("opencode: 读取子会话失败，不等待子 Agent: %v", err)
-	}
-	busy := len(children)
-	if busy == 0 {
+	if err == nil && len(children) == 0 {
 		return nil
 	}
+	title := fmt.Sprintf("等待 %d 个子 Agent 完成", len(children))
+	if err != nil {
+		log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
+		title = "等待子 Agent 完成"
+	}
 	callID := "subagents-" + s.id
-	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress",
-		"title": fmt.Sprintf("等待 %d 个子 Agent 完成", busy)})
+	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call", "toolCallId": callID, "status": "in_progress", "title": title})
 	tick := time.NewTicker(subagentPoll)
 	defer tick.Stop()
-	for busy > 0 {
+	for busy := true; busy; {
 		select {
 		case <-ctx.Done():
 			s.halt()
@@ -386,11 +387,10 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
 			return errSubagentHostExited
 		case <-tick.C:
-			// Unknown is not idle: keep waiting on the last known count.
 			if _, children, err := s.running(ctx); err != nil {
 				log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
 			} else {
-				busy = len(children)
+				busy = len(children) > 0
 			}
 		}
 	}

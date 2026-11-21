@@ -9,15 +9,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestFakePiProcess is a scripted `pi --mode rpc`. The prompt text selects
 // the run: "hang" waits in a tool call for a steer or an abort, "fail" ends
 // with a model error, "dialog" asks an extension dialog first, "strand"
 // leaves a steer queued after the run ends; reloading the session drops the
-// queue. Anything else gets a reply. After a run ends, get_state may keep
-// reporting streaming (GRASP_FAKE_PI_LATE_STREAMING reads) or fail
-// (GRASP_FAKE_PI_STATE_FAILS).
+// queue. "retry" fails its first request and recovers on Pi's automatic
+// retry, "retry giveup" gives up during the backoff. Anything else gets a
+// reply. After a run ends, get_state may keep reporting streaming
+// (GRASP_FAKE_PI_LATE_STREAMING reads) or fail (GRASP_FAKE_PI_STATE_FAILS),
+// and the run may stay busy a while past its agent_end
+// (GRASP_FAKE_PI_LINGER_MS).
 func TestFakePiProcess(t *testing.T) {
 	if os.Getenv("GRASP_FAKE_PI") == "" {
 		return
@@ -164,8 +168,13 @@ func (f *fakePi) delta(kind, text string) {
 func (f *fakePi) run(text string) {
 	f.write(map[string]any{"type": "agent_start"})
 	f.user(text)
+	agentEnd := true
 	defer func() {
-		f.write(map[string]any{"type": "agent_end", "messages": []any{}})
+		if agentEnd {
+			f.write(map[string]any{"type": "agent_end", "messages": []any{}})
+		}
+		linger, _ := strconv.Atoi(os.Getenv("GRASP_FAKE_PI_LINGER_MS"))
+		time.Sleep(time.Duration(linger) * time.Millisecond)
 		f.mu.Lock()
 		f.streaming, f.ended = false, true
 		idle := f.idle
@@ -190,6 +199,21 @@ func (f *fakePi) run(text string) {
 			f.assistant("toolUse", "")
 			f.user(steer)
 		}
+	case strings.Contains(text, "retry"):
+		f.assistant("error", "503 Service Unavailable")
+		f.write(map[string]any{"type": "agent_end", "messages": []any{}, "willRetry": true})
+		f.write(map[string]any{"type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 50, "errorMessage": "503 Service Unavailable"})
+		time.Sleep(50 * time.Millisecond)
+		if strings.Contains(text, "giveup") {
+			f.write(map[string]any{"type": "auto_retry_end", "success": false, "attempt": 1, "finalError": "Retry cancelled"})
+			agentEnd = false
+			return
+		}
+		f.write(map[string]any{"type": "agent_start"})
+		f.delta("text_delta", "recovered")
+		f.assistant("stop", "")
+		f.write(map[string]any{"type": "auto_retry_end", "success": true, "attempt": 1})
+		return
 	case strings.Contains(text, "fail"):
 		f.assistant("error", "upstream model failed")
 		return

@@ -102,9 +102,10 @@
 WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST /api/chats` 创建),
 缺省为 `default` 会话;工作流不带该参数即可,语义与单会话一致。`/api/events` 同样接受 `chat`。
 
-- `→ {op:"connect", cwd?, fsRoot?, mcpServers?, autoPermission?}`
-- `← {op:"connected", sessionId, resumed, eventLog, totalTurns, hasMoreTurns, agent:{name,version}, ...}` ——
+- `→ {op:"connect", connectId?, cwd?, fsRoot?, mcpServers?, autoPermission?}`
+- `← {op:"connected", connectId, sessionId, resumed, eventLog, totalTurns, hasMoreTurns, agent:{name,version}, ...}` ——
   `resumed` 为真表示这个 Agent 接回了原生会话（如后端重启后接回上次的对话），对话上下文仍在 Agent 内。
+  `connectId` 原样带回所应答的 `connect`；新连接收到的当前状态和其它请求触发的广播（如换模型）为空串，等待握手的客户端只认自己的 `connectId`。
 - `→ {op:"chat", content, images?, opId?, deadlineSec?}` → 流式
   `← {op:"event", opId?, data:{type:"session_update"|...}}`,以轮次边界事件收尾(见下)。
   `opId` 由客户端生成;沙箱在该轮的**每一帧** `event`(含 `prompt_begin`/`prompt_done`)

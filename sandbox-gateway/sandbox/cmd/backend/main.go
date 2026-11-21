@@ -91,7 +91,9 @@ func main() {
 	})
 
 	zlog.Info().Str("listen", cfg.ListenAddr).Msg("acp-bridge listening")
-	if err := router.Serve(cfg.ListenAddr, engine); err != nil {
+	err = router.Serve(cfg.ListenAddr, engine)
+	chats.Close()
+	if err != nil {
 		zlog.Fatal().Err(err).Str("listen", cfg.ListenAddr).Msg("http server failed")
 	}
 }

@@ -352,6 +352,41 @@ func TestModelErrorFailsTheTurn(t *testing.T) {
 	}
 }
 
+func TestAnAutomaticRetryDecidesTheTurn(t *testing.T) {
+	t.Run("recovers", func(t *testing.T) {
+		installFake(t)
+		s, rec := open(t, provider.OpenOptions{})
+		res, err := s.Prompt(turnCtx(t), "retry", nil)
+		if err != nil || res.StopReason != "end_turn" || rec.text("agent_message_chunk") != "recovered" {
+			t.Fatalf("turn: %+v %v %q", res, err, rec.text("agent_message_chunk"))
+		}
+		if e := rec.ofType("error_text"); len(e) != 0 {
+			t.Fatalf("the retried attempt's error was reported: %v", e)
+		}
+		if frames := rec.snapshot(); frames[len(frames)-1]["type"] != "prompt_done" {
+			t.Fatalf("output after prompt_done: %v", frames[len(frames)-1])
+		}
+	})
+	t.Run("gives up", func(t *testing.T) {
+		installFake(t)
+		s, _ := open(t, provider.OpenOptions{})
+		res, err := s.Prompt(turnCtx(t), "retry giveup", nil)
+		if err == nil || res.StopReason != "failed" || !strings.Contains(err.Error(), "Retry cancelled") {
+			t.Fatalf("turn: %+v %v", res, err)
+		}
+	})
+}
+
+func TestTheNextTurnWaitsForTheLastRunToClose(t *testing.T) {
+	installFake(t, "GRASP_FAKE_PI_LINGER_MS=10")
+	s, _ := open(t, provider.OpenOptions{})
+	for _, text := range []string{"hello", "again"} {
+		if res, err := s.Prompt(turnCtx(t), text, nil); err != nil || res.StopReason != "end_turn" {
+			t.Fatalf("%s: %+v %v", text, res, err)
+		}
+	}
+}
+
 func TestExtensionDialogsAreDismissed(t *testing.T) {
 	installFake(t)
 	s, _ := open(t, provider.OpenOptions{})

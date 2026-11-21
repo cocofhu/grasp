@@ -66,11 +66,7 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 		}
 
 		if p := bridge.Session(); p != nil {
-			// Marked so a client waiting on its connect does not take this
-			// as the answer.
-			snapshot := bridge.ConnectedPayload(p)
-			snapshot["snapshot"] = true
-			if err := bridge.WriteJSONWS(conn, snapshot); err != nil {
+			if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(p)); err != nil {
 				log.Printf("ws cid=%s: 同步 connected 失败: %v", cid, err)
 			} else {
 				log.Printf("ws cid=%s: 已同步当前会话 sid=%s", cid, p.SessionID())
@@ -185,7 +181,13 @@ func handleConnect(cid string, conn *websocket.Conn, bridge *service.Bridge, pay
 		return err
 	}
 	log.Printf("ws cid=%s sid=%s: 握手成功 agent=%s", cid, sess.SessionID(), sess.Info().Name)
-	if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(sess)); err != nil {
+	var req struct {
+		ConnectID string `json:"connectId"`
+	}
+	_ = json.Unmarshal(payload, &req)
+	reply := bridge.ConnectedPayload(sess)
+	reply["connectId"] = req.ConnectID
+	if err := bridge.WriteJSONWS(conn, reply); err != nil {
 		return err
 	}
 	bridge.BroadcastQueueState()

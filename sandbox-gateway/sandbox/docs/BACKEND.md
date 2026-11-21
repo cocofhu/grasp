@@ -299,7 +299,7 @@ web/                  # 前端（ESM + 静态资源）
   - `Resume`：用本会话的 `SessionID` 作为 `OpenOptions.ResumeSessionID` 重新打开，能接回同一原生对话。one-shot 各 codec、`codex`、`opencode` 与 `pi` 恒为真；ACP 家族取决于 `initialize` 的声明：有 `sessionCapabilities.resume` 时用 `session/resume`（不回放历史，如 `deepseek_harness`、`kimi`），否则有 `loadSession` 时用 `session/load`（回放的历史不转发给客户端，如 `trae`），都没有则为假。Agent 拒绝接回（会话已不存在）时改开新会话。
   - 两项都随 `connected` 帧的 `capabilities` 与 `/capabilities` 的 `session.steer` / `session.resume` 下发。
 - **运行中引导（steer）**：`Capabilities().Steer` 为真时，可把一条输入送进正在运行的这一轮。
-  - 原生实现：`codex` 走 `turn/steer`；`opencode` 在运行中再发一次 `prompt_async`，下一步并入，这一轮直到每条已发送的输入都有回复才结束；`pi` 用带 `streamingBehavior: steer` 的 `prompt`，在下一次模型调用前并入，恰在收尾时到达的会另起一轮，这一轮直到 Agent 收下全部输入才结束；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
+  - 原生实现：`codex` 走 `turn/steer`，带 `clientUserMessageId`，回执超时则按这个 ID 查本回合是否已记录这条输入，已记录即算送达，回合已结束且未记录才报 `no_turn`；`opencode` 在运行中再发一次 `prompt_async`，下一步并入，这一轮直到每条已发送的输入都有回复才结束；`pi` 用带 `streamingBehavior: steer` 的 `prompt`，在下一次模型调用前并入，恰在收尾时到达的会另起一轮，这一轮直到 Agent 收下全部输入才结束；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
   - WS 协议：`{"op":"steer","opId":<目标轮>,"steerId":…,"text":…,"images":[…]}` → `op:steer_ack`（`status`：`delivered` / `unsupported` / `no_turn` / `failed`）；送达后在目标轮的事件流里追加 `user_steer`（文本与附件预览），随该轮持久化。
   - 不支持的会话由平台改为"中断当前轮并把这条输入排到队首"。
 - **会话生命周期**：更换 Agent 进程时，桥接按用途决定是否接回原生对话。
@@ -308,12 +308,13 @@ web/                  # 前端（ESM + 静态资源）
   - 长驻进程意外退出：`Resume` 为真时 10 分钟内最多自动重启 3 次并接回原会话，正在跑的那一轮按失败收尾，排队消息在新进程上继续；否则照旧广播 `agentExited`。
   - 长驻进程回合前重建：沙箱从休眠中恢复（墙上时间比单调时钟多走 30s 以上，即 E2B 暂停又恢复），或进程已运行超过 `SANDBOX_AGENT_MAX_AGE`（默认 `6h`，`0` 不限）时，下一轮开始前重建进程并接回原会话，避免沿用已经断开的模型 / MCP 连接。不能接回会话的 Agent 不重建。
   - 回合被中断（用户停止或看门狗）后，长驻会话等 Agent 真正停下再返回，下一条消息不会与仍在运行的回合重叠；Agent 在 15s 内不响应中断则关闭进程，按上一条接回原会话（`codex`、`opencode`、`pi` 与 ACP 家族一致）。
-  - 后端进程重启：default 会话的原生会话指针（Agent、工作目录、会话 ID）存于 `~/.grasp/agent-session.json`，与各 Agent 的会话文件同在家目录；重启后的第一个 Agent 在同一 Agent 与目录下接回它，`connected` 帧带 `resumed: true`，平台据此不再补发对话记录。新对话会覆盖指针，不能接回的会话不留指针。
+  - 后端进程重启：后端退出前关闭所有会话的 Agent 进程（`opencode serve` 在独立进程组，不会随后端退出），不触发自动重启，指针保留供下一个后端接回。default 会话的原生会话指针（Agent、工作目录、会话 ID）存于 `~/.grasp/agent-session.json`，与各 Agent 的会话文件同在家目录；重启后的第一个 Agent 在同一 Agent 与目录下接回它，`connected` 帧带 `resumed: true`，平台据此不再补发对话记录。新对话会覆盖指针，不能接回的会话不留指针。
   - 配置变更：`connect` 带来不同的 MCP 列表时重开进程并接回原会话，可见聊天记录保留（不带 MCP 的 connect 沿用现有列表）；会话声明的启动配置文件（`provider.ConfigReader`，`codex` 为 `CODEX_HOME` 下的 `auth.json` 与 `config.toml`，`opencode` 为其配置目录下的 `opencode.json(c)` / `config.json` 与数据目录下的 `auth.json`）有变化时，下一轮开始前重建进程并接回原会话，平台续期的 Codex 设备码登录因此立即生效。凭据环境变量与模型连接由 reprime 重启后端下发，靠上面的会话指针接回；工作流换节点的 reprime 会删除指针，下一个节点总是新对话。
   - 自动重启或重建没能接回原会话（如原会话文件已不在）时，下一轮的 `prompt_done` 带 `sessionReset: true` 与 `previousSessionId`，平台据此补发对话记录，与 one-shot 的 resume 回退一致。
 - **回合终态**：`prompt_done` 表示 Agent 与它派生的子 Agent 都已停下，工作流据此判定节点完成。
-  - `codex`：`turn/completed` 后，若本线程经 `spawnAgent` 派生、按 `collabAgentToolCall.agentsStates` 仍在运行的子 Agent 用 `thread/read` 查到还是 `active`，就等它们停下再发 `prompt_done`，期间显示"等待 N 个子 Agent 完成"。回合被中断时，先用 `thread/turns/list` 取各子线程进行中的回合并 `turn/interrupt`，确认都停下后才发 `prompt_done`；`InterruptGrace` 内确认不了就结束 app-server，由 Bridge 复活。子线程自己的通知不会结束父回合。
-  - `opencode`：会话空闲后，若本会话的子会话（子 Agent）在 `/session/status` 里仍在运行，就等它们停下再发 `prompt_done`，提示与中断语义同 `codex`（逐个 `abort` 本会话与忙碌的子会话并轮询到空闲）。提交回合没收到回执时，同样先中断并确认空闲再结束回合。
+  - `codex`：`turn/completed` 后，若本线程经 `spawnAgent` 或 `subAgentActivity`（`started`，以及唤醒空闲子 Agent 的 `interacted`）派生、按 `collabAgentToolCall.agentsStates` 仍在运行的子 Agent 用 `thread/read` 查到还是 `active`，就等它们停下再发 `prompt_done`，期间显示"等待 N 个子 Agent 完成"。只有 app-server 答复线程不存在（`-32600`）才不再等；其它错误按状态未知继续等，由回合看门狗兜底。回合被中断时，先用 `thread/turns/list` 取各子线程进行中的回合并 `turn/interrupt`，确认都停下后才发 `prompt_done`；`InterruptGrace` 内确认不了就结束 app-server，由 Bridge 复活。子线程自己的通知不会结束父回合。
+  - `opencode`：会话空闲后，若本会话的子会话（子 Agent）在 `/session/status` 里仍在运行，就等它们停下再发 `prompt_done`，提示与中断语义同 `codex`（逐个 `abort` 本会话与忙碌的子会话并轮询到空闲）；状态读不到时按未知继续查询。提交回合没收到回执时，同样先中断并确认空闲再结束回合。
+  - `pi`：`agent_end` 带 `willRetry: true` 时回合不结束，以 Pi 自动重试的结果为准（重试成功则不报上一次的错误；在退避期间放弃或被取消时以 `auto_retry_end` 收尾）。下一轮的 `prompt` 若因上一轮仍在收尾被拒绝，等 Pi 空闲后重发一次。
   - one-shot：回合以 CLI 进程退出为界，`claude_code` 在 `-p` 下会先等后台任务（上限 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`）。
   - ACP 家族：以 `session/prompt` 的应答为界。
 - **验证状态**（务必据实使用，勿把"已接线"当成"已验证"）：

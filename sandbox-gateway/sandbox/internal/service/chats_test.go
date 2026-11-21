@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,6 +116,50 @@ func TestChatManagerCreateRenameDeleteAndCap(t *testing.T) {
 	}
 	if _, err := m.Create("after delete", ""); err != nil {
 		t.Fatalf("create after delete should fit under cap: %v", err)
+	}
+}
+
+type closingSess struct {
+	stubSess
+	done chan struct{}
+	once sync.Once
+}
+
+func (s *closingSess) Capabilities() provider.Capabilities { return provider.Capabilities{Resume: true} }
+func (s *closingSess) Done() <-chan struct{}               { return s.done }
+func (s *closingSess) Close() error {
+	s.once.Do(func() { close(s.done) })
+	return nil
+}
+
+func TestCloseEndsEveryAgentWithoutReviving(t *testing.T) {
+	m := NewChatManager()
+	a, err := m.Create("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridges := []*Bridge{m.Default(), a}
+	sessions := []*closingSess{
+		{stubSess: stubSess{id: "native-default"}, done: make(chan struct{})},
+		{stubSess: stubSess{id: "native-a"}, done: make(chan struct{})},
+	}
+	for i, b := range bridges {
+		attach(b, sessions[i])
+	}
+	m.Close()
+	for i, b := range bridges {
+		select {
+		case <-sessions[i].done:
+		default:
+			t.Fatalf("chat %s kept its Agent", b.ID())
+		}
+		b.watchAgentConn(sessions[i])
+		b.mu.Lock()
+		revived := b.reviving || b.sess != nil
+		b.mu.Unlock()
+		if revived {
+			t.Fatalf("chat %s revived its Agent during the exit", b.ID())
+		}
 	}
 }
 

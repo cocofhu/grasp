@@ -19,6 +19,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/textutil"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -482,8 +483,10 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 	c.mu.Unlock()
 	go c.readLoop(conn, done, stop)
 
+	connectID := uuid.NewString()
 	connectMsg := map[string]any{
 		"op":             "connect",
+		"connectId":      connectID,
 		"autoPermission": true,
 	}
 	if c.cwd != "" {
@@ -502,8 +505,8 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 		select {
 		case raw := <-c.eventCh:
 			op, sessionID := parseOpAndSession(raw)
-			resumed, snapshot := parseConnected(raw)
-			if op == "connected" && sessionID != "" && !snapshot {
+			resumed, answers := parseConnected(raw)
+			if op == "connected" && sessionID != "" && (answers == nil || *answers == connectID) {
 				c.setConnected(sessionID)
 				c.mu.Lock()
 				c.resumed = resumed
@@ -823,15 +826,16 @@ func parseOpAndSession(raw json.RawMessage) (string, string) {
 	return m.Op, m.SessionID
 }
 
-// parseConnected reads what a connected frame says about our connect. A
-// snapshot is the state a new socket is shown before its connect runs.
-func parseConnected(raw json.RawMessage) (resumed *bool, snapshot bool) {
+// parseConnected reads what a connected frame says about a connect: answers
+// is the connectId it replies to, empty for a broadcast or the state a new
+// socket is shown, nil from a bridge that predates the field.
+func parseConnected(raw json.RawMessage) (resumed *bool, answers *string) {
 	var m struct {
-		Resumed  *bool `json:"resumed"`
-		Snapshot bool  `json:"snapshot"`
+		Resumed   *bool   `json:"resumed"`
+		ConnectID *string `json:"connectId"`
 	}
 	_ = json.Unmarshal(raw, &m)
-	return m.Resumed, m.Snapshot
+	return m.Resumed, m.ConnectID
 }
 
 func parseErrorMessage(raw json.RawMessage) string {

@@ -1,6 +1,7 @@
 package pi
 
 import (
+	"cmp"
 	"encoding/json"
 	"log"
 	"regexp"
@@ -23,6 +24,8 @@ type event struct {
 	IsError    bool            `json:"isError"`
 	Success    bool            `json:"success"`
 	FinalError string          `json:"finalError"`
+	// WillRetry on agent_end: Pi retries the failed request as another run.
+	WillRetry bool `json:"willRetry"`
 	// extension_ui_request
 	ID     string `json:"id"`
 	Method string `json:"method"`
@@ -72,6 +75,10 @@ func (s *session) onEvent(raw json.RawMessage) {
 		t.ended = false
 	case "agent_end":
 		chunks = s.flushLocked(chunks)
+		if ev.WillRetry {
+			// The retry decides the outcome; this attempt's error is not it.
+			t.errText = ""
+		}
 	case "message_update":
 		if d := ev.AssistantMessageEvent; d != nil && d.Delta != "" {
 			switch d.Type {
@@ -109,8 +116,8 @@ func (s *session) onEvent(raw json.RawMessage) {
 		}
 		updates = append(updates, update)
 	case "auto_retry_end":
-		if !ev.Success && ev.FinalError != "" {
-			t.errText = ev.FinalError
+		if !ev.Success {
+			t.errText = cmp.Or(ev.FinalError, t.errText, "Pi 自动重试失败")
 		}
 	}
 	s.mu.Unlock()
@@ -120,7 +127,9 @@ func (s *session) onEvent(raw json.RawMessage) {
 	for _, u := range updates {
 		s.emitUpdate(u)
 	}
-	if ev.Type == "agent_end" {
+	// A run Pi retries goes on as another run; a retry that gave up or was
+	// cancelled during its backoff sends no further agent_end.
+	if (ev.Type == "agent_end" && !ev.WillRetry) || (ev.Type == "auto_retry_end" && !ev.Success) {
 		// Settle only after the run's last output went out.
 		s.mu.Lock()
 		t.ended = true

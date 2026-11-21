@@ -39,6 +39,12 @@ type fakeServer struct {
 	// turn is interrupted.
 	childReads              int
 	childStubborn, childOff bool
+	// childCalls counts every thread/read of child-1, including failed ones.
+	childCalls int
+	// lastTurn is the most recent turn; steered the clientUserMessageIds it
+	// recorded.
+	lastTurn string
+	steered  []string
 }
 
 func (f *fakeServer) childActive() bool {
@@ -92,6 +98,7 @@ func runFakeAppServer() {
 				TurnID      string `json:"turnId"`
 				Model       string `json:"model"`
 				ServiceTier string `json:"serviceTier"`
+				ClientMsgID string `json:"clientUserMessageId"`
 				Input       []struct {
 					Text string `json:"text"`
 				} `json:"input"`
@@ -135,7 +142,16 @@ func runFakeAppServer() {
 			reply(map[string]any{"config": config})
 		case "thread/read":
 			status := "idle"
+			if msg.Params.ThreadID == "gone-1" {
+				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "thread not found: gone-1"}})
+				continue
+			}
 			if msg.Params.ThreadID == "child-1" {
+				f.childCalls++
+				if os.Getenv("GRASP_FAKE_CODEX_CHILD_READ_FAIL") == strconv.Itoa(f.childCalls) {
+					f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32603, "message": "Internal error"}})
+					continue
+				}
 				f.childReads++
 				if os.Getenv("GRASP_FAKE_CODEX_EXIT_ON_CHILD_READ") == strconv.Itoa(f.childReads) {
 					os.Exit(0)
@@ -150,6 +166,7 @@ func runFakeAppServer() {
 		case "turn/start":
 			f.n++
 			f.turn = fmt.Sprintf("turn-%d", f.n)
+			f.lastTurn, f.steered = f.turn, nil
 			if strings.Contains(text, "slowstart") {
 				// The turn runs before its id reaches the client.
 				time.Sleep(500 * time.Millisecond)
@@ -164,10 +181,28 @@ func runFakeAppServer() {
 				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "no active turn"}})
 				continue
 			}
-			reply(map[string]any{"turnId": f.turn})
-			f.item("item/completed", map[string]any{"type": "agentMessage", "id": "steered", "text": "steered: " + text})
+			turn := f.turn
+			if !strings.Contains(text, "lostreceipt") {
+				f.steered = append(f.steered, msg.Params.ClientMsgID)
+				f.item("item/completed", map[string]any{"type": "userMessage", "id": "u-" + msg.Params.ClientMsgID, "clientId": msg.Params.ClientMsgID})
+				f.item("item/completed", map[string]any{"type": "agentMessage", "id": "steered", "text": "steered: " + text})
+			}
 			f.complete("completed", "")
+			if strings.Contains(text, "receipt") {
+				// The answer arrives after the client gave up on it.
+				go func() { time.Sleep(time.Second); reply(map[string]any{"turnId": turn}) }()
+				continue
+			}
+			reply(map[string]any{"turnId": turn})
 		case "thread/turns/list":
+			if msg.Params.ThreadID == f.thread {
+				items := []any{}
+				for _, id := range f.steered {
+					items = append(items, map[string]any{"type": "userMessage", "id": "u-" + id, "clientId": id})
+				}
+				reply(map[string]any{"data": []any{map[string]any{"id": f.lastTurn, "status": "completed", "items": items}}})
+				continue
+			}
 			status := "completed"
 			if msg.Params.ThreadID == "child-1" && f.childActive() {
 				status = "inProgress"
@@ -238,8 +273,15 @@ func (f *fakeServer) play(text string) {
 		f.send(map[string]any{"id": 96, "method": "item/tool/requestUserInput", "params": map[string]any{}})
 		f.complete("completed", "")
 	case strings.Contains(text, "delegate"):
-		f.item("item/completed", map[string]any{"type": "subAgentActivity", "id": "call_1", "kind": "started",
-			"agentThreadId": "child-1", "agentPath": "/root/helper"})
+		kind, child := "started", "child-1"
+		if strings.Contains(text, "followup") {
+			kind = "interacted"
+		}
+		if strings.Contains(text, "gone") {
+			child = "gone-1"
+		}
+		f.item("item/completed", map[string]any{"type": "subAgentActivity", "id": "call_1", "kind": kind,
+			"agentThreadId": child, "agentPath": "/root/helper"})
 		f.complete("completed", "")
 	case strings.Contains(text, "spawn"):
 		f.childStubborn = strings.Contains(text, "stubborn")

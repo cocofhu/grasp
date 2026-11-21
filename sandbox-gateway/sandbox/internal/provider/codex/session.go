@@ -10,8 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"backend/internal/acp"
@@ -22,6 +24,10 @@ const clientName = "grasp"
 
 // rpcTimeout bounds request/response calls that do not wait for a turn.
 var rpcTimeout = 30 * time.Second
+
+// rpcInvalidRequest is the JSON-RPC code the app-server answers, among other
+// refusals, for a thread it does not know.
+const rpcInvalidRequest = -32600
 
 // session is one app-server process and its thread.
 type session struct {
@@ -240,15 +246,65 @@ func (s *session) Steer(text string) error {
 	if id == "" {
 		return provider.ErrNoActiveTurn
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
+	clientID := "grasp-steer-" + strconv.FormatUint(steerSeq.Add(1), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), steerTimeout)
 	defer cancel()
 	_, err := s.conn.Call(ctx, "turn/steer", map[string]any{
-		"threadId": s.threadID, "expectedTurnId": id, "input": textInput(text),
+		"threadId": s.threadID, "expectedTurnId": id, "input": textInput(text), "clientUserMessageId": clientID,
 	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return s.steerLanded(t, clientID)
+	}
 	if err != nil && !s.turnActive(t) {
 		return provider.ErrNoActiveTurn
 	}
 	return err
+}
+
+// steerTimeout bounds the turn/steer call; steerCheckTimeout the read that
+// settles an unanswered one. Together they stay within provider.SteerTimeout
+// plus the margin the platform allows. Vars so tests can shrink them.
+var (
+	steerTimeout      = provider.SteerTimeout
+	steerCheckTimeout = 5 * time.Second
+)
+
+var steerSeq atomic.Uint64
+
+// steerLanded settles a turn/steer that got no answer by whether the turn
+// recorded its input, so input that reached the turn is never run again as
+// the next one. A turn that ended without it never took it: Codex does not
+// end a turn while steered input is pending.
+func (s *session) steerLanded(t *activeTurn, clientID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), steerCheckTimeout)
+	defer cancel()
+	raw, err := s.conn.Call(ctx, "thread/turns/list", map[string]any{"threadId": s.threadID, "limit": 1, "itemsView": "full"})
+	if err != nil {
+		return fmt.Errorf("无法确认引导是否送达: %w", err)
+	}
+	var page struct {
+		Data []struct {
+			ID    string `json:"id"`
+			Items []struct {
+				Type     string `json:"type"`
+				ClientID string `json:"clientId"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return fmt.Errorf("无法确认引导是否送达: %w", err)
+	}
+	for _, turn := range page.Data {
+		for _, item := range turn.Items {
+			if turn.ID == t.id && item.Type == "userMessage" && item.ClientID == clientID {
+				return nil
+			}
+		}
+	}
+	if s.turnActive(t) {
+		return errors.New("无法确认引导是否送达：Codex 未应答且回合尚未记录这条输入")
+	}
+	return provider.ErrNoActiveTurn
 }
 
 func (s *session) turnActive(t *activeTurn) bool {
@@ -492,8 +548,9 @@ func (s *session) activeTurnOf(threadID string) string {
 }
 
 // runningSubagents asks the app-server which tracked subagents are still
-// active and forgets the others. A thread the app-server refuses to read is
-// not waited for; one whose state is unknown (no answer) still is.
+// active and forgets the others. A thread the app-server reports as not
+// found is not waited for; one whose state is unknown (no answer, an internal
+// error) still is, until the turn's own deadline.
 func (s *session) runningSubagents(ctx context.Context) []string {
 	s.mu.Lock()
 	ids := slices.Sorted(maps.Keys(s.subagents))
@@ -503,7 +560,7 @@ func (s *session) runningSubagents(ctx context.Context) []string {
 		active, err := s.threadActive(ctx, id)
 		var refused *acp.RPCError
 		switch {
-		case errors.As(err, &refused):
+		case errors.As(err, &refused) && refused.Code == rpcInvalidRequest:
 			log.Printf("codex: 子 Agent %s 不可读取，不再等待: %v", id, err)
 		case err != nil:
 			log.Printf("codex: 子 Agent %s 状态未知，继续等待: %v", id, err)

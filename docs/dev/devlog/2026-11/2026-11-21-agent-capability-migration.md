@@ -63,6 +63,14 @@
         - OpenCode 提交回合时如果没收到回执（连接断开），服务端可能已经在跑。现在先中断并确认空闲，再结束回合；明确拒绝（HTTP 错误）照旧直接失败。
         - 等子 Agent 时停止，原来只异步中断父会话或父回合，子会话、子线程可能还在跑，`prompt_done(cancelled)` 却已发出。现在 OpenCode 的 `halt` 中断本会话和忙碌的子会话，Codex 的 `haltSubagents` 用 `thread/turns/list` 取子线程进行中的回合并 `turn/interrupt`；两者都轮询到确认停止，`InterruptGrace` 内确认不了就结束宿主进程，由 Bridge 像崩溃一样复活。
         - OpenCode 长驻会话原来保留每个已结束回合的完整正文。现在回合结束时把它的 part 换成共享的「已结算」标记，只留 ID 用于去重，之后重发或迟到的更新都忽略。
+      - 引导、子 Agent 与重试：
+        - Codex 的 `turn/steer` 回执超过 20s、原回合已结束时报 `no_turn`，平台把已送达的引导当作下一轮再跑一遍。现在引导带 `clientUserMessageId`，回执超时就用 `thread/turns/list` 查本回合是否记录了这条输入：记录了算送达；回合已结束且没记录才是 `no_turn`（Codex 有待并入的引导时不会结束回合）；查不到就报失败。
+        - Codex 的 `followup_task` 唤醒已空闲的子线程时，活动类型是 `interacted`，原来只跟踪 `started`，父回合不等它。另外 `thread/read` 的内部错误（`-32603`）原来也会让子线程从等待列表消失，现在只有线程不存在（`-32600`）才放弃，其它错误按状态未知继续等。
+        - OpenCode 第一次读子会话状态失败时，父回合原来直接成功结束，现在同样按未知继续查询。
+        - Pi 的 `agent_end` 带 `willRetry: true` 时，平台原来立即报失败，Pi 随后自动重试成功并照常执行。现在等重试结果；重试成功不报上一次的错误，退避期间放弃或被取消（之后没有 `agent_end`）以 `auto_retry_end` 收尾。
+        - Pi 发出 `agent_end` 后可能还在收尾，紧接着的下一轮 `prompt` 会被以「Agent is already processing」拒绝。现在遇到这个拒绝就等 Pi 空闲后重发一次。
+      - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
+      - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
     - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：
@@ -71,4 +79,5 @@
   - OpenCode 与 Pi 的事件回放测试取自真实抓包（工具回合、引导、中断）。
   - 实测 DeepSeek：OpenCode（模型连接 `api.deepseek.com/v1`）与 Pi（`deepseek/deepseek-v4-flash`）跑通工具回合、回合中引导、约 1s 内中断、新进程接回会话。交接文本在 1500 token 预算下省略 55/63 条后，模型仍答出最初需求的约束、最新决定和省略条数。
   - 全量实测（真实 Bridge + 服务端 `ACPClient`）：Claude Code、CodeBuddy、Codex、OpenCode、Pi、DeepSeek Harness 走 DeepSeek（模型连接或官方 key），Cursor 走 Cursor key。每个 Agent 依次验证工具调用、回合中引导（不支持原生引导的 DeepSeek Harness 与 Cursor 走中断后重发）、取消、切换模型后接回、杀掉 Agent 进程后自动复活接回、重启后端后按会话指针接回、新开上下文。除上述 Claude 自动记忆外全部通过。
+  - 控制面 Chat 实测（Playwright 录屏）：Codex、Claude Code、CodeBuddy、OpenCode 原生引导均并入运行中的回合；同一配置内切到辅助模型（Claude Code、Codex）与切推理强度（Codex，`max`）在回合边界生效，会话只建一次连接，追问仍答出上一轮内容。沙箱内连续重启 backend，旧的 `opencode serve` 均被回收，只剩新进程。
 - 后续：可选的冷恢复会话文件备份未做；Solo 的上下文前言（`services/conversation_history.go`）有自己的 `get_history` 回查机制，暂未改用 `handoff`。

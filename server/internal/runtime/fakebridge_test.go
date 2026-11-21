@@ -142,10 +142,10 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 			b.mu.Lock()
 			connected := map[string]any{"op": "connected", "sessionId": "fake-session"}
 			if !b.legacy {
-				connected["resumed"] = b.resumes
+				connected["resumed"], connected["connectId"] = b.resumes, m["connectId"]
+				_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "stale", "connectId": "", "resumed": !b.resumes})
 			}
 			b.mu.Unlock()
-			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "stale", "snapshot": true, "resumed": !b.resumes})
 			_ = conn.WriteJSON(connected)
 		case "cancel":
 			// fire-and-forget, no ack — unless a stalled ackCancel turn waits.

@@ -265,6 +265,28 @@ func TestSteerRaceWithTurnEndIsNoTurn(t *testing.T) {
 	}
 }
 
+func TestAnUnansweredSteerIsSettledByWhatTheTurnRecorded(t *testing.T) {
+	old := steerTimeout
+	steerTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { steerTimeout = old })
+	for _, tc := range []struct {
+		text string
+		want error
+	}{
+		{"slowreceipt", nil},
+		{"lostreceipt", provider.ErrNoActiveTurn},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			s, _ := open(t, provider.OpenOptions{})
+			ch := startTurn(t, s, context.Background(), "wait")
+			if err := s.Steer(tc.text); !errors.Is(err, tc.want) {
+				t.Fatalf("steer = %v, want %v", err, tc.want)
+			}
+			await(t, ch)
+		})
+	}
+}
+
 func TestCancelInterruptsWithoutKillingProcess(t *testing.T) {
 	s, rec := open(t, provider.OpenOptions{})
 	if err := s.Cancel(); err != nil {
@@ -521,14 +543,45 @@ func TestTurnWaitsForMultiAgentV2Subagents(t *testing.T) {
 	old := subagentPoll
 	subagentPoll = 10 * time.Millisecond
 	t.Cleanup(func() { subagentPoll = old })
-	s, rec := open(t, provider.OpenOptions{})
-	res, err := prompt(t, s, nil, "delegate")
-	if err != nil || res.StopReason != "end_turn" {
-		t.Fatalf("res=%+v err=%v", res, err)
+	for _, text := range []string{"delegate", "delegate followup"} {
+		t.Run(text, func(t *testing.T) {
+			s, rec := open(t, provider.OpenOptions{})
+			res, err := prompt(t, s, nil, text)
+			if err != nil || res.StopReason != "end_turn" {
+				t.Fatalf("res=%+v err=%v", res, err)
+			}
+			if calls := rec.updates("tool_call"); len(calls) != 1 || calls[0]["title"] != "等待 1 个子 Agent 完成" {
+				t.Fatalf("the turn ended before its subagent stopped: %v", calls)
+			}
+		})
 	}
-	if calls := rec.updates("tool_call"); len(calls) != 1 || calls[0]["title"] != "等待 1 个子 Agent 完成" {
-		t.Fatalf("the turn ended before its subagent stopped: %v", calls)
+}
+
+func TestASubagentReadErrorKeepsWaitingUnlessTheThreadIsGone(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	for _, failing := range []string{"1", "2"} {
+		t.Run("internal error on read "+failing, func(t *testing.T) {
+			t.Setenv("GRASP_FAKE_CODEX_CHILD_READ_FAIL", failing)
+			s, _ := open(t, provider.OpenOptions{})
+			if res, err := prompt(t, s, nil, "delegate"); err != nil || res.StopReason != "end_turn" {
+				t.Fatalf("res=%+v err=%v", res, err)
+			}
+			if active, err := s.threadActive(context.Background(), "child-1"); err != nil || active {
+				t.Fatalf("the turn ended while its subagent ran: active=%v err=%v", active, err)
+			}
+		})
 	}
+	t.Run("thread not found", func(t *testing.T) {
+		s, rec := open(t, provider.OpenOptions{})
+		if res, err := prompt(t, s, nil, "delegate gone"); err != nil || res.StopReason != "end_turn" {
+			t.Fatalf("res=%+v err=%v", res, err)
+		}
+		if calls := rec.updates("tool_call"); len(calls) != 0 {
+			t.Fatalf("waited for a thread the app-server does not know: %v", calls)
+		}
+	})
 }
 
 func TestInterruptWhileWaitingForSubagents(t *testing.T) {

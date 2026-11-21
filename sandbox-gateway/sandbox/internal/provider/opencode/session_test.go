@@ -344,6 +344,22 @@ func TestTurnWaitsForBusySubagents(t *testing.T) {
 	}
 }
 
+func TestAnUnreadableSubagentStateIsAskedAgain(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t, "GRASP_FAKE_OPENCODE_FAIL_STATUS=1")
+	s, rec := f.open(t, "", "", "")
+	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+	calls, updates := rec.updates("tool_call"), rec.updates("tool_call_update")
+	if len(calls) != 1 || calls[0]["title"] != "等待子 Agent 完成" || len(updates) != 1 || updates[0]["status"] != "completed" {
+		t.Fatalf("subagent wait: %v %v", calls, updates)
+	}
+}
+
 func TestTurnWaitsForABackgroundSubagentThatHasNotStarted(t *testing.T) {
 	old := subagentPoll
 	subagentPoll = 10 * time.Millisecond

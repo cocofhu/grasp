@@ -238,12 +238,13 @@ func (s *session) onNotification(raw json.RawMessage) error {
 
 // trackSubagents follows the agents this thread spawned: through the collab
 // tool calls that report on them, or with multi-agent v2 (the default for
-// newer models) through subAgentActivity items. Whether one still runs is
-// asked of the app-server when the turn ends.
+// newer models) through subAgentActivity items, where "interacted" is a
+// follow-up task that may wake an idle one. Whether one still runs is asked
+// of the app-server when the turn ends.
 func (s *session) trackSubagents(item threadItem) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if item.Type == "subAgentActivity" && item.Kind == "started" && item.AgentThreadID != "" {
+	if item.Type == "subAgentActivity" && (item.Kind == "started" || item.Kind == "interacted") && item.AgentThreadID != "" {
 		s.subagents[item.AgentThreadID] = true
 	}
 	if item.Tool == "spawnAgent" {

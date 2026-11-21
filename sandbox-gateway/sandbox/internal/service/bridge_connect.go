@@ -64,8 +64,11 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 	b.mu.Lock()
 	resumed := b.sess == p && b.sessHistory
 	b.mu.Unlock()
+	// connectId names the connect a frame answers: the caller fills it in
+	// for the reply to one, broadcasts carry it empty.
 	m := map[string]any{
 		"op":        "connected",
+		"connectId": "",
 		"resumed":   resumed,
 		"sessionId": p.SessionID(),
 		"cwd":       p.CWD(),

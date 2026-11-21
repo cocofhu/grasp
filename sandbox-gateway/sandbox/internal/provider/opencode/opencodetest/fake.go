@@ -146,9 +146,14 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.statusReads++
 		exit := os.Getenv("GRASP_FAKE_OPENCODE_EXIT_ON_STATUS") == strconv.Itoa(f.statusReads)
+		fail := os.Getenv("GRASP_FAKE_OPENCODE_FAIL_STATUS") == strconv.Itoa(f.statusReads)
 		f.mu.Unlock()
 		if exit {
 			os.Exit(0)
+		}
+		if fail {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		writeJSON(w, f.status())
 	case len(parts) == 2 && parts[0] == "session" && r.Method == http.MethodGet:

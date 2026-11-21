@@ -143,7 +143,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	s.turn = t
 	s.text = sanitizer{}
 	s.mu.Unlock()
-	if _, err := s.proc.call(ctx, map[string]any{"type": "prompt", "message": text}); err != nil {
+	if err := s.sendPrompt(ctx, text); err != nil {
 		s.endTurn()
 		return s.finishFailed(ctx, err)
 	}
@@ -160,6 +160,47 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	aborted := t.aborted
 	s.mu.Unlock()
 	return s.finishTurn(ctx, t, aborted)
+}
+
+// sendPrompt starts the turn's run. Pi may still be closing the previous run
+// after its agent_end; a prompt it refuses as busy is sent again once it
+// reports idle.
+func (s *session) sendPrompt(ctx context.Context, text string) error {
+	cmd := map[string]any{"type": "prompt", "message": text}
+	_, err := s.proc.call(ctx, cmd)
+	if err == nil || !strings.Contains(err.Error(), "Agent is already processing") {
+		return err
+	}
+	if _, idle := s.idleState(ctx, func() bool { return ctx.Err() == nil }); !idle {
+		return err
+	}
+	_, err = s.proc.call(ctx, cmd)
+	return err
+}
+
+// agentState is the part of get_state that tells whether the agent is idle.
+type agentState struct {
+	IsStreaming  bool `json:"isStreaming"`
+	PendingCount int  `json:"pendingMessageCount"`
+}
+
+// idleState asks the agent for its state until it reports it is not
+// streaming, at most queueChecks times and while keep holds.
+func (s *session) idleState(ctx context.Context, keep func() bool) (agentState, bool) {
+	var state agentState
+	for i := 0; i < queueChecks; i++ {
+		if i > 0 {
+			time.Sleep(queueCheckDelay)
+		}
+		if !keep() {
+			return state, false
+		}
+		r, err := s.proc.call(ctx, map[string]any{"type": "get_state"})
+		if err == nil && json.Unmarshal(r.Data, &state) == nil && !state.IsStreaming {
+			return state, true
+		}
+	}
+	return state, false
 }
 
 // abort stops the run and waits for the agent to confirm, then for the run
@@ -249,7 +290,7 @@ func (s *session) evaluateLocked(t *activeTurn) {
 	}
 }
 
-// queueChecks bounds how often checkQueued asks the agent for its queue: Pi
+// queueChecks bounds how often idleState asks the agent for its state: Pi
 // may still report streaming briefly after agent_end, and a query may fail.
 // Vars so tests can shrink them.
 var (
@@ -264,24 +305,11 @@ var (
 func (s *session) checkQueued(t *activeTurn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	var state struct {
-		IsStreaming  bool `json:"isStreaming"`
-		PendingCount int  `json:"pendingMessageCount"`
-	}
-	known := false
-	for i := 0; i < queueChecks && !known; i++ {
-		if i > 0 {
-			time.Sleep(queueCheckDelay)
-		}
+	state, known := s.idleState(ctx, func() bool {
 		s.mu.Lock()
-		idle := !t.settled && t.ended
-		s.mu.Unlock()
-		if !idle {
-			break
-		}
-		r, err := s.proc.call(ctx, map[string]any{"type": "get_state"})
-		known = err == nil && json.Unmarshal(r.Data, &state) == nil && !state.IsStreaming
-	}
+		defer s.mu.Unlock()
+		return !t.settled && t.ended
+	})
 	s.mu.Lock()
 	t.checking = false
 	if t.settled || !t.ended {
