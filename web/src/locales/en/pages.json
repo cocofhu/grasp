@@ -3221,7 +3221,8 @@
     },
     "chatMessageInfo": {
       "title": "Statistics",
-      "time": "Time",
+      "started": "Started",
+      "time": "Finished",
       "tool": "Coding tool",
       "model": "Model",
       "effort": "Reasoning effort",

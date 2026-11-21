@@ -54,6 +54,32 @@ describe('shared reply information', () => {
     expect(panel()?.querySelector('[data-info-row="model"] dd')?.textContent).toBe('Not reported')
   })
 
+  it('shows the finish time and adds the start time only for long or cross-day replies', async () => {
+    const at = (iso: string) => {
+      const d = new Date(iso)
+      const p = (n: number) => String(n).padStart(2, '0')
+      return { full: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`, clock: `${p(d.getHours())}:${p(d.getMinutes())}` }
+    }
+    const start = '2026-11-21T04:50:00Z', end = '2026-11-21T11:44:00Z'
+    const wrapper = setup({ createdAt: end, execution: { startedAt: start }, durationMs: 24840000 })
+    expect(wrapper.get('time').attributes('datetime')).toBe(end)
+    expect(wrapper.get('time').text()).toBe(at(end).clock)
+    await wrapper.get('button').trigger('focus'); await flushPromises()
+    expect(panel()?.querySelector('[data-info-row="time"] dt')?.textContent).toBe('Finished')
+    expect(panel()?.querySelector('[data-info-row="time"] dd')?.textContent).toBe(at(end).full)
+    expect(panel()?.querySelector('[data-info-row="started"] dt')?.textContent).toBe('Started')
+    expect(panel()?.querySelector('[data-info-row="started"] dd')?.textContent).toBe(at(start).full)
+
+    await wrapper.setProps({ metadata: { at: '2026-11-21T04:50:00Z', startedAt: '2026-11-21T04:50:00Z', endedAt: '2026-11-21T04:53:00Z' } })
+    expect(wrapper.get('time').attributes('datetime')).toBe('2026-11-21T04:53:00Z')
+    expect(panel()?.querySelector('[data-info-row="started"]')).toBeNull()
+
+    await wrapper.setProps({ metadata: { execution: { startedAt: start } } })
+    expect(wrapper.get('time').attributes('datetime')).toBe(start)
+    expect(panel()?.querySelector('[data-info-row="time"]')).toBeNull()
+    expect(panel()?.querySelector('[data-info-row="started"] dd')?.textContent).toBe(at(start).full)
+  })
+
   it('distinguishes absent token reports from explicit zeros and can total reported model buckets', async () => {
     const wrapper = setup()
     await wrapper.get('button').trigger('focus'); await flushPromises()
