@@ -78,9 +78,10 @@ func runFakeAppServer() {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params struct {
-				ThreadID string `json:"threadId"`
-				Model    string `json:"model"`
-				Input    []struct {
+				ThreadID    string `json:"threadId"`
+				Model       string `json:"model"`
+				ServiceTier string `json:"serviceTier"`
+				Input       []struct {
 					Text string `json:"text"`
 				} `json:"input"`
 			} `json:"params"`
@@ -106,18 +107,21 @@ func runFakeAppServer() {
 				continue
 			}
 			if path := os.Getenv("GRASP_FAKE_CODEX_RESUME_MODEL"); path != "" {
-				_ = os.WriteFile(path, []byte(msg.Params.Model), 0o600)
+				_ = os.WriteFile(path, []byte(msg.Params.Model+" "+msg.Params.ServiceTier), 0o600)
 			}
 			f.thread = msg.Params.ThreadID
 			reply(map[string]any{"thread": map[string]any{"id": f.thread}, "model": "fake-model"})
 		case "config/read":
-			model := any(nil)
+			config := map[string]any{"model": nil, "service_tier": nil}
 			for i, arg := range os.Args {
-				if arg == "-c" && i+1 < len(os.Args) && strings.HasPrefix(os.Args[i+1], "model=") {
-					model = strings.Trim(strings.TrimPrefix(os.Args[i+1], "model="), `"`)
+				if arg != "-c" || i+1 == len(os.Args) {
+					continue
+				}
+				if key, value, ok := strings.Cut(os.Args[i+1], "="); ok && (key == "model" || key == "service_tier") {
+					config[key] = strings.Trim(value, `"`)
 				}
 			}
-			reply(map[string]any{"config": map[string]any{"model": model}})
+			reply(map[string]any{"config": config})
 		case "model/list":
 			reply(map[string]any{"data": []any{map[string]any{"id": "fake-other"}, map[string]any{"id": "fake-default", "isDefault": true}}})
 		case "turn/start":
