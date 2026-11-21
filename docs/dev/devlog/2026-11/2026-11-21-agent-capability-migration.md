@@ -32,7 +32,7 @@
     - Codex 换登录账号后接回的线程会因 `invalid_encrypted_content` 每轮失败；服务端把它和 Cursor 的卡死会话一样识别，在同一沙箱开新会话并交接对话后重试。
     - 已知未处理：Kimi Code 2.5.3 / 2.6.1 失败的回合仍回 `end_turn`（真实结果只在 `wire.jsonl`），我们钉在 2.4.0，升级前需补；Pi 断线重流同一推理块时转录里会重复部分文本（ACP 分片无法撤回）。
   - 全量实测后的修正与收敛：
-    - `opencode serve` 启动期间收到的请求既不应答也不断开。健康检查原来沿用 30s 的通用请求超时，每次启动、切模型、崩溃重建都白等 30s；改为单次探测 2s 超时后重试，实测切模型从 32s 降到 9s。
+    - `opencode serve` 启动期间收到的请求既不应答也不断开。健康检查原来沿用 30s 的通用请求超时，每次启动、切模型、崩溃重建都白等 30s；改为单次探测 2s 超时后重试，实测切模型从 32s 降到 9s。启动变快后暴露出 CI 连接测试的时序问题：脚本在 backend 已经拉起 OpenCode 之后才写 `opencode.json`，原来靠那 30s 空等才赶在握手前写完。现在改为 `docker create` 后先注入配置再 `docker start`，与平台随配置包下发的顺序一致。
     - 沙箱自带聊天页显示 `user_steer` 的文本与附件，原来只显示「事件 · user_steer」。
     - 删除重构遗留的死代码：`Bridge.Connect`（生产改走 `connect(openSpec)` 后只剩测试调用）、服务端 `sandbox.GetChatModel`（唯一调用方已改用 `GetChatModelSettings`）。
     - 合并重复实现：Codex / OpenCode / Pi 的帧构造与附件引用改用 `provider` 包的 `SendFrame`、`UpdateFrame`、`ChunkUpdate`、`ErrorFrame`、`PromptDoneFrame`、`WithAttachments`，`prompt_done` 只在一处定义；会话指针、用量基线与附件落盘共用 `provider.WriteFileAtomic`。
