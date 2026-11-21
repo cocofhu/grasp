@@ -114,6 +114,15 @@ export function markBootLive(key: string): void {
   if (rec) rec.live = true
 }
 
+/** How many visits of runId:nodeId went live; reactive, so watchers re-read once a sandbox finished booting. */
+export function bootLiveCount(runId: string | null | undefined, nodeId: string | null | undefined): number {
+  if (!runId || !nodeId) return 0
+  const prefix = `${runId}:${nodeId}:`
+  let n = 0
+  for (const [key, rec] of records) if (key.startsWith(prefix) && rec.live) n++
+  return n
+}
+
 export function getBootRecord(key: string | null | undefined): BootRecord | null {
   return key ? records.get(key) ?? null : null
 }

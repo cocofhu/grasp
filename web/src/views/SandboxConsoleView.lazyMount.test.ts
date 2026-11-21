@@ -253,18 +253,20 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     wrapper.unmount()
   })
 
-  it('adds a 电脑 tab next to 浏览器 on the desktop image only', async () => {
+  it('shows a 电脑 tab instead of 浏览器 on the desktop image only', async () => {
     let wrapper = await mountConsole()
     expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
     expect(wrapper.findAll('button').some((b) => b.text().includes('电脑'))).toBe(false)
     wrapper.unmount()
 
-    apiMocks.sandboxDesktop.mockResolvedValueOnce({ mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] })
+    const browser = apiMocks.sandboxDesktop.getMockImplementation()
+    apiMocks.sandboxDesktop.mockResolvedValue({ mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] })
     wrapper = await mountConsole()
     await flushPromises()
     expect(wrapper.findAll('button').some((b) => b.text().includes('电脑'))).toBe(true)
-    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('浏览器'))).toBe(false)
     wrapper.unmount()
+    apiMocks.sandboxDesktop.mockImplementation(browser ?? (async () => ({ mode: 'browser' })))
 
     apiMocks.sandboxDesktop.mockRejectedValueOnce(new Error('409'))
     wrapper = await mountConsole()

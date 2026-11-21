@@ -5,8 +5,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
-import { resetConversationDrawers } from '@/lib/chat/conversationDrawer'
+import { REACT_STAGE_TAB_NOVNC, resetStageOpenStateForTests, saveStageOpenState } from '@/lib/run/reactArtifactPreview'
+import { ensureConversationDrawer, resetConversationDrawers } from '@/lib/chat/conversationDrawer'
 import ReactArtifactStage from './ReactArtifactStage.vue'
 import SandboxStageSurface from './SandboxStageSurface.vue'
 import { api } from '@/lib/api/api'
@@ -137,6 +137,31 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
       wrapper.unmount()
     })
 
+    it('drops the browser card on the desktop image and moves an open browser tab to 电脑', async () => {
+      const desktop = { mode: 'desktop', shellReady: true, agentActive: false, holder: 'agent', apps: [] }
+      vi.mocked(api.sandboxDesktop).mockResolvedValueOnce(desktop as never)
+      let wrapper = mountSolo()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-card-browser"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="react-artifact-card-computer"]').exists()).toBe(true)
+      wrapper.unmount()
+      resetStageOpenStateForTests(':run-')
+
+      let answer!: (v: unknown) => void
+      vi.mocked(api.sandboxDesktop).mockReturnValueOnce(new Promise((r) => (answer = r)) as never)
+      wrapper = mountSolo()
+      await flushPromises()
+      await wrapper.get('[data-testid="react-artifact-card-browser"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-tab-browser"]').exists()).toBe(true)
+      answer(desktop)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-tab-browser"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="react-artifact-preview-browser"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="react-artifact-preview-computer"]').isVisible()).toBe(true)
+      wrapper.unmount()
+    })
+
     it('shows a resume placeholder on sandbox tabs and remounts the panel after resume', async () => {
       const wrapper = mountSolo({ sandboxPaused: true })
       await flushPromises()
@@ -158,6 +183,24 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
       await flushPromises()
       expect(wrapper.find('[data-testid="react-artifact-sandbox-paused"]').exists()).toBe(false)
       expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-sandbox')).toBe('5')
+      wrapper.unmount()
+    })
+
+    it('opens the resources home instead of a blank stage when the remembered app tab has no preview', async () => {
+      const drawer = ensureConversationDrawer('run-solo')!
+      drawer.split = true
+      drawer.mode = 'resources'
+      saveStageOpenState('run-solo', 'solo', { openNames: [], activeTab: REACT_STAGE_TAB_NOVNC, novncOpen: true, fixedOpen: [] })
+      const wrapper = mountSolo({ sandboxPaused: true })
+      await flushPromises()
+      expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="react-artifact-preview-novnc"]').exists()).toBe(false)
+      expect((wrapper.get('[data-testid="react-artifact-grid"]').element as HTMLElement).style.display).toBe('')
+      expect(wrapper.find('[data-testid="react-artifact-card-app"]').exists()).toBe(false)
+
+      await wrapper.get('[data-testid="react-artifact-card-terminal"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="react-artifact-preview-terminal"] [data-testid="react-artifact-sandbox-paused"]').exists()).toBe(true)
       wrapper.unmount()
     })
 

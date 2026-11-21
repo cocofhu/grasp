@@ -19,6 +19,7 @@ import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { useToast } from '@/lib/composables/useToast'
+import { useDesktopImage } from '@/lib/composables/useDesktopImage'
 import { provideReviewAnnotate, useReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -66,6 +67,7 @@ import {
 } from '@/lib/run/reactArtifactPreview'
 import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
 import { registerStageLinks } from '@/lib/run/stageLinks'
+import { bootLiveCount } from '@/lib/run/bootRecord'
 import { peekConversationDrawer } from '@/lib/chat/conversationDrawer'
 import { useArtifactEditor } from '@/lib/run/useArtifactEditor'
 import { editReasonKey, isEditableArtifact, resolveRunEditState } from '@/lib/run/artifactEdit'
@@ -210,27 +212,15 @@ const sandboxId = computed(() => {
   const n = Number(id)
   return Number.isFinite(n) && n > 0 ? n : null
 })
-/** Desktop image: a 电脑 tab shows the whole desktop next to the browser tab. */
-const desktopImage = ref(false)
-watch(
-  sandboxId,
-  async (id) => {
-    desktopImage.value = false
-    if (!id || props.token) return
-    try {
-      const st = await api.sandboxDesktop(id)
-      if (sandboxId.value !== id) return
-      desktopImage.value = st.mode === 'desktop'
-      if (!desktopImage.value) {
-        removeFixed('computer')
-        fixedMounted.value = { ...fixedMounted.value, computer: false }
-      }
-    } catch {
-      /* stopped sandbox or old runtime: keep the browser label */
-    }
+/** Desktop image: a 电脑 tab shows the whole desktop in place of the browser tab. */
+const { desktopImage } = useDesktopImage(() => sandboxId.value, {
+  enabled: () => !props.token,
+  refreshKey: () => bootLiveCount(props.runId, props.nodeId),
+  onBrowser: () => {
+    removeFixed('computer')
+    fixedMounted.value = { ...fixedMounted.value, computer: false }
   },
-  { immediate: true },
-)
+})
 let summaryThumbGen = 0
 let summaryThumbAbort: AbortController | null = null
 const summaryThumbFp: Record<string, string> = {}
@@ -361,14 +351,15 @@ const fixedCards = computed(() => {
       title: t('pages.reactArtifactStage.fixedTerminalTitle'),
       meta: t('pages.reactArtifactStage.fixedTerminalMeta'),
     },
-    {
+  ]
+  if (!desktopImage.value) {
+    cards.push({
       id: 'browser',
       icon: 'stage-browser',
       title: t('pages.reactArtifactStage.fixedBrowserTitle'),
       meta: t('pages.reactArtifactStage.novncCardMeta'),
-    },
-  ]
-  if (desktopImage.value) {
+    })
+  } else {
     cards.push({
       id: 'computer',
       icon: 'monitor',
@@ -394,9 +385,11 @@ const fixedCards = computed(() => {
 })
 const fixedTabsBeforeApp = computed(() =>
   (['ide', 'terminal', 'browser', 'computer'] as const).filter(
-    (id) => fixedOpen.value.includes(id) && (id !== 'computer' || desktopImage.value),
+    (id) => fixedOpen.value.includes(id) && (id === 'computer' ? desktopImage.value : id !== 'browser' || !desktopImage.value),
   ),
 )
+/** The desktop image's 电脑 tab replaces the browser tab: it shows the same Chromium. */
+const browserPanel = computed<'browser' | 'computer'>(() => (desktopImage.value ? 'computer' : 'browser'))
 const fixedTabsAfterApp = computed(() =>
   (['log'] as const).filter((id) => fixedOpen.value.includes(id)),
 )
@@ -766,6 +759,15 @@ function closeFixed(id: string) {
   removeFixed(id)
 }
 
+watch(desktopImage, (desktop) => {
+  if (!desktop) return
+  const wasActive = activeTab.value === 'browser'
+  if (!wasActive && !fixedOpen.value.includes('browser')) return
+  fixedOpen.value = [...new Set([...fixedOpen.value.filter((x) => x !== 'browser'), 'computer'])]
+  fixedMounted.value = { ...fixedMounted.value, browser: false, computer: true }
+  if (wasActive) activeTab.value = 'computer'
+})
+
 function removeFixed(id: FixedPanelId) {
   if (!fixedOpen.value.includes(id)) return
   if (splitActive.value) {
@@ -812,7 +814,8 @@ function syncDrawerMode(next: 'resources' | 'artifacts') {
   newTabOpen.value = false
   if (next === 'resources') {
     const view = resourceView.value
-    if (view === 'home') {
+    if (view === 'home' || (view === 'app' && !showAppCard.value)) {
+      resourceView.value = 'home'
       activeTab.value = REACT_STAGE_TAB_GRID
       return
     }
@@ -1319,11 +1322,11 @@ watch(
             openAppTab()
             return
           }
-          if (effectiveRemoteKind.value === 'sandbox') openFixed('browser')
+          if (effectiveRemoteKind.value === 'sandbox') openFixed(browserPanel.value)
         },
         openUrl: (url) => {
           if (!showFixedCards.value || (!sandboxId.value && !sandboxLoadingState.value)) return false
-          openFixed('browser')
+          openFixed(browserPanel.value)
           browserOpenRequest.value = { url, seq: ++browserOpenSeq }
           return true
         },
@@ -1764,7 +1767,7 @@ onBeforeUnmount(() => {
         console
         fill
         :inspectable="annotatable"
-        :open-request="browserOpenRequest"
+        :open-request="desktopImage ? null : browserOpenRequest"
         @open-sent="browserOpenRequest = null"
         @pick="onRemotePick"
       />
@@ -1792,6 +1795,8 @@ onBeforeUnmount(() => {
         computer
         fill
         :inspectable="annotatable"
+        :open-request="desktopImage ? browserOpenRequest : null"
+        @open-sent="browserOpenRequest = null"
         @pick="onRemotePick"
       />
       <div
