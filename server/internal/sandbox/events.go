@@ -332,7 +332,7 @@ func dispatchSessionUpdate(kind string, flat map[string]any, result *ChatResult)
 	switch {
 	case kind == "agent_message_chunk":
 		if t := extractContentText(flat["content"]); t != "" {
-			result.Narration += t
+			result.addNarration(t)
 			result.addText("message", t)
 		}
 	case kind == "agent_thought_chunk":

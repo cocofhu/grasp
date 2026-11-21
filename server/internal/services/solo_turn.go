@@ -57,9 +57,20 @@ func (c *soloChat) setPhase(phase string) {
 }
 
 func (c *soloChat) onAcp(raw json.RawMessage) {
-	delta := extractAgentText(raw)
+	delta, brk := replyText(raw)
 	c.mu.Lock()
-	c.text.WriteString(delta)
+	switch {
+	case delta != "":
+		if c.textBreak && c.text.Len() > 0 {
+			prev := strings.TrimRight(c.text.String(), "\n")
+			c.text.Reset()
+			c.text.WriteString(prev + "\n\n")
+		}
+		c.textBreak = false
+		c.text.WriteString(delta)
+	case brk:
+		c.textBreak = true
+	}
 	if len(c.events) < soloMaxEvents {
 		c.events = append(c.events, append(json.RawMessage(nil), raw...))
 	}

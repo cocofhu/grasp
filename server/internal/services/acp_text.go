@@ -5,11 +5,13 @@ import (
 	"strings"
 )
 
-// extractAgentText pulls agent_message_chunk text from a raw ACP frame.
-func extractAgentText(raw json.RawMessage) string {
+// replyText reads a raw ACP frame for the visible reply: its
+// agent_message_chunk text, or whether it ends the current paragraph (a tool
+// call, a thought, or input steered into the turn).
+func replyText(raw json.RawMessage) (text string, brk bool) {
 	var envelope map[string]any
 	if json.Unmarshal(raw, &envelope) != nil {
-		return ""
+		return "", false
 	}
 	ev := envelope
 	if op, _ := envelope["op"].(string); op == "event" {
@@ -22,12 +24,15 @@ func extractAgentText(raw json.RawMessage) string {
 		}
 	}
 	typ, _ := ev["type"].(string)
+	if typ == "user_steer" {
+		return "", true
+	}
 	if typ != "session_update" {
-		return ""
+		return "", false
 	}
 	update, _ := ev["update"].(map[string]any)
 	if update == nil {
-		return ""
+		return "", false
 	}
 	kind := stringifyKind(update["sessionUpdate"])
 	if kind == "" {
@@ -36,10 +41,13 @@ func extractAgentText(raw json.RawMessage) string {
 	if kind == "" {
 		kind = stringifyKind(update["type"])
 	}
-	if normalizeACPKind(kind) != "agent_message_chunk" {
-		return ""
+	switch normalizeACPKind(kind) {
+	case "agent_message_chunk":
+		return contentTextAny(update["content"]), false
+	case "agent_thought_chunk", "tool_call", "tool_call_update":
+		return "", true
 	}
-	return contentTextAny(update["content"])
+	return "", false
 }
 
 func stringifyKind(v any) string {

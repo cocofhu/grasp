@@ -40,7 +40,7 @@ func TestAggregateLastTurnFrames_MultiTurnSeed(t *testing.T) {
 			fullThought = e.Text
 		}
 	}
-	if fullMsg != "answer-1answer-2-partial" || fullThought != "think-1think-2" {
+	if fullMsg != "answer-1\n\nanswer-2-partial" || fullThought != "think-1think-2" {
 		t.Fatalf("full aggregate sanity: msg=%q thought=%q", fullMsg, fullThought)
 	}
 

@@ -52,6 +52,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 			c.turnID = q.ID
 			c.phase = SoloPhasePreparing
 			c.text.Reset()
+			c.textBreak = false
 			c.events = nil
 			c.execution = nil
 			c.mu.Unlock()

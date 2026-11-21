@@ -160,6 +160,7 @@ type soloChat struct {
 	sandboxID uint
 	turnID    string
 	text      strings.Builder
+	textBreak bool // the next reply text starts a new paragraph
 	events    []json.RawMessage
 	execution *models.ChatExecution
 }

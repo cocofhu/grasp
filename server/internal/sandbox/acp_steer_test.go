@@ -97,7 +97,7 @@ func TestSteerDeliversIntoInFlightTurn(t *testing.T) {
 		t.Fatalf("steer = %q %v", st, err)
 	}
 	res := <-turn
-	if res == nil || res.Narration != "ab" {
+	if res == nil || res.Narration != "a\n\nb" {
 		t.Fatalf("turn = %+v", res)
 	}
 	var sawSteer bool

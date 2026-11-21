@@ -42,6 +42,15 @@ func (r *ChatResult) addText(kind, text string) {
 	r.Timeline = append(r.Timeline, ChatStep{Kind: kind, Text: text})
 }
 
+// addNarration appends to the visible reply. Text that resumes after a tool
+// call, a thought or a steer is a new paragraph, not a run-on of the last one.
+func (r *ChatResult) addNarration(text string) {
+	if n := len(r.Timeline); n > 0 && r.Timeline[n-1].Kind != "message" && r.Narration != "" {
+		r.Narration = strings.TrimRight(r.Narration, "\n") + "\n\n"
+	}
+	r.Narration += text
+}
+
 // addSteer records input the running turn took mid-flight, from its
 // user_steer event. Steers never merge: each one is a separate user message.
 func (r *ChatResult) addSteer(data json.RawMessage) {
