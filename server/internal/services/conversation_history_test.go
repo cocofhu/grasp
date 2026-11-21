@@ -70,7 +70,11 @@ func TestConversationHistoryPagesFitTheBudget(t *testing.T) {
 		row := models.SoloMessage{ID: fmt.Sprintf("m%02d", i), SessionID: sb.ThreadID, Role: "assistant", Content: fmt.Sprintf("第%d轮完成", i), CreatedAt: at.Add(time.Duration(i) * time.Second)}
 		for j := 0; j < 3; j++ {
 			call := fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"t%d","title":"bash"}}}`, j)
-			done := fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"t%d","status":"completed","content":[{"type":"content","content":{"type":"text","text":%q}}]}}}`, j, output)
+			status := "completed"
+			if j == 0 {
+				status = "failed"
+			}
+			done := fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"t%d","status":%q,"content":[{"type":"content","content":{"type":"text","text":%q}}]}}}`, j, status, output)
 			row.Events = append(row.Events, json.RawMessage(call), json.RawMessage(done))
 		}
 		if err := db.Create(&row).Error; err != nil {
@@ -79,7 +83,8 @@ func TestConversationHistoryPagesFitTheBudget(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	req := mcp.ConversationHistoryRequest{View: "summary", Limit: 50}
-	for pages := 0; ; pages++ {
+	pages := 0
+	for ; ; pages++ {
 		page, err := svc.ReadConversationHistory(sb.RunID, req)
 		if err != nil {
 			t.Fatal(err)
@@ -88,7 +93,7 @@ func TestConversationHistoryPagesFitTheBudget(t *testing.T) {
 			t.Fatalf("page %d is %d bytes", pages, len(encoded))
 		}
 		for _, m := range page.Messages {
-			if seen[m.ID] || len(m.ToolResults) != 3 || len([]rune(m.ToolResults[0].Text)) > historyToolTextRunes+1 {
+			if seen[m.ID] || len(m.ToolResults) != 3 || len([]rune(m.ToolResults[0].Text)) != historyToolTextRunes+1 || m.ToolResults[1].Text != "" {
 				t.Fatalf("message %s repeated or its tools unbounded", m.ID)
 			}
 			seen[m.ID] = true
@@ -98,8 +103,8 @@ func TestConversationHistoryPagesFitTheBudget(t *testing.T) {
 		}
 		req = mcp.ConversationHistoryRequest{View: "messages", Limit: 50, Cursor: page.NextCursor}
 	}
-	if len(seen) != 30 {
-		t.Fatalf("paged %d of 30 messages", len(seen))
+	if len(seen) != 30 || pages > 5 {
+		t.Fatalf("paged %d of 30 messages in %d pages", len(seen), pages+1)
 	}
 }
 
@@ -200,16 +205,21 @@ func TestContextPreambleResendsRecentAttachments(t *testing.T) {
 	}
 }
 
-func TestConversationHistoryIncludesVisibleToolResults(t *testing.T) {
+func TestConversationHistoryKeepsToolCallsAndFailures(t *testing.T) {
 	row := models.SoloMessage{Events: []json.RawMessage{
 		json.RawMessage(`not JSON`),
 		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_thought_chunk","toolCallId":"ignored"}}}`),
 		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"test","title":"npm test","status":"in_progress"}}}`),
-		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"test","status":"completed","content":[{"content":{"type":"text","text":"42 tests passed"}},{"content":{"type":"image","data":"binary must not appear"}}]}}}`),
+		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"test","status":"failed","content":[{"content":{"type":"text","text":"2 tests failed"}},{"content":{"type":"image","data":"binary must not appear"}}]}}}`),
+		json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"build","title":"npm run build","status":"completed","content":[{"content":{"type":"text","text":"long build log"}}]}}}`),
 	}}
 	message := conversationMessage(row)
-	if len(message.ToolResults) != 1 || message.ToolResults[0].Title != "npm test" || message.ToolResults[0].Status != "completed" || message.ToolResults[0].Text != "42 tests passed" {
-		t.Fatalf("tool continuity: %+v", message.ToolResults)
+	tools := message.ToolResults
+	if len(tools) != 2 || tools[0].Title != "npm test" || tools[0].Status != "failed" || tools[0].Text != "2 tests failed" {
+		t.Fatalf("failed tool keeps its output: %+v", tools)
+	}
+	if tools[1].Title != "npm run build" || tools[1].Status != "completed" || tools[1].Text != "" {
+		t.Fatalf("successful tool keeps title and status only: %+v", tools)
 	}
 	if got := historyExcerpt(strings.Repeat("大", 4000), 2000, ownHistoryTool); !strings.Contains(got, "摘录") || !strings.Contains(got, "get_history") {
 		t.Fatal("large excerpts need an explicit retrieval instruction")
@@ -280,15 +290,14 @@ func TestContextPreambleKeepsMidConversationUserCorrections(t *testing.T) {
 	}
 }
 
-func TestConversationHistoryDoesNotRecursivelyEmbedHistoryToolResponses(t *testing.T) {
+func TestConversationHistoryOmitsHistoryReads(t *testing.T) {
 	for _, title := range []string{"mcp__artifact-store__get_history", "MCP tool"} {
 		row := models.SoloMessage{Events: []json.RawMessage{
 			json.RawMessage(fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"history","title":%q}}}`, title)),
 			json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),
 		}}
-		tools := conversationMessage(row).ToolResults
-		if len(tools) != 1 || tools[0].ID != "history" || tools[0].Status != "completed" || strings.Contains(tools[0].Text, "nested old history") || !strings.Contains(tools[0].Text, "已省略") {
-			t.Fatalf("recursive history response: %+v", tools)
+		if tools := conversationMessage(row).ToolResults; len(tools) != 0 {
+			t.Fatalf("history read listed as a tool result: %+v", tools)
 		}
 	}
 }

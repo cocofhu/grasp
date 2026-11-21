@@ -215,8 +215,10 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 // page ends early and next_cursor leads to the rest.
 const historyPageBytes = 8 << 10
 
-// historyToolTextRunes bounds each tool result a history message carries.
-const historyToolTextRunes = 600
+// historyToolTextRunes bounds the output a failed tool call keeps in history.
+// Successful calls keep only their title and status: the reply and the
+// workspace carry their outcome, and their output would crowd out messages.
+const historyToolTextRunes = 200
 
 // historySummaryRunes bounds the summary view's instruction ledger, leaving
 // room for messages within historyPageBytes (CJK takes 3 bytes a rune).
@@ -328,8 +330,8 @@ func soloHistoryContent(row models.SoloMessage) string {
 	return models.RenderAnnotatedPrompt(row.Content, row.Annotations)
 }
 
-// conversationTools reads a reply's tool calls with their visible output text
-// (no inline image bytes), as the transcript showed them.
+// conversationTools reads a reply's tool calls as the transcript showed them,
+// with an excerpt of the output of failed ones (never inline image bytes).
 func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolResult {
 	var reply sandbox.Reply
 	for _, raw := range events {
@@ -337,23 +339,31 @@ func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolRe
 	}
 	var tools []mcp.ConversationHistoryToolResult
 	for _, tc := range reply.Tools() {
-		if tc.ID != "" {
-			tools = append(tools, mcp.ConversationHistoryToolResult{ID: tc.ID, Title: tc.Title, Status: tc.Status, Text: tc.Output})
+		if tc.ID == "" || isHistoryRead(tc) {
+			continue
 		}
-	}
-	for i := range tools {
-		// History results themselves contain prior messages and tool results.
-		// Re-embedding those responses would recursively duplicate the same
-		// history on every read. Keep the call reference and its outcome only.
-		var result map[string]json.RawMessage
-		isHistoryResponse := json.Unmarshal([]byte(tools[i].Text), &result) == nil && result["history_version"] != nil && result["messages"] != nil
-		if title := strings.ToLower(tools[i].Title); strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") || isHistoryResponse {
-			tools[i].Text = "（历史查询正文已省略；使用 get_history 回查原始消息。）"
-		} else if runes := []rune(tools[i].Text); len(runes) > historyToolTextRunes {
-			tools[i].Text = string(runes[:historyToolTextRunes]) + "…"
+		tool := mcp.ConversationHistoryToolResult{ID: tc.ID, Title: tc.Title, Status: tc.Status}
+		if tc.Status == "failed" {
+			tool.Text = tc.Output
+			if runes := []rune(tool.Text); len(runes) > historyToolTextRunes {
+				tool.Text = string(runes[:historyToolTextRunes]) + "…"
+			}
 		}
+		tools = append(tools, tool)
 	}
 	return tools
+}
+
+// isHistoryRead reports a call that read conversation history back. Such reads
+// carry nothing new, and listing them would make every page of a long
+// conversation larger than the last.
+func isHistoryRead(tc sandbox.ReplyTool) bool {
+	title := strings.ToLower(tc.Title)
+	if strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") {
+		return true
+	}
+	var result map[string]json.RawMessage
+	return json.Unmarshal([]byte(tc.Output), &result) == nil && result["history_version"] != nil && result["messages"] != nil
 }
 
 // ownHistoryTool reads the current conversation back; a referenced one is
