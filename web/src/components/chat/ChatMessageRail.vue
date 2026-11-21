@@ -37,6 +37,11 @@ let previewText = ''
 // The card stays open while the pointer is over the rail or the card, so the gap between them never closes it.
 let pointerInside = false
 let closeTimer: ReturnType<typeof setTimeout> | undefined
+// Touch: holding the rail (or dragging along it) opens the card and scrubs; lifting the finger jumps.
+const HOLD_MS = 350
+const HOLD_SLOP_PX = 8
+let hold: { pointerId: number; x: number; y: number; scrubbing: boolean; timer?: ReturnType<typeof setTimeout> } | null = null
+let suppressClick = false
 const pointedId = computed(() => hoverId.value || focusId.value)
 const displayItems = computed(() => {
   const ids = new Set(props.items.map(item => item.id))
@@ -127,7 +132,10 @@ function revealActiveTick(pinToBottom: boolean) {
     return
   }
   const button = buttons.get(activeId.value)
-  if (!button) return
+  if (button) revealTick(column, button)
+}
+
+function revealTick(column: HTMLElement, button: HTMLElement) {
   const columnRect = column.getBoundingClientRect()
   const buttonRect = button.getBoundingClientRect()
   if (buttonRect.top < columnRect.top - 1) column.scrollTop += buttonRect.top - columnRect.top
@@ -161,9 +169,9 @@ function cancelClose() {
   closeTimer = undefined
 }
 
-function openCard() {
+function openCard(force = false) {
   cancelClose()
-  if (open.value || hoverless() || !props.items.length) return
+  if (open.value || (!force && hoverless()) || !props.items.length) return
   open.value = true
   void positionCard()
 }
@@ -178,8 +186,95 @@ function scheduleClose() {
   cancelClose()
   closeTimer = setTimeout(() => {
     closeTimer = undefined
-    if (!pointerInside && !focusId.value) closeCard()
+    if (!pointerInside && !focusId.value && !hold?.scrubbing) closeCard()
   }, 120)
+}
+
+function endHold() {
+  if (hold?.timer) clearTimeout(hold.timer)
+  hold = null
+}
+
+/** The row or mark under the finger; off both, the nearest one on the same line of the side the finger is on. */
+function itemAt(x: number, y: number) {
+  const hit = document.elementFromPoint?.(x, y)?.closest<HTMLElement>('.chat-message-rail-row, .chat-message-rail-mark')
+  if (hit && (card.value?.contains(hit) || track.value?.contains(hit)) && hit.dataset.messageId) return hit.dataset.messageId
+  const cardRect = card.value?.getBoundingClientRect()
+  const candidates = cardRect && x >= cardRect.left ? rows : buttons
+  let found = ''
+  let best = Infinity
+  for (const [id, element] of candidates) {
+    const rect = element.getBoundingClientRect()
+    const distance = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0
+    if (distance < best) { best = distance; found = id }
+  }
+  return found
+}
+
+function scrubTo(x: number, y: number) {
+  const id = itemAt(x, y)
+  if (!id || id === hoverId.value) return
+  hoverId.value = id
+  rows.get(id)?.scrollIntoView?.({ block: 'nearest' })
+  const button = buttons.get(id)
+  if (track.value && button) revealTick(track.value, button)
+}
+
+function startScrub() {
+  if (!hold) return
+  if (hold.timer) clearTimeout(hold.timer)
+  hold.timer = undefined
+  hold.scrubbing = true
+  suppressClick = true
+  scrubTo(hold.x, hold.y)
+  openCard(true)
+  navigator.vibrate?.(8)
+}
+
+function onTouchDown(event: PointerEvent) {
+  if (event.pointerType === 'mouse') return
+  endHold()
+  suppressClick = false
+  hold = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrubbing: false }
+  hold.timer = setTimeout(startScrub, HOLD_MS)
+}
+
+function onTouchMove(event: PointerEvent) {
+  if (!hold || event.pointerId !== hold.pointerId) return
+  if (hold.scrubbing) {
+    event.preventDefault()
+    scrubTo(event.clientX, event.clientY)
+    return
+  }
+  if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) < HOLD_SLOP_PX) return
+  hold.x = event.clientX
+  hold.y = event.clientY
+  startScrub()
+}
+
+function onTouchUp(event: PointerEvent) {
+  if (!hold || event.pointerId !== hold.pointerId) return
+  const scrubbing = hold.scrubbing
+  endHold()
+  if (!scrubbing) return
+  event.preventDefault()
+  if (hoverId.value) navigate(hoverId.value)
+  else closeCard()
+}
+
+function onTouchCancel(event: PointerEvent) {
+  if (!hold || event.pointerId !== hold.pointerId) return
+  const scrubbing = hold.scrubbing
+  endHold()
+  if (scrubbing) closeCard()
+}
+
+function onMarkClick(id: string) {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  navigate(id)
 }
 
 function onPointerEnter() {
@@ -251,6 +346,7 @@ function onBlur() {
 }
 
 function onKeydown(event: KeyboardEvent, index: number) {
+  suppressClick = false
   let next = index
   if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = Math.min(props.items.length - 1, index + 1)
   else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = Math.max(0, index - 1)
@@ -287,11 +383,12 @@ watch(() => props.scopeKey, () => {
   activeId.value = ''
   visibleIds.value = []
   pointerInside = false
+  endHold()
   closeCard()
   clearHighlight()
   void nextTick(scheduleActive)
 })
-onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); clearHighlight(); resize?.disconnect() })
+onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); endHold(); clearHighlight(); resize?.disconnect() })
 </script>
 
 <template>
@@ -299,8 +396,8 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
     <button v-if="hasMore" type="button" class="chat-message-rail-earlier" :disabled="loadingEarlier" :aria-label="t(loadingEarlier ? 'pages.chatNavigation.loadingEarlier' : 'pages.chatNavigation.loadEarlier')" :title="t('pages.chatNavigation.loadedHistory')" data-testid="chat-message-rail-earlier" @click="emit('loadEarlier')">
       <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" />
     </button>
-    <div ref="track" class="chat-message-rail-track" data-testid="chat-message-rail-track" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave">
-      <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-visible': visibleSet.has(item.id), 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="navigate(item.id)">
+    <div ref="track" class="chat-message-rail-track" data-testid="chat-message-rail-track" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave" @pointerdown="onTouchDown" @pointermove="onTouchMove" @pointerup="onTouchUp" @pointercancel="onTouchCancel" @contextmenu.prevent>
+      <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-visible': visibleSet.has(item.id), 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="onMarkClick(item.id)">
         <span aria-hidden="true" />
       </button>
     </div>
@@ -328,7 +425,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 
 <style scoped>
 .chat-message-rail { position: absolute; z-index: 5; inset-block: 18px; left: 0; width: var(--chat-message-rail-width); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
-.chat-message-rail-track { display: flex; min-height: 0; max-height: min(420px, 100%); flex-direction: column; overflow-y: auto; padding-block: 5px; scrollbar-width: none; pointer-events: auto; }
+.chat-message-rail-track { display: flex; min-height: 0; max-height: min(420px, 100%); flex-direction: column; overflow-y: auto; padding-block: 5px; scrollbar-width: none; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .chat-message-rail-track::-webkit-scrollbar { display: none; }
 .chat-message-rail-mark { display: flex; width: var(--chat-message-rail-width); min-height: 10px; flex: none; align-items: center; justify-content: flex-start; padding-left: 7px; outline: none; }
 .chat-message-rail-mark > span { width: 10px; height: 1.5px; border-radius: 1px; background: rgb(var(--c-txt3) / .35); transition: width 160ms ease, background 160ms ease; }
