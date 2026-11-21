@@ -2,7 +2,6 @@ package browser
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"testing"
@@ -22,18 +21,7 @@ func TestProbeVNCReadyHappyPath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = wsLn.Close() })
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/json/version", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"Browser":"test"}`))
-	})
-	mux.HandleFunc("/json/new", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": "tab-1"})
-	})
-	mux.HandleFunc("/json/close/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	cdpSrv := &http.Server{Handler: mux}
+	cdpSrv := &http.Server{Handler: hiddenTargetProbeMux(t)}
 	go func() { _ = cdpSrv.Serve(cdpLn) }()
 	t.Cleanup(func() { _ = cdpSrv.Close() })
 

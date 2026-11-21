@@ -2225,7 +2225,10 @@
         "agentIdle": "Agent 空闲",
         "starting": "桌面启动中…",
         "takeoverTip": "Agent 正在运行：你接管期间它的键鼠操作会被拒绝，归还后继续。",
-        "takeoverHint": "Agent 正在操作电脑；接管会暂停它的键鼠操作。"
+        "takeoverHint": "Agent 正在操作电脑；接管会暂停它的键鼠操作。",
+        "takeoverConfirmTitle": "Agent 还在运行，确认接管？",
+        "takeoverConfirmBody": "接管期间 Agent 的鼠标和键盘操作会被拒绝，可能打断它正在做的事。点「交还」后它可以继续操作。",
+        "takeoverConfirmOk": "确认接管"
       },
       "novnc": {
         "back": "后退",

@@ -35,13 +35,24 @@ fi
 
 # Re-check under the lock (covers both the fast path and waiters after a peer finished).
 tab_ok() {
-  local resp id
-  resp=$(curl -fsS -X PUT "http://127.0.0.1:${CDP_PORT}/json/new?about:blank" 2>/dev/null) || return 1
-  id=$(printf '%s' "$resp" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-  if [ -n "$id" ]; then
-    curl -fsS -X DELETE "http://127.0.0.1:${CDP_PORT}/json/close/${id}" >/dev/null 2>&1 || true
-  fi
-  return 0
+  # Hidden CDP targets exercise tab creation without focusing Chromium. They
+  # are disposed automatically when this probe disconnects.
+  timeout 5s node --input-type=module - "${CDP_PORT}" 2>/dev/null <<'PROBE'
+const response = await fetch(`http://127.0.0.1:${process.argv[2]}/json/version`)
+if (!response.ok) process.exit(1)
+const { webSocketDebuggerUrl } = await response.json()
+const socket = new WebSocket(webSocketDebuggerUrl)
+process.exitCode = 1
+socket.onopen = () => socket.send(JSON.stringify({
+  id: 1, method: 'Target.createTarget', params: { url: 'about:blank', background: true, hidden: true },
+}))
+socket.onmessage = ({ data }) => {
+  const reply = JSON.parse(data)
+  if (reply.id !== 1) return
+  if (reply.result?.targetId) process.exitCode = 0
+  socket.close()
+}
+PROBE
 }
 
 ws_ok() {
@@ -67,8 +78,7 @@ start_pulse() {
   pactl set-default-sink grasp >/dev/null 2>&1 || true
 }
 
-if curl -fsS "http://127.0.0.1:${CDP_PORT}/json/version" >/dev/null 2>&1 \
-  && tab_ok && ws_ok; then
+if ws_ok && tab_ok; then
   exit 0
 fi
 
@@ -188,19 +198,7 @@ if ! ws_ok; then
 fi
 
 for i in $(seq 1 60); do
-  cdp_ok=0
-  ws_ok_flag=0
-  tab_ok_flag=0
-  if curl -fsS "http://127.0.0.1:${CDP_PORT}/json/version" >/dev/null 2>&1; then
-    cdp_ok=1
-  fi
-  if ws_ok; then
-    ws_ok_flag=1
-  fi
-  if tab_ok; then
-    tab_ok_flag=1
-  fi
-  if [ "$cdp_ok" = 1 ] && [ "$ws_ok_flag" = 1 ] && [ "$tab_ok_flag" = 1 ]; then
+  if ws_ok && tab_ok; then
     echo "vnc-preview: ready (CDP :${CDP_PORT}, vnc-ws :${WS_PORT})"
     exit 0
   fi

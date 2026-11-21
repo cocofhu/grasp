@@ -108,4 +108,11 @@ describe('acpReply', () => {
     fold(turn, update({ sessionUpdate: 'plan', steps: 'bad' }))
     expect(turn.plan).toEqual([])
   })
+
+  it('keeps command and path tool titles verbatim', () => {
+    const turn = reply()
+    const call = (id: string, title: string) => update({ sessionUpdate: 'tool_call', toolCallId: id, title, status: 'completed' })
+    fold(turn, call('t1', "/bin/bash -lc 'gh pr view 1307 -R cocofhu/grasp'"), call('t2', '/tmp/grasp-1304/web/e2e/console.spec.ts'), call('t3', 'web-search'))
+    expect(turn.tools.map((t) => t.title)).toEqual(["/bin/bash -lc 'gh pr view 1307 -R cocofhu/grasp'", '/tmp/grasp-1304/web/e2e/console.spec.ts', 'Web-Search'])
+  })
 })

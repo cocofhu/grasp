@@ -67,6 +67,8 @@ function humanizeTool(raw: string, label: ToolLabeler): string {
   if (/[\u4e00-\u9fff]/.test(s)) return s
   const localized = label(s.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_'))
   if (localized) return localized
+  // Agents like Codex title a call with the raw command or path; keep those verbatim.
+  if (!/^[A-Za-z][\w -]*$/.test(s)) return s
   return s.replace(/_/g, ' ').replace(/\s+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 

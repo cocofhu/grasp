@@ -31,25 +31,28 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
   let holding = false
   let failures = 0
 
-  async function refresh() {
+  async function refresh(): Promise<DesktopStatus | null> {
     const id = sandboxId()
-    if (!id) return
+    if (!id) return null
     try {
-      status.value = await api.sandboxDesktop(id)
+      const current = await api.sandboxDesktop(id)
+      if (id !== sandboxId()) return null
+      status.value = current
+      failures = 0
+      if (current.mode !== 'desktop') stopPolling()
+      return current
     } catch {
       // Older runtimes have no desktop status endpoint; stop asking.
-      if (++failures >= DESKTOP_POLL_MAX_FAILURES) stopPolling()
-      return
+      if (id === sandboxId() && ++failures >= DESKTOP_POLL_MAX_FAILURES) stopPolling()
+      return null
     }
-    failures = 0
-    if (status.value.mode !== 'desktop') stopPolling()
   }
 
-  async function report(holder: 'user' | 'agent', keepalive = false) {
-    const id = sandboxId()
+  async function report(holder: 'user' | 'agent', keepalive = false, id = sandboxId()) {
     if (!id) return
     try {
-      status.value = await api.setSandboxDesktopControl(id, holder, client, keepalive ? { keepalive } : undefined)
+      const current = await api.setSandboxDesktopControl(id, holder, client, keepalive ? { keepalive } : undefined)
+      if (id === sandboxId()) status.value = current
     } catch {
       /* the next poll shows the real holder */
     }
@@ -67,11 +70,11 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
     beatTimer = setInterval(() => void report('user'), DESKTOP_HEARTBEAT_MS)
   }
 
-  function release(keepalive = false) {
+  function release(keepalive = false, id = sandboxId()) {
     stopBeat()
     if (!holding) return
     holding = false
-    void report('agent', keepalive)
+    void report('agent', keepalive, id)
   }
 
   function stopPolling() {
@@ -96,10 +99,23 @@ export function useDesktopControl(sandboxId: () => number | undefined, control: 
     if (document.visibilityState === 'hidden' && control.value && isDesktop.value) control.value = false
   }
 
-  onMounted(() => {
+  function startPolling() {
     if (!sandboxId()) return
     void refresh()
     pollTimer = setInterval(() => void refresh(), DESKTOP_POLL_MS)
+  }
+
+  watch(sandboxId, (_, previous) => {
+    release(true, previous)
+    control.value = false
+    status.value = null
+    failures = 0
+    stopPolling()
+    startPolling()
+  })
+
+  onMounted(() => {
+    startPolling()
     window.addEventListener('pagehide', onPageHide)
     document.addEventListener('visibilitychange', onVisibility)
   })

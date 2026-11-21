@@ -14,6 +14,7 @@ describe('workspace settings navigation', () => {
     for (const retired of ['/settings/notification-policy', '/settings/channels', '/settings/schedules']) expect(paths).not.toContain(retired)
     expect(settingsNavItems.map((item) => (item.query?.integrations ? `${item.to}?integrations=1` : item.to))).toEqual([
       '/board',
+      '/runs',
       '/workflows',
       '/artifacts',
       '/notifications',
@@ -28,6 +29,18 @@ describe('workspace settings navigation', () => {
     const platformStart = settingsNavItems.findIndex((item) => item.groupKey === 'nav.groupPlatform')
     expect(settingsNavItems.slice(platformStart).map((item) => item.labelKey)).toEqual(['nav.general', 'nav.integrations'])
     expect(settingsNavItems.find((item) => item.to === '/sandboxes')?.groupKey).toBeUndefined()
+  })
+  it('lists run history under workspace tools right after the board', () => {
+    const runs = settingsNavItems.find((item) => item.to === '/runs')!
+    expect(runs).toMatchObject({ icon: 'runs', labelKey: 'nav.runs' })
+    expect(runs.groupKey).toBeUndefined()
+    expect(runs.exact).toBeUndefined()
+    const index = settingsNavItems.indexOf(runs)
+    expect(settingsNavItems[index - 1].to).toBe('/board')
+    expect(settingsItemActive(runs, '/runs', {})).toBe(true)
+    expect(settingsItemActive(runs, '/runs/abc', {})).toBe(true)
+    expect(settingsItemActive(runs, '/runsx', {})).toBe(false)
+    expect(settingsItemActive(runs, '/board', {})).toBe(false)
   })
   it('keeps operational tools and full pages in workspace chrome', () => {
     for (const path of ['/dashboard', '/board', '/workflows', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)

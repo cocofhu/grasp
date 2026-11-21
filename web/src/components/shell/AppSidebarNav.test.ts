@@ -761,7 +761,7 @@ describe('AppSidebarNav', () => {
     expect(categoryLinks[0].text()).toContain('看板')
     expect(wrapper.findAll('[data-testid="settings-nav-group"]').map((heading) => heading.text())).toEqual(['工作区工具', '执行配置', '平台配置'])
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(true)
-    expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/runs"]').text()).toContain('运行记录')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
     const settingsTos = categoryLinks.map((link) => (
       link.attributes('data-testid') === 'nav-settings-integrations'
@@ -770,6 +770,7 @@ describe('AppSidebarNav', () => {
     ))
     expect(settingsTos).toEqual([
       '/board',
+      '/runs',
       '/workflows',
       '/artifacts',
       '/notifications',
