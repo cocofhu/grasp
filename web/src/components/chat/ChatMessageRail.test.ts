@@ -144,6 +144,14 @@ describe('ChatMessageRail', () => {
     await nextTick()
     expect(card()).toBeNull()
     expect(wrapper.emitted('navigate')).toHaveLength(2)
+
+    touch('pointerdown', 205)
+    touch('pointermove', 225)
+    touch('pointerup', 225)
+    marks[1]!.element.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true }))
+    await marks[1]!.trigger('click')
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual(['question-2'])
+    expect(wrapper.emitted('navigate')).toHaveLength(4)
   })
 
   it('supports keyboard focus, arrows, Home, End and Escape without jumping on focus', async () => {

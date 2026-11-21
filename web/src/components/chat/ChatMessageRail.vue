@@ -232,9 +232,9 @@ function startScrub() {
 }
 
 function onTouchDown(event: PointerEvent) {
+  suppressClick = false
   if (event.pointerType === 'mouse') return
   endHold()
-  suppressClick = false
   hold = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrubbing: false }
   hold.timer = setTimeout(startScrub, HOLD_MS)
 }
