@@ -130,6 +130,13 @@ describe('renderChatMarkdown', () => {
     expect(renderChatMarkdown('正文\n#标题')).toMatch(/<p>正文<\/p>\s*<h1[^>]*>标题<\/h1>/)
   })
 
+  it('keeps issue references at a line start as text', () => {
+    const html = renderChatMarkdown('#1304 上次的 web-e2e 被取消\n\n#1307\nOwner')
+    expect(html).not.toContain('<h')
+    expect(html).toContain('#1304 上次的 web-e2e 被取消')
+    expect(html).toContain('#1307')
+  })
+
   it('keeps fenced code characters that look like tags', () => {
     const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
     expect(html).toContain('language-html')
