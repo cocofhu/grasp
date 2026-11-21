@@ -137,14 +137,14 @@ func (c *SandboxChats) Enqueue(id uint, item SandboxChatItem) (int, error) {
 
 // Steer handles a pending turn now (chatsession.Session.Steer). An item that
 // already started is reported as running next.
-func (c *SandboxChats) Steer(id uint, itemID string) (chatsession.SteerOutcome, error) {
+func (c *SandboxChats) Steer(ctx context.Context, id uint, itemID string) (chatsession.SteerOutcome, error) {
 	c.mu.Lock()
 	sc := c.chats[id]
 	c.mu.Unlock()
 	if sc == nil {
 		return "", chatsession.ErrNotFound
 	}
-	out, err := sc.sess.Steer(context.Background(), itemID)
+	out, err := sc.sess.Steer(ctx, itemID)
 	if errors.Is(err, chatsession.ErrItemActive) {
 		return chatsession.SteerOutcomeNext, nil
 	}

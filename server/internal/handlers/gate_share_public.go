@@ -478,9 +478,9 @@ func (h *Handlers) PublicGateQueueSteer(c *gin.Context) {
 	var outcome chatsession.SteerOutcome
 	var err error
 	if q.lane != "" {
-		outcome, err = h.Eng.SteerVisitorQueuedItem(q.runID, q.nodeID, q.lane, q.ItemID)
+		outcome, err = h.Eng.SteerVisitorQueuedItem(c.Request.Context(), q.runID, q.nodeID, q.lane, q.ItemID)
 	} else {
-		outcome, err = h.Eng.SteerQueuedItem(q.runID, q.nodeID, q.ItemID)
+		outcome, err = h.Eng.SteerQueuedItem(c.Request.Context(), q.runID, q.nodeID, q.ItemID)
 	}
 	if err != nil {
 		h.writePublicReactErr(c, err)

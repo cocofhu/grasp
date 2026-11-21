@@ -26,9 +26,17 @@ const ledgerSessions = 256
 // turn of the process it replaced. With a state directory the baselines are
 // also saved there, for a session a restarted backend resumes.
 type sessionLedger struct {
-	mu       sync.Mutex
+	mu       sync.Mutex // guards order and sessions, never file I/O
 	order    []string
-	sessions map[string]*sessionBaseline
+	sessions map[string]*ledgerEntry
+}
+
+// ledgerEntry holds one session's baseline. Its mutex orders the session's
+// reports together with their file reads and writes, so a slow state
+// directory delays that session only.
+type ledgerEntry struct {
+	mu sync.Mutex
+	b  *sessionBaseline // loaded on first use
 }
 
 type sessionBaseline struct {
@@ -38,23 +46,30 @@ type sessionBaseline struct {
 	Flat provider.TokenUsage `json:"flat"`
 }
 
-// baseline returns the session's entry, loading it from dir or creating it,
-// and evicting the oldest beyond ledgerSessions. The caller holds l.mu.
-func (l *sessionLedger) baseline(dir, session string) *sessionBaseline {
-	if b, ok := l.sessions[session]; ok {
-		return b
+// lock returns the session's baseline, loaded from dir on first use, with
+// the session locked until unlock. Entries beyond ledgerSessions are evicted
+// oldest first.
+func (l *sessionLedger) lock(dir, session string) (b *sessionBaseline, unlock func()) {
+	l.mu.Lock()
+	e, ok := l.sessions[session]
+	if !ok {
+		if l.sessions == nil {
+			l.sessions = map[string]*ledgerEntry{}
+		}
+		if len(l.order) == ledgerSessions {
+			delete(l.sessions, l.order[0])
+			l.order = l.order[1:]
+		}
+		e = &ledgerEntry{}
+		l.sessions[session] = e
+		l.order = append(l.order, session)
 	}
-	if l.sessions == nil {
-		l.sessions = map[string]*sessionBaseline{}
+	l.mu.Unlock()
+	e.mu.Lock()
+	if e.b == nil {
+		e.b = loadBaseline(dir, session)
 	}
-	if len(l.order) == ledgerSessions {
-		delete(l.sessions, l.order[0])
-		l.order = l.order[1:]
-	}
-	b := loadBaseline(dir, session)
-	l.sessions[session] = b
-	l.order = append(l.order, session)
-	return b
+	return e.b, e.mu.Unlock
 }
 
 // modelDelta differences per-model running totals against the session's last
@@ -64,9 +79,8 @@ func (l *sessionLedger) modelDelta(dir, session string, current map[string]provi
 	if session == "" {
 		return current, false
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	b := l.baseline(dir, session)
+	b, unlock := l.lock(dir, session)
+	defer unlock()
 	defer saveBaseline(dir, session, b)
 	delta := make(map[string]provider.TokenUsage, len(current))
 	var reset bool
@@ -97,12 +111,12 @@ func (l *sessionLedger) modelDelta(dir, session string, current map[string]provi
 // turns, so a later cumulative snapshot cannot ledger those failed/cancelled
 // attempts a second time.
 func (l *sessionLedger) reconcileFlat(dir, session string, current *provider.TokenUsage, usage map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	previous := provider.TokenUsage{}
 	var b *sessionBaseline
 	if session != "" {
-		b = l.baseline(dir, session)
+		var unlock func()
+		b, unlock = l.lock(dir, session)
+		defer unlock()
 		previous = b.Flat
 	}
 	known := sumUsage(usage)

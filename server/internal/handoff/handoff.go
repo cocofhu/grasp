@@ -126,14 +126,18 @@ func block(n int, e Entry) string {
 }
 
 // unmark keeps dialogue text from starting a line the way an entry header
-// does, so quoted history cannot pose as another turn.
+// does, so quoted history cannot pose as another turn. Every line break
+// becomes "\n" first, so none can start a line unseen.
 func unmark(s string) string {
+	s = lineBreaks.Replace(s)
 	s = strings.ReplaceAll(s, "\n[#", "\n［#")
 	if strings.HasPrefix(s, "[#") {
 		s = "［#" + s[len("[#"):]
 	}
 	return s
 }
+
+var lineBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\v", "\n", "\f", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
 
 // priority lists entry indices most important first.
 func priority(entries []Entry) []int {

@@ -335,7 +335,7 @@ var historyDirs = []string{"projects", "sessions"}
 func isolatedConfig(root string) (string, func(), error) {
 	for _, entry := range historyDirs {
 		if err := os.MkdirAll(filepath.Join(root, entry), 0o700); err != nil {
-			return "", func() {}, errors.New("model connection: cannot create agent history directory")
+			return "", func() {}, fmt.Errorf("model connection: cannot create agent history directory: %w", err)
 		}
 	}
 	dir, err := os.MkdirTemp("", "grasp-model-")

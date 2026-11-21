@@ -234,8 +234,8 @@ chmod 700 "$RUN_DIR"
 ) && mv -f "$ENV_FILE.tmp" "$ENV_FILE" || { echo "reprime: write env failed" >&2; exit 1; }
 cp -f "$STAGE/keys" "$KEYS_FILE"
 
-backend_handed_over=1
 "$SERVICES" restart backend || exit 1
+backend_handed_over=1
 if [ "${PREVIEW_DIRECT:-}" = "1" ] || [ "${PREVIEW_DIRECT:-}" = "true" ]; then
   "$SERVICES" restart preview-inject || echo "reprime: preview-inject restart failed" >&2
 else

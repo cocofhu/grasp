@@ -68,6 +68,33 @@ func TestRestartedBackendContinuesThePersistedSession(t *testing.T) {
 	}
 }
 
+func TestAFailedFirstOpenStillLeavesThePersistedSessionToResume(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived}
+	path, cwd := filepath.Join(t.TempDir(), "agent-session.json"), t.TempDir()
+	prev := persistedBridge(t, agent, path)
+	first, err := prev.EnsureAgent(cwd, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	takeTurn(t, prev, first.(*lifeSess))
+	awaitPointer(t, path)
+
+	next := persistedBridge(t, agent, path)
+	agent.mu.Lock()
+	agent.failOpens = 1
+	agent.mu.Unlock()
+	if _, err := next.EnsureAgent(cwd, "", nil, nil); err == nil {
+		t.Fatal("the first open was meant to fail")
+	}
+	sess, err := next.EnsureAgent(cwd, "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opens, _ := agent.opened(); opens[1].ResumeSessionID != "native-1" || sess.SessionID() != "native-1" {
+		t.Fatalf("retry opened %+v as %q, want native-1 resumed", opens[1], sess.SessionID())
+	}
+}
+
 func TestRestartedBackendDoesNotReportAnUnusedSessionAsResumed(t *testing.T) {
 	agent := &lifeAgent{transport: provider.LongLived}
 	path, cwd := filepath.Join(t.TempDir(), "agent-session.json"), t.TempDir()

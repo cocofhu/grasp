@@ -366,6 +366,14 @@ func TestUnconfirmedAbortStopsTheServer(t *testing.T) {
 	}
 }
 
+func TestAnEarlierTurnsReplayedFailureIsIgnored(t *testing.T) {
+	f := installFake(t)
+	s, _ := f.open(t, "", "", "")
+	if res, err := s.Prompt(promptCtx(t), "replay", nil); err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("turn: %+v %v", res, err)
+	}
+}
+
 func TestModelErrorFailsTheTurn(t *testing.T) {
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")

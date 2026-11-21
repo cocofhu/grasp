@@ -78,7 +78,7 @@ func TestSoloSteerJoinsRunningTurn(t *testing.T) {
 	solo, id := startSteerSolo(t, chat)
 	two := queueBehindRunningTurn(t, solo, id, chat.gateChat)
 
-	out, err := solo.SteerQueued(id, "alice", two)
+	out, err := solo.SteerQueued(context.Background(), id, "alice", two)
 	if err != nil || out != chatsession.SteerOutcomeJoined {
 		t.Fatalf("steer = %q %v", out, err)
 	}
@@ -104,7 +104,7 @@ func TestSoloSteerFallsBackToInterrupt(t *testing.T) {
 			}
 			solo, id := startSteerSolo(t, chat)
 			two := queueBehindRunningTurn(t, solo, id, gate)
-			out, err := solo.SteerQueued(id, "alice", two)
+			out, err := solo.SteerQueued(context.Background(), id, "alice", two)
 			if err != nil || out != chatsession.SteerOutcomeNext {
 				t.Fatalf("steer = %q %v", out, err)
 			}
@@ -120,7 +120,7 @@ func TestSoloSteerKeepsPreparedInputAsOwnTurn(t *testing.T) {
 	chat := &steerChat{gateChat: newGateChat(true), status: sandbox.SteerDelivered}
 	solo, id := startSteerSolo(t, chat)
 	two := queueBehindRunningTurn(t, solo, id, chat.gateChat, models.ReactAnnotation{Selector: "#a", Label: "button", URL: "http://localhost/"})
-	if out, err := solo.SteerQueued(id, "alice", two); err != nil || out != chatsession.SteerOutcomeNext {
+	if out, err := solo.SteerQueued(context.Background(), id, "alice", two); err != nil || out != chatsession.SteerOutcomeNext {
 		t.Fatalf("steer = %q %v", out, err)
 	}
 	if got := chat.steered(); len(got) != 0 {
@@ -138,7 +138,7 @@ func TestSoloSteerWaitsForAPreparingTurn(t *testing.T) {
 	c.phase = SoloPhasePreparing
 	c.mu.Unlock()
 
-	if out, err := solo.SteerQueued(id, "alice", two); err != nil || out != chatsession.SteerOutcomeNext {
+	if out, err := solo.SteerQueued(context.Background(), id, "alice", two); err != nil || out != chatsession.SteerOutcomeNext {
 		t.Fatalf("steer = %q %v", out, err)
 	}
 	if got := chat.steered(); len(got) != 0 {
@@ -193,18 +193,18 @@ func TestSoloSendAndSteer(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "first turn running", func() bool { return chat.started() })
-	if out, err := solo.SendAndSteer(id, "alice", "now", nil, nil); err != nil || out != chatsession.SteerOutcomeJoined {
+	if out, err := solo.SendAndSteer(context.Background(), id, "alice", "now", nil, nil); err != nil || out != chatsession.SteerOutcomeJoined {
 		t.Fatalf("send and steer = %q %v", out, err)
 	}
-	if _, err := solo.SendAndSteer(id, "bob", "x", nil, nil); err == nil {
+	if _, err := solo.SendAndSteer(context.Background(), id, "bob", "x", nil, nil); err == nil {
 		t.Fatal("another user's session")
 	}
-	if _, err := solo.SteerQueued(id, "alice", "missing"); err == nil {
+	if _, err := solo.SteerQueued(context.Background(), id, "alice", "missing"); err == nil {
 		t.Fatal("unknown turn")
 	}
 	waitFor(t, "session idle", func() bool { return solo.lookup(id).sess.Ready() })
 	// An idle session has nothing to join: the message simply runs.
-	if out, err := solo.SendAndSteer(id, "alice", "later", nil, nil); err != nil || out == "" {
+	if out, err := solo.SendAndSteer(context.Background(), id, "alice", "later", nil, nil); err != nil || out == "" {
 		t.Fatalf("idle send and steer = %q %v", out, err)
 	}
 	waitFor(t, "idle turn ran", func() bool { return chat.count() == 2 && solo.lookup(id).sess.Ready() })

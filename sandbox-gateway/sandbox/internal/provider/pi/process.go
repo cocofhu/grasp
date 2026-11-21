@@ -19,9 +19,10 @@ import (
 // process is one `pi --mode rpc` child: commands go to stdin as JSON lines,
 // responses and events come back on stdout.
 type process struct {
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	tail  *provider.OutputTail
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.Reader
+	tail   *provider.OutputTail
 
 	writeMu sync.Mutex
 	mu      sync.Mutex
@@ -39,8 +40,8 @@ type response struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// startProcess runs the agent and hands each event line to onEvent.
-func startProcess(ctx context.Context, bin, dir string, env, args []string, onEvent func(json.RawMessage)) (*process, error) {
+// startProcess runs the agent. Nothing is read from it until serve.
+func startProcess(ctx context.Context, bin, dir string, env, args []string) (*process, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = env
@@ -60,10 +61,12 @@ func startProcess(ctx context.Context, bin, dir string, env, args []string, onEv
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	p := &process{cmd: cmd, stdin: stdin, tail: tail, pending: map[string]chan response{}, done: make(chan struct{})}
-	go p.run(stdout, onEvent)
-	return p, nil
+	return &process{cmd: cmd, stdin: stdin, stdout: stdout, tail: tail, pending: map[string]chan response{}, done: make(chan struct{})}, nil
 }
+
+// serve starts handing each event line to onEvent. Callers publish p first,
+// so an event handler that answers the agent finds it.
+func (p *process) serve(onEvent func(json.RawMessage)) { go p.run(p.stdout, onEvent) }
 
 // run reads stdout until the process exits, routing responses to their
 // callers and everything else to onEvent.

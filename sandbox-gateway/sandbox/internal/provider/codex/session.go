@@ -106,10 +106,11 @@ func (s *session) handshake(ctx context.Context, opts provider.OpenOptions) erro
 		s.applyProcessSettings(ctx, resume)
 		err := s.openThread(ctx, "thread/resume", resume)
 		var rpcErr *acp.RPCError
-		if err == nil || !errors.As(err, &rpcErr) {
+		if err == nil || !errors.As(err, &rpcErr) || rpcErr.Code != rpcInvalidRequest {
 			return err
 		}
-		// The thread is gone (e.g. its rollout did not survive a cold restore).
+		// The thread is gone (e.g. its rollout did not survive a cold restore);
+		// any other failure is reported rather than losing the conversation.
 		// A fresh thread reports a new SessionID, which tells the bridge.
 		log.Printf("codex: thread/resume %s 被拒绝，改用新线程: %v", opts.ResumeSessionID, err)
 	}
@@ -424,12 +425,13 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	var end turnEnd
 	select {
 	case end = <-t.done:
-		if end.status == "completed" {
-			if err := s.awaitSubagents(ctx, t); errors.Is(err, provider.ErrSubagentHostExited) {
-				end = turnEnd{status: "failed", errText: "codex app-server exited while subagents were running"}
-			} else if err != nil {
-				end = turnEnd{status: "interrupted"}
-			}
+		if end.status != "completed" {
+			// A turn that failed or was interrupted leaves no subagent behind.
+			s.haltSubagents()
+		} else if err := s.awaitSubagents(ctx, t); errors.Is(err, provider.ErrSubagentHostExited) {
+			end = turnEnd{status: "failed", errText: "codex app-server exited while subagents were running"}
+		} else if err != nil {
+			end = turnEnd{status: "interrupted"}
 		}
 	case <-ctx.Done():
 		grace := time.After(provider.InterruptGrace)

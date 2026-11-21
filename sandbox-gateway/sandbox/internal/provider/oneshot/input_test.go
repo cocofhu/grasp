@@ -1,9 +1,11 @@
 package oneshot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -184,5 +186,29 @@ func TestTurnInputSettle(t *testing.T) {
 	}
 	if err := in.write([]byte("x")); !errors.Is(err, provider.ErrNoActiveTurn) {
 		t.Fatalf("write after settle: %v", err)
+	}
+}
+
+func TestClosingStdinEndsAStalledWrite(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	in, wait := openTurnInput(w, bytes.Repeat([]byte("x"), 1<<20))
+	steered := make(chan error, 1)
+	go func() { steered <- in.write([]byte("steer")) }()
+	closed := make(chan struct{})
+	go func() { in.close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("close waited for a write the CLI never reads")
+	}
+	if err := wait(); !errors.Is(err, provider.ErrNoActiveTurn) {
+		t.Fatalf("stalled prompt write: %v", err)
+	}
+	if err := <-steered; !errors.Is(err, provider.ErrNoActiveTurn) {
+		t.Fatalf("steer queued behind it: %v", err)
 	}
 }

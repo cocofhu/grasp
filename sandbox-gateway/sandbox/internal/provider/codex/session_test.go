@@ -481,6 +481,20 @@ func TestResumeOfAMissingThreadStartsFresh(t *testing.T) {
 	}
 }
 
+func TestResumeThatFailsOtherwiseIsReported(t *testing.T) {
+	installFake(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sess, err := New().Open(context.Background(), ctx, provider.OpenOptions{Cwd: t.TempDir(), ResumeSessionID: "thread-unreadable"}, nil, nil)
+	if err == nil {
+		_ = sess.Close()
+		t.Fatalf("an unreadable thread was replaced by %q", sess.SessionID())
+	}
+	if !strings.Contains(err.Error(), "failed to read rollout") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestOpenPassesProcessConfig(t *testing.T) {
 	argsFile := installFake(t)
 	sess, err := New().Open(context.Background(), context.Background(), provider.OpenOptions{
@@ -688,6 +702,17 @@ func TestCancelWhileWaitingForSubagentsStopsThemFirst(t *testing.T) {
 		}
 	}()
 	if res, err := prompt(t, s, ctx, "spawn stubborn"); !errors.Is(err, context.Canceled) || res.StopReason != "cancelled" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if running := s.runningSubagents(context.Background()); len(running) != 0 {
+		t.Fatalf("prompt_done sent with subagents running: %v", running)
+	}
+}
+
+func TestAFailedTurnStopsItsSubagents(t *testing.T) {
+	pollSubagents(t, 10*time.Millisecond)
+	s, _ := open(t, provider.OpenOptions{})
+	if res, err := prompt(t, s, nil, "spawn stubborn broken"); err == nil || res.StopReason != "failed" {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	if running := s.runningSubagents(context.Background()); len(running) != 0 {

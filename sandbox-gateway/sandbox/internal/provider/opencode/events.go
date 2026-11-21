@@ -220,9 +220,10 @@ func (s *session) messageUpdated(info messageInfo) {
 			t.userOrder = append(t.userOrder, info.ID)
 		}
 	case "assistant":
-		if info.ParentID != "" {
-			t.answered[info.ParentID] = true
+		if !t.users[info.ParentID] {
+			return
 		}
+		t.answered[info.ParentID] = true
 		if info.Error != nil && info.Error.Name != abortedError {
 			t.errText = info.Error.text()
 		}

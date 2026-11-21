@@ -47,6 +47,9 @@ type Bridge struct {
 	agentCtx        context.Context
 	agentCancel     context.CancelFunc
 	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
+	// opened: an agent of this backend process started. Until one does,
+	// connects continue the session persisted by the previous process.
+	opened bool
 	// sessHistory: sess holds earlier dialogue, because it took a turn or
 	// continues a session that had. A resumed session that never took one
 	// knows nothing the platform would otherwise replay.

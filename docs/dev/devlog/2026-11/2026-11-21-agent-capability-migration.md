@@ -72,6 +72,19 @@
         - OpenCode 与 Pi 的引导回执超过 20s 时原来直接报失败，平台中断回合并把引导再跑一遍，而 Agent 可能已经收下。OpenCode 现在按 OpenCode 自己的格式（`msg_` + 毫秒时钟 + 随机串，与会话消息同序）生成 `messageID` 随引导发送，超时后 `GET /session/{id}/message/{messageID}`：有即送达，404 才报失败，查询出错报「无法确认」。Pi 超时不报失败，回合等这条引导的应答再结算；应答在回合结束后才到时，按 `disposition` 中止或清空队列撤回，不让它混进下一轮。
         - 引导投递期间整段持有切换锁，用户此时点停止要等投递超时（最长 30s）。现在 `cancel` 先结束进行中的投递再取锁；被取消打断、Agent 没收下的引导排到队首，不再额外中断一次，是否保留由取消的 `clearQueue` 决定。
         - Codex、OpenCode 停止回合时同步发 `turn/interrupt` / `abort`（最长 30s）后才开始计 `InterruptGrace`。现在先计时、请求在后台发；`halt` 与 `haltSubagents` 里的状态查询和中断请求也都受同一个截止时间约束。
+        - 引导的调用方（HTTP 请求、聊天 WebSocket）断开时，投递随之结束，且不中断回合；条目留在队首。聊天 WebSocket 原来每条引导起一个协程，现在每个连接一个按序执行的协程，最多排 8 条，连接关闭即停止。`Steer` 的队列帧改在释放切换锁之后发布，与 `cancel` 一致。
+        - 只能评论的分享访客（`LiveWritesDenied`）的消息原来可以引导进 owner 的回合，借 owner 的 Live 写权限执行，并丢掉「仅评论」约束。现在这类消息总是单独成一轮。
+    - 评审第四轮：
+      - Provider：
+        - OpenCode 服务端重放的旧失败回复（assistant 消息）原来会写入当前回合的错误，现在只认回复本回合用户消息的 assistant 消息。
+        - Codex 以 `failed` / `interrupted` 结束的回合原来不停子 Agent，现在同样停下再结束。`thread/resume` 原来对任何 RPC 错误都改开新线程，现在只有线程不存在（实测 Codex 0.171.0 为 `-32600`）才改开新线程，其它错误照实报告。
+        - Pi 的 stdout 读取原来在 `s.proc` 赋值前启动，启动时就弹出的扩展对话框会读到 nil；现在先赋值再开始读。
+        - one-shot 的 stdin 写入原来持有 `settle` / `close` 也要用的锁，CLI 不读 stdin 时两者都无法关闭管道解开它。现在写入排序与状态各用一把锁，关闭 stdin 能结束卡住的写入。
+        - 用量 ledger 原来在 Provider 级锁内读写基线文件，现在每个会话一把锁，文件 I/O 只阻塞该会话。
+        - ACP 显式声明 `sessionCapabilities.resume: false` 时不再当作支持接回；取消与回复同时到达时保留回复。
+      - Bridge：首次打开 Agent 失败（例如 CLI 尚未装好）后，下一次 connect 原来不再读取持久化的会话指针，现在直到真正打开过 Agent 都会接回。
+      - 对话历史：回合中引导计入上下文前言的预算（每行最多占剩余预算的四分之一、4000 字，超出的标注条数），非精简模式也按预算截取；历史读取的识别改为同时出现 `history_version` 与 `conversationId`。交接文本把所有换行符（`\r`、U+2028 等）统一成 `\n` 再防伪造条目头。
+      - 脚本：`reprime.sh` 在 backend 重启成功后才标记交接完成，失败时 EXIT trap 仍会拉起 backend；`test-agent-connect.sh` 失败时也清理临时目录，`docker start` 失败输出容器日志。
       - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
       - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
     - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。

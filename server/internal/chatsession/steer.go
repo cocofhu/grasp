@@ -44,26 +44,40 @@ var ErrItemActive = errors.New("item is already running")
 // The whole exchange holds the transition gate. The active turn therefore
 // cannot be replaced meanwhile, and the pump cannot start the item as a turn
 // of its own while it is being delivered into the current one. A cancel of
-// that turn ends the delivery instead of waiting for it; unless the runtime
-// already took the item, it then stays at the head of the queue for the
-// cancel to keep or drop.
+// that turn ends the delivery instead of waiting for it, and so does the end
+// of ctx; unless the runtime already took the item, it then stays at the head
+// of the queue without interrupting the turn, for a cancel to keep or drop.
 func (s *Session[T]) Steer(ctx context.Context, id string) (SteerOutcome, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return "", errors.New("item id required")
 	}
+	outcome, frame, err := s.steerGated(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	// Like cancel: a slow viewer must not hold the gate.
+	if frame != nil {
+		s.publish(*frame)
+	}
+	return outcome, nil
+}
+
+// steerGated is Steer under the transition gate. The frame, when set, is
+// published once the gate is released.
+func (s *Session[T]) steerGated(ctx context.Context, id string) (SteerOutcome, *sessionFrame, error) {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 
 	s.mu.Lock()
 	if s.hasActive && s.cfg.View(s.active).ID == id {
 		s.mu.Unlock()
-		return "", ErrItemActive
+		return "", nil, ErrItemActive
 	}
 	idx := s.indexLocked(id)
 	if idx < 0 {
 		s.mu.Unlock()
-		return "", ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	item, active, hasActive := s.queue[idx], s.active, s.hasActive
 	deliverCtx, stop := context.WithCancel(ctx)
@@ -80,16 +94,16 @@ func (s *Session[T]) Steer(ctx context.Context, id string) (SteerOutcome, error)
 
 	s.mu.Lock()
 	s.steerStop = nil
-	if result == SteerRejected && deliverCtx.Err() != nil && ctx.Err() == nil {
+	if result == SteerRejected && deliverCtx.Err() != nil {
 		result = SteerDeferred
 	}
 	// Remove does not take the gate; the item may have left meanwhile.
 	if idx = s.indexLocked(id); idx < 0 {
 		s.mu.Unlock()
 		if result == SteerJoined {
-			return SteerOutcomeJoined, nil
+			return SteerOutcomeJoined, nil, nil
 		}
-		return "", ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
 	outcome := SteerOutcomeJoined
@@ -116,8 +130,7 @@ func (s *Session[T]) Steer(ctx context.Context, id string) (SteerOutcome, error)
 			s.cfg.CancelTurn()
 		}
 	}
-	s.publish(frame)
-	return outcome, nil
+	return outcome, &frame, nil
 }
 
 func (s *Session[T]) indexLocked(id string) int {

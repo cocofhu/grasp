@@ -362,12 +362,29 @@ func conversationTools(reply *sandbox.Reply) []mcp.ConversationHistoryToolResult
 func isHistoryRead(tc sandbox.ReplyTool) bool {
 	title := strings.ToLower(tc.Title)
 	return strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") ||
-		strings.Contains(tc.Output, `"history_version"`) && strings.Contains(tc.Output, `"messages"`)
+		strings.Contains(tc.Output, `"history_version"`) && strings.Contains(tc.Output, `"conversationId"`)
 }
 
 // ownHistoryTool reads the current conversation back; a referenced one is
 // read with read_reference and its handle instead.
 const ownHistoryTool = "artifact-store.get_history"
+
+// renderSteers lists the input added while a turn ran, within budget runes;
+// the rest is counted for get_history.
+func renderSteers(steers []string, budget int) string {
+	var b strings.Builder
+	for i, steer := range steers {
+		line := fmt.Sprintf("[用户·回合中补充] %s\n", historyExcerpt(steer, min(2000, budget), ownHistoryTool))
+		if n := len([]rune(line)); n <= budget {
+			b.WriteString(line)
+			budget -= n
+			continue
+		}
+		fmt.Fprintf(&b, "（另有 %d 条回合中补充未附上，可通过 get_history 回查。）\n", len(steers)-i)
+		break
+	}
+	return b.String()
+}
 
 func historyExcerpt(content string, budget int, via string) string {
 	runes := []rune(content)
@@ -499,9 +516,7 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 		role := "用户"
 		if row.Role == "assistant" {
 			role = "助手"
-			for _, steer := range reply.Steers() {
-				fmt.Fprintf(&part, "[用户·回合中补充] %s\n", historyExcerpt(steer, 2000, ownHistoryTool))
-			}
+			part.WriteString(renderSteers(reply.Steers(), min(budget/4, 4000)))
 		}
 		fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
 		for _, image := range row.Images {
@@ -520,7 +535,7 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 		}
 		part.WriteString("\n")
 		partText := part.String()
-		if compact && len([]rune(partText)) > budget {
+		if len([]rune(partText)) > budget {
 			partText = historyExcerpt(partText, budget-100, ownHistoryTool) + "\n\n"
 		}
 		parts = append(parts, partText)

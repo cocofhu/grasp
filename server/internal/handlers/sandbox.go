@@ -240,6 +240,9 @@ func (h *Handlers) CleanupSandboxes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"destroyed": destroyed, "skipped": skipped})
 }
 
+// maxPendingSteers bounds the steers one chat socket has waiting.
+const maxPendingSteers = 8
+
 // SandboxChat is the Agent Studio / sandbox-console chat WebSocket. Turns run
 // in the sandbox's chatsession FIFO and outlive the connection. On connect the
 // server sends a queue_state snapshot and, while busy, replays the active turn;
@@ -287,15 +290,26 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		<-writeDone
 	}()
 
-	// steer runs beside the read loop: it waits for the native delivery, and
-	// a cancel on this socket must not wait behind it. A missing item already
-	// ran or was removed: nothing left to steer.
-	steer := func(itemID string) {
-		go func() {
-			if _, err := h.SbxChats.Steer(id, itemID); err != nil && !errors.Is(err, chatsession.ErrNotFound) {
+	// Steers run in order on one worker beside the read loop: each waits for
+	// the native delivery, and a cancel on this socket must not wait behind
+	// it. Closing the socket ends the delivery in progress. A missing item
+	// already ran or was removed: nothing left to steer.
+	steerCtx, stopSteers := context.WithCancel(c.Request.Context())
+	steers := make(chan string, maxPendingSteers)
+	defer func() { stopSteers(); close(steers) }()
+	go func() {
+		for itemID := range steers {
+			if _, err := h.SbxChats.Steer(steerCtx, id, itemID); err != nil && !errors.Is(err, chatsession.ErrNotFound) && steerCtx.Err() == nil {
 				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
 			}
-		}()
+		}
+	}()
+	steer := func(itemID string) {
+		select {
+		case steers <- itemID:
+		default:
+			_ = write(gin.H{"type": "session", "event": "error", "message": "引导请求过多，请稍后再试", "interrupted": false})
+		}
 	}
 
 	for {

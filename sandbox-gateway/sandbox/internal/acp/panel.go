@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"backend/internal/provider"
@@ -208,7 +209,7 @@ func NewPanel(procCtx, rpcCtx context.Context, spec PanelSpec) (*Panel, error) {
 	p.AgentTitle = initOut.AgentInfo.Title
 	p.AgentVersion = initOut.AgentInfo.Version
 	switch caps := initOut.AgentCapabilities; {
-	case len(caps.SessionCapabilities.Resume) > 0 && string(caps.SessionCapabilities.Resume) != "null":
+	case !slices.Contains([]string{"", "null", "false"}, string(caps.SessionCapabilities.Resume)):
 		p.reopenMethod = "session/resume"
 	case caps.LoadSession:
 		p.reopenMethod = "session/load"
@@ -729,7 +730,8 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 // callPrompt runs session/prompt until the agent answers. Once ctx is
 // cancelled it asks the agent to stop and still waits for that answer, so the
 // next prompt never overlaps a turn that is still running; an agent that has
-// not answered within provider.InterruptGrace is closed.
+// not answered within provider.InterruptGrace is closed. An answer already
+// there when ctx ends is kept: that turn finished.
 func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, error) {
 	type reply struct {
 		raw json.RawMessage
@@ -744,6 +746,11 @@ func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, er
 	case r := <-answered:
 		return r.raw, r.err
 	case <-ctx.Done():
+	}
+	select {
+	case r := <-answered:
+		return r.raw, r.err
+	default:
 	}
 	if err := p.Cancel(); err != nil {
 		log.Printf("acp: session %s 取消通知失败: %v", p.SessionID, err)

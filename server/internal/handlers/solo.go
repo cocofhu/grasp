@@ -503,7 +503,7 @@ func (h *Handlers) StartSoloTurn(c *gin.Context) {
 		return
 	}
 	if body.Steer {
-		outcome, err := h.Solo.SendAndSteer(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
+		outcome, err := h.Solo.SendAndSteer(c.Request.Context(), c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
 		if err != nil {
 			writeSoloQueueErr(c, err)
 			return
@@ -553,7 +553,7 @@ func (h *Handlers) SteerSoloQueued(c *gin.Context) {
 	if !ok {
 		return
 	}
-	outcome, err := h.Solo.SteerQueued(c.Param("id"), user, c.Param("turnId"))
+	outcome, err := h.Solo.SteerQueued(c.Request.Context(), c.Param("id"), user, c.Param("turnId"))
 	if err != nil {
 		writeSoloQueueErr(c, err)
 		return

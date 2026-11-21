@@ -25,9 +25,12 @@ func turnInputCodec(c Codec) (TurnInputCodec, bool) {
 	return tc, ok && tc.TurnInput()
 }
 
-// turnInput is a running turn's stdin for a TurnInputCodec. Writes are
-// serialized so a steer never interleaves with the prompt envelope.
+// turnInput is a running turn's stdin for a TurnInputCodec. writeMu orders
+// the writes, so a steer never interleaves with the prompt envelope; mu
+// guards the counts only, never a pipe write, so settle and close can always
+// close stdin, which also ends a write the CLI stopped reading.
 type turnInput struct {
+	writeMu  sync.Mutex
 	mu       sync.Mutex
 	w        io.WriteCloser
 	sent     int
@@ -40,13 +43,13 @@ type turnInput struct {
 // wait reports the prompt write.
 func openTurnInput(w io.WriteCloser, prompt []byte) (t *turnInput, wait func() error) {
 	t = &turnInput{w: w}
-	t.mu.Lock()
+	t.writeMu.Lock()
 	var err error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer t.mu.Unlock()
-		err = t.writeLocked(prompt)
+		defer t.writeMu.Unlock()
+		err = t.send(prompt)
 	}()
 	return t, func() error { <-done; return err }
 }
@@ -54,19 +57,30 @@ func openTurnInput(w io.WriteCloser, prompt []byte) (t *turnInput, wait func() e
 // write sends one user message. It fails with provider.ErrNoActiveTurn once
 // the turn settled, so a late steer is never written to a finished CLI.
 func (t *turnInput) write(msg []byte) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.writeLocked(msg)
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	return t.send(msg)
 }
 
-func (t *turnInput) writeLocked(msg []byte) error {
+// send writes msg under writeMu. The message counts as sent from the start,
+// so a result that arrives meanwhile still waits for its answer.
+func (t *turnInput) send(msg []byte) error {
+	t.mu.Lock()
 	if t.closed {
+		t.mu.Unlock()
 		return provider.ErrNoActiveTurn
 	}
+	t.sent++
+	t.mu.Unlock()
 	if _, err := t.w.Write(msg); err != nil {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.sent--
+		if t.closed {
+			return provider.ErrNoActiveTurn
+		}
 		return err
 	}
-	t.sent++
 	return nil
 }
 

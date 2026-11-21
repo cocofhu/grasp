@@ -235,6 +235,34 @@ func TestCancelEndsAnInFlightSteer(t *testing.T) {
 	}
 }
 
+func TestASteerWhoseCallerLeftDoesNotInterrupt(t *testing.T) {
+	h := newHarness()
+	gate := h.hold("a")
+	cfg := h.config()
+	cfg.Capacity = 8
+	var cancels atomic.Int32
+	cfg.CancelTurn = func() { cancels.Add(1) }
+	cfg.SteerTurn = func(ctx context.Context, _, _ *testItem) SteerResult {
+		<-ctx.Done()
+		return SteerRejected
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{id: "a"}, nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue(&testItem{id: "b"}, nil)
+	_, _ = s.Enqueue(&testItem{id: "c"}, nil)
+	ctx, leave := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer leave()
+	if out, err := s.Steer(ctx, "c"); err != nil || out != SteerOutcomeNext || cancels.Load() != 0 || s.CancelRequested() {
+		t.Fatalf("steer = %q %v, interrupts = %d", out, err, cancels.Load())
+	}
+	if got := pendingIDs(s); !slices.Equal(got, []string{"c", "b"}) {
+		t.Fatalf("pending = %v", got)
+	}
+	close(gate)
+	h.waitIdle(t)
+}
+
 func TestSteerIdleSessionMovesToHead(t *testing.T) {
 	h := newHarness()
 	cfg := h.config()

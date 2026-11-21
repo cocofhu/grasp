@@ -85,10 +85,11 @@ func (p piProvider) Open(procCtx, handshakeCtx context.Context, opts provider.Op
 	}
 	args = append(append(args, prepared.Args...), opts.CustomArgs...)
 	s := newSession(opts, prepared.Env, onEvent, prepared.Cleanup)
-	if s.proc, err = startProcess(procCtx, path, opts.Cwd, prepared.Env, args, s.onEvent); err != nil {
+	if s.proc, err = startProcess(procCtx, path, opts.Cwd, prepared.Env, args); err != nil {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("start pi rpc: %w", err)
 	}
+	s.proc.serve(s.onEvent)
 	if err := s.handshake(handshakeCtx); err != nil {
 		_ = s.Close()
 		return nil, errors.New(provider.RedactDiagnostic(err.Error(), prepared.Env))

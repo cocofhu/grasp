@@ -288,7 +288,7 @@ func (h *Handlers) ReactQueueSteer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	outcome, err := h.Eng.SteerQueuedItem(c.Param("id"), c.Param("nodeId"), b.ItemID)
+	outcome, err := h.Eng.SteerQueuedItem(c.Request.Context(), c.Param("id"), c.Param("nodeId"), b.ItemID)
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -347,7 +347,7 @@ func (h *Handlers) GateReactQueueSteer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "review_session_unavailable", "error": "上游复审会话不可用"})
 		return
 	}
-	outcome, err := h.Eng.SteerQueuedItem(runID, producerID, b.ItemID)
+	outcome, err := h.Eng.SteerQueuedItem(c.Request.Context(), runID, producerID, b.ItemID)
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

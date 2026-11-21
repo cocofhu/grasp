@@ -312,7 +312,7 @@ func (s *SoloService) CancelPreviewTurn(id, user, turnID string) error {
 }
 
 // SendAndSteer queues a user turn and handles it at once (SteerQueued).
-func (s *SoloService) SendAndSteer(id, user, text string, images []models.PromptImage, refs []ReferenceInput, picks ...models.ReactAnnotation) (chatsession.SteerOutcome, error) {
+func (s *SoloService) SendAndSteer(ctx context.Context, id, user, text string, images []models.PromptImage, refs []ReferenceInput, picks ...models.ReactAnnotation) (chatsession.SteerOutcome, error) {
 	row, err := s.Require(id, user)
 	if err != nil {
 		return "", err
@@ -321,25 +321,25 @@ func (s *SoloService) SendAndSteer(id, user, text string, images []models.Prompt
 	if _, err := s.sendSoloTurn(row, turn, refs); err != nil {
 		return "", err
 	}
-	return s.steer(id, turn.ID)
+	return s.steer(ctx, id, turn.ID)
 }
 
 // SteerQueued handles a pending turn now: the running turn takes it when the
 // agent supports that, otherwise the running turn is interrupted and this one
 // runs next.
-func (s *SoloService) SteerQueued(id, user, turnID string) (chatsession.SteerOutcome, error) {
+func (s *SoloService) SteerQueued(ctx context.Context, id, user, turnID string) (chatsession.SteerOutcome, error) {
 	if _, err := s.Require(id, user); err != nil {
 		return "", err
 	}
-	return s.steer(id, turnID)
+	return s.steer(ctx, id, turnID)
 }
 
-func (s *SoloService) steer(id, turnID string) (chatsession.SteerOutcome, error) {
+func (s *SoloService) steer(ctx context.Context, id, turnID string) (chatsession.SteerOutcome, error) {
 	c := s.lookup(id)
 	if c == nil {
 		return "", soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
 	}
-	out, err := c.sess.Steer(context.Background(), turnID)
+	out, err := c.sess.Steer(ctx, turnID)
 	switch {
 	case errors.Is(err, chatsession.ErrItemActive):
 		// It started on its own meanwhile; that is what steering asked for.

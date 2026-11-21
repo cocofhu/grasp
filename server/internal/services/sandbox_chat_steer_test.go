@@ -46,13 +46,13 @@ func TestSandboxChatsSteer(t *testing.T) {
 			f := &steerSandboxChat{fakeSandboxChat: newFakeSandboxChat(), status: tc.status}
 			c := NewSandboxChats(nil)
 			c.SetChatterForTest(f)
-			if _, err := c.Steer(5, "x"); !errors.Is(err, chatsession.ErrNotFound) {
+			if _, err := c.Steer(context.Background(), 5, "x"); !errors.Is(err, chatsession.ErrNotFound) {
 				t.Fatalf("steer without a session = %v", err)
 			}
 			_, _ = c.Enqueue(5, SandboxChatItem{Content: "one"})
 			waitStarted(t, f.fakeSandboxChat, "one")
 			_, _ = c.Enqueue(5, SandboxChatItem{ID: "it-2", Content: tc.content})
-			out, err := c.Steer(5, "it-2")
+			out, err := c.Steer(context.Background(), 5, "it-2")
 			if err != nil || out != tc.want {
 				t.Fatalf("steer = %q %v", out, err)
 			}

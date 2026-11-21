@@ -36,7 +36,7 @@ type fakeServer struct {
 	n      int
 	// childReads counts thread/read calls for the "spawn" subagent, which
 	// stays active for the first two; a "stubborn" one stays active until its
-	// turn is interrupted.
+	// turn is interrupted. With "broken" the parent turn then fails.
 	childReads              int
 	childStubborn, childOff bool
 	// childCalls counts every thread/read of child-1, including failed ones.
@@ -122,6 +122,10 @@ func runFakeAppServer() {
 		case "thread/resume":
 			if msg.Params.ThreadID == "thread-gone" {
 				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "no rollout found for thread id thread-gone"}})
+				continue
+			}
+			if msg.Params.ThreadID == "thread-unreadable" {
+				f.send(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32603, "message": "failed to read rollout"}})
 				continue
 			}
 			if path := os.Getenv("GRASP_FAKE_CODEX_RESUME_MODEL"); path != "" {
@@ -292,6 +296,10 @@ func (f *fakeServer) play(text string) {
 		f.item("item/completed", map[string]any{"type": "collabAgentToolCall", "id": "s2", "tool": "spawnAgent", "senderThreadId": f.thread,
 			"receiverThreadIds": []string{"child-2"}, "status": "completed", "agentsStates": map[string]any{"child-2": map[string]any{"status": "completed"}}})
 		f.notify("turn/completed", map[string]any{"threadId": "child-0", "turn": map[string]any{"id": "child-turn", "status": "completed"}})
+		if strings.Contains(text, "broken") {
+			f.complete("failed", "parent turn broke")
+			return
+		}
 		f.complete("completed", "")
 	case strings.Contains(text, "die"):
 		os.Exit(3)

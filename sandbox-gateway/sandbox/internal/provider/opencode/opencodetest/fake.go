@@ -6,9 +6,9 @@
 // aborted or steered, "fail" ends it with a model error, "subagent" leaves a
 // child session busy for a few status polls, "stubborn" leaves one busy until
 // it is aborted, "background" starts a child that reports busy only after a
-// moment. Any other prompt gets Reply. A prompt containing "receipt" is
-// answered a second late, and not taken at all when it contains
-// "lostreceipt".
+// moment, "replay" re-publishes an earlier turn's failed answer. Any other
+// prompt gets Reply. A prompt containing "receipt" is answered a second
+// late, and not taken at all when it contains "lostreceipt".
 package opencodetest
 
 import (
@@ -430,6 +430,9 @@ func (f *fake) run(s *fakeSession, text string) {
 		default:
 			if strings.Contains(text, "background") {
 				f.background(sid)
+			}
+			if strings.Contains(text, "replay") {
+				f.assistant(sid, "msg_earlier", "msg_earlier_user", map[string]any{"name": "APIError", "data": map[string]string{"message": "an earlier turn failed"}}, true)
 			}
 			if strings.Contains(text, "subagent") || strings.Contains(text, "stubborn") {
 				child := f.create(sid)

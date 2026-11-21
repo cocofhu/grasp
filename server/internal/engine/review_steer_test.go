@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -44,7 +45,7 @@ func TestReviewQueueSteer(t *testing.T) {
 			}
 			waitReactPause(t, db, run.ID, "prop")
 			waitRunStatus(t, db, run.ID, "waiting_human")
-			if _, err := eng.SteerQueuedItem(run.ID, "prop", "x"); err == nil {
+			if _, err := eng.SteerQueuedItem(context.Background(), run.ID, "prop", "x"); err == nil {
 				t.Fatal("steer without a session")
 			}
 			if _, err := eng.EnqueueReviewTurnAs("", run.ID, "prop", "first", nil, nil, "node", ""); err != nil {
@@ -59,10 +60,10 @@ func TestReviewQueueSteer(t *testing.T) {
 				t.Fatalf("pending = %+v", snap.Items)
 			}
 			id, _ := snap.Items[0]["id"].(string)
-			if _, err := eng.SteerQueuedItem(run.ID, "prop", "missing"); err == nil {
+			if _, err := eng.SteerQueuedItem(context.Background(), run.ID, "prop", "missing"); err == nil {
 				t.Fatal("unknown item")
 			}
-			out, err := eng.SteerQueuedItem(run.ID, "prop", id)
+			out, err := eng.SteerQueuedItem(context.Background(), run.ID, "prop", id)
 			if err != nil || out != tc.want {
 				t.Fatalf("steer = %q %v", out, err)
 			}
@@ -77,10 +78,26 @@ func TestReviewQueueSteer(t *testing.T) {
 			if n := provider.reviseCount("prop"); n != tc.revisions {
 				t.Fatalf("revisions = %d, want %d", n, tc.revisions)
 			}
-			if _, err := eng.SteerVisitorQueuedItem(run.ID, "prop", "guest", id); err == nil {
+			if _, err := eng.SteerVisitorQueuedItem(context.Background(), run.ID, "prop", "guest", id); err == nil {
 				t.Fatal("steer on a lane without a session")
 			}
 		})
+	}
+}
+
+func TestOnlyPlainInputJoinsARunningTurn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		item reviewQueueItem
+		join bool
+	}{
+		"plain":             {reviewQueueItem{Text: "x"}, true},
+		"comment-only user": {reviewQueueItem{Text: "x", LiveWritesDenied: true}, false},
+		"command":           {reviewQueueItem{Text: "x", Command: chatcmd.Command{Name: "compact"}}, false},
+		"live":              {reviewQueueItem{Text: "x", Live: &models.LiveRef{}}, false},
+	} {
+		if got := tc.item.joinsRunningTurn(); got != tc.join {
+			t.Errorf("%s: joins = %v", name, got)
+		}
 	}
 }
 

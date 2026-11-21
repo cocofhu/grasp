@@ -16,7 +16,8 @@ import (
 
 // TestPanelAgentHelperProcess is a minimal ACP agent. It knows one stored
 // session, "stored", whose history it replays on session/load. Modes pick the
-// advertised reopen capability: "load", "resume" or "none". A prompt "hang"
+// advertised reopen capability: "load", "resume", "none" or "noresume"
+// (resume declared false). A prompt "hang"
 // runs until session/cancel, which the agent obeys unless
 // GRASP_ACP_PANEL_CANCEL is "ignore".
 func TestPanelAgentHelperProcess(t *testing.T) {
@@ -55,8 +56,11 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			caps := map[string]any{"loadSession": mode == "load"}
-			if mode == "resume" {
+			switch mode {
+			case "resume":
 				caps["sessionCapabilities"] = map[string]any{"resume": map[string]any{}}
+			case "noresume":
+				caps["sessionCapabilities"] = map[string]any{"resume": false}
 			}
 			reply(map[string]any{"protocolVersion": 1, "agentCapabilities": caps})
 		case "session/load", "session/resume":
@@ -163,6 +167,7 @@ func TestPanelStartsFreshWhenTheSessionCannotBeLoaded(t *testing.T) {
 	cases := map[string]struct{ mode, resume string }{
 		"unknown session":   {"load", "gone"},
 		"no loadSession":    {"noload", "stored"},
+		"resume false":      {"noresume", "stored"},
 		"nothing to resume": {"load", ""},
 	}
 	for name, tc := range cases {

@@ -80,10 +80,13 @@ type reviewQueueItem struct {
 
 // joinsRunningTurn reports whether the item is plain input a running turn can
 // take as is. Commands, references, picks, retries and Live requests are
-// prepared and recorded per turn, so they run as a turn of their own.
+// prepared and recorded per turn, so they run as a turn of their own; so does
+// input from a sender without Live write access, which a running turn would
+// otherwise carry out with its own.
 func (it *reviewQueueItem) joinsRunningTurn() bool {
 	return it.Command.Name == "" && len(it.References) == 0 && len(it.Annotations) == 0 &&
-		!it.RetryLast && !it.Force && it.Live == nil && it.LiveChat == nil && it.PreviewIteration == 0 && !it.AutoRetryOnResume
+		!it.RetryLast && !it.Force && it.Live == nil && it.LiveChat == nil && it.PreviewIteration == 0 && !it.AutoRetryOnResume &&
+		!it.LiveWritesDenied
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
@@ -649,16 +652,16 @@ func (e *Engine) removeLaneQueuedItem(runID, producerID, lane, itemID string) er
 // SteerQueuedItem handles one waiting item now (chatsession.Session.Steer):
 // the running turn takes it when the agent supports that, otherwise the turn
 // is interrupted and the item runs next.
-func (e *Engine) SteerQueuedItem(runID, producerID, itemID string) (chatsession.SteerOutcome, error) {
-	return e.steerLaneQueuedItem(runID, producerID, "", itemID)
+func (e *Engine) SteerQueuedItem(ctx context.Context, runID, producerID, itemID string) (chatsession.SteerOutcome, error) {
+	return e.steerLaneQueuedItem(ctx, runID, producerID, "", itemID)
 }
 
-func (e *Engine) steerLaneQueuedItem(runID, producerID, lane, itemID string) (chatsession.SteerOutcome, error) {
+func (e *Engine) steerLaneQueuedItem(ctx context.Context, runID, producerID, lane, itemID string) (chatsession.SteerOutcome, error) {
 	s := e.laneSession(runID, producerID, lane)
 	if s == nil {
 		return "", errors.New("no session")
 	}
-	out, err := s.Steer(context.Background(), itemID)
+	out, err := s.Steer(ctx, itemID)
 	if errors.Is(err, chatsession.ErrItemActive) {
 		// It started on its own meanwhile; that is what steering asked for.
 		return chatsession.SteerOutcomeNext, nil

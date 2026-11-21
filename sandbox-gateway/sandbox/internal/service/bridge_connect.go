@@ -147,7 +147,7 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, keepHistory: true,
 			resumeID: resume, resumeHistory: history})
 	}
-	first := b.agentGeneration == 0
+	first := !b.opened
 	b.mu.Unlock()
 
 	return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, resumeStored: first})
@@ -165,8 +165,8 @@ type openSpec struct {
 	// resumeHistory: the session resumeID names holds earlier dialogue.
 	resumeHistory bool
 	// resumeStored continues the persisted session when resumeID is empty:
-	// the first agent of this backend process picks up where the previous
-	// process left off.
+	// until an agent of this backend process started, connects pick up
+	// where the previous process left off.
 	resumeStored bool
 }
 
@@ -312,7 +312,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		logging.WarnErr(sess.Close(), "agent session close for deleted chat", nil)
 		return nil, ErrChatNotFound
 	}
-	b.sess, b.reviving = sess, false
+	b.sess, b.reviving, b.opened = sess, false, true
 	b.sessHistory = spec.resumeHistory && spec.resumeID != "" && sess.SessionID() == spec.resumeID
 	b.sessConfig = configStamp(sess)
 	b.sessOpened, b.sessThaw = time.Now(), thawCount()

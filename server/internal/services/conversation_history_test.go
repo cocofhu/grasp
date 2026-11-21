@@ -314,10 +314,29 @@ func TestConversationHistoryOmitsHistoryReads(t *testing.T) {
 	for _, title := range []string{"mcp__artifact-store__get_history", "MCP tool"} {
 		row := models.SoloMessage{Events: []json.RawMessage{
 			json.RawMessage(fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"history","title":%q}}}`, title)),
-			json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),
+			json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"conversationId\":\"c\",\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),
 		}}
 		if tools := conversationMessage(row).ToolResults; len(tools) != 0 {
 			t.Fatalf("history read listed as a tool result: %+v", tools)
 		}
+	}
+	grep := models.SoloMessage{Events: []json.RawMessage{json.RawMessage(
+		`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"g","title":"grep","status":"completed","content":[{"type":"content","content":{"type":"text","text":"mcp/conversation_history.go: \"history_version\" ... \"messages\""}}]}}}`)}}
+	if tools := conversationMessage(grep).ToolResults; len(tools) != 1 {
+		t.Fatalf("a tool result that merely mentions the page keys was dropped: %+v", tools)
+	}
+}
+
+func TestSteersStayWithinTheirBudget(t *testing.T) {
+	steers := make([]string, 50)
+	for i := range steers {
+		steers[i] = strings.Repeat("补", 3000)
+	}
+	out := renderSteers(steers, 4000)
+	if n := len([]rune(out)); n > 4000+100 || !strings.Contains(out, "另有 49 条回合中补充未附上") {
+		t.Fatalf("%d runes: %q", n, out[len(out)-200:])
+	}
+	if out := renderSteers([]string{"短"}, 4000); out != "[用户·回合中补充] 短\n" {
+		t.Fatalf("short steer: %q", out)
 	}
 }

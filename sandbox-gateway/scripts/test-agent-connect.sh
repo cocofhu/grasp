@@ -40,8 +40,10 @@ name=""
 mock_pid=""
 mock_port=""
 mock_log=""
+config_stage=""
 cleanup() {
   [ -n "$name" ] && docker rm -f "$name" >/dev/null 2>&1 || true
+  [ -n "$config_stage" ] && rm -rf "$config_stage"
   if [ -n "$mock_pid" ]; then
     kill "$mock_pid" >/dev/null 2>&1 || true
     wait "$mock_pid" 2>/dev/null || true
@@ -96,15 +98,16 @@ start_mock_chat() {
 # default agent reads it once at launch.
 install_opencode_mock_config() {
   [ -n "$mock_port" ] || die "provider=opencode: mock chat model 未启动"
-  local base="http://host.docker.internal:${mock_port}/v1" root
-  root="$(mktemp -d)"
-  mkdir -p "$root/root/.config/opencode"
-  node "$mock_chat" --print-opencode-config --base-url "$base" >"$root/root/.config/opencode/opencode.json" \
+  local base="http://host.docker.internal:${mock_port}/v1"
+  config_stage="$(mktemp -d)"
+  mkdir -p "$config_stage/root/.config/opencode"
+  node "$mock_chat" --print-opencode-config --base-url "$base" >"$config_stage/root/.config/opencode/opencode.json" \
     || die "provider=opencode: 生成 opencode.json 失败"
-  [ -s "$root/root/.config/opencode/opencode.json" ] || die "provider=opencode: opencode.json 为空"
-  tar -C "$root" --owner=0 --group=0 -cf - root/.config/opencode/opencode.json | docker cp - "$name:/" \
+  [ -s "$config_stage/root/.config/opencode/opencode.json" ] || die "provider=opencode: opencode.json 为空"
+  tar -C "$config_stage" --owner=0 --group=0 -cf - root/.config/opencode/opencode.json | docker cp - "$name:/" \
     || die "provider=opencode: 无法写入 opencode.json"
-  rm -rf "$root"
+  rm -rf "$config_stage"
+  config_stage=""
   log "provider=opencode: GRASP_OPENCODE_BASE_URL=${base}（custom / OpenAI 兼容适配器）"
 }
 
@@ -161,7 +164,7 @@ check_provider() {
   if [ "$provider" = opencode ]; then
     install_opencode_mock_config
   fi
-  docker start "$name" >/dev/null
+  docker start "$name" >/dev/null || die "provider=$provider: 容器启动失败"
 
   local api="" ide="" deadline=$((SECONDS + ready_timeout))
   until [ -n "$api" ] && curl -fsS "http://127.0.0.1:$api/api/capabilities" -o /tmp/agent-e2e-caps.json 2>/dev/null; do

@@ -165,8 +165,8 @@ func (e *Engine) RemoveVisitorQueuedItem(runID, producerID, lane, itemID string)
 	return e.removeLaneQueuedItem(runID, producerID, lane, itemID)
 }
 
-func (e *Engine) SteerVisitorQueuedItem(runID, producerID, lane, itemID string) (chatsession.SteerOutcome, error) {
-	return e.steerLaneQueuedItem(runID, producerID, lane, itemID)
+func (e *Engine) SteerVisitorQueuedItem(ctx context.Context, runID, producerID, lane, itemID string) (chatsession.SteerOutcome, error) {
+	return e.steerLaneQueuedItem(ctx, runID, producerID, lane, itemID)
 }
 
 func (e *Engine) ReorderVisitorQueuedItems(runID, producerID, lane string, itemIDs []string) error {

@@ -26,6 +26,8 @@ type lifeAgent struct {
 	// makes them fail.
 	hold       chan struct{}
 	failResume bool
+	// failOpens fails that many opens first.
+	failOpens int
 	// config is what sessions report as provider.ConfigReader files.
 	config []string
 
@@ -50,6 +52,10 @@ func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEven
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.failOpens > 0 {
+		a.failOpens--
+		return nil, errors.New("agent is not installed yet")
+	}
 	a.opens = append(a.opens, opts)
 	id := fmt.Sprintf("native-%d", len(a.opens))
 	if opts.ResumeSessionID != "" && !a.forget {
