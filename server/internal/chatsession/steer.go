@@ -43,7 +43,10 @@ var ErrItemActive = errors.New("item is already running")
 //
 // The whole exchange holds the transition gate. The active turn therefore
 // cannot be replaced meanwhile, and the pump cannot start the item as a turn
-// of its own while it is being delivered into the current one.
+// of its own while it is being delivered into the current one. A cancel of
+// that turn ends the delivery instead of waiting for it; unless the runtime
+// already took the item, it then stays at the head of the queue for the
+// cancel to keep or drop.
 func (s *Session[T]) Steer(ctx context.Context, id string) (SteerOutcome, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -63,16 +66,23 @@ func (s *Session[T]) Steer(ctx context.Context, id string) (SteerOutcome, error)
 		return "", ErrNotFound
 	}
 	item, active, hasActive := s.queue[idx], s.active, s.hasActive
+	deliverCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	s.steerStop = stop
 	s.mu.Unlock()
 
 	result := SteerRejected
 	if hasActive && s.cfg.SteerTurn != nil {
-		if err := guardTurn(func() { result = s.cfg.SteerTurn(ctx, active, item) }); err != nil {
+		if err := guardTurn(func() { result = s.cfg.SteerTurn(deliverCtx, active, item) }); err != nil {
 			result = SteerRejected
 		}
 	}
 
 	s.mu.Lock()
+	s.steerStop = nil
+	if result == SteerRejected && deliverCtx.Err() != nil && ctx.Err() == nil {
+		result = SteerDeferred
+	}
 	// Remove does not take the gate; the item may have left meanwhile.
 	if idx = s.indexLocked(id); idx < 0 {
 		s.mu.Unlock()

@@ -69,6 +69,9 @@
         - OpenCode 第一次读子会话状态失败时，父回合原来直接成功结束，现在同样按未知继续查询。
         - Pi 的 `agent_end` 带 `willRetry: true` 时，平台原来立即报失败，Pi 随后自动重试成功并照常执行。现在等重试结果；重试成功不报上一次的错误，退避期间放弃或被取消（之后没有 `agent_end`）以 `auto_retry_end` 收尾。
         - Pi 发出 `agent_end` 后可能还在收尾，紧接着的下一轮 `prompt` 会被以「Agent is already processing」拒绝。现在遇到这个拒绝就等 Pi 空闲后重发一次。
+        - OpenCode 与 Pi 的引导回执超过 20s 时原来直接报失败，平台中断回合并把引导再跑一遍，而 Agent 可能已经收下。OpenCode 现在按 OpenCode 自己的格式（`msg_` + 毫秒时钟 + 随机串，与会话消息同序）生成 `messageID` 随引导发送，超时后 `GET /session/{id}/message/{messageID}`：有即送达，404 才报失败，查询出错报「无法确认」。Pi 超时不报失败，回合等这条引导的应答再结算；应答在回合结束后才到时，按 `disposition` 中止或清空队列撤回，不让它混进下一轮。
+        - 引导投递期间整段持有切换锁，用户此时点停止要等投递超时（最长 30s）。现在 `cancel` 先结束进行中的投递再取锁；被取消打断、Agent 没收下的引导排到队首，不再额外中断一次，是否保留由取消的 `clearQueue` 决定。
+        - Codex、OpenCode 停止回合时同步发 `turn/interrupt` / `abort`（最长 30s）后才开始计 `InterruptGrace`。现在先计时、请求在后台发；`halt` 与 `haltSubagents` 里的状态查询和中断请求也都受同一个截止时间约束。
       - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
       - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
     - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。

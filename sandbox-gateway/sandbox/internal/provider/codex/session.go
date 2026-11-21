@@ -315,13 +315,13 @@ func (s *session) Cancel() error {
 	}
 	s.mu.Unlock()
 	if id != "" {
-		go s.interrupt(s.threadID, id)
+		go s.interrupt(context.Background(), s.threadID, id)
 	}
 	return nil
 }
 
-func (s *session) interrupt(threadID, turnID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+func (s *session) interrupt(ctx context.Context, threadID, turnID string) {
+	ctx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 	if _, err := s.conn.Call(ctx, "turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID}); err != nil {
 		log.Printf("codex: turn/interrupt %s: %v", turnID, err)
@@ -432,10 +432,11 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 			}
 		}
 	case <-ctx.Done():
-		s.interrupt(s.threadID, t.id)
+		grace := time.After(provider.InterruptGrace)
+		go s.interrupt(context.Background(), s.threadID, t.id)
 		select {
 		case end = <-t.done:
-		case <-time.After(provider.InterruptGrace):
+		case <-grace:
 			log.Printf("codex: turn %s 未在 %s 内响应中断，结束 app-server", t.id, provider.InterruptGrace)
 			_ = s.conn.Close()
 			end = turnEnd{status: "interrupted"}
@@ -466,21 +467,22 @@ func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
 // subagents that do not stop within InterruptGrace take the app-server down,
 // and the bridge revives the thread like a crash.
 func (s *session) haltSubagents() {
-	deadline := time.After(provider.InterruptGrace)
+	ctx, cancel := context.WithTimeout(context.Background(), provider.InterruptGrace)
+	defer cancel()
 	for {
-		running := s.runningSubagents(context.Background())
+		running := s.runningSubagents(ctx)
 		if len(running) == 0 {
 			return
 		}
 		for _, id := range running {
-			if turn := s.activeTurnOf(id); turn != "" {
-				s.interrupt(id, turn)
+			if turn := s.activeTurnOf(ctx, id); turn != "" {
+				s.interrupt(ctx, id, turn)
 			}
 		}
 		select {
 		case <-s.conn.Done():
 			return
-		case <-deadline:
+		case <-ctx.Done():
 			log.Printf("codex: 子 Agent %v 未在 %s 内停止，结束 app-server", running, provider.InterruptGrace)
 			_ = s.conn.Close()
 			return
@@ -490,8 +492,8 @@ func (s *session) haltSubagents() {
 }
 
 // activeTurnOf is the id of the thread's turn in progress, or "".
-func (s *session) activeTurnOf(threadID string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+func (s *session) activeTurnOf(ctx context.Context, threadID string) string {
+	ctx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 	raw, err := s.conn.Call(ctx, "thread/turns/list", map[string]any{"threadId": threadID, "limit": 1, "itemsView": "notLoaded"})
 	if err != nil {

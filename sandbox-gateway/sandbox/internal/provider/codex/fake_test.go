@@ -219,10 +219,11 @@ func runFakeAppServer() {
 				_, _ = fmt.Fprintln(fh, msg.Params.TurnID)
 				_ = fh.Close()
 			}
-			reply(map[string]any{})
-			if f.mode != "hang" {
-				f.complete("interrupted", "")
+			if f.mode == "hang" {
+				continue
 			}
+			reply(map[string]any{})
+			f.complete("interrupted", "")
 		default:
 			if len(msg.Result) > 0 {
 				// A response to our server request ("ask" mode).

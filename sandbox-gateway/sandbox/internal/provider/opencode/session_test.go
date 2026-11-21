@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -214,6 +215,43 @@ func TestDefaultModelSendsNoRouting(t *testing.T) {
 	}
 }
 
+func TestAnUnansweredSteerIsSettledByTheSessionsMessages(t *testing.T) {
+	defer func(d time.Duration) { steerTimeout = d }(steerTimeout)
+	steerTimeout = 200 * time.Millisecond
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(promptCtx(t), "hang until steered", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("lostreceipt"); err == nil || errors.Is(err, provider.ErrNoActiveTurn) {
+		t.Fatalf("a steer the server never took: %v", err)
+	}
+	if err := s.Steer("slowreceipt, now finish"); err != nil {
+		t.Fatalf("a steer the server took but answered late: %v", err)
+	}
+	if err := <-out; err != nil {
+		t.Fatal(err)
+	}
+	p := f.prompts(t)
+	if len(p) != 3 || p[1].MessageID == "" || p[2].MessageID == p[1].MessageID {
+		t.Fatalf("steers do not name their messages: %+v", p)
+	}
+}
+
+func TestMessageIDsFollowOpenCodesOrder(t *testing.T) {
+	a, b := newMessageID(), newMessageID()
+	if !regexp.MustCompile(`^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$`).MatchString(a) || b[:16] <= a[:16] {
+		t.Fatalf("ids %s, %s", a, b)
+	}
+	stamp, _ := strconv.ParseInt(a[4:16], 16, 64)
+	if age := time.Now().UnixMilli()&(1<<36-1) - stamp>>12; age < 0 || age > 1000 {
+		t.Fatalf("id %s is not stamped with the current time", a)
+	}
+}
+
 func TestSteerJoinsTheRunningTurn(t *testing.T) {
 	f := installFake(t)
 	s, rec := f.open(t, "", "", "")
@@ -311,8 +349,12 @@ func TestUnconfirmedAbortStopsTheServer(t *testing.T) {
 		waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
 		cancel()
 	}()
+	start := time.Now()
 	if res, _ := s.Prompt(ctx, "hang", nil); res.StopReason != "cancelled" {
 		t.Fatalf("stop reason %q", res.StopReason)
+	}
+	if waited := time.Since(start); waited > 3*time.Second {
+		t.Fatalf("an unanswered abort held the turn for %s", waited)
 	}
 	select {
 	case <-s.Done():

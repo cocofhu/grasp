@@ -299,7 +299,7 @@ web/                  # 前端（ESM + 静态资源）
   - `Resume`：用本会话的 `SessionID` 作为 `OpenOptions.ResumeSessionID` 重新打开，能接回同一原生对话。one-shot 各 codec、`codex`、`opencode` 与 `pi` 恒为真；ACP 家族取决于 `initialize` 的声明：有 `sessionCapabilities.resume` 时用 `session/resume`（不回放历史，如 `deepseek_harness`、`kimi`），否则有 `loadSession` 时用 `session/load`（回放的历史不转发给客户端，如 `trae`），都没有则为假。Agent 拒绝接回（会话已不存在）时改开新会话。
   - 两项都随 `connected` 帧的 `capabilities` 与 `/capabilities` 的 `session.steer` / `session.resume` 下发。
 - **运行中引导（steer）**：`Capabilities().Steer` 为真时，可把一条输入送进正在运行的这一轮。
-  - 原生实现：`codex` 走 `turn/steer`，带 `clientUserMessageId`，回执超时则按这个 ID 查本回合是否已记录这条输入，已记录即算送达，回合已结束且未记录才报 `no_turn`；`opencode` 在运行中再发一次 `prompt_async`，下一步并入，这一轮直到每条已发送的输入都有回复才结束；`pi` 用带 `streamingBehavior: steer` 的 `prompt`，在下一次模型调用前并入，恰在收尾时到达的会另起一轮，这一轮直到 Agent 收下全部输入才结束；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
+  - 原生实现：`codex` 走 `turn/steer`，带 `clientUserMessageId`，回执超时则按这个 ID 查本回合是否已记录这条输入，已记录即算送达，回合已结束且未记录才报 `no_turn`；`opencode` 在运行中再发一次带自生成 `messageID` 的 `prompt_async`，下一步并入，回执超时则按这个 ID 查会话里是否已有这条消息，有即算送达、确定没有才报失败，这一轮直到每条已发送的输入都有回复才结束；`pi` 用带 `streamingBehavior: steer` 的 `prompt`，在下一次模型调用前并入，恰在收尾时到达的会另起一轮，这一轮直到 Agent 收下全部输入才结束，回执超时不报失败，由迟到的应答决定这一轮的结果，回合已结束才收下的输入会被撤回（中止或清队），不会混进下一轮；`claude_code` / `codebuddy` 本轮 stdin 保持打开，引导写成下一条 stream-json 用户消息，CLI 以 `isReplay` 回显确认，只有全部已发送的输入都被确认后的 `result` 才结束这一轮。
   - WS 协议：`{"op":"steer","opId":<目标轮>,"steerId":…,"text":…,"images":[…]}` → `op:steer_ack`（`status`：`delivered` / `unsupported` / `no_turn` / `failed`）；送达后在目标轮的事件流里追加 `user_steer`（文本与附件预览），随该轮持久化。
   - 不支持的会话由平台改为"中断当前轮并把这条输入排到队首"。
 - **会话生命周期**：更换 Agent 进程时，桥接按用途决定是否接回原生对话。

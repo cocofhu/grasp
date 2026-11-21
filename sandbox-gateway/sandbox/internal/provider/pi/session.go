@@ -221,6 +221,11 @@ func (s *session) abort(t *activeTurn) {
 // Steer sends text into the running turn. Pi queues it before the next
 // model call; one that arrives as the run ends starts the next run, and the
 // turn lasts until the agent took it in.
+//
+// Pi answers a prompt once its preflight decided it, and always answers.
+// An answer slower than steerTimeout is not a refusal: the input is
+// reported as part of the turn, which stays open until the answer arrives
+// and fails if Pi refused it, so it is neither run twice nor dropped.
 func (s *session) Steer(text string) error {
 	s.mu.Lock()
 	t := s.turn
@@ -231,19 +236,70 @@ func (s *session) Steer(text string) error {
 	t.posted++
 	t.inflight++
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
-	defer cancel()
-	_, err := s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
+	answer := make(chan steerAnswer, 1)
+	go func() {
+		r, err := s.proc.call(context.Background(), map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
+		answer <- steerAnswer{r, err}
+	}()
+	select {
+	case a := <-answer:
+		return s.steerAnswered(t, text, a, false)
+	case <-time.After(steerTimeout):
+		log.Printf("pi: 引导未在 %s 内应答，回合等待其结果", steerTimeout)
+		go func() { _ = s.steerAnswered(t, text, <-answer, true) }()
+		return nil
+	}
+}
+
+// steerTimeout bounds how long Steer waits for Pi's answer. A var so tests
+// can shrink it.
+var steerTimeout = provider.SteerTimeout
+
+type steerAnswer struct {
+	r   response
+	err error
+}
+
+// steerAnswered applies Pi's answer to a steer. A late refusal fails the
+// turn it was reported in; late input that reaches an agent whose turn
+// already ended is withdrawn, since no turn would account for it.
+func (s *session) steerAnswered(t *activeTurn, text string, a steerAnswer, late bool) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	t.inflight--
-	if err != nil {
+	if a.err != nil {
 		t.posted--
-	} else {
-		t.steers = append(t.steers, text)
+		if late && t.errText == "" {
+			t.errText = fmt.Sprintf("pi: 引导未送达: %v", a.err)
+		}
+		s.evaluateLocked(t)
+		return a.err
+	}
+	t.steers = append(t.steers, text)
+	if late && t.settled && s.turn == nil {
+		var res struct {
+			Disposition string `json:"disposition"`
+		}
+		_ = json.Unmarshal(a.r.Data, &res)
+		go s.withdraw(res.Disposition)
 	}
 	s.evaluateLocked(t)
-	s.mu.Unlock()
-	return err
+	return nil
+}
+
+// withdraw undoes input that reached the agent after its turn ended: a run
+// it started is aborted, a queued message cleared.
+func (s *session) withdraw(disposition string) {
+	ctx, cancel := context.WithTimeout(context.Background(), provider.InterruptGrace)
+	defer cancel()
+	cmd := map[string]any{"type": "clear_queue"}
+	if disposition == "started" {
+		cmd = map[string]any{"type": "abort"}
+	}
+	log.Printf("pi: 回合结束后才送达的引导（%s）已撤回", disposition)
+	if _, err := s.proc.call(ctx, cmd); err != nil {
+		log.Printf("pi: 撤回迟到的引导失败: %v", err)
+	}
 }
 
 // Cancel aborts the running run. Prompt waits for it to settle.

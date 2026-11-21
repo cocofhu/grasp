@@ -128,6 +128,9 @@ type Session[T any] struct {
 	// cancelRequested is set by Cancel; the active turn saves partial output
 	// as interrupted when it returns.
 	cancelRequested bool
+	// steerStop ends the steer delivery into the active turn, so a cancel
+	// need not wait it out at the transition gate.
+	steerStop context.CancelFunc
 	// liveEvents is the in-flight stream kept for reconnect seeding by
 	// surfaces whose runtime does not hold one.
 	liveEvents []models.AcpEvent
@@ -332,6 +335,11 @@ func (s *Session[T]) CancelActive(turnID string, clearQueue bool) bool {
 }
 
 func (s *Session[T]) cancel(clearQueue bool, turnID string) bool {
+	s.mu.Lock()
+	if s.steerStop != nil && (turnID == "" || s.hasActive && s.cfg.View(s.active).ID == turnID) {
+		s.steerStop()
+	}
+	s.mu.Unlock()
 	s.transitionMu.Lock()
 	s.mu.Lock()
 	if turnID != "" && (!s.hasActive || s.cfg.View(s.active).ID != turnID) {

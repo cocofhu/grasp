@@ -344,8 +344,12 @@ func TestUnresponsiveInterruptStopsProcess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := startTurn(t, s, ctx, "hang")
 	cancel()
+	start := time.Now()
 	if res := await(t, ch); res.StopReason != "cancelled|canceled" {
 		t.Fatalf("hung turn = %+v", res)
+	}
+	if waited := time.Since(start); waited > 2*time.Second {
+		t.Fatalf("an unanswered interrupt held the turn for %s", waited)
 	}
 	select {
 	case <-s.Done():

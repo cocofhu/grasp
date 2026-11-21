@@ -18,7 +18,8 @@ import (
 // leaves a steer queued after the run ends; reloading the session drops the
 // queue. "retry" fails its first request and recovers on Pi's automatic
 // retry, "retry giveup" gives up during the backoff. Anything else gets a
-// reply. After a run ends, get_state may keep reporting streaming
+// reply. A steer containing "slow" is answered late, and refused when it
+// also contains "refuse". After a run ends, get_state may keep reporting streaming
 // (GRASP_FAKE_PI_LATE_STREAMING reads) or fail (GRASP_FAKE_PI_STATE_FAILS),
 // and the run may stay busy a while past its agent_end
 // (GRASP_FAKE_PI_LINGER_MS).
@@ -106,6 +107,16 @@ func (f *fakePi) handle(cmd map[string]any) {
 		switch {
 		case streaming && cmd["streamingBehavior"] == nil:
 			f.respond(cmd, false, nil, "Agent is already processing.")
+		case strings.Contains(text, "slow"):
+			go func() {
+				time.Sleep(150 * time.Millisecond)
+				if strings.Contains(text, "refuse") {
+					f.respond(cmd, false, nil, "input rejected")
+					return
+				}
+				f.respond(cmd, true, map[string]any{"disposition": "queued"}, "")
+				f.steer <- text
+			}()
 		case streaming:
 			f.respond(cmd, true, nil, "")
 			f.steer <- text
@@ -135,6 +146,15 @@ func (f *fakePi) handle(cmd map[string]any) {
 		f.queued = 0
 		f.mu.Unlock()
 		f.respond(cmd, true, map[string]any{"cancelled": false}, "")
+	case "clear_queue":
+		for drained := false; !drained; {
+			select {
+			case <-f.steer:
+			default:
+				drained = true
+			}
+		}
+		f.respond(cmd, true, nil, "")
 	case "extension_ui_response":
 		f.dialog <- cmd["cancelled"] == true
 	}

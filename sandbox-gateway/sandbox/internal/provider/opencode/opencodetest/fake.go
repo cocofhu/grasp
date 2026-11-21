@@ -6,7 +6,9 @@
 // aborted or steered, "fail" ends it with a model error, "subagent" leaves a
 // child session busy for a few status polls, "stubborn" leaves one busy until
 // it is aborted, "background" starts a child that reports busy only after a
-// moment. Any other prompt gets Reply.
+// moment. Any other prompt gets Reply. A prompt containing "receipt" is
+// answered a second late, and not taken at all when it contains
+// "lostreceipt".
 package opencodetest
 
 import (
@@ -30,7 +32,7 @@ type Options struct {
 	RequestLog string
 	// SessionStore, when set, keeps session ids across server processes.
 	SessionStore string
-	// IgnoreAbort plays a server that never confirms an abort.
+	// IgnoreAbort plays a server that never answers an abort.
 	IgnoreAbort bool
 	// SlowStart plays a server still starting: it never answers the first
 	// health check.
@@ -61,7 +63,8 @@ type Prompt struct {
 		ProviderID string `json:"providerID"`
 		ModelID    string `json:"modelID"`
 	} `json:"model"`
-	Variant string `json:"variant"`
+	Variant   string `json:"variant"`
+	MessageID string `json:"messageID"`
 }
 
 // Text joins the prompt's text parts.
@@ -88,7 +91,8 @@ func Serve(args []string, o Options) error {
 			port = args[i+1]
 		}
 	}
-	f := &fake{o: o, password: os.Getenv("OPENCODE_SERVER_PASSWORD"), sessions: map[string]*fakeSession{}, subs: map[chan []byte]bool{}}
+	f := &fake{o: o, password: os.Getenv("OPENCODE_SERVER_PASSWORD"), sessions: map[string]*fakeSession{}, subs: map[chan []byte]bool{},
+		messages: map[string]bool{}}
 	f.loadSessions()
 	l, err := net.Listen("tcp", net.JoinHostPort(host, port))
 	if err != nil {
@@ -107,6 +111,8 @@ type fake struct {
 	healthReads int
 	sessions    map[string]*fakeSession
 	subs        map[chan []byte]bool
+	// messages are the prompt message ids the server took.
+	messages map[string]bool
 }
 
 type fakeSession struct {
@@ -178,7 +184,16 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		f.prompt(parts[1], p.Text())
+		text := p.Text()
+		if !strings.Contains(text, "lostreceipt") {
+			f.mu.Lock()
+			f.messages[p.MessageID] = true
+			f.mu.Unlock()
+			f.prompt(parts[1], text)
+		}
+		if strings.Contains(text, "receipt") {
+			time.Sleep(time.Second)
+		}
 		if f.o.DropPromptReceipt {
 			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
 				_ = conn.Close()
@@ -186,7 +201,20 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	case len(parts) == 4 && parts[0] == "session" && parts[2] == "message" && r.Method == http.MethodGet:
+		f.mu.Lock()
+		taken := f.messages[parts[3]]
+		f.mu.Unlock()
+		if !taken {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]any{"info": map[string]string{"id": parts[3], "role": "user"}})
 	case len(parts) == 3 && parts[0] == "session" && parts[2] == "abort":
+		if f.o.IgnoreAbort {
+			<-r.Context().Done()
+			return
+		}
 		f.abort(parts[1])
 		writeJSON(w, true)
 	default:
@@ -342,9 +370,6 @@ func (f *fake) prompt(sid, text string) {
 }
 
 func (f *fake) abort(sid string) {
-	if f.o.IgnoreAbort {
-		return
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s := f.sessions[sid]

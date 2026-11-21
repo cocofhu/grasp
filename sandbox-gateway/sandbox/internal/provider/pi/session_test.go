@@ -191,6 +191,78 @@ func TestSteerJoinsTheRunningTurn(t *testing.T) {
 	}
 }
 
+func TestALateSteerAnswerDecidesTheTurn(t *testing.T) {
+	defer func(d time.Duration) { steerTimeout = d }(steerTimeout)
+	steerTimeout = 30 * time.Millisecond
+	for _, c := range []struct {
+		steers []string
+		fails  bool
+	}{
+		{steers: []string{"slow, now finish"}},
+		{steers: []string{"slow refuse", "now finish"}, fails: true},
+	} {
+		installFake(t)
+		s, rec := open(t, provider.OpenOptions{})
+		out := make(chan error, 1)
+		go func() {
+			_, err := s.Prompt(turnCtx(t), "hang until steered", nil)
+			out <- err
+		}()
+		waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+		for _, text := range c.steers {
+			if err := s.Steer(text); err != nil {
+				t.Fatalf("an unanswered steer was refused: %v", err)
+			}
+		}
+		err := <-out
+		if c.fails != (err != nil) || (c.fails && !strings.Contains(err.Error(), "引导未送达")) {
+			t.Fatalf("steers %q: %v", c.steers, err)
+		}
+		if n := len(rec.ofType("prompt_done")); n != 1 {
+			t.Fatalf("prompt_done = %d", n)
+		}
+	}
+}
+
+func TestInputThatLandsAfterItsTurnEndedIsWithdrawn(t *testing.T) {
+	defer func(d time.Duration) { steerTimeout = d }(steerTimeout)
+	steerTimeout = 30 * time.Millisecond
+	installFake(t)
+	users := filepath.Join(t.TempDir(), "users")
+	t.Setenv("GRASP_FAKE_PI_USERS", users)
+	s, rec := open(t, provider.OpenOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(ctx, "hang until steered", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("slow stale input"); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-out; !errors.Is(err, context.Canceled) {
+		t.Fatalf("stopped turn: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	next := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(turnCtx(t), "hang until steered", nil)
+		next <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 2 })
+	if err := s.Steer("now finish"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-next; err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(users); strings.Contains(string(got), "stale") {
+		t.Fatalf("withdrawn input was taken in:\n%s", got)
+	}
+}
+
 func TestSteerQueuedAfterTheRunEndedIsTakenInOnce(t *testing.T) {
 	installFake(t)
 	users := filepath.Join(t.TempDir(), "users")

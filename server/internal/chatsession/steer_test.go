@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func pendingIDs(s *Session[*testItem]) []string {
@@ -175,6 +176,62 @@ func TestSteerItemRemovedDuringDelivery(t *testing.T) {
 		}
 		close(gate)
 		h.waitIdle(t)
+	}
+}
+
+func TestCancelEndsAnInFlightSteer(t *testing.T) {
+	for _, clearQueue := range []bool{false, true} {
+		h := newHarness()
+		h.hold("a")
+		cfg := h.config()
+		cfg.Capacity = 8
+		var cancels atomic.Int32
+		cfg.CancelTurn = func() { cancels.Add(1) }
+		delivering := make(chan struct{})
+		cfg.SteerTurn = func(ctx context.Context, _, _ *testItem) SteerResult {
+			close(delivering)
+			<-ctx.Done()
+			return SteerRejected
+		}
+		s := New(cfg)
+		_, _ = s.Enqueue(&testItem{id: "a"}, nil)
+		waitFor(t, func() bool { return s.Snapshot().Busy })
+		_, _ = s.Enqueue(&testItem{id: "b"}, nil)
+		_, _ = s.Enqueue(&testItem{id: "c"}, nil)
+		steered := make(chan SteerOutcome, 1)
+		go func() {
+			out, _ := s.Steer(context.Background(), "c")
+			steered <- out
+		}()
+		<-delivering
+		stale := make(chan bool, 1)
+		go func() { stale <- s.CancelActive("other", clearQueue) }()
+		select {
+		case <-steered:
+			t.Fatal("a cancel of another turn ended the steer")
+		case <-time.After(50 * time.Millisecond):
+		}
+		cancelled := make(chan struct{})
+		go func() { s.Cancel(clearQueue); close(cancelled) }()
+		select {
+		case <-cancelled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("cancel waited for the steer delivery")
+		}
+		if out := <-steered; out != SteerOutcomeNext || cancels.Load() != 1 || <-stale {
+			t.Fatalf("steer = %q, interrupts = %d", out, cancels.Load())
+		}
+		h.waitIdle(t)
+		want := []string{"a", "c", "b"}
+		if clearQueue {
+			want = []string{"a"}
+		}
+		h.mu.Lock()
+		ran := slices.Clone(h.ran)
+		h.mu.Unlock()
+		if !slices.Equal(ran, want) {
+			t.Fatalf("clearQueue=%v ran %v, want %v", clearQueue, ran, want)
+		}
 	}
 }
 

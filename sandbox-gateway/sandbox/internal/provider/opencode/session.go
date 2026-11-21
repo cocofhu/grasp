@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -224,7 +225,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	s.mu.Lock()
 	s.turn = t
 	s.mu.Unlock()
-	if err := s.post(ctx, text); err != nil {
+	if err := s.post(ctx, text, ""); err != nil {
 		if rejected := (*httpError)(nil); !errors.As(err, &rejected) {
 			// No answer: the server may have taken the prompt. Whatever it
 			// started must stop before the next turn may run.
@@ -236,11 +237,12 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	select {
 	case <-t.done:
 	case <-ctx.Done():
-		s.abort(s.id)
+		grace := time.After(provider.InterruptGrace)
+		go s.abort(context.Background(), s.id)
 		select {
 		case <-t.done:
 		case <-s.done:
-		case <-time.After(provider.InterruptGrace):
+		case <-grace:
 			log.Printf("opencode: 会话 %s 未在 %s 内响应中断，结束 serve 进程", s.id, provider.InterruptGrace)
 			s.srv.stop()
 		}
@@ -275,9 +277,14 @@ func (s *session) Steer(text string) error {
 	}
 	t.posted++
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
+	id := newMessageID()
+	ctx, cancel := context.WithTimeout(context.Background(), steerTimeout)
 	defer cancel()
-	if err := s.post(ctx, text); err != nil {
+	err := s.post(ctx, text, id)
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = s.steerLanded(id)
+	}
+	if err != nil {
 		s.mu.Lock()
 		t.posted--
 		s.settleLocked(t)
@@ -287,8 +294,64 @@ func (s *session) Steer(text string) error {
 	return nil
 }
 
-func (s *session) post(ctx context.Context, text string) error {
+// steerTimeout bounds the steer post; steerCheckTimeout the read that
+// settles an unanswered one. Together they stay within provider.SteerTimeout
+// plus the margin the platform allows. Vars so tests can shrink them.
+var (
+	steerTimeout      = provider.SteerTimeout
+	steerCheckTimeout = 5 * time.Second
+)
+
+// steerLanded settles a steer post that got no answer by whether the
+// session holds its message, so input the server took is never run again
+// as the next turn.
+func (s *session) steerLanded(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), steerCheckTimeout)
+	defer cancel()
+	err := s.srv.call(ctx, http.MethodGet, fmt.Sprintf("/session/%s/message/%s", url.PathEscape(s.id), url.PathEscape(id)), nil, nil)
+	if isNotFound(err) {
+		return errors.New("opencode: 引导未送达")
+	}
+	if err != nil {
+		return fmt.Errorf("无法确认引导是否送达: %w", err)
+	}
+	return nil
+}
+
+// newMessageID is a message id in OpenCode's own format, which orders a
+// session's messages by creation: "msg_", 12 hex digits of the millisecond
+// clock times 4096 plus a counter, then 14 random base62 characters. The
+// server runs on this clock, so the id sorts after the messages before it.
+func newMessageID() string {
+	msgClock.Lock()
+	ms := time.Now().UnixMilli()
+	if ms != msgClock.ms {
+		msgClock.ms, msgClock.n = ms, 0
+	}
+	msgClock.n++
+	stamp := ms*0x1000 + msgClock.n
+	msgClock.Unlock()
+	const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	tail := make([]byte, 14)
+	_, _ = rand.Read(tail)
+	for i, b := range tail {
+		tail[i] = base62[int(b)%len(base62)]
+	}
+	return fmt.Sprintf("msg_%012x%s", stamp&0xffffffffffff, tail)
+}
+
+var msgClock struct {
+	sync.Mutex
+	ms, n int64
+}
+
+// post sends text into the session. messageID, when set, names the user
+// message so its arrival can be checked.
+func (s *session) post(ctx context.Context, text, messageID string) error {
 	body := map[string]any{"parts": []map[string]string{{"type": "text", "text": text}}}
+	if messageID != "" {
+		body["messageID"] = messageID
+	}
 	if s.model.ModelID != "" {
 		body["model"] = s.model
 	}
@@ -304,13 +367,13 @@ func (s *session) Cancel() error {
 	running := s.turn != nil
 	s.mu.Unlock()
 	if running {
-		go s.abort(s.id)
+		go s.abort(context.Background(), s.id)
 	}
 	return nil
 }
 
-func (s *session) abort(id string) {
-	if err := s.srv.call(context.Background(), http.MethodPost, sprintfPath("/session/%s/abort", id), nil, nil); err != nil {
+func (s *session) abort(ctx context.Context, id string) {
+	if err := s.srv.call(ctx, http.MethodPost, sprintfPath("/session/%s/abort", id), nil, nil); err != nil {
 		log.Printf("opencode: 中断会话 %s 失败: %v", id, err)
 	}
 }
@@ -321,22 +384,23 @@ func (s *session) abort(id string) {
 // InterruptGrace is stopped, and the bridge revives it on the native session
 // like a crash.
 func (s *session) halt() {
-	deadline := time.After(provider.InterruptGrace)
+	ctx, cancel := context.WithTimeout(context.Background(), provider.InterruptGrace)
+	defer cancel()
 	for {
-		self, children, err := s.running(context.Background())
+		self, children, err := s.running(ctx)
 		if err == nil && !self && len(children) == 0 {
 			return
 		}
 		if self || err != nil {
-			s.abort(s.id)
+			s.abort(ctx, s.id)
 		}
 		for _, id := range children {
-			s.abort(id)
+			s.abort(ctx, id)
 		}
 		select {
 		case <-s.srv.done:
 			return
-		case <-deadline:
+		case <-ctx.Done():
 			log.Printf("opencode: 会话 %s 及其子 Agent 未在 %s 内停止，结束 serve 进程", s.id, provider.InterruptGrace)
 			s.srv.stop()
 			return
