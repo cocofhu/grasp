@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +26,8 @@ type lifeAgent struct {
 	// makes them fail.
 	hold       chan struct{}
 	failResume bool
+	// config is what sessions report as provider.ConfigReader files.
+	config []string
 
 	mu    sync.Mutex
 	opens []provider.OpenOptions
@@ -51,7 +55,7 @@ func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEven
 	if opts.ResumeSessionID != "" && !a.forget {
 		id = opts.ResumeSessionID
 	}
-	s := &lifeSess{stubSess: stubSess{id: id}, cwd: opts.Cwd, resume: !a.noResume, onEvent: onEvent,
+	s := &lifeSess{stubSess: stubSess{id: id}, cwd: opts.Cwd, config: a.config, resume: !a.noResume, onEvent: onEvent,
 		done: make(chan struct{}), started: make(chan string, 8), release: make(chan struct{})}
 	a.sess = append(a.sess, s)
 	return s, nil
@@ -67,6 +71,7 @@ func (a *lifeAgent) opened() ([]provider.OpenOptions, []*lifeSess) {
 type lifeSess struct {
 	stubSess
 	cwd     string
+	config  []string
 	resume  bool
 	onEvent func(json.RawMessage)
 
@@ -80,6 +85,7 @@ func (s *lifeSess) Capabilities() provider.Capabilities {
 	return provider.Capabilities{Resume: s.resume}
 }
 func (s *lifeSess) CWD() string           { return s.cwd }
+func (s *lifeSess) ConfigFiles() []string { return s.config }
 func (s *lifeSess) Done() <-chan struct{} { return s.done }
 func (s *lifeSess) Close() error          { s.die(); return nil }
 func (s *lifeSess) die()                  { s.closeOnce.Do(func() { close(s.done) }) }
@@ -352,6 +358,35 @@ func TestStaleAgentIsRecycledBeforeTheNextTurn(t *testing.T) {
 		b.mu.Unlock()
 		runOnReplacement(t, b, agent, first)
 	})
+	t.Run("config", func(t *testing.T) {
+		login := filepath.Join(t.TempDir(), "auth.json")
+		if err := os.WriteFile(login, []byte(`{"v":1}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		agent := &lifeAgent{transport: provider.LongLived, config: []string{login}}
+		b, first := lifeBridge(t, agent)
+		if err := os.WriteFile(login, []byte(`{"v":22}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runOnReplacement(t, b, agent, first)
+	})
+}
+
+func TestUnchangedConfigKeepsTheAgent(t *testing.T) {
+	login := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(login, []byte(`{"v":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agent := &lifeAgent{transport: provider.LongLived, config: []string{login, filepath.Join(t.TempDir(), "missing.toml")}}
+	b, first := lifeBridge(t, agent)
+	if err := b.ChatWithLimits("turn", "t1", "chat", nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	awaitPrompt(t, first)
+	close(first.release)
+	if opens, _ := agent.opened(); len(opens) != 1 {
+		t.Fatal("an agent whose files did not change was recycled")
+	}
 }
 
 func runOnReplacement(t *testing.T, b *Bridge, agent *lifeAgent, first *lifeSess) {

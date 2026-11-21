@@ -76,6 +76,8 @@ case "$OLD_CONFIG_ROOT" in
   "$HOME_DIR"/.?*) rm -rf "$OLD_CONFIG_ROOT" ;;
 esac
 if [ "$reprime_tool_only" = 0 ]; then
+  # The next node is a new task: its agent must not resume this one's session.
+  rm -f "$HOME_DIR/.grasp/agent-session.json"
   rm -rf "$HOME_DIR/.git-credentials" "$HOME_DIR/.grasp/repo-credentials" "$HOME_DIR/.grasp/git-credentials" \
     "$HOME_DIR/.ssh/id_rsa" "$HOME_DIR/.ssh/known_hosts" "$HOME_DIR/.ssh/grasp_repos_config" \
     "$HOME_DIR/.config/gh/hosts.yml" "$HOME_DIR/.config/glab-cli/config.yml"

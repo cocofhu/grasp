@@ -104,3 +104,14 @@ func TestToolMappingHelpers(t *testing.T) {
 		t.Fatal("firstNonEmpty")
 	}
 }
+
+func TestConfigFilesFollowCodexHome(t *testing.T) {
+	var _ provider.ConfigReader = (*session)(nil)
+	s := &session{env: []string{"PATH=/bin", "CODEX_HOME=/tmp/conn-home"}}
+	if got := s.ConfigFiles(); len(got) != 2 || got[0] != "/tmp/conn-home/auth.json" || got[1] != "/tmp/conn-home/config.toml" {
+		t.Fatalf("ConfigFiles = %v", got)
+	}
+	if got := (&session{}).ConfigFiles(); got[0] != configRoot+"/auth.json" {
+		t.Fatalf("default ConfigFiles = %v", got)
+	}
+}

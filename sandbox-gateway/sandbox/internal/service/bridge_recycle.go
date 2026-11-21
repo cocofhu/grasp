@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,9 +44,9 @@ func (b *Bridge) agent() provider.Provider {
 // conversation.
 func (b *Bridge) recycleStaleAgent() {
 	b.mu.Lock()
-	sess, opened, thaw := b.sess, b.sessOpened, b.sessThaw
+	sess, opened, thaw, config := b.sess, b.sessOpened, b.sessThaw, b.sessConfig
 	b.mu.Unlock()
-	why := b.staleReason(sess, opened, thaw)
+	why := b.staleReason(sess, opened, thaw, config)
 	if why == "" {
 		return
 	}
@@ -75,7 +76,7 @@ func (b *Bridge) recycleStaleAgent() {
 	b.Broadcast(b.ConnectedPayload(next))
 }
 
-func (b *Bridge) staleReason(sess provider.Session, opened time.Time, thaw int64) string {
+func (b *Bridge) staleReason(sess provider.Session, opened time.Time, thaw int64, config string) string {
 	if !sessionUsable(sess) || b.agent().Transport() == provider.OneShot || resumePointer(sess) == "" {
 		return ""
 	}
@@ -85,7 +86,28 @@ func (b *Bridge) staleReason(sess provider.Session, opened time.Time, thaw int64
 	if b.maxAgentAge > 0 && !opened.IsZero() && time.Since(opened) >= b.maxAgentAge {
 		return fmt.Sprintf("Agent 进程已运行超过 %s", b.maxAgentAge)
 	}
+	if configStamp(sess) != config {
+		return "Agent 的登录或配置文件已更新"
+	}
 	return ""
+}
+
+// configStamp identifies the content of the files a session read at start;
+// it is empty for sessions that re-read their configuration on their own.
+func configStamp(sess provider.Session) string {
+	r, ok := sess.(provider.ConfigReader)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	for _, path := range r.ConfigFiles() {
+		b.WriteString(path)
+		if st, err := os.Stat(path); err == nil {
+			fmt.Fprintf(&b, ":%d:%d", st.Size(), st.ModTime().UnixNano())
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // thaws counts the times this sandbox was frozen and resumed (an E2B pause)

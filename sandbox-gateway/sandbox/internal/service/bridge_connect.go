@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -119,9 +120,8 @@ func (b *Bridge) StartDefaultAgent() {
 }
 
 // EnsureAgent 若已有会话则直接返回；否则用 agents.Current() 建连（忽略浏览器传入的 argv）。
-// 特例：启动时 StartDefaultAgent 常以空 MCP 建连，平台随后 connect 会带上
-// artifact-store 等 mcpServers——若仍复用空会话，ACP session/new 永远看不到工具。
-// 因此「空 → 非空」MCP 升级会重建会话。
+// connect 带来不同的 MCP 列表时（如启动时以空 MCP 拉起、平台随后带上 artifact-store），
+// 重开进程并接回原会话，Agent 才能看到新的工具；不带 MCP 的 connect 沿用现有列表。
 func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
@@ -133,12 +133,12 @@ func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool
 
 	b.mu.Lock()
 	if sessionUsable(b.sess) {
-		if !mcpUpgradeNeeded(b.lastMCP, mcp) {
+		if !mcpChanged(b.lastMCP, mcp) {
 			p := b.sess
 			b.mu.Unlock()
 			return p, nil
 		}
-		log.Printf("acp: connect 带来非空 MCP，重建此前空 MCP 会话")
+		log.Printf("acp: connect 带来新的 MCP 列表，重开 Agent 并接回会话")
 		resume := resumePointer(b.sess)
 		b.mu.Unlock()
 		return b.connectOrTest(openSpec{cwd: cwd, fsRoot: fsRoot, mcp: mcp, auto: auto, keepHistory: true, resumeID: resume})
@@ -177,10 +177,20 @@ func mcpEmpty(m json.RawMessage) bool {
 	return s == "" || s == "null" || s == "[]" || s == "{}"
 }
 
-// mcpUpgradeNeeded is true when an existing empty MCP session should be rebuilt
-// to pick up a non-empty connect-time mcpServers list.
-func mcpUpgradeNeeded(current, incoming json.RawMessage) bool {
-	return mcpEmpty(current) && !mcpEmpty(incoming)
+// mcpChanged reports whether a connect brings MCP servers the session does
+// not have yet. An empty list keeps the current servers.
+func mcpChanged(current, incoming json.RawMessage) bool {
+	if mcpEmpty(incoming) {
+		return false
+	}
+	if mcpEmpty(current) {
+		return true
+	}
+	var a, b any
+	if json.Unmarshal(current, &a) != nil || json.Unmarshal(incoming, &b) != nil {
+		return !bytes.Equal(current, incoming)
+	}
+	return !reflect.DeepEqual(a, b)
 }
 
 // mcpServerSummary returns count + names for CAPA A6 connect logs (no headers/URLs).
@@ -303,6 +313,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	}
 	b.sess, b.reviving = sess, false
 	b.sessResumed = spec.resumeID != "" && sess.SessionID() == spec.resumeID
+	b.sessConfig = configStamp(sess)
 	b.sessOpened, b.sessThaw = time.Now(), thawCount()
 	if len(mcp) > 0 && string(mcp) != "null" {
 		b.lastMCP = append(json.RawMessage(nil), mcp...)

@@ -8,6 +8,7 @@ import (
 	"log"
 	"maps"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -284,6 +285,17 @@ func (s *session) release() {
 }
 
 func (s *session) Done() <-chan struct{} { return s.conn.Done() }
+
+// ConfigFiles: the app-server reads its login and config once at start.
+func (s *session) ConfigFiles() []string {
+	home := configRoot
+	for _, kv := range s.env {
+		if v, ok := strings.CutPrefix(kv, "CODEX_HOME="); ok && v != "" {
+			home = v
+		}
+	}
+	return []string{filepath.Join(home, "auth.json"), filepath.Join(home, "config.toml")}
+}
 
 // ExitInfo reaps the app-server and composes the operator-facing banner.
 func (s *session) ExitInfo() (string, error) {

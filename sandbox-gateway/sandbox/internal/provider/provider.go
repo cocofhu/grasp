@@ -152,6 +152,14 @@ type Capabilities struct {
 	Resume bool
 }
 
+// ConfigReader is implemented by sessions whose process reads credentials or
+// settings from files only when it starts. Once any of them changes, the
+// bridge replaces the process before the next turn, resuming the native
+// session, so a renewed login or edited config takes effect.
+type ConfigReader interface {
+	ConfigFiles() []string
+}
+
 // Steerer delivers input into the running turn of a session whose
 // Capabilities report Steer.
 type Steerer interface {

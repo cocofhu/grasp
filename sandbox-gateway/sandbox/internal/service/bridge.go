@@ -49,6 +49,8 @@ type Bridge struct {
 	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
 	// sessResumed: sess continues the native session it was opened to resume.
 	sessResumed bool
+	// sessConfig stamps the files sess read at start (provider.ConfigReader).
+	sessConfig string
 	// pointer persists the native session across backend restarts; nil keeps
 	// it in memory only.
 	pointer        *pointerFile

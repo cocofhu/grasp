@@ -127,6 +127,7 @@ printf 'git.example ssh-ed25519 FAKE\n' >"$TMP/bundle/ssh/git/3.known_hosts"
 printf '0\tgithub_https\thttps://github.com/team/private.git\n' >"$TMP/bundle/ssh/repos/manifest"
 printf 'explicit-repo-token\n' >"$TMP/bundle/ssh/repos/0.secret"
 printf 'leftover-explicit\n' >"$H/.grasp/repo-credentials/0.token"
+printf '{"agent":"cursor","cwd":"/w","session":"previous-node"}\n' >"$H/.grasp/agent-session.json"
 printf 'OLDKEY\n' >"$H/.ssh/grasp-repo-1"
 {
   echo "AGENT_PROVIDER=$(b64 cursor)"
@@ -144,6 +145,7 @@ done
 password="$(printf 'url=https://github.com/team/private.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
 [ "$password" = catalog-repo-token ] || die "explicit repository grant overrode the Agent catalog ($password)"
 [ ! -e "$H/.grasp/repo-credentials" ] || die "old repository credential directory survived"
+[ ! -e "$H/.grasp/agent-session.json" ] || die "the next node would resume the previous node's agent session"
 [ ! -e "$H/.ssh/grasp-repo-1" ] || die "old repository SSH alias survived"
 ! grep -q explicit-repo-token "$H/.gitconfig" "$RUN/env" 2>/dev/null || die "explicit repository token was applied"
 password="$(printf 'url=https://github.com/team/public.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
@@ -194,6 +196,7 @@ printf 'CURSOR_API_KEY\n' >>"$RUN/reprime-keys"
 workspace_snapshot() {
   (cd "$H" && find workspace .ssh .grasp .gitconfig .config .sandbox -type f -print0 | sort -z | xargs -0 sha256sum)
 }
+printf '{"agent":"codex","cwd":"/w","session":"kept"}\n' >"$H/.grasp/agent-session.json"
 workspace_snapshot >"$TMP/workspace.before"
 mkdir -p "$TMP/no-git"
 cat >"$TMP/no-git/git" <<EOF
@@ -239,6 +242,7 @@ for operation in inherited explicit failure rollback; do
   [ ! -e "$H/workspace/absent" ] || die "tool switch created a missing repo"
   [ ! -e "$TMP/git.log" ] || die "tool switch invoked git"
   [ -f "$H/.$provider/settings.json" ] || die "tool config not installed"
+  [ -f "$H/.grasp/agent-session.json" ] || die "tool switch dropped the agent session pointer"
   ! grep -q previous-tool-secret "$RUN/env" || die "previous tool secret survived"
 done
 echo "OK: tool switch, backend failure and rollback retain files and Git/SSH state without Git or startup"

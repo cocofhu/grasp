@@ -9,7 +9,7 @@ import (
 	"backend/internal/provider"
 )
 
-func TestMcpUpgradeNeeded(t *testing.T) {
+func TestMcpChanged(t *testing.T) {
 	cases := []struct {
 		name        string
 		current     json.RawMessage
@@ -19,14 +19,15 @@ func TestMcpUpgradeNeeded(t *testing.T) {
 		{"empty to servers", json.RawMessage(`[]`), json.RawMessage(`[{"name":"artifact-store","type":"http","url":"http://x"}]`), true},
 		{"nil to servers", nil, json.RawMessage(`[{"name":"a"}]`), true},
 		{"null to servers", json.RawMessage(`null`), json.RawMessage(`[{"name":"a"}]`), true},
-		{"servers to servers", json.RawMessage(`[{"name":"a"}]`), json.RawMessage(`[{"name":"b"}]`), false},
+		{"other servers", json.RawMessage(`[{"name":"a"}]`), json.RawMessage(`[{"name":"b"}]`), true},
+		{"same servers", json.RawMessage(`[{"name":"a","url":"u"}]`), json.RawMessage(`[ {"url":"u", "name":"a"} ]`), false},
 		{"empty to empty", json.RawMessage(`[]`), json.RawMessage(`[]`), false},
 		{"servers to empty", json.RawMessage(`[{"name":"a"}]`), json.RawMessage(`[]`), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := mcpUpgradeNeeded(tc.current, tc.incoming); got != tc.wantUpgrade {
-				t.Fatalf("mcpUpgradeNeeded(%s,%s)=%v want %v", tc.current, tc.incoming, got, tc.wantUpgrade)
+			if got := mcpChanged(tc.current, tc.incoming); got != tc.wantUpgrade {
+				t.Fatalf("mcpChanged(%s,%s)=%v want %v", tc.current, tc.incoming, got, tc.wantUpgrade)
 			}
 		})
 	}
