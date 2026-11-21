@@ -125,8 +125,10 @@ type closingSess struct {
 	once sync.Once
 }
 
-func (s *closingSess) Capabilities() provider.Capabilities { return provider.Capabilities{Resume: true} }
-func (s *closingSess) Done() <-chan struct{}               { return s.done }
+func (s *closingSess) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Resume: true}
+}
+func (s *closingSess) Done() <-chan struct{} { return s.done }
 func (s *closingSess) Close() error {
 	s.once.Do(func() { close(s.done) })
 	return nil
