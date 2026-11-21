@@ -4,10 +4,10 @@ import { contextSlashCommand, type ContextCommand } from '@/lib/chat/chatCommand
 import type { AgentPart, AgentTool } from '@/lib/shared/types'
 
 /** A reply's tool row: the shared tool shape plus the id its updates key on. */
-export type ReplyTool = AgentTool & { id: string; status: string }
+type ReplyTool = AgentTool & { id: string; status: string }
 /** Arrival order of a reply: text runs, steers, or an index into AcpReply.tools. */
 export type ReplyStep = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
-export type PlanEntry = { content: string; status: string }
+type PlanEntry = { content: string; status: string }
 
 /** The reply state one agent turn folds its acp-bridge frames into. */
 export type AcpReply = {
