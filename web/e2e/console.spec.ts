@@ -11,6 +11,23 @@ async function vncConnectCount(page: import('@playwright/test').Page): Promise<n
 const TAB_ORDER = ['终端', 'IDE', 'Agent', '浏览器', '日志'] as const
 
 test.describe('SandboxConsole Tab / noVNC', () => {
+  test('can confirm or cancel desktop takeover in fullscreen', async ({ page }) => {
+    const desktop = { mode: 'desktop', shellReady: true, agentActive: true, holder: 'agent', apps: [] }
+    await page.route('**/api/sandboxes/42/desktop', route => route.fulfill({ json: desktop }))
+    await page.route('**/api/sandboxes/42/desktop/control', route =>
+      route.fulfill({ json: { ...desktop, holder: route.request().postDataJSON().holder } }))
+    await page.goto('/console.html?tab=computer')
+    await page.getByRole('button', { name: '全屏', exact: true }).click()
+    const panel = page.locator(':fullscreen')
+    const control = panel.getByTestId('novnc-control-toggle')
+    await control.click()
+    await panel.getByTestId('desktop-takeover-cancel').click()
+    await expect(control).toHaveAttribute('aria-pressed', 'false')
+    await control.click()
+    await panel.getByTestId('desktop-takeover-ok').click()
+    await expect(control).toHaveAttribute('aria-pressed', 'true')
+  })
+
   test('顶栏顺序 terminal|ide|acp|novnc|log 且仅一个 Agent', async ({ page }) => {
     await page.goto('/console.html')
     const tabs = page.locator('.ml-4.flex.gap-1 button')
@@ -32,7 +49,7 @@ test.describe('SandboxConsole Tab / noVNC', () => {
   test('sandboxId 精简工具栏无 Pick', async ({ page }) => {
     await page.goto('/console.html?tab=novnc')
     await expect(page.getByPlaceholder('about:blank')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByRole('button', { name: '打开' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '打开', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '取点标注' })).toHaveCount(0)
     await expect(page.getByText('FPS')).toHaveCount(0)
   })

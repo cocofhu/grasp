@@ -669,6 +669,29 @@ describe('NovncPreviewPanel', () => {
     wrapper.unmount()
   })
 
+  it('checks the current turn before taking over from a cached idle desktop', async () => {
+    const active = { ...browserStatus, mode: 'desktop', shellReady: true, agentActive: true }
+    apiMocks.sandboxDesktop.mockResolvedValueOnce({ ...active, agentActive: false })
+    let reportActive!: (value: typeof active) => void
+    apiMocks.sandboxDesktop.mockReturnValueOnce(new Promise(resolve => { reportActive = resolve }))
+    const wrapper = mountNovnc({ computer: true })
+    await flushPromises()
+    const rfb = rfbMocks.last() as unknown as { viewOnly: boolean }
+    clickScreen(screenStandIn(wrapper))
+    await controlButton(wrapper).trigger('click')
+    expect(rfb.viewOnly).toBe(true)
+    expect(apiMocks.sandboxDesktop).toHaveBeenCalledTimes(2)
+    reportActive(active)
+    await flushPromises()
+    expect(document.querySelector('[data-testid="desktop-takeover-confirm"]')).not.toBeNull()
+    expect(apiMocks.setSandboxDesktopControl).not.toHaveBeenCalled()
+    await wrapper.setProps({ sandboxId: 2 })
+    await flushPromises()
+    expect(document.querySelector('[data-testid="desktop-takeover-confirm"]')).toBeNull()
+    expect(apiMocks.setSandboxDesktopControl).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('desktop image: hiding the page returns control; public share tickets never poll', async () => {
     apiMocks.sandboxDesktop.mockResolvedValue({ ...browserStatus, mode: 'desktop', shellReady: false })
     const wrapper = mountNovnc({ computer: true })

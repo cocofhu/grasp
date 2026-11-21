@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ref, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -100,7 +100,8 @@ const audioLabel = computed(() => t(`pages.appPreview.novnc.audio.${audio.state.
 /** 电脑 view on the desktop image: the screen is a framed card with a control dock, no browser toolbar. */
 const desktopShell = computed(() => props.computer && desktop.isDesktop.value)
 /** Taking over while the Agent is mid-turn fails its mouse and keyboard tools, so ask first. */
-const takeoverConfirmOpen = ref(false)
+const takeoverPrompt = ref<'busy' | 'unknown' | null>(null)
+let takeoverCheck: symbol | null = null
 const desktopTakeoverText = computed(() => {
   if (!desktop.agentBusy.value) return ''
   return t(control.value ? 'pages.appPreview.desktop.takeoverTip' : 'pages.appPreview.desktop.takeoverHint')
@@ -348,6 +349,8 @@ function fail(m: string) {
 
 function teardown() {
   disposed = true
+  takeoverCheck = null
+  takeoverPrompt.value = null
   endTakeoverGesture()
   clearConnectTimer()
   clearPreviewWarnTimer()
@@ -732,12 +735,7 @@ function onScreenPointerDown(ev: Event) {
   if (ev.type !== 'mousedown' && ev.type !== 'touchstart') return
   blockGestureEvent(ev)
   swallowTakeoverGesture(ev.type === 'touchstart' ? 'touch' : 'mouse')
-  if (desktop.agentBusy.value) {
-    takeoverConfirmOpen.value = true
-    return
-  }
-  control.value = true
-  focusRemoteScreen()
+  void requestTakeover(true)
 }
 
 function isTrailingMouseEvent(type: string): boolean {
@@ -812,22 +810,38 @@ function unbindScreenTakeoverListeners() {
 }
 
 function toggleControl() {
-  if (!control.value && desktop.agentBusy.value) {
-    takeoverConfirmOpen.value = true
-    return
-  }
-  control.value = !control.value
+  if (control.value) control.value = false
+  else void requestTakeover(false)
 }
 
-function confirmTakeover() {
-  takeoverConfirmOpen.value = false
-  if (control.value) return
+async function requestTakeover(focusScreen: boolean) {
+  if (status.value !== 'live' || takeoverCheck || takeoverPrompt.value) return
+  if (!props.wsUrl && props.sandboxId && (props.computer || desktop.status.value?.mode !== 'browser')) {
+    const request = Symbol()
+    takeoverCheck = request
+    const current = await desktop.refresh()
+    if (takeoverCheck !== request) return
+    takeoverCheck = null
+    if (status.value !== 'live' || control.value) return
+    if (current?.agentActive || (!current && (props.computer || desktop.isDesktop.value))) {
+      takeoverPrompt.value = current ? 'busy' : 'unknown'
+      return
+    }
+  }
   control.value = true
+  if (focusScreen) focusRemoteScreen()
+}
+
+async function confirmTakeover() {
+  takeoverPrompt.value = null
+  if (status.value !== 'live' || control.value) return
+  control.value = true
+  await nextTick()
   focusRemoteScreen()
 }
 
 function cancelTakeover() {
-  takeoverConfirmOpen.value = false
+  takeoverPrompt.value = null
 }
 
 watch(desktopShell, (on) => {
@@ -1411,8 +1425,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <AppModal
-      :open="takeoverConfirmOpen"
-      :title="t('pages.appPreview.desktop.takeoverConfirmTitle')"
+      :open="takeoverPrompt !== null"
+      :inline="isFullscreen"
+      :title="t(takeoverPrompt === 'busy' ? 'pages.appPreview.desktop.takeoverConfirmTitle' : 'pages.appPreview.novnc.takeOver')"
       :width="420"
       :close-label="t('common.buttons.close')"
       close-on-esc

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
 
@@ -684,20 +685,6 @@ func (s *Service) probeVNCReadyAddrs(ctx context.Context, cdpAddr, novncAddr str
 	if novncP <= 0 {
 		novncP = vncWSport
 	}
-	verCtx, verCancel := context.WithTimeout(ctx, 2*time.Second)
-	defer verCancel()
-	req, err := http.NewRequestWithContext(verCtx, http.MethodGet, fmt.Sprintf("http://%s:%d/json/version", cdpHost, cdpP), nil)
-	if err != nil {
-		return false
-	}
-	// Belt-and-suspenders: if DNS resolve failed and we still dial a hostname,
-	// force Host to loopback so /json/version + /json/new are accepted.
-	setCDPRequestHost(req, cdpP)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	_ = resp.Body.Close()
 	d := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(novncHost, strconv.Itoa(novncP)))
 	if err != nil {
@@ -723,9 +710,11 @@ func setCDPRequestHost(req *http.Request, port int) {
 	req.Host = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 }
 
-// probeTabCreate verifies Chromium can still create a tab (catches zombie CDP).
+// probeTabCreate asks Chromium to allocate a hidden target. A hidden target has
+// no tab or window and Chromium disposes it when this CDP connection closes.
 func (s *Service) probeTabCreate(ctx context.Context, host string, port int) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("http://%s:%d/json/new?about:blank", host, port), nil)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/json/version", nil)
 	if err != nil {
 		return false
 	}
@@ -734,28 +723,36 @@ func (s *Service) probeTabCreate(ctx context.Context, host string, port int) boo
 	if err != nil {
 		return false
 	}
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusOK {
+	defer func() { _ = resp.Body.Close() }()
+	var version struct {
+		WebSocketURL string `json:"webSocketDebuggerUrl"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&version) != nil {
 		return false
 	}
-	var tab struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(body, &tab); err != nil || tab.ID == "" {
+	endpoint, err := url.Parse(version.WebSocketURL)
+	if err != nil || !strings.HasPrefix(endpoint.Path, "/devtools/browser/") {
 		return false
 	}
-	closeReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("http://%s:%d/json/close/%s", host, port, tab.ID), nil)
+	// Discovery reports the loopback Host header. Dial the published sandbox
+	// address while retaining that Host for Chromium's WebSocket handshake.
+	wsURL := url.URL{Scheme: "ws", Host: addr, Path: endpoint.Path}
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL.String(), http.Header{"Host": {req.Host}})
 	if err != nil {
 		return false
 	}
-	setCDPRequestHost(closeReq, port)
-	closeResp, err := http.DefaultClient.Do(closeReq)
-	if err != nil {
+	defer func() { _ = conn.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	if err := conn.WriteJSON(map[string]any{"id": 1, "method": "Target.createTarget",
+		"params": map[string]any{"url": "about:blank", "background": true, "hidden": true}}); err != nil {
 		return false
 	}
-	_ = closeResp.Body.Close()
-	return closeResp.StatusCode == http.StatusOK
+	var reply struct {
+		ID     int
+		Result struct{ TargetID string }
+	}
+	return conn.ReadJSON(&reply) == nil && reply.ID == 1 && reply.Result.TargetID != ""
 }
 
 // attachSandboxLocked dials CDP on an existing sandbox (or reuses a cached engine).

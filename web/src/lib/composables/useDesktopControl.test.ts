@@ -17,17 +17,18 @@ import { DESKTOP_HEARTBEAT_MS, DESKTOP_POLL_MAX_FAILURES, DESKTOP_POLL_MS, useDe
 const desktop = { mode: 'desktop', shellReady: true, agentActive: true, holder: 'agent', apps: [] }
 
 function harness(id: number | undefined, on = false) {
+  const sandboxId = ref(id)
   const control = ref(on)
   let api!: ReturnType<typeof useDesktopControl>
   const w = mount(
     defineComponent({
       setup() {
-        api = useDesktopControl(() => id, control)
+        api = useDesktopControl(() => sandboxId.value, control)
         return () => h('div')
       },
     }),
   )
-  return { w, control, api: () => api }
+  return { w, control, sandboxId, api: () => api }
 }
 
 describe('useDesktopControl', () => {
@@ -103,6 +104,24 @@ describe('useDesktopControl', () => {
     sandboxDesktop.mockRejectedValueOnce(new Error('down'))
     await api().refresh()
     expect(api().isDesktop.value).toBe(false)
+  })
+
+  it('releases the old sandbox and ignores its late status after switching', async () => {
+    const { w, control, sandboxId, api } = harness(3, true)
+    await flushPromises()
+    let finishOld!: (value: typeof desktop) => void
+    sandboxDesktop.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+    const olderRead = api().refresh()
+    sandboxDesktop.mockResolvedValueOnce({ ...desktop, agentActive: false })
+    sandboxId.value = 5
+    await flushPromises()
+    finishOld(desktop)
+    await olderRead
+    expect(setSandboxDesktopControl).toHaveBeenLastCalledWith(3, 'agent', expect.any(String), { keepalive: true })
+    expect(control.value).toBe(false)
+    expect(api().agentBusy.value).toBe(false)
+    expect(sandboxDesktop).toHaveBeenLastCalledWith(5)
+    w.unmount()
   })
 
   it('keeps noVNC control on the browser image when the tab is hidden', async () => {

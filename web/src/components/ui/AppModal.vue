@@ -12,6 +12,8 @@ const titleId = `app-modal-title-${useId().replace(/:/g, '')}`
 const props = withDefaults(
   defineProps<{
     open: boolean
+    /** Keep the dialog in its parent's fullscreen layer. */
+    inline?: boolean
     title?: string
     width?: number
     hideBody?: boolean
@@ -171,7 +173,7 @@ defineExpose({ scrollAreaEl })
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="inline">
     <Transition name="modal" @before-enter="showEnteringOverlay" @before-leave="hideLeavingOverlay" @after-leave="onAfterLeave">
       <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="onBackdropClick" />
