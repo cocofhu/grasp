@@ -33,7 +33,7 @@ func SteerResult(status sandbox.SteerStatus, err error) chatsession.SteerResult 
 	case err == nil && status == sandbox.SteerDelivered:
 		return chatsession.SteerJoined
 	case err == nil && status == sandbox.SteerNoTurn:
-		return chatsession.SteerTurnEnded
+		return chatsession.SteerDeferred
 	case err != nil:
 		log.Warn().Err(err).Str("status", string(status)).Msg("steer: native delivery failed; interrupting the turn instead")
 	}

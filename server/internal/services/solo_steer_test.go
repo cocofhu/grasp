@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
@@ -125,6 +127,63 @@ func TestSoloSteerKeepsPreparedInputAsOwnTurn(t *testing.T) {
 		t.Fatalf("an annotated message must not be steered: %v", got)
 	}
 	waitFor(t, "second turn ran", func() bool { return chat.count() == 2 && solo.lookup(id).sess.Ready() })
+}
+
+func TestSoloSteerWaitsForAPreparingTurn(t *testing.T) {
+	chat := &steerChat{gateChat: newGateChat(true), status: sandbox.SteerDelivered}
+	solo, id := startSteerSolo(t, chat)
+	two := queueBehindRunningTurn(t, solo, id, chat.gateChat)
+	c := solo.lookup(id)
+	c.mu.Lock()
+	c.phase = SoloPhasePreparing
+	c.mu.Unlock()
+
+	if out, err := solo.SteerQueued(id, "alice", two); err != nil || out != chatsession.SteerOutcomeNext {
+		t.Fatalf("steer = %q %v", out, err)
+	}
+	if got := chat.steered(); len(got) != 0 {
+		t.Fatalf("a turn that has not reached the agent cannot take a steer: %v", got)
+	}
+	chat.release()
+	waitFor(t, "second turn ran", func() bool { return chat.count() == 2 && c.sess.Ready() })
+	var stopped int64
+	solo.db.Model(&models.SoloMessage{}).Where("session_id = ? AND status = ?", id, "stopped").Count(&stopped)
+	if stopped != 0 {
+		t.Fatalf("steering must not interrupt a preparing turn: %d stopped", stopped)
+	}
+}
+
+// partialChat streams some reply, then ends cleanly once cancelled, as the
+// bridge client does for an interrupted turn that already has output.
+type partialChat struct{ started chan struct{} }
+
+func (c *partialChat) ChatWithTimeout(ctx context.Context, _ uint, _ string, _ []models.PromptImage, _ time.Duration, _ *models.ChatExecution, onEvent func(json.RawMessage)) (*models.TokenUsage, models.TokenUsageByModel, error) {
+	onEvent(json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working on it"}}}}`))
+	close(c.started)
+	<-ctx.Done()
+	return &models.TokenUsage{}, nil, nil
+}
+
+func (c *partialChat) Cancel(uint) {}
+
+func TestSoloStoppedTurnKeepsPartialReplyAsStopped(t *testing.T) {
+	chat := &partialChat{started: make(chan struct{})}
+	solo, id := startSteerSolo(t, chat)
+	if _, err := solo.SendWithReferences(id, "alice", "long task", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-chat.started
+	if err := solo.Cancel(id, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "session idle", func() bool { return solo.lookup(id).sess.Ready() })
+	var reply models.SoloMessage
+	if err := solo.db.Where("session_id = ? AND role = ?", id, "assistant").First(&reply).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reply.Status != "stopped" || reply.Content != "working on it" {
+		t.Fatalf("reply = %q %q", reply.Status, reply.Content)
+	}
 }
 
 func TestSoloSendAndSteer(t *testing.T) {

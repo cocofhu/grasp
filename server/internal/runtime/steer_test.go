@@ -19,7 +19,7 @@ func TestSteerResult(t *testing.T) {
 		want   chatsession.SteerResult
 	}{
 		{sandbox.SteerDelivered, nil, chatsession.SteerJoined},
-		{sandbox.SteerNoTurn, nil, chatsession.SteerTurnEnded},
+		{sandbox.SteerNoTurn, nil, chatsession.SteerDeferred},
 		{sandbox.SteerUnsupported, nil, chatsession.SteerRejected},
 		{sandbox.SteerFailed, boom, chatsession.SteerRejected},
 		{sandbox.SteerDelivered, boom, chatsession.SteerRejected},

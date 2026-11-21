@@ -171,19 +171,6 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", before.CreatedAt, before.CreatedAt, before.ID)
 	}
-	var rows []models.SoloMessage
-	if err := query.Order("created_at desc, id desc").Limit(req.Limit + 1).Find(&rows).Error; err != nil {
-		return page, err
-	}
-	page.HasMore = len(rows) > req.Limit
-	if page.HasMore {
-		rows = rows[:req.Limit]
-		cursor.BeforeID = rows[len(rows)-1].ID
-		page.NextCursor = encodeConversationCursor(cursor)
-	}
-	for i := len(rows) - 1; i >= 0; i-- {
-		page.Messages = append(page.Messages, conversationMessage(rows[i]))
-	}
 	if req.View == "summary" {
 		var anchors []models.SoloMessage
 		if err := base.Session(&gorm.Session{}).Where("role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", "user", snapshot.CreatedAt, snapshot.CreatedAt, snapshot.ID).
@@ -192,8 +179,48 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		}
 		page.Summary = renderContextBrief(scope.Title, anchors, scope.readTool())
 	}
+	var rows []models.SoloMessage
+	if err := query.Order("created_at desc, id desc").Limit(req.Limit + 1).Find(&rows).Error; err != nil {
+		return page, err
+	}
+	page.HasMore = len(rows) > req.Limit
+	if page.HasMore {
+		rows = rows[:req.Limit]
+	}
+	// Newest first until the page is full; the oldest one kept is the cursor.
+	newest := make([]mcp.ConversationHistoryMessage, 0, len(rows))
+	size := len(page.Summary)
+	for i, row := range rows {
+		message := conversationMessage(row)
+		encoded, _ := json.Marshal(message)
+		if i > 0 && size+len(encoded) > historyPageBytes {
+			rows, page.HasMore = rows[:i], true
+			break
+		}
+		size += len(encoded)
+		newest = append(newest, message)
+	}
+	if page.HasMore {
+		cursor.BeforeID = rows[len(rows)-1].ID
+		page.NextCursor = encodeConversationCursor(cursor)
+	}
+	for i := len(newest) - 1; i >= 0; i-- {
+		page.Messages = append(page.Messages, newest[i])
+	}
 	return page, nil
 }
+
+// historyPageBytes bounds one history page. Coding agents cut long tool
+// results (Codex keeps about 10 KiB) and a cut page is unreadable JSON, so a
+// page ends early and next_cursor leads to the rest.
+const historyPageBytes = 8 << 10
+
+// historyToolTextRunes bounds each tool result a history message carries.
+const historyToolTextRunes = 600
+
+// historySummaryRunes bounds the summary view's instruction ledger, leaving
+// room for messages within historyPageBytes (CJK takes 3 bytes a rune).
+const historySummaryRunes = 2000
 
 // ReadReference reads a conversation the user explicitly attached to the
 // current Solo session. The reference must sit on one of this session's user
@@ -322,6 +349,8 @@ func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolRe
 		isHistoryResponse := json.Unmarshal([]byte(tools[i].Text), &result) == nil && result["history_version"] != nil && result["messages"] != nil
 		if title := strings.ToLower(tools[i].Title); strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") || isHistoryResponse {
 			tools[i].Text = "（历史查询正文已省略；使用 get_history 回查原始消息。）"
+		} else if runes := []rune(tools[i].Text); len(runes) > historyToolTextRunes {
+			tools[i].Text = string(runes[:historyToolTextRunes]) + "…"
 		}
 	}
 	return tools
@@ -342,7 +371,7 @@ func historyExcerpt(content string, budget int, via string) string {
 func renderContextBrief(title string, anchors []models.SoloMessage, via string) string {
 	var b strings.Builder
 	b.WriteString("当前任务：" + title + "\n")
-	b.WriteString(renderUserInstructions(anchors, 12000, via))
+	b.WriteString(renderUserInstructions(anchors, historySummaryRunes, via))
 	b.WriteString("近期完整对话见 messages；更早原文见 next_cursor。任务进度以助手实际结果和当前工作区为准。")
 	return b.String()
 }

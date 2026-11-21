@@ -79,7 +79,7 @@ func TestSteerSandboxTurn(t *testing.T) {
 	if got := steerSandboxTurn(ctx, steerer, 0, "x", nil); got != chatsession.SteerRejected {
 		t.Fatalf("no sandbox = %v", got)
 	}
-	if got := steerSandboxTurn(ctx, steerer, 1, "x", nil); got != chatsession.SteerTurnEnded {
+	if got := steerSandboxTurn(ctx, steerer, 1, "x", nil); got != chatsession.SteerDeferred {
 		t.Fatalf("no turn = %v", got)
 	}
 	svc := &SandboxService{live: map[uint]*liveSandbox{}}

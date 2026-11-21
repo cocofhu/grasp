@@ -86,7 +86,7 @@ func TestSteerRejectedInterruptsAndRunsNext(t *testing.T) {
 func TestSteerAfterTurnEndedDoesNotInterrupt(t *testing.T) {
 	h := newHarness()
 	gate := h.hold("a")
-	s, cancels, _ := steerSession(t, h, SteerTurnEnded)
+	s, cancels, _ := steerSession(t, h, SteerDeferred)
 	out, err := s.Steer(context.Background(), "d")
 	if err != nil || out != SteerOutcomeNext || cancels.Load() != 0 || s.CancelRequested() {
 		t.Fatalf("steer = %q %v cancels=%d", out, err, cancels.Load())

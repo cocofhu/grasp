@@ -70,7 +70,10 @@ func (s *SoloService) newChat(id string) *soloChat {
 			sid, running := c.sandboxID, c.phase == SoloPhaseRunning
 			c.mu.Unlock()
 			// A turn still preparing has not reached the agent yet.
-			if !running || !q.joinsRunningTurn() {
+			if !running {
+				return chatsession.SteerDeferred
+			}
+			if !q.joinsRunningTurn() {
 				return chatsession.SteerRejected
 			}
 			return steerSandboxTurn(ctx, s.chat, sid, q.Text, q.Images)

@@ -16,9 +16,10 @@ const (
 	SteerRejected SteerResult = iota
 	// SteerJoined: the running turn took the item, which leaves the queue.
 	SteerJoined
-	// SteerTurnEnded: the turn finished before the item reached it. The item
-	// runs next; nothing is interrupted.
-	SteerTurnEnded
+	// SteerDeferred: the item cannot reach the turn, which must not be
+	// interrupted either: it already finished, or it has not reached its agent
+	// yet (interrupting would drop it unseen). The item runs next.
+	SteerDeferred
 )
 
 // SteerOutcome is what Steer did with the item.

@@ -42,22 +42,64 @@ func TestConversationHistoryPagesOriginalMessagesWithinSnapshot(t *testing.T) {
 		}
 	}
 	first, err := svc.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "messages", Limit: 2})
-	if err != nil || len(first.Messages) != 2 || first.Messages[0].ID != "m5" || first.Messages[1].ID != "m6" || !first.HasMore {
+	// m6 alone fills the page budget; it is never cut.
+	if err != nil || len(first.Messages) != 1 || first.Messages[0].ID != "m6" || !first.HasMore {
 		t.Fatalf("first page: %+v %v", first, err)
 	}
-	if len([]rune(first.Messages[1].Content)) != 4000 || first.Messages[1].Images[0].Data != "" || first.Messages[1].Images[0].Ref != "blob:attachment" {
+	if len([]rune(first.Messages[0].Content)) != 4000 || first.Messages[0].Images[0].Data != "" || first.Messages[0].Images[0].Ref != "blob:attachment" {
 		t.Fatal("message truncated or inline image exposed")
 	}
 	if err := db.Create(&models.SoloMessage{ID: "m7", SessionID: sb.ThreadID, Role: "assistant", Content: "new after snapshot", CreatedAt: at.Add(time.Minute)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	second, err := svc.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "messages", Limit: 2, Cursor: first.NextCursor})
-	if err != nil || second.HistoryVersion != first.HistoryVersion || len(second.Messages) != 2 || second.Messages[0].ID != "m3" || second.Messages[1].ID != "m4" {
+	if err != nil || second.HistoryVersion != first.HistoryVersion || len(second.Messages) != 2 || second.Messages[0].ID != "m4" || second.Messages[1].ID != "m5" {
 		t.Fatalf("second page drifted: %+v %v", second, err)
 	}
-	last, err := svc.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "summary", Limit: 2, Cursor: second.NextCursor})
-	if err != nil || last.HasMore || last.NextCursor != "" || last.Messages[0].ID != "m1" || !strings.Contains(last.Summary, "要求1") {
+	last, err := svc.ReadConversationHistory(sb.RunID, mcp.ConversationHistoryRequest{View: "summary", Limit: 3, Cursor: second.NextCursor})
+	if err != nil || last.HasMore || last.NextCursor != "" || last.Messages[0].ID != "m1" || !strings.Contains(last.Summary, "范围 m1 至 m5") {
 		t.Fatalf("last page: %+v %v", last, err)
+	}
+}
+
+func TestConversationHistoryPagesFitTheBudget(t *testing.T) {
+	svc, db, sb := conversationHistoryFixture(t)
+	at := time.Date(2026, 10, 28, 1, 0, 0, 0, time.UTC)
+	output := strings.Repeat("测试输出", 1000)
+	for i := 1; i <= 30; i++ {
+		row := models.SoloMessage{ID: fmt.Sprintf("m%02d", i), SessionID: sb.ThreadID, Role: "assistant", Content: fmt.Sprintf("第%d轮完成", i), CreatedAt: at.Add(time.Duration(i) * time.Second)}
+		for j := 0; j < 3; j++ {
+			call := fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"t%d","title":"bash"}}}`, j)
+			done := fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"t%d","status":"completed","content":[{"type":"content","content":{"type":"text","text":%q}}]}}}`, j, output)
+			row.Events = append(row.Events, json.RawMessage(call), json.RawMessage(done))
+		}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[string]bool{}
+	req := mcp.ConversationHistoryRequest{View: "summary", Limit: 50}
+	for pages := 0; ; pages++ {
+		page, err := svc.ReadConversationHistory(sb.RunID, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if encoded, _ := json.Marshal(page); len(encoded) > historyPageBytes+1024 {
+			t.Fatalf("page %d is %d bytes", pages, len(encoded))
+		}
+		for _, m := range page.Messages {
+			if seen[m.ID] || len(m.ToolResults) != 3 || len([]rune(m.ToolResults[0].Text)) > historyToolTextRunes+1 {
+				t.Fatalf("message %s repeated or its tools unbounded", m.ID)
+			}
+			seen[m.ID] = true
+		}
+		if !page.HasMore {
+			break
+		}
+		req = mcp.ConversationHistoryRequest{View: "messages", Limit: 50, Cursor: page.NextCursor}
+	}
+	if len(seen) != 30 {
+		t.Fatalf("paged %d of 30 messages", len(seen))
 	}
 }
 

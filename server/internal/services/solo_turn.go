@@ -349,7 +349,9 @@ func (c *soloChat) runAgent(ctx context.Context, prep soloTurnPrep, in soloTurnI
 
 	out.status = "ok"
 	switch {
-	case out.err != nil && ctx.Err() != nil:
+	case ctx.Err() != nil:
+		// Stopped, or interrupted for a steer: partial output is kept, but the
+		// turn did not finish.
 		out.status, out.errText = "stopped", "已停止"
 	case out.err != nil:
 		out.status, out.errText = "failed", truncErr(out.err)
