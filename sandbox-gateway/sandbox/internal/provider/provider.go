@@ -34,6 +34,11 @@ var ErrTurnStuck = fmt.Errorf("%w: agent stuck", ErrTurnTimeout)
 // shrink it.
 var InterruptGrace = 15 * time.Second
 
+// SteerTimeout bounds one native steer. The platform waits longer for the
+// bridge's answer, so a slow delivery that succeeds is never taken for a
+// failed one and run a second time.
+const SteerTimeout = 20 * time.Second
+
 // StopReasonTimeout is the prompt_done stopReason for a turn that ran past
 // its deadline; StopReasonStuck for one stopped as stuck.
 const (

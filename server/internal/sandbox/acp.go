@@ -180,8 +180,8 @@ type ACPClient struct {
 	sessionID string
 	connected bool
 	// resumed: the last connect continued the agent's native session, so the
-	// agent still holds the conversation.
-	resumed bool
+	// agent still holds the conversation. Nil when the bridge did not say.
+	resumed *bool
 
 	eventCh chan json.RawMessage
 	done    chan struct{}
@@ -326,11 +326,15 @@ func (c *ACPClient) SessionID() string {
 }
 
 // Resumed reports whether the last connect continued the agent's native
-// session instead of starting a new conversation.
-func (c *ACPClient) Resumed() bool {
+// session instead of starting a new conversation; reported is false for a
+// bridge that predates the field.
+func (c *ACPClient) Resumed() (resumed, reported bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.resumed
+	if c.resumed == nil {
+		return false, false
+	}
+	return *c.resumed, true
 }
 
 func (c *ACPClient) setConnected(sessionID string) {
@@ -498,10 +502,11 @@ func (c *ACPClient) connectOnce(ctx context.Context) error {
 		select {
 		case raw := <-c.eventCh:
 			op, sessionID := parseOpAndSession(raw)
-			if op == "connected" && sessionID != "" {
+			resumed, snapshot := parseConnected(raw)
+			if op == "connected" && sessionID != "" && !snapshot {
 				c.setConnected(sessionID)
 				c.mu.Lock()
-				c.resumed = connectedResumed(raw)
+				c.resumed = resumed
 				c.mu.Unlock()
 				c.lg.Info().Str("session", sessionID).Msg("acp connected")
 				return nil
@@ -880,12 +885,15 @@ func parseOpAndSession(raw json.RawMessage) (string, string) {
 	return m.Op, m.SessionID
 }
 
-func connectedResumed(raw json.RawMessage) bool {
+// parseConnected reads what a connected frame says about our connect. A
+// snapshot is the state a new socket is shown before its connect runs.
+func parseConnected(raw json.RawMessage) (resumed *bool, snapshot bool) {
 	var m struct {
-		Resumed bool `json:"resumed"`
+		Resumed  *bool `json:"resumed"`
+		Snapshot bool  `json:"snapshot"`
 	}
 	_ = json.Unmarshal(raw, &m)
-	return m.Resumed
+	return m.Resumed, m.Snapshot
 }
 
 func parseErrorMessage(raw json.RawMessage) string {

@@ -70,7 +70,14 @@ func (b *Bridge) recycleStaleAgent() {
 	log.Printf("acp: %s，回合前重建 Agent 进程并接回会话 %s", why, sess.SessionID())
 	next, err := b.replaceLocked(sess)
 	if err != nil {
+		// The old process is gone and its watcher no longer owns the chat,
+		// so the queue and the notice are left to this path.
 		log.Printf("acp: 重建 Agent 进程失败: %v", err)
+		b.enqueueMu.Lock()
+		b.clearPromptQueue()
+		b.enqueueMu.Unlock()
+		b.BroadcastQueueState()
+		b.broadcastAgentExitDebounced("Agent 进程重建失败。 请重新连接 Agent 后继续。")
 		return
 	}
 	b.Broadcast(b.ConnectedPayload(next))

@@ -240,7 +240,7 @@ func (s *session) Steer(text string) error {
 	if id == "" {
 		return provider.ErrNoActiveTurn
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
 	defer cancel()
 	_, err := s.conn.Call(ctx, "turn/steer", map[string]any{
 		"threadId": s.threadID, "expectedTurnId": id, "input": textInput(text),
@@ -356,6 +356,12 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	startCtx, cancelStart := context.WithTimeout(context.Background(), rpcTimeout)
 	raw, err := s.conn.Call(startCtx, "turn/start", map[string]any{"threadId": s.threadID, "input": textInput(text)})
 	cancelStart()
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Unanswered: the turn may be running. Stopping the app-server is
+		// the only way to be sure it is not; the bridge revives the thread.
+		log.Printf("codex: turn/start 未在 %s 内应答，结束 app-server", rpcTimeout)
+		_ = s.conn.Close()
+	}
 	if err != nil {
 		return s.finishFailed(ctx, err)
 	}
@@ -435,7 +441,8 @@ func (s *session) awaitSubagents(ctx context.Context, t *activeTurn) error {
 var errSubagentHostExited = errors.New("codex app-server exited while subagents were running")
 
 // runningSubagents asks the app-server which tracked subagents are still
-// active and forgets the others. A thread it cannot read is not waited for.
+// active and forgets the others. A thread the app-server refuses to read is
+// not waited for; one whose state is unknown (no answer) still is.
 func (s *session) runningSubagents(ctx context.Context) []string {
 	s.mu.Lock()
 	ids := slices.Sorted(maps.Keys(s.subagents))
@@ -443,8 +450,13 @@ func (s *session) runningSubagents(ctx context.Context) []string {
 	var running []string
 	for _, id := range ids {
 		active, err := s.threadActive(ctx, id)
-		if err != nil {
-			log.Printf("codex: 读取子 Agent %s 状态失败，不再等待: %v", id, err)
+		var refused *acp.RPCError
+		switch {
+		case errors.As(err, &refused):
+			log.Printf("codex: 子 Agent %s 不可读取，不再等待: %v", id, err)
+		case err != nil:
+			log.Printf("codex: 子 Agent %s 状态未知，继续等待: %v", id, err)
+			active = true
 		}
 		if active {
 			running = append(running, id)

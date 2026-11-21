@@ -11,9 +11,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// SteerDeliveryTimeout bounds one native steer. chatsession holds its
-// transition gate meanwhile, so a cancel waits for at most this long.
-const SteerDeliveryTimeout = 10 * time.Second
+// SteerDeliveryTimeout bounds the wait for the bridge's answer to a steer.
+// It exceeds the bridge's own bound on the native delivery (20s), so the
+// answer is definite unless the connection drops. chatsession holds its
+// transition gate meanwhile.
+const SteerDeliveryTimeout = 30 * time.Second
 
 // SessionTurnSteerer is an optional provider capability: deliver input into
 // the in-flight turn of a parked review session (lane "") or of a visitor

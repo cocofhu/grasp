@@ -169,3 +169,35 @@ func TestSteerReplyBehindTurnEventsIsDelivered(t *testing.T) {
 		t.Fatal("a turn event streamed before the steer reply blocked delivery")
 	}
 }
+
+// The agent may finish the turn before it answers the steer; clients must
+// still see the steer inside that turn.
+func TestSteerAnsweredAfterTheTurnEndedPrecedesPromptDone(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	sess := &steerSess{blockingSess: blockingSess{stubSess: stubSess{id: "s1"}}}
+	b := newTestBridge(sess)
+	c := dialBridge(t, b)
+	sess.beforeReply = func() {
+		b.emitAgentEvent(json.RawMessage(`{"type":"prompt_done","stopReason":"end_turn"}`))
+	}
+	startBlockingTurn(t, b, "op-A")
+	if got := b.SteerTurn("op-A", "steer-1", "also check tests", nil); got != SteerDelivered {
+		t.Fatalf("status = %q", got)
+	}
+	var order []string
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for len(order) < 2 {
+		_, raw, err := c.ReadMessage()
+		if err != nil {
+			t.Fatalf("read: %v (seen %v)", err, order)
+		}
+		for _, kind := range []string{"user_steer", "prompt_done"} {
+			if strings.Contains(string(raw), `"`+kind+`"`) && !strings.Contains(string(raw), `"queue_state"`) {
+				order = append(order, kind)
+			}
+		}
+	}
+	if order[0] != "user_steer" || order[1] != "prompt_done" {
+		t.Fatalf("frame order = %v", order)
+	}
+}

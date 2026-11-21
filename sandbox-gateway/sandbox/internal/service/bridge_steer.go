@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"log"
 	"strings"
@@ -71,6 +73,8 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 	if th == nil || th.opID != opID {
 		return SteerNoTurn, ""
 	}
+	b.holdPromptDone()
+	defer b.releasePromptDone()
 	err := steerer.Steer(prompt)
 	if err == nil {
 		th.lastActivity.Store(time.Now().UnixNano())
@@ -85,6 +89,37 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 	addAttachmentPreview(data, images)
 	b.Broadcast(eventEnvelope(data, opID))
 	return SteerDelivered, ""
+}
+
+// emitAgentEvent broadcasts one event of the agent session.
+func (b *Bridge) emitAgentEvent(ev json.RawMessage) {
+	env := eventEnvelope(b.markSessionReset(ev), b.touchActiveTurn(ev))
+	if bytes.Contains(ev, []byte(`"prompt_done"`)) {
+		b.holdMu.Lock()
+		if b.holding {
+			b.heldDone = append(b.heldDone, env)
+			b.holdMu.Unlock()
+			return
+		}
+		b.holdMu.Unlock()
+	}
+	b.Broadcast(env)
+}
+
+func (b *Bridge) holdPromptDone() {
+	b.holdMu.Lock()
+	b.holding = true
+	b.holdMu.Unlock()
+}
+
+func (b *Bridge) releasePromptDone() {
+	b.holdMu.Lock()
+	held := b.heldDone
+	b.holding, b.heldDone = false, nil
+	b.holdMu.Unlock()
+	for _, env := range held {
+		b.Broadcast(env)
+	}
 }
 
 func (b *Bridge) turnRunning(opID string) bool {

@@ -551,6 +551,18 @@ func TestAppServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 	}
 }
 
+func TestAppServerExitDuringASubagentReadFailsTheTurn(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	t.Setenv("GRASP_FAKE_CODEX_EXIT_ON_CHILD_READ", "2")
+	s, _ := open(t, provider.OpenOptions{})
+	res, err := prompt(t, s, nil, "spawn")
+	if err == nil || res.StopReason != "failed" {
+		t.Fatalf("an unknown subagent state ended the turn as %+v %v", res, err)
+	}
+}
+
 func TestCancelBeforeTheTurnIDArrivesInterruptsTheTurn(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "interrupts")
 	t.Setenv("GRASP_FAKE_CODEX_INTERRUPTS", log)
@@ -567,5 +579,19 @@ func TestCancelBeforeTheTurnIDArrivesInterruptsTheTurn(t *testing.T) {
 	}
 	if res, err := prompt(t, s, nil, "hello"); err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("next turn: %+v %v", res, err)
+	}
+}
+
+func TestUnansweredTurnStartStopsTheAppServer(t *testing.T) {
+	s, _ := open(t, provider.OpenOptions{})
+	defer func(d time.Duration) { rpcTimeout = d }(rpcTimeout)
+	rpcTimeout = 100 * time.Millisecond
+	if res, err := prompt(t, s, nil, "slowstart"); err == nil || res.StopReason != "failed" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	select {
+	case <-s.conn.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("an app-server that may still run the turn was kept")
 	}
 }

@@ -224,6 +224,51 @@ func TestSteerQueuedAfterTheRunEndedIsTakenInOnce(t *testing.T) {
 	}
 }
 
+func TestQueueCheckWaitsOutStreamingAfterTheRunEnded(t *testing.T) {
+	installFake(t)
+	users := filepath.Join(t.TempDir(), "users")
+	t.Setenv("GRASP_FAKE_PI_USERS", users)
+	t.Setenv("GRASP_FAKE_PI_LATE_STREAMING", "3")
+	s, rec := open(t, provider.OpenOptions{})
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(turnCtx(t), "strand", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("too late"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-out; err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(users); string(got) != "\"strand\"\n\"too late\"\n" {
+		t.Fatalf("user messages taken in:\n%s", got)
+	}
+}
+
+func TestUnknownQueueStateFailsTheTurn(t *testing.T) {
+	installFake(t)
+	t.Setenv("GRASP_FAKE_PI_STATE_FAILS", "1")
+	s, rec := open(t, provider.OpenOptions{})
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(turnCtx(t), "strand", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("too late"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-out; err == nil {
+		t.Fatal("a turn whose steer may be stranded ended as success")
+	}
+}
+
+// Queue checks outlive their test by a moment, so they are shortened for the
+// whole package rather than per test.
+func init() { queueChecks, queueCheckDelay = 5, 10*time.Millisecond }
+
 func TestCancelAbortsTheRunAndKeepsTheProcess(t *testing.T) {
 	installFake(t)
 	s, rec := open(t, provider.OpenOptions{})

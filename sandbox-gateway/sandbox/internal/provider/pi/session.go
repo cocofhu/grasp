@@ -194,7 +194,7 @@ func (s *session) Steer(text string) error {
 	t.posted++
 	t.inflight++
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
 	defer cancel()
 	_, err := s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
 	s.mu.Lock()
@@ -249,6 +249,14 @@ func (s *session) evaluateLocked(t *activeTurn) {
 	}
 }
 
+// queueChecks bounds how often checkQueued asks the agent for its queue: Pi
+// may still report streaming briefly after agent_end, and a query may fail.
+// Vars so tests can shrink them.
+var (
+	queueChecks     = 50
+	queueCheckDelay = 100 * time.Millisecond
+)
+
 // checkQueued resolves a run that ended with a steer not taken in: either
 // the steer started the next run, or it reached the queue just after the
 // agent's last check. A queued steer would only reach the model with the
@@ -256,17 +264,33 @@ func (s *session) evaluateLocked(t *activeTurn) {
 func (s *session) checkQueued(t *activeTurn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	r, err := s.proc.call(ctx, map[string]any{"type": "get_state"})
 	var state struct {
 		IsStreaming  bool `json:"isStreaming"`
 		PendingCount int  `json:"pendingMessageCount"`
 	}
-	if err == nil {
-		_ = json.Unmarshal(r.Data, &state)
+	known := false
+	for i := 0; i < queueChecks && !known; i++ {
+		if i > 0 {
+			time.Sleep(queueCheckDelay)
+		}
+		s.mu.Lock()
+		idle := !t.settled && t.ended
+		s.mu.Unlock()
+		if !idle {
+			break
+		}
+		r, err := s.proc.call(ctx, map[string]any{"type": "get_state"})
+		known = err == nil && json.Unmarshal(r.Data, &state) == nil && !state.IsStreaming
 	}
 	s.mu.Lock()
 	t.checking = false
-	if t.settled || !t.ended || (err == nil && state.IsStreaming) {
+	if t.settled || !t.ended {
+		s.mu.Unlock()
+		return
+	}
+	if !known {
+		t.errText = "pi: 回合结束时无法确认引导是否送达"
+		s.settleLocked(t)
 		s.mu.Unlock()
 		return
 	}
@@ -281,7 +305,7 @@ func (s *session) checkQueued(t *activeTurn) {
 	t.inflight++
 	s.mu.Unlock()
 
-	err = s.redeliver(ctx, stranded)
+	err := s.redeliver(ctx, stranded)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t.inflight--

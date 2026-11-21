@@ -66,7 +66,11 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 		}
 
 		if p := bridge.Session(); p != nil {
-			if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(p)); err != nil {
+			// Marked so a client waiting on its connect does not take this
+			// as the answer.
+			snapshot := bridge.ConnectedPayload(p)
+			snapshot["snapshot"] = true
+			if err := bridge.WriteJSONWS(conn, snapshot); err != nil {
 				log.Printf("ws cid=%s: 同步 connected 失败: %v", cid, err)
 			} else {
 				log.Printf("ws cid=%s: 已同步当前会话 sid=%s", cid, p.SessionID())
@@ -125,7 +129,9 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 					writeWSError(bridge, conn, "引导消息格式错误")
 					continue
 				}
-				bridge.SteerTurn(body.OpID, body.SteerID, body.Text, body.Images)
+				// The answer is a steer_ack; a cancel on this socket must not
+				// wait behind the native delivery.
+				go bridge.SteerTurn(body.OpID, body.SteerID, body.Text, body.Images)
 			case "restart_agent":
 				var body struct {
 					PreserveHistory bool `json:"preserveHistory"`

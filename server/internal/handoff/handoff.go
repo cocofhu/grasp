@@ -124,15 +124,25 @@ func block(n int, e Entry) string {
 	if e.Role == Agent {
 		role = "Agent"
 	}
-	fmt.Fprintf(&b, "[#%d %s] %s\n", n, role, strings.TrimSpace(e.Text))
+	fmt.Fprintf(&b, "[#%d %s] %s\n", n, role, unmark(strings.TrimSpace(e.Text)))
 	for _, d := range e.Details {
 		if d = strings.TrimRight(d, " \n"); d != "" {
 			b.WriteString("  ")
-			b.WriteString(d)
+			b.WriteString(unmark(d))
 			b.WriteString("\n")
 		}
 	}
 	return b.String()
+}
+
+// unmark keeps dialogue text from starting a line the way an entry header
+// does, so quoted history cannot pose as another turn.
+func unmark(s string) string {
+	s = strings.ReplaceAll(s, "\n[#", "\n［#")
+	if strings.HasPrefix(s, "[#") {
+		s = "［#" + s[len("[#"):]
+	}
+	return s
 }
 
 // priority lists entry indices most important first.

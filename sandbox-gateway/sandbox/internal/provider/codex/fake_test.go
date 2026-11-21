@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -130,6 +131,9 @@ func runFakeAppServer() {
 			status := "idle"
 			if msg.Params.ThreadID == "child-1" {
 				f.childReads++
+				if os.Getenv("GRASP_FAKE_CODEX_EXIT_ON_CHILD_READ") == strconv.Itoa(f.childReads) {
+					os.Exit(0)
+				}
 				if f.childReads <= 2 {
 					status = "active"
 				}

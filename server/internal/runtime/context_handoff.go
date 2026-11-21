@@ -118,8 +118,11 @@ func (c *acpProvider) handOff(ctx context.Context, acp *sandbox.ACPClient, req N
 	c.mu.Unlock()
 	res, err := c.streamChat(ctx, acp, req, prompt, images)
 	c.carryChatUsage(key, res)
-	if err != nil || chatFailure(res) != "" {
+	if err != nil {
 		return res, err
+	}
+	if fail := chatFailure(res); fail != "" {
+		return res, errors.New(fail)
 	}
 	if res != nil && res.Interrupted {
 		return res, errHandoffInterrupted

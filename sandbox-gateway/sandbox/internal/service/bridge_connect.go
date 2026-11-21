@@ -285,9 +285,7 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer handshakeCancel()
 
-	onEvent := func(ev json.RawMessage) {
-		b.Broadcast(eventEnvelope(b.markSessionReset(ev), b.touchActiveTurn(ev)))
-	}
+	onEvent := b.emitAgentEvent
 	perm := func(ctx context.Context, rpcID json.RawMessage, raw json.RawMessage) (string, error) {
 		return b.permissionChooser(ctx, rpcID, raw)
 	}

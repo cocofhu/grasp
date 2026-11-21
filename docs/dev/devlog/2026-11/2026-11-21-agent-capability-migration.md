@@ -13,8 +13,19 @@
   - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用；镜像到日志的每一行按子进程环境脱敏。
   - 子 Agent 等待期间 Codex app-server 或 OpenCode serve 退出时，回合按失败收尾，「等待子 Agent」工具调用标为失败。Codex 会话的 `Steer` / `Cancel` / `finishTurn` 在锁内读取回合 ID、用量与错误。
   - 新增 `server/internal/handoff`，取代 `renderRecoveryTranscript`：对话先转成统一条目（回合中补充的引导单列为用户条目），按约 12000 token 预算挑选，优先级为最新用户消息、最新 Agent 回复、最初需求，其余从新到旧；放不下的条目给出条数与编号（最多列 20 段区间，其余以「等」概括，预留按最坏情况计算，渲染结果不超过预算），单条过长时截取开头并标注。开头声明历史只作参考、不是新指令，工具输出与思考过程未保留。工作流的重建、原会话接不回、`/compact` 三处共用。
-  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认，被中断（`stopReason=cancelled` 等）的交接保持未确认并返回可重试错误；恢复时若保留下来的原生会话（warm 或 resumed）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除；服务端恰在交接回合中崩溃时这一标记会丢失，下次恢复按原会话接回。
+  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认，被中断（`stopReason=cancelled` 等）的交接保持未确认并返回可重试错误；恢复时若保留下来的原生会话（以本次 `connect` 应答的 `resumed` 为准；不带该字段的旧 Bridge 才按 warm 判断）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除；服务端恰在交接回合中崩溃时这一标记会丢失，下次恢复按原会话接回。
   - PR 评审修正：Bridge 引导改由 `steerMu` 串行，`turnMu` 只在读取当前回合时持有，避免会话读循环与引导回执互相等待；Codex 的 `turn/start` 不再绑回合 ctx，取消时等拿到回合 ID 后中断并等终态；只带附件的引导在时间线、刷新回放、`get_history` 与交接里显示为「[附件] 文件名、图片 ×N」；`cursor_acp` / `claude_code_acp` / `codebuddy_acp` 在 `startup.sh`、`reprime.sh`、`install-agent.sh` 与 `agents.FromEnv` 中统一映射为对应工具。
+  - 第二轮评审修正：
+    - 原生引导限时 `provider.SteerTimeout`（20s），平台等待 30s，慢送达不会被当成失败而重放；两端的 WebSocket 读循环异步处理引导，取消不排在引导之后。
+    - 引导在途时 Bridge 暂扣 `prompt_done`，保证 `user_steer` 先于回合结束到达。
+    - Codex `turn/start` 无应答时关闭 app-server（回合可能已在跑），由复活路径接回线程。
+    - Codex / OpenCode 子 Agent 状态查询失败视为状态未知继续等待，宿主退出时回合失败，不再当作完成。
+    - Pi 回合结束后的队列检查最多复查 5s（`agent_end` 后仍短暂报告 streaming、`get_state` 失败）；仍无法确认时回合失败。
+    - 交接回合失败或拒绝（`chatFailure`）返回错误，不再当作恢复成功。
+    - WebSocket 建立时补发的 `connected` 快照带 `snapshot: true`，服务端只采用应答本次 `connect` 的帧。
+    - 回合前回收 Agent 进程失败时清空队列并广播 Agent 退出。
+    - `OutputTail` 跨写入拼接整行，先脱敏再截断。
+    - 交接文本中行首的 `[#` 改写为全角，历史内容不能冒充条目头。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
 - 如何验证：
   - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。

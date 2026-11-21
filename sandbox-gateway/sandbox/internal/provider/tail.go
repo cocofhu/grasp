@@ -17,21 +17,36 @@ type OutputTail struct {
 
 	mu   sync.Mutex
 	data []byte
+	// partial is the unfinished last line, so a secret split across writes
+	// is still whole when it is redacted.
+	partial []byte
 }
 
+// maxLogLine bounds how much of an unfinished line is held back; past it
+// the line is logged without waiting for its end.
+const maxLogLine = 4096
+
 func (t *OutputTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.LogPrefix != "" {
-		for _, line := range strings.Split(string(p), "\n") {
-			if line = strings.TrimSpace(line); line != "" {
+		t.partial = append(t.partial, p...)
+		lines := strings.Split(string(t.partial), "\n")
+		last := lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+		if len(last) > maxLogLine {
+			lines, last = append(lines, last), ""
+		}
+		t.partial = append(t.partial[:0], last...)
+		for _, line := range lines {
+			if line = strings.TrimSpace(RedactDiagnostic(line, t.Env)); line != "" {
 				if len(line) > 500 {
 					line = line[:500] + "…"
 				}
-				log.Printf("%s: %s", t.LogPrefix, RedactDiagnostic(line, t.Env))
+				log.Printf("%s: %s", t.LogPrefix, line)
 			}
 		}
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.data = append(t.data, p...)
 	if over := len(t.data) - t.Max; over > 0 {
 		t.data = t.data[over:]

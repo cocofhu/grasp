@@ -96,7 +96,11 @@ func (c *acpProvider) restoreReactEnvironment(ctx context.Context, req NodeReq, 
 	if previous != nil && previous.acp != nil {
 		previous.acp.Close()
 	}
-	fresh := !warm && !acp.Resumed()
+	resumed, reported := acp.Resumed()
+	fresh := !resumed
+	if !reported {
+		fresh = !warm
+	}
 	if !fresh && c.handoffUnconfirmed(key) {
 		// The kept native session may hold part of an earlier handoff;
 		// replaying the dialogue into it would show the agent history twice.

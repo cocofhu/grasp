@@ -398,6 +398,21 @@ func TestStaleAgentIsRecycledBeforeTheNextTurn(t *testing.T) {
 	})
 }
 
+func TestFailedRecycleDropsTheQueueAndTellsTheClients(t *testing.T) {
+	agent := &lifeAgent{transport: provider.LongLived, hold: make(chan struct{}), failResume: true}
+	close(agent.hold)
+	b, _ := lifeBridge(t, agent)
+	c := dialBridge(t, b)
+	thaws.Add(1)
+	if err := b.ChatWithLimits("after", "t1", "chat", nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	readFrame(t, c, func(f map[string]any) bool { return f["agentExited"] == true })
+	if waiting, _, _ := b.PromptQueueInfo(); waiting != 0 {
+		t.Fatalf("%d prompts stayed queued with no agent", waiting)
+	}
+}
+
 func TestUnchangedConfigKeepsTheAgent(t *testing.T) {
 	login := filepath.Join(t.TempDir(), "auth.json")
 	if err := os.WriteFile(login, []byte(`{"v":1}`), 0o600); err != nil {

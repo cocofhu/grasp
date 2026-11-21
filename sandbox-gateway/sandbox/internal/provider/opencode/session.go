@@ -271,7 +271,7 @@ func (s *session) Steer(text string) error {
 	}
 	t.posted++
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
 	defer cancel()
 	if err := s.post(ctx, text); err != nil {
 		s.mu.Lock()
@@ -320,7 +320,10 @@ var subagentPoll = time.Second
 // while background agents still change the workspace. It fails when ctx ends
 // or the server exits first.
 func (s *session) awaitSubagents(ctx context.Context) error {
-	busy := s.busyChildren(ctx)
+	busy, err := s.busyChildren(ctx)
+	if err != nil {
+		log.Printf("opencode: 读取子会话失败，不等待子 Agent: %v", err)
+	}
 	if busy == 0 {
 		return nil
 	}
@@ -338,7 +341,12 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 			s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "failed"})
 			return errSubagentHostExited
 		case <-tick.C:
-			busy = s.busyChildren(ctx)
+			// Unknown is not idle: keep waiting on the last known count.
+			if n, err := s.busyChildren(ctx); err != nil {
+				log.Printf("opencode: 子 Agent 状态未知，继续等待: %v", err)
+			} else {
+				busy = n
+			}
 		}
 	}
 	s.emitUpdate(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": callID, "status": "completed"})
@@ -348,24 +356,21 @@ func (s *session) awaitSubagents(ctx context.Context) error {
 var errSubagentHostExited = errors.New("opencode serve exited while subagents were running")
 
 // busyChildren counts this session's child sessions that are still running.
-// A failed lookup is not waited on.
-func (s *session) busyChildren(ctx context.Context) int {
+func (s *session) busyChildren(ctx context.Context) (int, error) {
 	var children []struct {
 		ID string `json:"id"`
 	}
 	if err := s.srv.call(ctx, http.MethodGet, sprintfPath("/session/%s/children", s.id), nil, &children); err != nil {
-		log.Printf("opencode: 读取子会话失败，不再等待: %v", err)
-		return 0
+		return 0, err
 	}
 	if len(children) == 0 {
-		return 0
+		return 0, nil
 	}
 	var status map[string]struct {
 		Type string `json:"type"`
 	}
 	if err := s.srv.call(ctx, http.MethodGet, "/session/status", nil, &status); err != nil {
-		log.Printf("opencode: 读取会话状态失败，不再等待: %v", err)
-		return 0
+		return 0, err
 	}
 	busy := 0
 	for _, child := range children {
@@ -373,7 +378,7 @@ func (s *session) busyChildren(ctx context.Context) int {
 			busy++
 		}
 	}
-	return busy
+	return busy, nil
 }
 
 // finishTurn settles usage and stop reason, emits prompt_done and returns the

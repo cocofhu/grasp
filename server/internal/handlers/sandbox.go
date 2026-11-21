@@ -287,6 +287,17 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		<-writeDone
 	}()
 
+	// steer runs beside the read loop: it waits for the native delivery, and
+	// a cancel on this socket must not wait behind it. A missing item already
+	// ran or was removed: nothing left to steer.
+	steer := func(itemID string) {
+		go func() {
+			if _, err := h.SbxChats.Steer(id, itemID); err != nil && !errors.Is(err, chatsession.ErrNotFound) {
+				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
+			}
+		}()
+	}
+
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -307,10 +318,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 		case "cancel":
 			h.SbxChats.Cancel(id)
 		case "steer":
-			// A missing item already ran or was removed: nothing left to steer.
-			if _, err := h.SbxChats.Steer(id, strings.TrimSpace(m.ID)); err != nil && !errors.Is(err, chatsession.ErrNotFound) {
-				_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
-			}
+			steer(strings.TrimSpace(m.ID))
 		case "chat", "":
 			if m.Content == "" && len(m.Images) == 0 {
 				continue
@@ -325,9 +333,7 @@ func (h *Handlers) SandboxChat(c *gin.Context) {
 				continue
 			}
 			if m.Steer {
-				if _, err := h.SbxChats.Steer(id, itemID); err != nil && !errors.Is(err, chatsession.ErrNotFound) {
-					_ = write(gin.H{"type": "session", "event": "error", "message": err.Error(), "interrupted": false})
-				}
+				steer(itemID)
 			}
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -90,10 +91,11 @@ type fake struct {
 	o        Options
 	password string
 
-	mu       sync.Mutex
-	seq      int
-	sessions map[string]*fakeSession
-	subs     map[chan []byte]bool
+	mu          sync.Mutex
+	seq         int
+	statusReads int
+	sessions    map[string]*fakeSession
+	subs        map[chan []byte]bool
 }
 
 type fakeSession struct {
@@ -124,6 +126,13 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == "/session":
 		writeJSON(w, map[string]string{"id": f.create("").id})
 	case r.Method == http.MethodGet && r.URL.Path == "/session/status":
+		f.mu.Lock()
+		f.statusReads++
+		exit := os.Getenv("GRASP_FAKE_OPENCODE_EXIT_ON_STATUS") == strconv.Itoa(f.statusReads)
+		f.mu.Unlock()
+		if exit {
+			os.Exit(0)
+		}
 		writeJSON(w, f.status())
 	case len(parts) == 2 && parts[0] == "session" && r.Method == http.MethodGet:
 		if f.get(parts[1]) == nil {

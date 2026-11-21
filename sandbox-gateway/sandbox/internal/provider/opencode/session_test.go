@@ -398,6 +398,18 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 }
 
+func TestServerExitDuringASubagentReadFailsTheTurn(t *testing.T) {
+	old := subagentPoll
+	subagentPoll = 10 * time.Millisecond
+	t.Cleanup(func() { subagentPoll = old })
+	f := installFake(t, "GRASP_FAKE_OPENCODE_EXIT_ON_STATUS=2")
+	s, _ := f.open(t, "", "", "")
+	res, err := s.Prompt(promptCtx(t), "start a subagent", nil)
+	if err == nil || res.StopReason != "failed" {
+		t.Fatalf("an unknown subagent state ended the turn as %+v %v", res, err)
+	}
+}
+
 func TestServerExitWhileWaitingForSubagentsFailsTheTurn(t *testing.T) {
 	old := subagentPoll
 	subagentPoll = time.Hour

@@ -811,14 +811,8 @@ func (c *acpProvider) reopenPoisonedReact(ctx context.Context, req NodeReq, sess
 		return nil
 	}
 	prime := c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), historyWithoutTrailingHuman(history), cur.sb)
-	res, perr := c.handOff(ctx, cur.acp, req, prime, nil)
-	if perr != nil {
-		return perr
-	}
-	if fail := chatFailure(res); fail != "" {
-		return errors.New(fail)
-	}
-	return nil
+	_, err = c.handOff(ctx, cur.acp, req, prime, nil)
+	return err
 }
 
 func historyWithoutTrailingHuman(history []models.ReactMessage) []models.ReactMessage {

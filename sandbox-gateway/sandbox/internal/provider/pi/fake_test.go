@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +15,9 @@ import (
 // the run: "hang" waits in a tool call for a steer or an abort, "fail" ends
 // with a model error, "dialog" asks an extension dialog first, "strand"
 // leaves a steer queued after the run ends; reloading the session drops the
-// queue. Anything else gets a reply.
+// queue. Anything else gets a reply. After a run ends, get_state may keep
+// reporting streaming (GRASP_FAKE_PI_LATE_STREAMING reads) or fail
+// (GRASP_FAKE_PI_STATE_FAILS).
 func TestFakePiProcess(t *testing.T) {
 	if os.Getenv("GRASP_FAKE_PI") == "" {
 		return
@@ -26,6 +29,7 @@ func TestFakePiProcess(t *testing.T) {
 		}
 	}
 	f := &fakePi{session: session, steer: make(chan string, 8), dialog: make(chan bool, 1)}
+	f.late, _ = strconv.Atoi(os.Getenv("GRASP_FAKE_PI_LATE_STREAMING"))
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var cmd map[string]any
@@ -44,6 +48,8 @@ type fakePi struct {
 	mu        sync.Mutex
 	streaming bool
 	queued    int
+	ended     bool
+	late      int
 	abort     chan struct{}
 	idle      chan struct{}
 	steer     chan string
@@ -74,7 +80,16 @@ func (f *fakePi) handle(cmd map[string]any) {
 		f.mu.Lock()
 		state := map[string]any{"sessionFile": f.session, "isStreaming": f.streaming, "pendingMessageCount": f.queued,
 			"model": map[string]any{"id": "fake-model", "provider": "fake"}}
+		fail := f.ended && os.Getenv("GRASP_FAKE_PI_STATE_FAILS") != ""
+		if f.ended && f.late > 0 {
+			f.late--
+			state["isStreaming"] = true
+		}
 		f.mu.Unlock()
+		if fail {
+			f.respond(cmd, false, nil, "state unavailable")
+			return
+		}
 		f.respond(cmd, true, state, "")
 	case "prompt":
 		text, _ := cmd["message"].(string)
@@ -152,7 +167,7 @@ func (f *fakePi) run(text string) {
 	defer func() {
 		f.write(map[string]any{"type": "agent_end", "messages": []any{}})
 		f.mu.Lock()
-		f.streaming = false
+		f.streaming, f.ended = false, true
 		idle := f.idle
 		f.mu.Unlock()
 		close(idle)

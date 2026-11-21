@@ -103,6 +103,12 @@ type Bridge struct {
 	// cannot serve: the session's reader takes it for every event, and the
 	// steer's own reply arrives behind those events.
 	steerMu sync.Mutex
+	// While a steer is in flight its turn's prompt_done is held, so the
+	// user_steer the steer produces reaches clients first even when the
+	// agent finished the turn before answering the steer.
+	holdMu   sync.Mutex
+	holding  bool
+	heldDone []map[string]any
 
 	// 等待中的用户消息（Agent 正回复时后续发送先入队，按 FIFO 逐个 session/prompt）
 	queueMu     sync.Mutex
