@@ -32,6 +32,15 @@ describe('acpTurn', () => {
     expect(partsOf(turn)[0]!.text).toBe('think more')
   })
 
+  it('keeps command and path tool titles verbatim', () => {
+    const turn = emptyAgentTurn('live:1', true)
+    const call = (id: string, title: string) => ({ data: { type: 'session_update', update: { sessionUpdate: 'tool_call', toolCallId: id, title, status: 'completed' } } })
+    applyAcp(call('t1', "/bin/bash -lc 'gh pr view 1307 -R cocofhu/grasp'"), turn, label, 'Tool')
+    applyAcp(call('t2', '/tmp/grasp-1304/web/e2e/console.spec.ts'), turn, label, 'Tool')
+    applyAcp(call('t3', 'web-search'), turn, label, 'Tool')
+    expect(turn.tools.map((t) => t.title)).toEqual(["/bin/bash -lc 'gh pr view 1307 -R cocofhu/grasp'", '/tmp/grasp-1304/web/e2e/console.spec.ts', 'Web-Search'])
+  })
+
   it('rebuilds turns from persisted messages, replaying events', () => {
     const messages: SoloMessage[] = [
       { id: 'u1', sessionId: 's', role: 'user', content: 'hi', createdAt: '2026-01-01T00:00:00Z' },

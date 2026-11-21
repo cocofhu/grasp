@@ -972,6 +972,7 @@ function humanizeTool(s: string): string {
   const key = raw.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
   const i18nKey = `pages.agentChatTester.tools.${key}`
   if (te(i18nKey)) return t(i18nKey)
+  if (!/^[A-Za-z][\w -]*$/.test(raw)) return raw
   return raw
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')

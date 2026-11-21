@@ -279,13 +279,14 @@ chatMarked.use({
       name: 'tightHeading',
       level: 'block',
       // marked passes the paragraph minus its first char; a heading may only
-      // interrupt it at a line start, never mid-line as in `@#815`.
+      // interrupt it at a line start, never mid-line as in `@#815`. A digit
+      // right after the hashes is an issue/PR reference (`#1304`), not a heading.
       start(src) {
-        const m = /\n {0,3}#{1,6}[^\s#]/.exec(src)
+        const m = /\n {0,3}#{1,6}[^\s#\d]/.exec(src)
         return m ? m.index + 1 : undefined
       },
       tokenizer(src) {
-        const cap = /^ {0,3}(#{1,6})([^\s#].*?)(?:\n+|$)/.exec(src)
+        const cap = /^ {0,3}(#{1,6})([^\s#\d].*?)(?:\n+|$)/.exec(src)
         if (!cap) return
         let text = cap[2].trim()
         if (/#$/.test(text)) {
