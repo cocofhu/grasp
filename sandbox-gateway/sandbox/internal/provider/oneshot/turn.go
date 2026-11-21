@@ -125,7 +125,7 @@ func (a *turnAccumulator) settleUsage(resumeID string) {
 
 // outcome decides the turn's stop reason and error. A stop reason the CLI
 // reported wins; otherwise any wait or stream error means failed.
-func (a *turnAccumulator) outcome(waitErr, streamErr error, tail *stderrTail) (turnOutcome, error) {
+func (a *turnAccumulator) outcome(waitErr, streamErr error, tail *provider.OutputTail) (turnOutcome, error) {
 	stop := a.stop
 	if stop == "" {
 		if waitErr != nil || streamErr != nil {

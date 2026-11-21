@@ -39,8 +39,10 @@ type Name = provider.Name
 //     codebuddy / gemini. Fresh subprocess each turn; multi-turn continuity via
 //     a resume pointer. These are the primary transports.
 //   - run --format json (one-shot NDJSON): deveco.
-//   - json event lines (one-shot): copilot / pi / openclaw / antigravity.
+//   - json event lines (one-shot): copilot / openclaw / antigravity.
 //   - app-server (long-lived, JSON-RPC over stdio): codex.
+//   - serve (long-lived, HTTP + event stream): opencode.
+//   - rpc (long-lived, JSON lines over stdio): pi.
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
 //     grok / trae — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
@@ -141,12 +143,11 @@ var registry = map[Name]provider.Provider{
 		ConfigRoot: "/root/.copilot",
 		AuthEnvFn:  genericAuthEnv("GITHUB_TOKEN", "ACP_COPILOT_API_KEY", "COPILOT_API_KEY"),
 	}),
-	// pi: `pi -p --mode json --session <path>`. Continuity via a session log
-	// file (the resume pointer); text arrives under assistantMessageEvent.delta.
+	// pi: `pi --mode rpc --session <file>`; steering and abort over the RPC
+	// commands, the session file is the resume pointer.
 	provider.Pi: pi.New(pi.Config{
-		AgentName:  provider.Pi,
 		Bin:        "pi",
-		Runtime:    "pi-json",
+		Runtime:    "pi-rpc",
 		ConfigRoot: "/root/.pi",
 		AuthEnvFn:  genericAuthEnv("ANTHROPIC_API_KEY", "ACP_PI_API_KEY", "PI_API_KEY"),
 	}),

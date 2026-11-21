@@ -1,0 +1,77 @@
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 4; echo first. Then reply with one short sentence."}],"timestamp":1795232502466}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 4; echo first. Then reply with one short sentence."}],"timestamp":1795232502466}}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1795232502501}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"The"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" user"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" wants"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" me"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" to"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" run"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" a"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" bash"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" command"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":":"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" sleep"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" "}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"4"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":";"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" echo"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" first"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" Then"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" reply"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" with"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" one"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" short"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" sentence"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_start","contentIndex":1}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"{\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"command"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":": \""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"sleep"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" "}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"4"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":";"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" echo"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" first"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"}"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"The user wants me to run a bash command: sleep 4; echo first. Then reply with one short sentence."}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_00_uxhrQTzH38lo9QHiEGqA9459","name":"bash","arguments":{"command":"sleep 4; echo first"}}}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to run a bash command: sleep 4; echo first. Then reply with one short sentence.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_uxhrQTzH38lo9QHiEGqA9459","name":"bash","arguments":{"command":"sleep 4; echo first"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":1495,"output":66,"cacheRead":0,"cacheWrite":0,"totalTokens":1561,"cost":{"input":0.00020930000000000002,"output":1.8480000000000003e-05,"cacheRead":0,"cacheWrite":0,"total":0.00022778000000000002}},"stopReason":"toolUse","timestamp":1795232502501,"responseId":"3c2a68d6-4743-4034-bf02-ee9c9f42b0da","responseModel":"deepseek-flash"}}
+{"type":"tool_execution_start","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","args":{"command":"sleep 4; echo first"}}
+{"type":"tool_execution_update","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","args":{"command":"sleep 4; echo first"},"partialResult":{"content":[]}}
+{"type":"tool_execution_update","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","args":{"command":"sleep 4; echo first"},"partialResult":{"content":[{"type":"text","text":"first\n"}],"details":{}}}
+{"type":"tool_execution_end","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","result":{"content":[{"type":"text","text":"first\n"}]},"isError":false}
+{"type":"message_start","message":{"role":"toolResult","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","content":[{"type":"text","text":"first\n"}],"isError":false,"timestamp":1795232507111}}
+{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","content":[{"type":"text","text":"first\n"}],"isError":false,"timestamp":1795232507111}}
+{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to run a bash command: sleep 4; echo first. Then reply with one short sentence.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_uxhrQTzH38lo9QHiEGqA9459","name":"bash","arguments":{"command":"sleep 4; echo first"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":1495,"output":66,"cacheRead":0,"cacheWrite":0,"totalTokens":1561,"cost":{"input":0.00020930000000000002,"output":1.8480000000000003e-05,"cacheRead":0,"cacheWrite":0,"total":0.00022778000000000002}},"stopReason":"toolUse","timestamp":1795232502501,"responseId":"3c2a68d6-4743-4034-bf02-ee9c9f42b0da","responseModel":"deepseek-flash"},"toolResults":[{"role":"toolResult","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","content":[{"type":"text","text":"first\n"}],"isError":false,"timestamp":1795232507111}]}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Also end your reply with the word banana."}],"timestamp":1795232503108}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Also end your reply with the word banana."}],"timestamp":1795232503108}}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1795232507112}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"The"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" command"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" slept"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" for"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" four"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" seconds"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" and"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" then"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" printed"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" \""}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"first"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":" banana"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"The command slept for four seconds and then printed \"first\" banana."}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The command slept for four seconds and then printed \"first\" banana."}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":176,"output":15,"cacheRead":1408,"cacheWrite":0,"totalTokens":1599,"cost":{"input":2.464e-05,"output":4.2000000000000004e-06,"cacheRead":3.9424e-06,"cacheWrite":0,"total":3.27824e-05}},"stopReason":"stop","timestamp":1795232507112,"responseId":"5d8ba302-edc8-4445-b09f-b6591aca14eb","responseModel":"deepseek-flash"}}
+{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"The command slept for four seconds and then printed \"first\" banana."}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":176,"output":15,"cacheRead":1408,"cacheWrite":0,"totalTokens":1599,"cost":{"input":2.464e-05,"output":4.2000000000000004e-06,"cacheRead":3.9424e-06,"cacheWrite":0,"total":3.27824e-05}},"stopReason":"stop","timestamp":1795232507112,"responseId":"5d8ba302-edc8-4445-b09f-b6591aca14eb","responseModel":"deepseek-flash"},"toolResults":[]}
+{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 4; echo first. Then reply with one short sentence."}],"timestamp":1795232502466},{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to run a bash command: sleep 4; echo first. Then reply with one short sentence.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_uxhrQTzH38lo9QHiEGqA9459","name":"bash","arguments":{"command":"sleep 4; echo first"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":1495,"output":66,"cacheRead":0,"cacheWrite":0,"totalTokens":1561,"cost":{"input":0.00020930000000000002,"output":1.8480000000000003e-05,"cacheRead":0,"cacheWrite":0,"total":0.00022778000000000002}},"stopReason":"toolUse","timestamp":1795232502501,"responseId":"3c2a68d6-4743-4034-bf02-ee9c9f42b0da","responseModel":"deepseek-flash"},{"role":"toolResult","toolCallId":"call_00_uxhrQTzH38lo9QHiEGqA9459","toolName":"bash","content":[{"type":"text","text":"first\n"}],"isError":false,"timestamp":1795232507111},{"role":"user","content":[{"type":"text","text":"Also end your reply with the word banana."}],"timestamp":1795232503108},{"role":"assistant","content":[{"type":"text","text":"The command slept for four seconds and then printed \"first\" banana."}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":176,"output":15,"cacheRead":1408,"cacheWrite":0,"totalTokens":1599,"cost":{"input":2.464e-05,"output":4.2000000000000004e-06,"cacheRead":3.9424e-06,"cacheWrite":0,"total":3.27824e-05}},"stopReason":"stop","timestamp":1795232507112,"responseId":"5d8ba302-edc8-4445-b09f-b6591aca14eb","responseModel":"deepseek-flash"}]}

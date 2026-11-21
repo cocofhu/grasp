@@ -10,15 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
+
+	"backend/internal/provider"
 )
 
 // server is one `opencode serve` process bound to loopback. Every request
@@ -32,7 +32,7 @@ type server struct {
 
 	done    chan struct{}
 	waitErr error
-	tail    *tailBuffer
+	tail    *provider.OutputTail
 }
 
 const (
@@ -60,7 +60,7 @@ func startServer(ctx context.Context, bin, dir string, env, extra []string) (*se
 	// Its own group, so stopping the server also stops the shells it runs.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	tail := &tailBuffer{max: 4096}
+	tail := &provider.OutputTail{Max: 4096, LogPrefix: "opencode serve"}
 	cmd.Stdout, cmd.Stderr = tail, tail
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func (s *server) exitText() string {
 			sb.WriteString(s.waitErr.Error())
 		}
 	}
-	if out := strings.TrimSpace(s.tail.String()); out != "" {
+	if out := s.tail.String(); out != "" {
 		if sb.Len() > 0 {
 			sb.WriteString("；")
 		}
@@ -228,35 +228,6 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
-}
-
-// tailBuffer keeps the last max bytes of the server's output for
-// diagnostics and mirrors each line to the log.
-type tailBuffer struct {
-	mu   sync.Mutex
-	max  int
-	data []byte
-}
-
-func (b *tailBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			log.Printf("opencode serve: %s", truncate(line, 500))
-		}
-	}
-	b.data = append(b.data, p...)
-	if over := len(b.data) - b.max; over > 0 {
-		b.data = b.data[over:]
-	}
-	return len(p), nil
-}
-
-func (b *tailBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return string(b.data)
 }
 
 func truncate(s string, n int) string {

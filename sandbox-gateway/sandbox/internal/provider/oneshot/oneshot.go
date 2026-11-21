@@ -482,7 +482,7 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	}
 
 	acc := newTurnAccumulator(e, bg, input)
-	tail := newStderrTail(64 * 1024)
+	tail := &provider.OutputTail{Max: 64 * 1024}
 	var streamErr error
 	stdoutPipe := newOutPipe(proc.stdout, outputDrainGrace)
 	stderrPipe := newOutPipe(proc.stderr, outputDrainGrace)
@@ -1034,32 +1034,6 @@ func zeroUsage(usage map[string]provider.TokenUsage) bool {
 		}
 	}
 	return true
-}
-
-// stderrTail is a bounded ring buffer capturing the last N bytes of stderr so
-// native CLI crashes surface a diagnostic instead of a bare "exit status 3".
-type stderrTail struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func newStderrTail(max int) *stderrTail { return &stderrTail{max: max} }
-
-func (s *stderrTail) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buf = append(s.buf, p...)
-	if len(s.buf) > s.max {
-		s.buf = s.buf[len(s.buf)-s.max:]
-	}
-	return len(p), nil
-}
-
-func (s *stderrTail) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return strings.TrimSpace(string(s.buf))
 }
 
 // redactArgv returns a greppable argv snapshot for logs: keeps MCP-related
