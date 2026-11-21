@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestPreferIPAddrResolvesClusterDNS(t *testing.T) {
@@ -68,75 +70,63 @@ func TestAttachSandboxDialsResolvedIP(t *testing.T) {
 	}
 }
 
-// TestProbeTabCreateUsesLoopbackHostHeader locks the Chrome 149 DevTools rule:
-// PUT /json/new rejects Host that is neither an IP nor localhost. Approving
-// dials ClusterIP DNS (sbx-*.svc.cluster.local) after CDP/noVNC isolation, so
-// the probe must rewrite Host to 127.0.0.1 while still dialing the DNS name.
-func TestProbeTabCreateUsesLoopbackHostHeader(t *testing.T) {
-	var sawNewHost, sawCloseHost string
+// Chromium requires an IP or localhost Host even when the gateway is dialed
+// by service DNS. Discovery may return a loopback or an internal address.
+func hiddenTargetProbeMux(t *testing.T) *http.ServeMux {
+	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/json/new", func(w http.ResponseWriter, r *http.Request) {
-		sawNewHost = r.Host
+	mux.HandleFunc("/json/version", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackCDPHost(r.Host) {
-			http.Error(w, "Host header is specified and is not an IP address or localhost.", http.StatusInternalServerError)
-			return
+			t.Errorf("discovery Host = %q", r.Host)
 		}
-		if r.Method != http.MethodPut {
-			http.Error(w, "PUT required", http.StatusMethodNotAllowed)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": "tab-dns"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"webSocketDebuggerUrl": "ws://127.0.0.1:1/devtools/browser/test"})
 	})
-	mux.HandleFunc("/json/close/", func(w http.ResponseWriter, r *http.Request) {
-		sawCloseHost = r.Host
+	mux.HandleFunc("/devtools/browser/test", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackCDPHost(r.Host) {
-			http.Error(w, "Host header is specified and is not an IP address or localhost.", http.StatusInternalServerError)
+			t.Errorf("WebSocket Host = %q", r.Host)
+		}
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		defer conn.Close()
+		var cmd struct {
+			ID     int
+			Method string
+			Params struct {
+				URL                string
+				Background, Hidden bool
+			}
+		}
+		if err := conn.ReadJSON(&cmd); err != nil || cmd.Method != "Target.createTarget" ||
+			cmd.Params.URL != "about:blank" || !cmd.Params.Hidden || !cmd.Params.Background {
+			t.Errorf("unexpected readiness command: %+v, %v", cmd, err)
+			return
+		}
+		_ = conn.WriteJSON(map[string]any{"id": cmd.ID, "result": map[string]string{"targetId": "probe"}})
 	})
-	srv := httptest.NewServer(mux)
+	return mux
+}
+
+func TestProbeTabCreateUsesLoopbackHostHeader(t *testing.T) {
+	srv := httptest.NewServer(hiddenTargetProbeMux(t))
 	t.Cleanup(srv.Close)
-
-	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	port, err := net.LookupPort("tcp", portStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Simulate ClusterIP DNS dial target (hostname, not IP).
-	dialHost := "sbx-probe.sandbox-gateway.svc.cluster.local"
-	if host == "127.0.0.1" || host == "::1" {
-		// httptest binds loopback; map the DNS name via custom dialer... but
-		// probeTabCreate uses http.DefaultClient. Point URL host at 127.0.0.1
-		// for TCP and rely on Host rewrite — also cover the DNS-shaped path
-		// by calling with a fake hostname that resolves via /etc/hosts is
-		// unreliable. Instead: dial 127.0.0.1 but assert Host rewrite, and
-		// separately assert setCDPRequestHost + a Chrome-like gate on DNS Host.
-		dialHost = "127.0.0.1"
-	}
-
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
 	s, _, _ := newFakeService(Config{})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	if !s.probeTabCreate(ctx, dialHost, port) {
-		t.Fatalf("probeTabCreate failed; newHost=%q closeHost=%q", sawNewHost, sawCloseHost)
-	}
-	if !isLoopbackCDPHost(sawNewHost) {
-		t.Fatalf("PUT /json/new Host=%q want 127.0.0.1:<port>", sawNewHost)
-	}
-	if !isLoopbackCDPHost(sawCloseHost) {
-		t.Fatalf("DELETE /json/close Host=%q want 127.0.0.1:<port>", sawCloseHost)
+	if !s.probeTabCreate(ctx, "localhost", port) {
+		t.Fatal("background target probe failed")
 	}
 }
 
 func TestProbeTabCreateRejectsDNSHostWithoutRewrite(t *testing.T) {
 	// Document the Chrome failure mode we are guarding against: if Host stays
-	// as Service DNS, /json/new returns 500 and readiness fails.
+	// as Service DNS, /json/version returns 500 and readiness fails.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/json/new", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/json/version", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackCDPHost(r.Host) {
 			http.Error(w, "Host header is specified and is not an IP address or localhost.", http.StatusInternalServerError)
 			return
@@ -156,7 +146,7 @@ func TestProbeTabCreateRejectsDNSHostWithoutRewrite(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, srv.URL+"/json/new?about:blank", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/json/version", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +161,7 @@ func TestProbeTabCreateRejectsDNSHostWithoutRewrite(t *testing.T) {
 	}
 
 	// With rewrite, same server accepts.
-	req2, err := http.NewRequestWithContext(ctx, http.MethodPut, srv.URL+"/json/new?about:blank", nil)
+	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/json/version", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

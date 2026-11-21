@@ -2222,7 +2222,10 @@
         "agentIdle": "Agent idle",
         "starting": "Desktop starting…",
         "takeoverTip": "The Agent is running: its mouse and keyboard actions are refused while you are in control and resume once you return it.",
-        "takeoverHint": "The Agent is using the computer; taking over pauses its mouse and keyboard actions."
+        "takeoverHint": "The Agent is using the computer; taking over pauses its mouse and keyboard actions.",
+        "takeoverConfirmTitle": "The Agent is still running. Take over?",
+        "takeoverConfirmBody": "While you have control, the Agent's mouse and keyboard actions are rejected, which may interrupt what it is doing. Click Return to let it continue.",
+        "takeoverConfirmOk": "Take over"
       },
       "novnc": {
         "back": "Back",
