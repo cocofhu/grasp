@@ -6,7 +6,7 @@
 .cat--breathe .c-float{animation:c-breathe 2.8s ease-in-out infinite}
 .c-shadow{transform-origin:center;animation:c-shadow 2.6s ease-in-out infinite}
 .c-eye{transform-origin:center;animation:c-blink 4.2s infinite}
-.c-tail{transform-origin:0 100%;animation:c-wig 1.3s ease-in-out infinite}
+.c-tail{transform-box:view-box;transform-origin:139px 150px;animation:c-wig 1.3s ease-in-out infinite}
 .c-swing{transform-origin:50% 0;animation:c-wig 2.2s ease-in-out infinite}
 .c-bow{transform-origin:center;animation:c-wig 1.6s ease-in-out infinite}
 .c-star{transform-origin:center;animation:c-pop 2.4s cubic-bezier(.34,1.7,.5,1) infinite}
@@ -28,8 +28,8 @@
 <path class="c-star s2" transform="translate(168,42)" d="M0 -9 l3 7 7 1 -5 5 1 7 -6 -4 -6 4 1 -7 -5 -5 7 -1z" fill="#ffffff" stroke="#1a1a1a" stroke-width="3"/>
 <path class="c-star s3" transform="translate(172,128)" d="M0 -9 l3 7 7 1 -5 5 1 7 -6 -4 -6 4 1 -7 -5 -5 7 -1z" fill="#d0d0d0" stroke="#1a1a1a" stroke-width="3"/>
 <g class="c-float"><g class="c-squash">
-<path class="k c-tail" d="M140 140 Q172 132 166 104" fill="none"/>
-<path class="k" d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#FFFFFF"/>
+<path class="k c-tail" d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none"/>
+<path class="k" d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z" fill="#FFFFFF"/>
 <g class="c-eyes">
   <g class="c-eye"><ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>
   <g class="c-eye"><ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>
