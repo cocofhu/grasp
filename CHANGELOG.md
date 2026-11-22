@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
+
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 
 - Agent 会话更稳：

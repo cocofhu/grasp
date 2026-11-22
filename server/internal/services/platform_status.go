@@ -55,7 +55,11 @@ func (s *DashboardService) PlatformStatus(ctx context.Context, q PlatformStatusQ
 	}{
 		{&models.Run{}, "status = ?", []any{"running"}, &out.RunningCount},
 		{&models.Run{}, "status = ?", []any{"queued"}, &out.QueuedCount},
-		{&models.SoloSession{}, "status IN ?", []any{[]string{models.SoloStatusStarting, models.SoloStatusRunning}}, &solos},
+		// A running Solo only means its environment is alive. Count it as
+		// executing only while its chat has an active turn. Starting sessions
+		// remain visible because their first turn is still being prepared.
+		{&models.SoloSession{}, "status = ? OR (status = ? AND EXISTS (SELECT 1 FROM chat_pending_turns pending WHERE pending.surface = ? AND pending.session_key = solo_sessions.id AND pending.started = ?))",
+			[]any{models.SoloStatusStarting, models.SoloStatusRunning, soloPendingSurface, true}, &solos},
 	} {
 		if err := s.db.WithContext(ctx).Model(item.model).Where(item.where, item.args...).Count(item.dest).Error; err != nil {
 			return PlatformStatusMetrics{}, err
