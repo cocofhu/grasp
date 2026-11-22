@@ -80,6 +80,7 @@ type DialogueState struct {
 	Turns        []DialogueTurn  `json:"turns"`
 	Orphan       *DialogueOrphan `json:"orphan,omitempty"`
 	Busy         bool            `json:"busy"`
+	Steerable    bool            `json:"steerable"`
 	Done         bool            `json:"done"`
 	Observe      bool            `json:"observe,omitempty"`
 }
@@ -138,6 +139,9 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 		st.Kind = string(sess.kind)
 	}
 	platformBusy := view.HasActive || len(view.Pending) > 0
+	if bridge, live := e.SandboxBridgeState(runID, nodeID); live {
+		st.Steerable = bridge.Steerable
+	}
 
 	// A finished automatic visit stays observed only for viewers who watched
 	// it run; its transcript is otherwise the node's own history.
@@ -259,6 +263,9 @@ func (e *Engine) buildLaneDialogue(entry *dialogueEntry, st DialogueState) Dialo
 	}
 	appendQueuedTurns(&st, view.Pending)
 	st.Busy = view.HasActive || len(view.Pending) > 0
+	if bridge, live := e.VisitorSandboxBridgeState(entry.runID, entry.nodeID, entry.lane); live {
+		st.Steerable = bridge.Steerable
+	}
 	for _, et := range entry.ended {
 		st.Turns = append(st.Turns, endedDialogueTurn(et, st.Rows))
 	}

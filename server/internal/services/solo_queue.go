@@ -398,6 +398,9 @@ func (s *SoloService) Subscribe(id, user string, afterSeq int) (<-chan chatsessi
 		c.mu.Unlock()
 		if rowErr == nil {
 			applySoloResumeSnapshot(qs, row)
+			if s.sbx != nil && row.SandboxID != 0 {
+				qs["steerable"] = s.sbx.SupportsSteer(row.SandboxID)
+			}
 		}
 		return qs, sn.Busy
 	}, afterSeq)

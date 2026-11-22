@@ -100,6 +100,7 @@ type SoloSessionView struct {
 	Capabilities     *models.AgentCapabilities `json:"capabilities,omitempty"`
 	ReasoningEfforts []string                  `json:"reasoningEfforts"`
 	ServiceTiers     []string                  `json:"serviceTiers"`
+	Steerable        bool                      `json:"steerable,omitempty"`
 	// Backend and Model describe the Agent CLI for display.
 	Backend string   `json:"backend,omitempty"`
 	Model   string   `json:"model,omitempty"`
@@ -371,6 +372,9 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 	if c := s.lookup(row.ID); c != nil {
 		sn := c.sess.Snapshot()
 		v.Busy, v.Waiting = sn.Busy, sn.Waiting
+	}
+	if row.SandboxID != 0 && s.sbx != nil {
+		v.Steerable = s.sbx.SupportsSteer(row.SandboxID)
 	}
 	if row.SandboxID == 0 || s.sbx == nil {
 		return v

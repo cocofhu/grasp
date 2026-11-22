@@ -139,6 +139,7 @@ export type GateApprovalState = {
   reactThinking: boolean
   /** A revision turn is running (server busy), so queued rows may steer into it. */
   reactInFlight: boolean
+  reactSteerable: boolean
   reactStreamText: string
   reactTranscriptTurns: GateReactTurn[]
   reactStreamThought: string

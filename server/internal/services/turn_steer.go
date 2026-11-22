@@ -15,6 +15,15 @@ type turnSteerer interface {
 	Steer(ctx context.Context, id uint, text string, images []models.PromptImage) (sandbox.SteerStatus, error)
 }
 
+// SupportsSteer reports the live bridge capability for a sandbox. A missing
+// or switching session is treated as unsupported until the next queue state.
+func (s *SandboxService) SupportsSteer(id uint) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ls := s.live[id]
+	return ls != nil && !ls.switching && ls.acp != nil && ls.acp.IsConnected() && ls.acp.SupportsSteer()
+}
+
 // Steer offers input to the turn running on the sandbox's agent. A sandbox
 // that is switching tools or has no live connection has no turn to join.
 func (s *SandboxService) Steer(ctx context.Context, id uint, text string, images []models.PromptImage) (sandbox.SteerStatus, error) {

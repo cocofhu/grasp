@@ -429,6 +429,7 @@ const {
   showUnreadFab,
   unreadFabLabel,
   sessionBusy,
+  steerable,
   displayTurns,
   outputBounds,
   attachNotice,
@@ -1642,7 +1643,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         :items="queued"
         :notice="queueNotice"
         :toast="queueToast"
-        :steerable="thinking"
+        :steerable="steerable"
         @steer="steerQueuedItem"
         @cancel="cancelQueuedItem"
         @edit="editQueuedItem"

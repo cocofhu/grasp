@@ -92,6 +92,7 @@ watch(attachmentFiles.notice, value => { if (value?.kind === 'error') errorMsg.v
 // created until the server starts the turn (turn_begin). This avoids showing
 // "queued" bubbles prematurely in the transcript.
 const queued = ref<QueueItem[]>([])
+const steerable = ref(false)
 // True while rebuilding a reused sandbox's prior transcript, so the UI can show
 // a "loading history" indicator instead of a blank (seemingly frozen) panel.
 const restoring = ref(false)
@@ -296,6 +297,7 @@ function openWs(id: number) {
   // after a server restart where process-local session generations restart.
   sessionStateCursor.reset()
   wsSandboxId = id
+  steerable.value = false
   const sock = new WebSocket(api.sandboxChatWsUrl(id))
   ws = sock
   heldFrames = []
@@ -465,6 +467,7 @@ function serverItem(raw: any): QueueItem {
 
 function applyQueueState(frame: any) {
   queued.value = Array.isArray(frame.items) ? frame.items.map(serverItem) : []
+  if (typeof frame.steerable === 'boolean') steerable.value = frame.steerable
   if (!frame.busy && activeIdx >= 0) {
     // The turn ended while we were away.
     const turn = turns.value[activeIdx]
@@ -1171,7 +1174,7 @@ onBeforeUnmount(() => {
           <span v-if="q.images.length" class="chat-meta shrink-0">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
           <span class="min-w-0 flex-1 truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
           <button
-            v-if="status === 'thinking'"
+            v-if="status === 'thinking' && steerable"
             type="button"
             class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
             :title="t('pages.clarify.queueSteerTitle')"

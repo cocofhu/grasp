@@ -684,6 +684,7 @@ export interface SoloSession {
   updatedAt: string
   busy: boolean
   waiting: number
+  steerable?: boolean
   sandbox?: SoloSandboxInfo
   backend?: BackendId | string
   skills?: string[]

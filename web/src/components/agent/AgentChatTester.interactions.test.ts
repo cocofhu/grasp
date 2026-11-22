@@ -731,7 +731,7 @@ describe('AgentChatTester interactions', () => {
     vm.status = 'starting'
     vm.openWs(5)
     socket!.onopen?.()
-    frame('queue_state', { busy: true, waiting: 1, activeItem: { id: 'srv-1', text: 'live' }, items: [{ id: 'srv-2', text: 'next', images: [{ data: 'QQ==', mimeType: 'image/png' }] }] })
+    frame('queue_state', { busy: true, waiting: 1, steerable: true, activeItem: { id: 'srv-1', text: 'live' }, items: [{ id: 'srv-2', text: 'next', images: [{ data: 'QQ==', mimeType: 'image/png' }] }] })
     frame('turn_begin', { item: { id: 'srv-1', text: 'live', images: [] } })
     frame('acp', { data: { type: 'session_update', update: { sessionUpdate: 'agent_message_chunk', content: { text: 'partial' } } } })
     await flushPromises()

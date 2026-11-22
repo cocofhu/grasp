@@ -94,6 +94,11 @@ func (c *SandboxChats) newChat(id uint) *sandboxChat {
 			return false, c.chat.Chat(ctx, id, it.Content, it.Images, sc.stream.Acp)
 		},
 		Publish: func(event string, payload map[string]any) {
+			if event == chatsession.EventQueueState {
+				if capability, ok := c.chat.(interface{ SupportsSteer(uint) bool }); ok {
+					payload["steerable"] = capability.SupportsSteer(id)
+				}
+			}
 			keep := chatsession.KeepNone
 			switch event {
 			case chatsession.EventTurnBegin:
@@ -171,7 +176,11 @@ func (c *SandboxChats) Subscribe(id uint, afterSeq int) (<-chan chatsession.Even
 	sc := c.acquire(id)
 	ch, unsubStream := sc.stream.Subscribe(func() (map[string]any, bool) {
 		sn := sc.sess.Snapshot()
-		return sn.QueueState(), sn.Busy
+		payload := sn.QueueState()
+		if capability, ok := c.chat.(interface{ SupportsSteer(uint) bool }); ok {
+			payload["steerable"] = capability.SupportsSteer(id)
+		}
+		return payload, sn.Busy
 	}, afterSeq)
 	var once sync.Once
 	return ch, func() {

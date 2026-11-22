@@ -1085,6 +1085,7 @@ export interface Run {
       /** Bridge view, same keys as a live queue_state frame. Absent when the bridge has no session. */
       sandboxBusy?: boolean
       sandboxDesynced?: boolean
+      sandboxSteerable?: boolean
       sandboxRunningOpId?: string
       items?: { id?: string; clientMessageId?: string; text?: string }[]
       activeItem?: {

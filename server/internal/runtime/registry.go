@@ -336,6 +336,19 @@ func (r *ProviderRegistry) SessionBridgeState(runID, nodeID string) (BridgeStatu
 	return BridgeStatus{}, false
 }
 
+// VisitorSessionBridgeState returns the native capability for a share-link
+// visitor lane on the provider that owns it.
+func (r *ProviderRegistry) VisitorSessionBridgeState(runID, nodeID, lane string) (BridgeStatus, bool) {
+	for _, p := range r.providers {
+		if bi, ok := p.(VisitorSessionBridgeInspector); ok {
+			if st, hit := bi.VisitorSessionBridgeState(runID, nodeID, lane); hit {
+				return st, true
+			}
+		}
+	}
+	return BridgeStatus{}, false
+}
+
 // AbortSessionTurn aborts the bridge turn on the backend holding the session.
 func (r *ProviderRegistry) AbortSessionTurn(runID, nodeID string) bool {
 	for _, p := range r.providers {

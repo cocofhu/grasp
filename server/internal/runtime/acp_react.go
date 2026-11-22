@@ -542,6 +542,17 @@ func (c *acpProvider) SessionBridgeState(runID, nodeID string) (BridgeStatus, bo
 	return ClientBridgeStatus(a)
 }
 
+// VisitorSessionBridgeState reports the bridge view for one share-link lane.
+func (c *acpProvider) VisitorSessionBridgeState(runID, nodeID, lane string) (BridgeStatus, bool) {
+	c.mu.Lock()
+	vl := c.visitors[visitorKey(runID, nodeID, lane)]
+	c.mu.Unlock()
+	if vl == nil || vl.acp == nil {
+		return BridgeStatus{}, false
+	}
+	return ClientBridgeStatus(vl.acp)
+}
+
 // ClientBridgeStatus is the bridge view for one live ACP client. BridgeState
 // clears a lagging echo of lastDone before the caller sees it; a turn this
 // client has already entered (turnOpID set) must stay busy, and the current
@@ -551,6 +562,7 @@ func ClientBridgeStatus(a *sandbox.ACPClient) (BridgeStatus, bool) {
 		return BridgeStatus{}, false
 	}
 	st := a.BridgeState()
+	st.Steerable = a.SupportsSteer()
 	op := strings.TrimSpace(a.InFlightOpID())
 	if op == "" {
 		return st, true

@@ -28,8 +28,11 @@ var cancelAckWait = 15 * time.Second
 // BridgeState is the client-side mirror of the bridge's queue_state.
 type BridgeState struct {
 	// Known is false until the first queue_state frame arrives.
-	Known       bool
-	Busy        bool
+	Known bool
+	Busy  bool
+	// Steerable reports whether the connected agent accepts input in the
+	// running turn. It comes from the bridge handshake, not queue_state.
+	Steerable   bool
 	RunningOpID string
 	Waiting     int
 	// Desynced is set when a cancel this client sent was never acknowledged;
