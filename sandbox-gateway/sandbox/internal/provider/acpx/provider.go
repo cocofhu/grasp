@@ -3,7 +3,9 @@ package acpx
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 
 	"backend/internal/acp"
 	"backend/internal/provider"
@@ -22,6 +24,18 @@ type Spec struct {
 	AuthEnvFn func(env []string) []string
 	// ModelsFn optionally returns a model catalog (nil => auto).
 	ModelsFn func(ctx context.Context) ([]provider.Model, error)
+	// AuthMethodFn picks the ACP authenticate method for the session's
+	// environment ("" skips authenticate).
+	AuthMethodFn func(env []string) string
+	// ResultUsage reads turn usage from session/prompt results. Enable it
+	// only for agents verified to report per-turn counters there.
+	ResultUsage bool
+	// ConfigModel selects the requested model and reasoning effort through
+	// the session's advertised "model" and thought_level config options.
+	ConfigModel bool
+	// FailureText reports agent reply text that means the turn failed even
+	// though session/prompt ended normally.
+	FailureText func(text string) bool
 }
 
 // Provider is a long-lived ACP provider built from a Spec.
@@ -85,13 +99,86 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		}
 	}
 	argv := agentArgv(p.spec.ArgvFn(prepared.Model), prepared, opts.CustomArgs)
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, acp.PanelSpec{
+	var failed *turnFailure
+	if p.spec.FailureText != nil {
+		onEvent, failed = watchFailures(onEvent, p.spec.FailureText)
+	}
+	spec := acp.PanelSpec{
 		Argv: argv, Env: prepared.Env, Cwd: opts.Cwd, FSRoot: opts.FSRoot, MCPServers: opts.McpServers,
 		OnEvent: onEvent, Permissions: acp.PermissionChooser(perm), ResumeSessionID: opts.ResumeSessionID,
-	})
+	}
+	if p.spec.AuthMethodFn != nil {
+		spec.AuthMethod = p.spec.AuthMethodFn(prepared.Env)
+	}
+	if p.spec.ResultUsage {
+		spec.ResultUsage = acp.PromptResultUsage
+	}
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, spec)
 	if err != nil {
 		prepared.Cleanup()
 		return nil, err
 	}
-	return wrapWithCleanup(panel, prepared.Cleanup), nil
+	if p.spec.ConfigModel && prepared.Connection == nil {
+		if err := selectConfig(handshakeCtx, panel, p.Name(), prepared.Model, opts.ReasoningEffort); err != nil {
+			_ = panel.Close()
+			prepared.Cleanup()
+			return nil, err
+		}
+	}
+	s := wrapWithCleanup(panel, prepared.Cleanup).(*session)
+	s.failed = failed
+	return s, nil
+}
+
+// selectConfig applies the requested model and reasoning effort through the
+// session's advertised config options, rejecting values the agent does not
+// offer.
+func selectConfig(ctx context.Context, panel *acp.Panel, agent provider.Name, model, effort string) error {
+	model = strings.TrimSpace(model)
+	if model != "" && model != "auto" && panel.ModelID != model {
+		if !offers(panel.ConfigOptions, "model", "", model) {
+			return fmt.Errorf("%s 不提供模型 %q", agent, model)
+		}
+		if err := panel.SetConfigOption(ctx, "model", model); err != nil {
+			return err
+		}
+	}
+	effort = strings.TrimSpace(effort)
+	if effort == "" {
+		return nil
+	}
+	for _, option := range panel.ConfigOptions {
+		if option.Category != "thought_level" {
+			continue
+		}
+		if option.CurrentValue == effort {
+			return nil
+		}
+		if !offers(panel.ConfigOptions, option.ID, "thought_level", effort) {
+			return fmt.Errorf("%s 不支持思考强度 %q", agent, effort)
+		}
+		return panel.SetConfigOption(ctx, option.ID, effort)
+	}
+	return fmt.Errorf("%s 不支持设置思考强度", agent)
+}
+
+func offers(options []acp.ConfigOption, id, category, value string) bool {
+	for _, option := range options {
+		if option.ID != id && (category == "" || option.Category != category) {
+			continue
+		}
+		for _, v := range option.Options {
+			if v.Value == value {
+				return true
+			}
+		}
+		for _, g := range option.Groups {
+			for _, v := range g.Options {
+				if v.Value == value {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
