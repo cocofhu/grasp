@@ -50,7 +50,7 @@ func (s *SandboxService) soloPlatformSpecs(row *models.Sandbox) []sandbox.MCPSer
 		return nil
 	}
 	return []sandbox.MCPServerSpec{{
-		Name: ArtifactStoreMCP, URL: base + "/mcp/runs/" + url.PathEscape(row.RunID),
+		Name: GraspToolMCP, URL: base + "/mcp/runs/" + url.PathEscape(row.RunID),
 		Headers: map[string]string{"Authorization": "Bearer " + row.Token},
 	}}
 }

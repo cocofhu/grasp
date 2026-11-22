@@ -99,7 +99,7 @@ python3 -m venv /tmp/grasp-e2b-builder
 
 使用新的版本化 alias，避免无意更新另一部署引用的 alias。工具直接使用固定 digest 镜像中已有的 bootstrap 和 `IMAGE_LEVEL`，校验其与当前 checkout 的摘要和级别一致；镜像不匹配时须选择对应镜像或重新构建环境镜像。模板准备不再上传或覆盖这两个文件，因此无需 provider 的构建文件上传接口。工具保留公开的 `PATH` 与 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` 约定，并校验以下真实依赖：
 
-- `cursor-agent`、`claude`、`codebuddy`、`traecli`、`opencode`、`codex`、`dsh`、`kimi`。
+- `claude`、`codebuddy`、`traecli`、`opencode`、`codex`、`dsh`、`kimi`，以及 Cursor 使用的 `/opt/grasp/cursor-sdk`（`@cursor/sdk`）。
 - Python、Node/npm、Go、Git、curl/tar、sshd、Docker、code-server、Xvfb、x11vnc、websockify、Chromium 和 `chrome-devtools-mcp`。
 
 不复制 E2E wire fixture，不创建替代 vendor CLI，不调用真实模型，也不将缺失 CLI 视为成功。具备可执行文件不代表已经完成 Cursor、Trae、Kimi 等厂商账号授权；实际使用仍遵守原有 workspace 凭据配置。

@@ -10,40 +10,40 @@ import (
 func TestOmitOutcomeRuleStripsCompletionSection(t *testing.T) {
 	HomeBaseDir = ""
 	dir, err := BuildConfigHome(ConfigHomeSpec{
-		IncludeArtifactStore: true,
-		OmitOutcomeRule:      true,
+		IncludeGraspTool: true,
+		OmitOutcomeRule:  true,
 	})
 	if err != nil {
 		t.Fatalf("BuildConfigHome: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	storeBody, err := os.ReadFile(filepath.Join(dir, "rules/artifact-store.md"))
+	storeBody, err := os.ReadFile(filepath.Join(dir, "rules/grasp-tool.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(storeBody), "node_complete") {
-		t.Fatalf("clarify artifact-store.md must not mention node_complete:\n%s", storeBody)
+		t.Fatalf("clarify grasp-tool.md must not mention node_complete:\n%s", storeBody)
 	}
 	if strings.Contains(string(storeBody), "完成标记") {
-		t.Fatalf("clarify artifact-store.md must omit 完成标记 section:\n%s", storeBody)
+		t.Fatalf("clarify grasp-tool.md must omit 完成标记 section:\n%s", storeBody)
 	}
 
 }
 
-func TestArtifactStoreKeepsOutcomeSectionByDefault(t *testing.T) {
+func TestGraspToolKeepsOutcomeSectionByDefault(t *testing.T) {
 	HomeBaseDir = ""
-	dir, err := BuildConfigHome(ConfigHomeSpec{IncludeArtifactStore: true})
+	dir, err := BuildConfigHome(ConfigHomeSpec{IncludeGraspTool: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	body, err := os.ReadFile(filepath.Join(dir, "rules/artifact-store.md"))
+	body, err := os.ReadFile(filepath.Join(dir, "rules/grasp-tool.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(body), "node_complete") {
-		t.Fatal("auto Agent artifact-store.md must keep node_complete section")
+		t.Fatal("auto Agent grasp-tool.md must keep node_complete section")
 	}
 }
 

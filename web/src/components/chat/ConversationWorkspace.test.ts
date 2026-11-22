@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { h } from 'vue'
+import { defineComponent, h } from 'vue'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { CONVERSATION_PANEL_SHOWN_EVENT } from '@/lib/chat/conversationArtifacts'
+import { inlineMobileNavHosts, mobileNavAvailable, provideMobileNavOpener } from '@/lib/shared/mobileNav'
 import ConversationWorkspace from './ConversationWorkspace.vue'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
@@ -637,5 +638,31 @@ describe('ConversationWorkspace toolbar run name', () => {
     })
     expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('优化这里的段间距')
     expect(wrapper.get('.conversation-heading').text()).not.toContain('Conversation')
+  })
+
+  it('hosts the shell nav button in its header on mobile so the floating ball stays off the composer', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width: 767px'), media: query, addEventListener() {}, removeEventListener() {} }))
+    const openDrawer = vi.fn()
+    const Host = defineComponent({
+      setup() {
+        provideMobileNavOpener(openDrawer)
+        return () => h(ConversationWorkspace, { scopeKey: 'mobile-nav', showToolbar: true })
+      },
+    })
+    const host = mount(Host, { attachTo: document.body, global: { plugins: [i18n()] } })
+    const nav = host.get('[data-testid="conversation-mobile-nav"]')
+    expect(inlineMobileNavHosts.value).toBe(1)
+    await nav.trigger('click')
+    expect(openDrawer).toHaveBeenCalledTimes(1)
+    host.unmount()
+    expect(inlineMobileNavHosts.value).toBe(0)
+    expect(mobileNavAvailable.value).toBe(false)
+  })
+
+  it('keeps the floating ball when no shell can open the drawer', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }))
+    const w = mountWorkspace()
+    expect(w.find('[data-testid="conversation-mobile-nav"]').exists()).toBe(false)
+    expect(inlineMobileNavHosts.value).toBe(0)
   })
 })

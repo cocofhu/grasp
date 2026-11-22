@@ -54,7 +54,7 @@ func (h *Host) ServeRunHTTP(w http.ResponseWriter, r *http.Request, runID, token
 			return
 		}
 		// Session state is in-memory and lost on restart or another replica,
-		// while the agent keeps sending its old ID (cursor-agent does not
+		// while the agent keeps sending its old ID (agents do not always
 		// re-initialize on 404). The ID is not a credential — the bearer token
 		// already authorized this run — so re-adopt it instead of failing.
 		if !h.adoptToolSession(runID, sid) {

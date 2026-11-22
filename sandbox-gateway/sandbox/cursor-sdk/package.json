@@ -1,0 +1,8 @@
+{
+  "name": "grasp-cursor-sdk",
+  "private": true,
+  "description": "@cursor/sdk for the Cursor provider bridge (internal/provider/cursorsdk).",
+  "dependencies": {
+    "@cursor/sdk": "1.4.2"
+  }
+}

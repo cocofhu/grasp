@@ -232,8 +232,8 @@ type ServerConfig struct {
 	// DeploymentMode describes the trust boundary. "local-demo" is restricted
 	// to loopback development; other values trigger warnings when auth is empty.
 	DeploymentMode string `yaml:"deployment_mode"`
-	// MCPAdvertise is the base URL the in-container cursor-agent uses to reach
-	// the run-scoped artifact-store MCP. Empty defaults to
+	// MCPAdvertise is the base URL the in-container Cursor agent uses to reach
+	// the run-scoped grasp-tool MCP. Empty defaults to
 	// http://host.docker.internal:<port>.
 	MCPAdvertise string `yaml:"mcp_advertise"`
 	// PublicAdvertise is the browser-facing base URL for preview proxy links.
@@ -277,8 +277,6 @@ type DatabaseConfig struct {
 }
 
 type EngineConfig struct {
-	// MaxConcurrentRuns caps simultaneously executing runs.
-	MaxConcurrentRuns int `yaml:"max_concurrent_runs"`
 	// ProfilesRoot is where skill profiles (rules) are stored.
 	ProfilesRoot string `yaml:"profiles_root"`
 	// NodeAutoRetryMax caps how many times a node that fails with a transient /
@@ -382,11 +380,6 @@ func (c *Config) SandboxRuntimeBundle() string {
 		return v
 	}
 	return DefaultSandboxRuntimeBundle
-}
-
-// SandboxIdleTTL returns the shared inactivity window for saving and releasing resources.
-func (c *Config) SandboxIdleTTL() time.Duration {
-	return time.Duration(c.Sandbox.IdleTTLMinutes) * time.Minute
 }
 
 // SandboxMemoryTrim returns the idle E2B guest trim schedule; idleAfter <= 0
@@ -536,9 +529,6 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_DB_DSN"); v != "" {
 		c.Database.DSN = v
 	}
-	if v := envInt("GRASP_MAX_RUNS"); v != 0 {
-		c.Engine.MaxConcurrentRuns = v
-	}
 	if v := env("GRASP_PROFILES_ROOT"); v != "" {
 		c.Engine.ProfilesRoot = v
 	}
@@ -660,9 +650,6 @@ func setDefaults(c *Config) {
 	}
 	if c.Database.Driver == "sqlite" && c.Database.Path == "" {
 		c.Database.Path = "grasp.db"
-	}
-	if c.Engine.MaxConcurrentRuns == 0 {
-		c.Engine.MaxConcurrentRuns = 5
 	}
 	if c.Engine.ProfilesRoot == "" {
 		c.Engine.ProfilesRoot = "data/profiles"

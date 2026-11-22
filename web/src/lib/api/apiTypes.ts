@@ -126,7 +126,7 @@ export interface DesktopStatus {
 
 /** Built-in MCP template (GET /api/mcp-presets); the server is the only definition. */
 export interface MCPPreset {
-  id: 'artifact-store' | 'browser' | 'desktop' | 'blender'
+  id: 'grasp-tool' | 'browser' | 'desktop' | 'blender'
   /** Works only on the desktop sandbox image. */
   requiresDesktop: boolean
   server: MCPServer
@@ -471,18 +471,6 @@ export interface SandboxView {
   endpointTransport?: 'gateway'
 }
 
-export interface DashboardStats {
-  running: number
-  waitingHuman: number
-  failed: number
-  completed: number
-  workflows: number
-  artifacts: number
-  /** Platform-wide cumulative tokens; null = never reported (UI "—"). */
-  totalTokens?: number | null
-  workflowTokens?: number | null
-}
-
 /** GET /stats/platform-status — StatusMetrics snapshot (shell chrome). */
 export interface PlatformStatusMetrics {
   accounting?: TokenAccountingStatus
@@ -564,6 +552,8 @@ export interface CliCatalogModel {
   recommended?: boolean
   /** Reasoning levels the CLI accepts for this model; absent means none. */
   efforts?: string[]
+  /** The level the coding tool runs the model at when none is chosen. */
+  defaultEffort?: string
   /** Fast mode is declared by the coding-tool catalog. */
   serviceTiers?: string[]
 }
@@ -663,6 +653,8 @@ export interface SoloSession {
   reasoningEffort?: string
   /** Exact supported levels for the current model. Empty/absent means unsupported. */
   reasoningEfforts?: string[]
+  /** The listed level the coding tool itself runs the model at, when known. */
+  defaultReasoningEffort?: string
   serviceTier?: string
   serviceTiers?: string[]
   /** Stable code set when a model switch is rolled back. */

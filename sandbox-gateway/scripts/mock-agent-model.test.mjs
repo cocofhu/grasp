@@ -8,7 +8,7 @@ import {createMockAgentServer, normalizeRequest} from './mock-agent-model.mjs'
 const nonce = 'original-context-4ac397'
 const progress = 'checkpoint-built-81f2'
 const marker = (turn) => `[GRASP_MOCK run=fixture turn=${turn}]`
-const history = {name: 'mcp__artifact-store__get_history', parameters: {type: 'object', properties: {view: {type: 'string'}, limit: {type: 'integer'}}}}
+const history = {name: 'mcp__grasp-tool__get_history', parameters: {type: 'object', properties: {view: {type: 'string'}, limit: {type: 'integer'}}}}
 const shell = {name: 'exec_command', parameters: {type: 'object', properties: {cmd: {type: 'string'}}, required: ['cmd']}}
 const scenario = {
   id: 'fixture',
@@ -338,16 +338,16 @@ describe('deterministic multi-protocol native tool fixture', () => {
 
   for (const stream of [false, true]) {
     it(`encodes native Responses namespace separately from the function name (stream=${stream})`, async () => {
-      const tools = [{type: 'namespace', name: 'mcp__artifact_store', tools: [{type: 'function', name: 'get_history', parameters: history.parameters}]}, ...toolsFor('responses', [shell])]
+      const tools = [{type: 'namespace', name: 'mcp__grasp_tool', tools: [{type: 'function', name: 'get_history', parameters: history.parameters}]}, ...toolsFor('responses', [shell])]
       const messages = [{role: 'user', content: `${nonce}\n${marker('verify')} Continue.`}]
       let response = await invoke(server, 'responses', messages, {tools, stream})
       const item = stream ? response.at(-1).response.output[0] : response.output[0]
       assert.equal(item.name, 'get_history')
-      assert.equal(item.namespace, 'mcp__artifact_store')
+      assert.equal(item.namespace, 'mcp__grasp_tool')
       if (stream) {
         const added = response.find((event) => event.type === 'response.output_item.added')
         assert.equal(added.item.name, 'get_history')
-        assert.equal(added.item.namespace, 'mcp__artifact_store')
+        assert.equal(added.item.namespace, 'mcp__grasp_tool')
       }
       // Native Codex rejects the old dotted name with "unsupported call".
       // Echo the actual namespaced output item back as the next request does.
@@ -355,8 +355,8 @@ describe('deterministic multi-protocol native tool fixture', () => {
       response = await invoke(server, 'responses', messages, {tools})
       assert.equal(response.output[0].name, shell.name)
       assert.equal(response.output[0].namespace, undefined)
-      assert.equal(server.report().requests.at(-2).emittedTool.name, 'mcp__artifact_store.get_history')
-      assert.equal(server.report().requests.at(-2).emittedTool.namespace, 'mcp__artifact_store')
+      assert.equal(server.report().requests.at(-2).emittedTool.name, 'mcp__grasp_tool.get_history')
+      assert.equal(server.report().requests.at(-2).emittedTool.namespace, 'mcp__grasp_tool')
     })
   }
 

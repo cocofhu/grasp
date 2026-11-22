@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 func TestSharedCapacityAcrossIndependentServiceConnections(t *testing.T) {
@@ -159,5 +160,8 @@ func TestSharedCapacityHandoffDoesNotPublishRunning(t *testing.T) {
 	err = svc.createSandboxRow(&models.Sandbox{Name: "blocked", Status: "creating", Purpose: "run"})
 	if !errors.As(err, &limit) {
 		t.Fatalf("admitted while recovery is unconfirmed: %v", err)
+	}
+	if !errors.Is(err, runtime.ErrSandboxCapacity) {
+		t.Fatalf("capacity rejection does not match the runtime sentinel: %v", err)
 	}
 }

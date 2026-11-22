@@ -102,7 +102,7 @@ func (s *memStore) List(runID string) []mcp.ArtifactInfo {
 }
 
 // TestCursorLiveRunAgent exercises the real sandbox path end-to-end:
-// launch a container, drive cursor-agent over ACP, harvest the declared
+// launch a container, drive the Cursor agent over ACP, harvest the declared
 // produces file and write it through the run-scoped MCP host.
 //
 // Gated by GRASP_LIVE=1 (needs Docker + GRASP_CURSOR_API_KEY); the
@@ -131,7 +131,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 	if model == "" {
 		model = "cursor-grok-4.5-high-fast"
 	}
-	// Local MCP endpoint so artifact-store / node_complete are actually injected
+	// Local MCP endpoint so grasp-tool / node_complete are actually injected
 	// (previous live runs omitted this and only left the chrome-devtools MCP).
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -154,7 +154,7 @@ func TestCursorLiveRunAgent(t *testing.T) {
 		"ACP_BRIDGE_MODEL":     model,
 	}
 	envJSON, _ := json.Marshal(agentEnv)
-	profiles := writeAgent(t, "backend-dev", `{"acpBackend":"cursor","mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":`+string(envJSON)+`}`)
+	profiles := writeAgent(t, "backend-dev", `{"acpBackend":"cursor","mcp":[{"name":"grasp-tool","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":`+string(envJSON)+`}`)
 	provider := newACPProvider(host, Options{
 		GatewayURL:   gatewayURL,
 		ProfilesRoot: profiles,

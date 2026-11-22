@@ -8,6 +8,7 @@ import {
   sidebarHidden,
 } from '@/lib/shared/sidebarHidden'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { inlineMobileNavHosts } from '@/lib/shared/mobileNav'
 
 const props = defineProps<{
   /** When true (mobile drawer open), ball stays hidden. */
@@ -43,7 +44,9 @@ const desktopVisible = computed(
   () => !isMobile.value && (sidebarHidden.value || exiting.value),
 )
 
-const mobileVisible = computed(() => isMobile.value && !props.drawerOpen)
+const mobileVisible = computed(
+  () => isMobile.value && !props.drawerOpen && inlineMobileNavHosts.value === 0,
+)
 
 const visible = computed(() => desktopVisible.value || mobileVisible.value)
 

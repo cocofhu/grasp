@@ -10,10 +10,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// This file implements the run-scoped artifact-store MCP over a minimal
+// This file implements the run-scoped grasp-tool MCP over a minimal
 // JSON-RPC dispatcher (transport-agnostic: a thin HTTP handler in the
 // handlers package feeds request bodies in via ServeRPC). The in-container
-// cursor-agent connects to it (URL + Bearer token injected at ACP
+// Cursor agent connects to it (URL + Bearer token injected at ACP
 // session/new) and natively calls write_artifact / read_artifact /
 // list_artifacts, so artifacts are produced through MCP rather than only
 // harvested from the workspace.
@@ -70,7 +70,7 @@ func (h *Host) ServeRPC(runID, token string, body []byte) (status int, resp []by
 		return h.ok(req, map[string]any{
 			"protocolVersion": ver,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
-			"serverInfo":      map[string]any{"name": "artifact-store", "version": "1.0.0"},
+			"serverInfo":      map[string]any{"name": "grasp-tool", "version": "1.0.0"},
 		})
 	case "notifications/initialized", "notifications/cancelled":
 		return 202, nil

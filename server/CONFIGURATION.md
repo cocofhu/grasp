@@ -13,13 +13,12 @@ configured as workspace credentials, not in this platform config table.
 | --- | --- | --- | --- | --- | --- |
 | `GRASP_PORT` | `server.port` | integer | `8080` | Public | HTTP listen port |
 | `GRASP_DEPLOYMENT_MODE` | `server.deployment_mode` | string | `development` | Public | Deployment trust boundary; local-demo is loopback-only |
-| `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for artifact-store MCP |
+| `GRASP_MCP_ADVERTISE` | `server.mcp_advertise` | URL | `derived` | Public | API base URL used by sandboxes for grasp-tool MCP |
 | `GRASP_PUBLIC_ADVERTISE` | `server.public_advertise` | URL | `derived` | Public | Public base URL for the browser preview proxy (not used to mint gate share URLs) |
 | `GRASP_FRAME_ANCESTORS` | `server.frame_ancestors` | origin list | `Not set` | Public | Origins allowed to embed workspace pages in an iframe (space or comma separated, e.g. https://portal.example.com); empty forbids embedding |
 | `GRASP_DB` | `database.path` | path | `grasp.db` | Public | SQLite database file |
 | `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite or mysql |
 | `GRASP_DB_DSN` | `database.dsn` | string | `Not set` | Sensitive | MySQL DSN |
-| `GRASP_MAX_RUNS` | `engine.max_concurrent_runs` | integer | `5` | Public | Maximum concurrent runs |
 | `GRASP_PROFILES_ROOT` | `engine.profiles_root` | path | `data/profiles` | Public | Agent profile root |
 | `GRASP_NODE_AUTO_RETRY` | `engine.node_auto_retry_max` | integer | `3` | Public | Node automatic retry limit |
 | `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Deprecated and ignored (including sandbox.images.* and GRASP_SANDBOX_IMAGE_*): sandbox-gateway owns the image (docker/kubernetes image or profiles, E2B defaultTemplate or templates); Grasp reads it from GET /api/v1/capabilities |

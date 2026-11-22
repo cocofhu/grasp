@@ -24,6 +24,18 @@ All notable public-release changes are documented here.
 
 - 沙箱列表页进一步增加状态 tab 上方留白，使分段轨道与概览区的边界更舒展。
 
+- 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。工作流节点创建沙箱时如果沙箱已满，会在执行日志里提示「等待沙箱名额」并等到有名额后继续，不再直接失败。`GET /api/stats/dashboard` 已移除。
+
+- 设置里的仓库页面调整为工作台式布局：统计卡片自动填充可用宽度，仓库卡片补充来源、分支和最近使用状态，并突出「开始 Solo」操作。
+
+- 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
+
+- Cursor 改用官方 `@cursor/sdk` 运行，Agent 进程常驻：回合进行中可以「立即引导」，停止的回合保留已产生的 token 用量，切换模型、思考强度或速度档位后接回原会话。模型列表改为基础模型，思考强度和 Fast 单独选择，不再是 `gpt-5.5-high-fast` 这类组合名。**不兼容变更**：旧模型 id 不迁移，升级后请在 Cursor 的模型配置里重新选择模型；还用旧 id 的会话会报「Cursor 不提供模型」。Claude 的 thinking 与非 thinking 合并为同一个模型，按 Cursor 默认开启思考。没选思考强度时按 Cursor 自己的默认强度运行，部分模型的默认组合是 Max 模式（1M 上下文）。Cursor 不再加载插件、团队与 MDM 配置，`~/.cursor/mcp.json` 照常生效。需要新的沙箱镜像（`IMAGE_LEVEL` 3）和运行时更新后生效。
+
+- 停止 Claude Code 的回合后，用量统计不再把同一条模型回复重复计入：此前一条回复同时包含文字和工具调用时，输入和缓存 token 会按内容块数翻倍。需要沙箱运行时更新后生效。
+
+- Grok 和 Antigravity 的回合开始显示 token 用量，停止的回合也保留已产生的用量。Antigravity 改用常驻会话（`agy acp`），能看到工具调用和权限请求、接回原会话，模型和思考强度按会话设置；`agy` 返回执行错误时回合标为失败，不再当作正常回复。需要 `agy` 1.5 及以上和沙箱运行时更新后生效。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。
@@ -42,6 +54,10 @@ All notable public-release changes are documented here.
 - 不支持原生「立即引导」的 Agent 不再显示排队消息上的 steer 按钮；Solo、Agent Studio、工作流对话、审批和访客会话按当前沙箱会话能力更新显示。
 
 - Agent 对话中的「Steer」引导气泡与普通用户气泡统一尺寸和圆角，中文前缀显示为「引导」，支持 Markdown、Markdown 图片和图片附件预览。
+
+- 移动端对话页的导航按钮移到顶部标题栏左侧，不再浮在输入框上；输入框的发送和停止按钮在窄屏上保持同一行，Solo 输入框在移动端不再显示「停止环境」（可在导航抽屉里长按 Solo 会话停止）。
+
+- 修复已结束的 Agent 回合中「引导」气泡显示在耗时汇总下方的问题，现在会先显示引导，再显示回合耗时和回复内容。
 
 - 修复对话中行首的 `#1304` 这类 issue / PR 编号被显示成粗体大标题、`#` 被吞掉的问题。Codex 工具行里的命令和文件路径不再被逐词首字母大写（如 `/Bin/Bash -Lc 'Gh Pr View'`），按原样显示。
 

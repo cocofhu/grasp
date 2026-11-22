@@ -123,7 +123,7 @@ func (b *Bridge) StartDefaultAgent() {
 }
 
 // EnsureAgent 若已有会话则直接返回；否则用 agents.Current() 建连（忽略浏览器传入的 argv）。
-// connect 带来不同的 MCP 列表时（如启动时以空 MCP 拉起、平台随后带上 artifact-store），
+// connect 带来不同的 MCP 列表时（如启动时以空 MCP 拉起、平台随后带上 grasp-tool），
 // 重开进程并接回原会话，Agent 才能看到新的工具；不带 MCP 的 connect 沿用现有列表。
 func (b *Bridge) EnsureAgent(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error) {
 	b.ensureMu.Lock()

@@ -9,7 +9,7 @@ import McpConfigHelpModal from '@/components/agent/McpConfigHelpModal.vue'
 import type { MCPServer } from '@/lib/api/api'
 import { MCP_PRESET_LABEL_KEYS, loadMcpPresets, presetDraft, type MCPPreset } from '@/lib/agent/mcpPresets'
 import {
-  ARTIFACT_STORE,
+  GRASP_TOOL,
   DEFAULT_CONFIG_ROOT,
   apiMcpToDraft,
   draftMcpToApi,
@@ -47,7 +47,7 @@ function removeMcp(i: number) {
 
 function addPreset(p: MCPPreset) {
   if (presentNames.value.has(p.server.name)) return
-  if (p.server.name === ARTIFACT_STORE) props.draft.mcp.unshift(presetDraft(p))
+  if (p.server.name === GRASP_TOOL) props.draft.mcp.unshift(presetDraft(p))
   else props.draft.mcp.push(presetDraft(p))
 }
 

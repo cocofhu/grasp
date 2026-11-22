@@ -161,7 +161,7 @@ function chooseModel(value: string) {
   const encoded = choice?.configurationId && (grouped || changesGroup) ? modelRouteValue(choice.configurationId, choice.modelId || '') : value
   const route = parseModelRoute(encoded)
   const levels = listedEfforts(choice?.efforts)
-  const nextEffort = levels.includes(effort.value) ? effort.value : defaultReasoningEffort(levels)
+  const nextEffort = levels.includes(effort.value) ? effort.value : defaultReasoningEffort(levels, choice?.defaultEffort)
   void save(route.configurationId || choice?.configurationId || currentGroup.value, route.modelId || '', nextEffort, choice?.serviceTiers?.includes(serviceTier.value) ? serviceTier.value : '')
 }
 
@@ -171,7 +171,7 @@ function chooseEffort(value: string) {
 async function chooseServiceTier(value: string) {
   const choice = catalog.choices.value.find(item => item.id === currentSelection.value)
   const levels = listedEfforts(choice?.efforts)
-  const nextEffort = levels.length && !levels.includes(effort.value) ? defaultReasoningEffort(levels) : effort.value
+  const nextEffort = levels.length && !levels.includes(effort.value) ? defaultReasoningEffort(levels, choice?.defaultEffort) : effort.value
   if (await save(configurationId.value || currentGroup.value, modelId.value, nextEffort, value)) {
     toast.show(t('pages.solo.modelSelect.fastModeNextTurn'))
   }

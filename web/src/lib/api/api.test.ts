@@ -230,7 +230,6 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(
         jsonResponse({ items: [], total: 0, page: 1, pageSize: 10, hasMore: false }),
       )
-      .mockResolvedValueOnce(jsonResponse({ running: 0, waitingHuman: 0, failed: 0, completed: 0, workflows: 0, artifacts: 0 }))
       .mockResolvedValueOnce(jsonResponse({ items: [] }))
       .mockResolvedValueOnce(jsonResponse({ items: [] }))
       .mockResolvedValueOnce(jsonResponse({ username: 'u', expires_at: 't' }))
@@ -301,7 +300,6 @@ describe('api req helpers', () => {
     await expect(api.listGates({ page: 1, pageSize: 10, wf: 'w', tag: 'bugfix' })).resolves.toMatchObject({
       total: 0,
     })
-    await expect(api.dashboard()).resolves.toMatchObject({ running: 0 })
     await expect(api.getSettings()).resolves.toEqual({ items: [] })
     await expect(api.updateSettings({ a: 1 })).resolves.toEqual({ items: [] })
 

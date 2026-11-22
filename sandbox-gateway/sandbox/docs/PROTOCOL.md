@@ -44,8 +44,8 @@
 ```json
 {
   "protocol": "wsp/1",
-  "agent":   { "runtime": "cursor-agent", "name": "...", "version": "..." },
-  "session": { "ws": "/ws", "events": "/api/events", "tokenUsage": false, "steer": false, "resume": true },
+  "agent":   { "runtime": "cursor-sdk", "name": "...", "version": "..." },
+  "session": { "ws": "/ws", "events": "/api/events", "tokenUsage": true, "steer": true, "resume": true },
   "ide":     { "codeServer": true, "port": 8744 },
   "preview": {
     "vnc": true,
@@ -70,9 +70,8 @@
 - `session.steer`:运行中的一轮能否直接接收追加消息(`op:steer`);为 `false` 时平台中断当前轮,再把消息作为下一轮发送。
 - `session.resume`:重启 Agent 进程(换模型、进程意外退出、休眠恢复后重建)后能否接回同一原生会话。
   接不回时,下一轮 `prompt_done` 带 `sessionReset: true`,平台据此补发对话记录。
-- `session.tokenUsage`:会话事件/连接负载是否携带用量(token)字段。参考实现据实为
-  `false`(当前 cursor-agent ACP 不上报用量);未来 agent 能报时在事件里透出 `usage`
-  并置 `true`。
+- `session.tokenUsage`:会话事件/连接负载是否携带用量(token)字段。参考实现按所选 Agent
+  据实填写:原生协议能给出用量的(如 `cursor`)为 `true`,并在事件里透出 `usage`;给不出的为 `false`。
 - `preview` 缺省 / `preview.vnc=false` → 沙箱不提供预览桌面,平台对应用预览
   的 noVNC Tab 应降级(不可用或提示镜像不支持)。见 §5。
 - `desktop.available`:镜像是否为桌面变体(存在 `/etc/grasp-desktop`)。见 §5.6。
@@ -169,7 +168,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 - `SANDBOX_TURN_MAX_DURATION`(默认 `0` 不限,可被 `chat.deadlineSec` 按轮覆盖):整轮总时长,到点直接超时;工作流节点通过 `deadlineSec` 传入节点时限,Solo 不传;
 - `SANDBOX_AGENT_MAX_AGE`(默认 `6h`):长驻 Agent 进程服务一个会话的最长时间,到点后在下一轮开始前重建并接回原会话;`0` 不限。
 - `SANDBOX_LIVENESS_CPU_MS`(默认 `300`)/ `SANDBOX_LIVENESS_IO_BYTES`(默认 `4096`):一个采样周期内算作有活动的 CPU / IO 阈值。
-- `SANDBOX_BG_TASK_GRACE`(默认 `2m`):cursor-agent `-p` 要等它起的所有后台 shell 结束才给出结果、退出,
+- `SANDBOX_BG_TASK_GRACE`(默认 `2m`):one-shot CLI 要等它起的所有后台 shell 结束才给出结果、退出,
   Agent 用后台任务起的常驻服务会让这一轮一直不结束。没有前台工具在跑、只剩后台 shell、输出也安静了这么久,
   沙箱就结束这些后台 shell 的进程组(先 SIGTERM,1s 后 SIGKILL),CLI 随后自行收尾。只处理能确认属于本轮
   CLI 的进程(CLI 的后代、自成进程组、启动时间未变)。另外,CLI 给出结果后 5s 仍不退出,按本轮正常结束并杀掉
@@ -189,7 +188,7 @@ WebSocket `/ws`,JSON 帧。可选查询参数 `chat=<id>` 选择会话(由 `POST
 - **节点总时限**:参考实现不限单轮时长,只限一个节点所有 Agent 回合的总时间(画布节点的「超时」,
   空为平台兜底 24 小时),并据剩余时间下发 `deadlineSec`(多给 60s,让平台先报节点超时)。到点**不可重试**。
 - **连接握手超时**:`connect` 握手参考实现为 3 分钟,内含约 90s 的鉴权预热重连窗口
-  (cursor-agent 冷启动登录期间的瞬时 `Authentication required` 会自动重连)。
+  (Agent 冷启动登录期间的瞬时 `Authentication required` 会自动重连)。
 
 ---
 

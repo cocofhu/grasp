@@ -2,7 +2,7 @@
 # Local runner for the real-sandbox end-to-end tests.
 #
 # These are the GRASP_LIVE-gated tests in internal/runtime/: they launch a
-# real approving-sandbox container via Docker, drive cursor-agent over ACP, and
+# real approving-sandbox container via Docker, drive the Cursor agent over ACP, and
 # assert the declared `produces` file is harvested back. The default `go test`
 # run stays credential-free on the mock provider; this script opts into the
 # live path. It mirrors the CI `server:e2e` job (see .github/workflows/ci-server.yml) but talks

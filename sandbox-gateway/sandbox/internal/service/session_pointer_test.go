@@ -177,7 +177,7 @@ func TestMCPUpgradeKeepsTheConversation(t *testing.T) {
 	}
 	takeTurn(t, b, first.(*lifeSess))
 	visible := len(b.evLog.snapshot())
-	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"artifact-store"}]`), nil)
+	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"grasp-tool"}]`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestMCPUpgradeOfAnUnusedSessionIsNotResumed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"artifact-store"}]`), nil)
+	sess, err := b.EnsureAgent(cwd, "", json.RawMessage(`[{"name":"grasp-tool"}]`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

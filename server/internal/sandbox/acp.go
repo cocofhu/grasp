@@ -141,7 +141,7 @@ func attachImages(msg map[string]any, images []models.PromptImage) {
 // ACPClient is a Go binding for the acp-bridge WebSocket protocol that
 // runs inside a sandbox container (port 8765). It mirrors the auto-coder
 // client but adds mcpServers/cwd injection on connect so approving can wire
-// the per-run artifact-store MCP into the in-container cursor-agent.
+// the per-run grasp-tool MCP into the in-container Cursor agent.
 type ACPClient struct {
 	host string
 	port int
@@ -409,7 +409,7 @@ func bridgeLogin(ctx context.Context, host string, port int, password string) (s
 }
 
 // authWarmupBudget bounds how long Connect keeps re-dialing while the
-// in-container cursor-agent is still authenticating. The bridge's WS port
+// in-container Cursor agent is still authenticating. The bridge's WS port
 // accepts connections before the agent has finished logging in with
 // CURSOR_API_KEY, so an immediate session/new can be rejected with
 // "Authentication required" (JSON-RPC -32000) purely as a cold-start race — a
@@ -423,7 +423,7 @@ var authWarmupBackoff = 2 * time.Second
 
 // Connect dials the bridge and completes the {op:connect} session handshake.
 // It transparently re-dials on the transient "authentication not ready yet"
-// handshake error while the in-container cursor-agent finishes logging in
+// handshake error while the in-container Cursor agent finishes logging in
 // (bounded by authWarmupBudget). All other failures — dial error, a non-auth
 // handshake error, context cancellation — return immediately.
 func (c *ACPClient) Connect(ctx context.Context) error {
@@ -550,7 +550,7 @@ func (c *ACPClient) redial() {
 }
 
 // isAuthWarmupErr reports whether a handshake error is the transient
-// "authentication not ready yet" rejection (cursor-agent still logging in),
+// "authentication not ready yet" rejection (Cursor agent still logging in),
 // which is worth re-dialing. It matches the agent's auth message and the
 // JSON-RPC -32000 code it arrives with.
 func isAuthWarmupErr(err error) bool {

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// cursor-agent -p reports its result and exits only after every background
+// A one-shot CLI may report its result and exit only after every background
 // shell it launched has ended, so a service started as a background task
 // (python3 -m http.server, npm run dev) holds the turn open for good, while the
 // CLI keeps rewriting its terminal files and looks busy. Once the stream has

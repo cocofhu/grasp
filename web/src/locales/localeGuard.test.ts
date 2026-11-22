@@ -24,7 +24,7 @@ const zh = merged(zhFiles)
 const CJK_ALLOWED = new Set([
   'shell.langSelect',
   'pages.workspace.channels.badgeFeishu',
-  'mcp.artifactStore.tools.set_plan.desc',
+  'mcp.graspTool.tools.set_plan.desc',
 ])
 
 describe('locale guard', () => {

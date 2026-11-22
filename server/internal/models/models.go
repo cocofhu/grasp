@@ -156,7 +156,7 @@ type Run struct {
 	// remaining-human_gate then FIFO (see engine.claimNextQueued). List UI order
 	// is independent and must not follow the claim secondary key.
 	Priority int `gorm:"not null;default:2;index" json:"-"`
-	// McpToken is the run-scoped artifact-store MCP token, persisted so a run
+	// McpToken is the run-scoped grasp-tool MCP token, persisted so a run
 	// paused for human input (gate / react) can be resumed after a server
 	// restart: loadCtx re-registers it with the MCP host from here instead of
 	// failing every subsequent artifact write with ErrUnauthorized.
@@ -397,7 +397,7 @@ type RunVariable struct {
 	Secret bool `json:"secret,omitempty"`
 }
 
-// Artifact is a platform-stored run product written via the artifact-store MCP.
+// Artifact is a platform-stored run product written via the grasp-tool MCP.
 type Artifact struct {
 	ID           string `gorm:"primaryKey" json:"id"`
 	RunID        string `gorm:"index" json:"runId"`
@@ -899,7 +899,7 @@ type Sandbox struct {
 	Repos []SessionRepo `gorm:"serializer:json" json:"-"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
-	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
+	// the grasp-tool MCP. For purpose="agent", RunID is a synthetic
 	// agent-{thread} id used by platform MCP token binding, and ThreadID
 	// identifies the session thread.
 	RunID        string `json:"runId,omitempty"`

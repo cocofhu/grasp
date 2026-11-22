@@ -31,7 +31,9 @@ BUILD_ENV = {
 }
 # Check real installed executables. Never install or replace a vendor CLI with
 # an E2E wire fixture, and never perform vendor inference during preparation.
-NATIVE_CLIS = ("cursor-agent", "claude", "codebuddy", "traecli", "opencode", "codex", "dsh", "kimi")
+NATIVE_CLIS = ("claude", "codebuddy", "traecli", "opencode", "codex", "dsh", "kimi")
+# Agents that run through an SDK the image installs rather than a CLI.
+AGENT_SDKS = ("/opt/grasp/cursor-sdk/node_modules/@cursor/sdk/package.json",)
 REQUIRED_COMMANDS = NATIVE_CLIS + (
     "bash", "python3", "node", "npm", "go", "git", "curl", "tar",
     "sshd", "code-server", "docker", "Xvfb", "x11vnc", "websockify",
@@ -111,6 +113,7 @@ def validation_command(plan: dict[str, Any], require_disk: bool) -> str:
     expected = {
         "commands": REQUIRED_COMMANDS,
         "native": NATIVE_CLIS,
+        "sdks": AGENT_SDKS,
         "level": plan["imageLevel"],
         "bootstrap": plan["bootstrapSHA256"],
         "minimum": plan["minimumInitialWorkspaceGiB"] * (1 << 30) if require_disk else 0,
@@ -128,6 +131,8 @@ for name in expected['native']:
     with path.open('rb') as handle: prefix=handle.read(65536)
     if '/opt/grasp-e2e/' in str(path) or b'agent-platform-wire-fixture' in prefix:
         raise SystemExit('test fixture is not a production native CLI')
+missing=[path for path in expected['sdks'] if not pathlib.Path(path).is_file()]
+if missing: raise SystemExit('missing agent SDKs: '+','.join(missing))
 if pathlib.Path('/opt/grasp-e2e/agent-platform-wire-fixture.mjs').exists():
     raise SystemExit('test fixture content is not allowed in the production template')
 bootstrap=pathlib.Path('/grasp-bootstrap.sh')

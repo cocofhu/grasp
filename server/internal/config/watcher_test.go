@@ -33,7 +33,7 @@ func TestIsInotifyLimitError(t *testing.T) {
 func TestWatchAndReloadPollingFallback(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := Load(path); err != nil {
@@ -67,13 +67,13 @@ func TestWatchAndReloadPollingFallback(t *testing.T) {
 		}
 
 		time.Sleep(100 * time.Millisecond)
-		if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 9\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 9\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		select {
 		case <-reloaded:
-			if GetConfig().Engine.MaxConcurrentRuns != 9 {
-				t.Errorf("reload did not apply: %d", GetConfig().Engine.MaxConcurrentRuns)
+			if GetConfig().Sandbox.MaxSandboxes != 9 {
+				t.Errorf("reload did not apply: %d", GetConfig().Sandbox.MaxSandboxes)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("polling watcher did not reload within 5s")
@@ -100,13 +100,13 @@ func TestWatchAndReloadPollingFallback(t *testing.T) {
 		}
 
 		time.Sleep(100 * time.Millisecond)
-		if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 3\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 3\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		select {
 		case <-reloaded:
-			if GetConfig().Engine.MaxConcurrentRuns != 3 {
-				t.Errorf("reload did not apply: %d", GetConfig().Engine.MaxConcurrentRuns)
+			if GetConfig().Sandbox.MaxSandboxes != 3 {
+				t.Errorf("reload did not apply: %d", GetConfig().Sandbox.MaxSandboxes)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("polling watcher did not reload within 5s")
@@ -136,7 +136,7 @@ func TestWatchAndReloadNonInotifyAddError(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,6 +1,6 @@
 # Grasp 后端(Go)
 
-有限状态机(FSM)编排引擎 + 按 run 隔离的 artifact-store + 真实沙箱执行(cursor-agent)。
+有限状态机(FSM)编排引擎 + 按 run 隔离的 grasp-tool + 真实沙箱执行(各编码 Agent,默认 Cursor,经 `@cursor/sdk`)。
 
 ## 执行后端(ExecProvider)
 
@@ -36,21 +36,21 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
        → acp-bridge(AGENT_PROVIDER) → ACP WebSocket → chat / MCP / harvest
        → 数据面(exec / 文件 / 终端 / 变化上报)走 SSH 直连沙箱
 ```
-- **原生 artifact-store MCP(已落地)**:每个节点的容器都会接入一个 **run 级 HTTP MCP**:
+- **原生 grasp-tool MCP(已落地)**:每个节点的容器都会接入一个 **run 级 HTTP MCP**:
   - 平台在同一 Gin 端口暴露 `POST /mcp/runs/:runId`(Streamable-HTTP JSON-RPC:`initialize` / `tools/list` / `tools/call`),按 run-token 鉴权。
   - 注入方式有两条、互为冗余:ACP `session/new` 的 `mcpServers`(URL+`Authorization: Bearer <token>`)+ 容器内 `{configRoot}/mcp.json`。
   - 容器经 `host.docker.internal:<GRASP_PORT>` 回连平台(`--add-host host.docker.internal:host-gateway` 已设)。
-  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:cursor-agent 完成 initialize→tools/list→tools/call 全链路)。
+  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:Cursor agent 完成 initialize→tools/list→tools/call 全链路)。
 - **`{configRoot}` 配置树(对齐 auto-coder)**:每个节点按 Agent profile 的 `acpBackend` 解析 configRoot(Agent 卡片可覆盖),在控制面生成一份配置树后注入沙箱:
   - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`、`codex`→`/root/.codex`、`deepseek_harness`→`/root/.dsh`;
-  - `rules/base.md`(基础约束,alwaysApply)、`rules/artifact-store.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;
+  - `rules/base.md`(基础约束,alwaysApply)、`rules/grasp-tool.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;
   - Agent 的行为规则来自 Agent 工作目录的 `AGENTS.md` 与 skills(`GRASP_PROFILES_ROOT`),能力来自 `agent.json` 的 `capabilities`;
   - 需要 push/MR 的节点可在 Agent 工作目录附 `skills/git/SKILL.md`;
-  - `mcp.json` 写入 artifact-store MCP 配置(含改写后的 `GRASP_ARTIFACT_URL`);
+  - `mcp.json` 写入 grasp-tool MCP 配置(含改写后的 `GRASP_ARTIFACT_URL`);
   - 注入路径:**gateway `config.bundleUrl` 启动前 inject** — 控制面把 ConfigHome 打成 `.tgz`，经 `/sandbox-inject/:id` 短时下载；gateway 设 `SANDBOX_INJECT`，镜像 `startup.sh` 在 acp-bridge/agent 启动**之前**解压到 `{configRoot}`。URL 基址与 `mcp_advertise` 相同(沙箱可达)。Attach 重连仍可 SSH 补种。不使用 `config.hostPath`(远程 K8s 会挂空卷)。
 - **产物契约 + 完成标记**:节点完成时引擎要求已调用 `node_complete`,并校验 Agent 在 `capabilities.writes` 中声明为必填的结构化产物已经由对应的 `set_*` 工具写入平台 store,缺失即失败。推分支、开 MR 由实现模板的 git-mr skill 负责,平台不代验。
 - **上游产物读取**:run 内已有产物名会在 prompt 中列出,Agent 用 MCP `read_artifact` / `list_artifacts` 按名读取(按 run token 隔离)。产物**不**落盘到工作区,以免污染节点的代码变更报告。
-- **隔离**:每个 run 一枚 token,artifact-store 按 run 命名空间读写、token 绑定校验,run 间互不可见;容器 ACP 端口只绑定 `127.0.0.1` 临时端口。
+- **隔离**:每个 run 一枚 token,grasp-tool 按 run 命名空间读写、token 绑定校验,run 间互不可见;容器 ACP 端口只绑定 `127.0.0.1` 临时端口。
 - **token 生命周期 = 沙箱生命周期**:token 无单独的过期时间。内存注册命中即放行;run 结束或服务重启后,只要该 run 仍有存活的沙箱(回合执行中或回合结束后的 `sandbox.idle_ttl_minutes` 空闲窗口内),持久化 token 依旧可鉴权,让仍存活的沙箱 agent 继续写产物而非 401;最后一个沙箱销毁后 token 自然失效。
 
 ## ACP 后端怎么用
@@ -62,7 +62,7 @@ Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
-| `cursor` | `cursor-agent -p --output-format stream-json` | `/root/.cursor` | `CURSOR_API_KEY` |
+| `cursor` | `@cursor/sdk` 本地 Agent（常驻，Node 桥接） | `/root/.cursor` | `CURSOR_API_KEY` |
 | `claude_code` | `claude -p --output-format stream-json` | `/root/.claude` | `ANTHROPIC_API_KEY` |
 | `codebuddy` | `codebuddy -p --output-format stream-json` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
@@ -206,7 +206,6 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 |------|------|------|
 | `GRASP_PORT` | `8080` | HTTP 端口 |
 | `GRASP_DB` | `grasp.db` | SQLite 路径(`:memory:` 用于测试) |
-| `GRASP_MAX_RUNS` | `5` | 并发 run 上限 |
 | `GRASP_SANDBOX_GATEWAY_URL` | `http://127.0.0.1:8899` | sandbox-gateway 控制面地址(创建/销毁/管理沙箱) |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | — | 网关可选 Bearer 令牌(网关关鉴权时留空) |
 | `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `direct` | 数据面直连；`gateway` 通过带鉴权的网关通道，预览使用 Grasp 路径代理 |
@@ -246,7 +245,7 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 ```yaml
 server: { port, mcp_advertise }
 database: { path }
-engine: { max_concurrent_runs, profiles_root }
+engine: { profiles_root }
 sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 ```
 
@@ -254,7 +253,7 @@ sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 > 工作区凭据 UI，不是平台级配置。
 
 环境变量覆盖(env 优先级最高,上表对应字段):`GRASP_PORT`、`GRASP_DB`、
-`GRASP_MAX_RUNS`、`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
+`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
 `GRASP_SANDBOX_GATEWAY_URL`、`GRASP_CHAT_IDLE_SEC` 等。沙箱镜像不在本服务配置，由 sandbox-gateway 决定。
 
 > **ACP 与 Git 鉴权只来自工作区凭据**:各后端 API Key 与 Git Token / SSH 从工作区凭据解析后按 run
@@ -314,7 +313,7 @@ GRASP_LIVE_MCP=1 GRASP_CURSOR_API_KEY=crsr_xxx \
 
 ### E2E(真实沙箱端到端)
 
-live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → ACP 驱动 cursor-agent → 按
+live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → 驱动沙箱里的 Cursor Agent → 按
 `produces` 契约取回产物。需要一个可达的 sandbox-gateway + Cursor API key,慢(分钟级),
 所以默认单测不跑。运行前先起好 sandbox-gateway(见其仓库 `start.sh`),再:
 

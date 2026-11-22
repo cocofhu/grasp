@@ -17,7 +17,7 @@ import (
 )
 
 // ConversationScopeSource resolves a current, authorized sandbox generation.
-// Production uses the same resolver as persisted artifact-store authorization.
+// Production uses the same resolver as persisted grasp-tool authorization.
 type ConversationScopeSource func(runID string) (models.Sandbox, bool)
 
 type ConversationHistoryService struct {
@@ -64,7 +64,7 @@ func (h historyScope) readTool() string {
 }
 
 func referenceReadTool(refID string) string {
-	return fmt.Sprintf("artifact-store.read_reference(ref=%q)", refID)
+	return fmt.Sprintf("grasp-tool.read_reference(ref=%q)", refID)
 }
 
 func encodeConversationCursor(cursor conversationCursor) string {
@@ -367,7 +367,7 @@ func isHistoryRead(tc sandbox.ReplyTool) bool {
 
 // ownHistoryTool reads the current conversation back; a referenced one is
 // read with read_reference and its handle instead.
-const ownHistoryTool = "artifact-store.get_history"
+const ownHistoryTool = "grasp-tool.get_history"
 
 // renderSteers lists the input added while a turn ran, within budget runes;
 // the rest is counted for get_history.
@@ -491,7 +491,7 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 	}
 	var b strings.Builder
 	b.WriteString(header)
-	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 artifact-store 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
+	b.WriteString("此前对话来自同一任务，请保留已有约束并遵守更新后的决定。需要补充历史时，调用 grasp-tool 的 get_history(view=\"messages\")，按 next_cursor 向前读取。\n\n")
 	b.WriteString(renderUserInstructions(anchors, instructionBudget, ownHistoryTool))
 	referenceIndex := renderReferenceIndex(anchors)
 	if compact && len([]rune(referenceIndex)) > 3000 {

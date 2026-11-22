@@ -25,8 +25,8 @@ func (h *Handlers) SandboxInject(c *gin.Context) {
 	h.InjectBundles.ServeHTTP(c.Writer, c.Request, c.Param("id"))
 }
 
-// MCPRPC is the run-scoped artifact-store MCP endpoint. The in-container
-// cursor-agent connects here (URL + Bearer token injected at ACP
+// MCPRPC is the run-scoped grasp-tool MCP endpoint. The in-container
+// Cursor agent connects here (URL + Bearer token injected at ACP
 // session/new) and calls write_artifact / read_artifact / list_artifacts.
 // Streamable-HTTP: POST carries JSON-RPC, GET streams server notifications,
 // and DELETE terminates only the identified MCP session.
@@ -83,11 +83,6 @@ func (h *Handlers) Health(c *gin.Context) {
 // Live is the liveness probe: always 200 while the process is up.
 func (h *Handlers) Live(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "alive"})
-}
-
-// DashboardStats returns summary counters.
-func (h *Handlers) DashboardStats(c *gin.Context) {
-	c.JSON(http.StatusOK, h.Dash.Compute())
 }
 
 // PlatformStatus returns the shell StatusMetrics (Auth-protected via /api group).

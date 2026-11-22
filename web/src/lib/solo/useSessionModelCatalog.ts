@@ -55,11 +55,15 @@ export function useSessionModelCatalog(agentName: Ref<string>, scopedSource?: ()
       cliModels: cliModels.value, cliReady: cliReady.value && !cliFailed.value, connectionReady: connectionLoaded.value, credentials: credentials.value,
     })
     if (!scope.value) return rows
-    return rows.map(row => ({
-      ...row,
-      efforts: scope.value?.efforts?.[row.configurationId || '']?.[row.modelId || ''] || [],
-      unavailable: row.unavailable || !!scope.value?.unavailableConfigurationIds?.includes(row.configurationId || ''),
-    }))
+    return rows.map(({ defaultEffort, ...row }) => {
+      const efforts = scope.value?.efforts?.[row.configurationId || '']?.[row.modelId || ''] || []
+      return {
+        ...row,
+        efforts,
+        ...(defaultEffort && efforts.includes(defaultEffort) ? { defaultEffort } : {}),
+        unavailable: row.unavailable || !!scope.value?.unavailableConfigurationIds?.includes(row.configurationId || ''),
+      }
+    })
   })
   const ready = computed(() => catalogConfirmed.value)
   const configLoaded = computed(() => listState.value === 'ok')

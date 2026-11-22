@@ -1208,7 +1208,7 @@
     "settings": {
       "followGateway": "跟随网关",
       "title": "常规",
-      "subtitle": "管理工作区信息、品牌文案、运行并发与沙箱资源。",
+      "subtitle": "管理工作区信息、品牌文案与沙箱资源。",
       "saved": "已保存",
       "workspaceSaveFailed": "工作区信息保存失败：{reason}",
       "platformSaveFailed": "平台参数保存失败：{reason}",
@@ -1228,17 +1228,13 @@
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
-        "concurrency": {
-          "title": "调度并发",
-          "desc": "设置同时执行的工作流数量，达到上限后排队等待。"
-        },
         "recycle": {
           "title": "沙箱回收",
           "desc": "所有沙箱共用空闲回收时间，保存成功后释放运行资源。"
         },
         "capacity": {
           "title": "沙箱容量",
-          "desc": "查看全部沙箱的实时占用，统一设置数量上限。"
+          "desc": "查看全部沙箱的实时占用，统一设置数量上限；工作流并发也受此上限约束。"
         },
         "resources": {
           "title": "沙箱资源",
@@ -1250,18 +1246,16 @@
         "agent_idle_timeout_minutes": "Agent 持续没有输出或 CPU、磁盘活动时，先尝试恢复，再终止本轮。"
       },
       "labels": {
-        "max_concurrent_runs": "最大并发运行数",
         "sandbox_memory_mb": "沙箱内存覆盖",
         "agent_idle_timeout_minutes": "Agent 无动作时限",
         "sandbox_idle_ttl_minutes": "沙箱空闲回收时间",
         "max_sandboxes": "最大同时运行沙箱数"
       },
       "settings": {
-        "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
         "sandbox_memory_mb": "0 跟随网关默认值或所选 E2B 模板。非零值覆盖新建沙箱的内存，至少 1024 MiB；Docker/K8s 不得超过网关资源上限，E2B 必须与模板规格一致。浏览器、Docker 和构建共用这份内存，超限可能触发 OOM。由 GRASP_SANDBOX_MEMORY_MB 锁定时页面只读。",
         "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。",
         "sandbox_idle_ttl_minutes": "模型回合结束且没有排队请求后，持续达到此时长即保存环境并回收资源；打开页面、IDE、预览或终端不会延长计时。所有沙箱共用，默认 360 分钟；再次使用时自动恢复，可在侧栏菜单为单个会话开启「永不自动回收」。",
-        "max_sandboxes": "所有沙箱共用此上限，包含创建中、运行中及尚未释放资源的沙箱。达到上限后暂不能新建或恢复；降低上限不会关闭现有沙箱。"
+        "max_sandboxes": "所有沙箱共用此上限，包含创建中、运行中及尚未释放资源的沙箱。达到上限后暂不能新建或恢复，新的工作流运行排队等待；降低上限不会关闭现有沙箱或运行。"
       },
       "units": {
         "mib": "MiB"
@@ -1506,7 +1500,7 @@
         }
       },
       "mcp": {
-        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。",
+        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 grasp-tool,可自行增删。",
         "formEdit": "表单编辑",
         "rawJson": "原始 JSON",
         "runVarsTitle": "运行级变量(运行时替换到 url / headers / args / env)",
@@ -1514,14 +1508,14 @@
         "artifactUrl": "本次运行隔离的产物 MCP 端点",
         "artifactToken": "绑定该 run 的访问令牌",
         "globalVar": "{'${vars.<全局变量名>}'} — 工作流全局变量,如 {'${vars.feature}'}",
-        "addArtifactStore": "+ 添加产物存储",
+        "addGraspTool": "+ 添加 Grasp Tool",
         "addBrowser": "+ 浏览器",
         "addDesktop": "+ 桌面控制",
         "addBlender": "+ Blender",
         "requiresDesktop": "需要桌面镜像",
         "quickAddLabel": "快捷添加",
         "displayName": {
-          "artifact": "产物存储"
+          "artifact": "Grasp Tool"
         },
         "scopeNote": {
           "artifact": "本次运行隔离的产物服务。",
@@ -1713,12 +1707,12 @@
           "prefix": "命名前缀"
         },
         "mcp": {
-          "meta": "写入团队默认 mcp[]；创建工程师时一并带上。默认已放入 artifact-store。",
+          "meta": "写入团队默认 mcp[]；创建工程师时一并带上。默认已放入 grasp-tool。",
           "namePh": "名称",
           "headers": "请求头",
           "addHeader": "添加 Header",
           "add": "添加 MCP",
-          "restoreArtifact": "恢复 artifact-store 预设",
+          "restoreArtifact": "恢复 grasp-tool 预设",
           "runVars": "运行变量：{'${GRASP_ARTIFACT_URL}'} / {'${GRASP_ARTIFACT_TOKEN}'}"
         },
         "env": {
@@ -1729,7 +1723,7 @@
           "team": "团队",
           "none": "无",
           "roster": "编制：4 名工程师",
-          "noArtifactWarn": "工作流角色通常需要 artifact-store；当前 MCP 列表未包含它。"
+          "noArtifactWarn": "工作流角色通常需要 grasp-tool；当前 MCP 列表未包含它。"
         },
         "errors": {
           "teamNameRequired": "请填写团队名",
@@ -1851,7 +1845,7 @@
         "allVendors": "全部",
         "searchPlaceholder": "搜索模型名称、ID 或厂商",
         "contextShort": "{n} 上下文",
-        "commandAutoNote": "不指定 --model，使用 CLI 默认",
+        "commandAutoNote": "不指定模型，使用编码工具默认",
         "resetAuto": "恢复自动",
         "unlistedName": "自定义模型",
         "unlisted": "不在内置清单中，会原样传给 CLI",
@@ -2511,7 +2505,7 @@
       "changes": "变更",
       "changedFiles": "变更文件 ({n})",
       "gitDetection": "Git 检测",
-      "artifactsMcp": "产物 · 经 artifact-store MCP 写入",
+      "artifactsMcp": "产物 · 经 grasp-tool MCP 写入",
       "output": "输出",
       "noPreviewCardsTitle": "本次没有可预览的结果卡",
       "noPreviewCardsBody": "运行已成功完成。最终结果来源为空，或本次未执行输出节点。这不是加载失败。",
@@ -3531,6 +3525,8 @@
       "search": "搜索仓库",
       "empty": "还没有仓库",
       "emptyHint": "添加一个 Git 仓库，之后在首页或 Solo 页选择它即可启动带仓库的会话。",
+      "noMatch": "没有匹配的仓库",
+      "noMatchHint": "换个名称或仓库地址试试。",
       "lastUsed": "{time}使用",
       "neverUsed": "从未使用",
       "start": "开始 Solo",
@@ -3591,7 +3587,6 @@
         "modelsTools": "覆盖编码工具",
         "modelsProblems": "需要处理",
         "toolUnit": "种",
-        "runningRuns": "运行中 / 并发上限",
         "sandboxMemory": "沙箱内存上限",
         "projectsTotal": "仓库",
         "projectsUsed": "使用过",

@@ -61,7 +61,7 @@ export function useSoloLauncher() {
     const listed = listedEfforts(selected?.efforts)
     if (selected && !selected.serviceTiers?.includes(serviceTier.value)) serviceTier.value = ''
     if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
-      const next = defaultReasoningEffort(listed)
+      const next = defaultReasoningEffort(listed, selected?.defaultEffort)
       reasoningEffort.value = next
       if (next) error.value = t('pages.solo.modelSelect.effortResetNotice')
     }
@@ -178,11 +178,11 @@ export function useSoloLauncher() {
       const effective = initialModelId.value ? selected : modelChoices.value[0]
       const listed = listedEfforts(effective?.efforts)
       if (reasoningEffort.value && !listed.includes(reasoningEffort.value)) {
-        reasoningEffort.value = defaultReasoningEffort(listed)
+        reasoningEffort.value = defaultReasoningEffort(listed, effective?.defaultEffort)
         error.value = t('pages.solo.modelSelect.effortResetNotice')
         return null
       }
-      if (!reasoningEffort.value) reasoningEffort.value = defaultReasoningEffort(listed)
+      if (!reasoningEffort.value) reasoningEffort.value = defaultReasoningEffort(listed, effective?.defaultEffort)
       const s = await api.createSoloSession({
         agentName: agentName.value,
         repos: soloCreateChoices(projectIds.value, branches.value),

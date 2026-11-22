@@ -223,7 +223,7 @@ func admissionFromInDB(t *testing.T, db *gorm.DB, runID string) string {
 	return node
 }
 
-// TestAdmissionConcurrentLimit verifies max_concurrent_runs caps visible running
+// TestAdmissionConcurrentLimit verifies the run cap limits visible running
 // runs and queues the overflow (f1/f2).
 func TestAdmissionConcurrentLimit(t *testing.T) {
 	eng, db, p := setupBlockingEngine(t, slowGraph(), 5)

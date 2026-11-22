@@ -154,6 +154,10 @@ const SessionPending = "oneshot-pending"
 // running turn has already reported its result.
 var ErrNoActiveTurn = errors.New("no active turn")
 
+// ErrSteerDeclined is returned by Steer when the agent hands the input back
+// instead of taking it into the running turn; it runs as the next turn.
+var ErrSteerDeclined = errors.New("steer declined")
+
 // Capabilities drives the bridge's policy for a session. Only fields the
 // bridge acts on belong here.
 type Capabilities struct {

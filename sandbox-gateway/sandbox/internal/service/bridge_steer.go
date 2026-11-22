@@ -82,6 +82,9 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 	if errors.Is(err, provider.ErrNoActiveTurn) {
 		return SteerNoTurn, ""
 	}
+	if errors.Is(err, provider.ErrSteerDeclined) {
+		return SteerUnsupported, ""
+	}
 	if err != nil {
 		return SteerFailed, err.Error()
 	}

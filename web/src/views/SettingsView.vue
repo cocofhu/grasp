@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { api, type BrandSettings, type DashboardStats, type SandboxCapacity, type SettingItem } from '@/lib/api/api'
+import { api, type BrandSettings, type SandboxCapacity, type SettingItem } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
@@ -26,13 +26,6 @@ const { workspace, loading: workspaceLoading, error: workspaceError, ensureLoade
 const isAdmin = computed(() => !!user.value?.isAdmin)
 
 const groups = computed(() => [
-  {
-    id: 'concurrency',
-    icon: 'chart',
-    title: t('pages.settings.groups.concurrency.title'),
-    desc: t('pages.settings.groups.concurrency.desc'),
-    keys: ['max_concurrent_runs'],
-  },
   {
     id: 'recycle',
     icon: 'refresh',
@@ -95,7 +88,6 @@ const nameError = ref('')
 const displayNameError = ref('')
 let formEpoch = 0
 const capacity = ref<SandboxCapacity | null>(null)
-const dashboard = ref<DashboardStats | null>(null)
 const loading = ref(true)
 const hasInitialLoaded = ref(false)
 const loadFailed = ref(false)
@@ -162,9 +154,6 @@ function clearWorkspaceDraft() {
   displayNameError.value = ''
 }
 
-const runCount = computed(() => dashboard.value?.running ?? 0)
-const runLimit = computed(() => Math.max(1, itemOf('max_concurrent_runs')?.value || 1))
-const runRatio = computed(() => runCount.value / runLimit.value)
 const capacityRatio = computed(() => capacity.value ? capacity.value.used / Math.max(1, capacity.value.limit) : 0)
 
 function usageBarClass(ratio: number): string {
@@ -180,14 +169,6 @@ function barWidth(ratio: number): string {
 const overviewStats = computed<SettingsStatItem[]>(() => {
   const memory = itemOf('sandbox_memory_mb')
   return [
-    {
-      key: 'running-runs',
-      icon: 'chart',
-      label: t('pages.settingsOverview.stats.runningRuns'),
-      value: dashboard.value && itemOf('max_concurrent_runs') ? runCount.value : undefined,
-      total: runLimit.value,
-      tone: runRatio.value >= 1 ? 'warn' : 'neutral',
-    },
     {
       key: 'sandboxes',
       icon: 'layers',
@@ -230,15 +211,15 @@ async function loadSettings() {
 
 async function pollUsage() {
   const seq = usageSeq.beginListRequest()
-  const [sandboxResult, runResult] = await Promise.allSettled([api.sandboxCapacity(), api.dashboard()])
-  if (!usageSeq.isCurrentSeq(seq)) return
-  if (sandboxResult.status === 'fulfilled') {
-    capacity.value = sandboxResult.value
+  try {
+    const next = await api.sandboxCapacity()
+    if (!usageSeq.isCurrentSeq(seq)) return
+    capacity.value = next
     usageError.value = ''
-  } else {
-    usageError.value = failureText(sandboxResult.reason, t('pages.settings.usageRefreshFailed'))
+  } catch (cause) {
+    if (!usageSeq.isCurrentSeq(seq)) return
+    usageError.value = failureText(cause, t('pages.settings.usageRefreshFailed'))
   }
-  if (runResult.status === 'fulfilled') dashboard.value = runResult.value
 }
 
 function failureText(cause: unknown, fallback: string): string {

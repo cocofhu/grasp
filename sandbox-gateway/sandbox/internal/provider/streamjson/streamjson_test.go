@@ -120,9 +120,9 @@ func TestParseAssistantText(t *testing.T) {
 	}
 }
 
-func TestParseCursorDialect(t *testing.T) {
+func TestParseTopLevelThinkingAndCamelUsage(t *testing.T) {
 	c := &codec{}
-	// top-level thinking delta (cursor variant)
+	// top-level thinking delta
 	th := c.ParseLine([]byte(`{"type":"thinking","subtype":"delta","text":"pondering","session_id":"S1"}`))
 	if len(th.Msgs) != 1 || th.Msgs[0].Kind != oneshot.KindThinking || th.Msgs[0].Text != "pondering" {
 		t.Fatalf("thinking=%+v", th.Msgs)
@@ -219,32 +219,6 @@ func TestArgs(t *testing.T) {
 	}
 }
 
-func TestArgsStdinRawMode(t *testing.T) {
-	// cursor: -p is standalone (prompt on stdin), workspace pinned, no --input-format.
-	c := &codec{c: Config{Bin: "cursor-agent", PromptMode: PromptStdinRaw, BaseArgs: []string{"--yolo", "--approve-mcps"}, WorkspaceFlag: "--workspace", ResumeFlag: "--resume"}}
-	if !c.PromptViaStdin() {
-		t.Fatal("stdin-raw mode must feed prompt via stdin")
-	}
-	args := c.Args(provider.OpenOptions{Cwd: "/w"}, "the prompt", "")
-	if containsStr(args, "the prompt") {
-		t.Fatalf("prompt must not be in argv: %v", args)
-	}
-	if containsStr(args, "--input-format") || c.TurnInput() {
-		t.Fatalf("stdin-raw must not add --input-format or take turn input: %v", args)
-	}
-	for _, want := range []string{"-p", "--output-format", "stream-json", "--yolo", "--approve-mcps", "--workspace", "/w"} {
-		if !containsStr(args, want) {
-			t.Fatalf("missing %q in %v", want, args)
-		}
-	}
-	if got := string(c.StdinBytes("the prompt", nil)); got != "the prompt" {
-		t.Fatalf("stdin bytes=%q", got)
-	}
-	if c.SupportsImages() {
-		t.Fatal("stdin-raw must not claim image support")
-	}
-}
-
 func TestArgsStdinJSONMode(t *testing.T) {
 	// claude/codebuddy: -p standalone + --input-format, prompt as a stream-json envelope.
 	c := &codec{c: Config{Bin: "claude", PromptMode: PromptStdinJSON, ResumeFlag: "--resume"}}
@@ -300,7 +274,7 @@ func TestArgsStrictMcpConfigAddsMcpConfigPath(t *testing.T) {
 
 func TestArgsStrictMcpConfigUsesConfigRoot(t *testing.T) {
 	root := t.TempDir()
-	const managedMCP = `{"mcpServers":{"artifact-store":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/run-1"}}}`
+	const managedMCP = `{"mcpServers":{"grasp-tool":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/run-1"}}}`
 	if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(managedMCP), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -324,27 +298,6 @@ func TestArgsStrictMcpConfigUsesConfigRoot(t *testing.T) {
 				t.Fatal("explicit native MCP config argument was overridden")
 			}
 		})
-	}
-}
-
-func TestCursorAuthEnvUsesManagedConfigRoot(t *testing.T) {
-	root := t.TempDir()
-	env := []string{"CONFIG_ROOT=" + root, "CURSOR_CONFIG_DIR=/old/account-home", "CURSOR_API_KEY=synthetic-key"}
-	c := &codec{c: Config{AgentName: provider.Cursor, AuthEnvFn: func(env []string) []string {
-		return append(env, "CURSOR_EXTRA=kept")
-	}}}
-	next := c.AuthEnv(env)
-	want := "CURSOR_CONFIG_DIR=" + root
-	if !containsStr(next, want) || containsStr(next, "CURSOR_CONFIG_DIR=/old/account-home") || !containsStr(next, "CURSOR_API_KEY=synthetic-key") || !containsStr(next, "CURSOR_EXTRA=kept") {
-		t.Fatal("Cursor native home did not follow the CONFIG_ROOT managed MCP config")
-	}
-	plain := []string{"CURSOR_CONFIG_DIR=/explicit/cli-home"}
-	if got := c.AuthEnv(plain); !containsStr(got, plain[0]) {
-		t.Fatal("unmanaged Cursor config override was replaced")
-	}
-	other := &codec{c: Config{AgentName: provider.CodeBuddy}}
-	if got := other.AuthEnv(env); containsStr(got, want) {
-		t.Fatal("another backend changed Cursor's native home")
 	}
 }
 

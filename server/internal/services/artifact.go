@@ -42,7 +42,7 @@ func escapeLikePattern(s string) string {
 }
 
 // ArtifactService persists run products and implements mcp.Store so the
-// artifact-store MCP writes land in the platform product store.
+// grasp-tool MCP writes land in the platform product store.
 type ArtifactService struct {
 	db           *gorm.DB
 	maxFileBytes int64

@@ -258,7 +258,7 @@ const (
 	AcpKindTurnEnd = "turn_end"
 )
 
-// ArtifactMeta marks an event as an artifact-store write.
+// ArtifactMeta marks an event as a grasp-tool write.
 type ArtifactMeta struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`

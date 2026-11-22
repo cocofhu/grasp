@@ -2,8 +2,9 @@
 """Real Grasp/gateway/sandbox/MCP E2E with native CLIs and a free model server.
 
 Grasp and the gateway run on this host; agents run in Docker sandboxes built
-from agent-e2e-sandbox.Dockerfile. Cursor, Trae and Kimi Code use explicitly
-labelled platform wire doubles there. Every other CLI is the one the product
+from agent-e2e-sandbox.Dockerfile. Cursor (a stand-in @cursor/sdk package),
+Trae and Kimi Code use explicitly labelled platform wire doubles there. Every
+other CLI is the one the product
 sandbox image ships. No vendor key is read, inherited or required.
 """
 import argparse
@@ -46,9 +47,9 @@ def validate_inventory(tools, capabilities):
     if len(set(ids)) != len(ids) or set(ids) != supported:
         raise AssertionError(f'E2E inventory differs from product capabilities: missing={sorted(supported-set(ids))}, extra={sorted(set(ids)-supported)}')
     for tool in tools:
-        if tool['mode'] not in ['native-cli', 'platform-wire-fixture']:
+        if tool['mode'] not in ['native-cli', 'platform-wire-fixture', 'platform-sdk-fixture']:
             raise AssertionError(f'unknown E2E coverage mode: {tool["id"]}')
-        if tool['mode'] == 'platform-wire-fixture' and not tool.get('reason'):
+        if tool['mode'] != 'native-cli' and not tool.get('reason'):
             raise AssertionError('a platform double must state the missing native coverage')
 
 
@@ -208,7 +209,7 @@ class E2E:
                     binding['auxiliaryModelIds'] = tool['auxiliaryModels']
             self.groups[tool['id']] = self.request('/api/workspace/model-configurations', {'name': 'CI '+tool['id'], 'backend': tool['id'], 'binding': binding, 'state': 'active'})['id']
         ids = list(self.groups.values())
-        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.sandbox_model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped artifact-store. Do not access other workspaces, deploy, or submit Git changes.'}]})
+        self.request('/api/agents', {'name': 'AgentMatrixE2E', 'inheritModel': False, 'acpBackend': self.tools[0]['id'], 'modelBinding': {'kind': 'configuration', 'configurationId': ids[0], 'configurationIds': ids}, 'env': {'SKIP_INNER_DOCKER': '1', 'IS_SANDBOX': '1', 'GRASP_CI_MOCK_URL': self.sandbox_model}, 'files': [{'path': 'AGENTS.md', 'content': 'This is an isolated deterministic CI task. Use only the local model and scoped grasp-tool. Do not access other workspaces, deploy, or submit Git changes.'}]})
 
     def scenario(self, walk):
         turns = []
@@ -250,9 +251,10 @@ class E2E:
         return state, assistants[-1]
 
     def resolved_effort(self, step):
-        # An empty session effort is stored as the last advertised level.
-        # OpenCode reads the provider catalog, which does not list the matrix
-        # auxiliary id, so that model keeps an empty effort.
+        # An empty session effort is stored as the catalog's default level,
+        # or else the last advertised one. OpenCode reads the provider
+        # catalog, which does not list the matrix auxiliary id, so that model
+        # keeps an empty effort.
         effort = step.get('effort') or ''
         if effort:
             return effort
@@ -263,7 +265,7 @@ class E2E:
             return ''
         if tool['id'] == 'opencode' and model != tool['model']:
             return ''
-        return efforts[-1]
+        return tool.get('defaultEffort') or efforts[-1]
 
     def run_matrix(self):
         names = [tool['id'] for tool in self.tools]
@@ -407,7 +409,7 @@ class E2E:
             raise AssertionError(f'native token accounting mismatch for {step["backend"]}/{step["id"]}: upstream={upstream}, recorded={recorded}')
 
     def save_report(self, error=None):
-        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI wire adapters are exercised with labelled doubles'}
+        report = {'status': 'failed' if error else 'passed', 'error': str(error) if error else None, 'fullInventory': not bool(self.args.tools), 'tools': self.tools, 'switches': self.cases, 'paidModelCalls': 0, 'nativePlatformInference': 'not covered: Cursor, Trae and Kimi Code require their own platform credentials; their CLI and SDK wire adapters are exercised with labelled doubles'}
         report['codexFastMode'] = self.fast_probe_report
         (self.output/'report.json').write_text(json.dumps(report, indent=2))
         if error:

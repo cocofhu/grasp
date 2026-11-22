@@ -34,11 +34,12 @@ func TestEveryNameResolves(t *testing.T) {
 func TestTransportSplit(t *testing.T) {
 	// ACP-native CLIs run long-lived (persistent JSON-RPC over stdio). Every
 	// other agent is one-shot (fresh process per turn + resume), except the
-	// codex app-server, opencode serve and pi rpc.
+	// codex app-server, opencode serve, pi rpc and the Cursor SDK bridge.
 	long := map[provider.Name]bool{
-		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
+		provider.Cursor: true, provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
 		provider.DeepSeekHarness: true, provider.Codex: true, provider.OpenCode: true, provider.Pi: true,
+		provider.Antigravity: true,
 	}
 	for n, p := range registry {
 		want := provider.OneShot
@@ -54,7 +55,7 @@ func TestTransportSplit(t *testing.T) {
 func TestCodeBuddyKeepsStrictMcpIsolation(t *testing.T) {
 	// Regression lock: codebuddy must keep --strict-mcp-config (isolation) and
 	// a ConfigRoot so streamjson can attach --mcp-config <root>/mcp.json.
-	// Without that pair, artifact-store from seeded mcp.json never reaches -p.
+	// Without that pair, grasp-tool from seeded mcp.json never reaches -p.
 	p := registry[provider.CodeBuddy]
 	if p.DefaultConfigRoot() != "/root/.codebuddy" {
 		t.Fatalf("codebuddy ConfigRoot=%q", p.DefaultConfigRoot())
@@ -78,12 +79,10 @@ func TestCodeBuddyArgsGoldenStrictPlusMcpConfig(t *testing.T) {
 	}
 }
 
-// TestCursorBaseArgsIncludeApproveMcps (CAPA A3): Cursor Args must include
-// --approve-mcps so headless -p auto-approves seeded ~/.cursor/mcp.json.
-func TestCursorBaseArgsIncludeApproveMcps(t *testing.T) {
-	args := mustArgsForTest(t, registry[provider.Cursor])
-	if !containsArg(args, "--approve-mcps") {
-		t.Fatalf("missing --approve-mcps in %v", args)
+func TestCursorRunsOnTheSDK(t *testing.T) {
+	p := registry[provider.Cursor]
+	if p.Runtime() != "cursor-sdk" || p.Transport() != provider.LongLived || p.DefaultConfigRoot() != "/root/.cursor" {
+		t.Fatalf("cursor provider: runtime %q transport %v root %q", p.Runtime(), p.Transport(), p.DefaultConfigRoot())
 	}
 }
 

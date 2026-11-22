@@ -53,7 +53,7 @@ type Options struct {
 	// a running sandbox. Must stay >= the gateway's FinalizeTimeout so approving
 	// does not give up during a slow cold-start. 0 → Manager default.
 	SandboxCreateTimeout time.Duration
-	// MCPEndpoint is the artifact-store MCP base URL reachable from inside
+	// MCPEndpoint is the grasp-tool MCP base URL reachable from inside
 	// a sandbox container (e.g. http://host.docker.internal:8090).
 	MCPEndpoint string
 	// InjectStore holds short-lived ConfigHome .tgz for gateway bundleUrl inject.
@@ -469,6 +469,10 @@ type SandboxRegistry interface {
 type RunSandboxBeginner interface {
 	BeginRunSandbox(info RunSandboxInfo) error
 }
+
+// ErrSandboxCapacity matches a BeginRunSandbox rejection caused by the shared
+// sandbox limit. The node waits for a free slot instead of failing.
+var ErrSandboxCapacity = errors.New("sandbox capacity full")
 
 // RunSandboxRetirer is an optional registry capability: instead of destroying a
 // finished run's node sandbox immediately, keep the container alive and set an

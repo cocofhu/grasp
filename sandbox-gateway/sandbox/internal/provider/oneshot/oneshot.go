@@ -70,8 +70,12 @@ type ParseResult struct {
 	// TracksSessionUsage also advances the baseline on partial turns whose
 	// native cumulative snapshot is unavailable.
 	TracksSessionUsage bool
-	UsagePartial       bool
-	StopReason         string
+	// UsageMessageID names the native message a streamed sample belongs to.
+	// CLIs that split one message into several events repeat its usage on
+	// each; a later sample for the same id replaces the earlier one.
+	UsageMessageID string
+	UsagePartial   bool
+	StopReason     string
 	// UserMessagesConsumed counts stdin user messages the CLI acknowledged
 	// (TurnInputCodec only).
 	UserMessagesConsumed int
@@ -1000,6 +1004,15 @@ func mergeUsage(a, b map[string]provider.TokenUsage) map[string]provider.TokenUs
 		out[model] = out[model].Plus(usage)
 	}
 	return out
+}
+
+func minusUsage(u, o provider.TokenUsage) provider.TokenUsage {
+	return provider.TokenUsage{
+		InputTokens:      max(u.InputTokens-o.InputTokens, 0),
+		OutputTokens:     max(u.OutputTokens-o.OutputTokens, 0),
+		CacheReadTokens:  max(u.CacheReadTokens-o.CacheReadTokens, 0),
+		CacheWriteTokens: max(u.CacheWriteTokens-o.CacheWriteTokens, 0),
+	}
 }
 
 func nonEmptyUsage(u map[string]provider.TokenUsage) map[string]provider.TokenUsage {

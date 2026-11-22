@@ -28,7 +28,7 @@ type Liveness struct {
 }
 
 // ChatResult is the structured aggregation of one prompt turn's
-// session_update events from cursor-agent (via the acp-bridge).
+// session_update events from the agent (via the acp-bridge).
 //
 //   - Narration: concatenated agent_message_chunk text (the visible reply)
 //   - Thought:   concatenated agent_thought_chunk text (internal reasoning)
@@ -208,7 +208,7 @@ var planToolNames = map[string]bool{
 	"cursor_update_todos": true,
 }
 
-// normalizeSessionUpdate normalises cursor-agent version differences into
+// normalizeSessionUpdate normalises agent version differences into
 // snake_case kind + a flattened map (nested sessionUpdate object lifted up).
 func normalizeSessionUpdate(update json.RawMessage) (kind string, flat map[string]any) {
 	if len(update) == 0 {

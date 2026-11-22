@@ -29,13 +29,13 @@ func TestProjectConfiguredModelsKeepsOrderAndMarksMissing(t *testing.T) {
 
 func TestConfiguredReasoningEffortsAreExactAndAdapterBacked(t *testing.T) {
 	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"pinned-model","reasoningEfforts":["low","ultra"]}]`)
-	for _, backend := range []string{"codex", "deepseek_harness"} {
+	for _, backend := range []string{"codex", "cursor", "deepseek_harness"} {
 		t.Setenv("AGENT_PROVIDER", backend)
 		if !ReasoningEffortSelectable("pinned-model", "ultra") || !ReasoningEffortSelectable("pinned-model", "") || ReasoningEffortSelectable("other", "ultra") || ReasoningEffortSelectable("pinned-model", "max") {
 			t.Fatalf("%s accepted an unadvertised model/effort or rejected an exact value", backend)
 		}
 	}
-	t.Setenv("AGENT_PROVIDER", "cursor")
+	t.Setenv("AGENT_PROVIDER", "claude_code")
 	if ReasoningEffortSelectable("pinned-model", "ultra") {
 		t.Fatal("a model name/metadata must not invent a separate-effort provider adapter")
 	}

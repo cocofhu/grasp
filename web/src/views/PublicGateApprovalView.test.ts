@@ -275,7 +275,7 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     const tl = w.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-elapsed', 'agent-timeline-steer', 'agent-timeline-rule', 'clarify-agent-message', 'chat-message-meta',
+      'agent-timeline-steer', 'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message', 'chat-message-meta',
     ])
     expect(w.get('[data-testid="agent-timeline-steer"]').text()).toContain('顺便改标题')
     expect(w.findAll('[data-testid="agent-timeline"]')).toHaveLength(1)

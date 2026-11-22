@@ -57,7 +57,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/health", h.Health)
 		api.GET("/live", h.Live)
-		api.GET("/stats/dashboard", h.DashboardStats)
 		api.GET("/stats/token", h.GetGlobalTokenStats)
 		api.GET("/stats/token/events", h.ListTokenUsageEvents)
 		api.GET("/stats/token/pricing", h.GetTokenPricing)
@@ -268,8 +267,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/sandboxes/:id/desktop/control", h.SandboxDesktopControl)
 	}
 
-	// Run-scoped artifact-store MCP (outside /api): the in-container
-	// cursor-agent connects here via host.docker.internal with a per-run
+	// Run-scoped grasp-tool MCP (outside /api): the in-container
+	// Cursor agent connects here via host.docker.internal with a per-run
 	// Bearer token. Streamable-HTTP over POST; GET/DELETE are no-ops.
 	r.POST("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId", h.MCPRPC)

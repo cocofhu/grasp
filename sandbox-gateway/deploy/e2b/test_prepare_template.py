@@ -158,6 +158,9 @@ class PrepareTemplateTest(unittest.TestCase):
             bootstrap = root / "grasp-bootstrap.sh"
             level = root / "etc/grasp-image-level"
             executable = root / "usr/bin/native-cli"
+            for sdk in tool.AGENT_SDKS:
+                (root / sdk.lstrip("/")).parent.mkdir(parents=True)
+                (root / sdk.lstrip("/")).write_text("{}")
             level.parent.mkdir(parents=True)
             executable.parent.mkdir(parents=True)
             executable.write_text("#!/bin/sh\nexit 0\n")
@@ -301,6 +304,9 @@ class PrepareTemplateTest(unittest.TestCase):
             (root / "grasp-bootstrap.sh").write_bytes(source_bootstrap)
             (root / "grasp-bootstrap.sh").chmod(0o755)
             (root / "etc/grasp-image-level").write_text(str(plan["imageLevel"]) + "\n")
+            for sdk in tool.AGENT_SDKS:
+                (root / sdk.lstrip("/")).parent.mkdir(parents=True)
+                (root / sdk.lstrip("/")).write_text("{}")
             executable = root / "chrome"
             executable.write_text("#!/bin/sh\n")
             executable.chmod(0o755)

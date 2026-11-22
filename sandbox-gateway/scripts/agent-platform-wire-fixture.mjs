@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// CI double for CLIs that cannot be pointed at the localhost model without a
-// vendor credential: Cursor, Trae, and Kimi Code. This is never a claim of
-// vendor inference. The real Grasp server and runtime still load the selected
-// config, negotiate their native CLI wire protocol, call the actual scoped MCP
-// server, and execute commands issued by the localhost model fixture.
+// CI double for agents that cannot be pointed at the localhost model without a
+// vendor credential: Cursor (@cursor/sdk), Trae, and Kimi Code. This is never a
+// claim of vendor inference. The real Grasp server and runtime still load the
+// selected config, negotiate their native wire protocol, call the actual
+// scoped MCP server, and execute commands issued by the localhost model fixture.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import {randomUUID} from 'node:crypto'
@@ -71,7 +72,7 @@ export function kimiConfiguration(config, secret) {
 }
 
 async function rpc(method, params) {
-  if (!mcp?.url) throw new Error('selected artifact-store MCP configuration is missing')
+  if (!mcp?.url) throw new Error('selected grasp-tool MCP configuration is missing')
   const headers = Array.isArray(mcp.headers) ? Object.fromEntries(mcp.headers.map(({name, value}) => [name, value])) : mcp.headers || {}
   const response = await fetch(mcp.url, {method: 'POST', headers: {...headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(mcpSession ? {'mcp-session-id': mcpSession} : {})}, body: JSON.stringify({jsonrpc: '2.0', id: randomUUID(), method, params})})
   mcpSession = response.headers.get('mcp-session-id') || mcpSession
@@ -82,15 +83,90 @@ async function rpc(method, params) {
   return data.result
 }
 
-async function run(prompt, notify) {
+// The SDK selection Cursor's bridge passes to Agent.create/resume: the base id
+// plus every parameter of one offered variant.
+const cursorEfforts = ['none', 'low', 'medium', 'high', 'extra-high']
+const cursorModels = [{
+  id: 'gpt-5.5', displayName: 'GPT-5.5', aliases: ['gpt-5-5'],
+  parameters: [{id: 'reasoning', values: cursorEfforts.map((value) => ({value}))}, {id: 'fast', values: [{value: 'false'}, {value: 'true'}]}],
+  variants: cursorEfforts.flatMap((reasoning) => ['false', 'true'].map((fast) => ({params: [{id: 'reasoning', value: reasoning}, {id: 'fast', value: fast}], isDefault: reasoning === 'medium' && fast === 'false'}))),
+}]
+
+export function cursorSelection(model) {
+  const known = cursorModels.find((entry) => entry.id === model?.id)
+  if (!known) throw new Error('unknown fixture Cursor model')
+  const params = Object.fromEntries((model.params || []).map(({id, value}) => [id, value]))
+  if (Object.keys(params).length !== 2 || !known.variants.some((variant) => variant.params.every((p) => params[p.id] === p.value))) throw new Error('Cursor model selection is not an offered variant')
+  const effort = {none: '', 'extra-high': 'xhigh'}[params.reasoning] ?? params.reasoning
+  return {model: known.id, effort, fast: params.fast === 'true'}
+}
+
+// Agents persist across bridge processes like Cursor's local store, so a
+// reopened session resumes its conversation and an unknown id fails.
+const cursorStore = () => process.env.GRASP_CURSOR_FIXTURE_STORE || path.join(os.tmpdir(), 'grasp-cursor-sdk-fixture')
+
+function cursorAgent(options, agentId) {
+  if (!options?.apiKey) throw new Error('Cursor API key was not passed to the SDK')
+  if (JSON.stringify(options.local?.settingSources) !== '["project","user"]') throw new Error('Cursor must load only project and user settings')
+  const selected = cursorSelection(options.model)
+  const id = agentId || `agent-${randomUUID()}`
+  const file = path.join(cursorStore(), `${id}.json`)
+  const save = (history) => {
+    fs.mkdirSync(cursorStore(), {recursive: true, mode: 0o700})
+    fs.writeFileSync(file, JSON.stringify(history), {mode: 0o600})
+  }
+  let history = []
+  if (agentId) {
+    if (!fs.existsSync(file)) throw new Error(`agent ${agentId} was not found`)
+    history = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } else save(history)
+  return {
+    agentId: id,
+    async send(message, {onDelta} = {}) {
+      const text = typeof message === 'string' ? message : message.text
+      const runId = `run-${randomUUID()}`
+      const delta = (update) => onDelta?.({update})
+      const calls = new Map()
+      const done = (async () => {
+        mcp = options.mcpServers?.['grasp-tool']
+        mcpSession = undefined
+        messages = history
+        selectedModel = selected.model
+        const reply = await run(text, (update) => {
+          if (update.sessionUpdate === 'tool_call') calls.set(update.toolCallId, update)
+          const start = calls.get(update.toolCallId)
+          const isMcp = start.title.startsWith('mcp__grasp-tool__')
+          const toolCall = isMcp ? {type: 'mcp', args: {toolName: start.title.slice('mcp__grasp-tool__'.length), args: start.rawInput}} : {type: 'shell', args: {command: start.rawInput.cmd}}
+          if (update.sessionUpdate === 'tool_call') return delta({type: 'tool-call-started', callId: update.toolCallId, toolCall})
+          const output = update.content.map((entry) => entry.content.text).join('\n')
+          delta({type: 'tool-call-completed', callId: update.toolCallId, toolCall: {...toolCall, result: {status: 'success', value: isMcp ? {content: [{type: 'text', text: output}]} : {stdout: output, exitCode: 0}}}})
+        }, selected.effort ? {reasoning_effort: selected.effort} : {})
+        history = messages
+        save(history)
+        delta({type: 'text-delta', text: reply})
+        return {id: runId, status: 'finished', usage: {inputTokens: 128, outputTokens: 32, cacheReadTokens: 0, cacheWriteTokens: 0}}
+      })()
+      return {id: runId, status: 'running', wait: () => done, cancel: async () => {}}
+    },
+    close() {},
+  }
+}
+
+export const cursorSdk = {
+  Agent: {create: async (options) => cursorAgent(options), resume: async (agentId, options) => cursorAgent(options, agentId)},
+  Cursor: {models: {list: async () => cursorModels}},
+  createAgentPlatform: async () => ({store: {getRun: async () => null}}),
+}
+
+async function run(prompt, notify, extra = {}) {
   await rpc('initialize', {protocolVersion: '2024-11-05', capabilities: {}, clientInfo: {name: 'grasp-platform-wire-fixture', version: '1'}})
   const catalog = await rpc('tools/list', {})
-  const tools = (catalog.tools || []).map((tool) => ({type: 'function', function: {name: `mcp__artifact-store__${tool.name}`, description: tool.description, parameters: tool.inputSchema}}))
+  const tools = (catalog.tools || []).map((tool) => ({type: 'function', function: {name: `mcp__grasp-tool__${tool.name}`, description: tool.description, parameters: tool.inputSchema}}))
   tools.push({type: 'function', function: {name: 'exec_command', parameters: {type: 'object', properties: {cmd: {type: 'string'}}, required: ['cmd']}}})
   messages.push({role: 'user', content: prompt})
   for (let turn = 0; turn < 20; turn++) {
     const thinking = provider === 'kimi_code' ? {thinking: {type: selectedThinking ? 'enabled' : 'disabled', ...(selectedThinking && selectedEffort ? {effort: selectedEffort} : {}), keep: 'all'}} : {}
-    const response = await fetch(`${process.env.GRASP_CI_MOCK_URL}/v1/chat/completions`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({model: selectedWireModel || selectedModel, messages, tools, stream: false, ...thinking})})
+    const response = await fetch(`${process.env.GRASP_CI_MOCK_URL}/v1/chat/completions`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({model: selectedWireModel || selectedModel, messages, tools, stream: false, ...thinking, ...extra})})
     const body = await response.json()
     if (!response.ok) throw new Error(`mock model rejected the fixture request: ${JSON.stringify(body)}`)
     const message = body.choices?.[0]?.message
@@ -101,8 +177,8 @@ async function run(prompt, notify) {
       const input = JSON.parse(call.function.arguments)
       notify({sessionUpdate: 'tool_call', toolCallId: call.id, title: call.function.name, status: 'in_progress', rawInput: input})
       let result
-      if (call.function.name.startsWith('mcp__artifact-store__')) {
-        result = await rpc('tools/call', {name: call.function.name.slice('mcp__artifact-store__'.length), arguments: input})
+      if (call.function.name.startsWith('mcp__grasp-tool__')) {
+        result = await rpc('tools/call', {name: call.function.name.slice('mcp__grasp-tool__'.length), arguments: input})
         if (result?.isError) throw new Error('the scoped MCP tool returned an error')
       } else if (call.function.name === 'exec_command') {
         result = checkpointOperation(input.cmd)
@@ -118,27 +194,6 @@ async function run(prompt, notify) {
 async function main() {
 if (args.includes('--version')) {
   console.log(`grasp-${provider}-platform-wire-fixture 1`)
-} else if (provider === 'cursor') {
-  // Match the native CLI's actual config root so a broken config mapping
-  // fails; CONFIG_ROOT alone is not a native Cursor setting.
-  const root = process.env.CURSOR_CONFIG_DIR
-  if (!root) throw new Error('native CURSOR_CONFIG_DIR was not set')
-  mcp = JSON.parse(fs.readFileSync(path.join(root, 'mcp.json'), 'utf8')).mcpServers?.['artifact-store']
-  let prompt = ''
-  for await (const chunk of process.stdin) prompt += chunk
-  send({type: 'system', subtype: 'init', session_id: sid})
-  const calls = new Map()
-  const reply = await run(prompt, (update) => {
-    if (update.sessionUpdate === 'tool_call') calls.set(update.toolCallId, update)
-    const start = calls.get(update.toolCallId)
-    const isMcp = start.title.startsWith('mcp__artifact-store__')
-    const key = isMcp ? 'mcpToolCall' : 'shellToolCall'
-    const toolArgs = isMcp ? {toolName: start.title, args: start.rawInput} : {command: start.rawInput.cmd}
-    const result = update.content ? {success: {content: update.content.map((entry) => ({type: 'text', text: entry.content.text}))}} : undefined
-    send({type: 'tool_call', subtype: update.sessionUpdate === 'tool_call' ? 'started' : 'completed', call_id: update.toolCallId, tool_call: {[key]: {args: toolArgs, ...(result ? {result} : {})}}})
-  })
-  send({type: 'assistant', message: {content: [{type: 'text', text: reply}]}})
-  send({type: 'result', subtype: 'success', result: reply, session_id: sid, usage: {input_tokens: 128, output_tokens: 32}})
 } else if (provider === 'trae' || provider === 'kimi_code') {
   if (provider === 'kimi_code') {
     const root = process.env.KIMI_CODE_HOME
@@ -166,7 +221,7 @@ if (args.includes('--version')) {
       let result = {}
       if (request.method === 'initialize') result = {protocolVersion: 1, agentCapabilities: {mcpCapabilities: {http: true}}, agentInfo: {name: `grasp-${provider}-platform-wire-fixture`, version: '1'}}
       else if (request.method === 'session/new') {
-        mcp = request.params.mcpServers.find((server) => server.name === 'artifact-store')
+        mcp = request.params.mcpServers.find((server) => server.name === 'grasp-tool')
         result = {sessionId: sid, configOptions: options()}
       } else if (request.method === 'session/set_config_option') {
         const option = options().find((option) => option.id === request.params.configId)

@@ -136,8 +136,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
           />
         </template>
         <template #toolbar-start>
-          <div class="flex min-w-0 items-center gap-2">
-            <div ref="plus" class="relative">
+          <div class="flex min-w-0 flex-1 items-center gap-2">
+            <div ref="plus" class="relative shrink-0">
               <button
                 type="button"
                 class="chat-action-button"

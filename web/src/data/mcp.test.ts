@@ -23,10 +23,10 @@ beforeAll(async () => {
   i18n.global.setLocaleMessage('en', en)
 })
 
-describe('BUILTIN_MCPS artifact-store catalog', () => {
-  const store = BUILTIN_MCPS.find((m) => m.id === 'artifact-store')
+describe('BUILTIN_MCPS grasp-tool catalog', () => {
+  const store = BUILTIN_MCPS.find((m) => m.id === 'grasp-tool')
 
-  it('exposes artifact-store with the catalog tools including history, node_complete, and root_cause', () => {
+  it('exposes grasp-tool with the catalog tools including history, node_complete, and root_cause', () => {
     expect(store).toBeDefined()
     expect(store!.tools).toHaveLength(ARTIFACT_TOOL_COUNT)
     const names = store!.tools.map((t) => t.name)
@@ -57,8 +57,8 @@ describe('BUILTIN_MCPS artifact-store catalog', () => {
 })
 
 describe('BUILTIN_MCPS platform catalog', () => {
-  it('lists artifact-store as the only built-in MCP', () => {
-    expect(BUILTIN_MCPS.map((m) => m.id)).toEqual(['artifact-store'])
+  it('lists grasp-tool as the only built-in MCP', () => {
+    expect(BUILTIN_MCPS.map((m) => m.id)).toEqual(['grasp-tool'])
   })
 
   it.each(['zh-CN', 'en'] as const)('%s integrations i18n keys are complete', (locale) => {

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -40,6 +42,14 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 	s := bufio.NewScanner(os.Stdin)
 	sid := ""
 	var hanging int64
+	authed := false
+	usage := map[string]any{"inputTokens": 7, "outputTokens": 3, "totalTokens": 10}
+	withUsage := func(result map[string]any) map[string]any {
+		if os.Getenv("GRASP_ACP_PANEL_USAGE") != "" {
+			result["usage"] = usage
+		}
+		return result
+	}
 	for s.Scan() {
 		var req struct {
 			ID     int64  `json:"id"`
@@ -75,7 +85,14 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 			reply(map[string]any{"configOptions": []any{map[string]any{
 				"id": "model", "currentValue": "m2", "options": []any{map[string]any{"value": "m2", "name": "Model 2"}},
 			}}})
+		case "authenticate":
+			authed = true
+			reply(map[string]any{})
 		case "session/new":
+			if os.Getenv("GRASP_ACP_PANEL_AUTH") != "" && !authed {
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": "Authentication required"}})
+				continue
+			}
 			sid = "fresh"
 			reply(map[string]any{"sessionId": sid})
 		case "session/prompt":
@@ -84,10 +101,10 @@ func TestPanelAgentHelperProcess(t *testing.T) {
 				continue
 			}
 			update(sid, "live reply")
-			reply(map[string]any{"stopReason": "end_turn"})
+			reply(withUsage(map[string]any{"stopReason": "end_turn"}))
 		case "session/cancel":
 			if hanging != 0 && os.Getenv("GRASP_ACP_PANEL_CANCEL") != "ignore" {
-				send(map[string]any{"jsonrpc": "2.0", "id": hanging, "result": map[string]any{"stopReason": "cancelled"}})
+				send(map[string]any{"jsonrpc": "2.0", "id": hanging, "result": withUsage(map[string]any{"stopReason": "cancelled"})})
 				hanging = 0
 			}
 		}
@@ -99,6 +116,7 @@ type panelRun struct {
 	panel  *Panel
 	mu     sync.Mutex
 	events []string
+	done   []string
 }
 
 func (r *panelRun) texts() []string {
@@ -109,6 +127,11 @@ func (r *panelRun) texts() []string {
 
 func openHelperPanel(t *testing.T, mode, resume string, env ...string) *panelRun {
 	t.Helper()
+	return openHelperPanelSpec(t, PanelSpec{ResumeSessionID: resume}, mode, env...)
+}
+
+func openHelperPanelSpec(t *testing.T, spec PanelSpec, mode string, env ...string) *panelRun {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -116,28 +139,31 @@ func openHelperPanel(t *testing.T, mode, resume string, env ...string) *panelRun
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	run := &panelRun{}
-	p, err := NewPanel(context.Background(), ctx, PanelSpec{
-		Argv: []string{exe, "-test.run=^TestPanelAgentHelperProcess$"},
-		Env:  append(append(os.Environ(), "GRASP_ACP_PANEL_HELPER="+mode), env...),
-		Cwd:  t.TempDir(),
-		OnEvent: func(ev json.RawMessage) {
-			var frame struct {
-				Type   string `json:"type"`
-				Update struct {
-					Content struct {
-						Text string `json:"text"`
-					} `json:"content"`
-				} `json:"update"`
+	spec.Argv = []string{exe, "-test.run=^TestPanelAgentHelperProcess$"}
+	spec.Env = append(append(os.Environ(), "GRASP_ACP_PANEL_HELPER="+mode), env...)
+	spec.Cwd = t.TempDir()
+	spec.OnEvent = func(ev json.RawMessage) {
+		var frame struct {
+			Type   string `json:"type"`
+			Update struct {
+				Content struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(ev, &frame) != nil || frame.Type != "session_update" {
+			if frame.Type == "prompt_done" {
+				run.mu.Lock()
+				run.done = append(run.done, string(ev))
+				run.mu.Unlock()
 			}
-			if json.Unmarshal(ev, &frame) != nil || frame.Type != "session_update" {
-				return
-			}
-			run.mu.Lock()
-			run.events = append(run.events, frame.Update.Content.Text)
-			run.mu.Unlock()
-		},
-		ResumeSessionID: resume,
-	})
+			return
+		}
+		run.mu.Lock()
+		run.events = append(run.events, frame.Update.Content.Text)
+		run.mu.Unlock()
+	}
+	p, err := NewPanel(context.Background(), ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,5 +235,49 @@ func TestAgentThatIgnoresTheInterruptIsClosed(t *testing.T) {
 	case <-run.panel.Conn().Done():
 	case <-time.After(3 * time.Second):
 		t.Fatal("an agent that ignored the interrupt was left running")
+	}
+}
+
+func TestPanelAuthenticatesAndReportsResultUsage(t *testing.T) {
+	read := func(result json.RawMessage, model string) map[string]provider.TokenUsage {
+		return PromptResultUsage(result, model)
+	}
+	run := openHelperPanelSpec(t, PanelSpec{AuthMethod: "api-key", ResultUsage: read}, "none", "GRASP_ACP_PANEL_AUTH=1", "GRASP_ACP_PANEL_USAGE=1")
+	want := map[string]provider.TokenUsage{"default": {InputTokens: 7, OutputTokens: 3}}
+	if !run.panel.ReportsUsage() {
+		t.Fatal("a panel with a result reader must report usage")
+	}
+	res, err := run.panel.PromptTurn(context.Background(), "again", nil)
+	if err != nil || res.StopReason != "end_turn" || !reflect.DeepEqual(res.Usage, want) {
+		t.Fatalf("result=%+v err=%v", res, err)
+	}
+	run.mu.Lock()
+	done := append([]string(nil), run.done...)
+	run.mu.Unlock()
+	if len(done) != 2 || !strings.Contains(done[1], `"usage":{"default":{"inputTokens":7,"outputTokens":3}}`) {
+		t.Fatalf("prompt_done frames = %q", done)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	res, err = run.panel.PromptTurn(ctx, "hang", nil)
+	if !errors.Is(err, context.Canceled) || res.StopReason != "" || !reflect.DeepEqual(res.Usage, want) {
+		t.Fatalf("cancelled result=%+v err=%v, want the cancelled answer's usage", res, err)
+	}
+}
+
+func TestPanelWithoutAuthMethodIsRefusedByAnAgentThatNeedsOne(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = NewPanel(context.Background(), ctx, PanelSpec{
+		Argv: []string{exe, "-test.run=^TestPanelAgentHelperProcess$"},
+		Env:  append(os.Environ(), "GRASP_ACP_PANEL_HELPER=none", "GRASP_ACP_PANEL_AUTH=1"),
+		Cwd:  t.TempDir(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "Authentication required") {
+		t.Fatalf("err = %v", err)
 	}
 }

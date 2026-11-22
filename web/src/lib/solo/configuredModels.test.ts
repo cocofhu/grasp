@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { configuredModelChoices } from './configuredModels'
+import { configuredModelChoices, defaultReasoningEffort } from './configuredModels'
+
+describe('defaultReasoningEffort', () => {
+  it('prefers the tool\'s listed default, then max, then the last level', () => {
+    expect(defaultReasoningEffort(['low', 'medium', 'max'], 'medium')).toBe('medium')
+    expect(defaultReasoningEffort(['low', 'medium', 'max'], 'xhigh')).toBe('max')
+    expect(defaultReasoningEffort(['low', 'high'])).toBe('high')
+    expect(defaultReasoningEffort([])).toBe('')
+  })
+})
 
 describe('configuredModelChoices', () => {
+  it('offers Cursor its catalog levels, default level and Fast per model', () => {
+    const choices = configuredModelChoices({
+      backend: 'cursor', catalogReady: true,
+      binding: { kind: 'platform', credentialId: 'cursor-key', modelId: 'gpt-5.5', auxiliaryModelIds: ['composer-2.5'] },
+      cliModels: [
+        { id: 'gpt-5.5', name: 'GPT-5.5', vendor: 'openai', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', serviceTiers: ['fast'] },
+        { id: 'composer-2.5', name: 'Composer 2.5', vendor: 'cursor', serviceTiers: ['fast'] },
+      ],
+    })
+    expect(choices.map(({ id, efforts, defaultEffort, serviceTiers }) => ({ id, efforts, defaultEffort, serviceTiers }))).toEqual([
+      { id: 'gpt-5.5', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', serviceTiers: ['fast'] },
+      { id: 'composer-2.5', efforts: [], defaultEffort: undefined, serviceTiers: ['fast'] },
+    ])
+  })
+
   it('offers Fast only for an explicitly declared official Codex model', () => {
     const input = {
       backend: 'codex', catalogReady: true,
@@ -11,7 +35,7 @@ describe('configuredModelChoices', () => {
     expect(platform.map(model => model.serviceTiers)).toEqual([['fast'], undefined])
     const connection = configuredModelChoices({ ...input, binding: { kind: 'connection', connectionId: 'api', modelId: 'gpt-6.2-sol' } })
     expect(connection[0]?.serviceTiers).toBeUndefined()
-    const otherTool = configuredModelChoices({ ...input, backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-login', modelId: 'gpt-6.2-sol' } })
+    const otherTool = configuredModelChoices({ ...input, backend: 'claude_code', binding: { kind: 'platform', credentialId: 'claude-login', modelId: 'gpt-6.2-sol' } })
     expect(otherTool[0]?.serviceTiers).toBeUndefined()
   })
 
