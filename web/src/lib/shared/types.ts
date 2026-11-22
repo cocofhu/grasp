@@ -528,6 +528,8 @@ export interface AcpLiveness {
 export interface AgentPart {
   kind: 'thought' | 'message' | 'tool' | 'steer'
   text?: string
+  /** Image attachments carried by a steer event. */
+  imageURLs?: string[]
   title?: string
   status?: string
   summary?: string

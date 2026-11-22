@@ -19,6 +19,8 @@ All notable public-release changes are documented here.
 
 - Agent 回合进行中可以「立即引导」：在 Solo、Agent Studio、工作流澄清 / 复审 / 审批和访客分享链接的排队消息上点闪电按钮，消息直接进入正在进行的回合，Agent 接着当前工作处理，不用等这一轮结束。Codex、Claude Code、CodeBuddy、OpenCode 和 Pi 原生支持；其他 Agent 会先停下当前回合，再把这条消息作为下一轮发送。引导内容显示在对话中，也会保留在历史记录和上下文里；只带附件的引导会列出附件名。Codex 改为常驻 `app-server` 运行，OpenCode 改为常驻 `opencode serve`，Pi 改为常驻 `pi --mode rpc`，需要沙箱运行时更新后生效。
 
+- Agent 对话中的「Steer」引导气泡与普通用户气泡统一尺寸和圆角，中文前缀显示为「引导」，支持 Markdown、Markdown 图片和图片附件预览。
+
 - 修复对话中行首的 `#1304` 这类 issue / PR 编号被显示成粗体大标题、`#` 被吞掉的问题。Codex 工具行里的命令和文件路径不再被逐词首字母大写（如 `/Bin/Bash -Lc 'Gh Pr View'`），按原样显示。
 
 - 回复下方的时间和「统计信息」改为显示完成时间，不再显示开始时间。用时达到 1 小时或跨天的回复会额外显示「开始时间」。

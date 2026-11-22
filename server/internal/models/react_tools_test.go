@@ -147,7 +147,7 @@ func TestPartsForReplyReplacesCleanedNarration(t *testing.T) {
 		{Kind: "message", Text: "draft <!--internal-->"}, {Kind: "tool", Title: "Shell"}, {Kind: "message", Text: "done"},
 	}}}
 	got := PartsForReply(events, "draft done")
-	if len(got) != 2 || got[0].Kind != "tool" || got[1] != (AcpPart{Kind: "message", Text: "draft done"}) {
+	if len(got) != 2 || got[0].Kind != "tool" || !reflect.DeepEqual(got[1], AcpPart{Kind: "message", Text: "draft done"}) {
 		t.Fatalf("cleaned reply must replace message steps: %+v", got)
 	}
 	got = PartsForReply(events, "")

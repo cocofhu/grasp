@@ -17,6 +17,7 @@ import ContextCommandNotice from '@/components/chat/ContextCommandNotice.vue'
 import { renderChatMarkdown, renderChatMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
+import AgentSteerBubble from './AgentSteerBubble.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import Icon from '../ui/Icon.vue'
@@ -299,23 +300,34 @@ function onToggle(index: number, last: boolean, e: Event) {
           </div>
         </template>
       </div>
-      <div v-for="b in steerSlots.beforeTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
-        <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
-      </div>
+      <AgentSteerBubble
+        v-for="b in steerSlots.beforeTail"
+        :key="b.key"
+        :text="b.text"
+        :image-urls="b.imageURLs"
+        :label="t('pages.clarify.steerLabel')"
+      />
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
       </div>
-      <div v-for="b in steerSlots.afterTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
-        <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
-      </div>
+      <AgentSteerBubble
+        v-for="b in steerSlots.afterTail"
+        :key="b.key"
+        :text="b.text"
+        :image-urls="b.imageURLs"
+        :label="t('pages.clarify.steerLabel')"
+      />
     </template>
     <template v-else>
       <template v-for="b in blocks" :key="b.key">
         <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" :run-id="runId" />
-        <div v-else-if="b.kind === 'steer'" class="agent-steer" data-testid="agent-timeline-steer">
-          <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
-        </div>
+        <AgentSteerBubble
+          v-else-if="b.kind === 'steer'"
+          :text="b.text"
+          :image-urls="b.imageURLs"
+          :label="t('pages.clarify.steerLabel')"
+        />
         <details
           v-else-if="b.kind === 'thought'"
           class="agent-thought chat-meta w-full min-w-0"
@@ -387,24 +399,6 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-live-message { margin: 0 0 2px; }
 .agent-live-message:last-child { margin-bottom: 0; }
 .agent-elapsed-note { margin-bottom: 2px; }
-.agent-steer {
-  align-self: flex-end;
-  max-width: 85%;
-  margin: 4px 0 8px;
-  border-radius: 12px;
-  padding: 6px 10px;
-  background: rgb(var(--c-elevated));
-  color: rgb(var(--c-txt));
-  font-size: 13px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.agent-steer-label {
-  margin-right: 6px;
-  color: rgb(var(--c-txt3));
-  font-size: 11px;
-}
 .agent-elapsed-rule {
   height: 1px;
   margin: 4px 0 8px;
