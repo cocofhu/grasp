@@ -50,7 +50,7 @@ function mountDashboard() {
     attachTo: document.body,
     global: {
       plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...common, ...pages } } })],
-      stubs: { RunLaunchModal: true, AppModal: true, Teleport: false, HomeParticleMeshBackground: true, HomeYumeCharacter: true },
+      stubs: { RunLaunchModal: true, AppModal: true, Teleport: false, HomeYumeCharacter: true },
     },
   })
 }

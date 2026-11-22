@@ -223,7 +223,6 @@
       "format.ts",
       "frontmatter.ts",
       "highlightJson.ts",
-      "homeParticleMesh.ts",
       "hoverInkDirective.ts",
       "hoverInkGeometry.ts",
       "htmlPreviewSandbox.ts",
@@ -295,7 +294,7 @@
     "inbox": 47,
     "onboarding": 2,
     "run": 76,
-    "shared": 43,
+    "shared": 42,
     "solo": 16,
     "workflow": 3,
     "workspace": 6
