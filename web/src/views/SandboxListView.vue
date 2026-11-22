@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="flex shrink-0 flex-col px-4 pb-2 pt-1 md:flex-row md:items-center md:px-5">
+    <div class="flex shrink-0 flex-col px-4 pb-2 pt-2 md:flex-row md:items-center md:px-5">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>

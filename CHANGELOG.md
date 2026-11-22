@@ -22,6 +22,8 @@ All notable public-release changes are documented here.
 
 - 沙箱列表页在概览区与状态 tab 之间补充小间距，让分段控件与上方内容保持清晰层次。
 
+- 沙箱列表页进一步增加状态 tab 上方留白，使分段轨道与概览区的边界更舒展。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。
