@@ -237,7 +237,7 @@ export default defineConfig({
           if (requestUrl.pathname === '/sandbox-list.html') {
             richSandboxMode = requestUrl.searchParams.get('fixture') === 'rich'
           }
-          const richSandboxFixture = richSandboxMode
+          const richSandboxFixture = richSandboxMode || String(req.headers.referer || '').includes('fixture=rich')
           const activeSandboxList = richSandboxFixture ? mockSandboxes : [mockSandbox]
           if (req.url?.split('?')[0] === '/preview-pick.js') {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
