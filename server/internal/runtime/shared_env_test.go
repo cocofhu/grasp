@@ -318,7 +318,7 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"inheritModel":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent"}}`
+	agentJSON := `{"inheritModel":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"grasp-tool","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 		switch sp.Name {
 		case "server-log":
 			logHdr = sp.Headers["Authorization"]
-		case "artifact-store":
+		case "grasp-tool":
 			artHdr = sp.Headers["Authorization"]
 		}
 	}
@@ -356,7 +356,7 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 		t.Fatalf("server-log Authorization = %q", logHdr)
 	}
 	if artHdr != "Bearer tok" {
-		t.Fatalf("artifact-store must keep run token, got %q", artHdr)
+		t.Fatalf("grasp-tool must keep run token, got %q", artHdr)
 	}
 	spec, err := c.spec(req)
 	if err != nil {

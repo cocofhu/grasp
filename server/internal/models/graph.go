@@ -130,6 +130,8 @@ const AcpPartSteer = "steer"
 type AcpPart struct {
 	Kind string `json:"kind"` // thought|message|tool|steer
 	Text string `json:"text,omitempty"`
+	// ImageURLs carries image attachments on steer steps. Other parts leave it empty.
+	ImageURLs []string `json:"imageURLs,omitempty"`
 	// Tool steps only. Summary is the redacted one-line argument (command,
 	// path, URL…); Input / Output are redacted, truncated details.
 	Title   string `json:"title,omitempty"`
@@ -256,7 +258,7 @@ const (
 	AcpKindTurnEnd = "turn_end"
 )
 
-// ArtifactMeta marks an event as an artifact-store write.
+// ArtifactMeta marks an event as a grasp-tool write.
 type ArtifactMeta struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`

@@ -6,7 +6,7 @@ import type { AgentPart, AgentTool } from '@/lib/shared/types'
 /** A reply's tool row: the shared tool shape plus the id its updates key on. */
 type ReplyTool = AgentTool & { id: string; status: string }
 /** Arrival order of a reply: text runs, steers, or an index into AcpReply.tools. */
-export type ReplyStep = { kind: 'thought' | 'message' | 'steer'; text: string } | { kind: 'tool'; tool: number }
+export type ReplyStep = { kind: 'thought' | 'message' | 'steer'; text: string; imageURLs?: string[] } | { kind: 'tool'; tool: number }
 type PlanEntry = { content: string; status: string }
 
 /** The reply state one agent turn folds its acp-bridge frames into. */
@@ -130,8 +130,11 @@ export function applyAcp(envelope: any, turn: AcpReply, label: ToolLabeler, tool
   if (ev?.type === 'user_steer') {
     // Each steer is its own user message; never merge it into a neighbour.
     const text = steerText(ev)
-    if (text) {
-      ;(turn.steps ??= []).push({ kind: 'steer', text })
+    const imageURLs = Array.isArray(ev.imageURLs)
+      ? ev.imageURLs.filter((url: unknown): url is string => typeof url === 'string' && !!url.trim())
+      : []
+    if (text || imageURLs.length) {
+      ;(turn.steps ??= []).push({ kind: 'steer', text, ...(imageURLs.length ? { imageURLs } : {}) })
       turn.paragraph = true
     }
     return
@@ -163,7 +166,7 @@ export function applyAcp(envelope: any, turn: AcpReply, label: ToolLabeler, tool
 /** Timeline parts of a reply; tool steps read the live tool row. */
 export function partsOf(turn: AcpReply): AgentPart[] {
   return (turn.steps ?? []).map((st) => {
-    if (st.kind !== 'tool') return { kind: st.kind, text: st.text }
+    if (st.kind !== 'tool') return { kind: st.kind, text: st.text, imageURLs: st.imageURLs }
     const tool = turn.tools[st.tool]
     return tool
       ? { kind: 'tool', title: tool.title, status: tool.status, summary: tool.summary, input: tool.input, output: tool.output }

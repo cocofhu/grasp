@@ -115,7 +115,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	platformSpecs := []sandbox.MCPServerSpec{}
 	if base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/"); base != "" {
 		platformSpecs = append(platformSpecs, sandbox.MCPServerSpec{
-			Name:    ArtifactStoreMCP,
+			Name:    GraspToolMCP,
 			URL:     base + "/mcp/runs/" + url.PathEscape(runID),
 			Headers: map[string]string{"Authorization": "Bearer " + token},
 		})

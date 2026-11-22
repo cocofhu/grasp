@@ -176,12 +176,12 @@ function addMcp() {
 }
 
 async function seedArtifact() {
-  artifactPreset.value = findPreset(await loadMcpPresets(), 'artifact-store')
+  artifactPreset.value = findPreset(await loadMcpPresets(), 'grasp-tool')
   restoreArtifact()
 }
 
 function restoreArtifact() {
-  if (!artifactPreset.value || draft.value.mcp.some((m) => m.name.trim() === 'artifact-store')) return
+  if (!artifactPreset.value || draft.value.mcp.some((m) => m.name.trim() === 'grasp-tool')) return
   draft.value.mcp.unshift(presetDraft(artifactPreset.value))
 }
 
@@ -200,7 +200,7 @@ const envSummary = computed(() => {
   if (!rows.length) return t('pages.agentStudio.teamWizard.review.none')
   return rows.map((e) => e.k).join(', ')
 })
-const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() === 'artifact-store'))
+const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() === 'grasp-tool'))
 </script>
 
 <template>

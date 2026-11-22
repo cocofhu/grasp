@@ -311,7 +311,7 @@ func TestConversationHistoryOmitsHistoryReadThroughARunner(t *testing.T) {
 }
 
 func TestConversationHistoryOmitsHistoryReads(t *testing.T) {
-	for _, title := range []string{"mcp__artifact-store__get_history", "MCP tool"} {
+	for _, title := range []string{"mcp__grasp-tool__get_history", "MCP tool"} {
 		row := models.SoloMessage{Events: []json.RawMessage{
 			json.RawMessage(fmt.Sprintf(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call","toolCallId":"history","title":%q}}}`, title)),
 			json.RawMessage(`{"op":"event","data":{"type":"session_update","update":{"sessionUpdate":"tool_call_update","toolCallId":"history","status":"completed","content":[{"content":{"type":"text","text":"{\"conversationId\":\"c\",\"history_version\":\"v1\",\"messages\":[{\"content\":\"nested old history must not recur\"}]}"}}]}}}`),

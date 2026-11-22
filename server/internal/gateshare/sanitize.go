@@ -437,8 +437,12 @@ func SanitizeParts(parts []models.AcpPart) []models.AcpPart {
 		case "tool":
 			out = append(out, models.AcpPart{Kind: "tool", Title: SanitizeToolTitle(p.Title), Status: SanitizeToolStatus(p.Status)})
 		case "thought", "message", models.AcpPartSteer:
-			if strings.TrimSpace(p.Text) != "" {
-				out = append(out, models.AcpPart{Kind: p.Kind, Text: p.Text})
+			if strings.TrimSpace(p.Text) != "" || len(p.ImageURLs) > 0 {
+				var imageURLs []string
+				if p.Kind == models.AcpPartSteer {
+					imageURLs = append([]string(nil), p.ImageURLs...)
+				}
+				out = append(out, models.AcpPart{Kind: p.Kind, Text: p.Text, ImageURLs: imageURLs})
 			}
 		}
 	}

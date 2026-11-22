@@ -1479,7 +1479,7 @@
         }
       },
       "mcp": {
-        "hint": "Full mcp.json written to {configRoot}/mcp.json and injected in ACP. New agents include artifact-store by default.",
+        "hint": "Full mcp.json written to {configRoot}/mcp.json and injected in ACP. New agents include grasp-tool by default.",
         "formEdit": "Form editor",
         "rawJson": "Raw JSON",
         "runVarsTitle": "Run-scoped variables (substituted in url/headers/args/env)",
@@ -1487,14 +1487,14 @@
         "artifactUrl": "run-scoped artifact MCP endpoint",
         "artifactToken": "run-bound access token",
         "globalVar": "{'${vars.NAME}'} — workflow global, e.g. {'${vars.feature}'}",
-        "addArtifactStore": "+ Add artifact store",
+        "addGraspTool": "+ Add Grasp Tool",
         "addBrowser": "+ Browser",
         "addDesktop": "+ Desktop control",
         "addBlender": "+ Blender",
         "requiresDesktop": "Requires the desktop image",
         "quickAddLabel": "Quick add",
         "displayName": {
-          "artifact": "Artifact store"
+          "artifact": "Grasp Tool"
         },
         "scopeNote": {
           "artifact": "Run-isolated artifact service for this run.",
@@ -1686,12 +1686,12 @@
           "prefix": "Name prefix"
         },
         "mcp": {
-          "meta": "Default mcp[] for the team; applied when creating engineers. artifact-store is prefilled.",
+          "meta": "Default mcp[] for the team; applied when creating engineers. grasp-tool is prefilled.",
           "namePh": "Name",
           "headers": "Headers",
           "addHeader": "Add header",
           "add": "Add MCP",
-          "restoreArtifact": "Restore artifact-store preset",
+          "restoreArtifact": "Restore grasp-tool preset",
           "runVars": "Run vars: {'${GRASP_ARTIFACT_URL}'} / {'${GRASP_ARTIFACT_TOKEN}'}"
         },
         "env": {
@@ -1702,7 +1702,7 @@
           "team": "Team",
           "none": "None",
           "roster": "Roster: 4 engineers",
-          "noArtifactWarn": "Workflow roles usually need artifact-store; it is missing from the MCP list."
+          "noArtifactWarn": "Workflow roles usually need grasp-tool; it is missing from the MCP list."
         },
         "errors": {
           "teamNameRequired": "Enter a team name",
@@ -2484,7 +2484,7 @@
       "changes": "Changes",
       "changedFiles": "Changed files ({n})",
       "gitDetection": "Git detection",
-      "artifactsMcp": "Artifacts · written via artifact-store MCP",
+      "artifactsMcp": "Artifacts · written via grasp-tool MCP",
       "output": "Output",
       "noPreviewCardsTitle": "No previewable result cards this run",
       "noPreviewCardsBody": "The run completed successfully. Final result sources are empty, or no output node ran. This is not a load failure.",

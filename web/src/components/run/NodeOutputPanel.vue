@@ -458,7 +458,7 @@ function fileStatusClass(s: string): string {
       </div>
     </div>
 
-    <!-- artifacts written via artifact-store MCP -->
+    <!-- artifacts written via grasp-tool MCP -->
     <div v-if="nodeArtifacts.length" class="card mb-3 p-3">
       <div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-txt2"><Icon name="artifact" :size="13" class="text-n-artifact" /> {{ t('pages.nodeOutput.artifactsMcp') }}</div>
       <div class="space-y-1.5">

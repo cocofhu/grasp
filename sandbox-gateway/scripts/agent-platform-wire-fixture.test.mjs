@@ -50,7 +50,7 @@ async function kimiWire(config, commands) {
     child.stderr.on('data', (chunk) => { errors += chunk })
     child.stdin.end([
       {id: 1, method: 'initialize'},
-      {id: 2, method: 'session/new', params: {mcpServers: [{name: 'artifact-store', url: base+'/mcp'}]}},
+      {id: 2, method: 'session/new', params: {mcpServers: [{name: 'grasp-tool', url: base+'/mcp'}]}},
       ...commands,
     ].map((request) => JSON.stringify({jsonrpc: '2.0', ...request})).join('\n')+'\n')
     const [code] = await once(child, 'close')

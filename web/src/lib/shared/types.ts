@@ -495,7 +495,7 @@ export interface AcpEvent {
   title?: string
   text?: string
   status?: 'running' | 'completed' | 'failed'
-  // 当 tool_call 是 artifact-store MCP 写入时,标记产物名/类型,供日志高亮与产物派生
+  // 当 tool_call 是 grasp-tool MCP 写入时,标记产物名/类型,供日志高亮与产物派生
   artifact?: { name: string; kind: 'markdown' | 'json' | 'yaml' }
   /** RFC3339; set on prompt (turn start) and turn_end. */
   at?: string
@@ -528,6 +528,8 @@ export interface AcpLiveness {
 export interface AgentPart {
   kind: 'thought' | 'message' | 'tool' | 'steer'
   text?: string
+  /** Image attachments carried by a steer event. */
+  imageURLs?: string[]
   title?: string
   status?: string
   summary?: string

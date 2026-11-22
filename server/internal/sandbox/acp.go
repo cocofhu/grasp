@@ -141,7 +141,7 @@ func attachImages(msg map[string]any, images []models.PromptImage) {
 // ACPClient is a Go binding for the acp-bridge WebSocket protocol that
 // runs inside a sandbox container (port 8765). It mirrors the auto-coder
 // client but adds mcpServers/cwd injection on connect so approving can wire
-// the per-run artifact-store MCP into the in-container cursor-agent.
+// the per-run grasp-tool MCP into the in-container cursor-agent.
 type ACPClient struct {
 	host string
 	port int

@@ -1,4 +1,4 @@
-// Package mcp implements the built-in artifact-store MCP host.
+// Package mcp implements the built-in grasp-tool MCP host.
 //
 // Isolation model (see PLAN.md section 6): the MCP is NOT a global
 // singleton. Each run gets its own scoped endpoint and a run-bound token

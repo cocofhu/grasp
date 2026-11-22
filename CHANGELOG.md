@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。工作流节点创建沙箱时如果沙箱已满，会在执行日志里提示「等待沙箱名额」并等到有名额后继续，不再直接失败。`GET /api/stats/dashboard` 已移除。
 
+- 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。
@@ -22,6 +24,8 @@ All notable public-release changes are documented here.
 - Agent 回合进行中可以「立即引导」：在 Solo、Agent Studio、工作流澄清 / 复审 / 审批和访客分享链接的排队消息上点闪电按钮，消息直接进入正在进行的回合，Agent 接着当前工作处理，不用等这一轮结束。Codex、Claude Code、CodeBuddy、OpenCode 和 Pi 原生支持；其他 Agent 会先停下当前回合，再把这条消息作为下一轮发送。引导内容显示在对话中，也会保留在历史记录和上下文里；只带附件的引导会列出附件名。Codex 改为常驻 `app-server` 运行，OpenCode 改为常驻 `opencode serve`，Pi 改为常驻 `pi --mode rpc`，需要沙箱运行时更新后生效。
 
 - 不支持原生「立即引导」的 Agent 不再显示排队消息上的 steer 按钮；Solo、Agent Studio、工作流对话、审批和访客会话按当前沙箱会话能力更新显示。
+
+- Agent 对话中的「Steer」引导气泡与普通用户气泡统一尺寸和圆角，中文前缀显示为「引导」，支持 Markdown、Markdown 图片和图片附件预览。
 
 - 修复对话中行首的 `#1304` 这类 issue / PR 编号被显示成粗体大标题、`#` 被吞掉的问题。Codex 工具行里的命令和文件路径不再被逐词首字母大写（如 `/Bin/Bash -Lc 'Gh Pr View'`），按原样显示。
 

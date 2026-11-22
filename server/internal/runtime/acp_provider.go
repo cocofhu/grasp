@@ -114,11 +114,11 @@ func isTurnTimeoutErr(err error) bool {
 // (the gateway default when unset). The in-container ACP agent is
 // driven via the acp-bridge WebSocket bridge (ACP JSON-RPC). Declared produces
 // are harvested from the container workspace and written through the run-scoped
-// artifact-store MCP, satisfying the produces contract the engine enforces.
+// grasp-tool MCP, satisfying the produces contract the engine enforces.
 //
 // Each node gets a per-node config-home mount (rules/skills + mcp.json) built
-// from the Agent config. The run-scoped artifact-store MCP is not
-// auto-injected: an Agent opts in by convention (an MCP named "artifact-store"),
+// from the Agent config. The run-scoped grasp-tool MCP is not
+// auto-injected: an Agent opts in by convention (an MCP named "grasp-tool"),
 // and the platform fills its run-scoped URL + token so artifacts stay isolated
 // per run.
 type acpProvider struct {

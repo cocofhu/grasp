@@ -18,17 +18,17 @@ model_reasoning_effort = "low"
 base_url = "https://user.example/v1"
 [mcp_servers.user-server]
 command = "user-mcp"
-[mcp_servers.artifact-store]
+[mcp_servers.grasp-tool]
 url = "https://old.example/mcp"
 bearer_token_env_var = "OLD_AUTH_TOKEN"
 default_tools_approval_mode = "prompt"
 disabled_tools = ["write_artifact"]
 required = true
-[mcp_servers.artifact-store.http_headers]
+[mcp_servers.grasp-tool.http_headers]
 Authorization = "Bearer old-synthetic-auth"
-[mcp_servers.artifact-store.env_http_headers]
+[mcp_servers.grasp-tool.env_http_headers]
 Authorization = "OLD_AUTH_TOKEN"
-[mcp_servers.artifact-store.tools.get_history]
+[mcp_servers.grasp-tool.tools.get_history]
 approval_mode = "prompt"
 `
 	if err := os.WriteFile(filepath.Join(work, "config.toml"), []byte(original), 0o644); err != nil {
@@ -36,7 +36,7 @@ approval_mode = "prompt"
 	}
 	for _, route := range []string{"first", "second"} {
 		specs := []MCPServerSpec{
-			{Name: "artifact-store", URL: "http://mcp.example/runs/" + route, Headers: map[string]string{"Authorization": "Bearer synthetic-" + route}},
+			{Name: "grasp-tool", URL: "http://mcp.example/runs/" + route, Headers: map[string]string{"Authorization": "Bearer synthetic-" + route}},
 			{Name: "local-tool", Command: "node", Args: []string{"/tools/mcp.js"}, Env: map[string]string{"FIXTURE": route}},
 		}
 		home, err := BuildConfigHome(ConfigHomeSpec{WorkDirSrc: work, Codex: true, MCP: specs})
@@ -59,7 +59,7 @@ approval_mode = "prompt"
 		}
 		config := read()
 		servers := config["mcp_servers"].(map[string]any)
-		http := servers["artifact-store"].(map[string]any)
+		http := servers["grasp-tool"].(map[string]any)
 		stdio := servers["local-tool"].(map[string]any)
 		if config["model"] != "user-model" || config["model_reasoning_effort"] != "low" || config["model_providers"] == nil || servers["user-server"] == nil {
 			t.Fatal("native MCP injection discarded user configuration")
@@ -81,7 +81,7 @@ approval_mode = "prompt"
 		if err := writeCodexMCPConfig(home, specs); err != nil {
 			t.Fatal(err)
 		}
-		if read()["mcp_servers"].(map[string]any)["artifact-store"].(map[string]any)["url"] != specs[0].URL {
+		if read()["mcp_servers"].(map[string]any)["grasp-tool"].(map[string]any)["url"] != specs[0].URL {
 			t.Fatal("native Codex MCP refresh did not replace the managed server")
 		}
 	}

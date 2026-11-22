@@ -25,7 +25,7 @@ func (h *Handlers) SandboxInject(c *gin.Context) {
 	h.InjectBundles.ServeHTTP(c.Writer, c.Request, c.Param("id"))
 }
 
-// MCPRPC is the run-scoped artifact-store MCP endpoint. The in-container
+// MCPRPC is the run-scoped grasp-tool MCP endpoint. The in-container
 // cursor-agent connects here (URL + Bearer token injected at ACP
 // session/new) and calls write_artifact / read_artifact / list_artifacts.
 // Streamable-HTTP: POST carries JSON-RPC, GET streams server notifications,

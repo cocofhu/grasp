@@ -14,9 +14,9 @@
         "read": "read"
       }
     },
-    "artifactStore": {
+    "graspTool": {
       "desc": "Platform artifact store · injected into every node of the run (including sandbox agents) for reading/writing intermediate and final artifacts",
-      "overview": "Built-in artifact-store MCP. Injected by the orchestrator at run start into all nodes (including sandbox Agents), isolated by run token. Agents read/write artifacts via MCP; the Host persists them.",
+      "overview": "Built-in grasp-tool MCP. Injected by the orchestrator at run start into all nodes (including sandbox Agents), isolated by run token. Agents read/write artifacts via MCP; the Host persists them.",
       "convention": "Sandbox rule (mandatory): for every file listed in the node's produces contract, the agent must write it via write_artifact before ending the turn; after deliverables, the agent must also call node_complete. Validation order is fixed: platform default checks must pass, then optional business RPC. Enforced via injected system rules.",
       "tools": {
         "write_artifact": {

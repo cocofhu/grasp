@@ -71,7 +71,7 @@ export function kimiConfiguration(config, secret) {
 }
 
 async function rpc(method, params) {
-  if (!mcp?.url) throw new Error('selected artifact-store MCP configuration is missing')
+  if (!mcp?.url) throw new Error('selected grasp-tool MCP configuration is missing')
   const headers = Array.isArray(mcp.headers) ? Object.fromEntries(mcp.headers.map(({name, value}) => [name, value])) : mcp.headers || {}
   const response = await fetch(mcp.url, {method: 'POST', headers: {...headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(mcpSession ? {'mcp-session-id': mcpSession} : {})}, body: JSON.stringify({jsonrpc: '2.0', id: randomUUID(), method, params})})
   mcpSession = response.headers.get('mcp-session-id') || mcpSession
@@ -85,7 +85,7 @@ async function rpc(method, params) {
 async function run(prompt, notify) {
   await rpc('initialize', {protocolVersion: '2024-11-05', capabilities: {}, clientInfo: {name: 'grasp-platform-wire-fixture', version: '1'}})
   const catalog = await rpc('tools/list', {})
-  const tools = (catalog.tools || []).map((tool) => ({type: 'function', function: {name: `mcp__artifact-store__${tool.name}`, description: tool.description, parameters: tool.inputSchema}}))
+  const tools = (catalog.tools || []).map((tool) => ({type: 'function', function: {name: `mcp__grasp-tool__${tool.name}`, description: tool.description, parameters: tool.inputSchema}}))
   tools.push({type: 'function', function: {name: 'exec_command', parameters: {type: 'object', properties: {cmd: {type: 'string'}}, required: ['cmd']}}})
   messages.push({role: 'user', content: prompt})
   for (let turn = 0; turn < 20; turn++) {
@@ -101,8 +101,8 @@ async function run(prompt, notify) {
       const input = JSON.parse(call.function.arguments)
       notify({sessionUpdate: 'tool_call', toolCallId: call.id, title: call.function.name, status: 'in_progress', rawInput: input})
       let result
-      if (call.function.name.startsWith('mcp__artifact-store__')) {
-        result = await rpc('tools/call', {name: call.function.name.slice('mcp__artifact-store__'.length), arguments: input})
+      if (call.function.name.startsWith('mcp__grasp-tool__')) {
+        result = await rpc('tools/call', {name: call.function.name.slice('mcp__grasp-tool__'.length), arguments: input})
         if (result?.isError) throw new Error('the scoped MCP tool returned an error')
       } else if (call.function.name === 'exec_command') {
         result = checkpointOperation(input.cmd)
@@ -123,7 +123,7 @@ if (args.includes('--version')) {
   // fails; CONFIG_ROOT alone is not a native Cursor setting.
   const root = process.env.CURSOR_CONFIG_DIR
   if (!root) throw new Error('native CURSOR_CONFIG_DIR was not set')
-  mcp = JSON.parse(fs.readFileSync(path.join(root, 'mcp.json'), 'utf8')).mcpServers?.['artifact-store']
+  mcp = JSON.parse(fs.readFileSync(path.join(root, 'mcp.json'), 'utf8')).mcpServers?.['grasp-tool']
   let prompt = ''
   for await (const chunk of process.stdin) prompt += chunk
   send({type: 'system', subtype: 'init', session_id: sid})
@@ -131,7 +131,7 @@ if (args.includes('--version')) {
   const reply = await run(prompt, (update) => {
     if (update.sessionUpdate === 'tool_call') calls.set(update.toolCallId, update)
     const start = calls.get(update.toolCallId)
-    const isMcp = start.title.startsWith('mcp__artifact-store__')
+    const isMcp = start.title.startsWith('mcp__grasp-tool__')
     const key = isMcp ? 'mcpToolCall' : 'shellToolCall'
     const toolArgs = isMcp ? {toolName: start.title, args: start.rawInput} : {command: start.rawInput.cmd}
     const result = update.content ? {success: {content: update.content.map((entry) => ({type: 'text', text: entry.content.text}))}} : undefined
@@ -166,7 +166,7 @@ if (args.includes('--version')) {
       let result = {}
       if (request.method === 'initialize') result = {protocolVersion: 1, agentCapabilities: {mcpCapabilities: {http: true}}, agentInfo: {name: `grasp-${provider}-platform-wire-fixture`, version: '1'}}
       else if (request.method === 'session/new') {
-        mcp = request.params.mcpServers.find((server) => server.name === 'artifact-store')
+        mcp = request.params.mcpServers.find((server) => server.name === 'grasp-tool')
         result = {sessionId: sid, configOptions: options()}
       } else if (request.method === 'session/set_config_option') {
         const option = options().find((option) => option.id === request.params.configId)

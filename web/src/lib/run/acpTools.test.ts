@@ -64,6 +64,7 @@ describe('sameParts', () => {
     expect(sameParts([{ kind: 'tool', title: 'a' }], [{ kind: 'tool', title: 'a', output: 'x' }])).toBe(false)
     expect(sameParts([{ kind: 'message', text: 'a' }], [])).toBe(false)
     expect(sameParts([{ kind: 'tool', title: 'a' }], [{ kind: 'tool', title: 'a', durationMs: 1200 }])).toBe(false)
+    expect(sameParts([{ kind: 'steer', text: 'a', imageURLs: ['data:image/png;base64,A'] }], [{ kind: 'steer', text: 'a', imageURLs: ['data:image/png;base64,B'] }])).toBe(false)
   })
 })
 
@@ -121,5 +122,11 @@ describe('steer parts', () => {
     expect(timelineBlocks(parts).map((b) => b.kind)).toEqual(['message', 'steer'])
     expect(timelineFolds(parts)).toBe(true)
     expect(timelineFolds([{ kind: 'message', text: 'a' }])).toBe(false)
+  })
+
+  it('keeps an image-only steer block', () => {
+    expect(timelineBlocks([{ kind: 'steer', text: '', imageURLs: ['data:image/png;base64,A'] }])).toMatchObject([
+      { kind: 'steer', text: '', imageURLs: ['data:image/png;base64,A'] },
+    ])
   })
 })

@@ -74,10 +74,16 @@ func TestAttachmentOnlySteerIsRecorded(t *testing.T) {
 	if s := models.SteerTexts(timelineParts(t, replayed)); !reflect.DeepEqual(s, want) {
 		t.Fatalf("replayed steers = %v", s)
 	}
+	if got := timelineParts(t, replayed)[0].ImageURLs; !reflect.DeepEqual(got, []string{"data:image/png;base64,AAAA"}) {
+		t.Fatalf("replayed steer images = %v", got)
+	}
 	res := &ChatResult{}
 	(&ACPClient{}).dispatchEventData(json.RawMessage(`{"op":"event","opId":"g-1","data":`+data+`}`), res)
 	if s := models.SteerTexts(timelineParts(t, res.AcpEvents())); !reflect.DeepEqual(s, want) {
 		t.Fatalf("live steers = %v", s)
+	}
+	if got := timelineParts(t, res.AcpEvents())[0].ImageURLs; !reflect.DeepEqual(got, []string{"data:image/png;base64,AAAA"}) {
+		t.Fatalf("live steer images = %v", got)
 	}
 }
 

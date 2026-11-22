@@ -84,7 +84,7 @@ class MatrixContracts(unittest.TestCase):
 
     def test_history_result_must_match_its_native_call(self):
         message = {'events': [
-            {'data': {'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'history-1', 'title': 'artifact-store/get_history'}}},
+            {'data': {'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'history-1', 'title': 'grasp-tool/get_history'}}},
             {'data': {'update': {'sessionUpdate': 'tool_call_update', 'toolCallId': 'other', 'status': 'completed'}}},
         ]}
         self.assertFalse(runner.history_tool_completed(message))
@@ -98,7 +98,7 @@ class MatrixContracts(unittest.TestCase):
         ]}
         self.assertFalse(runner.history_tool_completed(message))
         message['events'].extend([
-            {'data': {'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'actual', 'title': 'DeferExecuteTool', 'rawInput': {'toolName': 'mcp__artifact-store__get_history'}}}},
+            {'data': {'update': {'sessionUpdate': 'tool_call', 'toolCallId': 'actual', 'title': 'DeferExecuteTool', 'rawInput': {'toolName': 'mcp__grasp-tool__get_history'}}}},
             {'data': {'update': {'sessionUpdate': 'tool_call_update', 'toolCallId': 'actual', 'status': 'completed'}}},
         ])
         self.assertTrue(runner.history_tool_completed(message))

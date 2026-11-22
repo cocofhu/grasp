@@ -321,7 +321,7 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 }
 
 func TestAgentConfigAndMCP(t *testing.T) {
-	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
+	root := writeAgent(t, "dev", `{"mcp":[{"name":"grasp-tool","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
@@ -344,7 +344,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 		t.Errorf("resolvedMCPSpecs = %+v", specs)
 	}
 	if raw := p.mcpServers(req); len(raw) == 0 {
-		t.Error("mcpServers should be non-empty when artifact-store present")
+		t.Error("mcpServers should be non-empty when grasp-tool present")
 	}
 	if wd := p.workDir("dev"); wd != "" { // no cursor/ dir exists
 		t.Errorf("workDir = %q, want empty", wd)

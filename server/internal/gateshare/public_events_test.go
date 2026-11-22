@@ -2,6 +2,7 @@ package gateshare
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestSanitizeLiveEventsTimelineDropsToolDetails(t *testing.T) {
 		t.Fatalf("parts: %+v", ev[0].Parts)
 	}
 	for i, p := range ev[0].Parts {
-		if p != want[i] {
+		if !reflect.DeepEqual(p, want[i]) {
 			t.Fatalf("part %d = %+v, want %+v", i, p, want[i])
 		}
 	}

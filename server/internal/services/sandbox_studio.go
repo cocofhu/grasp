@@ -236,14 +236,14 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	}
 	env = merged
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
-		BaseWorkDirSrc:       sharedWorkDir,
-		WorkDirSrc:           s.skills.WorkDir(profile),
-		IncludeArtifactStore: hasArtifactStoreSpec(specs),
-		MCP:                  specs,
-		OpenCode:             backend == runtime.BackendOpenCode,
-		Codex:                backend == runtime.BackendCodex,
-		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
-		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
+		BaseWorkDirSrc:   sharedWorkDir,
+		WorkDirSrc:       s.skills.WorkDir(profile),
+		IncludeGraspTool: hasGraspToolSpec(specs),
+		MCP:              specs,
+		OpenCode:         backend == runtime.BackendOpenCode,
+		Codex:            backend == runtime.BackendCodex,
+		DeepSeekHarness:  backend == runtime.BackendDeepSeekHarness,
+		Settings:         runtime.CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))
@@ -551,13 +551,13 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 			sharedWorkDir = s.shared.WorkDir()
 		}
 		if home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
-			BaseWorkDirSrc:       sharedWorkDir,
-			WorkDirSrc:           s.skills.WorkDir(row.Profile),
-			DeepSeekHarness:      deepSeekHarness,
-			IncludeArtifactStore: hasArtifactStoreSpec(specs),
-			MCP:                  specs,
-			OpenCode:             runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendOpenCode,
-			Codex:                runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendCodex,
+			BaseWorkDirSrc:   sharedWorkDir,
+			WorkDirSrc:       s.skills.WorkDir(row.Profile),
+			DeepSeekHarness:  deepSeekHarness,
+			IncludeGraspTool: hasGraspToolSpec(specs),
+			MCP:              specs,
+			OpenCode:         runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendOpenCode,
+			Codex:            runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendCodex,
 		}); err != nil {
 			if deepSeekHarness {
 				return nil, nil, fmt.Errorf("reconnect: rebuild DeepSeek Harness config home: %w", err)
@@ -959,9 +959,9 @@ func resolveAgentMCP(in []MCPServer, vars map[string]string) []sandbox.MCPServer
 	return out
 }
 
-func hasArtifactStoreSpec(specs []sandbox.MCPServerSpec) bool {
+func hasGraspToolSpec(specs []sandbox.MCPServerSpec) bool {
 	for _, sp := range specs {
-		if sp.Name == ArtifactStoreMCP {
+		if sp.Name == GraspToolMCP {
 			return true
 		}
 	}

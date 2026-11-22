@@ -349,9 +349,9 @@ func (s *stack) configureRestartFixture(endpoint string, markers ...string) rest
 				"id": "restart", "reply": marker,
 				"actions": []map[string]any{
 					{"kind": "shell", "command": command, "expect": []string{marker}},
-					{"kind": "tool", "name": "artifact-store_set_implementation_result", "expect": []string{"已写入实现结果"},
+					{"kind": "tool", "name": "grasp-tool_set_implementation_result", "expect": []string{"已写入实现结果"},
 						"arguments": map[string]string{"summary": marker}},
-					{"kind": "tool", "name": "artifact-store_node_complete", "expect": []string{marker},
+					{"kind": "tool", "name": "grasp-tool_node_complete", "expect": []string{marker},
 						"arguments": map[string]string{"status": "success", "summary": marker, "handoff": marker}},
 				},
 			}},

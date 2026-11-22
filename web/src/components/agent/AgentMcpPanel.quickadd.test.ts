@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { ARTIFACT_STORE, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import { GRASP_TOOL, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMcpPanel from './AgentMcpPanel.vue'
 
 vi.mock('@/lib/agent/mcpPresets', async (importOriginal) => {
@@ -13,7 +13,7 @@ vi.mock('@/lib/agent/mcpPresets', async (importOriginal) => {
   return {
     ...real,
     loadMcpPresets: async () => [
-      { id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } },
+      { id: 'grasp-tool', requiresDesktop: false, server: { name: 'grasp-tool', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } },
       { id: 'browser', requiresDesktop: false, server: { name: 'chrome-devtools', command: 'chrome-devtools-mcp', args: ['--browser-url=http://127.0.0.1:9222'] } },
       { id: 'desktop', requiresDesktop: true, server: { name: 'desktop', command: '/opt/grasp-runtime/current/bin/grasp-desktop', args: ['mcp'] } },
       { id: 'blender', requiresDesktop: true, server: { name: 'blender', command: '/usr/local/bin/blender-mcp', env: { BLENDER_MCP_PORT: '6092' } } },
@@ -104,14 +104,14 @@ describe('AgentMcpPanel', () => {
     const w = mountPanel(d)
     await flushPromises()
 
-    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(true)
-    await w.get('[data-test="mcp-add-artifact-store"]').trigger('click')
+    expect(w.find('[data-test="mcp-add-grasp-tool"]').exists()).toBe(true)
+    await w.get('[data-test="mcp-add-grasp-tool"]').trigger('click')
     await flushPromises()
 
-    expect(d.mcp[0].name).toBe(ARTIFACT_STORE)
+    expect(d.mcp[0].name).toBe(GRASP_TOOL)
     expect(d.mcp[0].headers[0].k).toBe('Authorization')
-    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(false)
-    expect(w.get('[data-test="mcp-display-name"]').text()).toBe('产物存储')
+    expect(w.find('[data-test="mcp-add-grasp-tool"]').exists()).toBe(false)
+    expect(w.get('[data-test="mcp-display-name"]').text()).toBe('Grasp Tool')
     expect(w.find('[data-test="mcp-scope-note"]').exists()).toBe(true)
     expect(w.find('[data-test="mcp-custom-name"]').exists()).toBe(false)
 
@@ -138,7 +138,7 @@ describe('AgentMcpPanel', () => {
     expect(d.mcp[3].env).toEqual([{ k: 'BLENDER_MCP_PORT', v: '6092' }])
     expect(w.findAll('[data-test="mcp-desktop-note"]')).toHaveLength(2)
     expect(w.find('[data-test="mcp-add-browser"]').exists()).toBe(false)
-    expect(w.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(true)
+    expect(w.find('[data-test="mcp-add-grasp-tool"]').exists()).toBe(true)
     w.unmount()
   })
 

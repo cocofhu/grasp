@@ -126,7 +126,7 @@ export interface DesktopStatus {
 
 /** Built-in MCP template (GET /api/mcp-presets); the server is the only definition. */
 export interface MCPPreset {
-  id: 'artifact-store' | 'browser' | 'desktop' | 'blender'
+  id: 'grasp-tool' | 'browser' | 'desktop' | 'blender'
   /** Works only on the desktop sandbox image. */
   requiresDesktop: boolean
   server: MCPServer

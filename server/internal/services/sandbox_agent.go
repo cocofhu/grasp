@@ -175,7 +175,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 }
 
-// filterAgentPlatformMCP drops artifact-store entries so they are not
+// filterAgentPlatformMCP drops grasp-tool entries so they are not
 // double-injected from Agent mcp[] (platform appends real endpoints), and
 // entries of retired platform MCPs.
 func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec {
@@ -185,7 +185,7 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 	out := make([]sandbox.MCPServerSpec, 0, len(in))
 	for _, sp := range in {
 		name := strings.ToLower(strings.TrimSpace(sp.Name))
-		if name == ArtifactStoreMCP || strings.Contains(sp.URL, "/mcp/runs/") || runtime.IsRetiredPlatformMCP(sp.Name, sp.URL) {
+		if name == GraspToolMCP || strings.Contains(sp.URL, "/mcp/runs/") || runtime.IsRetiredPlatformMCP(sp.Name, sp.URL) {
 			continue
 		}
 		out = append(out, sp)
