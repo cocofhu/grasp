@@ -1208,7 +1208,7 @@
     "settings": {
       "followGateway": "Follow gateway",
       "title": "General",
-      "subtitle": "Manage workspace information, brand copy, run concurrency, and sandbox resources.",
+      "subtitle": "Manage workspace information, brand copy, and sandbox resources.",
       "saved": "Saved",
       "workspaceSaveFailed": "Workspace information failed to save: {reason}",
       "platformSaveFailed": "Platform settings failed to save: {reason}",
@@ -1228,17 +1228,13 @@
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
-        "concurrency": {
-          "title": "Scheduling concurrency",
-          "desc": "Set how many workflows can run at once. Additional runs wait in the queue."
-        },
         "recycle": {
           "title": "Sandbox recycle",
           "desc": "All sandboxes share one idle timeout. Runtime resources are released after saving succeeds."
         },
         "capacity": {
           "title": "Sandbox capacity",
-          "desc": "View total sandbox usage and set one shared limit."
+          "desc": "View total sandbox usage and set one shared limit. It also caps concurrent workflow runs."
         },
         "resources": {
           "title": "Sandbox resources",
@@ -1250,18 +1246,16 @@
         "agent_idle_timeout_minutes": "Try recovery, then end the turn when an agent has no output, CPU, or disk activity for this long."
       },
       "labels": {
-        "max_concurrent_runs": "Max concurrent runs",
         "sandbox_memory_mb": "Sandbox memory override",
         "agent_idle_timeout_minutes": "Agent no-activity limit",
         "sandbox_idle_ttl_minutes": "Sandbox idle timeout",
         "max_sandboxes": "Maximum running sandboxes"
       },
       "settings": {
-        "max_concurrent_runs": "Max workflows in running state. Read-only when locked by GRASP_MAX_RUNS.",
         "sandbox_memory_mb": "0 follows the gateway defaults or selected E2B template. An override must be at least 1024 MiB, within Docker/K8s resource caps, and exactly match E2B template memory. The browser, Docker and builds share this memory; exceeding it can trigger OOM. Applies to new sandboxes. Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
         "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC.",
         "sandbox_idle_ttl_minutes": "Save and release resources this long after the last model turn ended with no queued requests. Open pages, the IDE, previews and terminals do not extend it. Applies to every sandbox; defaults to 360 minutes. The environment resumes when needed; use Never auto-reclaim in the sidebar menu to keep one.",
-        "max_sandboxes": "One limit for all sandboxes, including those starting, running or waiting to release resources. Creation and resume require a free slot. Lowering the limit does not stop existing sandboxes."
+        "max_sandboxes": "One limit for all sandboxes, including those starting, running or waiting to release resources. Creation and resume require a free slot, and new workflow runs queue until one opens. Lowering the limit does not stop existing sandboxes or runs."
       },
       "units": {
         "mib": "MiB"
@@ -3570,7 +3564,6 @@
         "modelsTools": "Coding tools",
         "modelsProblems": "Need attention",
         "toolUnit": "tools",
-        "runningRuns": "Running / limit",
         "sandboxMemory": "Sandbox memory limit",
         "projectsTotal": "Repositories",
         "projectsUsed": "Used",

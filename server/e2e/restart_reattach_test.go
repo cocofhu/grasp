@@ -75,6 +75,8 @@ func TestRestartReattach(t *testing.T) {
 	t.Logf("using %s model %s", model.provider, model.id)
 	s.onboard(model)
 	wfID := s.createWorkflow(fixtureURL != "")
+	// A single slot keeps the second run queued across the restart.
+	s.mustDo(http.MethodPut, "/api/settings", map[string]any{"max_sandboxes": 1}, nil)
 
 	runA := s.startRun(wfID, marker)
 	runB := s.startRun(wfID, marker+"-B")
@@ -127,8 +129,10 @@ func TestRestartReattach(t *testing.T) {
 		t.Errorf("work node output does not mention marker %s", marker)
 	}
 
-	// The run queued across the restart is admitted once A frees the slot.
-	// Its own model round-trip proves nothing more about the restart.
+	// The run queued across the restart is admitted once a slot opens. A's
+	// finished sandbox still holds its slot until idle reclaim, so raise the
+	// limit. B's own model round-trip proves nothing more about the restart.
+	s.mustDo(http.MethodPut, "/api/settings", map[string]any{"max_sandboxes": 2}, nil)
 	s.waitSandboxRunning(runB, 6*time.Minute)
 	if st := s.runStatus(runB); st != "running" {
 		t.Fatalf("run B status = %q after A finished, want running", st)

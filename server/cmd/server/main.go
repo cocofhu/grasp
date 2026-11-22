@@ -285,7 +285,15 @@ func main() {
 		PublicAdvertise: cfg.Server.PublicAdvertise,
 		CodexLogins:     codexLogins,
 	})
-	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
+	// Platform settings: DB override layer over the read-only config file for
+	// runtime-tunable scheduling params. Persisted values must be effective
+	// before the engine dispatcher starts admitting queued runs.
+	settingsSvc := services.NewSettingsService(db, nil, nil)
+	if err := settingsSvc.ApplyOnBoot(); err != nil {
+		log.Fatal().Err(err).Msg("migrate sandbox policy settings")
+	}
+	maxSandboxes := settingsSvc.Value(services.KeyMaxSandboxes)
+	eng := engine.New(db, provider, host, artifactSvc, maxSandboxes)
 	if err := eng.InitDialogueEpoch(); err != nil {
 		log.Fatal().Err(err).Msg("init dialogue epoch")
 	}
@@ -391,9 +399,9 @@ func main() {
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		MCPEndpoint:          cfg.Server.MCPAdvertise,
 		Env:                  cfg.Sandbox.Env,
-		IdleTTL:              cfg.SandboxIdleTTL(),
+		IdleTTL:              time.Duration(settingsSvc.Value(services.KeySandboxIdleTTLMin)) * time.Minute,
 		MemoryTrim:           services.MemoryTrimPolicy{IdleAfter: trimIdle, Interval: trimEvery, MinCacheMiB: trimCache},
-		Max:                  cfg.Sandbox.MaxSandboxes,
+		Max:                  maxSandboxes,
 		SharedAgent:          sharedAgentSvc,
 		CredentialReferences: credentialSvc.ResolveReferences,
 		ModelBinding:         resolveModelBinding,
@@ -442,13 +450,7 @@ func main() {
 	browserSvc.Start()
 	log.Info().Int("max_tabs", cfg.Browser.MaxTabs).Msg("in-sandbox vnc preview enabled")
 
-	// Platform settings: DB override layer over the read-only config file for
-	// runtime-tunable scheduling params. ApplyOnBoot re-applies persisted UI
-	// values so they survive restarts.
-	settingsSvc := services.NewSettingsService(db, eng, sbxSvc)
-	if err := settingsSvc.ApplyOnBoot(); err != nil {
-		log.Fatal().Err(err).Msg("migrate sandbox policy settings")
-	}
+	settingsSvc.Bind(eng, sbxSvc)
 
 	previewSvc := services.NewPreviewService(db, sbxMgr)
 	previewSvc.SetAgents(agentSvc)

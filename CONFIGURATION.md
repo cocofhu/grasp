@@ -134,9 +134,8 @@ docker:
 | YAML 路径 | 环境变量 | 程序默认值 | 含义 / 设置页 |
 | --- | --- | --- | --- |
 | `sandbox.sandbox_memory_mb` | `GRASP_SANDBOX_MEMORY_MB` | `0` | 跟随网关/模板；非零覆盖至少 `1024 MiB`，环境变量会锁定设置页 |
-| `engine.max_concurrent_runs` | `GRASP_MAX_RUNS` | `5` | 最大并发运行数；设置页可改 |
 | `engine.node_auto_retry_max` | `GRASP_NODE_AUTO_RETRY` | `3` | 节点自动重试次数；设置页可改 |
-| `sandbox.max_sandboxes` | — | `15` | 所有用途和后端共用的同时运行上限；创建和恢复都计入，设置页可改 |
+| `sandbox.max_sandboxes` | — | `15` | 所有用途和后端共用的同时运行上限；创建和恢复都计入，同时也是 workflow 并发运行上限（超出排队），设置页可改 |
 | `sandbox.idle_ttl_minutes` | — | `360 分钟` | 模型回合结束且无排队请求后开始计时，到期保存并释放运行资源；页面、IDE、预览和终端访问不续期。设置页可改，会话/运行可单独开启「永不自动回收」 |
 | `sandbox.memory_trim_idle_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN` | `10 分钟` | 仅 E2B：模型回合结束后多久首次清理沙箱页面缓存并整理内存，让空闲内存还给主机大页池；负数关闭 |
 | `sandbox.memory_trim_interval_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN` | `30 分钟` | 沙箱持续空闲时再次清理的间隔 |

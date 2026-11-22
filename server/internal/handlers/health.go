@@ -85,11 +85,6 @@ func (h *Handlers) Live(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "alive"})
 }
 
-// DashboardStats returns summary counters.
-func (h *Handlers) DashboardStats(c *gin.Context) {
-	c.JSON(http.StatusOK, h.Dash.Compute())
-}
-
 // PlatformStatus returns the shell StatusMetrics (Auth-protected via /api group).
 // Query: timezone=IANA (preferred), utcOffsetMinutes=int (fallback, east of UTC positive).
 func (h *Handlers) PlatformStatus(c *gin.Context) {

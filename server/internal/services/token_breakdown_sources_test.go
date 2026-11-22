@@ -8,13 +8,12 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
+func TestWorkspaceTokenBreakdownSourcesAndZero(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "platform_tokens.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := NewWorkspaceService(db)
-	dash := NewDashboardService(db, s)
 
 	mustCreate := func(v any) {
 		t.Helper()
@@ -24,10 +23,8 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 	}
 
 	// No usage anywhere → null (not 0).
-	st := dash.Compute()
-	if st.TotalTokens != nil || st.WorkflowTokens != nil {
-		t.Fatalf("no usage: want null tokens, got total=%v wf=%v",
-			st.TotalTokens, st.WorkflowTokens)
+	if bd := s.TokenBreakdown(); bd.Total != nil || bd.Workflow != nil {
+		t.Fatalf("no usage: want null tokens, got %+v", bd)
 	}
 
 	mustCreate(&models.WorkflowDef{ID: "wf-partial", Name: "w", Version: 1})
@@ -54,14 +51,6 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 		t.Fatalf("platform total=%v want 128", platform.Total)
 	}
 
-	st = dash.Compute()
-	if st.TotalTokens == nil || *st.TotalTokens != 128 {
-		t.Fatalf("dashboard totalTokens=%v want 128", st.TotalTokens)
-	}
-	if st.WorkflowTokens == nil || *st.WorkflowTokens != 128 {
-		t.Fatalf("dashboard workflowTokens=%v want 128", st.WorkflowTokens)
-	}
-
 	seedLedger(t, db,
 		models.TokenUsageEvent{Source: models.TokenLedgerSourceSolo,
 			InputTokens: 10, OutputTokens: 20, CacheReadTokens: 30, CacheWriteTokens: 40},
@@ -70,10 +59,6 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 	platform = s.TokenBreakdown()
 	if platform.Total == nil || *platform.Total != 2228 || platform.Workflow == nil || *platform.Workflow != 128 {
 		t.Fatalf("all-source breakdown=%+v want total=2228 workflow=128", platform)
-	}
-	st = dash.Compute()
-	if st.TotalTokens == nil || *st.TotalTokens != 2228 || st.WorkflowTokens == nil || *st.WorkflowTokens != 128 {
-		t.Fatalf("all-source dashboard=%+v want total=2228 workflow=128", st)
 	}
 
 	// All reported zeros → 0 (not null).
@@ -95,11 +80,11 @@ func TestWorkspaceTokenBreakdownMatchesDashboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	syncTokenLedger(t, db2)
-	got := NewDashboardService(db2, s2).Compute()
-	if got.TotalTokens == nil || *got.TotalTokens != 0 {
-		t.Fatalf("reported zero total=%v want 0", got.TotalTokens)
+	got := s2.TokenBreakdown()
+	if got.Total == nil || *got.Total != 0 {
+		t.Fatalf("reported zero total=%v want 0", got.Total)
 	}
-	if got.WorkflowTokens == nil || *got.WorkflowTokens != 0 {
-		t.Fatalf("reported zero workflow=%v want 0", got.WorkflowTokens)
+	if got.Workflow == nil || *got.Workflow != 0 {
+		t.Fatalf("reported zero workflow=%v want 0", got.Workflow)
 	}
 }
