@@ -170,7 +170,7 @@ async function handle(line) {
       await turn?.current?.cancel();
     } catch {}
     try {
-      agent?.close();
+      await agent?.close();
     } catch {}
     emit({ type: "response", id: req.id, ok: true });
     process.exit(0);
@@ -192,9 +192,9 @@ const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 rl.on("line", (line) => {
   if (line.trim()) void handle(line);
 });
-rl.on("close", () => {
+rl.on("close", async () => {
   try {
-    agent?.close();
+    await agent?.close();
   } catch {}
   process.exit(0);
 });
