@@ -58,6 +58,7 @@ const store = useSoloSessions()
 const toast = useToast()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
 const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentServiceTier, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentServiceTier } = chat
+const steerable = computed(() => busy.value && chat.steerable.value)
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''), props.embedded?.modelCatalog)
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
@@ -618,7 +619,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <PendingSendQueuePanel
             :items="queueRows"
             panel-test-id="solo-queue-panel"
-            :steerable="busy"
+            :steerable="steerable"
             @steer="steerQueued"
             @cancel="cancelQueued"
             @edit="editQueued"

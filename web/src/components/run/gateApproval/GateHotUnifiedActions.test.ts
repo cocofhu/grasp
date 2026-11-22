@@ -30,6 +30,7 @@ function mountHot(
     canReactRevise: true,
     reactThinking: false,
     reactInFlight: false,
+    reactSteerable: false,
     reactQueued: [],
     hotRejectAllowEmpty: false,
     canSubmitReact: false,
@@ -124,7 +125,7 @@ describe('GateHotUnifiedActions hot toolbar', () => {
     await flushPromises()
     expect(waiting.wrapper.getComponent({ name: 'PendingSendQueuePanel' }).props('steerable')).toBe(false)
     waiting.wrapper.unmount()
-    const running = mountHot({ reactThinking: true, reactInFlight: true, reactQueued: queued })
+    const running = mountHot({ reactThinking: true, reactInFlight: true, reactSteerable: true, reactQueued: queued })
     await flushPromises()
     expect(running.wrapper.getComponent({ name: 'PendingSendQueuePanel' }).props('steerable')).toBe(true)
     running.wrapper.unmount()

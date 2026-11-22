@@ -388,6 +388,13 @@ type SessionBridgeInspector interface {
 	AbortSessionTurn(runID, nodeID string) bool
 }
 
+// VisitorSessionBridgeInspector reports the native steer capability for a
+// share-link visitor lane. Visitor lanes use a separate bridge chat inside
+// the parked sandbox.
+type VisitorSessionBridgeInspector interface {
+	VisitorSessionBridgeState(runID, nodeID, lane string) (BridgeStatus, bool)
+}
+
 // LiveEventSource is an optional provider capability: read a running node's
 // full event log straight from its live sandbox. The engine type-asserts for
 // it so non-sandbox providers (tests) simply have no live source.

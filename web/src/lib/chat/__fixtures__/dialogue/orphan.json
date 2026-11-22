@@ -35,6 +35,7 @@
         "desynced": false
       },
       "busy": false,
+      "steerable": false,
       "done": false
     },
     {
@@ -49,6 +50,7 @@
       "rows": [],
       "turns": [],
       "busy": false,
+      "steerable": false,
       "done": false
     }
   ],
@@ -64,6 +66,7 @@
     "rows": [],
     "turns": [],
     "busy": false,
+    "steerable": false,
     "done": false
   }
 }

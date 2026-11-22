@@ -53,6 +53,7 @@ type PublicDialogueState struct {
 	Turns     []PublicDialogueTurn  `json:"turns"`
 	Orphan    *PublicDialogueOrphan `json:"orphan,omitempty"`
 	Busy      bool                  `json:"busy"`
+	Steerable bool                  `json:"steerable"`
 	Done      bool                  `json:"done"`
 	Observe   bool                  `json:"observe,omitempty"`
 }
@@ -62,7 +63,7 @@ type PublicDialogueState struct {
 func PublicDialogue(st DialogueState) PublicDialogueState {
 	out := PublicDialogueState{Type: "dialogue", NodeID: gateshare.PublicDialogueNodeID, Iteration: st.Iteration,
 		Epoch: st.Epoch, Seq: st.Seq, Mode: "full", Rows: []PublicDialogueRow{}, Turns: []PublicDialogueTurn{},
-		Busy: st.Busy, Done: st.Done, Observe: st.Observe}
+		Busy: st.Busy, Steerable: st.Steerable, Done: st.Done, Observe: st.Observe}
 	idx := 0
 	for _, r := range st.Rows {
 		var turns []gateshare.PreviewTurn

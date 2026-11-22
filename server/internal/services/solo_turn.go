@@ -28,7 +28,11 @@ func (c *soloChat) publish(event string, payload map[string]any) {
 				payload["execution"] = c.execution
 			}
 		}
+		sid := c.sandboxID
 		c.mu.Unlock()
+		if c.svc.sbx != nil && sid != 0 {
+			payload["steerable"] = c.svc.sbx.SupportsSteer(sid)
+		}
 	case chatsession.EventTurnBegin:
 		keep = chatsession.KeepBegin
 	case chatsession.EventTurnDone, chatsession.EventError:

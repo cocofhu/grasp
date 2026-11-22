@@ -309,6 +309,7 @@ type ReviewSessionSnapshot struct {
 	SandboxKnown       bool             `json:"-"`
 	SandboxBusy        bool             `json:"sandboxBusy"`
 	SandboxDesynced    bool             `json:"sandboxDesynced"`
+	SandboxSteerable   bool             `json:"sandboxSteerable"`
 	SandboxWaiting     int              `json:"sandboxWaiting,omitempty"`
 	SandboxRunningOpID string           `json:"sandboxRunningOpId,omitempty"`
 }
@@ -352,6 +353,9 @@ func (e *Engine) decorateSessionSnapshot(runID string, snap ReviewSessionSnapsho
 	if des, ok := payload["sandboxDesynced"].(bool); ok {
 		snap.SandboxDesynced = des
 	}
+	if steerable, ok := payload["sandboxSteerable"].(bool); ok {
+		snap.SandboxSteerable = steerable
+	}
 	switch w := payload["sandboxWaiting"].(type) {
 	case int:
 		snap.SandboxWaiting = w
@@ -383,6 +387,7 @@ func (e *Engine) SendReviewSessions(runID string, write func([]byte) error) erro
 		if snap.SandboxKnown {
 			payload["sandboxBusy"] = snap.SandboxBusy
 			payload["sandboxDesynced"] = snap.SandboxDesynced
+			payload["sandboxSteerable"] = snap.SandboxSteerable
 			payload["sandboxWaiting"] = snap.SandboxWaiting
 			if snap.SandboxRunningOpID != "" {
 				payload["sandboxRunningOpId"] = snap.SandboxRunningOpID

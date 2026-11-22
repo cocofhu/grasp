@@ -49,6 +49,7 @@ const producerConversation = computed(() => s.run?.clarifyByNode?.[s.gate.reactU
     :queue-toast="s.reactQueueToast"
     :thinking="s.reactThinking"
     :turn-running="s.reactInFlight"
+    :turn-steerable="s.reactSteerable"
     :stream-text="s.reactStreamText"
     :stream-thought="s.reactStreamThought"
     :stream-tools="s.reactStreamTools"

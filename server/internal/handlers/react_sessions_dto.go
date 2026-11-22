@@ -36,6 +36,7 @@ func reactSessionsDTO(snaps []engine.ReviewSessionSnapshot) gin.H {
 		if s.SandboxKnown {
 			row["sandboxBusy"] = s.SandboxBusy
 			row["sandboxDesynced"] = s.SandboxDesynced
+			row["sandboxSteerable"] = s.SandboxSteerable
 			if s.SandboxWaiting != 0 {
 				row["sandboxWaiting"] = s.SandboxWaiting
 			}

@@ -206,6 +206,7 @@ const orphanOnly = computed(() => !!view.value.orphan &&
   !(serverState.value?.turns ?? []).some((t) => t.phase === 'running') && !view.value.rows.some((r) => r.localPending))
 const thinking = computed(() => !props.done && !forcedIdle.value &&
   ((view.value.thinking && !orphanOnly.value) || retryPending.value))
+const steerable = computed(() => thinking.value && view.value.steerable)
 /** Review confirm mid-state: re-validating product (not Agent thinking). */
 const validating = ref(false)
 /** Success overlay host from ReviewShell (g2.1); optional in unit mounts. */
@@ -1685,6 +1686,7 @@ onBeforeUnmount(() => setArtifactSessionBusy(props.runId, busyKey(), null))
     showAnnotationChips,
     inputPlaceholder,
     thinking,
+    steerable,
     validating,
     releaseConfirmPending,
     settleConfirmedTurn,
