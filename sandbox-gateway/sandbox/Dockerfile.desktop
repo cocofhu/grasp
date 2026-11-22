@@ -56,8 +56,8 @@ ARG BLENDER_VERSION=5.1.2
 ARG BLENDER_SHA256=aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb
 RUN f="blender-${BLENDER_VERSION}-linux-x64.tar.xz" && \
     p="release/Blender${BLENDER_VERSION%.*}/${f}" && \
-    { curl -fsSL --retry 3 -o "/tmp/${f}" "https://download.blender.org/${p}" || \
-      curl -fsSL --retry 3 -o "/tmp/${f}" "https://mirrors.ocf.berkeley.edu/blender/${p}"; } && \
+    { curl -fsSL --retry 3 --retry-all-errors -o "/tmp/${f}" "https://download.blender.org/${p}" || \
+      curl -fsSL --retry 3 --retry-all-errors -o "/tmp/${f}" "https://mirrors.ocf.berkeley.edu/blender/${p}"; } && \
     echo "${BLENDER_SHA256}  /tmp/${f}" | sha256sum -c - && \
     mkdir -p /opt/blender && tar -xJf "/tmp/${f}" -C /opt/blender --strip-components=1 && \
     rm -f "/tmp/${f}" && ln -sfn /opt/blender/blender /usr/local/bin/blender
@@ -67,7 +67,7 @@ ENV BLENDER_PATH=/opt/blender/blender
 ARG GODOT_VERSION=4.7.2-stable
 ARG GODOT_SHA256=cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4
 ARG GODOT_ICON_SHA256=bc626acf7b04ab704d55911d955f83959ee5921c5f3914d89c5bc1d8332159f7
-RUN curl -fsSL --retry 3 -o /tmp/godot.zip \
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/godot.zip \
       "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip" && \
     echo "${GODOT_SHA256}  /tmp/godot.zip" | sha256sum -c - && \
     mkdir -p /opt/godot && unzip -q /tmp/godot.zip -d /opt/godot && \
@@ -80,7 +80,7 @@ RUN curl -fsSL --retry 3 -o /tmp/godot.zip \
 # draw.io 桌面版
 ARG DRAWIO_VERSION=32.6.10
 ARG DRAWIO_SHA256=fc96faafe68cb4e06c0b7116779891592b20fce2cde7907adec504f23c5af83c
-RUN curl -fsSL --retry 3 -o /tmp/drawio.deb \
+RUN curl -fsSL --retry 3 --retry-all-errors -o /tmp/drawio.deb \
       "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-amd64-${DRAWIO_VERSION}.deb" && \
     echo "${DRAWIO_SHA256}  /tmp/drawio.deb" | sha256sum -c - && \
     apt-get update && apt-get install -y --no-install-recommends /tmp/drawio.deb && \
@@ -90,7 +90,7 @@ RUN curl -fsSL --retry 3 -o /tmp/drawio.deb \
 ARG SLICER_VERSION=5.12.4
 ARG SLICER_ITEM=6aa1beb7ce9de556d3010204
 ARG SLICER_SHA512=ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76
-RUN curl -fsSL --retry 3 -o /tmp/slicer.tar.gz \
+RUN curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 -C - -o /tmp/slicer.tar.gz \
       "https://slicer-packages.kitware.com/api/v1/item/${SLICER_ITEM}/download" && \
     echo "${SLICER_SHA512}  /tmp/slicer.tar.gz" | sha512sum -c - && \
     mkdir -p /opt/slicer && tar -xzf /tmp/slicer.tar.gz -C /opt/slicer --strip-components=1 && \
