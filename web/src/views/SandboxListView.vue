@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="mb-5 grid shrink-0 grid-cols-2 gap-2.5 md:grid-cols-4">
+    <div class="mb-5 grid shrink-0 grid-cols-2 border-y border-line/80 py-3 md:grid-cols-4 md:py-4">
       <article class="sandbox-stat-card">
         <div class="flex items-center justify-between gap-2">
           <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.total') }}</span>
@@ -390,21 +390,21 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="mb-3 flex shrink-0 flex-col gap-3 rounded-xl border border-line bg-surface px-3.5 py-3 md:flex-row md:items-center">
+    <div class="mb-3 flex shrink-0 flex-col gap-3 border-b border-line/80 pb-2.5 md:flex-row md:items-center">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>
-          <span class="rounded-full bg-elevated px-2 py-0.5 text-[10px] font-medium text-txt3">{{ rows.length }}</span>
+          <span class="font-mono text-[11px] font-medium text-txt3">{{ rows.length }}</span>
         </div>
-        <div class="flex items-center gap-0.5 rounded-lg bg-elevated p-0.5" role="tablist" :aria-label="t('pages.sandboxes.filters.label')">
+        <div class="flex items-center gap-1" role="tablist" :aria-label="t('pages.sandboxes.filters.label')">
           <button
             v-for="filter in sandboxFilters"
             :key="filter.key"
             type="button"
             role="tab"
             :aria-selected="activeFilter === filter.key"
-            class="rounded-md px-2.5 py-1.5 text-[11px] font-medium text-txt3 transition hover:text-txt"
-            :class="activeFilter === filter.key ? 'bg-surface text-txt shadow-sm' : ''"
+            class="border-b border-transparent px-2 py-1.5 text-[11px] font-medium text-txt3 transition hover:text-txt"
+            :class="activeFilter === filter.key ? 'border-accent-2 text-txt' : ''"
             @click="activeFilter = filter.key"
           >{{ filter.label }} <span v-if="filter.key !== 'all'" class="ml-0.5 text-[10px] opacity-70">{{ filter.count }}</span></button>
         </div>
@@ -554,12 +554,12 @@ onBeforeUnmount(() => {
     <!-- Desktop table -->
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-line/80"
       :class="{ 'table-loading': showTableLoading }"
     >
       <div class="scroll-area min-h-0 flex-1 overflow-auto">
         <table class="w-full min-w-[920px] text-left text-[13px]">
-          <thead class="border-b border-line bg-elevated/25 text-[11px] uppercase tracking-wider text-txt3">
+          <thead class="border-b border-line text-[11px] uppercase tracking-wider text-txt3">
             <tr>
               <th class="px-4 py-3 font-medium">{{ t('common.table.sandbox') }}</th>
               <th class="px-4 py-3 font-medium">{{ t('common.table.agent') }}</th>
@@ -827,44 +827,40 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sandbox-stat-card {
-  @apply relative overflow-hidden rounded-xl border border-line bg-surface p-4;
+  @apply min-w-0 px-3 py-1 md:px-4;
 }
-.sandbox-stat-card::after {
-  content: '';
-  position: absolute;
-  right: -28px;
-  bottom: -40px;
-  width: 108px;
-  height: 108px;
-  border: 1px solid rgb(var(--c-accent-2) / 0.12);
-  border-radius: 9999px;
-  pointer-events: none;
+.sandbox-stat-card:nth-child(n + 3) {
+  @apply border-t border-line/80 md:border-t-0;
+}
+.sandbox-stat-card + .sandbox-stat-card {
+  @apply md:border-l md:border-line/80;
+}
+.sandbox-stat-card:first-child {
+  @apply md:pl-0;
+}
+.sandbox-stat-card:nth-child(2) {
+  @apply md:pr-4;
+}
+.sandbox-stat-card:last-child {
+  @apply md:pr-0;
 }
 .sandbox-stat-card strong {
-  @apply text-[26px] font-semibold leading-none tracking-[-0.04em] text-txt;
-}
-.sandbox-stat-card > div:last-child {
-  position: relative;
-  z-index: 1;
+  @apply text-[24px] font-semibold leading-none tracking-[-0.04em] text-txt;
 }
 .sandbox-stat-icon {
-  @apply flex h-7 w-7 items-center justify-center rounded-lg;
+  @apply flex h-5 w-5 items-center justify-center;
 }
 .sandbox-stat-icon-accent {
   color: rgb(var(--c-accent-2));
-  background: rgb(var(--c-accent-2) / 0.14);
 }
 .sandbox-stat-icon-ok {
   color: rgb(var(--c-ok));
-  background: rgb(var(--c-ok) / 0.14);
 }
 .sandbox-stat-icon-warn {
   color: rgb(var(--c-warn));
-  background: rgb(var(--c-warn) / 0.14);
 }
 .sandbox-stat-icon-info {
   color: rgb(var(--c-info));
-  background: rgb(var(--c-info) / 0.14);
 }
 .sandbox-status::before {
   width: 6px;
