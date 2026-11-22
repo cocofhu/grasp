@@ -125,6 +125,16 @@ func (s *SettingsService) Effective() []SettingItem {
 	return out
 }
 
+// Value returns one knob's effective value (0 for an unknown key).
+func (s *SettingsService) Value(key string) int {
+	for _, it := range s.Effective() {
+		if it.Key == key {
+			return it.Value
+		}
+	}
+	return 0
+}
+
 // Brand returns normalized instance-level brand overrides. Empty values mean
 // callers should use their built-in, locale-aware defaults.
 func (s *SettingsService) Brand() BrandSettings {
@@ -225,6 +235,13 @@ func (s *SettingsService) ApplyOnBoot() error {
 	}
 	s.apply()
 	return nil
+}
+
+// Bind attaches runtime components built after ApplyOnBoot and pushes the
+// effective values onto them.
+func (s *SettingsService) Bind(conc ConcurrencyController, sbx SandboxTuner) {
+	s.conc, s.sbx = conc, sbx
+	s.apply()
 }
 
 // apply computes the effective values and drives the runtime components.

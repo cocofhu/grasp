@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -249,6 +250,42 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) error {
 	})
 }
 
+// sandboxSlotPoll is how often a node blocked on the shared sandbox limit
+// retries admission.
+var sandboxSlotPoll = 5 * time.Second
+
+// waitRunSandboxSlot reserves the node's sandbox slot, waiting while the shared
+// limit is full. Only ctx (run cancel, node time limit) ends the wait.
+func (c *acpProvider) waitRunSandboxSlot(ctx context.Context, req NodeReq, name, home string) error {
+	notified := false
+	for {
+		err := c.beginRunSandbox(req, name, home)
+		if !errors.Is(err, ErrSandboxCapacity) {
+			return err
+		}
+		if !notified {
+			notified = true
+			c.emitSandboxSlotNotice(req, err)
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(sandboxSlotPoll):
+		}
+	}
+}
+
+func (c *acpProvider) emitSandboxSlotNotice(req NodeReq, err error) {
+	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Err(err).Msg("waiting for a sandbox slot")
+	if c.emit != nil {
+		c.emit(req.RunID, req.NodeID, []models.AcpEvent{{
+			Kind:  "message",
+			Title: "等待沙箱名额",
+			Text:  fmt.Sprintf("%s。有空闲名额后自动继续。", err.Error()),
+		}}, true)
+	}
+}
+
 // registerRunSandbox records a freshly-created node sandbox in the platform
 // store. No-op when no registry is wired.
 func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home string) {
@@ -359,7 +396,7 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 
 	placeholder := sandbox.NewContainerName()
 	spec.Name = placeholder
-	if err := c.beginRunSandbox(req, placeholder, home); err != nil {
+	if err := c.waitRunSandboxSlot(ctx, req, placeholder, home); err != nil {
 		c.unregisterCodexLogin(req)
 		removeHome(home)
 		return nil, nil, "", spec, fmt.Errorf("%w: sandbox capacity: %v", errSandboxSetup, err)

@@ -13,14 +13,10 @@ import (
 
 func TestTTLAndDurationGetters(t *testing.T) {
 	c := &Config{}
-	c.Sandbox.IdleTTLMinutes = 10
 	c.Sandbox.AgentNodeHardCapHours = 3
 	c.Sandbox.ChatIdleTimeoutSeconds = 40
 	c.Sandbox.RetryBackoffSeconds = 5
 
-	if c.SandboxIdleTTL() != 10*time.Minute {
-		t.Error("SandboxIdleTTL")
-	}
 	if c.AgentNodeHardCap() != 3*time.Hour {
 		t.Error("AgentNodeHardCap")
 	}
@@ -191,8 +187,8 @@ func TestSandboxLifecycleDefaultsAndOverrides(t *testing.T) {
 	c := &Config{}
 	setDefaults(c)
 	idle, every, cache := c.SandboxMemoryTrim()
-	if c.SandboxIdleTTL() != 6*time.Hour || idle != 10*time.Minute || every != 30*time.Minute || cache != 1024 {
-		t.Fatalf("defaults: ttl=%v trim=%v/%v/%d", c.SandboxIdleTTL(), idle, every, cache)
+	if c.Sandbox.IdleTTLMinutes != 360 || idle != 10*time.Minute || every != 30*time.Minute || cache != 1024 {
+		t.Fatalf("defaults: ttl=%dm trim=%v/%v/%d", c.Sandbox.IdleTTLMinutes, idle, every, cache)
 	}
 
 	c = &Config{}

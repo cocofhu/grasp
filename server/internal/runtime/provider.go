@@ -470,6 +470,10 @@ type RunSandboxBeginner interface {
 	BeginRunSandbox(info RunSandboxInfo) error
 }
 
+// ErrSandboxCapacity matches a BeginRunSandbox rejection caused by the shared
+// sandbox limit. The node waits for a free slot instead of failing.
+var ErrSandboxCapacity = errors.New("sandbox capacity full")
+
 // RunSandboxRetirer is an optional registry capability: instead of destroying a
 // finished run's node sandbox immediately, keep the container alive and set an
 // idle-TTL deadline so it can be inspected (terminal / IDE / ACP / container

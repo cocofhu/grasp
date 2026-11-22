@@ -67,6 +67,15 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if got := sandbox.AgentIdleTimeout(); got != 30*time.Minute {
 		t.Fatalf("agent idle: got %s, want 30m", got)
 	}
+	late := NewSettingsService(db, nil, nil)
+	if got := late.Value(KeyMaxSandboxes); got != 8 {
+		t.Fatalf("value before bind: %d", got)
+	}
+	lateConc, lateSbx := &fakeConc{}, &fakeSbxTuner{}
+	late.Bind(lateConc, lateSbx)
+	if lateConc.max != 8 || lateSbx.max != 8 || lateSbx.idleTTL != 45*time.Minute {
+		t.Fatalf("bind: conc=%+v sbx=%+v", lateConc, lateSbx)
+	}
 	if err := svc.ApplyOnBoot(); err != nil {
 		t.Fatal(err)
 	}

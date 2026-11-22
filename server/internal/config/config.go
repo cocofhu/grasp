@@ -382,11 +382,6 @@ func (c *Config) SandboxRuntimeBundle() string {
 	return DefaultSandboxRuntimeBundle
 }
 
-// SandboxIdleTTL returns the shared inactivity window for saving and releasing resources.
-func (c *Config) SandboxIdleTTL() time.Duration {
-	return time.Duration(c.Sandbox.IdleTTLMinutes) * time.Minute
-}
-
 // SandboxMemoryTrim returns the idle E2B guest trim schedule; idleAfter <= 0
 // means disabled.
 func (c *Config) SandboxMemoryTrim() (idleAfter, interval time.Duration, minCacheMiB int) {
