@@ -68,15 +68,12 @@ describe('AppPreviewPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        { port: 5173, label: '前端' },
-        { port: 8080, label: 'API' },
-      ],
+      ports: [{ port: 5173, label: '前端' }],
     })
     apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 7 })
   })
 
-  it('loads ports and renders preview tabs', async () => {
+  it('loads the active preview', async () => {
     const wrapper = mountPanel()
     await flushPromises()
     expect(apiMocks.nodePreviews).toHaveBeenCalledWith(
@@ -84,8 +81,7 @@ describe('AppPreviewPanel', () => {
       'preview-1',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(wrapper.text()).toContain('前端')
-    expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('5173')
     wrapper.unmount()
   })
 
@@ -105,40 +101,6 @@ describe('AppPreviewPanel', () => {
     } finally {
       wrapper.unmount()
     }
-  })
-
-  it('switches active port tab', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        { port: 5173, label: '前端' },
-        { port: 5174, label: '管理端' },
-      ],
-    })
-    const wrapper = mountPanel()
-    await flushPromises()
-    const tabs = wrapper.findAll('button').filter((b) => /前端|管理端/.test(b.text()))
-    expect(tabs.length).toBe(2)
-    await tabs[1].trigger('click')
-    await flushPromises()
-    expect(tabs[1].classes().some((c) => c.includes('accent'))).toBe(true)
-    expect(tabs[0].classes().some((c) => c.includes('accent'))).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('shares one noVNC connection across sandbox ports', async () => {
-    const wrapper = mountPanel()
-    await flushPromises()
-    const stubs = () => wrapper.findAll('[data-testid="novnc-stub"]')
-    expect(stubs()).toHaveLength(1)
-    expect(apiMocks.getRunNodeSandbox).toHaveBeenCalledWith('run-1', 'preview-1')
-    expect(stubs()[0].attributes('data-sandbox-id')).toBe('7')
-    expect(stubs()[0].attributes('data-target-port')).toBe('5173')
-    await wrapper.findAll('button').find((b) => b.text() === 'API')!.trigger('click')
-    await flushPromises()
-    expect(stubs()).toHaveLength(1)
-    expect(stubs()[0].attributes('data-sandbox-id')).toBe('7')
-    expect(stubs()[0].attributes('data-target-port')).toBe('8080')
-    wrapper.unmount()
   })
 
   it('shows the Agent desktop before any port is registered', async () => {
@@ -180,27 +142,20 @@ describe('AppPreviewPanel', () => {
 
   it('passes AbortSignal and replaces ports on node switch', async () => {
     apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        { port: 5173, label: '前端' },
-        { port: 5174, label: '管理端' },
-      ],
+      ports: [{ port: 5173, label: '前端' }],
     })
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.text()).toContain('前端')
+    expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('5173')
     expect(apiMocks.nodePreviews.mock.calls[0][2]).toEqual(
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
     apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        { port: 3000, label: 'NEWPORT' },
-        { port: 3001, label: 'OTHER' },
-      ],
+      ports: [{ port: 3000, label: 'NEWPORT' }],
     })
     await wrapper.setProps({ nodeId: 'preview-2' })
     await flushPromises()
-    expect(wrapper.text()).toContain('NEWPORT')
-    expect(wrapper.text()).not.toContain('前端')
+    expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('3000')
     wrapper.unmount()
   })
 
@@ -242,23 +197,6 @@ describe('AppPreviewPanel', () => {
     expect(tab.opener).toBeNull()
     expect(tab.location.href).toBe(`http://127.0.0.1:18081/#__grasp_embed&run=run-1&node=preview-1&ticket=tk&theme=dark&lang=${locale.value}`)
     openSpy.mockRestore()
-    wrapper.unmount()
-  })
-
-  it('shows the new-tab button only while a direct port is active', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        { port: 5173, label: '前端', mode: 'direct', directUrl: 'http://10.0.0.5:5173/' },
-        { port: 8080, label: 'API' },
-      ],
-    })
-    const wrapper = mountPanel()
-    await flushPromises()
-    expect(wrapper.find('[data-testid="app-preview-direct-open"]').exists()).toBe(true)
-    await wrapper.findAll('button').find((b) => b.text() === 'API')!.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="app-preview-direct-open"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="novnc-stub"]')).toHaveLength(1)
     wrapper.unmount()
   })
 

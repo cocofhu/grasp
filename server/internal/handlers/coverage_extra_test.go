@@ -23,7 +23,7 @@ func TestListNodePreviews(t *testing.T) {
 	hn.host.SetPreviewStore(preview)
 	hn.h.Preview = preview
 
-	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
 		RunID: "run1", NodeID: "n1", Port: 3000, Label: "app",
 		ProxyURL: "/preview/run1/n1/3000/", Healthy: true, RegisteredAt: time.Now(),
 	})

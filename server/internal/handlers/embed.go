@@ -29,26 +29,20 @@ type embedTicketResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-// directPreviewOrigins lists the scheme://host:port of every direct preview
-// registered for the node. Only these pages may frame the chat drawer.
+// directPreviewOrigins returns the active direct preview origin. Only this
+// page may frame the chat drawer.
 func (h *Handlers) directPreviewOrigins(runID, nodeID string) []string {
 	if h.MCP == nil {
 		return nil
 	}
-	seen := map[string]bool{}
-	var out []string
-	for _, p := range h.MCP.ListPreviewPorts(runID, nodeID) {
-		if p.Mode != "direct" {
-			continue
-		}
-		o := originOf(p.DirectURL)
-		if o == "" || seen[o] {
-			continue
-		}
-		seen[o] = true
-		out = append(out, o)
+	ports := h.MCP.ListPreviewPorts(runID, nodeID)
+	if len(ports) == 0 || ports[0].Mode != "direct" {
+		return nil
 	}
-	return out
+	if origin := originOf(ports[0].DirectURL); origin != "" {
+		return []string{origin}
+	}
+	return nil
 }
 
 func originOf(raw string) string {

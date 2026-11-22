@@ -6,10 +6,6 @@ import { describe, expect, it } from 'vitest'
 
 const dir = dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(join(dir, 'DashboardView.vue'), 'utf8')
-const particleBgSrc = readFileSync(
-  join(dir, '../components/dashboard/HomeParticleMeshBackground.vue'),
-  'utf8',
-)
 const workflowSelectSrc = readFileSync(
   join(dir, '../components/dashboard/HomeWorkflowSelect.vue'),
   'utf8',
@@ -40,16 +36,13 @@ describe('DashboardView home chat layout', () => {
     expect(src).not.toMatch(/RunBoardColumn/)
   })
 
-  // plan g1.1 — no purple stage atmosphere; particle mesh background instead
-  it('does not include full-bleed purple stage layers', () => {
+  // plan g1.1 — no purple stage atmosphere
+  it('does not include the removed dashboard stage layer', () => {
     expect(src).not.toMatch(/home-stage-bg/)
     expect(src).not.toMatch(/home-stage__wash/)
     expect(src).not.toMatch(/home-stage__grid/)
     expect(src).not.toMatch(/home-stage__glow/)
     expect(src).not.toMatch(/rgba\(91,\s*66,\s*180/)
-    expect(src).toMatch(/HomeParticleMeshBackground/)
-    expect(particleBgSrc).toMatch(/data-testid="home-particle-mesh-bg"/)
-    expect(particleBgSrc).toMatch(/pointer-events:\s*none/)
   })
 
   // fill LOCKED — cropped yume + copy (no wordmark / logo-mark / old hint)

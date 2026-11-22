@@ -16,8 +16,9 @@ var retiredColumns = map[string][]string{
 		"pm_leader_enabled", "pm_leader_agent", "pm_enabled_mcps", "pm_gate_auto_var", "pm_gate_auto_prompt",
 		"notify_policy",
 	},
-	"workflow_defs": {"notify_policy"},
-	"sandboxes":     {"recovery_mcp_names"},
+	"workflow_defs":     {"notify_policy"},
+	"sandboxes":         {"recovery_mcp_names"},
+	"run_preview_ports": {"item_key"},
 }
 
 // retiredTables held the workspace assistant, external MCP, IM channels,

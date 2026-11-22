@@ -59,6 +59,54 @@ func TestOpenSQLiteTestClonesMigratedSchema(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacyPreviewStorageKeepsNewestRegistration(t *testing.T) {
+	db, err := openSQLiteConn(":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.Exec(`
+CREATE TABLE run_preview_ports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  registered_at DATETIME NOT NULL
+)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX idx_preview_run_node_item ON run_preview_ports(run_id, node_id, item_key)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO run_preview_ports(run_id, node_id, item_key, registered_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+		"r1", "n1", "p:3000", "2026-11-22 10:00:00", "r1", "n1", "p:4000", "2026-11-22 11:00:00").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyPreviewStorage(db); err != nil {
+		t.Fatal(err)
+	}
+	var rows []legacyPreviewRegistration
+	if err := db.Table("run_preview_ports").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != 2 {
+		t.Fatalf("legacy rows after collapse=%+v", rows)
+	}
+	if db.Migrator().HasIndex(&models.RunPreviewPort{}, "idx_preview_run_node_item") {
+		t.Fatal("legacy multi-preview index still exists")
+	}
+	if err := db.AutoMigrate(&models.RunPreviewPort{}); err != nil {
+		t.Fatalf("active preview schema migration: %v", err)
+	}
+	if !db.Migrator().HasIndex(&models.RunPreviewPort{}, "idx_preview_run_node") {
+		t.Fatal("active preview unique index missing")
+	}
+}
+
 func TestOpenMemory(t *testing.T) {
 	db, err := OpenSQLite(":memory:")
 	if err != nil {

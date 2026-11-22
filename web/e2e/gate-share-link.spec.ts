@@ -578,7 +578,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('public-gate-sidebar').screenshot({ path: 'test-results/screenshots/public-review-timeline.png' })
   })
 
-  test('公开应用预览页远程壳可确认且支持多端口', async ({ page }) => {
+  test('公开应用预览页远程壳可确认并显示活动预览', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/gate-share-link.html?scene=public-app-preview')
     await expect(page.getByTestId('public-gate-root')).toBeVisible({ timeout: 10_000 })
@@ -597,13 +597,6 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('public-gate-app-preview')).toBeVisible()
     await expect(page.getByTestId('public-gate-app-preview')).not.toContainText('只读')
     await expect(page.getByTestId('public-gate-app-preview')).not.toContainText('不提供远程桌面')
-    await expect(page.getByTestId('public-gate-app-preview-port-5173')).toBeVisible()
-    await expect(page.getByTestId('public-gate-app-preview-port-8080')).toBeVisible()
-    await expect(page.getByTestId('novnc-inspect-toggle').or(page.getByTestId('public-gate-app-preview-retry')).or(page.getByTestId('public-gate-app-preview-connecting'))).toBeVisible({
-      timeout: 10_000,
-    })
-    await page.getByTestId('public-gate-app-preview-port-8080').click()
-    await expect(page.getByTestId('public-gate-app-preview-api')).toHaveCount(0)
     await expect(page.getByTestId('novnc-inspect-toggle').or(page.getByTestId('public-gate-app-preview-retry')).or(page.getByTestId('public-gate-app-preview-connecting'))).toBeVisible({
       timeout: 10_000,
     })

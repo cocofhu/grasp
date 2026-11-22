@@ -54,7 +54,7 @@ type PreviewDTO struct {
 	ActiveItem        *PreviewActiveItem `json:"activeItem,omitempty"`
 	ProductKind       string             `json:"productKind,omitempty"`
 	ProductName       string             `json:"productName,omitempty"`
-	// Ports is the desensitized public preview port list (no runId/nodeId/paths).
+	// Ports contains the desensitized active preview (no runId/nodeId/paths).
 	Ports []PublicPreviewPort `json:"ports,omitempty"`
 	// NodeType is the graph node type (always "agent" for producers).
 	NodeType string `json:"nodeType,omitempty"`

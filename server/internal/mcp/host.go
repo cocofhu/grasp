@@ -125,14 +125,14 @@ type Host struct {
 	// wrongly reject set_preview / set_*.
 	// Nil ⇒ no fallback. See ActiveCaps.
 	activeSrc ActiveNodeSource
-	// Preview port registrations (set_preview); keyed runID|nodeID.
-	previewMem       map[string][]PreviewPort
+	// The active preview registration for each run/node, keyed runID|nodeID.
+	previewMem       map[string]PreviewPort
 	previewBase      string
 	privateEndpoints bool
 	previewStore     PreviewStore
 	previewOps       PreviewSandboxOps
-	// previewLocks serializes set_preview per sandbox: switching the injector
-	// upstream and writing the registration must not interleave.
+	// previewLocks serializes preview replacement per node and sandbox. Switching
+	// the injector and writing the single active registration must not interleave.
 	previewLocks map[string]*sync.Mutex
 	// outcomes buffers node_complete marks keyed runID -> nodeID. The engine
 	// drains them via TakeOutcome after the agent turn (destructive).
@@ -214,7 +214,7 @@ func NewHost(store Store) *Host {
 		pending:        map[string]map[string][]models.ReactQuestion{},
 		pendingForms:   map[string]map[string][]models.ReactForm{},
 		calls:          map[string]map[string][]models.McpCall{},
-		previewMem:     map[string][]PreviewPort{},
+		previewMem:     map[string]PreviewPort{},
 		outcomes:       map[string]map[string]NodeOutcome{},
 		outcomeAllowed: map[string]bool{},
 		toolsListGen:   map[string]int{},

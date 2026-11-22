@@ -1000,12 +1000,11 @@ type Setting struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// RunPreviewPort records a preview proxy registration for a preview-capable Agent node.
+// RunPreviewPort records the active preview proxy registration for a preview-capable Agent node.
 type RunPreviewPort struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
-	RunID       string `gorm:"index:idx_preview_run_node_item,unique" json:"runId"`
-	NodeID      string `gorm:"index:idx_preview_run_node_item,unique" json:"nodeId"`
-	ItemKey     string `gorm:"index:idx_preview_run_node_item,unique" json:"-"`
+	RunID       string `gorm:"index:idx_preview_run_node,unique" json:"runId"`
+	NodeID      string `gorm:"index:idx_preview_run_node,unique" json:"nodeId"`
 	Kind        string `gorm:"default:port" json:"kind"`
 	Port        int    `json:"port"`
 	ExternalURL string `json:"externalUrl,omitempty"`
