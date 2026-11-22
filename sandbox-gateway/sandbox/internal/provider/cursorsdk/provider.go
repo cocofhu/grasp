@@ -126,6 +126,9 @@ func (p *sdkProvider) Open(procCtx, handshakeCtx context.Context, opts provider.
 	if key == "" {
 		return nil, errors.New("Cursor 需要 CURSOR_API_KEY")
 	}
+	if _, err := configDir(env); err != nil {
+		return nil, err
+	}
 	catalog, err := p.catalog(handshakeCtx, env)
 	if err != nil {
 		return nil, err
@@ -150,6 +153,25 @@ func (p *sdkProvider) Open(procCtx, handshakeCtx context.Context, opts provider.
 	}
 	log.Printf("cursor: 已就绪 agent=%s model=%s transport=sdk", s.agentID, model.label())
 	return s, nil
+}
+
+// configDir is where the agent reads the user's MCP servers, rules and CLI
+// config. @cursor/sdk always reads ~/.cursor, so a CONFIG_ROOT elsewhere
+// would be ignored.
+func configDir(env []string) (string, error) {
+	home := envutil.Get(env, "HOME")
+	if home == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		home = h
+	}
+	dir := filepath.Join(home, ".cursor")
+	if root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT")); root != "" && filepath.Clean(root) != dir {
+		return "", fmt.Errorf("@cursor/sdk 只读取 %s，不支持 CONFIG_ROOT=%s；请把 Agent 的配置目录设为 %s", dir, root, dir)
+	}
+	return dir, nil
 }
 
 // start runs a bridge in dir. Nothing is read from it until serve.

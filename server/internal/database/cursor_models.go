@@ -1,6 +1,7 @@
 package database
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -291,6 +292,9 @@ var legacyCursorModels = map[string]legacyCursorModel{
 	"deepseek-v41-flash-1017-max":          {"deepseek-v41-flash-1017", "max", ""},
 }
 
+// legacyCursorIDs are the keys of legacyCursorModels, for SQL filters.
+var legacyCursorIDs = slices.Sorted(maps.Keys(legacyCursorModels))
+
 // cursorRouteColumns are the configuration, model, effort and tier columns of
 // one stored model choice, and the column that marks the choice explicit.
 // Initial choices have no effort or tier of their own.
@@ -388,8 +392,18 @@ func migrateCursorRoutes(tx *gorm.DB, configurations []string, primary map[strin
 			return nil
 		}
 	}
+	trimmed := "TRIM(COALESCE(" + model + ", ''))"
+	q := tx.Session(&gorm.Session{NewDB: true})
+	match := q.Where(trimmed+" IN ?", legacyCursorIDs)
+	if len(primary) > 0 {
+		explicit := q.Where(trimmed+" = ''").Where(configuration+" IN ?", slices.Collect(maps.Keys(primary)))
+		if set != "" {
+			explicit = explicit.Where(set+" = ?", true)
+		}
+		match = match.Or(explicit)
+	}
 	var rows []map[string]any
-	if err := tx.Table(table).Select(cols).Where(configuration+" IN ?", configurations).Find(&rows).Error; err != nil {
+	if err := tx.Table(table).Select(cols).Where(configuration+" IN ?", configurations).Where(match).Find(&rows).Error; err != nil {
 		return err
 	}
 	for _, row := range rows {

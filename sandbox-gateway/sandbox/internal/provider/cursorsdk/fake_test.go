@@ -66,7 +66,11 @@ func (f *fakeBridge) handle(cmd map[string]any) {
 	case "open":
 		id, _ := cmd["agentId"].(string)
 		model, _ := json.Marshal(cmd["model"])
-		f.reply(cmd, map[string]any{"agentId": map[bool]string{true: id, false: "agent-new"}[id != ""], "resumed": id != ""})
+		if id == "agent-gone" {
+			f.reply(cmd, map[string]any{"agentId": "agent-new", "resumed": false, "resumeError": "Agent agent-gone was not found"})
+		} else {
+			f.reply(cmd, map[string]any{"agentId": map[bool]string{true: id, false: "agent-new"}[id != ""], "resumed": id != ""})
+		}
 		f.emit(map[string]any{"type": "connection", "state": "open " + string(model)})
 	case "send":
 		text, _ := cmd["text"].(string)

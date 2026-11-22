@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -142,11 +141,10 @@ func (s *session) AgentPIDs() []int { return []int{s.proc.pid()} }
 // ConfigFiles: the agent reads the user's MCP servers, rules and CLI config
 // when it starts.
 func (s *session) ConfigFiles() []string {
-	home, err := os.UserHomeDir()
+	dir, err := configDir(s.env)
 	if err != nil {
 		return nil
 	}
-	dir := filepath.Join(home, ".cursor")
 	return []string{filepath.Join(dir, "mcp.json"), filepath.Join(dir, "cli-config.json")}
 }
 

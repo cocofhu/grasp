@@ -84,6 +84,7 @@ func installFake(t *testing.T) Config {
 	t.Setenv("GRASP_FAKE_CURSOR_MODELS", models)
 	t.Setenv("GRASP_CURSOR_SDK_DIR", "")
 	t.Setenv("CURSOR_API_KEY", "key-test")
+	t.Setenv("CONFIG_ROOT", "")
 	return Config{Node: node, SDKDir: sdk, Runtime: "cursor-sdk"}
 }
 
@@ -156,6 +157,33 @@ func TestResumeOpensTheSameAgent(t *testing.T) {
 	s, _ := open(t, installFake(t), provider.OpenOptions{ResumeSessionID: "agent-old"})
 	if s.SessionID() != "agent-old" || s.Info().ModelID != "default" {
 		t.Fatalf("session %q model %q", s.SessionID(), s.Info().ModelID)
+	}
+}
+
+// A resume Cursor cannot honor opens a new agent; the new session id is how
+// the bridge learns the dialogue is gone and restores it.
+func TestResumeOfAMissingAgentOpensANewOne(t *testing.T) {
+	s, _ := open(t, installFake(t), provider.OpenOptions{ResumeSessionID: "agent-gone"})
+	if s.SessionID() != "agent-new" {
+		t.Fatalf("session %q", s.SessionID())
+	}
+}
+
+func TestOpenRejectsAConfigRootTheSDKDoesNotRead(t *testing.T) {
+	c := installFake(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CONFIG_ROOT", "/opt/cursor-config")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := New(c).Open(context.Background(), ctx, provider.OpenOptions{Cwd: t.TempDir()}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "CONFIG_ROOT=/opt/cursor-config") {
+		t.Fatalf("err %v", err)
+	}
+	t.Setenv("CONFIG_ROOT", filepath.Join(home, ".cursor")+"/")
+	s, _ := open(t, c, provider.OpenOptions{})
+	if got := s.ConfigFiles(); len(got) != 2 || got[0] != filepath.Join(home, ".cursor", "mcp.json") {
+		t.Fatalf("config files %v", got)
 	}
 }
 
