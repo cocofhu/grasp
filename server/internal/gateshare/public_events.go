@@ -342,7 +342,17 @@ func partsFromAny(v any) []models.AcpPart {
 		text, _ := m["text"].(string)
 		title, _ := m["title"].(string)
 		status, _ := m["status"].(string)
-		out = append(out, models.AcpPart{Kind: kind, Text: text, Title: title, Status: status})
+		var imageURLs []string
+		if kind == models.AcpPartSteer {
+			if rawURLs, ok := m["imageURLs"].([]any); ok {
+				for _, rawURL := range rawURLs {
+					if url, ok := rawURL.(string); ok && url != "" {
+						imageURLs = append(imageURLs, url)
+					}
+				}
+			}
+		}
+		out = append(out, models.AcpPart{Kind: kind, Text: text, Title: title, Status: status, ImageURLs: imageURLs})
 	}
 	return out
 }

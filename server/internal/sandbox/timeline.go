@@ -12,9 +12,10 @@ import (
 // ChatStep is one entry of the open row's timeline: a run of thought or
 // narration text, or a pointer into ToolCalls.
 type ChatStep struct {
-	Kind string // thought|message|tool|steer
-	Text string
-	Tool int
+	Kind      string // thought|message|tool|steer
+	Text      string
+	ImageURLs []string
+	Tool      int
 }
 
 const (
@@ -60,15 +61,15 @@ func (r *ChatResult) addSteer(data json.RawMessage) {
 		return
 	}
 	var ev struct {
-		Text      string            `json:"text"`
-		FileNames []string          `json:"fileNames"`
-		ImageURLs []json.RawMessage `json:"imageURLs"`
+		Text      string   `json:"text"`
+		FileNames []string `json:"fileNames"`
+		ImageURLs []string `json:"imageURLs"`
 	}
 	if json.Unmarshal(data, &ev) != nil {
 		return
 	}
 	if text := models.SteerText(ev.Text, ev.FileNames, len(ev.ImageURLs)); text != "" {
-		r.Timeline = append(r.Timeline, ChatStep{Kind: models.AcpPartSteer, Text: text})
+		r.Timeline = append(r.Timeline, ChatStep{Kind: models.AcpPartSteer, Text: text, ImageURLs: append([]string(nil), ev.ImageURLs...)})
 		r.Steers = append(r.Steers, text)
 		r.paragraph = true
 	}
@@ -133,7 +134,7 @@ func (r *ChatResult) timelineEvent(t int) *models.AcpEvent {
 		// remaining 64KiB budget. Counting it still lets later tool details drop.
 		text := st.Text
 		budget -= len(text)
-		parts = append(parts, models.AcpPart{Kind: st.Kind, Text: text})
+		parts = append(parts, models.AcpPart{Kind: st.Kind, Text: text, ImageURLs: append([]string(nil), st.ImageURLs...)})
 	}
 	if len(parts) == 0 {
 		return nil

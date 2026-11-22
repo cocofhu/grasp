@@ -21,6 +21,8 @@ All notable public-release changes are documented here.
 
 - 不支持原生「立即引导」的 Agent 不再显示排队消息上的 steer 按钮；Solo、Agent Studio、工作流对话、审批和访客会话按当前沙箱会话能力更新显示。
 
+- Agent 对话中的「Steer」引导气泡与普通用户气泡统一尺寸和圆角，中文前缀显示为「引导」，支持 Markdown、Markdown 图片和图片附件预览。
+
 - 修复对话中行首的 `#1304` 这类 issue / PR 编号被显示成粗体大标题、`#` 被吞掉的问题。Codex 工具行里的命令和文件路径不再被逐词首字母大写（如 `/Bin/Bash -Lc 'Gh Pr View'`），按原样显示。
 
 - 回复下方的时间和「统计信息」改为显示完成时间，不再显示开始时间。用时达到 1 小时或跨天的回复会额外显示「开始时间」。
