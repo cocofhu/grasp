@@ -150,8 +150,8 @@ const workBlocks = computed(() => {
 })
 /**
  * What the user added mid-turn is theirs, not process: it never folds away.
- * Steers keep their place around the reply: before it above the rule, after
- * it below.
+ * Steers keep their place around the reply. A steer before the final reply
+ * sits before the process summary, while a late steer remains below it.
  */
 type TextBlock = Exclude<ReturnType<typeof timelineBlocks>[number], { kind: 'tools' }>
 const steerSlots = computed(() => {
@@ -263,6 +263,13 @@ function onToggle(index: number, last: boolean, e: Event) {
   <ContextCommandNotice v-if="!streaming && metadata?.contextCommand" :command="metadata.contextCommand" />
   <div v-else class="agent-timeline flex min-w-0 flex-col" data-testid="agent-timeline">
     <template v-if="settled">
+      <AgentSteerBubble
+        v-for="b in steerSlots.beforeTail"
+        :key="b.key"
+        :text="b.text"
+        :image-urls="b.imageURLs"
+        :label="t('pages.clarify.steerLabel')"
+      />
       <button
         type="button"
         class="agent-elapsed"
@@ -300,13 +307,6 @@ function onToggle(index: number, last: boolean, e: Event) {
           </div>
         </template>
       </div>
-      <AgentSteerBubble
-        v-for="b in steerSlots.beforeTail"
-        :key="b.key"
-        :text="b.text"
-        :image-urls="b.imageURLs"
-        :label="t('pages.clarify.steerLabel')"
-      />
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
