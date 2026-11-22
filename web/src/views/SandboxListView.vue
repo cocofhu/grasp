@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="mb-5 grid shrink-0 grid-cols-2 border-y border-line/80 py-3 md:grid-cols-4 md:py-4">
+    <div class="mb-6 grid shrink-0 grid-cols-2 gap-y-4 py-1 md:grid-cols-4 md:gap-8 md:py-2">
       <article class="sandbox-stat-card">
         <div class="flex items-center justify-between gap-2">
           <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.total') }}</span>
@@ -390,7 +390,7 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="mb-3 flex shrink-0 flex-col gap-3 border-b border-line/80 pb-2.5 md:flex-row md:items-center">
+    <div class="mb-4 flex shrink-0 flex-col gap-3 md:flex-row md:items-center">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>
@@ -403,8 +403,8 @@ onBeforeUnmount(() => {
             type="button"
             role="tab"
             :aria-selected="activeFilter === filter.key"
-            class="border-b border-transparent px-2 py-1.5 text-[11px] font-medium text-txt3 transition hover:text-txt"
-            :class="activeFilter === filter.key ? 'border-accent-2 text-txt' : ''"
+            class="px-2 py-1.5 text-[11px] font-medium text-txt3 transition hover:text-txt"
+            :class="activeFilter === filter.key ? 'font-semibold text-txt' : ''"
             @click="activeFilter = filter.key"
           >{{ filter.label }} <span v-if="filter.key !== 'all'" class="ml-0.5 text-[10px] opacity-70">{{ filter.count }}</span></button>
         </div>
@@ -554,12 +554,12 @@ onBeforeUnmount(() => {
     <!-- Desktop table -->
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-line/80"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden"
       :class="{ 'table-loading': showTableLoading }"
     >
       <div class="scroll-area min-h-0 flex-1 overflow-auto">
         <table class="w-full min-w-[920px] text-left text-[13px]">
-          <thead class="border-b border-line text-[11px] uppercase tracking-wider text-txt3">
+          <thead class="border-b border-line/80 text-[11px] uppercase tracking-wider text-txt3">
             <tr>
               <th class="px-4 py-3 font-medium">{{ t('common.table.sandbox') }}</th>
               <th class="px-4 py-3 font-medium">{{ t('common.table.agent') }}</th>
@@ -827,22 +827,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sandbox-stat-card {
-  @apply min-w-0 px-3 py-1 md:px-4;
-}
-.sandbox-stat-card:nth-child(n + 3) {
-  @apply border-t border-line/80 md:border-t-0;
-}
-.sandbox-stat-card + .sandbox-stat-card {
-  @apply md:border-l md:border-line/80;
-}
-.sandbox-stat-card:first-child {
-  @apply md:pl-0;
-}
-.sandbox-stat-card:nth-child(2) {
-  @apply md:pr-4;
-}
-.sandbox-stat-card:last-child {
-  @apply md:pr-0;
+  @apply min-w-0 px-0 py-1;
 }
 .sandbox-stat-card strong {
   @apply text-[24px] font-semibold leading-none tracking-[-0.04em] text-txt;
