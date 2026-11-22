@@ -304,15 +304,6 @@ func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 			Msg("list active preview from store failed")
 		return nil
 	}
-	if len(dbPorts) > 1 {
-		latest := dbPorts[0]
-		for _, candidate := range dbPorts[1:] {
-			if candidate.RegisteredAt.After(latest.RegisteredAt) {
-				latest = candidate
-			}
-		}
-		dbPorts = []PreviewPort{latest}
-	}
 	return h.annotatePreviewTransport(runID, nodeID, dbPorts)
 }
 
