@@ -1283,6 +1283,28 @@
     },
     "sandboxes": {
       "title": "Sandboxes",
+      "runtimeLabel": "Agent runtime",
+      "listTitle": "All sandboxes",
+      "searchPlaceholder": "Search sandbox ID",
+      "noMatching": "No matching sandboxes",
+      "filters": {
+        "label": "Filter sandboxes by status",
+        "all": "All",
+        "running": "Running",
+        "busy": "In chat",
+        "creating": "Creating"
+      },
+      "stats": {
+        "total": "All sandboxes",
+        "running": "Running",
+        "busy": "In chat",
+        "creating": "Creating",
+        "instances": "instances",
+        "totalHint": "Current workspace",
+        "runningHint": "Resources in use",
+        "busyHint": "Agent is working",
+        "creatingHint": "Preparing resources"
+      },
       "errorPrefix": "Error:",
       "empty": "No sandboxes. Created on workflow runs or from Agent Studio → Chat test.",
       "copyId": "Copy ID",

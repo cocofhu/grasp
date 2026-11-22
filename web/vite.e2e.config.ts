@@ -19,7 +19,7 @@ const mockPick = {
 const mockSandbox = {
   id: 42,
   name: 'e2e-sandbox',
-  profile: 'default',
+  profile: 'Solo',
   purpose: 'test',
   status: 'running',
   createdAt: '2026-01-01T00:00:00Z',
@@ -31,6 +31,121 @@ const mockSandbox = {
   hasAcp: true,
   password: 'e2e-secret',
 }
+
+/** Rich sandbox list data for the local control-plane preview. */
+let mockSandboxes = [
+  { ...mockSandbox, destroyAt: '2026-11-22T22:30:00Z' },
+  {
+    ...mockSandbox,
+    id: 43,
+    name: 'chat-test-4a77895c',
+    status: 'running',
+    busy: true,
+    createdAt: '2026-11-22T21:18:12Z',
+    updatedAt: '2026-11-22T21:18:12Z',
+    destroyAt: '2026-11-22T23:18:12Z',
+  },
+  {
+    ...mockSandbox,
+    id: 44,
+    name: 'chat-test-c0001084',
+    status: 'creating',
+    containerStatus: 'starting',
+    busy: true,
+    connected: false,
+    hasCodeServer: false,
+    hasAcp: false,
+    createdAt: '2026-11-22T21:17:27Z',
+    updatedAt: '2026-11-22T21:17:27Z',
+  },
+  {
+    ...mockSandbox,
+    id: 45,
+    name: 'pulling-olive-91ae',
+    status: 'pulling',
+    containerStatus: 'starting',
+    busy: true,
+    connected: false,
+    hasCodeServer: false,
+    hasAcp: false,
+    createdAt: '2026-11-22T20:54:09Z',
+    updatedAt: '2026-11-22T20:54:09Z',
+  },
+  {
+    ...mockSandbox,
+    id: 46,
+    name: 'stopped-lab-2f84',
+    status: 'stopped',
+    containerStatus: 'exited',
+    busy: false,
+    connected: false,
+    createdAt: '2026-11-22T19:45:18Z',
+    updatedAt: '2026-11-22T20:10:06Z',
+  },
+  {
+    ...mockSandbox,
+    id: 47,
+    name: 'lost-container-7b1e',
+    status: 'error',
+    containerStatus: 'not_found',
+    busy: false,
+    connected: false,
+    error: 'Container exited unexpectedly',
+    createdAt: '2026-11-22T18:12:40Z',
+    updatedAt: '2026-11-22T18:21:03Z',
+  },
+  {
+    ...mockSandbox,
+    id: 48,
+    name: 'run-node-629ec231',
+    profile: 'Codex',
+    purpose: 'run',
+    workflowId: 'wf-1',
+    workflowName: 'Release checklist',
+    runId: 'run-20261122-629e',
+    nodeId: 'implement',
+    status: 'running',
+    busy: false,
+    createdAt: '2026-11-22T17:39:21Z',
+    updatedAt: '2026-11-22T17:39:21Z',
+    destroyAt: '2026-11-22T23:39:21Z',
+  },
+  {
+    ...mockSandbox,
+    id: 49,
+    name: 'run-node-4075299e',
+    profile: 'Claude Code',
+    purpose: 'run',
+    workflowId: 'wf-2',
+    workflowName: 'Content migration',
+    runId: 'run-20261122-4075',
+    nodeId: 'review',
+    status: 'running',
+    busy: true,
+    createdAt: '2026-11-22T17:39:05Z',
+    updatedAt: '2026-11-22T17:39:05Z',
+    destroyAt: '2026-11-22T23:39:05Z',
+  },
+  {
+    ...mockSandbox,
+    id: 50,
+    name: 'run-node-a3d66ebb',
+    profile: 'OpenCode',
+    purpose: 'run',
+    workflowId: 'wf-1',
+    workflowName: 'Release checklist',
+    runId: 'run-20261122-a3d6',
+    nodeId: 'test',
+    status: 'creating',
+    containerStatus: 'starting',
+    busy: true,
+    connected: false,
+    hasCodeServer: false,
+    hasAcp: false,
+    createdAt: '2026-11-22T17:05:14Z',
+    updatedAt: '2026-11-22T17:05:14Z',
+  },
+]
 
 /** Detail modal (getSandbox) includes gateway endpoints; list omits them. */
 const mockSandboxDetail = {
@@ -49,6 +164,7 @@ const mockSandboxDetail = {
 
 let vncConnectCount = 0
 let vncLastGoto = ''
+let richSandboxMode = false
 /** Page boot calls /__e2e/opts so WS upgrades can honor delay/fail without relying on Referer. */
 let e2eOpts = { connectDelayMs: 0, fail: false }
 
@@ -117,6 +233,12 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           if (handleLiveVariantsMock(req, res)) return
+          const requestUrl = new URL(req.url || '/', 'http://e2e.local')
+          if (requestUrl.pathname === '/sandbox-list.html') {
+            richSandboxMode = requestUrl.searchParams.get('fixture') === 'rich'
+          }
+          const richSandboxFixture = richSandboxMode
+          const activeSandboxList = richSandboxFixture ? mockSandboxes : [mockSandbox]
           if (req.url?.split('?')[0] === '/preview-pick.js') {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
             res.end(readFileSync(previewPickJs))
@@ -162,26 +284,55 @@ export default defineConfig({
             return
           }
 
-          const sandboxMatch = req.url?.match(/^\/api\/sandboxes\/(\d+)(?:\/(log))?\/?(\?.*)?$/)
+          const sandboxMatch = req.url?.match(/^\/api\/sandboxes\/(\d+)(?:\/(log|stop))?\/?(\?.*)?$/)
+          if (sandboxMatch && sandboxMatch[2] === 'stop' && req.method === 'POST') {
+            const sandbox = activeSandboxList.find((item) => item.id === Number(sandboxMatch[1]))
+            if (sandbox) {
+              sandbox.status = 'stopped'
+              sandbox.containerStatus = 'exited'
+              sandbox.busy = false
+              sandbox.connected = false
+            }
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ status: 'ok' }))
+            return
+          }
           if (sandboxMatch && req.method === 'GET') {
             res.setHeader('Content-Type', 'application/json')
             if (sandboxMatch[2] === 'log') {
               res.end(JSON.stringify({ content: '', live: false, found: false }))
             } else {
               // getSandbox: include endpoints for detail modal; numeric port keys present for filter checks.
-              res.end(JSON.stringify({ ...mockSandboxDetail, id: Number(sandboxMatch[1]) }))
+              const sandbox = activeSandboxList.find((item) => item.id === Number(sandboxMatch[1])) || mockSandbox
+              res.end(JSON.stringify({ ...mockSandboxDetail, ...sandbox, id: Number(sandboxMatch[1]) }))
             }
+            return
+          }
+          if (req.url?.match(/^\/api\/sandboxes\/\d+\/?$/) && req.method === 'DELETE') {
+            const id = Number(req.url.match(/^\/api\/sandboxes\/(\d+)/)?.[1])
+            if (richSandboxFixture) mockSandboxes = mockSandboxes.filter((item) => item.id !== id)
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ status: 'ok' }))
+            return
+          }
+          if (req.url === '/api/sandboxes/cleanup' && req.method === 'POST') {
+            const before = activeSandboxList.length
+            if (richSandboxFixture) {
+              mockSandboxes = mockSandboxes.filter((item) => item.busy || item.status === 'creating' || item.status === 'pulling')
+            }
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ destroyed: before - activeSandboxList.length, skipped: activeSandboxList.length }))
             return
           }
           if (req.url === '/api/sandboxes/capacity' && req.method === 'GET') {
             res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ used: 1, limit: 15 }))
+            res.end(JSON.stringify({ used: activeSandboxList.filter((item) => item.containerStatus === 'running').length, limit: 15 }))
             return
           }
           if (req.url?.startsWith('/api/sandboxes') && req.method === 'GET') {
             res.setHeader('Content-Type', 'application/json')
             // List path intentionally omits endpoints (no gateway Get per row).
-            res.end(JSON.stringify([mockSandbox]))
+            res.end(JSON.stringify(activeSandboxList))
             return
           }
 

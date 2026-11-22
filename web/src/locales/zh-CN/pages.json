@@ -1283,6 +1283,28 @@
     },
     "sandboxes": {
       "title": "沙箱",
+      "runtimeLabel": "Agent 运行环境",
+      "listTitle": "全部沙箱",
+      "searchPlaceholder": "搜索沙箱 ID",
+      "noMatching": "没有匹配的沙箱",
+      "filters": {
+        "label": "沙箱状态筛选",
+        "all": "全部",
+        "running": "运行中",
+        "busy": "对话中",
+        "creating": "创建中"
+      },
+      "stats": {
+        "total": "全部沙箱",
+        "running": "运行中",
+        "busy": "对话中",
+        "creating": "创建中",
+        "instances": "个实例",
+        "totalHint": "当前工作区",
+        "runningHint": "资源正在使用",
+        "busyHint": "Agent 正在工作",
+        "creatingHint": "正在准备资源"
+      },
       "errorPrefix": "出错:",
       "empty": "暂无沙箱。运行工作流时会按需创建节点沙箱，或前往 Agent Studio「对话测试」启动测试沙箱。",
       "copyId": "复制 ID",
