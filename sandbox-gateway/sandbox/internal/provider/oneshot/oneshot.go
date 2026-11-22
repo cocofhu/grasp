@@ -60,8 +60,9 @@ type ParseResult struct {
 	// UsageIsTotal marks an authoritative per-turn snapshot. A nonempty total
 	// replaces prior streamed samples, which may use different model aliases.
 	UsageIsTotal bool
-	// UsageIsSessionTotal is an authoritative cumulative native-session report,
-	// as returned by Codex exec resume. It must be differenced across turns.
+	// UsageIsSessionTotal marks a total as the native session's running
+	// per-model counters, which a resumed CLI continues from its previous
+	// process. The engine reports the difference from the session's last total.
 	UsageIsSessionTotal bool
 	// SessionUsage is a separate canonical native-session total. Some CLIs
 	// report per-process model buckets alongside cumulative flat counters.
@@ -71,9 +72,9 @@ type ParseResult struct {
 	TracksSessionUsage bool
 	UsagePartial       bool
 	StopReason         string
-	// RetryDiagnostic describes a transport retry. Preserve it in case the CLI
-	// exits before producing a new message or reporting the turn outcome.
-	RetryDiagnostic string
+	// UserMessagesConsumed counts stdin user messages the CLI acknowledged
+	// (TurnInputCodec only).
+	UserMessagesConsumed int
 }
 
 // Codec captures the per-CLI specifics: how to launch it and how to parse its
@@ -126,12 +127,6 @@ type StatefulCodec interface {
 	NewTurnParser(opts provider.OpenOptions) LineParser
 }
 
-// RecoverableDiagnosticCodec identifies a CLI's documented nonfatal messages.
-// A diagnostic is suppressed only after a successful turn with assistant text.
-type RecoverableDiagnosticCodec interface {
-	IsRecoverableDiagnostic(Msg) bool
-}
-
 // WholeOutputCodec is an optional Codec extension for CLIs that emit a single
 // (usually pretty-printed) JSON document rather than line-delimited JSON. The
 // engine buffers all of stdout and hands it to ParseAll once the process closes
@@ -160,7 +155,10 @@ type LogFileCodec interface {
 }
 
 // Provider is a one-shot provider backed by a Codec.
-type Provider struct{ c Codec }
+type Provider struct {
+	c      Codec
+	ledger sessionLedger
+}
 
 // NewProvider wraps a Codec as a provider.Provider.
 func NewProvider(c Codec) provider.Provider { return &Provider{c: c} }
@@ -202,21 +200,8 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		return nil, fmt.Errorf("one-shot agent %q not found on PATH (sandbox image lacks this CLI; rebuild it with AGENT_PROVIDERS including %q): %w",
 			bin, p.c.AgentName(), err)
 	}
-	if prepared.Platform || (prepared.Connection != nil && p.Name() != provider.OpenCode) {
+	if prepared.Platform || prepared.Connection != nil {
 		if err := modelconnection.CheckVersion(procCtx, p.Name(), path, prepared.Env); err != nil {
-			prepared.Cleanup()
-			return nil, err
-		}
-	}
-	if p.Name() == provider.OpenCode {
-		// Validate the native directory before custom variants can declare an
-		// otherwise unknown official model in the generated configuration.
-		if err := modelconnection.CheckOpenCodeCatalog(handshakeCtx, path, prepared, opts.Cwd); err != nil {
-			prepared.Cleanup()
-			return nil, err
-		}
-		prepared, err = modelconnection.ApplyOpenCodeVariant(prepared, opts.ReasoningEffort)
-		if err != nil {
 			prepared.Cleanup()
 			return nil, err
 		}
@@ -239,6 +224,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		env:      prepared.Env,
 		cleanup:  prepared.Cleanup,
 		onEvent:  onEvent,
+		ledger:   &p.ledger,
 		done:     make(chan struct{}),
 		cumUsage: map[string]provider.TokenUsage{},
 		bgGrace:  BackgroundGrace(),
@@ -275,14 +261,12 @@ type engine struct {
 	cleanup      func()
 	displayModel string
 
-	mu                sync.Mutex
-	sessionID         string
-	cumUsage          map[string]provider.TokenUsage
-	usageSession      string
-	usageBaseline     map[string]provider.TokenUsage
-	flatUsageSession  string
-	flatUsageBaseline provider.TokenUsage
-	curCancel         context.CancelFunc
+	ledger *sessionLedger
+
+	mu        sync.Mutex
+	sessionID string
+	cumUsage  map[string]provider.TokenUsage
+	curCancel context.CancelFunc
 	// agentPID is the running CLI's pid (0 between turns), for the bridge's
 	// CPU / IO liveness sampling.
 	agentPID atomic.Int64
@@ -290,6 +274,8 @@ type engine struct {
 	// they are ended (0 = never). bg is the running turn's tracker.
 	bgGrace time.Duration
 	bg      atomic.Pointer[backgroundShells]
+	// input is the running turn's open stdin (TurnInputCodec only).
+	input atomic.Pointer[turnInput]
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -299,7 +285,7 @@ func (e *engine) SessionID() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.sessionID == "" {
-		return "oneshot-pending"
+		return provider.SessionPending
 	}
 	return e.sessionID
 }
@@ -324,14 +310,7 @@ func (e *engine) ReportsUsage() bool { return e.c.ReportsUsage() }
 func (e *engine) CumulativeUsage() map[string]provider.TokenUsage {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.cumUsage) == 0 {
-		return nil
-	}
-	out := make(map[string]provider.TokenUsage, len(e.cumUsage))
-	for k, v := range e.cumUsage {
-		out[k] = v
-	}
-	return out
+	return provider.CopyUsage(e.cumUsage)
 }
 
 // Prompt runs one turn, spawning the CLI with a --resume pointer when available.
@@ -423,9 +402,6 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	// diagnostics, so an error from the abandoned attempt cannot fail that turn.
 	errorReported := false
 	for _, diagnostic := range res.diagnostics {
-		if recoverable, ok := e.c.(RecoverableDiagnosticCodec); ok && err == nil && res.stopReason == "end_turn" && res.hasText && recoverable.IsRecoverableDiagnostic(diagnostic) {
-			continue
-		}
 		if strings.TrimSpace(diagnostic.Text) != "" {
 			e.emitUpdate(diagnostic)
 			errorReported = true
@@ -486,13 +462,20 @@ func (e *engine) runOnce(ctx context.Context, text string, images []provider.Pro
 	disarmKiller := killGroupOnCancel(turnCtx, proc.cmd)
 	defer disarmKiller()
 
-	waitStdin, err := e.feedStdin(proc, text, images)
+	waitStdin, input, err := e.feedStdin(proc, text, images)
 	if err != nil {
 		return turnOutcome{stopReason: "failed"}, err
 	}
+	if input != nil {
+		e.input.Store(input)
+		defer func() {
+			e.input.CompareAndSwap(input, nil)
+			input.close()
+		}()
+	}
 
-	acc := newTurnAccumulator(e, bg)
-	tail := newStderrTail(64 * 1024)
+	acc := newTurnAccumulator(e, bg, input)
+	tail := &provider.OutputTail{Max: 64 * 1024}
 	var streamErr error
 	stdoutPipe := newOutPipe(proc.stdout, outputDrainGrace)
 	stderrPipe := newOutPipe(proc.stderr, outputDrainGrace)
@@ -641,26 +624,33 @@ func killGroupOnCancel(ctx context.Context, cmd *exec.Cmd) (disarm func()) {
 
 // feedStdin writes the prompt in a goroutine so large prompts cannot deadlock
 // against a child that is simultaneously filling the stdout pipe buffer. The
-// returned wait blocks until the write finished and reports its error. When the
-// prompt cannot be encoded the process is reaped and its pipes closed.
-func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.PromptImage) (wait func() error, err error) {
+// returned wait blocks until the write finished and reports its error. A
+// TurnInputCodec keeps stdin open behind the returned turnInput; otherwise
+// stdin closes after the prompt. When the prompt cannot be encoded the process
+// is reaped and its pipes closed.
+func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.PromptImage) (wait func() error, input *turnInput, err error) {
 	stdin := proc.stdin
 	if stdin == nil {
-		return func() error { return nil }, nil
+		return func() error { return nil }, nil, nil
 	}
-	if _, ok := e.c.(StdinEncoder); !ok && len(images) > 0 {
+	enc, encodes := e.c.(StdinEncoder)
+	if !encodes && len(images) > 0 {
 		_ = stdin.Close()
 		_ = proc.cmd.Process.Kill()
 		_ = proc.cmd.Wait()
 		closeFiles(proc.stdout, proc.stderr)
-		return nil, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+		return nil, nil, fmt.Errorf("oneshot: agent %q 图片附件需要 StdinEncoder", e.c.AgentName())
+	}
+	if _, ok := turnInputCodec(e.c); ok {
+		input, wait = openTurnInput(stdin, enc.StdinBytes(text, images))
+		return wait, input, nil
 	}
 	var stdinErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		var werr error
-		if enc, ok := e.c.(StdinEncoder); ok {
+		if encodes {
 			_, werr = stdin.Write(enc.StdinBytes(text, images))
 		} else {
 			_, werr = io.WriteString(stdin, text)
@@ -677,7 +667,7 @@ func (e *engine) feedStdin(proc *turnProcess, text string, images []provider.Pro
 	return func() error {
 		<-done
 		return stdinErr
-	}, nil
+	}, input, nil
 }
 
 // waitTurnProcess waits for the CLI to exit under superviseTurn. The turn ends
@@ -760,9 +750,7 @@ func (e *engine) mergeCumulative(turn map[string]provider.TokenUsage) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for model, u := range turn {
-		e.cumUsage[model] = addUsage(e.cumUsage[model], u)
-	}
+	provider.AddUsage(e.cumUsage, turn)
 }
 
 func (e *engine) Cancel() error {
@@ -833,7 +821,7 @@ func (e *engine) emitUpdate(m Msg) {
 		}
 		update = map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": m.Text}}
 	case KindError:
-		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": redactDiagnostic(m.Text, e.env)})
+		e.emit(map[string]any{"op": "raw", "type": "error_text", "text": provider.RedactDiagnostic(m.Text, e.env)})
 		return
 	default:
 		return
@@ -992,91 +980,10 @@ func closeFiles(files ...*os.File) {
 
 // --- helpers ---------------------------------------------------------------
 
-func addUsage(a, b provider.TokenUsage) provider.TokenUsage {
-	return provider.TokenUsage{
-		InputTokens:      a.InputTokens + b.InputTokens,
-		OutputTokens:     a.OutputTokens + b.OutputTokens,
-		CacheReadTokens:  a.CacheReadTokens + b.CacheReadTokens,
-		CacheWriteTokens: a.CacheWriteTokens + b.CacheWriteTokens,
-	}
-}
-
-func (e *engine) sessionUsageDelta(session string, current map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	delta := make(map[string]provider.TokenUsage, len(current))
-	var reset bool
-	for model, u := range current {
-		previous := provider.TokenUsage{}
-		if session != "" && session == e.usageSession {
-			previous = e.usageBaseline[model]
-		}
-		if u.InputTokens < previous.InputTokens || u.OutputTokens < previous.OutputTokens || u.CacheReadTokens < previous.CacheReadTokens || u.CacheWriteTokens < previous.CacheWriteTokens {
-			reset = true
-		}
-		delta[model] = provider.TokenUsage{InputTokens: u.InputTokens - previous.InputTokens, OutputTokens: u.OutputTokens - previous.OutputTokens, CacheReadTokens: u.CacheReadTokens - previous.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens - previous.CacheWriteTokens}
-	}
-	e.usageSession = session
-	e.usageBaseline = make(map[string]provider.TokenUsage, len(current))
-	for model, u := range current {
-		e.usageBaseline[model] = u
-	}
-	if reset {
-		return current, true
-	}
-	return delta, false
-}
-
-// Reconcile process-local model buckets against a native-session counter. The
-// baseline includes already reported partial turns, so a later cumulative
-// snapshot cannot ledger those failed/cancelled attempts a second time.
-func (e *engine) reconcileFlatSessionUsage(session string, current *provider.TokenUsage, usage map[string]provider.TokenUsage) (map[string]provider.TokenUsage, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	previous := provider.TokenUsage{}
-	if session != "" && session == e.flatUsageSession {
-		previous = e.flatUsageBaseline
-	}
-	known := sumUsage(usage)
-	var uncertain bool
-	if current != nil {
-		if current.InputTokens < previous.InputTokens || current.OutputTokens < previous.OutputTokens || current.CacheReadTokens < previous.CacheReadTokens || current.CacheWriteTokens < previous.CacheWriteTokens {
-			previous = provider.TokenUsage{}
-			uncertain = true
-		}
-		delta := provider.TokenUsage{
-			InputTokens:      current.InputTokens - previous.InputTokens,
-			OutputTokens:     current.OutputTokens - previous.OutputTokens,
-			CacheReadTokens:  current.CacheReadTokens - previous.CacheReadTokens,
-			CacheWriteTokens: current.CacheWriteTokens - previous.CacheWriteTokens,
-		}
-		missing := provider.TokenUsage{
-			InputTokens:      max(delta.InputTokens-known.InputTokens, 0),
-			OutputTokens:     max(delta.OutputTokens-known.OutputTokens, 0),
-			CacheReadTokens:  max(delta.CacheReadTokens-known.CacheReadTokens, 0),
-			CacheWriteTokens: max(delta.CacheWriteTokens-known.CacheWriteTokens, 0),
-		}
-		if missing != (provider.TokenUsage{}) {
-			uncertain = uncertain || len(usage) > 0
-			if usage == nil {
-				usage = map[string]provider.TokenUsage{}
-			}
-			usage["default"] = addUsage(usage["default"], missing)
-		}
-		uncertain = uncertain || known.InputTokens > delta.InputTokens || known.OutputTokens > delta.OutputTokens || known.CacheReadTokens > delta.CacheReadTokens || known.CacheWriteTokens > delta.CacheWriteTokens
-		if len(usage) == 0 {
-			usage = map[string]provider.TokenUsage{"default": {}}
-		}
-	}
-	e.flatUsageSession = session
-	e.flatUsageBaseline = addUsage(previous, sumUsage(usage))
-	return usage, uncertain
-}
-
 func sumUsage(usage map[string]provider.TokenUsage) provider.TokenUsage {
 	var total provider.TokenUsage
 	for _, bucket := range usage {
-		total = addUsage(total, bucket)
+		total = total.Plus(bucket)
 	}
 	return total
 }
@@ -1090,7 +997,7 @@ func mergeUsage(a, b map[string]provider.TokenUsage) map[string]provider.TokenUs
 		out[model] = usage
 	}
 	for model, usage := range b {
-		out[model] = addUsage(out[model], usage)
+		out[model] = out[model].Plus(usage)
 	}
 	return out
 }
@@ -1109,32 +1016,6 @@ func zeroUsage(usage map[string]provider.TokenUsage) bool {
 		}
 	}
 	return true
-}
-
-// stderrTail is a bounded ring buffer capturing the last N bytes of stderr so
-// native CLI crashes surface a diagnostic instead of a bare "exit status 3".
-type stderrTail struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func newStderrTail(max int) *stderrTail { return &stderrTail{max: max} }
-
-func (s *stderrTail) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buf = append(s.buf, p...)
-	if len(s.buf) > s.max {
-		s.buf = s.buf[len(s.buf)-s.max:]
-	}
-	return len(p), nil
-}
-
-func (s *stderrTail) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return strings.TrimSpace(string(s.buf))
 }
 
 // redactArgv returns a greppable argv snapshot for logs: keeps MCP-related

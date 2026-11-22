@@ -22,6 +22,7 @@ import type {
   ReferenceInput,
   RepoChoice,
   SandboxView,
+  SteerOutcome,
 } from '../apiTypes'
 
 export type VisitModelChoice = {
@@ -365,6 +366,15 @@ export const runsClient = {
   /** Remove one waiting queue item by server id. */
   reactQueueRemove: (runId: string, nodeId: string, itemId: string) =>
     req<{ status: string }>(`/runs/${runId}/nodes/${nodeId}/queue/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId }),
+    }),
+  /**
+   * Handle one waiting item now; works for node and gate queues alike. joined:
+   * the running turn took it; next: that turn was interrupted and it runs next.
+   */
+  reactQueueSteer: (runId: string, nodeId: string, itemId: string) =>
+    req<{ status: string; steer: SteerOutcome }>(`/runs/${runId}/nodes/${nodeId}/queue/steer`, {
       method: 'POST',
       body: JSON.stringify({ itemId }),
     }),

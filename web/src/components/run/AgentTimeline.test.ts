@@ -52,6 +52,24 @@ describe('AgentTimeline', () => {
     expect(thought.get('summary').text()).toBe('思考过程')
   })
 
+  it('shows steers inline while streaming and keeps them outside the fold once settled', () => {
+    const steered: AgentPart[] = [
+      { kind: 'message', text: 'working' },
+      { kind: 'steer', text: 'also add tests' },
+      { kind: 'message', text: 'done with tests' },
+    ]
+    const live = mountTimeline({ parts: steered, streaming: true })
+    expect(order(live)).toEqual(['agent-timeline-message', 'agent-timeline-steer', 'agent-timeline-message'])
+    expect(live.get('[data-testid="agent-timeline-steer"]').text()).toBe('引导also add tests')
+
+    const settled = mountTimeline({ parts: steered, completed: true, startedAt, endedAt })
+    expect(order(settled)).toEqual(['agent-timeline-elapsed', 'agent-timeline-steer', 'agent-timeline-rule', 'agent-timeline-message', 'chat-message-meta'])
+    expect(settled.findAll('[data-testid="agent-timeline-message"]').map((m) => m.text())).toEqual(['done with tests'])
+
+    const late = mountTimeline({ parts: [{ kind: 'message', text: 'done' }, { kind: 'steer', text: 'also fix X' }], completed: true, startedAt, endedAt })
+    expect(order(late).filter((id) => id !== 'chat-message-meta')).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message', 'agent-timeline-steer'])
+  })
+
   it('streams only the last message and keeps the caret on it', () => {
     const w = mountTimeline({ streaming: true, messageTestId: 'm' }, { caret: '<i data-testid="caret" />' })
     const msgs = w.findAll('[data-testid="m"]')

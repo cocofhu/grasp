@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,11 +28,7 @@ func newChatsEngine(chats *service.ChatManager) *gin.Engine {
 }
 
 func TestReasoningEffortOnlySwitchPreservesModelAndUsesAdvertisedOptions(t *testing.T) {
-	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir)
+	installFakeCodex(t)
 	t.Setenv("CONFIG_ROOT", t.TempDir())
 	t.Setenv("AGENT_PROVIDER", "codex")
 	t.Setenv("GRASP_MODEL_CONNECTION", "")

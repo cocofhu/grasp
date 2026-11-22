@@ -64,6 +64,8 @@ type fakeBridge struct {
 	stalledOp string // opId of a stalled ackCancel turn awaiting {op:cancel}
 	turns     int
 	restarts  int      // {op:restart_agent} count; the container is not recreated
+	resumes   bool     // connect reports that the agent continued its native session
+	legacy    bool     // connect omits resumed, as bridges before the field did
 	prompts   []string // every chat prompt received (for rehydrate-prime assertions)
 	images    []int    // image attachment count per chat turn
 }
@@ -137,7 +139,14 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch fmt.Sprint(m["op"]) {
 		case "connect":
-			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "fake-session"})
+			b.mu.Lock()
+			connected := map[string]any{"op": "connected", "sessionId": "fake-session"}
+			if !b.legacy {
+				connected["resumed"], connected["connectId"] = b.resumes, m["connectId"]
+				_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "stale", "connectId": "", "resumed": !b.resumes})
+			}
+			b.mu.Unlock()
+			_ = conn.WriteJSON(connected)
 		case "cancel":
 			// fire-and-forget, no ack — unless a stalled ackCancel turn waits.
 			b.mu.Lock()

@@ -1,0 +1,60 @@
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 30; echo late"}],"timestamp":1795232512804}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 30; echo late"}],"timestamp":1795232512804}}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1795232512837}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"The"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" user"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" asks"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" to"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" run"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" sleep"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" "}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"30"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":";"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" echo"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" late"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" I"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" should"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" just"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" run"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" it"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" No"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" timeout"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" specified"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" Let"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" me"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" run"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"."}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_start","contentIndex":1}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"{\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"command"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":": \""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"sleep"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" "}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"30"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":";"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" echo"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":" late"}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"\""}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":1,"delta":"}"}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"The user asks to run sleep 30; echo late. I should just run it. No timeout specified. Let me run."}}
+{"type":"message_update","assistantMessageEvent":{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_00_gOE1G4mlyP6HDhUNFIFi0781","name":"bash","arguments":{"command":"sleep 30; echo late"}}}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user asks to run sleep 30; echo late. I should just run it. No timeout specified. Let me run.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_gOE1G4mlyP6HDhUNFIFi0781","name":"bash","arguments":{"command":"sleep 30; echo late"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":208,"output":68,"cacheRead":1408,"cacheWrite":0,"totalTokens":1684,"cost":{"input":2.9120000000000002e-05,"output":1.904e-05,"cacheRead":3.9424e-06,"cacheWrite":0,"total":5.21024e-05}},"stopReason":"toolUse","timestamp":1795232512837,"responseId":"870316e3-cec5-4af2-963e-b589c8a11492","responseModel":"deepseek-flash"}}
+{"type":"tool_execution_start","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","args":{"command":"sleep 30; echo late"}}
+{"type":"tool_execution_update","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","args":{"command":"sleep 30; echo late"},"partialResult":{"content":[]}}
+{"type":"tool_execution_end","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","result":{"content":[{"type":"text","text":"Command aborted"}],"details":{}},"isError":true}
+{"type":"message_start","message":{"role":"toolResult","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","content":[{"type":"text","text":"Command aborted"}],"details":{},"isError":true,"timestamp":1795232514487}}
+{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","content":[{"type":"text","text":"Command aborted"}],"details":{},"isError":true,"timestamp":1795232514487}}
+{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user asks to run sleep 30; echo late. I should just run it. No timeout specified. Let me run.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_gOE1G4mlyP6HDhUNFIFi0781","name":"bash","arguments":{"command":"sleep 30; echo late"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":208,"output":68,"cacheRead":1408,"cacheWrite":0,"totalTokens":1684,"cost":{"input":2.9120000000000002e-05,"output":1.904e-05,"cacheRead":3.9424e-06,"cacheWrite":0,"total":5.21024e-05}},"stopReason":"toolUse","timestamp":1795232512837,"responseId":"870316e3-cec5-4af2-963e-b589c8a11492","responseModel":"deepseek-flash"},"toolResults":[{"role":"toolResult","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","content":[{"type":"text","text":"Command aborted"}],"details":{},"isError":true,"timestamp":1795232514487}]}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":1795232514487,"errorMessage":"Request was aborted."}}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":1795232514487,"errorMessage":"Request was aborted."}}
+{"type":"turn_end","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":1795232514487,"errorMessage":"Request was aborted."},"toolResults":[]}
+{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"Use the bash tool to run: sleep 30; echo late"}],"timestamp":1795232512804},{"role":"assistant","content":[{"type":"thinking","thinking":"The user asks to run sleep 30; echo late. I should just run it. No timeout specified. Let me run.","thinkingSignature":"reasoning_content"},{"type":"toolCall","id":"call_00_gOE1G4mlyP6HDhUNFIFi0781","name":"bash","arguments":{"command":"sleep 30; echo late"}}],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":208,"output":68,"cacheRead":1408,"cacheWrite":0,"totalTokens":1684,"cost":{"input":2.9120000000000002e-05,"output":1.904e-05,"cacheRead":3.9424e-06,"cacheWrite":0,"total":5.21024e-05}},"stopReason":"toolUse","timestamp":1795232512837,"responseId":"870316e3-cec5-4af2-963e-b589c8a11492","responseModel":"deepseek-flash"},{"role":"toolResult","toolCallId":"call_00_gOE1G4mlyP6HDhUNFIFi0781","toolName":"bash","content":[{"type":"text","text":"Command aborted"}],"details":{},"isError":true,"timestamp":1795232514487},{"role":"assistant","content":[],"api":"openai-completions","provider":"deepseek","model":"deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":1795232514487,"errorMessage":"Request was aborted."}]}

@@ -264,6 +264,7 @@ describe('PublicGateApprovalView workbench', () => {
           parts: [
             { kind: 'thought', text: '先读' },
             { kind: 'tool', title: 'Read', status: 'completed', summary: '/secret/path', output: 'leak' },
+            { kind: 'steer', text: '顺便改标题' },
             { kind: 'message', text: '改好了' },
             { kind: 'bogus', text: 'x' },
           ],
@@ -274,8 +275,9 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     const tl = w.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message', 'chat-message-meta',
+      'agent-timeline-elapsed', 'agent-timeline-steer', 'agent-timeline-rule', 'clarify-agent-message', 'chat-message-meta',
     ])
+    expect(w.get('[data-testid="agent-timeline-steer"]').text()).toContain('顺便改标题')
     expect(w.findAll('[data-testid="agent-timeline"]')).toHaveLength(1)
     expect(w.get('[data-testid="clarify-agent-message"]').text()).toContain('改好了')
     await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')

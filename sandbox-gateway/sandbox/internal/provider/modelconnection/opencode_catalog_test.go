@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 )
 
 const currentOpenCodeCatalog = `{"opencode":{"models":{"current":{"id":"current"},"retired":{"id":"retired","status":"deprecated"},"preview":{"id":"preview","status":"alpha"},"beta":{"id":"beta","status":"beta"},"invalid":null}},"opencode-go":{"models":{"go-model":{"id":"go-model"}}}}`
@@ -348,10 +348,10 @@ func TestOpenCodeCatalogPathMatchesNativeEnvironment(t *testing.T) {
 	for range 2 {
 		f := newCatalogFixture(t, refreshCatalogScript)
 		home := filepath.Join(t.TempDir(), "home")
-		f.p.Env = common.UpsertEnv(f.p.Env, "HOME", home)
-		f.p.Env = common.UpsertEnv(f.p.Env, "XDG_CACHE_HOME", "")
+		f.p.Env = envutil.Upsert(f.p.Env, "HOME", home)
+		f.p.Env = envutil.Upsert(f.p.Env, "XDG_CACHE_HOME", "")
 		f.path = filepath.Join(home, ".cache", "opencode", "models.json")
-		f.p.Env = common.UpsertEnv(f.p.Env, "GRASP_CATALOG_TEST_CACHE", f.path)
+		f.p.Env = envutil.Upsert(f.p.Env, "GRASP_CATALOG_TEST_CACHE", f.path)
 		if err := f.check(); err != nil || f.count(t) != 1 {
 			t.Fatalf("HOME-scoped native refresh failed: %v", err)
 		}

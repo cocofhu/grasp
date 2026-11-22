@@ -85,7 +85,8 @@ func GetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 }
 
 // SetIndependentModelSettings changes only the non-default chat this client owns.
-// A nil tier keeps the chat's current speed tier.
+// A nil tier keeps the chat's current speed tier. It reports whether the chat
+// had to restart its coding agent.
 func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effort string, tier *string) (bool, error) {
 	if c.chatID == "" || c.chatID == "default" {
 		return false, fmt.Errorf("independent chat required")
@@ -115,45 +116,27 @@ func (c *ACPClient) SetIndependentModelSettings(ctx context.Context, model, effo
 	if settings.Selected == model && settings.ReasoningEffort != nil && *settings.ReasoningEffort == effort && tierMatches {
 		return false, nil
 	}
-	return true, SetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID, model, effort, tier)
-}
-
-// GetChatModel reads the default chat's explicit model. Empty means the
-// sandbox is following its primary model.
-func GetChatModel(ctx context.Context, host string, port int, password string) (string, error) {
-	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, "/api/models?chat=default", nil)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("get chat model: status %d", resp.StatusCode)
-	}
-	var info struct {
-		Selected string `json:"selected"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
-		return "", fmt.Errorf("get chat model: %w", err)
-	}
-	return strings.TrimSpace(info.Selected), nil
+	_, err = SetChatModelSettingsFor(ctx, c.host, c.port, c.password, c.chatID, model, effort, tier)
+	return true, err
 }
 
 // SetChatModel selects the default chat's model and restarts that chat's
 // coding agent. Empty restores the primary model. The caller must not invoke
-// this while a turn is still generating.
-func SetChatModel(ctx context.Context, host string, port int, password, model string) error {
+// this while a turn is still generating. resumed reports that the restarted
+// agent continues its native conversation.
+func SetChatModel(ctx context.Context, host string, port int, password, model string) (resumed bool, err error) {
 	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery("default"), map[string]any{"model": strings.TrimSpace(model)})
 }
 
 // SetChatModelSettings applies the settings through one runtime restart.
 // A nil tier preserves the chat's current speed tier.
-func SetChatModelSettings(ctx context.Context, host string, port int, password, model, effort string, tier *string) error {
+func SetChatModelSettings(ctx context.Context, host string, port int, password, model, effort string, tier *string) (resumed bool, err error) {
 	return SetChatModelSettingsFor(ctx, host, port, password, "default", model, effort, tier)
 }
 
 // SetChatModelSettingsFor applies the settings to one bridge chat. Empty chat
 // is the default chat. Empty model restores that chat's primary model.
-func SetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat, model, effort string, tier *string) error {
+func SetChatModelSettingsFor(ctx context.Context, host string, port int, password, chat, model, effort string, tier *string) (resumed bool, err error) {
 	settings := map[string]any{"model": strings.TrimSpace(model), "reasoningEffort": strings.TrimSpace(effort)}
 	if tier != nil {
 		settings["serviceTier"] = strings.TrimSpace(*tier)
@@ -161,25 +144,32 @@ func SetChatModelSettingsFor(ctx context.Context, host string, port int, passwor
 	return setChatSettings(ctx, host, port, password, "/api/model?chat="+chatQuery(chat), settings)
 }
 
-func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]any) error {
+// setChatSettings posts the settings. A runtime that predates native resume
+// omits "resumed", which reads as a fresh conversation; an unreadable answer
+// is an error, since the agent may have resumed either way.
+func setChatSettings(ctx context.Context, host string, port int, password, path string, settings map[string]any) (bool, error) {
 	body, err := json.Marshal(settings)
 	if err != nil {
-		return err
+		return false, err
 	}
 	resp, err := chatRequestTimeout(ctx, http.MethodPost, host, port, password, path, body, chatModelTimeout)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusOK {
-		return nil
-	}
 	var info struct {
-		Error string `json:"error"`
+		Error   string `json:"error"`
+		Resumed bool   `json:"resumed"`
 	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&info)
+	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&info)
+	if resp.StatusCode == http.StatusOK {
+		if decodeErr != nil {
+			return false, fmt.Errorf("set chat model: unreadable response: %w", decodeErr)
+		}
+		return info.Resumed, nil
+	}
 	if strings.TrimSpace(info.Error) == "" || resp.StatusCode >= http.StatusBadGateway {
-		return &ChatHTTPError{StatusCode: resp.StatusCode, op: "set chat model"}
+		return false, &ChatHTTPError{StatusCode: resp.StatusCode, op: "set chat model"}
 	}
-	return fmt.Errorf("set chat model: %s", strings.TrimSpace(info.Error))
+	return false, fmt.Errorf("set chat model: %s", strings.TrimSpace(info.Error))
 }

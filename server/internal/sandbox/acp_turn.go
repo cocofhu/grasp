@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,12 +114,8 @@ func (c *ACPClient) setDesynced() {
 	c.stateMu.Unlock()
 }
 
-// observeQueueState updates the bridge mirror from a queue_state frame. Called
-// from readLoop for every frame, so it must stay cheap for everything else.
+// observeQueueState updates the bridge mirror from a queue_state frame.
 func (c *ACPClient) observeQueueState(raw []byte) {
-	if !bytes.Contains(raw, []byte(`"queue_state"`)) {
-		return
-	}
 	var m struct {
 		Op          string `json:"op"`
 		Busy        *bool  `json:"busy"`
@@ -150,32 +145,10 @@ func newTurnOpID() string {
 	return "g-" + uuid.NewString()
 }
 
-type turnFrame struct {
-	Op     string          `json:"op"`
-	OpID   string          `json:"opId"`
-	Status string          `json:"status"`
-	Busy   *bool           `json:"busy"`
-	Data   json.RawMessage `json:"data"`
-}
-
-func parseTurnFrame(raw json.RawMessage) turnFrame {
-	var f turnFrame
-	_ = json.Unmarshal(raw, &f)
-	return f
-}
-
-func (f turnFrame) dataType() string {
-	var d struct {
-		Type string `json:"type"`
-	}
-	_ = json.Unmarshal(f.Data, &d)
-	return d.Type
-}
-
 // belongsTo reports whether f is part of the turn opID. Event frames must carry
 // a matching opId; untagged errors (a rejected chat, sent only to this
 // connection) and queue_state (global) always count.
-func (c *ACPClient) belongsTo(f turnFrame, opID string) bool {
+func (c *ACPClient) belongsTo(f frame, opID string) bool {
 	if f.OpID != "" {
 		return f.OpID == opID
 	}
@@ -263,7 +236,7 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 				return result, fmt.Errorf("%w during chat", ErrConnClosed)
 			}
 		}
-		f := parseTurnFrame(raw)
+		f := c.decode(raw)
 		if !c.belongsTo(f, opID) {
 			continue
 		}
@@ -273,7 +246,7 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 			if onEvent != nil {
 				onEvent(raw)
 			}
-			done := c.dispatchEventData(raw, result)
+			done := c.applyFrame(f, result)
 			if onProgress != nil {
 				onProgress(result)
 			}
@@ -352,9 +325,9 @@ func (c *ACPClient) finishTurn(result *ChatResult) (*ChatResult, error) {
 // desynced so callers stop assuming the sandbox is idle.
 func (c *ACPClient) abortTurn(result *ChatResult, reason string, cause error) (*ChatResult, error) {
 	if !c.cancelTurnAndWait(result.OpID, cancelAckWait, func(raw json.RawMessage) {
-		f := parseTurnFrame(raw)
+		f := c.decode(raw)
 		if f.Op == "event" && f.OpID == result.OpID {
-			c.dispatchEventData(raw, result)
+			c.applyFrame(f, result)
 		}
 	}) {
 		c.lg.Warn().Str("op_id", result.OpID).Msg("acp cancel not acknowledged; sandbox marked desynced")
@@ -399,7 +372,7 @@ func (c *ACPClient) cancelTurnAndWait(opID string, wait time.Duration, onFrame f
 			if onFrame != nil {
 				onFrame(raw)
 			}
-			if c.cancelConfirmed(parseTurnFrame(raw), opID) {
+			if c.cancelConfirmed(c.decode(raw), opID) {
 				return true
 			}
 		case <-timer.C:
@@ -410,14 +383,14 @@ func (c *ACPClient) cancelTurnAndWait(opID string, wait time.Duration, onFrame f
 	}
 }
 
-func (c *ACPClient) cancelConfirmed(f turnFrame, opID string) bool {
+func (c *ACPClient) cancelConfirmed(f frame, opID string) bool {
 	switch f.Op {
 	case "cancel_ack":
 		return f.OpID == opID && (f.Status == "removed" || f.Status == "unknown")
 	case "queue_state":
 		return f.Busy != nil && !*f.Busy
 	case "event":
-		if f.dataType() != "prompt_done" {
+		if f.ev.Type != "prompt_done" {
 			return false
 		}
 		if f.OpID != "" && (opID == "" || f.OpID == opID) {

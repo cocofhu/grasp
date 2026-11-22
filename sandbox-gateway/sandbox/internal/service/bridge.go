@@ -47,8 +47,20 @@ type Bridge struct {
 	agentCtx        context.Context
 	agentCancel     context.CancelFunc
 	agentGeneration uint64 // guarded by mu; scopes delayed exit notifications
-	permWait        map[string]chan string
-	autoPermission  bool
+	// opened: an agent of this backend process started. Until one does,
+	// connects continue the session persisted by the previous process.
+	opened bool
+	// sessHistory: sess holds earlier dialogue, because it took a turn or
+	// continues a session that had. A resumed session that never took one
+	// knows nothing the platform would otherwise replay.
+	sessHistory bool
+	// sessConfig stamps the files sess read at start (provider.ConfigReader).
+	sessConfig string
+	// pointer persists the native session across backend restarts; nil keeps
+	// it in memory only.
+	pointer        *pointerFile
+	permWait       map[string]chan string
+	autoPermission bool
 	// 每连接 *wsClient 一把写锁，禁止并发 Write、禁止双 map 维护。
 	clients map[*websocket.Conn]*wsClient
 
@@ -62,12 +74,44 @@ type Bridge struct {
 	// 最近一次 session/new 使用的 MCP 列表（JSON），重启 Agent 时复用
 	lastMCP json.RawMessage
 
+	// sessOpened / sessThaw: when sess was opened, and thawCount() then.
+	sessOpened time.Time
+	sessThaw   int64
+	// maxAgentAge recycles a long-lived Agent process between turns once it is
+	// this old (0 = never).
+	maxAgentAge time.Duration
+	// revivals bounds automatic restarts after the Agent exits on its own.
+	revivals revivalBudget
+	// reviving: sess is nil only because the exited Agent is being restarted
+	// on its session; prompts keep queueing meanwhile. Guarded by mu.
+	reviving bool
+	// lostSession is the native session (string) a replacement failed to
+	// resume; the next prompt_done reports it as sessionReset.
+	lostSession atomic.Value
+	// recycling holds off new turns while recycleStaleAgent swaps the process.
+	// Guarded by turnMu.
+	recycling bool
+
+	// agentProvider replaces agents.Current() (unit tests only).
+	agentProvider provider.Provider
+
 	// testConnect, when non-nil, replaces Connect inside EnsureAgent (unit tests only).
 	testConnect func(cwd, fsRoot string, mcp json.RawMessage, auto *bool) (provider.Session, error)
 
 	// 当前 session/prompt 一轮：取消时结束 Conn.Call 等待，并配合 session/cancel 通知 Agent
 	turnMu     sync.Mutex
 	activeTurn *promptTurn
+	// steerMu is held across a steer RPC and taken before a new turn is
+	// reserved, so a steer meant for one turn never reaches the next. turnMu
+	// cannot serve: the session's reader takes it for every event, and the
+	// steer's own reply arrives behind those events.
+	steerMu sync.Mutex
+	// While a steer is in flight its turn's prompt_done is held, so the
+	// user_steer the steer produces reaches clients first even when the
+	// agent finished the turn before answering the steer.
+	holdMu   sync.Mutex
+	holding  bool
+	heldDone []map[string]any
 
 	// 等待中的用户消息（Agent 正回复时后续发送先入队，按 FIFO 逐个 session/prompt）
 	queueMu     sync.Mutex
@@ -159,6 +203,7 @@ func NewBridge() *Bridge {
 		evLog:           eventLog{},
 		turnIdle:        idle,
 		turnMax:         max,
+		maxAgentAge:     agentMaxAgeFromEnv(),
 	}
 }
 

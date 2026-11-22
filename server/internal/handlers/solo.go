@@ -495,19 +495,25 @@ func (h *Handlers) StartSoloTurn(c *gin.Context) {
 		Images      []models.PromptImage      `json:"images"`
 		Annotations []models.ReactAnnotation  `json:"annotations"`
 		References  []services.ReferenceInput `json:"references"`
+		// Steer handles the turn now instead of in queue order.
+		Steer bool `json:"steer"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
-	if err != nil {
-		var se *services.SoloError
-		if errors.As(err, &se) {
-			writeSoloErr(c, err)
+	if body.Steer {
+		outcome, err := h.Solo.SendAndSteer(c.Request.Context(), c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
+		if err != nil {
+			writeSoloQueueErr(c, err)
 			return
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"steer": outcome})
+		return
+	}
+	waiting, err := h.Solo.SendWithReferences(c.Param("id"), user, body.Text, body.Images, body.References, body.Annotations...)
+	if err != nil {
+		writeSoloQueueErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"waiting": waiting})
@@ -533,15 +539,35 @@ func (h *Handlers) RemoveSoloQueued(c *gin.Context) {
 		return
 	}
 	if err := h.Solo.RemoveQueued(c.Param("id"), user, c.Param("turnId")); err != nil {
-		var se *services.SoloError
-		if errors.As(err, &se) {
-			writeSoloErr(c, err)
-			return
-		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		writeSoloQueueErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SteerSoloQueued handles POST /api/solo/sessions/:id/queue/:turnId/steer:
+// the pending turn is handled now. The response says whether it joined the
+// running turn or runs next.
+func (h *Handlers) SteerSoloQueued(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	outcome, err := h.Solo.SteerQueued(c.Request.Context(), c.Param("id"), user, c.Param("turnId"))
+	if err != nil {
+		writeSoloQueueErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"steer": outcome})
+}
+
+func writeSoloQueueErr(c *gin.Context, err error) {
+	var se *services.SoloError
+	if errors.As(err, &se) {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 }
 
 // ReorderSoloQueue handles PUT /api/solo/sessions/:id/queue.
@@ -558,12 +584,7 @@ func (h *Handlers) ReorderSoloQueue(c *gin.Context) {
 		return
 	}
 	if err := h.Solo.ReorderQueued(c.Param("id"), user, body.IDs); err != nil {
-		var se *services.SoloError
-		if errors.As(err, &se) {
-			writeSoloErr(c, err)
-			return
-		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		writeSoloQueueErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

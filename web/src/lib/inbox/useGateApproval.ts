@@ -1139,6 +1139,8 @@ let reactQueueToastTimer = 0
 const reactThinking = ref(false)
 /** True between turn_begin and turn_done/error (mirrors ClarifyChat liveAgentIdx). */
 const reactInFlight = ref(false)
+/** Queue ids whose steer request is still pending; repeat clicks are ignored. */
+const reactSteering = new Set<string>()
 const reactStreamText = ref('')
 /** Accepted requests retain their own response and survive short queue snapshots. */
 const reactTurns = ref<GateReactTurn[]>([])
@@ -1360,6 +1362,20 @@ async function cancelReactQueuedItem(index: number) {
     } catch (e: any) {
       reactError.value = e?.message || t('pages.gateApproval.reactRevise.failed')
     }
+  }
+}
+
+/** Handle a queued revision now; the next queue_state shows where it went. */
+async function steerReactQueuedItem(index: number) {
+  const item = reactQueued.value[index]
+  if (!item?.id || !props.run?.id || reactSteering.has(item.id)) return
+  reactSteering.add(item.id)
+  try {
+    await api.reactQueueSteer(props.run.id, props.gate.nodeId, item.id)
+  } catch (e: any) {
+    reactError.value = e?.message || t('pages.gateApproval.reactRevise.failed')
+  } finally {
+    reactSteering.delete(item.id)
   }
 }
 
@@ -2052,9 +2068,11 @@ provide(gateApprovalKey, {
     reactQueueNotice,
     reactQueueToast,
     cancelReactQueuedItem,
+    steerReactQueuedItem,
     reorderReactQueuedItems,
     editReactQueuedItem,
     reactThinking,
+    reactInFlight,
     reactStreamText,
     reactTranscriptTurns,
     reactStreamThought,
@@ -2184,6 +2202,7 @@ provide(gateApprovalKey, {
     reactQueued,
     reactQueueToast,
     cancelReactQueuedItem,
+    steerReactQueuedItem,
     reorderReactQueuedItems,
     editReactQueuedItem,
     reactThinking,

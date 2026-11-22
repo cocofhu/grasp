@@ -90,7 +90,7 @@ func TestModelAndEffortRestartIsAtomicAndChatScoped(t *testing.T) {
 		}
 		return nil, errors.New("fixture restart rejected")
 	}
-	if _, err := bridge.SwitchModelSettings("next", "ultra", nil); err == nil {
+	if _, _, err := bridge.SwitchModelSettings("next", "ultra", nil); err == nil {
 		t.Fatal("expected restart failure")
 	}
 	if bridge.Model() != "original" || bridge.ReasoningEffort() != "low" {
@@ -99,7 +99,7 @@ func TestModelAndEffortRestartIsAtomicAndChatScoped(t *testing.T) {
 	bridge.testConnect = func(string, string, json.RawMessage, *bool) (provider.Session, error) {
 		return &stubSess{id: "next"}, nil
 	}
-	if _, err := bridge.SwitchModelSettings("next", "ultra", nil); err != nil {
+	if _, _, err := bridge.SwitchModelSettings("next", "ultra", nil); err != nil {
 		t.Fatal(err)
 	}
 	if manager.Default().ReasoningEffort() != "low" || bridge.ReasoningEffort() != "ultra" {

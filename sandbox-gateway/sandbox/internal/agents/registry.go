@@ -14,8 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"backend/internal/backend"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/acpx"
 	"backend/internal/provider/antigravity"
@@ -24,6 +23,7 @@ import (
 	"backend/internal/provider/deepseek"
 	"backend/internal/provider/kimicode"
 	"backend/internal/provider/openclaw"
+	"backend/internal/provider/opencode"
 	"backend/internal/provider/opencodejson"
 	"backend/internal/provider/pi"
 	"backend/internal/provider/streamjson"
@@ -38,16 +38,14 @@ type Name = provider.Name
 //   - stream-json (one-shot, spawn per turn + --resume): cursor / claude_code /
 //     codebuddy / gemini. Fresh subprocess each turn; multi-turn continuity via
 //     a resume pointer. These are the primary transports.
-//   - run --format json (one-shot NDJSON): opencode / deveco.
-//   - json event lines (one-shot): copilot / pi / openclaw / antigravity.
-//   - JSONL exec (one-shot): codex.
+//   - run --format json (one-shot NDJSON): deveco.
+//   - json event lines (one-shot): copilot / openclaw / antigravity.
+//   - app-server (long-lived, JSON-RPC over stdio): codex.
+//   - serve (long-lived, HTTP + event stream): opencode.
+//   - rpc (long-lived, JSON lines over stdio): pi.
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
 //     grok / trae — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
-//
-// The *_acp entries are opt-in fallbacks that force the long-lived stdio path
-// for the stream-json CLIs (reusing the proven common.Backend logic). They are
-// not built as dedicated images by default.
 var registry = map[Name]provider.Provider{
 	// --- stream-json family (one-shot; primary) ----------------------------
 	// cursor-agent: `-p --output-format stream-json --yolo --workspace <cwd>`,
@@ -112,19 +110,8 @@ var registry = map[Name]provider.Provider{
 	}),
 
 	// --- run --format json family (one-shot NDJSON) ------------------------
-	// opencode/deveco: `run --format json --dangerously-skip-permissions
-	// <prompt>`, resume via `--session <id>`; deveco speaks the same protocol.
-	provider.OpenCode: opencodejson.New(opencodejson.Config{
-		AgentName:     provider.OpenCode,
-		Bin:           "opencode",
-		Runtime:       "opencode-json",
-		ConfigRoot:    "/root/.config/opencode",
-		BaseArgs:      []string{"run", "--format", "json", "--thinking", "--dangerously-skip-permissions"},
-		WorkspaceFlag: "--dir",
-		ResumeFlag:    "--session",
-		ModelFlag:     "--model",
-		AuthEnvFn:     openCodeAuthEnv,
-	}),
+	// deveco: `run --format json --dangerously-skip-permissions <prompt>`,
+	// resume via `--session <id>`.
 	provider.DevEco: opencodejson.New(opencodejson.Config{
 		AgentName:     provider.DevEco,
 		Bin:           "deveco",
@@ -137,8 +124,15 @@ var registry = map[Name]provider.Provider{
 		AuthEnvFn:     genericAuthEnv("DEVECO_API_KEY", "ACP_DEVECO_API_KEY"),
 	}),
 
-	// --- other one-shot CLIs (dedicated codecs) ----------------------------
+	// --- app-server (long-lived) ------------------------------------------
+	// codex: `codex app-server`; one thread per session, turns steered with
+	// turn/steer and stopped with turn/interrupt.
 	provider.Codex: codex.New(),
+	// opencode: `opencode serve`; prompts and steering over HTTP, the
+	// transcript from its event stream, abort without stopping the server.
+	provider.OpenCode: opencode.New(opencode.Config{AuthEnvFn: openCodeAuthEnv}),
+
+	// --- other one-shot CLIs (dedicated codecs) ----------------------------
 	// copilot: `-p <prompt> --output-format json --allow-all --no-ask-user`,
 	// resume via `--resume <id>`. JSONL envelope { type: "dotted.name", data }
 	// with a synthetic "result" line; parsed by the dedicated copilot codec.
@@ -149,12 +143,11 @@ var registry = map[Name]provider.Provider{
 		ConfigRoot: "/root/.copilot",
 		AuthEnvFn:  genericAuthEnv("GITHUB_TOKEN", "ACP_COPILOT_API_KEY", "COPILOT_API_KEY"),
 	}),
-	// pi: `pi -p --mode json --session <path>`. Continuity via a session log
-	// file (the resume pointer); text arrives under assistantMessageEvent.delta.
+	// pi: `pi --mode rpc --session <file>`; steering and abort over the RPC
+	// commands, the session file is the resume pointer.
 	provider.Pi: pi.New(pi.Config{
-		AgentName:  provider.Pi,
 		Bin:        "pi",
-		Runtime:    "pi-json",
+		Runtime:    "pi-rpc",
 		ConfigRoot: "/root/.pi",
 		AuthEnvFn:  genericAuthEnv("ANTHROPIC_API_KEY", "ACP_PI_API_KEY", "PI_API_KEY"),
 	}),
@@ -182,16 +175,11 @@ var registry = map[Name]provider.Provider{
 	// --- ACP family (long-lived, JSON-RPC over stdio) ----------------------
 	provider.DeepSeekHarness: deepseek.New(),
 	provider.KimiCode:        kimicode.New(),
-	provider.Trae:            acpx.FromBackend(backend.Get(backend.Trae)),
+	provider.Trae:            traeProvider(),
 	provider.Hermes:          acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
 	provider.Kiro:            acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
 	provider.Qoder:           acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),
 	provider.Grok:            acpSpec(provider.Grok, "grok-acp", "/root/.grok", []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}, "XAI_API_KEY"),
-
-	// --- opt-in ACP fallbacks for the stream-json CLIs ---------------------
-	provider.CursorACP:     acpx.FromBackend(backend.Get(backend.Cursor)),
-	provider.ClaudeCodeACP: acpx.FromBackend(backend.Get(backend.ClaudeCode)),
-	provider.CodeBuddyACP:  acpx.FromBackend(backend.Get(backend.CodeBuddy)),
 }
 
 // acpSpec builds a long-lived ACP provider for a CLI without a bespoke backend
@@ -213,28 +201,39 @@ func acpSpec(name provider.Name, runtime, configRoot string, argv []string, apiK
 func genericAuthEnv(nativeVar string, aliases ...string) func(env []string) []string {
 	keys := append([]string{nativeVar}, aliases...)
 	return func(env []string) []string {
-		return common.SetIfEmpty(env, nativeVar, common.FirstNonEmptyEnv(keys...))
+		return envutil.SetIfEmpty(env, nativeVar, envutil.FirstNonEmpty(keys...))
 	}
 }
 
 func openCodeAuthEnv(env []string) []string {
-	if common.GetEnvValue(env, "GRASP_OPENCODE_PROVIDER") != "opencode" {
+	if envutil.Get(env, "GRASP_OPENCODE_PROVIDER") != "opencode" {
 		return genericAuthEnv("OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY")(env)
 	}
 	// Preserve the selected value so the official adapter can reject malformed
 	// authorization before any config writes; trimming here would hide CR/LF.
 	for _, key := range []string{"OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"} {
-		if value := common.GetEnvValue(env, key); value != "" {
-			return common.UpsertEnv(env, "OPENCODE_API_KEY", value)
+		if value := envutil.Get(env, key); value != "" {
+			return envutil.Upsert(env, "OPENCODE_API_KEY", value)
 		}
 	}
 	return env
+}
+
+// legacyNames are earlier AGENT_PROVIDER values that named a transport of
+// the same tool; deployed configurations keep selecting that tool.
+var legacyNames = map[Name]Name{
+	"cursor_acp":      provider.Cursor,
+	"claude_code_acp": provider.ClaudeCode,
+	"codebuddy_acp":   provider.CodeBuddy,
 }
 
 // FromEnv resolves the active provider name from AGENT_PROVIDER, defaulting to
 // cursor. Unknown values are logged and ignored (cursor is used).
 func FromEnv() Name {
 	if v := strings.TrimSpace(os.Getenv("AGENT_PROVIDER")); v != "" {
+		if n, ok := legacyNames[Name(v)]; ok {
+			return n
+		}
 		if _, ok := registry[Name(v)]; ok {
 			return Name(v)
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -51,7 +52,7 @@ func (s *SoloService) newChat(id string) *soloChat {
 			c.mu.Lock()
 			c.turnID = q.ID
 			c.phase = SoloPhasePreparing
-			c.text.Reset()
+			c.reply = sandbox.Reply{}
 			c.events = nil
 			c.execution = nil
 			c.mu.Unlock()
@@ -63,6 +64,19 @@ func (s *SoloService) newChat(id string) *soloChat {
 			if s.chat != nil && sid != 0 {
 				s.chat.Cancel(sid)
 			}
+		},
+		SteerTurn: func(ctx context.Context, _, q *soloTurn) chatsession.SteerResult {
+			c.mu.Lock()
+			sid, running := c.sandboxID, c.phase == SoloPhaseRunning
+			c.mu.Unlock()
+			// A turn still preparing has not reached the agent yet.
+			if !running {
+				return chatsession.SteerDeferred
+			}
+			if !q.joinsRunningTurn() {
+				return chatsession.SteerRejected
+			}
+			return steerSandboxTurn(ctx, s.chat, sid, q.Text, q.Images)
 		},
 	})
 	return c
@@ -295,6 +309,45 @@ func (s *SoloService) CancelPreviewTurn(id, user, turnID string) error {
 		return nil
 	}
 	return soloErr(http.StatusConflict, "turn_changed", "当前回复已变化，请重试")
+}
+
+// SendAndSteer queues a user turn and handles it at once (SteerQueued).
+func (s *SoloService) SendAndSteer(ctx context.Context, id, user, text string, images []models.PromptImage, refs []ReferenceInput, picks ...models.ReactAnnotation) (chatsession.SteerOutcome, error) {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return "", err
+	}
+	turn := &soloTurn{Text: text, Images: images, Annotations: picks}
+	if _, err := s.sendSoloTurn(row, turn, refs); err != nil {
+		return "", err
+	}
+	return s.steer(ctx, id, turn.ID)
+}
+
+// SteerQueued handles a pending turn now: the running turn takes it when the
+// agent supports that, otherwise the running turn is interrupted and this one
+// runs next.
+func (s *SoloService) SteerQueued(ctx context.Context, id, user, turnID string) (chatsession.SteerOutcome, error) {
+	if _, err := s.Require(id, user); err != nil {
+		return "", err
+	}
+	return s.steer(ctx, id, turnID)
+}
+
+func (s *SoloService) steer(ctx context.Context, id, turnID string) (chatsession.SteerOutcome, error) {
+	c := s.lookup(id)
+	if c == nil {
+		return "", soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
+	}
+	out, err := c.sess.Steer(ctx, turnID)
+	switch {
+	case errors.Is(err, chatsession.ErrItemActive):
+		// It started on its own meanwhile; that is what steering asked for.
+		return chatsession.SteerOutcomeNext, nil
+	case errors.Is(err, chatsession.ErrNotFound):
+		return "", soloErr(http.StatusNotFound, "turn_not_found", "排队消息不存在")
+	}
+	return out, err
 }
 
 // RemoveQueued drops one pending turn.

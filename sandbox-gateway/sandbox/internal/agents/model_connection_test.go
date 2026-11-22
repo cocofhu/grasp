@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
+	"backend/internal/provider/opencode/opencodetest"
 )
 
 // Exercise real registry -> provider -> subprocess wiring against a local model
@@ -192,10 +194,11 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 		providers := doc["provider"].(map[string]any)
 		for route, entry := range providers {
 			p := entry.(map[string]any)
-			if !strings.HasPrefix(argModel(), route+"/") {
+			routed, _ := doc["model"].(string)
+			if !strings.HasPrefix(routed, route+"/") {
 				fail("wrong CLI route")
 			}
-			model = strings.TrimPrefix(argModel(), route+"/")
+			model = strings.TrimPrefix(routed, route+"/")
 			if p["models"].(map[string]any)[model] == nil {
 				fail("upstream model was split")
 			}
@@ -218,7 +221,6 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 			}
 		}
 	case provider.Codex:
-		model = argModel()
 		protocol = modelconnection.Responses
 		for i, arg := range os.Args {
 			if arg != "-c" || i+1 >= len(os.Args) {
@@ -228,6 +230,9 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 			name, value, _ := strings.Cut(setting, "=")
 			var text string
 			_ = json.Unmarshal([]byte(value), &text)
+			if name == "model" {
+				model = text
+			}
 			if strings.HasSuffix(name, ".base_url") {
 				base = text
 			}
@@ -253,36 +258,85 @@ func TestModelConnectionCLIProcess(t *testing.T) {
 			path = "/messages"
 		}
 	}
-	body, _ := json.Marshal(map[string]string{"model": model})
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+path, strings.NewReader(string(body)))
-	if err != nil {
-		fail("bad endpoint")
+	request := func() {
+		body, _ := json.Marshal(map[string]string{"model": model})
+		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+path, strings.NewReader(string(body)))
+		if err != nil {
+			fail("bad endpoint")
+		}
+		if scheme == "x-api-key" {
+			req.Header.Set("x-api-key", key)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		client := http.Client{Timeout: time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			fail("fixture model request failed")
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != 200 {
+			fail("fixture request rejected")
+		}
 	}
-	if scheme == "x-api-key" {
-		req.Header.Set("x-api-key", key)
-	} else {
-		req.Header.Set("Authorization", "Bearer "+key)
+	if provider.Name(tool) == provider.Codex {
+		serveCodexAppServer(request)
+		os.Exit(0)
 	}
-	client := http.Client{Timeout: time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		fail("fixture model request failed")
+	if provider.Name(tool) == provider.OpenCode {
+		serveFakeOpenCode(opencodetest.Options{Reply: "connected", OnPrompt: func(p opencodetest.Prompt) error {
+			if p.Model == nil || p.Model.ModelID != model {
+				return fmt.Errorf("prompt routed to %+v, want %s", p.Model, model)
+			}
+			request()
+			return nil
+		}})
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != 200 {
-		fail("fixture request rejected")
-	}
+	request()
 	switch provider.Name(tool) {
 	case provider.ClaudeCode, provider.CodeBuddy:
 		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"text","text":"connected"}]}}`)
 		fmt.Println(`{"type":"result","subtype":"success","session_id":"fixture","result":"connected"}`)
-	case provider.OpenCode:
-		fmt.Println(`{"type":"text","part":{"text":"connected"}}`)
-		fmt.Println(`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":1,"output":1}}}`)
-	case provider.Codex:
-		fmt.Println(`{"type":"thread.started","thread_id":"fixture"}`)
-		fmt.Println(`{"type":"item.completed","item":{"type":"agent_message","text":"connected"}}`)
-		fmt.Println(`{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}`)
 	}
 	os.Exit(0)
+}
+
+// serveCodexAppServer answers the app-server handshake and runs each turn's
+// model request on turn/start.
+func serveCodexAppServer(request func()) {
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var msg struct {
+			ID     *int64 `json:"id"`
+			Method string `json:"method"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &msg) != nil || msg.ID == nil {
+			continue
+		}
+		switch msg.Method {
+		case "thread/start":
+			fmt.Printf(`{"id":%d,"result":{"thread":{"id":"fixture"},"model":"fixture"}}`+"\n", *msg.ID)
+		case "turn/start":
+			request()
+			fmt.Printf(`{"id":%d,"result":{"turn":{"id":"turn-1"}}}`+"\n", *msg.ID)
+			fmt.Println(`{"method":"item/completed","params":{"threadId":"fixture","turnId":"turn-1","item":{"type":"agentMessage","id":"m1","text":"connected"}}}`)
+			fmt.Println(`{"method":"turn/completed","params":{"threadId":"fixture","turn":{"id":"turn-1","status":"completed"}}}`)
+		default:
+			fmt.Printf(`{"id":%d,"result":{}}`+"\n", *msg.ID)
+		}
+	}
+}
+
+// serveFakeOpenCode runs the fake `opencode serve` for this helper process's
+// native arguments and exits.
+func serveFakeOpenCode(o opencodetest.Options) {
+	args := os.Args
+	for i, arg := range args {
+		if arg == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	fmt.Fprintln(os.Stderr, opencodetest.Serve(args, o))
+	os.Exit(2)
 }

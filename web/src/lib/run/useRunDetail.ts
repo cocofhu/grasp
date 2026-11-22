@@ -2,6 +2,7 @@
  * Run detail view orchestration (WS/live log/selection composed here).
  */
 import { replyTail } from '@/lib/run/replyTail'
+import { reactQueueActions } from '@/lib/run/reactQueueActions'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -849,27 +850,14 @@ async function onClarifyCancel() {
   }
 }
 
-async function onClarifyQueueRemove(itemId: string | undefined) {
-  if (!itemId) return
+const {
+  queueRemove: onClarifyQueueRemove,
+  queueSteer: onClarifyQueueSteer,
+  queueReorder: onClarifyQueueReorder,
+} = reactQueueActions(() => {
   const conv = selClarify.value
-  if (!conv || conv.done) return
-  try {
-    await api.reactQueueRemove(runId.value, conv.nodeId, itemId)
-  } catch (e: any) {
-    console.warn('reactQueueRemove failed', e?.message || e)
-  }
-}
-
-async function onClarifyQueueReorder(itemIds: string[]) {
-  if (!itemIds.length) return
-  const conv = selClarify.value
-  if (!conv || conv.done) return
-  try {
-    await api.reactQueueReorder(runId.value, conv.nodeId, itemIds)
-  } catch (e: any) {
-    console.warn('reactQueueReorder failed', e?.message || e)
-  }
-}
+  return conv && !conv.done ? { runId: runId.value, nodeId: conv.nodeId } : null
+})
 // Clarify: finish early. Review: confirm product & advance (different prompt).
 function onClarifyFinish() {
   const prompt = reviewActive.value
@@ -1620,6 +1608,7 @@ function locateExecution(nodeId: string, idx: number) {
   onClarifyRetryLast,
   onClarifyCancel,
   onClarifyQueueRemove,
+  onClarifyQueueSteer,
   onClarifyQueueReorder,
   onClarifyFinish,
   onClarifyFinishAbort,

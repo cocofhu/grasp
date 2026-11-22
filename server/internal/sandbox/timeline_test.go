@@ -57,9 +57,25 @@ func TestTimelineKeepsArrivalOrder(t *testing.T) {
 	if parts[3].Summary != "a.go" || !strings.Contains(parts[3].Input, `"path": "a.go"`) {
 		t.Fatalf("second tool: %+v", parts[3])
 	}
-	// The flat rails stay as before for older consumers.
-	if r.Narration != "看到了。完成" || r.Thought != "先看仓库再想想" || len(r.ToolCalls) != 2 {
+	// The flat rails stay for older consumers; reply text that resumes after
+	// process steps is a new paragraph.
+	if r.Narration != "看到了。\n\n完成" || r.Thought != "先看仓库再想想" || len(r.ToolCalls) != 2 {
 		t.Fatalf("flat rails changed: %q %q %d", r.Narration, r.Thought, len(r.ToolCalls))
+	}
+}
+
+func TestNarrationParagraphs(t *testing.T) {
+	r := &ChatResult{}
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "t0", "title": "Read"}, r)
+	msgChunk(r, "I'll run it.\n")
+	dispatchSessionUpdate("usage_update", map[string]any{"used": 10}, r)
+	msgChunk(r, "Now.")
+	dispatchSessionUpdate("tool_call", map[string]any{"toolCallId": "t1", "title": "Shell"}, r)
+	msgChunk(r, "Done")
+	r.addSteer(json.RawMessage(`{"text":"also"}`))
+	msgChunk(r, "Also done")
+	if want := "I'll run it.\nNow.\n\nDone\n\nAlso done"; r.Narration != want {
+		t.Fatalf("narration = %q, want %q", r.Narration, want)
 	}
 }
 

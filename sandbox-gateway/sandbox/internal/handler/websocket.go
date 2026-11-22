@@ -114,6 +114,20 @@ func WebSocket(chats *service.ChatManager) gin.HandlerFunc {
 				}
 				_ = json.Unmarshal(payload, &body)
 				bridge.CancelPromptOp(body.OpID)
+			case "steer":
+				var body struct {
+					OpID    string                `json:"opId"`
+					SteerID string                `json:"steerId"`
+					Text    string                `json:"text"`
+					Images  []service.PromptImage `json:"images"`
+				}
+				if err := json.Unmarshal(payload, &body); err != nil {
+					writeWSError(bridge, conn, "引导消息格式错误")
+					continue
+				}
+				// The answer is a steer_ack; a cancel on this socket must not
+				// wait behind the native delivery.
+				go bridge.SteerTurn(body.OpID, body.SteerID, body.Text, body.Images)
 			case "restart_agent":
 				var body struct {
 					PreserveHistory bool `json:"preserveHistory"`
@@ -167,7 +181,13 @@ func handleConnect(cid string, conn *websocket.Conn, bridge *service.Bridge, pay
 		return err
 	}
 	log.Printf("ws cid=%s sid=%s: 握手成功 agent=%s", cid, sess.SessionID(), sess.Info().Name)
-	if err := bridge.WriteJSONWS(conn, bridge.ConnectedPayload(sess)); err != nil {
+	var req struct {
+		ConnectID string `json:"connectId"`
+	}
+	_ = json.Unmarshal(payload, &req)
+	reply := bridge.ConnectedPayload(sess)
+	reply["connectId"] = req.ConnectID
+	if err := bridge.WriteJSONWS(conn, reply); err != nil {
 		return err
 	}
 	bridge.BroadcastQueueState()

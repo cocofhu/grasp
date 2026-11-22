@@ -33,14 +33,12 @@ func TestEveryNameResolves(t *testing.T) {
 
 func TestTransportSplit(t *testing.T) {
 	// ACP-native CLIs run long-lived (persistent JSON-RPC over stdio). Every
-	// other agent is one-shot (fresh process per turn + resume). cursor /
-	// claude_code / codebuddy default to one-shot stream-json; their *_acp
-	// aliases are the opt-in long-lived fallbacks.
+	// other agent is one-shot (fresh process per turn + resume), except the
+	// codex app-server, opencode serve and pi rpc.
 	long := map[provider.Name]bool{
 		provider.Trae: true, provider.Kiro: true, provider.Qoder: true,
 		provider.Grok: true, provider.KimiCode: true, provider.Hermes: true,
-		provider.CursorACP: true, provider.ClaudeCodeACP: true, provider.CodeBuddyACP: true,
-		provider.DeepSeekHarness: true,
+		provider.DeepSeekHarness: true, provider.Codex: true, provider.OpenCode: true, provider.Pi: true,
 	}
 	for n, p := range registry {
 		want := provider.OneShot
@@ -171,5 +169,16 @@ func TestFromEnvSelection(t *testing.T) {
 	t.Setenv("AGENT_PROVIDER", "does-not-exist")
 	if FromEnv() != provider.Cursor {
 		t.Fatalf("unknown provider should default to cursor: %s", FromEnv())
+	}
+}
+
+func TestLegacyACPNamesSelectTheirTool(t *testing.T) {
+	for legacy, want := range map[string]provider.Name{
+		"cursor_acp": provider.Cursor, "claude_code_acp": provider.ClaudeCode, "codebuddy_acp": provider.CodeBuddy,
+	} {
+		t.Setenv("AGENT_PROVIDER", legacy)
+		if got := Current().Name(); got != want {
+			t.Errorf("AGENT_PROVIDER=%s selected %s, want %s", legacy, got, want)
+		}
 	}
 }

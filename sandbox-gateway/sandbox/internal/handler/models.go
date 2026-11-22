@@ -86,7 +86,7 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		} else if !service.ServiceTierSelectable(effectiveModel, tier) {
 			tier = ""
 		}
-		sess, err := bridge.SwitchModelSettings(model, effort, &tier)
+		sess, resumed, err := bridge.SwitchModelSettings(model, effort, &tier)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -94,9 +94,12 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 		bridge.Broadcast(bridge.ConnectedPayload(sess))
 		bridge.BroadcastQueueState()
 		c.JSON(http.StatusOK, gin.H{
-			"model":           bridge.EffectiveModel(),
-			"selected":        bridge.Model(),
-			"sessionId":       sess.SessionID(),
+			"model":     bridge.EffectiveModel(),
+			"selected":  bridge.Model(),
+			"sessionId": sess.SessionID(),
+			// resumed: the Agent continues its native conversation under the new
+			// settings, so the platform need not resend the dialogue.
+			"resumed":         resumed,
 			"reasoningEffort": bridge.ReasoningEffort(),
 			"serviceTier":     bridge.ServiceTier(),
 			"serviceTiers":    service.ServiceTiers(bridge.EffectiveModel()),

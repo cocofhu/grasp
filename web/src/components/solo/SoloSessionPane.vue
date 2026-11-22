@@ -38,7 +38,7 @@ import { chatImageSrc } from '@/lib/shared/compositeText'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useToast } from '@/lib/composables/useToast'
-import { partsOf } from '@/lib/solo/acpTurn'
+import { partsOf } from '@/lib/run/acpReply'
 import { useFormDraft, useQuestionDeck } from '@/lib/inbox/clarifyAnswers'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { modelRouteValue } from '@/lib/agent/modelBindings'
@@ -331,6 +331,11 @@ function cancelQueued(index: number) {
   if (item && !item.local) void chat.removeQueued(item.id)
 }
 
+function steerQueued(index: number) {
+  const item = displayQueued.value[index]
+  if (item && !item.local) void chat.steerQueued(item.id)
+}
+
 let editingQueued = false
 /** Withdraw a queued message into the composer; an unsent draft is queued first. */
 async function editQueued(index: number) {
@@ -613,6 +618,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <PendingSendQueuePanel
             :items="queueRows"
             panel-test-id="solo-queue-panel"
+            :steerable="busy"
+            @steer="steerQueued"
             @cancel="cancelQueued"
             @edit="editQueued"
             @reorder="(from: number, to: number) => chat.reorderQueued(from, to)"

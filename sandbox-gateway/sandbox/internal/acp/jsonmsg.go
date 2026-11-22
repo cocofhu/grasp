@@ -9,11 +9,15 @@ import (
 
 // JSON-RPC 2.0 helpers: classify inbound lines from the Agent.
 
-type rpcError struct {
+// RPCError is the error member of a JSON-RPC response; Call returns it when
+// the peer rejected the request (as opposed to a transport failure).
+type RPCError struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
 }
+
+func (e *RPCError) Error() string { return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message) }
 
 // JSONRPCIDKey normalizes a JSON-RPC "id" value for map lookups.
 func JSONRPCIDKey(id json.RawMessage) string {
@@ -61,7 +65,7 @@ func classifyInbound(line []byte) (Inbound, error) {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
 		Result json.RawMessage `json:"result"`
-		Error  *rpcError       `json:"error"`
+		Error  *RPCError       `json:"error"`
 	}
 	if err := json.Unmarshal(line, &probe); err != nil {
 		return Inbound{}, err

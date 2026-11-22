@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   stopSoloSession: vi.fn(),
   wakeSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
+  steerSoloQueued: vi.fn(),
   reorderSoloQueue: vi.fn(),
   setSoloSessionModel: vi.fn(),
   setSoloSessionReasoningEffort: vi.fn(),
@@ -630,6 +631,29 @@ describe('useSoloChat', () => {
     ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'server-two', text: 'two', images: [] } })
     expect(chat.turns.value.filter(row => row.role === 'user').map(row => row.text)).toEqual(['one', 'two'])
     expect(chat.queued.value.map(row => row.text)).toEqual(['three'])
+    app.unmount()
+  })
+
+  it('steers an acknowledged queued turn and renders the joined input inside the reply', async () => {
+    const { chat, app, ws } = await openChat()
+    mocks.steerSoloQueued.mockResolvedValue({ steer: 'joined' })
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+    ws.emit(acp('working'))
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'server-queued', text: 'also this', images: [] }] })
+    await chat.steerQueued('missing')
+    expect(mocks.steerSoloQueued).not.toHaveBeenCalled()
+    await chat.steerQueued('server-queued')
+    expect(mocks.steerSoloQueued).toHaveBeenCalledWith('s1', 'server-queued')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [] })
+    ws.emit({ type: 'acp', data: { op: 'event', data: { type: 'user_steer', text: 'also this' } } })
+    await flushPromises()
+    expect(chat.queued.value).toEqual([])
+    const reply = chat.turns.value.find(row => row.role === 'agent')!
+    expect(reply.steps.map(step => step.kind)).toEqual(['message', 'steer'])
+    mocks.steerSoloQueued.mockRejectedValueOnce(new Error('steer failed'))
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'again', text: 'x', images: [] }] })
+    await chat.steerQueued('again')
+    expect(chat.actionError.value).toBe('steer failed')
     app.unmount()
   })
 

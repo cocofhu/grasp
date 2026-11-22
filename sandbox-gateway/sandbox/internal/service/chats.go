@@ -261,6 +261,23 @@ func (m *ChatManager) Delete(id string) error {
 	return nil
 }
 
+// Close ends every chat's Agent as the backend exits, so no Agent process
+// (opencode serve runs in its own process group) outlives it. Nothing is
+// revived and the session pointers stay: the next backend resumes them.
+func (m *ChatManager) Close() {
+	m.mu.Lock()
+	bridges := make([]*Bridge, 0, len(m.chats))
+	for _, b := range m.chats {
+		bridges = append(bridges, b)
+	}
+	m.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, b := range bridges {
+		wg.Go(b.closeAgent)
+	}
+	wg.Wait()
+}
+
 func normalizeChatTitle(t string) string {
 	t = strings.TrimSpace(t)
 	if r := []rune(t); len(r) > maxChatTitleLen {
@@ -293,6 +310,17 @@ func (b *Bridge) inheritFromDefault(cwd, fsRoot string, mcp json.RawMessage) (st
 		mcp = append(json.RawMessage(nil), def.lastMCP...)
 	}
 	return cwd, fsRoot, mcp
+}
+
+// closeAgent stops the Agent for good and waits for its process to end.
+func (b *Bridge) closeAgent() {
+	b.mu.Lock()
+	b.closed = true
+	sess := b.sess
+	b.mu.Unlock()
+	if sess != nil {
+		logging.WarnErr(sess.Close(), "agent session close on backend exit", nil)
+	}
 }
 
 // shutdown 取消进行中的回合、清空队列、关闭 Agent，并断开本会话的所有 WebSocket。

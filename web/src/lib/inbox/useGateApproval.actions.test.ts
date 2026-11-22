@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   gateReactCancel: vi.fn(),
   gateReactQueueRemove: vi.fn(),
   gateReactQueueReorder: vi.fn(),
+  reactQueueSteer: vi.fn(),
   toastSuccess: vi.fn(),
   toastWarn: vi.fn(),
   toastError: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('@/lib/api/api', async () => {
       gateReactCancel: mocks.gateReactCancel,
       gateReactQueueRemove: mocks.gateReactQueueRemove,
       gateReactQueueReorder: mocks.gateReactQueueReorder,
+      reactQueueSteer: mocks.reactQueueSteer,
     },
   }
 })
@@ -677,6 +679,34 @@ describe('useGateApproval actions', () => {
     expect(approval.reactText.value).toBeTruthy()
     expect(approval.reactError.value).toBe('already active')
     await approval.editReactQueuedItem(-1)
+    app.unmount()
+  })
+
+  it('steers a queued revision once per pending request and reports failures', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactQueued.value = [
+      { text: 'local', images: [], annotations: [] },
+      { id: 'b', text: 'beta', images: [], annotations: [] },
+    ]
+    let release!: () => void
+    mocks.reactQueueSteer.mockReturnValueOnce(new Promise<void>((resolve) => { release = resolve }))
+
+    await approval.steerReactQueuedItem(0)
+    await approval.steerReactQueuedItem(9)
+    expect(mocks.reactQueueSteer).not.toHaveBeenCalled()
+
+    const first = approval.steerReactQueuedItem(1)
+    await approval.steerReactQueuedItem(1)
+    expect(mocks.reactQueueSteer).toHaveBeenCalledTimes(1)
+    expect(mocks.reactQueueSteer).toHaveBeenCalledWith('run-1', 'gate-1', 'b')
+    release()
+    await first
+
+    mocks.reactQueueSteer.mockRejectedValueOnce(new Error('turn ended'))
+    await approval.steerReactQueuedItem(1)
+    expect(mocks.reactQueueSteer).toHaveBeenCalledTimes(2)
+    expect(approval.reactError.value).toBe('turn ended')
     app.unmount()
   })
 

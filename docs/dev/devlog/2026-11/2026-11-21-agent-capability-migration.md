@@ -1,0 +1,124 @@
+# 2026-11-21 Agent 能力迁移收尾（#1311）
+
+- 日期：2026-11-21
+- 范围：`sandbox-gateway/sandbox/internal/provider`（`opencode`、`pi`、`oneshot`、`opencodejson`、`tail.go`）、`sandbox-gateway/sandbox/internal/agents`、`sandbox-gateway/sandbox/internal/service`、`sandbox-gateway/sandbox/internal/modelconnection`、`server/internal/handoff`、`server/internal/runtime`
+- 做了什么：
+  - 看门狗：回合中断后长驻会话等 Agent 真正停下再返回；`provider.InterruptGrace`（15s）内不响应则关闭进程，走崩溃复活路径接回原会话。
+  - 会话指针：default 会话的原生会话指针写入 `~/.grasp/agent-session.json`，后端重启后的第一个 Agent 在同一 Agent 与目录下接回。`connected` 帧与切换模型的 `resumed` 表示「新进程带着此前的对话」：只有跑过回合的会话（或接回这样的会话）才算，指针随之记录 `history`。沙箱启动时预建的空会话在平台带 MCP 连接时被接回，仍报 `resumed: false`，冷恢复照常补发对话记录。
+  - 用量基线：one-shot 的会话累计用量基线随指针存到 `~/.grasp/usage/`（`OpenOptions.StateDir`，按会话 ID 哈希命名，最多 256 个），后端重启后接回的会话不会把此前的累计用量记到新一轮。
+  - 配置变更：`connect` 带来不同 MCP 列表，或 `provider.ConfigReader` 声明的启动配置文件变化时，下一轮前重建进程并接回原会话。
+  - 子 Agent：Codex（`spawnAgent` 子线程）与 OpenCode（子会话）仍在运行时不发 `prompt_done`，工作流节点不会提前完成。
+  - OpenCode 改为常驻 `opencode serve`：回环地址 + 随机 basic auth 密码，`prompt_async` 发起与引导，`abort` 中断，SSE `/event` 汇总事件；一轮在每条已发送的用户消息都有回复且会话空闲后结束。删除 one-shot 里的 OpenCode 分支和 `--title`。
+  - Pi 改为常驻 `pi --mode rpc`：会话文件即接回指针，带 `streamingBehavior: steer` 的 `prompt` 引导，`abort` 中断；运行结束后仍滞留在 Pi 队列里的引导，用 `switch_session` 重载同一会话文件撤回（Pi 的 RPC 没有清空队列或继续的命令），再作为本回合的一次 `prompt` 发出，保证恰好送达一次。扩展对话框一律取消。
+  - 进程输出尾部缓冲抽成 `provider.OutputTail`，one-shot、OpenCode、Pi 共用；镜像到日志的每一行按子进程环境脱敏。
+  - 子 Agent 等待期间 Codex app-server 或 OpenCode serve 退出时，回合按失败收尾，「等待子 Agent」工具调用标为失败。Codex 会话的 `Steer` / `Cancel` / `finishTurn` 在锁内读取回合 ID、用量与错误。
+  - 新增 `server/internal/handoff`，取代 `renderRecoveryTranscript`：对话先转成统一条目（回合中补充的引导单列为用户条目），按约 12000 token 预算挑选，优先级为最新用户消息、最新 Agent 回复、最初需求，其余从新到旧；放不下的条目给出条数与编号（最多列 20 段区间，其余以「等」概括，预留按最坏情况计算，渲染结果不超过预算），单条过长时截取开头并标注。开头声明历史只作参考、不是新指令，工具输出与思考过程未保留。工作流的重建、原会话接不回、`/compact` 三处共用。
+  - 交接送达跟踪：`acpProvider.handOff` 在交接回合干净结束前把节点标为未确认，被中断（`stopReason=cancelled` 等）的交接保持未确认并返回可重试错误；恢复时若保留下来的原生会话（以本次 `connect` 应答的 `resumed` 为准；不带该字段的旧 Bridge 才按 warm 判断）遇到未确认的交接，先 `restart_agent` 开新会话再完整交接，避免重复注入。状态只在内存里，随节点关闭清除；服务端恰在交接回合中崩溃时这一标记会丢失，下次恢复按原会话接回。
+  - PR 评审修正：Bridge 引导改由 `steerMu` 串行，`turnMu` 只在读取当前回合时持有，避免会话读循环与引导回执互相等待；Codex 的 `turn/start` 不再绑回合 ctx，取消时等拿到回合 ID 后中断并等终态；只带附件的引导在时间线、刷新回放、`get_history` 与交接里显示为「[附件] 文件名、图片 ×N」；`cursor_acp` / `claude_code_acp` / `codebuddy_acp` 在 `startup.sh`、`reprime.sh`、`install-agent.sh` 与 `agents.FromEnv` 中统一映射为对应工具。
+  - 第二轮评审修正：
+    - 原生引导限时 `provider.SteerTimeout`（20s），平台等待 30s，慢送达不会被当成失败而重放；两端的 WebSocket 读循环异步处理引导，取消不排在引导之后。
+    - 引导在途时 Bridge 暂扣 `prompt_done`，保证 `user_steer` 先于回合结束到达。
+    - Codex `turn/start` 无应答时关闭 app-server（回合可能已在跑），由复活路径接回线程。
+    - Codex / OpenCode 子 Agent 状态查询失败视为状态未知继续等待，宿主退出时回合失败，不再当作完成。
+    - Pi 回合结束后的队列检查最多复查 5s（`agent_end` 后仍短暂报告 streaming、`get_state` 失败）；仍无法确认时回合失败。
+    - 交接回合失败或拒绝（`chatFailure`）返回错误，不再当作恢复成功。
+    - WebSocket 建立时补发的 `connected` 快照带 `snapshot: true`，服务端只采用应答本次 `connect` 的帧。
+    - 回合前回收 Agent 进程失败时清空队列并广播 Agent 退出。
+    - `OutputTail` 跨写入拼接整行，先脱敏再截断。
+    - 交接文本中行首的 `[#` 改写为全角，历史内容不能冒充条目头。
+  - 对照 t3code 已修复的问题：
+    - Codex multi-agent v2（新模型默认）用 `subAgentActivity` 条目报告子 Agent，不再有 `spawnAgent`；`kind: started` 的 `agentThreadId` 也登记为待等子线程。
+    - OpenCode 后台任务的子会话创建后要过一会儿才报 busy，`/session/status` 在此之前查不到它；收到 `session.created` 后、子会话报出任何状态前（最多 30s）算作仍在运行。
+    - Codex 换登录账号后接回的线程会因 `invalid_encrypted_content` 每轮失败；服务端把它和 Cursor 的卡死会话一样识别，在同一沙箱开新会话并交接对话后重试。
+    - 已知未处理：Kimi Code 2.5.3 / 2.6.1 失败的回合仍回 `end_turn`（真实结果只在 `wire.jsonl`），我们钉在 2.4.0，升级前需补；Pi 断线重流同一推理块时转录里会重复部分文本（ACP 分片无法撤回）。
+  - 全量实测后的修正与收敛：
+    - `opencode serve` 启动期间收到的请求既不应答也不断开。健康检查原来沿用 30s 的通用请求超时，每次启动、切模型、崩溃重建都白等 30s；改为单次探测 2s 超时后重试，实测切模型从 32s 降到 9s。启动变快后暴露出 CI 连接测试的时序问题：脚本在 backend 已经拉起 OpenCode 之后才写 `opencode.json`，原来靠那 30s 空等才赶在握手前写完。现在改为 `docker create` 后先注入配置再 `docker start`，与平台随配置包下发的顺序一致。
+    - 控制面 Solo 实测发现保存的回复会把工具调用前后的文字直接拼在一起（Codex 的「I'll run it.已创建…」）。时间线本来就按文字段与工具调用分段，只有回复全文（`ChatResult.Narration` 与 Solo 的回复文本）是直接拼接。现在两处统一：文字在工具调用、思考或引导之后重新开始时另起一段；用量等元数据帧不算边界。所有 Agent 生效。
+    - 沙箱自带聊天页显示 `user_steer` 的文本与附件，原来只显示「事件 · user_steer」。
+    - 删除重构遗留的死代码：`Bridge.Connect`（生产改走 `connect(openSpec)` 后只剩测试调用）、服务端 `sandbox.GetChatModel`（唯一调用方已改用 `GetChatModelSettings`）。
+    - 合并重复实现：Codex / OpenCode / Pi 的帧构造与附件引用改用 `provider` 包的 `SendFrame`、`UpdateFrame`、`ChunkUpdate`、`ErrorFrame`、`PromptDoneFrame`、`WithAttachments`，`prompt_done` 只在一处定义；会话指针、用量基线与附件落盘共用 `provider.WriteFileAtomic`。
+    - `handoff.Render` 直接返回文本。原 `Result` 的 `Included` / `Omitted` / `Tokens` 只有测试在读，测试改为从文本解析条目编号。
+    - Bridge 帧的解析两端各收敛为一处。服务端 `sandbox/frame.go` 的 `decodeFrame` 解析包装帧（`{op:"event", opId, data}`）和事件日志里的裸事件，`ChatResult.apply` 是唯一的折叠逻辑；实时回合、接回、回放、展示聚合、Solo 回复文本与对话历史都用它，删除了各自的信封解析与 Solo 的 `replyText`。前端 `lib/run/acpReply.ts` 的 `applyAcp` 由 Solo 和 Agent 测试对话共用，删除测试对话里整套重复的工具摘要、计划和工具名本地化代码，回复全文也按上面的段落规则拼接。
+    - 统一后顺带修掉两个问题：
+      - Solo 对话历史（`get_history` 与上下文前言）原来按并不存在的 `params.update` 形状读工具结果，工具输出从未进入历史。
+      - 各 Provider 按 ACP 把工具输出放在 `content` 块（`{type:"content", content:{type:"text", text}}`）里。服务端时间线原来把它显示成 JSON，Solo 与测试对话完全不显示工具输出；现在两端都只取文本，跳过图片。
+    - 对话历史带上工具结果后，长会话的 `get_history` 一页可达 24KB，Codex 会截断过长的工具结果，截断后的页不再是合法 JSON（CI 的 Agent 切换矩阵在 Codex 一步失败）。现在每页按 8KB 预算从最新消息往前装，装不下的经 `next_cursor` 翻页，每页至少一条；历史里的工具记录只留名称和状态，失败的再附 200 字错误摘录；智能体自己读历史的调用不再写进历史，否则长会话每一轮的翻页记录都会让下一轮的页更多（矩阵跑到第 28、58 轮时触发了 mock 的 10 页上限）；summary 视图的用户要求记录降到 2000 字，超出时仍按新的优先并说明省略范围。
+    - 控制面实测发现的两个回合状态问题：
+      - 回合还在准备（沙箱创建中）时点「引导」，原来按「不支持引导」处理，直接中断当前回合，用户的原始请求 Agent 根本没见过就丢了。现在这种情况与「回合已结束」一样（`SteerDeferred`），引导的消息排到下一轮，不中断。
+      - 用户停止或被引导中断的回合如果已有部分输出，`ChatStream` 按设计返回部分结果且不报错，Solo 因此存成 `ok`；实时界面显示「已停止」，刷新后又变成正常完成。现在只要回合被取消就存为 `stopped`，保留部分输出。
+    - Review 用协议夹具复现的问题：
+      - 回复正文：
+        - 卡住续跑后（`turn_segment`），Solo 的预览、入库正文和 `get_history` 只剩最后一段。现在 `ChatResult.VisibleText` 按顺序拼接已封存段和当前段，Solo 与预览访客共用。
+        - 同一个工具的完成更新是原地修改，「上一步是否正文」看不到它，前后两段文字仍会粘连。服务端和前端都改为按事件到达顺序记一个「下一段文字另起段落」的标记。
+      - 帧与历史：
+        - 事件日志里的诊断帧自带 `op:"raw"`，重启回放时被当成控制帧，丢了报错正文。现在带 `type`、不带 `data` 的帧一律按裸事件解析。
+        - 一条引导后跟 120 个工具调用，就超出时间线上限，引导从历史和交接里消失。现在 `ChatResult.Steers` 单独按顺序记录引导，不受时间线上限约束。
+        - 只返回图片的工具，原来会把 base64 序列化进工具详情和历史，现在图片、音频块的 `data` 一律省略。
+        - 经延迟工具调用的历史查询，输出被截断成非法 JSON 后识别不出来，现在按 `history_version` 和 `messages` 字段识别。
+      - 切换模型时，被截断的 200 响应原来当作「新会话」处理，Solo 会多余地重放历史，现在报错。runtime 总会返回 JSON，测试替身也一并改成返回 JSON。
+      - 共享沙箱切换节点：
+        - reprime 原来在清理会话指针之后才重启 backend，旧回合收尾时会写回指针，下一节点就接上了旧对话。现在先停 backend、等它退出，再清理；中途任何失败都由 EXIT trap 把 backend 拉起来。
+      - Provider 的取消与启动：
+        - 回合启动阶段（OpenCode 的 HTTP 回执、Pi 的 `prompt` 回执、Codex 的 `turn/start`）被看门狗打断时，原来一律报「已取消」，丢了 recover、超时和卡死的原因。recover 本应保持回合开放。三家的回合收尾收敛到 `provider.EndInterrupted` / `EndFailed`，回合结束和启动失败两条路径都用它。
+        - OpenCode 提交回合时如果没收到回执（连接断开），服务端可能已经在跑。现在先中断并确认空闲，再结束回合；明确拒绝（HTTP 错误）照旧直接失败。
+        - 等子 Agent 时停止，原来只异步中断父会话或父回合，子会话、子线程可能还在跑，`prompt_done(cancelled)` 却已发出。现在 OpenCode 的 `halt` 中断本会话和忙碌的子会话，Codex 的 `haltSubagents` 用 `thread/turns/list` 取子线程进行中的回合并 `turn/interrupt`；两者都轮询到确认停止，`InterruptGrace` 内确认不了就结束宿主进程，由 Bridge 像崩溃一样复活。
+        - OpenCode 长驻会话原来保留每个已结束回合的完整正文。现在回合结束时把它的 part 换成共享的「已结算」标记，只留 ID 用于去重，之后重发或迟到的更新都忽略。
+      - 引导、子 Agent 与重试：
+        - Codex 的 `turn/steer` 回执超过 20s、原回合已结束时报 `no_turn`，平台把已送达的引导当作下一轮再跑一遍。现在引导带 `clientUserMessageId`，回执超时就用 `thread/turns/list` 查本回合是否记录了这条输入：记录了算送达；回合已结束且没记录才是 `no_turn`（Codex 有待并入的引导时不会结束回合）；查不到就报失败。
+        - Codex 的 `followup_task` 唤醒已空闲的子线程时，活动类型是 `interacted`，原来只跟踪 `started`，父回合不等它。另外 `thread/read` 的内部错误（`-32603`）原来也会让子线程从等待列表消失，现在只有线程不存在（`-32600`）才放弃，其它错误按状态未知继续等。
+        - OpenCode 第一次读子会话状态失败时，父回合原来直接成功结束，现在同样按未知继续查询。
+        - Pi 的 `agent_end` 带 `willRetry: true` 时，平台原来立即报失败，Pi 随后自动重试成功并照常执行。现在等重试结果；重试成功不报上一次的错误，退避期间放弃或被取消（之后没有 `agent_end`）以 `auto_retry_end` 收尾。
+        - Pi 发出 `agent_end` 后可能还在收尾，紧接着的下一轮 `prompt` 会被以「Agent is already processing」拒绝。现在遇到这个拒绝就等 Pi 空闲后重发一次。
+        - OpenCode 与 Pi 的引导回执超过 20s 时原来直接报失败，平台中断回合并把引导再跑一遍，而 Agent 可能已经收下。OpenCode 现在按 OpenCode 自己的格式（`msg_` + 毫秒时钟 + 随机串，与会话消息同序）生成 `messageID` 随引导发送，超时后 `GET /session/{id}/message/{messageID}`：有即送达，404 才报失败，查询出错报「无法确认」。Pi 超时不报失败，回合等这条引导的应答再结算；应答在回合结束后才到时撤回，不让它混进下一轮（撤回方式见第六轮）。
+        - 引导投递期间整段持有切换锁，用户此时点停止要等投递超时（最长 30s）。现在 `cancel` 先结束进行中的投递再取锁；被取消打断、Agent 没收下的引导排到队首，不再额外中断一次，是否保留由取消的 `clearQueue` 决定。
+        - Codex、OpenCode 停止回合时同步发 `turn/interrupt` / `abort`（最长 30s）后才开始计 `InterruptGrace`。现在先计时、请求在后台发；`halt` 与 `haltSubagents` 里的状态查询和中断请求也都受同一个截止时间约束。
+        - 引导的调用方（HTTP 请求、聊天 WebSocket）断开时，投递随之结束，且不中断回合；条目留在队首。聊天 WebSocket 原来每条引导起一个协程，现在每个连接一个按序执行的协程，最多排 8 条，连接关闭即停止。`Steer` 的队列帧改在释放切换锁之后发布，与 `cancel` 一致。
+        - 只能评论的分享访客（`LiveWritesDenied`）的消息原来可以引导进 owner 的回合，借 owner 的 Live 写权限执行，并丢掉「仅评论」约束。现在这类消息总是单独成一轮。
+    - 评审第四轮：
+      - Provider：
+        - OpenCode 服务端重放的旧失败回复（assistant 消息）原来会写入当前回合的错误，现在只认回复本回合用户消息的 assistant 消息。
+        - Codex 以 `failed` / `interrupted` 结束的回合原来不停子 Agent，现在同样停下再结束。`thread/resume` 原来对任何 RPC 错误都改开新线程，现在只有线程不存在（实测 Codex 0.171.0 为 `-32600`）才改开新线程，其它错误照实报告。
+        - Pi 的 stdout 读取原来在 `s.proc` 赋值前启动，启动时就弹出的扩展对话框会读到 nil；现在先赋值再开始读。
+        - one-shot 的 stdin 写入原来持有 `settle` / `close` 也要用的锁，CLI 不读 stdin 时两者都无法关闭管道解开它。现在写入排序与状态各用一把锁，关闭 stdin 能结束卡住的写入。
+        - 用量 ledger 原来在 Provider 级锁内读写基线文件，现在每个会话一把锁，文件 I/O 只阻塞该会话。
+        - ACP 显式声明 `sessionCapabilities.resume: false` 时不再当作支持接回；取消与回复同时到达时保留回复。
+      - Bridge：首次打开 Agent 失败（例如 CLI 尚未装好）后，下一次 connect 原来不再读取持久化的会话指针，现在直到真正打开过 Agent 都会接回。
+      - 对话历史：回合中引导计入上下文前言的预算（每行最多占剩余预算的四分之一、4000 字，超出的标注条数），非精简模式也按预算截取；历史读取的识别改为同时出现 `history_version` 与 `conversationId`。交接文本把所有换行符（`\r`、U+2028 等）统一成 `\n` 再防伪造条目头。
+      - 脚本：`reprime.sh` 在 backend 重启成功后才标记交接完成，失败时 EXIT trap 仍会拉起 backend；`test-agent-connect.sh` 失败时也清理临时目录，`docker start` 失败输出容器日志。
+      - 恢复握手原来接受任何不带 `snapshot` 的 `connected`，其它请求（如保存模型设置）广播的帧会被当作本次应答，存下旧线程的 `resumed`。现在 `connect` 带 `connectId`，Bridge 的直接应答原样带回，广播和新连接收到的状态为空串，客户端只认自己的；完全不带该字段的帧来自旧 Bridge，沿用旧规则。`snapshot` 标记随之删除。
+      - backend 收到 SIGTERM 时只关 HTTP 服务，`opencode serve` 在独立进程组，每次热重启都多留一个。现在退出前关闭所有会话的 Agent，不触发自动重启，指针保留给下一个 backend。
+    - 评审第五轮：
+      - 澄清 / 审批会话切模型：沙箱切换配置（或跨工具切换）后 Agent 若未接回原生会话（`resumed: false`），下一次回复原来只发新消息，Agent 丢了前文。现在会话记下「上下文已丢失」，下一次回复先用恢复时的交接提示把对话交给新会话，再发用户消息；交接失败保留标记，下次重试。
+      - 前端引导：
+        - 审批的引导按钮原来绑 `reactThinking`（有排队即为真），现在只在修订回合真正运行（`reactInFlight`）时出现，同一条的引导请求未返回前不重复发送。
+        - 还没有服务端 id 的本地排队行不显示引导按钮（尚未入队，无从引导，可取消）。
+        - Run Live 页补上排队的删除、引导、重排。
+        - 控制面 Agent 测试页重建回放时保留引导步骤。
+        - 回复结束后的引导按位置显示在回复之前或之后。
+        - 公开审批页的时间线不再丢引导。
+        - 运行记录页的排队操作失败只记警告，不再变成未处理的 Promise 拒绝。
+      - 一致性：前端 `steerText` 与服务端 `models.SteerText` 共用 `web/src/lib/run/__fixtures__/steer_text.json` 测试，措辞变动任一侧都会失败。`ReplyTool` 改由 `AgentTool` 派生。
+    - 评审第六轮：
+      - Pi 撤回：
+        - 原来的撤回依赖 `clear_queue` 命令和 prompt 应答里的 `disposition`，核对上游 0.73.1 两者都不存在，测试夹具模拟的是假行为。现在先用 `get_state` 查状态：Agent 还在运行就 `abort`，队列里还有消息就用 `switch_session` 重载会话（保留历史、丢掉队列）。
+        - 撤回在 `turnMu` 下进行，不会误伤下一回合；下一回合发 prompt 前也会先做这次清理。
+        - 同时修复一个更常见的漏洞：上游的 `abort` 不清队列，回合被中断或失败时还没收下的引导会混进下一回合，现在也会撤回。
+        - 夹具改为与上游一致：排队与开新 run 由收到时的状态决定，应答不带数据。
+        - 引导应答的后台等待加上限（10 倍 `SteerTimeout`）；回合结束后才被拒绝的引导会记日志。
+      - 引导投递与调用方解绑：上一轮把 HTTP 请求的 ctx 传进投递，调用方离开时投递被放弃、条目留在队首，之后会再执行一次。现在投递只受用户的「取消」和 `SteerDeliveryTimeout` 约束；聊天 socket 关闭时，正在进行的投递照常完成，还在排队的引导丢弃，不会被逐条放回队首而颠倒顺序。
+      - OpenCode 引导：除了明确的 HTTP 拒绝，任何没拿到应答的失败（不只是超时，也包括连接中断）都先按消息 id 查回执，服务端已收下的引导不再被当作失败而重复执行。
+      - 切模型后的交接：交接只带当前消息之前的对话，当前消息不再出现两次；没有更早的对话就不交接。交接收进 `handOffLostContext`，`ReviseInPlace`（复审修改、审批驳回）也会执行。
+      - one-shot 用量 ledger：上一轮改成每个会话一把锁后，正在使用的条目可能被淘汰，同一会话出现两份基线，后写的覆盖先写的。现在条目带使用计数，淘汰时跳过在用的条目。
+      - 前端：Run Live、运行记录、收件箱和运行详情的排队删除、引导、重排收进共享的 `reactQueueActions`，请求失败时会弹出提示（原来只记控制台），四份重复实现删除；`AgentTimeline` 的引导一次遍历分到回复前后两组。
+      - 脚本：`test-agent-connect.sh` 的清理步骤失败不再中断后续的进程回收。
+    - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。
+    - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
+- 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。
+- 如何验证：
+  - 沙箱模块 `go test -race ./...`、golangci-lint 0 问题、`cover-check-sandbox.sh 90`（97.8%）。
+  - 服务端 `go test ./...`、golangci-lint、`cover-check-server.sh 90`。`handoff` 包覆盖率 100%。新增测试覆盖优先级选择、超长条目截取、省略说明、未确认交接后开新会话并清除状态。
+  - OpenCode 与 Pi 的事件回放测试取自真实抓包（工具回合、引导、中断）。
+  - 实测 DeepSeek：OpenCode（模型连接 `api.deepseek.com/v1`）与 Pi（`deepseek/deepseek-v4-flash`）跑通工具回合、回合中引导、约 1s 内中断、新进程接回会话。交接文本在 1500 token 预算下省略 55/63 条后，模型仍答出最初需求的约束、最新决定和省略条数。
+  - 全量实测（真实 Bridge + 服务端 `ACPClient`）：Claude Code、CodeBuddy、Codex、OpenCode、Pi、DeepSeek Harness 走 DeepSeek（模型连接或官方 key），Cursor 走 Cursor key。每个 Agent 依次验证工具调用、回合中引导（不支持原生引导的 DeepSeek Harness 与 Cursor 走中断后重发）、取消、切换模型后接回、杀掉 Agent 进程后自动复活接回、重启后端后按会话指针接回、新开上下文。除上述 Claude 自动记忆外全部通过。
+  - 控制面 Chat 实测（Playwright 录屏）：Codex、Claude Code、CodeBuddy、OpenCode 原生引导均并入运行中的回合；同一配置内切到辅助模型（Claude Code、Codex）与切推理强度（Codex，`max`）在回合边界生效，会话只建一次连接，追问仍答出上一轮内容。沙箱内连续重启 backend，旧的 `opencode serve` 均被回收，只剩新进程。
+- 后续：可选的冷恢复会话文件备份未做；Solo 的上下文前言（`services/conversation_history.go`）有自己的 `get_history` 回查机制，暂未改用 `handoff`。

@@ -15,6 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/solobackup"
 
 	"github.com/google/uuid"
@@ -159,7 +160,7 @@ type soloChat struct {
 	phase     string
 	sandboxID uint
 	turnID    string
-	text      strings.Builder
+	reply     sandbox.Reply
 	events    []json.RawMessage
 	execution *models.ChatExecution
 }
@@ -174,6 +175,13 @@ type soloTurn struct {
 	// References were validated at send time; Solo anchors are pinned when
 	// the turn begins.
 	References []models.MessageReference `json:",omitempty"`
+}
+
+// joinsRunningTurn reports whether the turn is plain input the running turn
+// can take as is. Commands, references and preview picks are rendered and
+// recorded per turn, so they run as a turn of their own.
+func (q *soloTurn) joinsRunningTurn() bool {
+	return q.Command.Name == "" && len(q.References) == 0 && len(q.Annotations) == 0 && !q.PreviewShared
 }
 
 // NewSoloService builds the service. sbx may be nil in tests that only touch
@@ -740,7 +748,7 @@ func (s *SoloService) PreviewLiveReply(id string) (*models.SoloMessage, bool) {
 	for i, event := range c.events {
 		events[i] = append(json.RawMessage(nil), event...)
 	}
-	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.text.String(), Events: events, Execution: c.execution}, true
+	return &models.SoloMessage{ID: "live:" + c.turnID, Role: "assistant", Content: c.reply.Text(), Events: events, Execution: c.execution}, true
 }
 
 // PreviewPending reads the authoritative FIFO without querying stored history.

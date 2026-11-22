@@ -121,6 +121,8 @@ const props = withDefaults(
     serviceTier?: string
     serviceTiers?: string[]
     modelNotice?: string
+    /** Gate mode: a revision turn is running, so queued rows may steer into it. */
+    turnRunning?: boolean
   }>(),
   {
     iteration: 1,
@@ -145,6 +147,7 @@ const props = withDefaults(
     queueNotice: null,
     queueToast: null,
     thinking: false,
+    turnRunning: false,
     streamText: '',
     streamThought: '',
     streamTools: () => [],
@@ -170,9 +173,11 @@ const emit = defineEmits<{
   (e: 'cancel'): void
   (e: 'takeover'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
+  (e: 'queue-steer', itemId: string, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
   (e: 'queue-edit', index: number): void
   (e: 'queue-cancel-item', index: number): void
+  (e: 'queue-steer-item', index: number): void
   (e: 'queue-reorder-indexes', fromIndex: number, toIndex: number): void
 }>()
 
@@ -412,6 +417,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       @finish-abort="emit('finish-abort')"
       @cancel="emit('cancel')"
       @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
+      @queue-steer="(itemId, index) => emit('queue-steer', itemId, index)"
       @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"
     >
       <template v-if="$slots['composer-controls']" #composer-controls="slotProps"><slot name="composer-controls" v-bind="slotProps" /></template>
@@ -606,6 +612,8 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           :items="gateQueued"
           :notice="queueNotice"
           :toast="queueToast"
+          :steerable="turnRunning"
+          @steer="(i) => emit('queue-steer-item', i)"
           @cancel="(i) => emit('queue-cancel-item', i)"
           @edit="(i) => emit('queue-edit', i)"
           @reorder="(from, to) => emit('queue-reorder-indexes', from, to)"

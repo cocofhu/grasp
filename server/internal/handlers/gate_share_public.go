@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/chatcmd"
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/models"
@@ -51,14 +52,18 @@ type publicCancelBody struct {
 	Token string `json:"token"`
 }
 
-type publicQueueItemBody struct {
-	Token  string `json:"token"`
-	ItemID string `json:"itemId"`
+type publicQueueBody struct {
+	Token   string   `json:"token"`
+	ItemID  string   `json:"itemId"`
+	ItemIDs []string `json:"itemIds"`
 }
 
-type publicQueueReorderBody struct {
-	Token   string   `json:"token"`
-	ItemIDs []string `json:"itemIds"`
+// publicQueueRequest is one authorized edit of a share link's waiting queue.
+type publicQueueRequest struct {
+	publicQueueBody
+	lookup        *gateshare.LookupResult
+	runID, nodeID string
+	lane          string
 }
 
 func (h *Handlers) publicRateLimit(c *gin.Context, bucket string) bool {
@@ -395,28 +400,30 @@ func (h *Handlers) publicShareQueueTarget(lookup *gateshare.LookupResult) (runID
 	return lookup.Link.RunID, producerID, nil
 }
 
-func (h *Handlers) PublicGateQueueRemove(c *gin.Context) {
+// openPublicQueueRequest authorizes a visitor's edit of the share link's
+// waiting queue. It writes the response itself when ok is false; the link must
+// allow every one of actions.
+func (h *Handlers) openPublicQueueRequest(c *gin.Context, denied string, actions ...string) (req publicQueueRequest, ok bool) {
 	applyPublicSecurityHeaders(c)
 	if !h.publicRateLimit(c, gateshare.RateBucketPreview) {
-		return
+		return req, false
 	}
 	if h.GateShare == nil || h.Eng == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
-		return
+		return req, false
 	}
 	if !h.checkPublicCSRF(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "csrf", "message": "请求未通过安全校验"})
-		return
+		return req, false
 	}
-	var body publicQueueItemBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	if err := c.ShouldBindJSON(&req.publicQueueBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
-		return
+		return req, false
 	}
-	token := strings.TrimSpace(body.Token)
+	token := strings.TrimSpace(req.Token)
 	if token == "" || !gateshare.ValidCredentialShape(token) {
 		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
-		return
+		return req, false
 	}
 	lookup, st, err := h.GateShare.LookupByToken(token)
 	if err != nil || lookup == nil || st != models.ShareLinkStateActive {
@@ -424,87 +431,80 @@ func (h *Handlers) PublicGateQueueRemove(c *gin.Context) {
 			st = "invalid"
 		}
 		c.JSON(http.StatusOK, gin.H{"status": st})
-		return
+		return req, false
 	}
-	if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionReply) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
-		return
+	for _, action := range actions {
+		if !gateshare.Allow(lookup.Link.PermissionPreset, action) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": denied})
+			return req, false
+		}
 	}
-	lane, ok := h.requestLane(c, token, lookup)
+	if req.lane, ok = h.requestLane(c, token, lookup); !ok {
+		return req, false
+	}
+	if req.runID, req.nodeID, err = h.publicShareQueueTarget(lookup); err != nil {
+		h.writePublicReactErr(c, err)
+		return req, false
+	}
+	req.lookup = lookup
+	return req, true
+}
+
+func (h *Handlers) PublicGateQueueRemove(c *gin.Context) {
+	q, ok := h.openPublicQueueRequest(c, "当前链接权限不允许回复", gateshare.ActionReply)
 	if !ok {
 		return
 	}
-	runID, nodeID, err := h.publicShareQueueTarget(lookup)
-	if err != nil {
-		h.writePublicReactErr(c, err)
-		return
-	}
-	if lane != "" {
-		err = h.Eng.RemoveVisitorQueuedItem(runID, nodeID, lane, body.ItemID)
+	var err error
+	if q.lane != "" {
+		err = h.Eng.RemoveVisitorQueuedItem(q.runID, q.nodeID, q.lane, q.ItemID)
 	} else {
-		err = h.Eng.RemoveQueuedItem(runID, nodeID, body.ItemID)
+		err = h.Eng.RemoveQueuedItem(q.runID, q.nodeID, q.ItemID)
 	}
 	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "kind": publicShareKind(lookup)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "kind": publicShareKind(q.lookup)})
+}
+
+// PublicGateQueueSteer handles one waiting item now. Steering may interrupt
+// the running turn, so the link must allow both replying and cancelling.
+func (h *Handlers) PublicGateQueueSteer(c *gin.Context) {
+	q, ok := h.openPublicQueueRequest(c, "当前链接权限不允许立即处理消息", gateshare.ActionReply, gateshare.ActionCancel)
+	if !ok {
+		return
+	}
+	var outcome chatsession.SteerOutcome
+	var err error
+	if q.lane != "" {
+		outcome, err = h.Eng.SteerVisitorQueuedItem(c.Request.Context(), q.runID, q.nodeID, q.lane, q.ItemID)
+	} else {
+		outcome, err = h.Eng.SteerQueuedItem(c.Request.Context(), q.runID, q.nodeID, q.ItemID)
+	}
+	if err != nil {
+		h.writePublicReactErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "steer": outcome, "kind": publicShareKind(q.lookup)})
 }
 
 func (h *Handlers) PublicGateQueueReorder(c *gin.Context) {
-	applyPublicSecurityHeaders(c)
-	if !h.publicRateLimit(c, gateshare.RateBucketPreview) {
-		return
-	}
-	if h.GateShare == nil || h.Eng == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
-		return
-	}
-	if !h.checkPublicCSRF(c) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "csrf", "message": "请求未通过安全校验"})
-		return
-	}
-	var body publicQueueReorderBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
-		return
-	}
-	token := strings.TrimSpace(body.Token)
-	if token == "" || !gateshare.ValidCredentialShape(token) {
-		c.JSON(http.StatusOK, gin.H{"status": "invalid"})
-		return
-	}
-	lookup, st, err := h.GateShare.LookupByToken(token)
-	if err != nil || lookup == nil || st != models.ShareLinkStateActive {
-		if st == "" {
-			st = "invalid"
-		}
-		c.JSON(http.StatusOK, gin.H{"status": st})
-		return
-	}
-	if !gateshare.Allow(lookup.Link.PermissionPreset, gateshare.ActionReply) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission_denied", "message": "当前链接权限不允许回复"})
-		return
-	}
-	lane, ok := h.requestLane(c, token, lookup)
+	q, ok := h.openPublicQueueRequest(c, "当前链接权限不允许回复", gateshare.ActionReply)
 	if !ok {
 		return
 	}
-	runID, nodeID, err := h.publicShareQueueTarget(lookup)
-	if err != nil {
-		h.writePublicReactErr(c, err)
-		return
-	}
-	if lane != "" {
-		err = h.Eng.ReorderVisitorQueuedItems(runID, nodeID, lane, body.ItemIDs)
+	var err error
+	if q.lane != "" {
+		err = h.Eng.ReorderVisitorQueuedItems(q.runID, q.nodeID, q.lane, q.ItemIDs)
 	} else {
-		err = h.Eng.ReorderQueuedItems(runID, nodeID, body.ItemIDs)
+		err = h.Eng.ReorderQueuedItems(q.runID, q.nodeID, q.ItemIDs)
 	}
 	if err != nil {
 		h.writePublicReactErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "kind": publicShareKind(lookup)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "kind": publicShareKind(q.lookup)})
 }
 
 func (h *Handlers) writePublicReactErr(c *gin.Context, err error) {

@@ -76,6 +76,11 @@ func main() {
 		chats.Default().SetModel(initial)
 		zlog.Info().Str("model", initial).Msg("solo initial chat model")
 	}
+	if path, err := service.DefaultPointerPath(); err != nil {
+		zlog.Warn().Err(err).Msg("agent session pointer is not persisted")
+	} else {
+		chats.Default().PersistSession(path)
+	}
 	chats.StartDefaultAgent()
 
 	engine := router.New(&router.Dependencies{
@@ -86,7 +91,9 @@ func main() {
 	})
 
 	zlog.Info().Str("listen", cfg.ListenAddr).Msg("acp-bridge listening")
-	if err := router.Serve(cfg.ListenAddr, engine); err != nil {
+	err = router.Serve(cfg.ListenAddr, engine)
+	chats.Close()
+	if err != nil {
 		zlog.Fatal().Err(err).Str("listen", cfg.ListenAddr).Msg("http server failed")
 	}
 }

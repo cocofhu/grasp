@@ -66,6 +66,7 @@ const emit = defineEmits<{
   'finish-abort': []
   cancel: []
   'queue-remove': [itemId: string | undefined, index: number]
+  'queue-steer': [itemId: string, index: number]
   'queue-reorder': [itemIds: string[]]
   pick: [payload: AppPreviewPickPayload]
   stagedPick: [payload: AppPreviewPickPayload | null]
@@ -176,6 +177,7 @@ defineExpose({
         @finish-abort="emit('finish-abort')"
         @cancel="emit('cancel')"
         @queue-remove="(itemId, index) => emit('queue-remove', itemId, index)"
+        @queue-steer="(itemId, index) => emit('queue-steer', itemId, index)"
         @queue-reorder="(itemIds) => emit('queue-reorder', itemIds)"
       />
     </template>

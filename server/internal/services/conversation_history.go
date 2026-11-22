@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -170,19 +171,6 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		}
 		query = query.Where("created_at < ? OR (created_at = ? AND id < ?)", before.CreatedAt, before.CreatedAt, before.ID)
 	}
-	var rows []models.SoloMessage
-	if err := query.Order("created_at desc, id desc").Limit(req.Limit + 1).Find(&rows).Error; err != nil {
-		return page, err
-	}
-	page.HasMore = len(rows) > req.Limit
-	if page.HasMore {
-		rows = rows[:req.Limit]
-		cursor.BeforeID = rows[len(rows)-1].ID
-		page.NextCursor = encodeConversationCursor(cursor)
-	}
-	for i := len(rows) - 1; i >= 0; i-- {
-		page.Messages = append(page.Messages, conversationMessage(rows[i]))
-	}
 	if req.View == "summary" {
 		var anchors []models.SoloMessage
 		if err := base.Session(&gorm.Session{}).Where("role = ? AND (created_at < ? OR (created_at = ? AND id <= ?))", "user", snapshot.CreatedAt, snapshot.CreatedAt, snapshot.ID).
@@ -191,8 +179,50 @@ func (s *ConversationHistoryService) readSession(scope historyScope, req mcp.Con
 		}
 		page.Summary = renderContextBrief(scope.Title, anchors, scope.readTool())
 	}
+	var rows []models.SoloMessage
+	if err := query.Order("created_at desc, id desc").Limit(req.Limit + 1).Find(&rows).Error; err != nil {
+		return page, err
+	}
+	page.HasMore = len(rows) > req.Limit
+	if page.HasMore {
+		rows = rows[:req.Limit]
+	}
+	// Newest first until the page is full; the oldest one kept is the cursor.
+	newest := make([]mcp.ConversationHistoryMessage, 0, len(rows))
+	size := len(page.Summary)
+	for i, row := range rows {
+		message := conversationMessage(row)
+		encoded, _ := json.Marshal(message)
+		if i > 0 && size+len(encoded) > historyPageBytes {
+			rows, page.HasMore = rows[:i], true
+			break
+		}
+		size += len(encoded)
+		newest = append(newest, message)
+	}
+	if page.HasMore {
+		cursor.BeforeID = rows[len(rows)-1].ID
+		page.NextCursor = encodeConversationCursor(cursor)
+	}
+	for i := len(newest) - 1; i >= 0; i-- {
+		page.Messages = append(page.Messages, newest[i])
+	}
 	return page, nil
 }
+
+// historyPageBytes bounds one history page. Coding agents cut long tool
+// results (Codex keeps about 10 KiB) and a cut page is unreadable JSON, so a
+// page ends early and next_cursor leads to the rest.
+const historyPageBytes = 8 << 10
+
+// historyToolTextRunes bounds the output a failed tool call keeps in history.
+// Successful calls keep only their title and status: the reply and the
+// workspace carry their outcome, and their output would crowd out messages.
+const historyToolTextRunes = 200
+
+// historySummaryRunes bounds the summary view's instruction ledger, leaving
+// room for messages within historyPageBytes (CJK takes 3 bytes a rune).
+const historySummaryRunes = 2000
 
 // ReadReference reads a conversation the user explicitly attached to the
 // current Solo session. The reference must sit on one of this session's user
@@ -283,8 +313,19 @@ func conversationMessage(row models.SoloMessage) mcp.ConversationHistoryMessage 
 	for i := range images {
 		images[i].Data = ""
 	}
+	reply := replyOf(row.Events)
 	return mcp.ConversationHistoryMessage{ID: row.ID, Role: row.Role, Content: soloHistoryContent(row), Status: row.Status, Files: row.Files,
-		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(row.Events)}
+		Error: row.Error, Images: images, CreatedAt: row.CreatedAt, ToolResults: conversationTools(reply), Steers: reply.Steers()}
+}
+
+// replyOf folds a reply's persisted frames. A steer the turn joined has no
+// message row of its own; these frames are its only record.
+func replyOf(events []json.RawMessage) *sandbox.Reply {
+	var reply sandbox.Reply
+	for _, raw := range events {
+		reply.Add(raw)
+	}
+	return &reply
 }
 
 func soloHistoryContent(row models.SoloMessage) string {
@@ -294,72 +335,56 @@ func soloHistoryContent(row models.SoloMessage) string {
 	return models.RenderAnnotatedPrompt(row.Content, row.Annotations)
 }
 
-// Read only visible tool text/status from ACP updates, not the provider's raw
-// event envelope or inline image bytes. Updates merge into their tool call.
-func conversationTools(events []json.RawMessage) []mcp.ConversationHistoryToolResult {
+// conversationTools reads a reply's tool calls as the transcript showed them,
+// with an excerpt of the output of failed ones (never inline image bytes).
+func conversationTools(reply *sandbox.Reply) []mcp.ConversationHistoryToolResult {
 	var tools []mcp.ConversationHistoryToolResult
-	indices := map[string]int{}
-	for _, raw := range events {
-		var event struct {
-			Params struct {
-				Update struct {
-					Kind    string `json:"sessionUpdate"`
-					ID      string `json:"toolCallId"`
-					Title   string `json:"title"`
-					Status  string `json:"status"`
-					Content []struct {
-						Content struct {
-							Text string `json:"text"`
-						} `json:"content"`
-					} `json:"content"`
-				} `json:"update"`
-			} `json:"params"`
-		}
-		if json.Unmarshal(raw, &event) != nil {
+	for _, tc := range reply.Tools() {
+		if tc.ID == "" || isHistoryRead(tc) {
 			continue
 		}
-		update := event.Params.Update
-		if (update.Kind != "tool_call" && update.Kind != "tool_call_update") || update.ID == "" {
-			continue
-		}
-		index, exists := indices[update.ID]
-		if !exists {
-			index = len(tools)
-			indices[update.ID] = index
-			tools = append(tools, mcp.ConversationHistoryToolResult{ID: update.ID})
-		}
-		if update.Title != "" {
-			tools[index].Title = update.Title
-		}
-		if update.Status != "" {
-			tools[index].Status = update.Status
-		}
-		var text []string
-		for _, block := range update.Content {
-			if block.Content.Text != "" {
-				text = append(text, block.Content.Text)
+		tool := mcp.ConversationHistoryToolResult{ID: tc.ID, Title: tc.Title, Status: tc.Status}
+		if tc.Status == "failed" {
+			tool.Text = tc.Output
+			if runes := []rune(tool.Text); len(runes) > historyToolTextRunes {
+				tool.Text = string(runes[:historyToolTextRunes]) + "…"
 			}
 		}
-		if len(text) > 0 {
-			tools[index].Text = strings.Join(text, "\n")
-		}
-	}
-	for i := range tools {
-		// History results themselves contain prior messages and tool results.
-		// Re-embedding those responses would recursively duplicate the same
-		// history on every read. Keep the call reference and its outcome only.
-		var result map[string]json.RawMessage
-		isHistoryResponse := json.Unmarshal([]byte(tools[i].Text), &result) == nil && result["history_version"] != nil && result["messages"] != nil
-		if title := strings.ToLower(tools[i].Title); strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") || isHistoryResponse {
-			tools[i].Text = "（历史查询正文已省略；使用 get_history 回查原始消息。）"
-		}
+		tools = append(tools, tool)
 	}
 	return tools
+}
+
+// isHistoryRead reports a call that read conversation history back. Such reads
+// carry nothing new, and listing them would make every page of a long
+// conversation larger than the last. A call through a generic tool runner is
+// known by its page, which Output may have truncated into invalid JSON.
+func isHistoryRead(tc sandbox.ReplyTool) bool {
+	title := strings.ToLower(tc.Title)
+	return strings.Contains(title, "get_history") || strings.Contains(title, "read_reference") ||
+		strings.Contains(tc.Output, `"history_version"`) && strings.Contains(tc.Output, `"conversationId"`)
 }
 
 // ownHistoryTool reads the current conversation back; a referenced one is
 // read with read_reference and its handle instead.
 const ownHistoryTool = "artifact-store.get_history"
+
+// renderSteers lists the input added while a turn ran, within budget runes;
+// the rest is counted for get_history.
+func renderSteers(steers []string, budget int) string {
+	var b strings.Builder
+	for i, steer := range steers {
+		line := fmt.Sprintf("[用户·回合中补充] %s\n", historyExcerpt(steer, min(2000, budget), ownHistoryTool))
+		if n := len([]rune(line)); n <= budget {
+			b.WriteString(line)
+			budget -= n
+			continue
+		}
+		fmt.Fprintf(&b, "（另有 %d 条回合中补充未附上，可通过 get_history 回查。）\n", len(steers)-i)
+		break
+	}
+	return b.String()
+}
 
 func historyExcerpt(content string, budget int, via string) string {
 	runes := []rune(content)
@@ -372,7 +397,7 @@ func historyExcerpt(content string, budget int, via string) string {
 func renderContextBrief(title string, anchors []models.SoloMessage, via string) string {
 	var b strings.Builder
 	b.WriteString("当前任务：" + title + "\n")
-	b.WriteString(renderUserInstructions(anchors, 12000, via))
+	b.WriteString(renderUserInstructions(anchors, historySummaryRunes, via))
 	b.WriteString("近期完整对话见 messages；更早原文见 next_cursor。任务进度以助手实际结果和当前工作区为准。")
 	return b.String()
 }
@@ -486,10 +511,12 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 			break
 		}
 		var part strings.Builder
+		reply := replyOf(row.Events)
 		content := historyExcerpt(strings.TrimSpace(soloHistoryContent(row)), min(budget-200, 8000), ownHistoryTool)
 		role := "用户"
 		if row.Role == "assistant" {
 			role = "助手"
+			part.WriteString(renderSteers(reply.Steers(), min(budget/4, 4000)))
 		}
 		fmt.Fprintf(&part, "[%s] %s\n（历史消息 ID：%s）\n", role, content, row.ID)
 		for _, image := range row.Images {
@@ -502,13 +529,13 @@ func (s *SoloService) contextPreambleChecked(sessionID, exceptMsgID, header, con
 		if row.Status == "failed" || row.Status == "stopped" {
 			fmt.Fprintf(&part, "本轮状态：%s %s\n", row.Status, row.Error)
 		}
-		tools := conversationTools(row.Events)
+		tools := conversationTools(reply)
 		for _, tool := range tools[max(0, len(tools)-3):] {
 			fmt.Fprintf(&part, "工具结果：%s [%s] %s\n", tool.Title, tool.Status, historyExcerpt(tool.Text, 1000, ownHistoryTool))
 		}
 		part.WriteString("\n")
 		partText := part.String()
-		if compact && len([]rune(partText)) > budget {
+		if len([]rune(partText)) > budget {
 			partText = historyExcerpt(partText, budget-100, ownHistoryTool) + "\n\n"
 		}
 		parts = append(parts, partText)

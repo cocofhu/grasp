@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { replyTail } from '@/lib/run/replyTail'
+import { reactQueueActions } from '@/lib/run/reactQueueActions'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ClarifyChat from '../ClarifyChat.vue'
 import ClarifyMessageThread from '../ClarifyMessageThread.vue'
@@ -204,15 +205,10 @@ async function onRetryLast() {
   if (current) await api.reactReply(props.run.id, current.nodeId, '', [], false, [], true)
 }
 
-async function onQueueRemove(id: string | undefined) {
+const { queueRemove: onQueueRemove, queueSteer: onQueueSteer, queueReorder: onQueueReorder } = reactQueueActions(() => {
   const current = thread.value.current
-  if (current && id) await api.reactQueueRemove(props.run.id, current.nodeId, id)
-}
-
-async function onQueueReorder(ids: string[]) {
-  const current = thread.value.current
-  if (current) await api.reactQueueReorder(props.run.id, current.nodeId, ids)
-}
+  return current ? { runId: props.run.id, nodeId: current.nodeId } : null
+})
 </script>
 
 <template>
@@ -243,6 +239,7 @@ async function onQueueReorder(ids: string[]) {
         @cancel="onCancel"
         @retry-last="onRetryLast"
         @queue-remove="onQueueRemove"
+        @queue-steer="onQueueSteer"
         @queue-reorder="onQueueReorder"
         @finish="onFinish"
       />

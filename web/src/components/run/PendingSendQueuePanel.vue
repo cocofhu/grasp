@@ -23,9 +23,13 @@ const props = defineProps<{
   panelTestId?: string
   /** Messages the platform sends on its own (no edit / cancel / reorder). */
   readonly?: boolean
+  /** A turn is running that a queued message can be steered into. Only rows
+   * the server acknowledged (with an id) can be steered. */
+  steerable?: boolean
 }>()
 
 const emit = defineEmits<{
+  (e: 'steer', index: number): void
   (e: 'cancel', index: number): void
   (e: 'edit', index: number): void
   (e: 'reorder', fromIndex: number, toIndex: number): void
@@ -127,6 +131,17 @@ function onDrop(toIndex: number, e: DragEvent) {
           {{ t('pages.clarify.queueAnnotationBadge') }}
         </span>
         <span v-if="!readonly && !q.locked" class="flex shrink-0 gap-0.5">
+          <button
+            v-if="steerable && q.id"
+            type="button"
+            class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
+            :title="t('pages.clarify.queueSteerTitle')"
+            :aria-label="t('pages.clarify.queueSteerAria')"
+            data-testid="clarify-queue-steer"
+            @click.stop="emit('steer', qi)"
+          >
+            <Icon name="priority-bolt" :size="13" />
+          </button>
           <button
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-base hover:text-txt"

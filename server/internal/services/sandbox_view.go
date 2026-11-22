@@ -75,9 +75,9 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 }
 
 // ErrChatModelUnknown means the sandbox did not report its current chat model.
-// AlignChatModel must not call POST /api/model in that case: that call restarts
-// the coding agent. The caller keeps the already applied model for this turn
-// and retries on a later one.
+// AlignChatSettings must not call POST /api/model in that case: that call
+// restarts the coding agent. The caller keeps the already applied model for
+// this turn and retries on a later one.
 var ErrChatModelUnknown = errors.New("chat model unknown")
 
 func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint, chat ...string) (sandbox.ChatModelSettings, error) {
@@ -91,40 +91,28 @@ func (s *SandboxService) ChatModelSettings(ctx context.Context, id uint, chat ..
 	return sandbox.GetChatModelSettings(ctx, host, port, password)
 }
 
-// AlignChatModel makes the sandbox default chat use model. Empty follows the
-// primary model. A match does not restart the coding agent. A change calls
-// POST /api/model, which restarts that agent, so callers must wait until the
-// current turn has finished. A failed read does not restart it either.
-func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model string) (bool, error) {
-	host, port, password, err := s.acpConnection(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	model = strings.TrimSpace(model)
-	selected, getErr := sandbox.GetChatModel(ctx, host, port, password)
-	if getErr != nil {
-		return false, fmt.Errorf("%w: %w", ErrChatModelUnknown, getErr)
-	}
-	if selected == model {
-		return false, nil
-	}
-	if err := sandbox.SetChatModel(ctx, host, port, password, model); err != nil {
-		return false, err
-	}
-	return true, nil
+// ChatSwitch is the outcome of aligning a chat's model settings.
+type ChatSwitch struct {
+	// Restarted: the settings differed, so the coding agent was restarted.
+	Restarted bool
+	// Resumed: the restarted agent continues its native conversation and
+	// still has the dialogue.
+	Resumed bool
 }
 
-// AlignChatSettings changes model and effort as one unit at a turn boundary.
-// Older bundles continue to support model-only switches; they cannot silently
+// AlignChatSettings changes the default chat's model, effort and speed tier as
+// one unit at a turn boundary; empty model follows the primary model. Matching
+// settings do not restart the coding agent, nor does a failed read. Older
+// bundles continue to support model-only switches; they cannot silently
 // accept a requested reasoning effort that they do not expose.
-func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort, tier string) (bool, error) {
+func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, effort, tier string) (ChatSwitch, error) {
 	host, port, password, err := s.acpConnection(ctx, id)
 	if err != nil {
-		return false, err
+		return ChatSwitch{}, err
 	}
 	current, err := sandbox.GetChatModelSettings(ctx, host, port, password)
 	if err != nil {
-		return false, fmt.Errorf("%w: %w", ErrChatModelUnknown, err)
+		return ChatSwitch{}, fmt.Errorf("%w: %w", ErrChatModelUnknown, err)
 	}
 	model, effort, tier = strings.TrimSpace(model), strings.TrimSpace(effort), strings.TrimSpace(tier)
 	var wantTier *string
@@ -132,27 +120,27 @@ func (s *SandboxService) AlignChatSettings(ctx context.Context, id uint, model, 
 	if current.ServiceTier != nil {
 		wantTier, currentTier = &tier, *current.ServiceTier
 	} else if tier != "" {
-		return false, errors.New("sandbox does not expose service tiers")
+		return ChatSwitch{}, errors.New("sandbox does not expose service tiers")
 	}
+	var resumed bool
 	if current.ReasoningEffort == nil {
 		if effort != "" {
-			return false, errors.New("sandbox does not expose reasoning effort")
+			return ChatSwitch{}, errors.New("sandbox does not expose reasoning effort")
 		}
 		if current.Selected == model {
-			return false, nil
+			return ChatSwitch{}, nil
 		}
-		if err := sandbox.SetChatModel(ctx, host, port, password, model); err != nil {
-			return false, err
+		resumed, err = sandbox.SetChatModel(ctx, host, port, password, model)
+	} else {
+		if current.Selected == model && *current.ReasoningEffort == effort && currentTier == tier {
+			return ChatSwitch{}, nil
 		}
-		return true, nil
+		resumed, err = sandbox.SetChatModelSettings(ctx, host, port, password, model, effort, wantTier)
 	}
-	if current.Selected == model && *current.ReasoningEffort == effort && currentTier == tier {
-		return false, nil
+	if err != nil {
+		return ChatSwitch{}, err
 	}
-	if err := sandbox.SetChatModelSettings(ctx, host, port, password, model, effort, wantTier); err != nil {
-		return false, err
-	}
-	return true, nil
+	return ChatSwitch{Restarted: true, Resumed: resumed}, nil
 }
 
 // ACPUpstream returns the reachable "host:port" for the sandbox ACP bridge

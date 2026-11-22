@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"backend/internal/acp"
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/acpx"
 	"backend/internal/provider/modelconnection"
@@ -50,19 +50,19 @@ func (*Provider) ListModels(context.Context) ([]provider.Model, error) {
 // MOONSHOT_API_KEY alone does not authenticate this CLI.
 func (*Provider) AuthEnv(env []string) []string {
 	for _, key := range []string{APIKeyEnv, "GRASP_KIMI_CODE_API_KEY", "ACP_KIMI_CODE_API_KEY"} {
-		if value := common.GetEnvValue(env, key); strings.TrimSpace(value) != "" {
-			env = common.UpsertEnv(env, APIKeyEnv, value)
+		if value := envutil.Get(env, key); strings.TrimSpace(value) != "" {
+			env = envutil.Upsert(env, APIKeyEnv, value)
 			break
 		}
 	}
-	root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT"))
+	root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT"))
 	if root == "" {
 		root = ConfigRoot
 	}
-	env = common.UpsertEnv(env, "KIMI_CODE_HOME", root)
-	env = common.UpsertEnv(env, "KIMI_CODE_TRUST_WORKSPACE", "1")
-	env = common.UpsertEnv(env, "KIMI_DISABLE_TELEMETRY", "1")
-	env = common.UpsertEnv(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
+	env = envutil.Upsert(env, "KIMI_CODE_HOME", root)
+	env = envutil.Upsert(env, "KIMI_CODE_TRUST_WORKSPACE", "1")
+	env = envutil.Upsert(env, "KIMI_DISABLE_TELEMETRY", "1")
+	env = envutil.Upsert(env, "KIMI_CODE_NO_AUTO_UPDATE", "1")
 	return env
 }
 
@@ -85,12 +85,12 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 		return nil, fmt.Errorf("Kimi Code 只使用 Coding Plan，不接受自定义模型接口")
 	}
 	env := p.AuthEnv(prepared.Env)
-	secret := strings.TrimSpace(common.GetEnvValue(env, APIKeyEnv))
+	secret := strings.TrimSpace(envutil.Get(env, APIKeyEnv))
 	if secret == "" || strings.ContainsAny(secret, "\r\n\x00") {
 		prepared.Cleanup()
 		return nil, fmt.Errorf("%s", MsgMissingKey)
 	}
-	baseURL, err := BaseURL(common.GetEnvValue(env, RegionEnv))
+	baseURL, err := BaseURL(envutil.Get(env, RegionEnv))
 	if err != nil {
 		prepared.Cleanup()
 		return nil, err
@@ -116,7 +116,7 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	defer func() { _ = home.Close() }()
 	var cleanupOnce sync.Once
 	cleanup := func() { cleanupOnce.Do(prepared.Cleanup) }
-	env = common.UpsertEnv(env, "KIMI_CODE_HOME", home.Name())
+	env = envutil.Upsert(env, "KIMI_CODE_HOME", home.Name())
 	// Native model environment overrides have higher precedence than config
 	// and ACP state. The selected Coding Plan route owns model, credential
 	// and strength, including an empty reset to the native default.
@@ -134,7 +134,10 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	if onEvent != nil {
 		wrapped = func(ev json.RawMessage) { onEvent(RewriteEvent(ev, secret)) }
 	}
-	panel, err := acp.NewPanel(procCtx, handshakeCtx, LaunchArgv(model), cleanEnv, opts.Cwd, firstNonEmpty(opts.FSRoot, opts.Cwd), opts.McpServers, wrapped, acp.PermissionChooser(perm))
+	panel, err := acp.NewPanel(procCtx, handshakeCtx, acp.PanelSpec{
+		Argv: LaunchArgv(model), Env: cleanEnv, Cwd: opts.Cwd, FSRoot: opts.FSRoot, MCPServers: opts.McpServers,
+		OnEvent: wrapped, Permissions: acp.PermissionChooser(perm), ResumeSessionID: opts.ResumeSessionID,
+	})
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("%s", Explain(err.Error(), secret))
@@ -190,15 +193,6 @@ func reasoningOption(options []acp.ConfigOption, effort string) (acp.ConfigOptio
 		}
 	}
 	return acp.ConfigOption{}, false
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 type explainingSession struct {

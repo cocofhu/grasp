@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -118,6 +119,52 @@ func TestChatManagerCreateRenameDeleteAndCap(t *testing.T) {
 	}
 }
 
+type closingSess struct {
+	stubSess
+	done chan struct{}
+	once sync.Once
+}
+
+func (s *closingSess) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Resume: true}
+}
+func (s *closingSess) Done() <-chan struct{} { return s.done }
+func (s *closingSess) Close() error {
+	s.once.Do(func() { close(s.done) })
+	return nil
+}
+
+func TestCloseEndsEveryAgentWithoutReviving(t *testing.T) {
+	m := NewChatManager()
+	a, err := m.Create("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridges := []*Bridge{m.Default(), a}
+	sessions := []*closingSess{
+		{stubSess: stubSess{id: "native-default"}, done: make(chan struct{})},
+		{stubSess: stubSess{id: "native-a"}, done: make(chan struct{})},
+	}
+	for i, b := range bridges {
+		attach(b, sessions[i])
+	}
+	m.Close()
+	for i, b := range bridges {
+		select {
+		case <-sessions[i].done:
+		default:
+			t.Fatalf("chat %s kept its Agent", b.ID())
+		}
+		b.watchAgentConn(sessions[i])
+		b.mu.Lock()
+		revived := b.reviving || b.sess != nil
+		b.mu.Unlock()
+		if revived {
+			t.Fatalf("chat %s revived its Agent during the exit", b.ID())
+		}
+	}
+}
+
 // A handler that resolved the chat just before Delete must not revive it.
 func TestDeletedChatRejectsClientsAndConnect(t *testing.T) {
 	m := NewChatManager()
@@ -128,7 +175,7 @@ func TestDeletedChatRejectsClientsAndConnect(t *testing.T) {
 	if err := m.Delete(a.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Connect(t.TempDir(), "", nil, nil); !errors.Is(err, ErrChatNotFound) {
+	if _, err := a.connect(openSpec{cwd: t.TempDir()}); !errors.Is(err, ErrChatNotFound) {
 		t.Fatalf("connect on deleted chat err = %v", err)
 	}
 	if a.Session() != nil {

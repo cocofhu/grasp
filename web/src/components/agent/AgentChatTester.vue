@@ -19,7 +19,6 @@ import ChatUserMessage from '@/components/run/ChatUserMessage.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
-import { contextSlashCommand, type ContextCommand } from '@/lib/chat/chatCommands'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import type { Project, RepoChoice } from '@/lib/api/apiTypes'
@@ -29,9 +28,9 @@ import {
   isImageAttachment,
 } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
-import { contentText, flattenUpdate, normalizeKind, unwrapFrame } from '@/lib/run/acpUnpack'
-import { acpFailureText, appendAcpError } from '@/lib/run/acpFailure'
-import type { AgentPart } from '@/lib/shared/types'
+import { unwrapFrame } from '@/lib/run/acpUnpack'
+import { acpFailureText } from '@/lib/run/acpFailure'
+import { applyAcp, partsOf, type AcpReply } from '@/lib/run/acpReply'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { isPlainEnter } from '@/lib/chat/composerKeys'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
@@ -54,23 +53,14 @@ const props = defineProps<{
 const { t, te } = useI18n()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
-type Tool = { id: string; title: string; status: string; summary?: string; input?: string; output?: string }
-/** Arrival order of the reply: text runs, or an index into Turn.tools. */
-type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool: number }
 type ImageAtt = ClarifyImage
 type QueueItem = { id: string; text: string; images: ImageAtt[] }
-type Turn = {
+type Turn = AcpReply & {
   id: string
   role: 'user' | 'agent'
-  text: string
-  contextCommand?: ContextCommand
   thought: string
-  tools: Tool[]
-  steps?: Step[]
-  plan: { content: string; status: string }[]
   streaming: boolean
   images?: ImageAtt[]
-  error?: string
   /** Wall clock when this reply started outputting. */
   startedAt?: string
   /** Wall clock when this reply stopped. */
@@ -431,6 +421,11 @@ function send() {
   scrollDown()
 }
 
+/** Handle a queued message now; the next queue_state shows where it went. */
+function steerQueued(id: string) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'steer', id }))
+}
+
 function cancel() {
   ws?.send(JSON.stringify({ type: 'cancel' }))
   // Drop everything not yet started; the running turn still gets its turn_done.
@@ -591,7 +586,7 @@ function onFrame(data: string) {
   if (frame.type === 'acp') {
     const turn = activeIdx >= 0 ? turns.value[activeIdx] : null
     if (turn) {
-      applyAcp(frame.data, turn)
+      applyFrame(frame.data, turn)
       if (activeItemId) liveOutputItemId = activeItemId
     }
     scrollDown()
@@ -676,13 +671,13 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
     } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
       const ended = isoStamp(ev.at)
       if (ended && agent) agent.endedAt = ended
-    } else if (ev.type === 'context_command' || (ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
+    } else if (ev.type === 'context_command' || ev.type === 'user_steer' || (ev.type === 'session_update' && ev.update) || acpFailureText(ev) !== null) {
       if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
-      applyAcp(ev, agent)
+      applyFrame(ev, agent)
     }
   }
   const last = rebuilt[rebuilt.length - 1]
-  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length && !last.error) {
+  if (last && last.role === 'agent' && !last.text && !last.thought && !last.tools.length && !last.plan.length && !last.steps?.length && !last.error) {
     rebuilt.pop()
   }
   return rebuilt
@@ -879,133 +874,14 @@ async function loadEarlierHistory() {
   }
 }
 
-// applyAcp tolerantly parses an acp-bridge event frame ({op:"event",data:{type,update}}).
-function applyAcp(envelope: any, turn: Turn) {
-  const failure = acpFailureText(envelope)
-  if (failure !== null) {
-    turn.error = appendAcpError(turn.error, failure) || t('pages.agentChatTester.execError')
-    return
-  }
-  const ev = envelope?.data ?? envelope
-  if (ev?.type === 'context_command') {
-    turn.contextCommand = contextSlashCommand(String(ev.command ?? ''))
-    return
-  }
-  if (!ev || ev.type !== 'session_update' || !ev.update) return
-  const u = flattenUpdate(ev.update)
-  const kind = normalizeKind(u.sessionUpdate || u.session_update || u.type || u.kind || '')
-  if (kind === 'agent_message_chunk') {
-    const s = contentText(u.content)
-    turn.text += s
-    addStep(turn, 'message', s)
-  } else if (kind === 'agent_thought_chunk') {
-    const s = contentText(u.content)
-    turn.thought += s
-    addStep(turn, 'thought', s)
-  }
-  else if (kind === 'plan') turn.plan = planEntries(u)
-  else if (isToolKind(kind)) applyTool(u, turn)
+const toolLabel = (key: string) => {
+  const k = `pages.agentChatTester.tools.${key}`
+  return te(k) ? t(k) : ''
 }
 
-function addStep(turn: Turn, kind: 'thought' | 'message', s: string) {
-  if (!s) return
-  const steps = (turn.steps ??= [])
-  const last = steps[steps.length - 1]
-  if (last && last.kind === kind) last.text += s
-  else steps.push({ kind, text: s })
-}
-
-/** Turn steps as timeline parts; tool steps read the live tool row. */
-function partsOf(turn: Turn): AgentPart[] {
-  return (turn.steps || []).map((st) => {
-    if (st.kind !== 'tool') return { kind: st.kind, text: st.text }
-    const tool = turn.tools[st.tool]
-    return tool ? { kind: 'tool', title: tool.title, status: tool.status, summary: tool.summary, input: tool.input, output: tool.output } : { kind: 'tool', title: '' }
-  })
-}
-
-const SUMMARY_KEYS = ['command', 'cmd', 'file_path', 'filePath', 'path', 'target_file', 'url', 'uri', 'pattern', 'glob_pattern', 'query', 'search_term', 'name', 'description']
-const TOOL_DETAIL_MAX = 2000
-const SECRET_KEY_RE = /token|secret|password|passwd|api[_-]?key|authorization|cookie|credential/i
-
-function toolSummary(input: any): string {
-  if (!input || typeof input !== 'object') return ''
-  for (const k of SUMMARY_KEYS) {
-    const v = input[k]
-    const s = typeof v === 'string' ? v : Array.isArray(v) ? v.filter((x) => typeof x === 'string').join(' ') : ''
-    if (s.trim()) return s.replace(/\s+/g, ' ').trim().slice(0, 160)
-  }
-  return ''
-}
-
-function toolDetail(v: any, output: boolean): string {
-  if (v === undefined || v === null) return ''
-  let s = ''
-  if (typeof v === 'string') s = v
-  else if (output && typeof v === 'object' && !Array.isArray(v)) s = [v.stdout, v.stderr].filter((x) => typeof x === 'string' && x).join('\n') || (typeof v.output === 'string' ? v.output : '')
-  if (!s && output && (Array.isArray(v) || v.content)) s = contentText(Array.isArray(v) ? v : v.content)
-  if (!s) s = JSON.stringify(v, (k, x) => (k && SECRET_KEY_RE.test(k) && typeof x !== 'object' ? '****' : x), 2)
-  s = s.trim()
-  if (!s || s === '{}' || s === '[]') return ''
-  return s.length > TOOL_DETAIL_MAX ? `${s.slice(0, TOOL_DETAIL_MAX)}\n…(truncated)` : s
-}
-
-function isToolKind(k: string): boolean {
-  return k.includes('tool_call') || k.includes('toolcall')
-}
-function field(o: any, ...keys: string[]): string {
-  for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k]
-  return ''
-}
-function planEntries(u: any): { content: string; status: string }[] {
-  const raw = u.entries || u.steps || []
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((e: any) => ({ content: field(e, 'content', 'title', 'text'), status: field(e, 'status', 'state') || 'pending' }))
-    .filter((e: any) => e.content)
-}
-// Common tool names → localized labels (rest gets Title-Cased).
-function humanizeTool(s: string): string {
-  const raw = String(s || '').trim()
-  if (!raw || /^tool_[0-9a-f-]{8,}$/i.test(raw)) return ''
-  if (/[\u4e00-\u9fff]/.test(raw)) return raw
-  const key = raw.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
-  const i18nKey = `pages.agentChatTester.tools.${key}`
-  if (te(i18nKey)) return t(i18nKey)
-  if (!/^[A-Za-z][\w -]*$/.test(raw)) return raw
-  return raw
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function applyTool(u: any, turn: Turn) {
-  // Some agents nest the tool details under toolCall/tool/call instead of the
-  // top level — check both so we don't miss the title/kind.
-  const tc = (u.toolCall || u.tool || u.call || {}) as any
-  const id = field(u, 'toolCallId', 'tool_call_id', 'id', 'callId') || field(tc, 'toolCallId', 'id', 'callId')
-  // Prefer an explicit title/name; fall back to the ACP tool "kind" (read/edit/…)
-  // so a call still reads as e.g. "Read" instead of the ugly id.
-  const title = humanizeTool(
-    field(u, 'title', 'name', 'toolName', 'tool_name', 'kind') || field(tc, 'title', 'name', 'toolName', 'kind'),
-  )
-  const stat = field(u, 'status', 'state') || field(tc, 'status', 'state')
-  const rawIn = u.rawInput ?? u.raw_input ?? u.input ?? tc.rawInput ?? tc.input
-  const rawOut = u.rawOutput ?? u.raw_output ?? u.output ?? tc.rawOutput ?? tc.output
-  const existing = turn.tools.find((t) => id && t.id === id)
-  const tool = existing ?? { id, title: title || t('pages.agentChatTester.toolFallback'), status: stat || 'pending' }
-  if (existing) {
-    if (title) existing.title = title
-    if (stat) existing.status = stat
-  } else {
-    turn.tools.push(tool)
-    ;(turn.steps ??= []).push({ kind: 'tool', tool: turn.tools.length - 1 })
-  }
-  if (rawIn !== undefined) {
-    tool.summary = toolSummary(rawIn) || undefined
-    tool.input = toolDetail(rawIn, false) || undefined
-  }
-  if (rawOut !== undefined) tool.output = toolDetail(rawOut, true) || undefined
+function applyFrame(envelope: any, turn: Turn) {
+  applyAcp(envelope, turn, toolLabel, t('pages.agentChatTester.toolFallback'))
+  if (turn.status === 'failed' && !turn.error) turn.error = t('pages.agentChatTester.execError')
 }
 
 function scrollDown() {
@@ -1293,7 +1169,18 @@ onBeforeUnmount(() => {
         >
           <span class="chat-meta flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line">{{ qi + 1 }}</span>
           <span v-if="q.images.length" class="chat-meta shrink-0">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
-          <span class="truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
+          <button
+            v-if="status === 'thinking'"
+            type="button"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
+            :title="t('pages.clarify.queueSteerTitle')"
+            :aria-label="t('pages.clarify.queueSteerAria')"
+            data-testid="tester-queue-steer"
+            @click="steerQueued(q.id)"
+          >
+            <Icon name="priority-bolt" :size="13" />
+          </button>
         </div>
       </div>
       </div>

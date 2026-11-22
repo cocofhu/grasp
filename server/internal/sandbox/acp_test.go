@@ -126,6 +126,22 @@ func TestACPConnectAndChatStructured(t *testing.T) {
 	}
 }
 
+// Another request's connected frame, broadcast to every socket while this
+// connect is pending, is not its answer.
+func TestACPConnectTakesOnlyItsOwnAnswer(t *testing.T) {
+	h, p := wsServer(t, func(conn *websocket.Conn, op string, msg map[string]any) {
+		if op == "connect" {
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "old-thread", "resumed": true, "connectId": ""})
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "other", "resumed": true, "connectId": "someone-else"})
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "new-thread", "resumed": false, "connectId": msg["connectId"]})
+		}
+	})
+	c := connectAndClient(t, h, p)
+	if resumed, reported := c.Resumed(); c.SessionID() != "new-thread" || resumed || !reported {
+		t.Fatalf("session=%q resumed=%v reported=%v", c.SessionID(), resumed, reported)
+	}
+}
+
 func TestACPConnectError(t *testing.T) {
 	h, p := wsServer(t, func(conn *websocket.Conn, op string, _ map[string]any) {
 		if op == "connect" {

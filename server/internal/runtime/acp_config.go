@@ -57,16 +57,6 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 	return home, nil
 }
 
-// EnvEnabled recognizes the boolean spellings accepted by sandbox startup.
-func EnvEnabled(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
 const agentWorkDirName = "workspace"
 
 // workDir returns the agent's on-disk workspace/ directory if it exists.

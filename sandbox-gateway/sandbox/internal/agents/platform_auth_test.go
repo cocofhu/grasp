@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/modelconnection"
+	"backend/internal/provider/opencode/opencodetest"
 )
 
 // Runs the real registry and one-shot preparation with synthetic credentials.
@@ -79,6 +80,7 @@ func setupOfficialOpenCodeCLI(t *testing.T) string {
 	return callsPath
 }
 
+// assertOfficialOpenCodeCalls counts catalog refreshes and prompts.
 func assertOfficialOpenCodeCalls(t *testing.T, path string, wantRefresh, wantRun int) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -90,12 +92,12 @@ func assertOfficialOpenCodeCalls(t *testing.T, path string, wantRefresh, wantRun
 		switch line {
 		case "models":
 			refresh++
-		case "run":
+		case "prompt":
 			run++
 		}
 	}
 	if refresh != wantRefresh || run != wantRun {
-		t.Fatalf("native calls: refresh=%d run=%d, want refresh=%d run=%d", refresh, run, wantRefresh, wantRun)
+		t.Fatalf("native calls: refresh=%d prompts=%d, want refresh=%d prompts=%d", refresh, run, wantRefresh, wantRun)
 	}
 }
 
@@ -162,7 +164,7 @@ func TestOfficialOpenCodeAuthAliasesCannotHideMalformedCredentials(t *testing.T)
 	for _, alias := range []string{"OPENCODE_API_KEY", "GRASP_OPENCODE_API_KEY", "ACP_OPENCODE_API_KEY"} {
 		for _, value := range []string{"", " \t ", "synthetic\r", "synthetic\n", "synthetic\x00"} {
 			env := Get(provider.OpenCode).AuthEnv([]string{"GRASP_OPENCODE_PROVIDER=opencode", alias + "=" + value})
-			if value != "" && common.GetEnvValue(env, "OPENCODE_API_KEY") != value {
+			if value != "" && envutil.Get(env, "OPENCODE_API_KEY") != value {
 				t.Fatal("auth normalization hid a malformed selected credential")
 			}
 			if _, err := modelconnection.Prepare(provider.OpenCode, env, "", t.TempDir()); err == nil {
@@ -193,12 +195,15 @@ func TestOfficialOpenCodeCLIProcess(t *testing.T) {
 	if len(args) == 0 {
 		fail("native command missing")
 	}
-	calls, err := os.OpenFile(os.Getenv("GRASP_OFFICIAL_TEST_CALLS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		fail("cannot record native command")
+	record := func(call string) {
+		calls, err := os.OpenFile(os.Getenv("GRASP_OFFICIAL_TEST_CALLS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			fail("cannot record native command")
+		}
+		_, _ = fmt.Fprintln(calls, call)
+		_ = calls.Close()
 	}
-	_, _ = fmt.Fprintln(calls, args[0])
-	_ = calls.Close()
+	record(args[0])
 	if os.Getenv("OPENCODE_API_KEY") != "official-synthetic-secret" || os.Getenv("OPENCODE_CONFIG") != "" || os.Getenv("OPENCODE_MODELS_PATH") != "" || os.Getenv("OPENCODE_DISABLE_PROJECT_CONFIG") != "true" {
 		fail("official credential/environment isolation failed")
 	}
@@ -230,22 +235,25 @@ func TestOfficialOpenCodeCLIProcess(t *testing.T) {
 		fmt.Println("opencode/official-model")
 		os.Exit(0)
 	}
-	if args[0] != "run" {
+	if args[0] != "serve" {
 		fail("unexpected native command")
 	}
 	if config.Model != "" && config.Model != "opencode/official-model" {
 		fail("native default was replaced with a third-party model")
 	}
-	if config.Model != "" {
-		at := indexOfArg(args, "--model")
-		if at < 0 || at+1 >= len(args) || args[at+1] != config.Model {
-			fail("selected model changed before native run")
-		}
-	}
 	if os.Getenv("XDG_DATA_HOME") != filepath.Join(os.Getenv("CONFIG_ROOT"), ".grasp-official", "data") {
 		fail("official session history is not stable")
 	}
-	fmt.Println(`{"type":"text","sessionID":"official-session","part":{"text":"ok"}}`)
-	fmt.Println(`{"type":"step_finish","sessionID":"official-session","part":{"reason":"stop"}}`)
-	os.Exit(0)
+	serveFakeOpenCode(opencodetest.Options{Version: os.Getenv("GRASP_OFFICIAL_TEST_VERSION"), Reply: "ok",
+		OnPrompt: func(p opencodetest.Prompt) error {
+			routed := ""
+			if p.Model != nil {
+				routed = p.Model.ProviderID + "/" + p.Model.ModelID
+			}
+			if routed != config.Model {
+				return fmt.Errorf("selected model changed before the native prompt: %q", routed)
+			}
+			record("prompt")
+			return nil
+		}})
 }

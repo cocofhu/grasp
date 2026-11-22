@@ -12,14 +12,14 @@ internal/service   … 队列、广播、权限、时间线（应用层）
 internal/agents    … AGENT_PROVIDER 选型（唯一入口）
     ↓
 internal/provider  … Session / Provider 抽象
-    ├─ acpx + acp + backend/*   … 长驻 ACP（JSON-RPC over stdio）
+    ├─ acpx + acp               … 长驻 ACP（JSON-RPC over stdio）
     └─ oneshot + codecs         … 每轮起进程 + resume
 ```
 
 - **`internal/router`**：注册路由、静态资源、CORS、优雅退出；**不**写业务逻辑。
 - **`internal/correl`**：短 ID（cid / oid），仅用于日志关联。
 - **`internal/config`**：进程级配置结构体。
-- **`internal/backend`**：仅提供长驻 ACP 的 argv/AuthEnv 实现，供 `acpx.FromBackend` 复用；**不是**第二套选型入口（选型只在 `agents`）。
+- **`internal/envutil`**：读写 `KEY=VALUE` 环境变量切片，供各 provider 把凭据别名归一化到 CLI 原生变量。
 
 ## `service` 包内文件职责
 

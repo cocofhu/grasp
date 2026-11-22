@@ -15,6 +15,7 @@ const nodeEvents = vi.fn()
 const reactCancel = vi.fn()
 const reactQueueRemove = vi.fn()
 const reactQueueReorder = vi.fn()
+const reactQueueSteer = vi.fn()
 vi.mock('@/lib/api/api', () => ({
   api: {
     llmTranscript: (...args: unknown[]) => llmTranscript(...args),
@@ -23,6 +24,7 @@ vi.mock('@/lib/api/api', () => ({
     reactCancel: (...args: unknown[]) => reactCancel(...args),
     reactQueueRemove: (...args: unknown[]) => reactQueueRemove(...args),
     reactQueueReorder: (...args: unknown[]) => reactQueueReorder(...args),
+    reactQueueSteer: (...args: unknown[]) => reactQueueSteer(...args),
   },
 }))
 
@@ -96,6 +98,7 @@ beforeEach(() => {
   reactCancel.mockReset().mockResolvedValue({})
   reactQueueRemove.mockReset().mockResolvedValue({})
   reactQueueReorder.mockReset().mockResolvedValue({})
+  reactQueueSteer.mockReset().mockResolvedValue({})
   llmTranscript.mockResolvedValue(transcript)
   reactReply.mockResolvedValue({ status: 'ok' })
   nodeEvents.mockResolvedValue({ events: [] })
@@ -325,6 +328,13 @@ describe('RunLlmTranscript', () => {
       expect(reactQueueRemove).toHaveBeenCalledWith('r1', 'b', 'queued-1')
       expect(reactQueueReorder).toHaveBeenCalledWith('r1', 'b', ['queued-2', 'queued-1'])
       expect(reactReply).toHaveBeenCalledWith('r1', 'b', '结构化回答', [], false, [])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      reactQueueSteer.mockRejectedValueOnce(new Error('item already handled'))
+      chat.vm.$emit('queue-steer', 'queued-2', 0)
+      await flushPromises()
+      expect(reactQueueSteer).toHaveBeenCalledWith('r1', 'b', 'queued-2')
+      expect(warn).toHaveBeenCalledWith('reactQueueSteer failed', 'item already handled')
+      warn.mockRestore()
       chat.vm.$emit('retry-last')
       await flushPromises()
       expect(reactReply).toHaveBeenLastCalledWith('r1', 'b', '', [], false, [], true)

@@ -1,5 +1,6 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { replyTail } from '@/lib/run/replyTail'
+import { reactQueueActions } from '@/lib/run/reactQueueActions'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -775,6 +776,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
   }
 
+  const { queueRemove, queueSteer, queueReorder } = reactQueueActions(() =>
+    mode.value === 'chat' && nodeId.value ? { runId: runId.value, nodeId: nodeId.value } : null,
+  )
+
   function stop() {
     reconnect.reset()
     heartbeat.stop()
@@ -865,6 +870,9 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     takeover,
     send,
     confirm,
+    queueRemove,
+    queueSteer,
+    queueReorder,
     reload: load,
     onFrame,
   }

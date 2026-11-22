@@ -339,13 +339,6 @@ describe('AgentChatTester interactions', () => {
     vm.send()
     expect(vm.errorMsg).toContain('huge.bin')
     expect(socket!.send).not.toHaveBeenCalled()
-
-    const turn = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
-    vm.applyAcp({}, turn)
-    vm.applyAcp({ type: 'other' }, turn)
-    expect(vm.humanizeTool('工具')).toBe('工具')
-    expect(vm.humanizeTool('tool_12345678')).toBe('')
-    expect(vm.planEntries({ steps: 'bad' })).toEqual([])
     w.unmount()
   })
 
@@ -502,6 +495,11 @@ describe('AgentChatTester interactions', () => {
     expect(wrapped).toHaveLength(2)
     expect(wrapped[1]).toMatchObject({ role: 'agent', thought: 'ab', text: 'xy' })
     expect(wrapped[1].tools[0]).toMatchObject({ id: 't9', status: 'pending' })
+    const steered = vm.rebuildTurnsFromFrames([
+      { op: 'event', data: { type: 'prompt_begin', text: 'q' } },
+      { op: 'event', data: { type: 'user_steer', text: 'also fix X' } },
+    ])
+    expect(steered[1].steps).toEqual([{ kind: 'steer', text: 'also fix X' }])
     w.unmount()
   })
 
@@ -741,6 +739,13 @@ describe('AgentChatTester interactions', () => {
     expect(vm.status).toBe('thinking')
     expect(vm.queued[0]).toMatchObject({ id: 'srv-2', text: 'next' })
     expect(vm.queued[0].images[0].url).toBe('data:image/png;base64,QQ==')
+    await w.get('[data-testid="tester-queue-steer"]').trigger('click')
+    expect(socket!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'steer', id: 'srv-2' }))
+    socket!.readyState = 3
+    socket!.send.mockClear()
+    await w.get('[data-testid="tester-queue-steer"]').trigger('click')
+    expect(socket!.send).not.toHaveBeenCalled()
+    socket!.readyState = 1
 
     // Reconnect mid-turn: the replay rebuilds the same reply in place.
     vm.openWs(5)

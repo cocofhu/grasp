@@ -73,6 +73,14 @@ func (h *Handlers) NodeQueueRemove(c *gin.Context) {
 	h.ReactQueueRemove(c)
 }
 
+func (h *Handlers) NodeQueueSteer(c *gin.Context) {
+	if h.isHumanGateNode(c.Param("id"), c.Param("nodeId")) {
+		h.GateReactQueueSteer(c)
+		return
+	}
+	h.ReactQueueSteer(c)
+}
+
 func (h *Handlers) NodeQueueReorder(c *gin.Context) {
 	if h.isHumanGateNode(c.Param("id"), c.Param("nodeId")) {
 		h.GateReactQueueReorder(c)

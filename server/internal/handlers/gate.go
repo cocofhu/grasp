@@ -280,6 +280,23 @@ func (h *Handlers) ReactQueueRemove(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// ReactQueueSteer handles one waiting item of the node-inline review/clarify
+// FIFO now.
+func (h *Handlers) ReactQueueSteer(c *gin.Context) {
+	var b reactQueueItemBody
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	outcome, err := h.Eng.SteerQueuedItem(c.Request.Context(), c.Param("id"), c.Param("nodeId"), b.ItemID)
+	if err != nil {
+		_ = c.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "steer": outcome})
+}
+
 // ReactQueueReorder reorders waiting items for a node-inline review/clarify session.
 func (h *Handlers) ReactQueueReorder(c *gin.Context) {
 	var b reactQueueReorderBody
@@ -315,6 +332,28 @@ func (h *Handlers) GateReactQueueRemove(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "producerNodeId": producerID})
+}
+
+// GateReactQueueSteer handles one waiting item of the upstream producer FIFO now.
+func (h *Handlers) GateReactQueueSteer(c *gin.Context) {
+	var b reactQueueItemBody
+	if err := c.ShouldBindJSON(&b); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	runID, gateNodeID := c.Param("id"), c.Param("nodeId")
+	producerID, alive := h.Eng.GateReactInfo(runID, gateNodeID)
+	if producerID == "" || !alive {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "review_session_unavailable", "error": "上游复审会话不可用"})
+		return
+	}
+	outcome, err := h.Eng.SteerQueuedItem(c.Request.Context(), runID, producerID, b.ItemID)
+	if err != nil {
+		_ = c.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "steer": outcome, "producerNodeId": producerID})
 }
 
 // GateReactQueueReorder reorders waiting items on the upstream producer FIFO.

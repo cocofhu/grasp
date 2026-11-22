@@ -131,19 +131,35 @@ const elapsedName = computed(() =>
  * even when tools follow it. Earlier messages stay in the fold, once.
  * Failed-tool counts still come from every tool block, including those after the reply.
  */
-const tailBlock = computed(() => {
-  if (!settled.value) return null
+const tailAt = computed(() => {
+  if (!settled.value) return -1
   for (let i = blocks.value.length - 1; i >= 0; i--) {
-    const block = blocks.value[i]
-    if (block?.kind === 'message') return block
+    if (blocks.value[i]?.kind === 'message') return i
   }
-  return null
+  return -1
+})
+const tailBlock = computed(() => {
+  const block = blocks.value[tailAt.value]
+  return block?.kind === 'message' ? block : null
 })
 const workBlocks = computed(() => {
   if (!settled.value) return []
   const tail = tailBlock.value
-  if (!tail) return blocks.value
-  return blocks.value.filter((block) => block.key !== tail.key)
+  return blocks.value.filter((block) => block.kind !== 'steer' && block.key !== tail?.key)
+})
+/**
+ * What the user added mid-turn is theirs, not process: it never folds away.
+ * Steers keep their place around the reply: before it above the rule, after
+ * it below.
+ */
+type TextBlock = Exclude<ReturnType<typeof timelineBlocks>[number], { kind: 'tools' }>
+const steerSlots = computed(() => {
+  const slots = { beforeTail: [] as TextBlock[], afterTail: [] as TextBlock[] }
+  if (!settled.value) return slots
+  blocks.value.forEach((block, i) => {
+    if (block.kind === 'steer') (tailAt.value >= 0 && i > tailAt.value ? slots.afterTail : slots.beforeTail).push(block)
+  })
+  return slots
 })
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
@@ -201,7 +217,7 @@ const reveal = createStreamTextReveal({
 
 const lastText = computed(() => {
   const b = blocks.value[blocks.value.length - 1]
-  return b && b.kind !== 'tools' ? { key: b.key, kind: b.kind, text: b.text } : null
+  return b && (b.kind === 'thought' || b.kind === 'message') ? { key: b.key, kind: b.kind, text: b.text } : null
 })
 watch(
   () => [lastText.value, props.streaming, props.replayBatches] as const,
@@ -283,14 +299,23 @@ function onToggle(index: number, last: boolean, e: Event) {
           </div>
         </template>
       </div>
+      <div v-for="b in steerSlots.beforeTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+        <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
+      </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
+      </div>
+      <div v-for="b in steerSlots.afterTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+        <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
       </div>
     </template>
     <template v-else>
       <template v-for="b in blocks" :key="b.key">
         <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" :run-id="runId" />
+        <div v-else-if="b.kind === 'steer'" class="agent-steer" data-testid="agent-timeline-steer">
+          <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
+        </div>
         <details
           v-else-if="b.kind === 'thought'"
           class="agent-thought chat-meta w-full min-w-0"
@@ -362,6 +387,24 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-live-message { margin: 0 0 2px; }
 .agent-live-message:last-child { margin-bottom: 0; }
 .agent-elapsed-note { margin-bottom: 2px; }
+.agent-steer {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: 4px 0 8px;
+  border-radius: 12px;
+  padding: 6px 10px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-steer-label {
+  margin-right: 6px;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+}
 .agent-elapsed-rule {
   height: 1px;
   margin: 4px 0 8px;

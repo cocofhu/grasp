@@ -93,6 +93,13 @@ type ChatResult struct {
 	// Timeline is the open segment's thought / narration / tool steps in the
 	// order they arrived (AcpEvents reports it as one kind=timeline event).
 	Timeline []ChatStep `json:"-"`
+	// Steers is every input the turn took mid-flight, in order. Unlike the
+	// Timeline it is never capped or reset at a segment boundary.
+	Steers []string `json:"-"`
+	// paragraph marks that a tool, thought or steer event arrived since the
+	// last reply text, so the next text starts a new paragraph. A tool update
+	// changes its row in place, so the Timeline alone cannot tell.
+	paragraph bool
 
 	// Prompt / ImageCount / StartedAt / EndedAt describe the request side of
 	// the turn. Stamped by the runtime after the turn so the persisted
@@ -120,7 +127,33 @@ func (r *ChatResult) sealSegment() {
 	r.Segments = append(r.Segments, ChatSegment{Thought: r.Thought, Narration: r.Narration})
 	r.Thought = ""
 	r.Narration = ""
-	r.Timeline = nil
+	// Only the open row has a timeline; steers move on to it so the user's
+	// input survives the boundary.
+	var steers []ChatStep
+	for _, st := range r.Timeline {
+		if st.Kind == models.AcpPartSteer {
+			steers = append(steers, st)
+		}
+	}
+	r.Timeline = steers
+}
+
+// VisibleText is the whole reply the turn showed: the narration of each
+// sealed segment, then the open one.
+func (r *ChatResult) VisibleText() string {
+	if r == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(r.Segments)+1)
+	for _, seg := range r.Segments {
+		if seg.Narration != "" {
+			parts = append(parts, seg.Narration)
+		}
+	}
+	if r.Narration != "" {
+		parts = append(parts, r.Narration)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // appendErrorText records a provider/bridge error body on the turn. Multiple
@@ -324,13 +357,13 @@ func dispatchSessionUpdate(kind string, flat map[string]any, result *ChatResult)
 	switch {
 	case kind == "agent_message_chunk":
 		if t := extractContentText(flat["content"]); t != "" {
-			result.Narration += t
-			result.addText("message", t)
+			result.addMessage(t)
 		}
 	case kind == "agent_thought_chunk":
 		if t := extractContentText(flat["content"]); t != "" {
 			result.Thought += t
 			result.addText("thought", t)
+			result.paragraph = true
 		}
 	case kind == "plan":
 		if entries := extractPlanEntries(flat); len(entries) > 0 {
@@ -344,6 +377,7 @@ func dispatchSessionUpdate(kind string, flat map[string]any, result *ChatResult)
 		// silent meta
 	case isToolKind(kind):
 		applyToolCall(flat, result)
+		result.paragraph = true
 	}
 }
 
@@ -414,6 +448,10 @@ func extractContentText(v any) string {
 	if m, ok := v.(map[string]any); ok {
 		if s, ok := m["text"].(string); ok {
 			return s
+		}
+		if inner, ok := m["content"]; ok {
+			// ACP tool call content: {type:"content", content:{type:"text", text}}.
+			return extractContentText(inner)
 		}
 		if parts, ok := m["parts"].([]any); ok {
 			var b strings.Builder

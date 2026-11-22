@@ -29,6 +29,7 @@ function mountHot(
     pickedElementImage: null,
     canReactRevise: true,
     reactThinking: false,
+    reactInFlight: false,
     reactQueued: [],
     hotRejectAllowEmpty: false,
     canSubmitReact: false,
@@ -115,6 +116,18 @@ describe('GateHotUnifiedActions hot toolbar', () => {
       false,
     )
     wrapper.unmount()
+  })
+
+  it('offers steer only while a revision turn is actually running', async () => {
+    const queued = [{ id: 'q1', text: 'next', images: [], annotations: [] }]
+    const waiting = mountHot({ reactThinking: true, reactQueued: queued })
+    await flushPromises()
+    expect(waiting.wrapper.getComponent({ name: 'PendingSendQueuePanel' }).props('steerable')).toBe(false)
+    waiting.wrapper.unmount()
+    const running = mountHot({ reactThinking: true, reactInFlight: true, reactQueued: queued })
+    await flushPromises()
+    expect(running.wrapper.getComponent({ name: 'PendingSendQueuePanel' }).props('steerable')).toBe(true)
+    running.wrapper.unmount()
   })
 
   it('shows stop alone when busy with nothing to send, and beside send when a draft exists', async () => {

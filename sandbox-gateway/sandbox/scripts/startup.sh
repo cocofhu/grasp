@@ -65,10 +65,14 @@ CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 # 提前解析 agent provider 与配置根：契约注入（默认落到 CONFIG_ROOT）与 backend 都要用。
 # 未设置时回落 cursor。运行时 AGENT_PROVIDER 单活。
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
+# 旧取值 *_acp 是同一工具的旧 transport 名，沿用对应工具与配置目录。
 case "$AGENT_PROVIDER" in
-  cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
-  claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
-  codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
+  cursor_acp|claude_code_acp|codebuddy_acp) AGENT_PROVIDER=${AGENT_PROVIDER%_acp} ;;
+esac
+case "$AGENT_PROVIDER" in
+  cursor)                                         CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
+  claude_code)                                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
+  codebuddy)                                      CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
   deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
   kimi_code)                                      CONFIG_ROOT=${CONFIG_ROOT:-/root/.kimi-code} ;;

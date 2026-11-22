@@ -1,0 +1,7 @@
+[
+  { "event": { "text": "看这个" }, "want": "看这个" },
+  { "event": { "text": " 看这个 ", "fileNames": ["a.pdf", " "] }, "want": "看这个\n[附件] a.pdf" },
+  { "event": { "text": "", "fileNames": ["diagram.pdf"], "imageURLs": ["data:image/png;base64,AAAA"] }, "want": "[附件] diagram.pdf、图片 ×1" },
+  { "event": { "imageURLs": ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"] }, "want": "[附件] 图片 ×2" },
+  { "event": { "text": " " }, "want": "" }
+]

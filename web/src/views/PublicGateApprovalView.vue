@@ -329,7 +329,7 @@ const turns = computed<ClarifyTurn[]>(() =>
     if (mapped.role === 'agent' && tools.length) mapped.tools = tools
     if (mapped.role === 'agent' && turn.parts?.length) {
       mapped.parts = turn.parts
-        .filter((p) => p && (p.kind === 'thought' || p.kind === 'message' || p.kind === 'tool'))
+        .filter((p) => p && (p.kind === 'thought' || p.kind === 'message' || p.kind === 'steer' || p.kind === 'tool'))
         .map((p) => (p.kind === 'tool' ? { kind: 'tool', title: p.title, status: p.status } : { kind: p.kind, text: p.text }))
     }
     // Only attach structured prompts when present so plain turns stay unchanged.
@@ -1164,6 +1164,15 @@ async function onQueueRemove(itemId: string | undefined) {
   }
 }
 
+async function onQueueSteer(itemId: string) {
+  try {
+    await publicGateApi.queueSteer(token.value, itemId)
+    await loadPreview({ silent: true })
+  } catch (e) {
+    errorText.value = e instanceof Error ? e.message : t('pages.publicGate.replyFailed')
+  }
+}
+
 async function onQueueReorder(itemIds: string[]) {
   if (!itemIds.length) return
   try {
@@ -1684,6 +1693,7 @@ defineExpose({
                   @finish-abort="onComposerFinishAbort"
                   @cancel="onCancel"
                   @queue-remove="(itemId) => onQueueRemove(itemId)"
+                  @queue-steer="(itemId) => onQueueSteer(itemId)"
                   @queue-reorder="onQueueReorder"
                 >
                   <template #composer-controls="{ compact }">

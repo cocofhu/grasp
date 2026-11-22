@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 
@@ -108,6 +109,12 @@ func (c *SandboxChats) newChat(id uint) *sandboxChat {
 			c.mu.Unlock()
 		},
 		CancelTurn: func() { c.chat.Cancel(id) },
+		SteerTurn: func(ctx context.Context, _, it *SandboxChatItem) chatsession.SteerResult {
+			if chatcmd.Parse(it.Content).Name != "" {
+				return chatsession.SteerRejected
+			}
+			return steerSandboxTurn(ctx, c.chat, id, it.Content, it.Images)
+		},
 	})
 	return sc
 }
@@ -126,6 +133,22 @@ func (c *SandboxChats) Enqueue(id uint, item SandboxChatItem) (int, error) {
 	sc := c.acquire(id)
 	defer c.release(id, sc)
 	return sc.sess.Enqueue(&item, nil)
+}
+
+// Steer handles a pending turn now (chatsession.Session.Steer). An item that
+// already started is reported as running next.
+func (c *SandboxChats) Steer(ctx context.Context, id uint, itemID string) (chatsession.SteerOutcome, error) {
+	c.mu.Lock()
+	sc := c.chats[id]
+	c.mu.Unlock()
+	if sc == nil {
+		return "", chatsession.ErrNotFound
+	}
+	out, err := sc.sess.Steer(ctx, itemID)
+	if errors.Is(err, chatsession.ErrItemActive) {
+		return chatsession.SteerOutcomeNext, nil
+	}
+	return out, err
 }
 
 // Cancel stops the running turn and drops the queue.

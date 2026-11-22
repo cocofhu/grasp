@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 )
 
@@ -36,16 +36,16 @@ func TestOpenCodeOfficialModeIsolatesRoutingAndKeepsHistory(t *testing.T) {
 		if !p.Platform || p.Connection != nil || !reflect.DeepEqual(before, env) {
 			t.Fatal("official mode must not create a generic connection or mutate its input")
 		}
-		if common.GetEnvValue(p.Env, "HOME") != "/original-home" || common.GetEnvValue(p.Env, "OPENCODE_API_KEY") != "official-test-key" {
+		if envutil.Get(p.Env, "HOME") != "/original-home" || envutil.Get(p.Env, "OPENCODE_API_KEY") != "official-test-key" {
 			t.Fatal("official credential or command HOME changed")
 		}
 		for _, key := range []string{"OPENCODE_CONFIG", "OPENCODE_MODELS_PATH", "OPENCODE_MODELS_URL", "OPENCODE_CONSOLE_TOKEN", "OPENAI_API_KEY"} {
-			if common.GetEnvValue(p.Env, key) != "" {
+			if envutil.Get(p.Env, key) != "" {
 				t.Errorf("stale routing environment survived: %s", key)
 			}
 		}
 		var config map[string]any
-		raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+		raw := envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")
 		if err := json.Unmarshal([]byte(raw), &config); err != nil {
 			t.Fatal(err)
 		}
@@ -62,17 +62,17 @@ func TestOpenCodeOfficialModeIsolatesRoutingAndKeepsHistory(t *testing.T) {
 		} else if config["model"] != nil || p.Model != "" {
 			t.Fatal("empty default must let the native official catalog choose its model")
 		}
-		if common.GetEnvValue(p.Env, "OPENCODE_DISABLE_PROJECT_CONFIG") != "true" {
+		if envutil.Get(p.Env, "OPENCODE_DISABLE_PROJECT_CONFIG") != "true" {
 			t.Fatal("project providers can override the official route")
 		}
-		configDir := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_DIR")
+		configDir := envutil.Get(p.Env, "OPENCODE_CONFIG_DIR")
 		if _, err := os.Stat(filepath.Join(configDir, "skills")); err != nil {
 			t.Fatal("managed skills were not preserved")
 		}
-		if dataHome != "" && dataHome != common.GetEnvValue(p.Env, "XDG_DATA_HOME") {
+		if dataHome != "" && dataHome != envutil.Get(p.Env, "XDG_DATA_HOME") {
 			t.Fatal("session history namespace changed between Open calls")
 		}
-		dataHome = common.GetEnvValue(p.Env, "XDG_DATA_HOME")
+		dataHome = envutil.Get(p.Env, "XDG_DATA_HOME")
 		if err := os.WriteFile(filepath.Join(dataHome, "history-fixture"), []byte("history"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ func TestOpenCodeOfficialModeRejectsOtherProviderAndLeavesConnectionMode(t *test
 		t.Fatal(err)
 	}
 	defer p.Cleanup()
-	if p.Platform || p.Connection == nil || p.Model != c.RouteID()+"/"+c.SelectedModelID || common.GetEnvValue(p.Env, "OPENCODE_API_KEY") != "" {
+	if p.Platform || p.Connection == nil || p.Model != c.RouteID()+"/"+c.SelectedModelID || envutil.Get(p.Env, "OPENCODE_API_KEY") != "" {
 		t.Fatal("official authorization overrode the explicit API connection")
 	}
 }
@@ -144,7 +144,7 @@ func TestOpenCodeGoOfficialModeEnablesOnlyGoProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Cleanup()
-	raw := common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")
+	raw := envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")
 	var config map[string]any
 	if err := json.Unmarshal([]byte(raw), &config); err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestOpenCodeGoOfficialModeEnablesOnlyGoProvider(t *testing.T) {
 	if options["apiKey"] != "{env:OPENCODE_API_KEY}" || options["baseURL"] != nil || strings.Contains(raw, "official-test-key") || strings.Contains(raw, "npm") {
 		t.Fatalf("native endpoint or key copied: %s", raw)
 	}
-	if common.GetEnvValue(p.Env, "OPENCODE_API_KEY") != "official-test-key" {
+	if envutil.Get(p.Env, "OPENCODE_API_KEY") != "official-test-key" {
 		t.Fatal("selected key was not mapped to OPENCODE_API_KEY")
 	}
 }
@@ -174,7 +174,7 @@ func TestOpenCodeGoFamilyFromAuxiliaryModelsWhenPrimaryIsEmpty(t *testing.T) {
 	}
 	defer p.Cleanup()
 	var config map[string]any
-	if err := json.Unmarshal([]byte(common.GetEnvValue(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
+	if err := json.Unmarshal([]byte(envutil.Get(p.Env, "OPENCODE_CONFIG_CONTENT")), &config); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(config["enabled_providers"], []any{"opencode-go"}) || config["model"] != nil || len(config["provider"].(map[string]any)) != 1 {
@@ -210,11 +210,11 @@ func TestDeepSeekPlatformDropsAlternateCredentialAndEndpointEnvironment(t *testi
 		t.Fatal(err)
 	}
 	defer p.Cleanup()
-	if common.GetEnvValue(p.Env, "DEEPSEEK_API_KEY") != "official-test-key" || common.GetEnvValue(p.Env, "DSH_HOME") != "/role-home" {
+	if envutil.Get(p.Env, "DEEPSEEK_API_KEY") != "official-test-key" || envutil.Get(p.Env, "DSH_HOME") != "/role-home" {
 		t.Fatal("official key or native history root lost")
 	}
 	for _, key := range []string{"DEEPSEEK_BASE_URL", "DEEPSEEK_SEARCH_BASE_URL", "GRASP_DEEPSEEK_API_KEY", "OPENAI_API_KEY"} {
-		if common.GetEnvValue(p.Env, key) != "" {
+		if envutil.Get(p.Env, key) != "" {
 			t.Errorf("stale official route setting survived: %s", key)
 		}
 	}

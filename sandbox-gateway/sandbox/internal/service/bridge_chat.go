@@ -44,13 +44,16 @@ func (b *Bridge) pumpPromptQueue() {
 	b.turnMu.Unlock()
 	if !busy {
 		b.ensureSelectableModel()
+		b.recycleStaleAgent()
 	}
 	// Model fallback may reconnect under ensureMu, so take enqueueMu only
 	// after it finishes. Keep the queue pop / restore / turn reservation
 	// atomic with Connect and watcher cleanup.
+	b.steerMu.Lock()
+	defer b.steerMu.Unlock()
 	b.enqueueMu.Lock()
 	b.turnMu.Lock()
-	if b.activeTurn != nil {
+	if b.activeTurn != nil || b.recycling {
 		b.turnMu.Unlock()
 		b.enqueueMu.Unlock()
 		b.BroadcastQueueState()
@@ -106,38 +109,40 @@ func (b *Bridge) pumpPromptQueue() {
 		"text":       item.Text,
 		"promptText": item.Text,
 	}
-	// 图片 → data URL 供前端重放气泡预览；非图片只记文件名（附件已统一落盘，不嵌入 prompt）。
-	if len(item.Images) > 0 {
-		urls := make([]string, 0, len(item.Images))
-		fileNames := make([]string, 0, len(item.Images))
-		for _, img := range item.Images {
-			if img.Data == "" || img.History {
-				continue
-			}
-			mime := img.MimeType
-			if mime == "" {
-				mime = "application/octet-stream"
-			}
-			if strings.HasPrefix(strings.ToLower(mime), "image/") {
-				urls = append(urls, "data:"+mime+";base64,"+img.Data)
-				continue
-			}
-			name := strings.TrimSpace(img.Name)
-			if name == "" {
-				name = "attachment" + provider.ExtForMIME(mime)
-			}
-			fileNames = append(fileNames, name)
-		}
-		if len(urls) > 0 {
-			promptBeginData["imageURLs"] = urls
-		}
-		if len(fileNames) > 0 {
-			promptBeginData["fileNames"] = fileNames
-		}
-	}
+	addAttachmentPreview(promptBeginData, item.Images)
 	b.Broadcast(eventEnvelope(promptBeginData, oid))
 
 	go b.executePrompt(p, turnCtx, item, th, cancelTurn)
+}
+
+// addAttachmentPreview 让前端重放用户气泡：图片转 data URL，非图片只记文件名
+// （附件已统一落盘，不嵌入 prompt）。
+func addAttachmentPreview(data map[string]any, images []PromptImage) {
+	var urls, fileNames []string
+	for _, img := range images {
+		if img.Data == "" || img.History {
+			continue
+		}
+		mime := img.MimeType
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		if strings.HasPrefix(strings.ToLower(mime), "image/") {
+			urls = append(urls, "data:"+mime+";base64,"+img.Data)
+			continue
+		}
+		name := strings.TrimSpace(img.Name)
+		if name == "" {
+			name = "attachment" + provider.ExtForMIME(mime)
+		}
+		fileNames = append(fileNames, name)
+	}
+	if len(urls) > 0 {
+		data["imageURLs"] = urls
+	}
+	if len(fileNames) > 0 {
+		data["fileNames"] = fileNames
+	}
 }
 
 // stallContinuePrompt / loopContinuePrompt are shown only to the agent. The
@@ -200,6 +205,7 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 			stop()
 		}
 		b.recordUserTurnDone(item)
+		b.rememberSession(p)
 		b.pumpPromptQueue()
 	}()
 
@@ -238,6 +244,11 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	stopWatch := b.watchTurn(p, th, idle, max)
 	res, err := p.Prompt(turnCtx, text, images)
 	stopWatch()
+	b.mu.Lock()
+	if b.sess == p {
+		b.sessHistory = true
+	}
+	b.mu.Unlock()
 	if err == nil && res.StopReason == "end_turn" {
 		b.mu.Lock()
 		b.compactPreamble = ""
@@ -286,13 +297,13 @@ func (b *Bridge) executePrompt(p provider.Session, turnCtx context.Context, item
 	}
 	if err == nil {
 		if sr := strings.ToLower(strings.TrimSpace(stopReason)); sr == "refusal" {
-			log.Printf("prompt %s oid=%s: 轮次结束 stopReason=refusal（多为鉴权失败：检查 CODEBUDDY_API_KEY / 区域 ACP_CODEBUDDY_REGION，或执行 codebuddy login）", b.AgentLogPrefix(), oid)
+			log.Printf("prompt %s oid=%s: 轮次结束 stopReason=refusal（多为鉴权失败：检查 CODEBUDDY_API_KEY / 区域 CODEBUDDY_INTERNET_ENVIRONMENT，或执行 codebuddy login）", b.AgentLogPrefix(), oid)
 			b.Broadcast(map[string]any{
 				"op":   "error",
 				"opId": oid,
 				"message": "Agent 拒绝本轮请求（refusal）。CodeBuddy 多为 API Key 无效或区域不匹配：" +
 					"请确认 CODEBUDDY_API_KEY（iOA 站：https://tencent.sso.copilot.tencent.com/profile/keys），" +
-					"并设置 ACP_CODEBUDDY_REGION=ioa；也可 unset CODEBUDDY_API_KEY 后执行 codebuddy login。",
+					"并设置 CODEBUDDY_INTERNET_ENVIRONMENT=ioa；也可 unset CODEBUDDY_API_KEY 后执行 codebuddy login。",
 			})
 		}
 		return
@@ -428,7 +439,7 @@ func (b *Bridge) ensureSelectableModel() {
 	if !ReasoningEffortSelectable(primary, effort) {
 		effort = ""
 	}
-	sess, err := b.SwitchModelSettings("", effort, nil)
+	sess, _, err := b.SwitchModelSettings("", effort, nil)
 	if err != nil {
 		log.Printf("acp-bridge: 当前模型已不可用，回到主模型失败: %v", err)
 		return
@@ -455,7 +466,7 @@ func (b *Bridge) ChatWithLimits(text, opID, action string, images []PromptImage,
 	b.enqueueMu.Lock()
 
 	b.mu.Lock()
-	ok := sessionUsable(b.sess)
+	ok := sessionUsable(b.sess) || b.reviving
 	b.mu.Unlock()
 	if !ok {
 		b.enqueueMu.Unlock()

@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"backend/internal/backend/common"
+	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/oneshot"
 )
@@ -33,7 +33,9 @@ const (
 	// PromptStdinRaw keeps `-p` standalone and feeds the prompt raw on stdin.
 	PromptStdinRaw
 	// PromptStdinJSON keeps `-p` standalone, adds `--input-format stream-json`,
-	// and feeds a `{"type":"user","message":{...}}` envelope on stdin.
+	// and feeds a `{"type":"user","message":{...}}` envelope on stdin. stdin
+	// stays open for the turn: further envelopes steer it, and
+	// `--replay-user-messages` acknowledges each one as it is consumed.
 	PromptStdinJSON
 )
 
@@ -114,6 +116,9 @@ func (d *codec) PromptViaStdin() bool     { return d.c.PromptMode != PromptArg }
 // Anthropic image content blocks; argv / raw-stdin modes cannot.
 func (d *codec) SupportsImages() bool { return d.c.PromptMode == PromptStdinJSON }
 
+// TurnInput reports whether the CLI takes steering envelopes mid-turn.
+func (d *codec) TurnInput() bool { return d.c.PromptMode == PromptStdinJSON }
+
 // StdinBytes is the payload written to stdin when PromptViaStdin is true. For
 // PromptStdinJSON it is a stream-json user message (optionally with images);
 // otherwise the raw prompt (images must already have been rejected by oneshot).
@@ -129,8 +134,8 @@ func (d *codec) AuthEnv(env []string) []string {
 		env = d.c.AuthEnvFn(env)
 	}
 	if d.c.AgentName == provider.Cursor {
-		if root := strings.TrimSpace(common.GetEnvValue(env, "CONFIG_ROOT")); root != "" {
-			env = common.UpsertEnv(env, "CURSOR_CONFIG_DIR", root)
+		if root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT")); root != "" {
+			env = envutil.Upsert(env, "CURSOR_CONFIG_DIR", root)
 		}
 	}
 	return env
@@ -145,7 +150,7 @@ func (d *codec) Args(opts provider.OpenOptions, prompt, resumeID string) []strin
 	}
 	args = append(args, "--output-format", "stream-json")
 	if d.c.PromptMode == PromptStdinJSON {
-		args = append(args, "--input-format", "stream-json")
+		args = append(args, "--input-format", "stream-json", "--replay-user-messages")
 	}
 	args = append(args, d.c.BaseArgs...)
 	// --strict-mcp-config means "only MCP from --mcp-config". Without a path,
@@ -342,7 +347,10 @@ type streamEvent struct {
 	ModelUsage map[string]wireUsage `json:"modelUsage"`
 	Result     string               `json:"result"`
 	IsError    bool                 `json:"is_error"`
+	NumTurns   *int                 `json:"num_turns"`
 	StopReason string               `json:"stop_reason"`
+	// IsReplay marks a stdin user message echoed by --replay-user-messages.
+	IsReplay bool `json:"isReplay"`
 }
 
 func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
@@ -417,6 +425,10 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		addUsage(ev.Message.Usage, ev.Message.Model, d.c.AgentName == provider.CodeBuddy)
 		res.UsagePartial = len(res.Usage) > 0
 	case "user":
+		if ev.IsReplay {
+			res.UserMessagesConsumed = 1
+			break
+		}
 		if ev.Message == nil {
 			break
 		}
@@ -443,6 +455,9 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 				uu := u
 				addUsage(&uu, model, false)
 			}
+			// Claude Code's modelUsage runs over the whole session: --resume
+			// restores the counters of the last completed turn.
+			res.UsageIsSessionTotal = d.c.AgentName == provider.ClaudeCode
 		} else if !res.TracksSessionUsage {
 			addUsage(ev.Usage, ev.Model, d.c.AgentName == provider.CodeBuddy)
 		}
@@ -451,6 +466,12 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		res.UsageIsTotal = len(res.Usage) > 0
 		if ev.IsError || strings.HasPrefix(ev.Subtype, "error") {
 			res.StopReason = "failed"
+			if ev.NumTurns != nil && *ev.NumTurns == 0 {
+				// A failure before any turn ran (Claude Code rejecting --resume
+				// of a missing conversation) echoes the requested session id;
+				// it is not evidence that the session exists.
+				res.SessionID = ""
+			}
 			if ev.Result != "" {
 				res.Msgs = append(res.Msgs, oneshot.Msg{Kind: oneshot.KindError, Text: ev.Result})
 			}
@@ -493,9 +514,9 @@ func extractText(raw json.RawMessage) string {
 // then it kills them) at SANDBOX_BG_TASK_GRACE, the limit cursor-agent gets;
 // an explicit CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS wins.
 func ClaudeAuthEnv(env []string) []string {
-	env = common.SetIfEmpty(env, "ANTHROPIC_API_KEY",
-		common.FirstNonEmptyEnv("ACP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"))
-	return common.SetIfEmpty(env, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
+	env = envutil.SetIfEmpty(env, "ANTHROPIC_API_KEY",
+		envutil.FirstNonEmpty("ACP_CLAUDE_API_KEY", "ANTHROPIC_API_KEY"))
+	return envutil.SetIfEmpty(env, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
 		strconv.FormatInt(oneshot.BackgroundGrace().Milliseconds(), 10))
 }
 

@@ -133,9 +133,12 @@ export type GateApprovalState = {
   reactQueueNotice: string | null
   reactQueueToast: string | null
   cancelReactQueuedItem: (index: number) => void | Promise<void>
+  steerReactQueuedItem: (index: number) => void | Promise<void>
   reorderReactQueuedItems: (fromIndex: number, toIndex: number) => void | Promise<void>
   editReactQueuedItem: (index: number) => void | Promise<void>
   reactThinking: boolean
+  /** A revision turn is running (server busy), so queued rows may steer into it. */
+  reactInFlight: boolean
   reactStreamText: string
   reactTranscriptTurns: GateReactTurn[]
   reactStreamThought: string
