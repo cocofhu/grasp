@@ -670,6 +670,11 @@
 .app-icon[data-icon="priority-bolt"][data-icon-motion="once"] .p0{animation:iconMotion_priority_bolt_beat 550ms ease 1}
 @keyframes iconMotion_priority_bolt_beat{0%,100%{transform:scale(1);opacity:1}45%{transform:scale(1.12);opacity:.7}}
 
+/* icon: steer */
+.app-icon[data-icon="steer"] .steer-arrow{transform-box:fill-box;transform-origin:center}
+.app-icon[data-icon="steer"][data-icon-motion="once"] .steer-arrow{animation:iconMotion_steer_arrow 620ms cubic-bezier(.25,.7,.3,1) 1 both}
+@keyframes iconMotion_steer_arrow{0%,100%{transform:translate(0,0) scale(1);opacity:1}42%{transform:translate(.7px,-.7px) scale(1.08);opacity:.9}72%{transform:translate(-.1px,.1px) scale(1.01);opacity:1}}
+
 /* icon: priority-low */
 .app-icon[data-icon="priority-low"] .p0, .app-icon[data-icon="priority-low"] .p1, .app-icon[data-icon="priority-low"] .p2{transform-box:fill-box;transform-origin:center bottom}
 .app-icon[data-icon="priority-low"][data-icon-motion="once"] .p0, .app-icon[data-icon="priority-low"][data-icon-motion="once"] .p1, .app-icon[data-icon="priority-low"][data-icon-motion="once"] .p2{animation:iconMotion_priority_low_rise 600ms ease 1 both}

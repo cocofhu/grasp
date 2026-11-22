@@ -919,6 +919,14 @@
     "strokeWidth": 0.0,
     "note": "hover：能量符单次亮起归位。与触发器闪电原图不同，为实心变体。"
   },
+  "steer": {
+    "body": "<path class=\"steer-arrow\" fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M3.74 20.25a.75.75 0 0 0 .75-.75V8.999h13.938l-2.47 2.47a.75.75 0 0 0 1.061 1.06l3.75-3.75a.75.75 0 0 0 0-1.06l-3.75-3.75a.75.75 0 0 0-1.06 1.06l2.47 2.47H3.738a.75.75 0 0 0-.75.75V19.5c0 .414.336.75.75.75Z\" clip-rule=\"evenodd\"/>",
+    "duration": 620,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "使用实心转向箭头表达把排队消息导入当前回合，悬停时轻微向前落位。"
+  },
   "priority-low": {
     "body": "<g class=\"motion\">\n            <rect class=\"p0\" x=\"3\" y=\"11\" width=\"3\" height=\"5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p1\" x=\"8.5\" y=\"7.5\" width=\"3\" height=\"8.5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"0.2\"/>\n            <rect class=\"p2\" x=\"14\" y=\"4\" width=\"3\" height=\"12\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"0.2\"/>\n          </g>",
     "duration": 800,
