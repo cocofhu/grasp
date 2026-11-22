@@ -40,7 +40,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
   - 平台在同一 Gin 端口暴露 `POST /mcp/runs/:runId`(Streamable-HTTP JSON-RPC:`initialize` / `tools/list` / `tools/call`),按 run-token 鉴权。
   - 注入方式有两条、互为冗余:ACP `session/new` 的 `mcpServers`(URL+`Authorization: Bearer <token>`)+ 容器内 `{configRoot}/mcp.json`。
   - 容器经 `host.docker.internal:<GRASP_PORT>` 回连平台(`--add-host host.docker.internal:host-gateway` 已设)。
-  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:cursor-agent 完成 initialize→tools/list→tools/call 全链路)。
+  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:Cursor agent 完成 initialize→tools/list→tools/call 全链路)。
 - **`{configRoot}` 配置树(对齐 auto-coder)**:每个节点按 Agent profile 的 `acpBackend` 解析 configRoot(Agent 卡片可覆盖),在控制面生成一份配置树后注入沙箱:
   - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`、`codex`→`/root/.codex`、`deepseek_harness`→`/root/.dsh`;
   - `rules/base.md`(基础约束,alwaysApply)、`rules/grasp-tool.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;

@@ -268,7 +268,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 	}
 
 	// Run-scoped grasp-tool MCP (outside /api): the in-container
-	// cursor-agent connects here via host.docker.internal with a per-run
+	// Cursor agent connects here via host.docker.internal with a per-run
 	// Bearer token. Streamable-HTTP over POST; GET/DELETE are no-ops.
 	r.POST("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId", h.MCPRPC)

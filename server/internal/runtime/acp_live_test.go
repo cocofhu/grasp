@@ -102,7 +102,7 @@ func (s *memStore) List(runID string) []mcp.ArtifactInfo {
 }
 
 // TestCursorLiveRunAgent exercises the real sandbox path end-to-end:
-// launch a container, drive cursor-agent over ACP, harvest the declared
+// launch a container, drive the Cursor agent over ACP, harvest the declared
 // produces file and write it through the run-scoped MCP host.
 //
 // Gated by GRASP_LIVE=1 (needs Docker + GRASP_CURSOR_API_KEY); the

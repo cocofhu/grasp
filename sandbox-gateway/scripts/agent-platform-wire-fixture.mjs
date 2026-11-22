@@ -86,7 +86,7 @@ async function rpc(method, params) {
 // The SDK selection Cursor's bridge passes to Agent.create/resume: the base id
 // plus every parameter of one offered variant.
 const cursorEfforts = ['none', 'low', 'medium', 'high', 'extra-high']
-export const cursorModels = [{
+const cursorModels = [{
   id: 'gpt-5.5', displayName: 'GPT-5.5', aliases: ['gpt-5-5'],
   parameters: [{id: 'reasoning', values: cursorEfforts.map((value) => ({value}))}, {id: 'fast', values: [{value: 'false'}, {value: 'true'}]}],
   variants: cursorEfforts.flatMap((reasoning) => ['false', 'true'].map((fast) => ({params: [{id: 'reasoning', value: reasoning}, {id: 'fast', value: fast}], isDefault: reasoning === 'medium' && fast === 'false'}))),
