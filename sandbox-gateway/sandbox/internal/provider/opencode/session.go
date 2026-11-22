@@ -475,9 +475,10 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 	res := provider.TurnResult{Usage: usage}
 	if errText != "" {
 		res.StopReason = "failed"
+		res.UsagePartial = len(usage) > 0
 		msg := provider.RedactDiagnostic(errText, s.env)
 		s.emitError(msg)
-		s.emitPromptDone(res.StopReason, usage, false)
+		s.emitPromptDone(res.StopReason, usage, res.UsagePartial)
 		return res, errors.New(msg)
 	}
 	res.StopReason = "end_turn"

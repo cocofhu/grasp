@@ -765,6 +765,9 @@ func (p *Panel) PromptTurn(ctx context.Context, text string, images []PromptImag
 	}
 	if len(usage) > 0 {
 		frame["usage"] = usage
+		if out.StopReason == "cancelled" {
+			frame["usagePartial"] = true
+		}
 	}
 	p.emit(frame)
 	return result, nil

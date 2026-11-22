@@ -145,8 +145,8 @@ func TestSessionReportsResultUsageAndSelectsConfig(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", res, err)
 	}
 	res, err = s.Prompt(context.Background(), "fail", nil)
-	if err != nil || res.StopReason != "failed" {
-		t.Fatalf("failure text must fail the turn: %+v err=%v", res, err)
+	if err != nil || res.StopReason != "failed" || !res.UsagePartial {
+		t.Fatalf("failure text must fail the turn with partial usage: %+v err=%v", res, err)
 	}
 	res, err = s.Prompt(context.Background(), "hello", nil)
 	if err != nil || res.StopReason != "end_turn" {
@@ -158,13 +158,21 @@ func TestSessionReportsResultUsageAndSelectsConfig(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !res.UsagePartial || !reflect.DeepEqual(res.Usage, want) {
 		t.Fatalf("cancelled result=%+v err=%v", res, err)
 	}
-	total := map[string]provider.TokenUsage{"m2": {InputTokens: 80, OutputTokens: 16, CacheReadTokens: 40}}
+	// A stop the agent answers before ctx ends is still an unfinished turn.
+	time.AfterFunc(50*time.Millisecond, func() { _ = s.Cancel() })
+	res, err = s.Prompt(context.Background(), "hang", nil)
+	if err != nil || res.StopReason != "cancelled" || !res.UsagePartial || !reflect.DeepEqual(res.Usage, want) {
+		t.Fatalf("agent-cancelled result=%+v err=%v", res, err)
+	}
+	total := map[string]provider.TokenUsage{"m2": {InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50}}
 	if got := s.CumulativeUsage(); !reflect.DeepEqual(got, total) {
 		t.Fatalf("cumulative=%+v want %+v", got, total)
 	}
 	run.mu.Lock()
 	defer run.mu.Unlock()
-	if len(run.done) != 3 || !strings.Contains(run.done[1], `"stopReason":"failed"`) || !strings.Contains(run.done[0], `"usage":{"m2"`) {
+	if len(run.done) != 4 || !strings.Contains(run.done[0], `"usage":{"m2"`) || strings.Contains(run.done[0], "usagePartial") ||
+		!strings.Contains(run.done[1], `"stopReason":"failed"`) || !strings.Contains(run.done[1], `"usagePartial":true`) ||
+		!strings.Contains(run.done[3], `"stopReason":"cancelled"`) || !strings.Contains(run.done[3], `"usagePartial":true`) {
 		t.Fatalf("prompt_done frames=%q", run.done)
 	}
 }

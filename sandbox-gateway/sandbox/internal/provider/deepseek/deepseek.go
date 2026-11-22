@@ -307,6 +307,7 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	if err != nil {
 		res.Usage = s.usage.promptDone()
 	}
+	res.UsagePartial = len(res.Usage) > 0 && (err != nil || res.StopReason == "cancelled")
 	return res, err
 }
 
