@@ -275,6 +275,7 @@ func (b contentBlock) resultID() string {
 }
 
 type message struct {
+	ID         string         `json:"id"`
 	Model      string         `json:"model"`
 	Content    []contentBlock `json:"content"`
 	StopReason string         `json:"stop_reason"`
@@ -424,6 +425,9 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 		}
 		addUsage(ev.Message.Usage, ev.Message.Model, d.c.AgentName == provider.CodeBuddy)
 		res.UsagePartial = len(res.Usage) > 0
+		// Claude Code emits one assistant event per content block, each
+		// repeating the whole message's usage.
+		res.UsageMessageID = ev.Message.ID
 	case "user":
 		if ev.IsReplay {
 			res.UserMessagesConsumed = 1

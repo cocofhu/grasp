@@ -148,3 +148,35 @@ func TestCodeBuddySessionTotalsKeepMissingRequestsAndPartialTurns(t *testing.T) 
 		}
 	}
 }
+
+// Recorded from claude 2.1 against an Anthropic-compatible endpoint: one API
+// message with text and a tool call arrives as two assistant events sharing
+// message.id and usage. A turn that ends without a result keeps one sample
+// per message.
+func TestClaudePartialUsageCountsEachMessageOnce(t *testing.T) {
+	lines := []string{
+		`{"type":"assistant","message":{"id":"msg_main_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"我先运行 date。"}],"usage":{"input_tokens":100,"output_tokens":1,"cache_read_input_tokens":5000,"cache_creation_input_tokens":0}}}`,
+		`{"type":"assistant","message":{"id":"msg_main_1","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"Bash"}],"usage":{"input_tokens":100,"output_tokens":1,"cache_read_input_tokens":5000,"cache_creation_input_tokens":0}}}`,
+		`{"type":"assistant","message":{"id":"msg_main_2","model":"claude-sonnet-4-5","content":[{"type":"text","text":"完成。"}],"usage":{"input_tokens":100,"output_tokens":3,"cache_read_input_tokens":5000,"cache_creation_input_tokens":0}}}`,
+		`{"type":"assistant","message":{"id":"msg_main_2","model":"claude-sonnet-4-5","content":[{"type":"text","text":"再见。"}],"usage":{"input_tokens":100,"output_tokens":7,"cache_read_input_tokens":5000,"cache_creation_input_tokens":0}}}`,
+	}
+	root := t.TempDir()
+	binary := filepath.Join(root, "claude")
+	script := "#!/bin/sh\n"
+	for _, line := range lines {
+		script += "printf '%s\\n' '" + line + "'\n"
+	}
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	session, err := New(Config{AgentName: provider.ClaudeCode, Bin: binary}).Open(context.Background(), context.Background(), provider.OpenOptions{Cwd: root}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	result, err := session.Prompt(context.Background(), "run date", nil)
+	want := map[string]provider.TokenUsage{"claude-sonnet-4-5": {InputTokens: 200, OutputTokens: 8, CacheReadTokens: 10000}}
+	if err != nil || !reflect.DeepEqual(result.Usage, want) || !result.UsagePartial {
+		t.Fatalf("usage=%+v partial=%v err=%v, want=%+v partial", result.Usage, result.UsagePartial, err, want)
+	}
+}
