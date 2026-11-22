@@ -225,9 +225,6 @@ func TestHealthAndDashboard(t *testing.T) {
 	if w := h.do("GET", "/api/health", nil); w.Code != 200 {
 		t.Fatalf("health: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/stats/dashboard", nil); w.Code != 200 {
-		t.Fatalf("dashboard: %d", w.Code)
-	}
 	w := h.do("GET", "/api/stats/platform-status?utcOffsetMinutes=480", nil)
 	if w.Code != 200 {
 		t.Fatalf("platform-status: %d %s", w.Code, w.Body.String())
@@ -1505,7 +1502,6 @@ func TestHandlerDBErrorBranches(t *testing.T) {
 	h.do("GET", "/api/workflows", nil)
 	h.do("GET", "/api/sandboxes", nil)
 	h.do("GET", "/api/runs", nil)
-	h.do("GET", "/api/stats/dashboard", nil)
 }
 
 // TestAgentErrorBranches covers the 400 validation branches of the agent

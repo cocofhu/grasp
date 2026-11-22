@@ -13,14 +13,10 @@ import (
 
 func TestTTLAndDurationGetters(t *testing.T) {
 	c := &Config{}
-	c.Sandbox.IdleTTLMinutes = 10
 	c.Sandbox.AgentNodeHardCapHours = 3
 	c.Sandbox.ChatIdleTimeoutSeconds = 40
 	c.Sandbox.RetryBackoffSeconds = 5
 
-	if c.SandboxIdleTTL() != 10*time.Minute {
-		t.Error("SandboxIdleTTL")
-	}
 	if c.AgentNodeHardCap() != 3*time.Hour {
 		t.Error("AgentNodeHardCap")
 	}
@@ -58,7 +54,6 @@ func TestApplyAllEnvOverrides(t *testing.T) {
 	c := &Config{}
 	t.Setenv("GRASP_MCP_ADVERTISE", "http://adv")
 	t.Setenv("GRASP_DB", "/db")
-	t.Setenv("GRASP_MAX_RUNS", "7")
 	t.Setenv("GRASP_PROFILES_ROOT", "/pr")
 	t.Setenv("GRASP_AGENT_TIMEOUT_SEC", "11")
 	t.Setenv("GRASP_CHAT_IDLE_SEC", "12")
@@ -69,7 +64,7 @@ func TestApplyAllEnvOverrides(t *testing.T) {
 	t.Setenv("GRASP_BLOBS_ROOT", "/blobs")
 	applyEnvOverrides(c)
 	if c.Server.MCPAdvertise != "http://adv" || c.Database.Path != "/db" ||
-		c.Engine.MaxConcurrentRuns != 7 || c.Engine.ProfilesRoot != "/pr" ||
+		c.Engine.ProfilesRoot != "/pr" ||
 		c.Sandbox.AgentChatTimeoutSeconds != 11 || c.Sandbox.ChatIdleTimeoutSeconds != 12 ||
 		c.Sandbox.MaxAttempts != 4 || c.Sandbox.RetryBackoffSeconds != 3 || c.Sandbox.WorkDir != "/wd" ||
 		c.Storage.Driver != "local" || c.Storage.BlobsRoot != "/blobs" {
@@ -80,7 +75,7 @@ func TestApplyAllEnvOverrides(t *testing.T) {
 func TestWatchAndReload(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := Load(path); err != nil {
@@ -101,13 +96,13 @@ func TestWatchAndReload(t *testing.T) {
 
 	// Trigger a change; the watcher debounces ~1s before reloading.
 	time.Sleep(100 * time.Millisecond)
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 6\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 6\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-reloaded:
-		if GetConfig().Engine.MaxConcurrentRuns != 6 {
-			t.Errorf("reload did not apply: %d", GetConfig().Engine.MaxConcurrentRuns)
+		if GetConfig().Sandbox.MaxSandboxes != 6 {
+			t.Errorf("reload did not apply: %d", GetConfig().Sandbox.MaxSandboxes)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("watcher did not reload within 5s")
@@ -192,8 +187,8 @@ func TestSandboxLifecycleDefaultsAndOverrides(t *testing.T) {
 	c := &Config{}
 	setDefaults(c)
 	idle, every, cache := c.SandboxMemoryTrim()
-	if c.SandboxIdleTTL() != 6*time.Hour || idle != 10*time.Minute || every != 30*time.Minute || cache != 1024 {
-		t.Fatalf("defaults: ttl=%v trim=%v/%v/%d", c.SandboxIdleTTL(), idle, every, cache)
+	if c.Sandbox.IdleTTLMinutes != 360 || idle != 10*time.Minute || every != 30*time.Minute || cache != 1024 {
+		t.Fatalf("defaults: ttl=%dm trim=%v/%v/%d", c.Sandbox.IdleTTLMinutes, idle, every, cache)
 	}
 
 	c = &Config{}

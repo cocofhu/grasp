@@ -127,7 +127,6 @@ test.describe('未知模型显示名', () => {
         json: {
           brand: { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' },
           items: [
-            { key: 'max_concurrent_runs', value: 4, min: 1, source: 'db', locked: false },
             { key: 'max_sandboxes', value: 3, min: 1, source: 'db', locked: false },
           ],
         },

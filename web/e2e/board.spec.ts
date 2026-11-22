@@ -44,22 +44,6 @@ async function mockBoardApis(page: import('@playwright/test').Page) {
   await page.route('**/api/workspace', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: '工作区', description: '', variables: [] }) })
   })
-  await page.route('**/api/stats/dashboard', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          running: 1,
-          waitingHuman: 1,
-          failed: 1,
-          completed: 1,
-        }),
-      })
-      return
-    }
-    await route.continue()
-  })
 
   await page.route('**/api/workflows**', async (route) => {
     if (route.request().method() === 'GET') {
@@ -228,18 +212,6 @@ test.describe('工作区进度看板', () => {
     const pageSizeByStatus: Record<string, number> = {}
     await page.setViewportSize({ width: 1280, height: 800 })
 
-    await page.route('**/api/stats/dashboard', async (route) => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ running: 20, waitingHuman: 1, failed: 0, completed: 24 }),
-        })
-        return
-      }
-      await route.continue()
-    })
-
     await page.route('**/api/runs**', async (route) => {
       if (route.request().method() !== 'GET') {
         await route.continue()
@@ -359,18 +331,6 @@ test.describe('工作区进度看板', () => {
     const listCalls: { status: string; page: string; pageSize: string }[] = []
 
     await page.setViewportSize({ width: 1280, height: 800 })
-
-    await page.route('**/api/stats/dashboard', async (route) => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ running: 5, waitingHuman: 0, failed: 0, completed: 45 }),
-        })
-        return
-      }
-      await route.continue()
-    })
 
     await page.route('**/api/runs**', async (route) => {
       if (route.request().method() !== 'GET') {

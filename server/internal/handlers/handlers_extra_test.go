@@ -28,8 +28,8 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 		t.Fatalf("get settings: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("PUT", "/api/settings", map[string]any{
-		"unknown_setting":     "x",
-		"max_concurrent_runs": 4,
+		"unknown_setting": "x",
+		"max_sandboxes":   4,
 	}); w.Code != http.StatusBadRequest {
 		t.Fatalf("read-only/unknown setting accepted: %d %s", w.Code, w.Body)
 	}
@@ -56,8 +56,8 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 		t.Fatalf("overlong brand update: %d %s", w.Code, w.Body)
 	}
 	if w := h.do("PUT", "/api/settings", map[string]int{
-		services.KeyMaxConcurrentRuns: 3,
-		services.KeyAgentIdleMin:      25,
+		services.KeyMaxSandboxes: 3,
+		services.KeyAgentIdleMin: 25,
 	}); w.Code != 200 || !strings.Contains(w.Body.String(), `"agent_idle_timeout_minutes"`) {
 		t.Fatalf("update settings: %d %s", w.Code, w.Body)
 	}
@@ -65,7 +65,7 @@ func TestSettingsAndLiveEndpoints(t *testing.T) {
 		t.Fatalf("update settings bad body: %d", w.Code)
 	}
 	if w := h.do("PUT", "/api/settings", map[string]int{
-		services.KeyMaxConcurrentRuns: 0,
+		services.KeyMaxSandboxes: 0,
 	}); w.Code != 400 {
 		t.Fatalf("update settings below min: %d", w.Code)
 	}

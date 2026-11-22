@@ -28,7 +28,7 @@ type Engine struct {
 	store    mcp.Store
 	broker   *Broker
 	// sem bounds the number of runs actively executing (in the "running"
-	// state). Its capacity is the effective max_concurrent_runs and can be
+	// state). Its capacity follows the effective max_sandboxes and can be
 	// changed at runtime via SetMaxConcurrent (settings page).
 	sem *sema
 	// wake signals the dispatcher to (re)drain the queued-run backlog. Buffered
@@ -167,9 +167,6 @@ func (e *Engine) SetPageHub(h *pagebridge.Hub) { e.pageHub = h }
 
 // New builds an engine.
 func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.Store, maxRuns int) *Engine {
-	if maxRuns <= 0 {
-		maxRuns = 5
-	}
 	e := &Engine{
 		db: db, provider: provider, host: host, store: store,
 		broker: NewBroker(), sem: newSema(maxRuns),
@@ -225,9 +222,6 @@ type IssueResolver interface {
 
 // SetAgents wires the Agent catalog used by the agent_profile gate.
 func (e *Engine) SetAgents(skills SkillLookup) { e.skills = skills }
-
-// MaxConcurrent returns the current concurrency cap.
-func (e *Engine) MaxConcurrent() int { return e.sem.Limit() }
 
 // SetDefaultVarsLookup wires the lookup used by StartRun to seed a workflow's
 // default variables into the run's vars.* namespace.

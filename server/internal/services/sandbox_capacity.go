@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -17,6 +18,8 @@ type ErrSandboxLimit struct{ Max int }
 func (e ErrSandboxLimit) Error() string {
 	return fmt.Sprintf("已达到沙箱总上限（%d），请等待空闲沙箱回收或停止不用的环境", e.Max)
 }
+
+func (e ErrSandboxLimit) Is(target error) bool { return target == runtime.ErrSandboxCapacity }
 
 type SandboxCapacity struct {
 	Used  int `json:"used"`

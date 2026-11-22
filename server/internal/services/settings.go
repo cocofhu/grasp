@@ -16,7 +16,6 @@ import (
 
 // Setting keys (the fixed set of UI-editable platform scheduling knobs).
 const (
-	KeyMaxConcurrentRuns = "max_concurrent_runs"
 	KeySandboxIdleTTLMin = "sandbox_idle_ttl_minutes"
 	KeyMaxSandboxes      = "max_sandboxes"
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
@@ -40,11 +39,10 @@ type BrandPatch struct {
 }
 
 // ConcurrencyController is the slice of the engine the settings layer drives:
-// changing the live max_concurrent_runs. Defined here (consumer side) so the
+// changing the live run cap, which follows max_sandboxes. Defined here (consumer side) so the
 // engine need not import services.
 type ConcurrencyController interface {
 	SetMaxConcurrent(n int)
-	MaxConcurrent() int
 }
 
 // AutoRetryController is the optional slice of the engine that accepts the live
@@ -88,8 +86,6 @@ type knob struct {
 
 func knobs() []knob {
 	return []knob{
-		{KeyMaxConcurrentRuns, "最大并发运行数", "", 1, 0, "GRASP_MAX_RUNS",
-			func(c *config.Config) int { return c.Engine.MaxConcurrentRuns }},
 		{KeySandboxIdleTTLMin, "沙箱空闲回收时间", "分钟", 1, 0, "",
 			func(c *config.Config) int { return c.Sandbox.IdleTTLMinutes }},
 		{KeyMaxSandboxes, "最大同时运行沙箱数", "", 1, 0, "",
@@ -127,6 +123,16 @@ func (s *SettingsService) Effective() []SettingItem {
 		})
 	}
 	return out
+}
+
+// Value returns one knob's effective value (0 for an unknown key).
+func (s *SettingsService) Value(key string) int {
+	for _, it := range s.Effective() {
+		if it.Key == key {
+			return it.Value
+		}
+	}
+	return 0
 }
 
 // Brand returns normalized instance-level brand overrides. Empty values mean
@@ -231,6 +237,13 @@ func (s *SettingsService) ApplyOnBoot() error {
 	return nil
 }
 
+// Bind attaches runtime components built after ApplyOnBoot and pushes the
+// effective values onto them.
+func (s *SettingsService) Bind(conc ConcurrencyController, sbx SandboxTuner) {
+	s.conc, s.sbx = conc, sbx
+	s.apply()
+}
+
 // apply computes the effective values and drives the runtime components.
 func (s *SettingsService) apply() {
 	m := map[string]int{}
@@ -242,7 +255,7 @@ func (s *SettingsService) apply() {
 		}
 	}
 	if s.conc != nil {
-		s.conc.SetMaxConcurrent(m[KeyMaxConcurrentRuns])
+		s.conc.SetMaxConcurrent(m[KeyMaxSandboxes])
 		// The concrete engine also accepts the live node auto-retry cap.
 		if ar, ok := s.conc.(AutoRetryController); ok {
 			ar.SetAutoRetryMax(m[KeyNodeAutoRetryMax])

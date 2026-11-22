@@ -5,6 +5,7 @@ All notable public-release changes are documented here.
 ## Unreleased
 
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
+- 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。工作流节点创建沙箱时如果沙箱已满，会在执行日志里提示「等待沙箱名额」并等到有名额后继续，不再直接失败。`GET /api/stats/dashboard` 已移除。
 
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 
@@ -28,6 +29,8 @@ All notable public-release changes are documented here.
 - Agent 对话中的「Steer」引导气泡与普通用户气泡统一尺寸和圆角，中文前缀显示为「引导」，支持 Markdown、Markdown 图片和图片附件预览。
 
 - 移动端对话页的导航按钮移到顶部标题栏左侧，不再浮在输入框上；输入框的发送和停止按钮在窄屏上保持同一行，Solo 输入框在移动端不再显示「停止环境」（可在导航抽屉里长按 Solo 会话停止）。
+
+- 修复已结束的 Agent 回合中「引导」气泡显示在耗时汇总下方的问题，现在会先显示引导，再显示回合耗时和回复内容。
 
 - 修复对话中行首的 `#1304` 这类 issue / PR 编号被显示成粗体大标题、`#` 被吞掉的问题。Codex 工具行里的命令和文件路径不再被逐词首字母大写（如 `/Bin/Bash -Lc 'Gh Pr View'`），按原样显示。
 

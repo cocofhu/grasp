@@ -1,7 +1,6 @@
 package services
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ type fakeConc struct {
 }
 
 func (f *fakeConc) SetMaxConcurrent(n int) { f.max = n }
-func (f *fakeConc) MaxConcurrent() int     { return f.max }
 func (f *fakeConc) SetAutoRetryMax(n int)  { f.ar = n }
 
 type fakeSbxTuner struct {
@@ -34,7 +32,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
-		Engine:  config.EngineConfig{MaxConcurrentRuns: 5, NodeAutoRetryMax: 2},
+		Engine:  config.EngineConfig{NodeAutoRetryMax: 2},
 		Sandbox: config.SandboxConfig{IdleTTLMinutes: 60, MaxSandboxes: 15, MemoryMB: 8192, ChatIdleTimeoutSeconds: 1200},
 	}
 	config.StoreConfig(cfg)
@@ -43,11 +41,10 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 6 {
+	if len(items) != 5 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.UpdateWithBrand(map[string]int{
-		KeyMaxConcurrentRuns: 7,
 		KeySandboxIdleTTLMin: 45,
 		KeyMaxSandboxes:      8,
 		KeyNodeAutoRetryMax:  3,
@@ -58,10 +55,10 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 6 {
+	if len(updated) != 5 {
 		t.Fatalf("updated: %d", len(updated))
 	}
-	if conc.max != 7 || conc.ar != 3 || sbx.max != 8 || sbx.idleTTL != 45*time.Minute {
+	if conc.max != 8 || conc.ar != 3 || sbx.max != 8 || sbx.idleTTL != 45*time.Minute {
 		t.Fatalf("apply: conc=%+v sbx=%+v", conc, sbx)
 	}
 	if got := sandbox.DefaultMemoryMB(); got != 12288 {
@@ -69,6 +66,15 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	if got := sandbox.AgentIdleTimeout(); got != 30*time.Minute {
 		t.Fatalf("agent idle: got %s, want 30m", got)
+	}
+	late := NewSettingsService(db, nil, nil)
+	if got := late.Value(KeyMaxSandboxes); got != 8 {
+		t.Fatalf("value before bind: %d", got)
+	}
+	lateConc, lateSbx := &fakeConc{}, &fakeSbxTuner{}
+	late.Bind(lateConc, lateSbx)
+	if lateConc.max != 8 || lateSbx.max != 8 || lateSbx.idleTTL != 45*time.Minute {
+		t.Fatalf("bind: conc=%+v sbx=%+v", lateConc, lateSbx)
 	}
 	if err := svc.ApplyOnBoot(); err != nil {
 		t.Fatal(err)
@@ -78,9 +84,6 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	}
 	if _, err := svc.UpdateWithBrand(map[string]int{KeyAgentIdleMin: 1}, BrandPatch{}); err == nil {
 		t.Fatal("expected agent idle min validation error")
-	}
-	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxConcurrentRuns: 0}, BrandPatch{}); err == nil {
-		t.Fatal("expected min validation error")
 	}
 	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxSandboxes: 0}, BrandPatch{}); err == nil {
 		t.Fatal("expected sandbox min validation error")
@@ -105,14 +108,14 @@ func TestSettingsServiceEnvLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.StoreConfig(&config.Config{Engine: config.EngineConfig{MaxConcurrentRuns: 5}})
-	t.Setenv("GRASP_MAX_RUNS", "9")
+	config.StoreConfig(&config.Config{Engine: config.EngineConfig{NodeAutoRetryMax: 5}})
+	t.Setenv("GRASP_NODE_AUTO_RETRY", "5")
 	conc := &fakeConc{}
 	svc := NewSettingsService(db, conc, nil)
 	items := svc.Effective()
 	var locked bool
 	for _, it := range items {
-		if it.Key == KeyMaxConcurrentRuns {
+		if it.Key == KeyNodeAutoRetryMax {
 			locked = it.Locked
 			if it.Source != "env" {
 				t.Fatalf("env item: %+v", it)
@@ -122,13 +125,12 @@ func TestSettingsServiceEnvLocked(t *testing.T) {
 	if !locked {
 		t.Fatal("expected env locked")
 	}
-	if _, err := svc.UpdateWithBrand(map[string]int{KeyMaxConcurrentRuns: 1}, BrandPatch{}); err != nil {
+	if _, err := svc.UpdateWithBrand(map[string]int{KeyNodeAutoRetryMax: 1}, BrandPatch{}); err != nil {
 		t.Fatal(err)
 	}
-	if conc.max != 0 && conc.max != items[0].Value {
-		// apply uses effective env value
+	if conc.ar != 5 {
+		t.Fatalf("apply should keep env value, got %d", conc.ar)
 	}
-	os.Unsetenv("GRASP_MAX_RUNS")
 }
 
 func TestSettingsServiceAgentIdleFromConfigKeepsSeconds(t *testing.T) {
@@ -157,12 +159,12 @@ func TestSettingsServiceDBOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.StoreConfig(&config.Config{Engine: config.EngineConfig{MaxConcurrentRuns: 5}})
+	config.StoreConfig(&config.Config{Sandbox: config.SandboxConfig{MaxSandboxes: 5}})
 	svc := NewSettingsService(db, nil, nil)
-	if err := svc.setInt(KeyMaxConcurrentRuns, 12); err != nil {
+	if err := svc.setInt(KeyMaxSandboxes, 12); err != nil {
 		t.Fatal(err)
 	}
-	v, ok := svc.dbInt(KeyMaxConcurrentRuns)
+	v, ok := svc.dbInt(KeyMaxSandboxes)
 	if !ok || v != 12 {
 		t.Fatalf("dbInt: %v %v", v, ok)
 	}

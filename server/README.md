@@ -206,7 +206,6 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 |------|------|------|
 | `GRASP_PORT` | `8080` | HTTP 端口 |
 | `GRASP_DB` | `grasp.db` | SQLite 路径(`:memory:` 用于测试) |
-| `GRASP_MAX_RUNS` | `5` | 并发 run 上限 |
 | `GRASP_SANDBOX_GATEWAY_URL` | `http://127.0.0.1:8899` | sandbox-gateway 控制面地址(创建/销毁/管理沙箱) |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | — | 网关可选 Bearer 令牌(网关关鉴权时留空) |
 | `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `direct` | 数据面直连；`gateway` 通过带鉴权的网关通道，预览使用 Grasp 路径代理 |
@@ -246,7 +245,7 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 ```yaml
 server: { port, mcp_advertise }
 database: { path }
-engine: { max_concurrent_runs, profiles_root }
+engine: { profiles_root }
 sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 ```
 
@@ -254,7 +253,7 @@ sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 > 工作区凭据 UI，不是平台级配置。
 
 环境变量覆盖(env 优先级最高,上表对应字段):`GRASP_PORT`、`GRASP_DB`、
-`GRASP_MAX_RUNS`、`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
+`GRASP_PROFILES_ROOT`、`GRASP_MCP_ADVERTISE`、
 `GRASP_SANDBOX_GATEWAY_URL`、`GRASP_CHAT_IDLE_SEC` 等。沙箱镜像不在本服务配置，由 sandbox-gateway 决定。
 
 > **ACP 与 Git 鉴权只来自工作区凭据**:各后端 API Key 与 Git Token / SSH 从工作区凭据解析后按 run

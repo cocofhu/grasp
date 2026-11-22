@@ -1208,7 +1208,7 @@
     "settings": {
       "followGateway": "跟随网关",
       "title": "常规",
-      "subtitle": "管理工作区信息、品牌文案、运行并发与沙箱资源。",
+      "subtitle": "管理工作区信息、品牌文案与沙箱资源。",
       "saved": "已保存",
       "workspaceSaveFailed": "工作区信息保存失败：{reason}",
       "platformSaveFailed": "平台参数保存失败：{reason}",
@@ -1228,17 +1228,13 @@
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
-        "concurrency": {
-          "title": "调度并发",
-          "desc": "设置同时执行的工作流数量，达到上限后排队等待。"
-        },
         "recycle": {
           "title": "沙箱回收",
           "desc": "所有沙箱共用空闲回收时间，保存成功后释放运行资源。"
         },
         "capacity": {
           "title": "沙箱容量",
-          "desc": "查看全部沙箱的实时占用，统一设置数量上限。"
+          "desc": "查看全部沙箱的实时占用，统一设置数量上限；工作流并发也受此上限约束。"
         },
         "resources": {
           "title": "沙箱资源",
@@ -1250,18 +1246,16 @@
         "agent_idle_timeout_minutes": "Agent 持续没有输出或 CPU、磁盘活动时，先尝试恢复，再终止本轮。"
       },
       "labels": {
-        "max_concurrent_runs": "最大并发运行数",
         "sandbox_memory_mb": "沙箱内存覆盖",
         "agent_idle_timeout_minutes": "Agent 无动作时限",
         "sandbox_idle_ttl_minutes": "沙箱空闲回收时间",
         "max_sandboxes": "最大同时运行沙箱数"
       },
       "settings": {
-        "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
         "sandbox_memory_mb": "0 跟随网关默认值或所选 E2B 模板。非零值覆盖新建沙箱的内存，至少 1024 MiB；Docker/K8s 不得超过网关资源上限，E2B 必须与模板规格一致。浏览器、Docker 和构建共用这份内存，超限可能触发 OOM。由 GRASP_SANDBOX_MEMORY_MB 锁定时页面只读。",
         "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。",
         "sandbox_idle_ttl_minutes": "模型回合结束且没有排队请求后，持续达到此时长即保存环境并回收资源；打开页面、IDE、预览或终端不会延长计时。所有沙箱共用，默认 360 分钟；再次使用时自动恢复，可在侧栏菜单为单个会话开启「永不自动回收」。",
-        "max_sandboxes": "所有沙箱共用此上限，包含创建中、运行中及尚未释放资源的沙箱。达到上限后暂不能新建或恢复；降低上限不会关闭现有沙箱。"
+        "max_sandboxes": "所有沙箱共用此上限，包含创建中、运行中及尚未释放资源的沙箱。达到上限后暂不能新建或恢复，新的工作流运行排队等待；降低上限不会关闭现有沙箱或运行。"
       },
       "units": {
         "mib": "MiB"
@@ -3570,7 +3564,6 @@
         "modelsTools": "覆盖编码工具",
         "modelsProblems": "需要处理",
         "toolUnit": "种",
-        "runningRuns": "运行中 / 并发上限",
         "sandboxMemory": "沙箱内存上限",
         "projectsTotal": "仓库",
         "projectsUsed": "使用过",

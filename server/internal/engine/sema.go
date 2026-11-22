@@ -4,7 +4,7 @@ import "sync"
 
 // sema is a counting semaphore whose capacity (limit) can be changed at
 // runtime. A fixed-size channel cannot be resized, but the platform settings
-// page needs to raise/lower max_concurrent_runs live, so concurrency admission
+// page needs to raise/lower max_sandboxes live, so concurrency admission
 // is a mutex-guarded counter instead.
 //
 // Semantics:
