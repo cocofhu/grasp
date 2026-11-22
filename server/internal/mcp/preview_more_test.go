@@ -14,7 +14,7 @@ type memPreviewStore struct {
 	err   error
 }
 
-func (m *memPreviewStore) ReplacePreviewPort(rec PreviewPort) error {
+func (m *memPreviewStore) ReplacePreview(rec PreviewPort) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -31,38 +31,25 @@ func (m *memPreviewStore) ReplacePreviewPort(rec PreviewPort) error {
 	m.ports = append(kept, rec)
 	return nil
 }
-func (m *memPreviewStore) ListPreviewPorts(runID, nodeID string) ([]PreviewPort, error) {
+func (m *memPreviewStore) ActivePreview(runID, nodeID string) (*PreviewPort, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	var out []PreviewPort
-	for _, p := range m.ports {
-		if p.RunID == runID && p.NodeID == nodeID {
-			out = append(out, p)
-		}
-	}
-	return out, nil
-}
-func (m *memPreviewStore) GetPreviewPort(runID, nodeID string, port int) (*PreviewPort, bool) {
 	for i, p := range m.ports {
-		if p.RunID == runID && p.NodeID == nodeID && p.Port == port {
-			return &m.ports[i], true
+		if p.RunID == runID && p.NodeID == nodeID {
+			return &m.ports[i], nil
 		}
 	}
-	return nil, false
+	return nil, nil
 }
-func (m *memPreviewStore) ActivePreviewForSandbox(sandboxName string) (*PreviewPort, bool) {
-	var latest *PreviewPort
-	for i := range m.ports {
-		p := &m.ports[i]
-		if p.SandboxName != sandboxName || (latest != nil && !p.RegisteredAt.After(latest.RegisteredAt)) {
-			continue
+func (m *memPreviewStore) ActivePreviewForSandbox(sandboxName string) (*PreviewPort, error) {
+	for i, p := range m.ports {
+		if p.SandboxName == sandboxName {
+			return &m.ports[i], nil
 		}
-		latest = p
 	}
-	return latest, latest != nil
+	return nil, nil
 }
-func (m *memPreviewStore) UpdatePreviewHealth(string, string, int, bool) error { return nil }
 
 type fakePreviewOps struct {
 	name    string
@@ -251,7 +238,7 @@ func TestParsePreviewPortTypes(t *testing.T) {
 	}
 }
 
-func TestListPreviewPortsPrefersMemory(t *testing.T) {
+func TestActivePreviewPrefersMemory(t *testing.T) {
 	h := NewHost(&memStore{})
 	store := &memPreviewStore{ports: []PreviewPort{{
 		RunID: "r", NodeID: "n", Port: 1, Label: "db", ProxyURL: "/preview/r/n/1/",
@@ -265,9 +252,8 @@ func TestListPreviewPortsPrefersMemory(t *testing.T) {
 		RunID: "r", NodeID: "n", Port: 2, Label: "mem", ProxyURL: "/preview/r/n/2/",
 	}}
 	h.mu.Unlock()
-	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 1 || ports[0].Port != 2 {
-		t.Fatalf("active=%d %+v", len(ports), ports)
+	if active, ok := h.ActivePreview("r", "n"); !ok || active.Port != 2 {
+		t.Fatalf("active=%+v ok=%v", active, ok)
 	}
 
 	reg, err := h.setPreviewPort("r", "n", 3000, "web")
@@ -293,9 +279,8 @@ func TestPreviewKeepalivePID(t *testing.T) {
 	if _, err := h.setPreviewPort("r", "n", 3000, "web"); err != nil {
 		t.Fatal(err)
 	}
-	pids := h.ListPreviewKeepalivePIDs("r", "n")
-	if len(pids) != 1 || pids[0] != 4242 {
-		t.Fatalf("keepalive pids=%v", pids)
+	if pid := h.PreviewKeepalivePID("r", "n"); pid != 4242 {
+		t.Fatalf("keepalive pid=%d", pid)
 	}
 }
 
@@ -309,8 +294,8 @@ func TestSetPreviewDirectStillShowsDesktopAndSetsDirectURL(t *testing.T) {
 	if len(ops.shown) != 1 || ops.shown[0] != "sb:18081" {
 		t.Fatalf("direct mode must still show the app on the desktop: %v", ops.shown)
 	}
-	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 1 || ports[0].Mode != "direct" || ports[0].DirectURL != "http://10.0.0.8:18081/" {
-		t.Fatalf("ports=%+v", ports)
+	active, ok := h.ActivePreview("r", "n")
+	if !ok || active.Mode != "direct" || active.DirectURL != "http://10.0.0.8:18081/" {
+		t.Fatalf("active=%+v ok=%v", active, ok)
 	}
 }

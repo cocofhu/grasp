@@ -475,8 +475,7 @@ func (c *acpProvider) AbortRun(runID string) {
 
 		keep := false
 		if c.host != nil {
-			pids := c.host.ListPreviewKeepalivePIDs(runID, nodeID)
-			keep = c.host.HasHealthyPreviewPorts(runID, nodeID) || len(pids) > 0
+			keep = c.host.HasHealthyPreview(runID, nodeID) || c.host.PreviewKeepalivePID(runID, nodeID) > 0
 		}
 		agentKeepPreview = append(agentKeepPreview, keep)
 	}

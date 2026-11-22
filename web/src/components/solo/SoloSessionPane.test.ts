@@ -239,20 +239,20 @@ describe('SoloSessionPane', () => {
     const port = { runId: 'solo-new', nodeId: 'solo', kind: 'port', port: 8899, proxyUrl: '/preview/new/', healthy: true }
     box.getResources
       .mockReturnValueOnce(oldRequest)
-      .mockResolvedValueOnce({ runId: 'solo-new', artifacts: [], previewArtifact: 'demo.html', ports: [port] })
+      .mockResolvedValueOnce({ runId: 'solo-new', artifacts: [], previewArtifact: 'demo.html', preview: port })
     sessionState.value = { ...initial, artifactRunId: 'solo-old' }
     const wrapper = mountPane(pages)
     try {
       await flushPromises()
       sessionState.value = { ...initial, artifactRunId: 'solo-new' }
       await flushPromises()
-      finishOld({ runId: 'solo-old', artifacts: [], previewArtifact: 'old.html', ports: [] })
+      finishOld({ runId: 'solo-old', artifacts: [], previewArtifact: 'old.html', preview: null })
       await flushPromises()
       expect(box.getResources.mock.calls[0]?.[1].aborted).toBe(true)
       const stage = wrapper.getComponent(ReactArtifactStage)
       expect(stage.props('nodeId')).toBe('solo')
       expect(stage.props('previewArtifact')).toBe('demo.html')
-      expect(stage.props('registeredPreviews')).toEqual([port])
+      expect(stage.props('registeredPreview')).toEqual(port)
     } finally {
       wrapper.unmount()
       sessionState.value = initial

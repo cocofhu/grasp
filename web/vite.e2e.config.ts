@@ -263,11 +263,11 @@ export default defineConfig({
             return
           }
 
-          if (req.url?.match(/^\/api\/runs\/[^/]+\/nodes\/[^/]+\/previews/)) {
+          if (req.url?.match(/^\/api\/runs\/[^/]+\/nodes\/[^/]+\/preview\/?(\?.*)?$/)) {
             res.setHeader('Content-Type', 'application/json')
             res.end(
               JSON.stringify({
-                ports: [{ port: 3000, label: '前端', proxyUrl: 'http://mock-app:3000/' }],
+                preview: { port: 3000, label: '前端', proxyUrl: 'http://mock-app:3000/' },
               }),
             )
             return

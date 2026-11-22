@@ -54,8 +54,8 @@ type PreviewDTO struct {
 	ActiveItem        *PreviewActiveItem `json:"activeItem,omitempty"`
 	ProductKind       string             `json:"productKind,omitempty"`
 	ProductName       string             `json:"productName,omitempty"`
-	// Ports contains the desensitized active preview (no runId/nodeId/paths).
-	Ports []PublicPreviewPort `json:"ports,omitempty"`
+	// Preview is the desensitized active preview (no runId/nodeId/paths).
+	Preview *PublicPreview `json:"preview,omitempty"`
 	// NodeType is the graph node type (always "agent" for producers).
 	NodeType string `json:"nodeType,omitempty"`
 	// Interaction is the producer Agent's capability interaction ("clarify" |
@@ -81,8 +81,8 @@ type PreviewLiveEvent struct {
 	Parts []models.AcpPart `json:"parts,omitempty"`
 }
 
-// PublicPreviewPort is the leak-free port entry for public preview remote / API iframe.
-type PublicPreviewPort struct {
+// PublicPreview is the leak-free active preview for public remote / API iframe.
+type PublicPreview struct {
 	Port  int    `json:"port"`
 	Label string `json:"label,omitempty"`
 	// Kind is "port" or "url".
@@ -107,7 +107,7 @@ type PreviewExtras struct {
 	ActiveItem        map[string]any
 	ProductKind       string
 	ProductName       string
-	Ports             []PublicPreviewPort
+	Preview           *PublicPreview
 	LiveEvents        []models.AcpEvent
 	Dialogue          any
 }
@@ -216,8 +216,9 @@ func applyPreviewArtifacts(dto *PreviewDTO, visualHTML, structuredName, structur
 		dto.ProductName = "app"
 	}
 	// Preview-capable Agents may register a live preview next to their structured product.
-	if len(extras.Ports) > 0 {
-		dto.Ports = append([]PublicPreviewPort(nil), extras.Ports...)
+	if extras.Preview != nil {
+		preview := *extras.Preview
+		dto.Preview = &preview
 	}
 	imageBase := 0
 	if turns, next := SanitizeTurnsFrom(extras.Turns, 0); len(turns) > 0 {

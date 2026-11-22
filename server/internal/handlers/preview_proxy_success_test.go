@@ -45,7 +45,7 @@ func TestPreviewProxySuccess(t *testing.T) {
 	preview := services.NewPreviewService(hn.db, nil) // no manager → skip health
 	hn.h.Preview = preview
 	hn.host.SetPreviewStore(preview)
-	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "run-px", NodeID: "n1", Port: 9090, Label: "web",
 		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
 	})
@@ -117,7 +117,7 @@ func TestPreviewProxyUsesRegisteredInjectorPort(t *testing.T) {
 	hn.fg.SetEndpoints("sb-solo", map[string]string{"18081": up.Listener.Addr().String()})
 	for injectorPort, host := range map[int]string{0: up.URL, 18081: "http://127.0.0.1:1"} {
 		runID := "solo-session-" + strconv.Itoa(injectorPort)
-		if err := preview.ReplacePreviewPort(mcp.PreviewPort{
+		if err := preview.ReplacePreview(mcp.PreviewPort{
 			RunID: runID, NodeID: "solo", Port: 8899, InjectorPort: injectorPort,
 			Host: host, SandboxName: "sb-solo", Healthy: true,
 		}); err != nil {

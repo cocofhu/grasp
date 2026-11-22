@@ -20,7 +20,7 @@ vi.mock('@/lib/api/api', () => ({
     artifactVersions: vi.fn(async () => []),
     artifactVersionContent: vi.fn(),
     getRunNodeSandbox: vi.fn(async () => ({ id: 42 })),
-    nodePreviews: vi.fn(async () => ({ ports: [] })),
+    nodePreview: vi.fn(async () => ({ preview: null })),
     nodeSandboxLog: vi.fn(async () => ({ content: '', live: false, found: false })),
     sandboxIdeUrl: () => 'about:blank',
     sandboxTerminalWsUrl: () => 'ws://test.local',

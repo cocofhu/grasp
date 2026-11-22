@@ -44,7 +44,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	if err := hn.db.Save(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "run-ap-api", NodeID: "preview_api", Port: 8080, Label: "API · 8080",
 		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
 		Mode: "direct", DirectURL: "http://127.0.0.1:8080/",

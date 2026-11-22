@@ -15,7 +15,7 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     artifactContent: vi.fn(async () => ({})),
     getRunNodeSandbox: vi.fn(async () => ({ id: 42 })),
-    nodePreviews: vi.fn(async () => ({ ports: [] })),
+    nodePreview: vi.fn(async () => ({ preview: null })),
     nodeSandboxLog: vi.fn(async () => ({ content: '', live: true, found: true })),
     sandboxLog: vi.fn(async () => ({ content: '', live: true, found: true })),
     sandboxIdeUrl: (id: number) => `about:blank#ide-${id}`,
@@ -109,7 +109,7 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
   describe('Solo paused sandbox', () => {
     function mountSolo(props: Record<string, unknown> = {}) {
       return mount(ReactArtifactStage, {
-        props: { artifacts: [], runId: 'run-solo', nodeId: 'solo', sandbox: { id: 5, hasCodeServer: true }, registeredPreviews: [], soloSessionId: 's1', ...props },
+        props: { artifacts: [], runId: 'run-solo', nodeId: 'solo', sandbox: { id: 5, hasCodeServer: true }, registeredPreview: null, soloSessionId: 's1', ...props },
         global: { plugins: [i18n()], stubs },
       })
     }

@@ -219,7 +219,7 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ content: 'log', live: false, found: true }))
       .mockResolvedValueOnce(jsonResponse({ id: 9, name: 's', profile: 'a1', purpose: 'test', status: 'running', createdAt: 't', updatedAt: 't', containerStatus: 'up', busy: false, connected: true, hasCodeServer: true, hasAcp: true }))
       .mockResolvedValueOnce(jsonResponse({ content: 'log', live: true, found: true }))
-      .mockResolvedValueOnce(jsonResponse({ ports: [] }))
+      .mockResolvedValueOnce(jsonResponse({ preview: null }))
       .mockResolvedValueOnce(jsonResponse({ issues: [] }))
       .mockResolvedValueOnce(jsonResponse({ id: 'i1', runId: 'r', nodeId: 'n', body: 'b', status: 'open', createdAt: 't' }))
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
@@ -287,7 +287,7 @@ describe('api req helpers', () => {
     await expect(api.nodeSandboxLog('r1', 'n1')).resolves.toMatchObject({ found: true })
     await expect(api.getRunNodeSandbox('r1', 'n1')).resolves.toMatchObject({ id: 9 })
     await expect(api.sandboxLog(1)).resolves.toMatchObject({ live: true })
-    await expect(api.nodePreviews('r1', 'n1')).resolves.toEqual({ ports: [] })
+    await expect(api.nodePreview('r1', 'n1')).resolves.toEqual({ preview: null })
     await expect(api.listPreviewIssues('r1', 'n1')).resolves.toEqual({ issues: [] })
     await expect(api.createPreviewIssue('r1', 'n1', 'body', '#x', 5173, [])).resolves.toMatchObject({
       id: 'i1',

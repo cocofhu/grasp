@@ -7,7 +7,7 @@ import ExternalUrlPreviewFrame from '@/components/run/ExternalUrlPreviewFrame.vu
 import {
   publicGateApi,
   publicPreviewVncWsUrl,
-  type PublicPreviewPort,
+  type PublicPreview,
 } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
@@ -15,7 +15,7 @@ import { isAbortError } from '@/lib/run/liveLogRehydrate'
 const props = withDefaults(
   defineProps<{
     token: string
-    ports: PublicPreviewPort[]
+    preview: PublicPreview | null
     /** Share link still active (remote allowed). */
     active?: boolean
     mobile?: boolean
@@ -38,42 +38,29 @@ const linkInactive = ref(false)
 let ticketAbort: AbortController | null = null
 let ticketGen = 0
 
-const preview = computed(() => props.ports.find((p) => p.port > 0 || p.kind === 'url') || null)
-const activePort = computed(() => (preview.value && preview.value.kind !== 'url' ? preview.value.port : null))
-
-function isUrlPreview(p: PublicPreviewPort): boolean {
-  return p.kind === 'url'
-}
-
+const activeIsUrl = computed(() => props.preview?.kind === 'url')
+const activePort = computed(() => (props.preview && !activeIsUrl.value ? props.preview.port : null))
 /** IP-direct sandbox port: previews over noVNC and can also open in a new tab. */
-function isDirectPort(p: PublicPreviewPort): boolean {
-  return !isUrlPreview(p) && !!(p.directUrl || '').trim()
-}
-
-function previewLabel(p: PublicPreviewPort): string {
+const activeIsDirect = computed(() => !!props.preview && !activeIsUrl.value && !!(props.preview.directUrl || '').trim())
+const activeDirectUrl = computed(() => {
+  const p = props.preview
+  if (!p) return ''
+  return (activeIsUrl.value ? p.url || p.directUrl || '' : p.directUrl || '').trim()
+})
+const previewLabel = computed(() => {
+  const p = props.preview
+  if (!p) return 'preview'
   const label = (p.label || '').trim()
   if (label) return label
-  if (isUrlPreview(p)) {
-    const u = (p.url || p.directUrl || '').trim()
+  if (activeIsUrl.value) {
     try {
-      const parsed = new URL(u)
+      const parsed = new URL(activeDirectUrl.value)
       return parsed.host + parsed.pathname
     } catch {
-      return u
+      return activeDirectUrl.value
     }
   }
   return String(p.port)
-}
-
-const activeMeta = computed(() => preview.value)
-const activeIsUrl = computed(() => (activeMeta.value ? isUrlPreview(activeMeta.value) : false))
-const activeIsDirect = computed(() => (activeMeta.value ? isDirectPort(activeMeta.value) : false))
-const activeDirectUrl = computed(() => {
-  if (!activeMeta.value) return ''
-  if (isUrlPreview(activeMeta.value)) {
-    return (activeMeta.value.url || activeMeta.value.directUrl || '').trim()
-  }
-  return (activeMeta.value.directUrl || '').trim()
 })
 
 async function exchangeTicket() {
@@ -188,7 +175,7 @@ function retry() {
         <ExternalUrlPreviewFrame
           v-if="activeIsUrl && activeDirectUrl"
           :url="activeDirectUrl"
-          :title="activeMeta ? previewLabel(activeMeta) : 'preview'"
+          :title="previewLabel"
         />
         <NovncPreviewPanel
           v-if="vncWsUrl"
