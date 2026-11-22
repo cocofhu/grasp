@@ -449,6 +449,12 @@ func TestModelErrorFailsTheTurn(t *testing.T) {
 	if e := rec.ofType("error_text"); len(e) != 1 {
 		t.Fatalf("error_text: %v", e)
 	}
+	if len(res.Usage) == 0 || !res.UsagePartial {
+		t.Fatalf("the failed turn's usage must be partial: %+v", res)
+	}
+	if done := rec.ofType("prompt_done"); len(done) != 1 || done[0]["usagePartial"] != true {
+		t.Fatalf("prompt_done: %v", done)
+	}
 }
 
 func TestAnAutomaticRetryDecidesTheTurn(t *testing.T) {

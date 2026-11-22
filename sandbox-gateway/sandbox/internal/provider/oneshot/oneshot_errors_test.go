@@ -33,6 +33,9 @@ func (*diagnosticFake) ParseLine(line []byte) ParseResult {
 	if s := string(line); strings.HasPrefix(s, "error:") {
 		return ParseResult{Msgs: []Msg{{Kind: KindError, Text: strings.TrimPrefix(s, "error:")}}, StopReason: "failed"}
 	}
+	if string(line) == "step" {
+		return ParseResult{Usage: map[string]provider.TokenUsage{"default": stepUsage}}
+	}
 	return (&fakeCodec{}).ParseLine(line)
 }
 
@@ -275,6 +278,44 @@ func TestOneShotStructuredFailureWithoutExitError(t *testing.T) {
 	assertDiagnosticBoundary(t, got, "failed", 2)
 	if got[0]["text"] != "API unavailable" || got[1]["text"] != "Check your proxy configuration" {
 		t.Fatalf("lost final attempt diagnostics: %v", got)
+	}
+}
+
+var stepUsage = provider.TokenUsage{InputTokens: 3, OutputTokens: 2}
+
+func TestOneShotUnfinishedTurnsReportPartialUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name, script, stop string
+		cancel, partial    bool
+	}{
+		{name: "completed", script: `printf '%s\n' step done`, stop: "end_turn"},
+		{name: "failed", script: `printf '%s\n' step 'error:quota exceeded'`, stop: "failed", partial: true},
+		{name: "cancelled", script: `printf '%s\n' step 'text:working'; exec sleep 30`, stop: "cancelled", cancel: true, partial: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &diagnosticFake{scripts: []string{tc.script}}
+			frames := &diagnosticFrames{}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			s, err := NewProvider(c).Open(context.Background(), context.Background(), provider.OpenOptions{Cwd: t.TempDir()}, func(raw json.RawMessage) {
+				frames.receive(raw)
+				if tc.cancel && strings.Contains(string(raw), "working") {
+					cancel()
+				}
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			result, _ := s.Prompt(ctx, "hi", nil)
+			if result.StopReason != tc.stop || result.UsagePartial != tc.partial || result.Usage["default"].InputTokens < stepUsage.InputTokens {
+				t.Fatalf("result=%+v", result)
+			}
+			got := frames.take()
+			if done := got[len(got)-1]; done["type"] != "prompt_done" || (done["usagePartial"] == true) != tc.partial {
+				t.Fatalf("prompt_done=%v", done)
+			}
+		})
 	}
 }
 

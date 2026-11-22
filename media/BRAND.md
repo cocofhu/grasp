@@ -12,8 +12,9 @@ Grasp 只有一套标识：**幽灵猫 + Fredoka 墨色「Grasp」字标**。本
 | `grasp-logo-banner.svg` | 横幅源文件，内容同 `logo-light.svg` |
 | `grasp-logo-banner.png` | 横幅位图 1200×400，透明底，由 `grasp-logo-banner.svg` 导出 |
 | `favicon.svg` | 静态猫矢量源，`web/public/favicon.ico` 由它导出 |
+| `yume-mark.png` | 165×172 透明底位图，由 `logo-mark.svg` 导出 |
 
-`yume-mark.png`、`grasp-*.mp4`、`grasp-readme-video-poster.webp` 与 `screenshots/` 是首页插画和 README 演示素材，不属于 Logo。
+`grasp-*.mp4`、`grasp-readme-video-poster.webp` 与 `screenshots/` 是首页插画和 README 演示素材，不属于 Logo。
 
 `web/src/assets/brand/` 中的 `logo-mark.svg`、`logo-light.svg`、`logo-dark.svg` 与本目录同名文件内容保持一致；三份 `favicon.svg`（本目录、`web/src/assets/brand`、`web/public`）保持同步。
 
@@ -21,7 +22,7 @@ Grasp 只有一套标识：**幽灵猫 + Fredoka 墨色「Grasp」字标**。本
 
 | 项 | 规则 |
 |----|------|
-| 图标 | 只用幽灵猫，几何与配色不可修改；白身 + `#1a1a1a` 描边 + `#c8c8c8` 腮红，深浅底都不反色。猫的路径以 `web/src/components/shell/BrandCharacterMark.vue` 为唯一数据源 |
+| 图标 | 只用幽灵猫（带右侧尾巴），几何与配色不可修改；白身 + `#1a1a1a` 描边（宽 5，favicon 为 6）+ `#c8c8c8` 腮红，深浅底都不反色。尾巴是一条黑色描边，下面垫一条白色宽描边，保证深色底上也能看见。猫的路径与画布 `50 51 120 119` 以 `web/src/components/shell/BrandCharacterMark.vue` 为唯一数据源 |
 | 字标 | Grasp，Fredoka SemiBold（600），字距 −0.01em；浅底 `#18181b`，深底 `#ededf0`；不用渐变 / 流光 / 描边 |
 | 组合比例 | 猫高 ≈ 字号 × 1.45；间距 ≈ 猫高 × 0.25（28→8px、48→12px、96→22px） |
 | 最小尺寸 | 猫 ≥ 16px；完整 lockup ≥ 120px 宽 |
@@ -47,7 +48,7 @@ Grasp 只有一套标识：**幽灵猫 + Fredoka 墨色「Grasp」字标**。本
 
 ## 4. 更新资产时的检查清单
 
-- [ ] 猫的 `path d` 与 `BrandCharacterMark.vue` 完全一致
+- [ ] 猫身体与尾巴的 `path d`、画布与 `BrandCharacterMark.vue` 完全一致
 - [ ] 字标为 `<path>`，SVG 中没有 `<text>`、外链字体或外部图片
 - [ ] `media/` 与 `web/src/assets/brand/` 同名文件一致，横幅 PNG 已重新导出
 - [ ] 浅色与深色背景下均检查过侧边栏、登录页与 README 头图

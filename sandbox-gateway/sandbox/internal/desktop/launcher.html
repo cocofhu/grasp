@@ -14,9 +14,43 @@
   .hero { display: flex; flex-direction: column; align-items: center; }
   .bubble { position: relative; max-width: 300px; padding: 10px 16px; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(30,27,58,.06), 0 10px 28px -12px rgba(30,27,58,.25); font-size: 13px; line-height: 1.55; color: #3b3858; text-align: center; }
   .bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #fff; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
-  .mascot { width: 76px; height: 86px; margin-top: 14px; filter: drop-shadow(0 10px 14px rgba(123,97,255,.28)); animation: float 4.5s ease-in-out infinite; }
-  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-  @media (prefers-reduced-motion: reduce) { .mascot { animation: none; } }
+  .mascot { width: 86px; height: 96px; margin-top: 10px; overflow: visible; filter: drop-shadow(0 10px 14px rgba(123,97,255,.28)); cursor: pointer; outline: none; }
+  .mascot:focus-visible { filter: drop-shadow(0 0 0.5px #7b61ff) drop-shadow(0 10px 14px rgba(123,97,255,.28)); }
+  .mascot .m-motion { transform-box: view-box; transform-origin: 100px 160px; transform: translate(var(--m-x, 0px), var(--m-y, 0px)) rotate(var(--m-rot, 0deg)) scale(var(--m-sx, 1), var(--m-sy, 1)); }
+  .mascot .m-tail { transform-box: view-box; transform-origin: 139px 150px; transform: rotate(var(--m-tail, 0deg)); }
+  .mascot .m-arm-l { transform-box: view-box; transform-origin: 68px 141px; transform: rotate(var(--m-arm-l, 0deg)); }
+  .mascot .m-arm-r { transform-box: view-box; transform-origin: 132px 141px; transform: rotate(var(--m-arm-r, 0deg)); }
+  .mascot .m-arms { opacity: var(--m-arms, 0); }
+  .mascot .m-eyes { transform-box: view-box; transform-origin: 100px 110px; transform: translate(var(--m-eye-x, 0px), var(--m-eye-y, 0px)) scale(var(--m-eye-sx, 1), var(--m-eye-sy, 1)); }
+  .mascot .m-brow { transform-box: view-box; transform-origin: 100px 104px; transform: rotate(var(--m-brow-rot, 0deg)); opacity: var(--m-brow-opacity, 0); }
+  .mascot .m-mouth-closed { opacity: calc(1 - var(--m-mouth, 0)); }
+  .mascot .m-mouth-open { opacity: var(--m-mouth, 0); }
+  .mascot .m-blush { opacity: var(--m-blush, .85); }
+  .mascot .m-shadow { transform-box: fill-box; transform-origin: center; transform: scaleX(var(--m-shadow, 1)); opacity: var(--m-shadow-opacity, .2); }
+  .mascot .m-motion,
+  .mascot .m-tail,
+  .mascot .m-arm-l,
+  .mascot .m-arm-r,
+  .mascot .m-arms,
+  .mascot .m-eyes,
+  .mascot .m-brow,
+  .mascot .m-mouth-closed,
+  .mascot .m-mouth-open,
+  .mascot .m-blush,
+  .mascot .m-shadow { transition: transform 420ms cubic-bezier(.22,.8,.25,1), opacity 260ms ease; transform-origin: center; }
+  @media (prefers-reduced-motion: reduce) {
+    .mascot .m-motion,
+    .mascot .m-tail,
+    .mascot .m-arm-l,
+    .mascot .m-arm-r,
+    .mascot .m-arms,
+    .mascot .m-eyes,
+    .mascot .m-brow,
+    .mascot .m-mouth-closed,
+    .mascot .m-mouth-open,
+    .mascot .m-blush,
+    .mascot .m-shadow { transition: none; }
+  }
   .clock { margin-top: 10px; font-size: 96px; font-weight: 300; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
   .greet { margin-top: 14px; font-size: 18px; font-weight: 500; }
   .date { margin-top: 6px; font-size: 13px; color: var(--muted); }
@@ -37,7 +71,7 @@
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="cat" viewBox="48 52 104 118"><path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/><ellipse cx="84" cy="110" rx="6" ry="8" fill="currentColor"/><ellipse cx="116" cy="110" rx="6" ry="8" fill="currentColor"/></symbol>
+  <symbol id="cat" viewBox="50 51 120 119"><path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/><path d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/><ellipse cx="84" cy="110" rx="6" ry="8" fill="currentColor"/><ellipse cx="116" cy="110" rx="6" ry="8" fill="currentColor"/></symbol>
 </svg>
 <div class="doodles" aria-hidden="true">
   <svg style="left:7%;top:12%;transform:rotate(-14deg)"><use href="#cat"/></svg>
@@ -52,13 +86,32 @@
 <main>
   <div class="hero">
     <div class="bubble" id="bubble"></div>
-    <svg class="mascot" viewBox="48 52 104 118" role="img" aria-label="Grasp">
-      <path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"/>
-      <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
-      <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
-      <path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="74" cy="126" r="6" fill="#c8c8c8"/>
-      <circle cx="126" cy="126" r="6" fill="#c8c8c8"/>
+    <svg class="mascot" viewBox="0 0 200 200" role="button" aria-label="Grasp mascot" tabindex="0">
+      <ellipse class="m-shadow" cx="100" cy="184" rx="39" ry="7" fill="#1a1a1a"/>
+      <g class="m-motion">
+        <g class="m-tail">
+          <path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#1a1a1a" stroke-width="6" stroke-linecap="round"/>
+        </g>
+        <path d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"/>
+        <g class="m-arms">
+          <g class="m-arm-l"><path d="M64 143 C52 142 49 132 56 124 C61 119 67 123 70 130" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linecap="round"/></g>
+          <g class="m-arm-r"><path d="M136 143 C148 142 151 132 144 124 C139 119 133 123 130 130" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linecap="round"/></g>
+        </g>
+        <g class="m-eyes">
+          <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+          <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+        </g>
+        <g class="m-brow" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round">
+          <path d="M75 99 Q84 94 92 99"/>
+          <path d="M108 99 Q116 94 125 99"/>
+        </g>
+        <path class="m-mouth-closed" d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+        <path class="m-mouth-open" d="M91 121 Q100 124 109 121 Q108 135 100 135 Q92 135 91 121Z" fill="#FFFFFF" stroke="#1a1a1a" stroke-width="4" stroke-linejoin="round"/>
+        <g class="m-blush" fill="#c8c8c8">
+          <circle cx="74" cy="126" r="6"/>
+          <circle cx="126" cy="126" r="6"/>
+        </g>
+      </g>
     </svg>
     <div class="clock" id="clock"></div>
     <div class="greet" id="greet"></div>
@@ -86,6 +139,138 @@
   }
   tick();
   setInterval(tick, 15000);
+  var mascot = document.querySelector('.mascot');
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var poseKeys = ['x', 'y', 'rot', 'sx', 'sy', 'tail', 'armL', 'armR', 'arms', 'eyeX', 'eyeY', 'eyeSX', 'eyeSY', 'browRot', 'browOpacity', 'mouth', 'blush', 'shadow', 'shadowOpacity'];
+  var idlePose = {
+    x: 0, y: 0, rot: 0, sx: 1, sy: 1, tail: 0, armL: 0, armR: 0, arms: 0,
+    eyeX: 0, eyeY: 0, eyeSX: 1, eyeSY: 1, browRot: 0, browOpacity: 0, mouth: 0, blush: .85, shadow: 1, shadowOpacity: .2,
+  };
+  var poses = {
+    idle: idlePose,
+    happy: Object.assign({}, idlePose, { y: -2, sx: 1.02, sy: 1.02, tail: 8, eyeSY: .78, mouth: .35 }),
+    laugh: Object.assign({}, idlePose, { y: -4, sx: 1.04, sy: .96, tail: -10, arms: .2, eyeSY: .16, mouth: 1, shadow: .82 }),
+    surprise: Object.assign({}, idlePose, { y: -1, sx: .98, sy: 1.04, tail: 13, arms: .75, armL: -20, armR: 20, eyeSX: 1.18, eyeSY: 1.18, mouth: 1, browOpacity: .8, shadow: .9 }),
+    sleepy: Object.assign({}, idlePose, { y: 3, rot: 2, sx: 1.02, sy: .96, tail: -8, eyeSY: .12, mouth: 0, shadow: .92 }),
+    angry: Object.assign({}, idlePose, { rot: -1, sx: 1.04, sy: .96, tail: 12, arms: .45, armL: -12, armR: 12, eyeSY: .72, browRot: -12, browOpacity: 1, mouth: 0 }),
+    worried: Object.assign({}, idlePose, { x: 1, y: 1, rot: 1, tail: -4, arms: .22, eyeSX: .92, eyeSY: 1.08, browRot: 12, browOpacity: 1, mouth: 0 }),
+    think: Object.assign({}, idlePose, { x: -3, y: -1, rot: -2, tail: 4, arms: .55, armR: -40, eyeX: -4, eyeY: -2, browRot: 8, browOpacity: .55, shadow: .95 }),
+    waveA: Object.assign({}, idlePose, { y: -3, rot: -1, tail: 12, arms: .9, armR: -35, mouth: .35, eyeSY: .9, shadow: .86 }),
+    waveB: Object.assign({}, idlePose, { x: 2, y: -3, rot: 1, tail: -8, arms: .9, armR: 25, mouth: .35, eyeSY: .9, shadow: .86 }),
+    jumpPrep: Object.assign({}, idlePose, { y: 6, sx: 1.08, sy: .82, tail: -8, arms: .75, armL: -12, armR: 12, shadow: 1.18, shadowOpacity: .26 }),
+    jumpAir: Object.assign({}, idlePose, { y: -24, rot: -2, sx: .9, sy: 1.08, tail: 18, arms: .9, armL: -40, armR: 40, eyeSY: 1.08, mouth: 1, shadow: .55, shadowOpacity: .12 }),
+    jumpLand: Object.assign({}, idlePose, { y: 2, rot: 1, sx: 1.1, sy: .86, tail: -15, arms: .55, mouth: .4, shadow: 1.2, shadowOpacity: .28 }),
+    runA: Object.assign({}, idlePose, { x: -3, y: -4, rot: -6, sx: 1.02, sy: .98, tail: 10, arms: .8, armL: 25, armR: -25, shadow: .82 }),
+    runB: Object.assign({}, idlePose, { x: 3, y: -2, rot: 6, sx: 1.02, sy: .98, tail: -10, arms: .8, armL: -25, armR: 25, shadow: .82 }),
+    peek: Object.assign({}, idlePose, { x: 16, y: 3, rot: 8, sx: .96, sy: 1.02, tail: 15, arms: .5, armR: -20, eyeX: -4, mouth: .2, shadow: .9 }),
+  };
+  var currentPose = Object.assign({}, idlePose);
+  var animationToken = 0;
+  var sequence = [
+    ['idle', 700, 700], ['happy', 420, 500], ['laugh', 360, 520], ['surprise', 380, 500],
+    ['sleepy', 480, 620], ['angry', 380, 480], ['worried', 380, 560], ['think', 480, 680],
+    ['waveA', 360, 260], ['waveB', 280, 280], ['waveA', 280, 260],
+    ['jumpPrep', 260, 100], ['jumpAir', 260, 220], ['jumpLand', 220, 360],
+    ['runA', 260, 220], ['runB', 240, 220], ['runA', 240, 220], ['peek', 420, 620],
+  ];
+
+  function applyPose(next) {
+    if (!mascot) return;
+    mascot.style.setProperty('--m-x', next.x + 'px');
+    mascot.style.setProperty('--m-y', next.y + 'px');
+    mascot.style.setProperty('--m-rot', next.rot + 'deg');
+    mascot.style.setProperty('--m-sx', next.sx);
+    mascot.style.setProperty('--m-sy', next.sy);
+    mascot.style.setProperty('--m-tail', next.tail + 'deg');
+    mascot.style.setProperty('--m-arm-l', next.armL + 'deg');
+    mascot.style.setProperty('--m-arm-r', next.armR + 'deg');
+    mascot.style.setProperty('--m-arms', next.arms);
+    mascot.style.setProperty('--m-eye-x', next.eyeX + 'px');
+    mascot.style.setProperty('--m-eye-y', next.eyeY + 'px');
+    mascot.style.setProperty('--m-eye-sx', next.eyeSX);
+    mascot.style.setProperty('--m-eye-sy', next.eyeSY);
+    mascot.style.setProperty('--m-brow-rot', next.browRot + 'deg');
+    mascot.style.setProperty('--m-brow-opacity', next.browOpacity);
+    mascot.style.setProperty('--m-mouth', next.mouth);
+    mascot.style.setProperty('--m-blush', next.blush);
+    mascot.style.setProperty('--m-shadow', next.shadow);
+    mascot.style.setProperty('--m-shadow-opacity', next.shadowOpacity);
+  }
+
+  function easeInOut(t) {
+    return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function animatePose(name, duration, token) {
+    return new Promise(function (resolve) {
+      var start = Object.assign({}, currentPose);
+      var target = poses[name] || idlePose;
+      var started = performance.now();
+      function frame(now) {
+        if (token !== animationToken) { resolve(false); return; }
+        var progress = duration <= 0 ? 1 : Math.min(1, (now - started) / duration);
+        var eased = easeInOut(progress);
+        var next = {};
+        poseKeys.forEach(function (key) { next[key] = start[key] + (target[key] - start[key]) * eased; });
+        currentPose = next;
+        applyPose(next);
+        if (progress < 1) requestAnimationFrame(frame);
+        else resolve(true);
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function pause(ms, token) {
+    return new Promise(function (resolve) { setTimeout(function () { resolve(token === animationToken); }, ms); });
+  }
+
+  function playSteps(steps, resume) {
+    var token = ++animationToken;
+    (async function () {
+      for (var i = 0; i < steps.length; i++) {
+        var step = steps[i];
+        if (!(await animatePose(step[0], step[1], token))) return;
+        if (!(await pause(step[2], token))) return;
+      }
+      if (resume && token === animationToken && !document.hidden && !reduceMotion.matches) playSteps(sequence, true);
+    }());
+  }
+
+  function startMascotMotion() {
+    if (!mascot) return;
+    if (reduceMotion.matches) { applyPose(idlePose); return; }
+    playSteps(sequence, true);
+  }
+
+  if (mascot) {
+    mascot.addEventListener('mouseenter', function () {
+      if (!reduceMotion.matches) playSteps([['waveA', 360, 220], ['waveB', 280, 260], ['waveA', 280, 220], ['happy', 360, 360]], true);
+    });
+    mascot.addEventListener('click', function () {
+      if (!reduceMotion.matches) playSteps([['jumpPrep', 260, 80], ['jumpAir', 260, 180], ['jumpLand', 220, 360], ['happy', 360, 420]], true);
+    });
+    mascot.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        mascot.click();
+      }
+    });
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      animationToken++;
+      applyPose(idlePose);
+    } else {
+      startMascotMotion();
+    }
+  });
+  reduceMotion.addEventListener('change', function () {
+    animationToken++;
+    startMascotMotion();
+  });
+  applyPose(idlePose);
+  startMascotMotion();
   var toastTimer;
   function toast(msg) {
     var el = document.getElementById('toast');

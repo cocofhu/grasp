@@ -100,7 +100,7 @@ test.describe('Live preview and Chat browser bridge', () => {
     const motion = mark.locator('.brand-character__motion')
     const breath = mark.locator('.brand-character__breath')
     const eyes = mark.locator('.brand-character__eye')
-    await expect(mark.locator('svg')).toHaveAttribute('viewBox', '48 52 104 118')
+    await expect(mark.locator('svg')).toHaveAttribute('viewBox', '50 51 120 119')
     await expect(eyes).toHaveCount(2)
 
     const layout = () => mark.evaluate((element) => {
@@ -113,7 +113,8 @@ test.describe('Live preview and Chat browser bridge', () => {
 
     // Sample the running browser timeline: animation declarations alone do not
     // prove that the injected SVG is visibly moving.
-    await expect.poll(() => mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(4)
+    // Sway, breath, tail wag, two blinks and the eight face parts of the expression cycle.
+    await expect.poll(() => mark.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(13)
     for (const part of [motion, breath]) {
       const transform = await part.evaluate((element) => getComputedStyle(element).transform)
       await expect.poll(() => part.evaluate((element) => getComputedStyle(element).transform)).not.toBe(transform)
@@ -147,8 +148,8 @@ test.describe('Live preview and Chat browser bridge', () => {
       if (theme === 'light') await expect(host).toHaveClass(/\blight\b/)
       else await expect(host).not.toHaveClass(/\blight\b/)
       await expect(mark).toBeVisible()
-      await expect(mark.locator('path').first()).toHaveCSS('fill', 'rgb(255, 255, 255)')
-      await expect(mark.locator('path').first()).toHaveCSS('stroke', 'rgb(26, 26, 26)')
+      await expect(mark.locator('path[d^="M58 160"]')).toHaveCSS('fill', 'rgb(255, 255, 255)')
+      await expect(mark.locator('path[d^="M58 160"]')).toHaveCSS('stroke', 'rgb(26, 26, 26)')
       await expect(mark.locator('circle').first()).toHaveCSS('fill', 'rgb(200, 200, 200)')
       await mark.hover()
       await expect.poll(() => response.evaluate((element) => getComputedStyle(element).transform)).not.toBe('none')

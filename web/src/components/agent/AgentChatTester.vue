@@ -1176,13 +1176,13 @@ onBeforeUnmount(() => {
           <button
             v-if="status === 'thinking' && steerable"
             type="button"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-accent/10 hover:text-accent"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt hover:bg-accent/10 hover:text-accent"
             :title="t('pages.clarify.queueSteerTitle')"
             :aria-label="t('pages.clarify.queueSteerAria')"
             data-testid="tester-queue-steer"
             @click="steerQueued(q.id)"
           >
-            <Icon name="priority-bolt" :size="13" />
+            <Icon name="steer" :size="14" />
           </button>
         </div>
       </div>

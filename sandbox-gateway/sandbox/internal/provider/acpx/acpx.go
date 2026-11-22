@@ -63,10 +63,11 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 		s.failed.reset()
 	}
 	res, err := s.p.PromptTurn(ctx, text, images)
-	out := provider.TurnResult{StopReason: res.StopReason, Usage: res.Usage, UsagePartial: err != nil && len(res.Usage) > 0}
+	out := provider.TurnResult{StopReason: res.StopReason, Usage: res.Usage}
 	if err == nil && s.failed != nil && s.failed.seen() {
 		out.StopReason = "failed"
 	}
+	out.UsagePartial = len(res.Usage) > 0 && (err != nil || out.StopReason == "cancelled" || out.StopReason == "failed")
 	if len(res.Usage) > 0 {
 		s.mu.Lock()
 		if s.cumulative == nil {

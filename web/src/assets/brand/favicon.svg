@@ -1,7 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 50 120 120" width="32" height="32" role="img" aria-label="Grasp">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="50 50 120 120" width="32" height="32" role="img" aria-label="Grasp">
   <title>Grasp</title>
+  <path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" />
+  <path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#1a1a1a" stroke-width="6" stroke-linecap="round" />
   <path
-    d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z"
+    d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z"
     fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"
   />
   <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a" />

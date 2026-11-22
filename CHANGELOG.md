@@ -6,6 +6,12 @@ All notable public-release changes are documented here.
 
 - 应用预览接口改为单一对象：节点预览改为 `GET /api/runs/:id/nodes/:nodeId/preview`，返回 `{"preview": ... | null}`；Solo 资源和公开分享预览也改为 `preview` 字段，不再返回 `ports` 列表。旧数据库升级时按节点和沙箱都只保留最新一条预览登记。
 
+- 取消、超时或失败的回合带回的 token 用量统一标为部分用量（对齐 t3code），覆盖 DeepSeek Harness、Grok、Antigravity、DevEco、OpenClaw、Claude Code、CodeBuddy、Gemini、Pi 和 OpenCode；同一操作之后的最终用量可以替换它。token 数值不变。
+
+- 聊天时间线里的思考过程改用脑部线稿，工具完成状态改用圆环勾选，折叠后的状态行在小尺寸下更清晰。
+
+- 排队消息的「立即引导」按钮改用更明确的转向箭头图标，并在悬停或键盘聚焦时播放一次路径转入动效；减弱动态效果时保持静态图标。
+
 - 应用预览每个沙箱只保留一个活动 Preview。再次调用 `set_preview` 会替换当前预览，预览界面和公开分享页不再提供多端口切换标签。
 
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
@@ -35,6 +41,10 @@ All notable public-release changes are documented here.
 - 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。工作流节点创建沙箱时如果沙箱已满，会在执行日志里提示「等待沙箱名额」并等到有名额后继续，不再直接失败。`GET /api/stats/dashboard` 已移除。
 
 - 设置里的仓库页面调整为工作台式布局：统计卡片自动填充可用宽度，仓库卡片补充来源、分支和最近使用状态，并突出「开始 Solo」操作。
+
+- 首页角色改为 A 方案的多表情连续动画：会依次做出待机、开心、大笑、惊讶、困倦、生气、担心、思考、挥手、跳跃、奔跑和探头，切换表情时像眨眼一样先闭上再弹开新表情，不再出现两张脸叠在一起的灰影；悬停时挥手，输入时专注，提交时跳跃。侧边栏图标和 Page Harness CoCo 工具栏里的角色也会轮换开心、惊讶、眨眼、困倦等表情。角色轮廓（含 Logo、favicon 和桌面图标）从直线改为圆润的曲线和浅波浪下摆，Logo 也加上了 A 方案的尾巴并换成更细的描边，深色底上尾巴带白边也能看清；横幅 PNG、`favicon.ico` 和 `yume-mark.png` 已重新导出。表情特效改用项目主色 #7B61FF，嘴巴内部为白色，和黑白灰的角色配色一致。
+
+- 桌面启动页的吉祥物改为连续动作角色动画（造型与 Logo 一致：曲线轮廓、新尾巴、白色张嘴）：保留原有气泡、时钟和应用布局，角色会在待机、开心、惊讶、困倦、思考、挥手、跳跃、奔跑和探头等状态之间平滑过渡，并支持悬停、点击和键盘触发互动。
 
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 

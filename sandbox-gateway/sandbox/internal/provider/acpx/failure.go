@@ -34,6 +34,9 @@ func watchFailures(onEvent func(json.RawMessage), isFailure func(string) bool) (
 				var done map[string]any
 				if json.Unmarshal(ev, &done) == nil {
 					done["stopReason"] = "failed"
+					if done["usage"] != nil {
+						done["usagePartial"] = true
+					}
 					if b, err := json.Marshal(done); err == nil {
 						ev = b
 					}

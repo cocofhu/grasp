@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -13,7 +13,19 @@ const props = withDefaults(
   { attentive: false, typingTick: 0, cheerTick: 0 },
 )
 
-type IdleAction = 'look' | 'ear' | 'tilt' | 'stretch'
+type Mood =
+  | 'idle'
+  | 'happy'
+  | 'laugh'
+  | 'surprised'
+  | 'sleepy'
+  | 'angry'
+  | 'worried'
+  | 'think'
+  | 'wave'
+  | 'jump'
+  | 'run'
+  | 'peek'
 
 interface Heart {
   id: number
@@ -22,10 +34,48 @@ interface Heart {
   delay: number
 }
 
-const IDLE_DURATION_MS: Record<IdleAction, number> = { look: 1600, ear: 700, tilt: 1400, stretch: 1200 }
-const IDLE_ACTIONS = Object.keys(IDLE_DURATION_MS) as IdleAction[]
-const IDLE_MIN_MS = 6000
-const IDLE_SPREAD_MS = 4000
+/** Ambient performance order. Each hold is a whole number of that mood's loop, so loops end at rest. */
+const MOOD_HOLD_MS: Record<Mood, number> = {
+  idle: 3200,
+  happy: 2400,
+  laugh: 2500,
+  surprised: 1800,
+  sleepy: 2800,
+  angry: 2160,
+  worried: 2400,
+  think: 2800,
+  wave: 2400,
+  jump: 2700,
+  run: 2520,
+  peek: 2600,
+}
+const MOODS = Object.keys(MOOD_HOLD_MS) as Mood[]
+
+interface Face {
+  eyes: 'dot' | 'arc' | 'x' | 'shut' | 'wink' | 'glare'
+  mouth: 'w' | 'open' | 'o' | 'tiny' | 'wavy' | 'frown' | 'hm'
+  brows?: 'angry' | 'worry'
+  arms?: 'wave' | 'up' | 'run'
+  shine?: boolean
+  paw?: boolean
+  fx?: string
+}
+
+/** Expression sheet A: every mood is a mix of the same parts, so each one blinks into the next. */
+const FACES: Record<Mood, Face> = {
+  idle: { eyes: 'dot', mouth: 'w' },
+  happy: { eyes: 'arc', mouth: 'open', fx: 'spark' },
+  laugh: { eyes: 'x', mouth: 'open', fx: 'hash' },
+  surprised: { eyes: 'dot', mouth: 'o', shine: true, fx: 'bang' },
+  sleepy: { eyes: 'shut', mouth: 'tiny', fx: 'zz' },
+  angry: { eyes: 'glare', mouth: 'frown', brows: 'angry', fx: 'vein' },
+  worried: { eyes: 'dot', mouth: 'wavy', brows: 'worry', shine: true, fx: 'sweat' },
+  think: { eyes: 'dot', mouth: 'hm', shine: true, paw: true, fx: 'cloud' },
+  wave: { eyes: 'wink', mouth: 'open', arms: 'wave', fx: 'waves' },
+  jump: { eyes: 'arc', mouth: 'open', arms: 'up', fx: 'hop' },
+  run: { eyes: 'x', mouth: 'open', arms: 'run', fx: 'speed' },
+  peek: { eyes: 'dot', mouth: 'open', shine: true, fx: 'alert' },
+}
 const SLEEP_AFTER_MS = 45_000
 const TAP_WINDOW_MS = 800
 const JUMP_MS = 360
@@ -46,15 +96,25 @@ const sleeping = ref(false)
 const waking = ref(false)
 const nodding = ref(false)
 const cheering = ref(false)
-const idleAction = ref<IdleAction | null>(null)
+const mood = ref<Mood>('idle')
 const hearts = ref<Heart[]>([])
 const reducedMotion = ref(false)
+
+/** Live states win over the ambient performance; transitions between them stay continuous. */
+const shownMood = computed<Mood>(() => {
+  if (reducedMotion.value) return 'idle'
+  if (sleeping.value) return 'sleepy'
+  if (cheering.value) return 'jump'
+  if (props.attentive) return 'idle'
+  if (hovering.value) return 'wave'
+  return mood.value
+})
+const face = computed(() => FACES[shownMood.value])
 
 let mounted = false
 let motionMql: MediaQueryList | null = null
 let taps = 0
 let lastTapAt = -Infinity
-let lastIdle: IdleAction | null = null
 let lastActivityAt = 0
 let lastNodEndAt = -Infinity
 let heartSeq = 0
@@ -116,7 +176,7 @@ function stopAll() {
   waking.value = false
   nodding.value = false
   cheering.value = false
-  idleAction.value = null
+  mood.value = 'idle'
   hearts.value = []
   resetEyes()
 }
@@ -124,46 +184,19 @@ function stopAll() {
 function startAmbient() {
   if (!motionAllowed() || pageHidden()) return
   lastActivityAt = Date.now()
-  scheduleIdle()
+  scheduleMood()
   scheduleSleep()
 }
 
-function scheduleIdle() {
-  later('idle', IDLE_MIN_MS + Math.random() * IDLE_SPREAD_MS, runIdle)
+function scheduleMood() {
+  later('mood', MOOD_HOLD_MS[mood.value], advanceMood)
 }
 
-function canIdle() {
-  return !(
-    hovering.value ||
-    pressed.value ||
-    jumping.value ||
-    flipping.value ||
-    cheering.value ||
-    nodding.value ||
-    waking.value ||
-    sleeping.value ||
-    idleAction.value ||
-    props.attentive ||
-    pageHidden()
-  )
-}
-
-function runIdle() {
-  if (canIdle()) {
-    const options = IDLE_ACTIONS.filter((a) => a !== lastIdle)
-    const action = options[Math.floor(Math.random() * options.length)] ?? options[0]
-    lastIdle = action
-    idleAction.value = action
-    later('idleEnd', IDLE_DURATION_MS[action], () => {
-      idleAction.value = null
-    })
-  }
-  scheduleIdle()
-}
-
-function clearIdle() {
-  cancel('idleEnd')
-  idleAction.value = null
+/** Hover, focus and sleep hold the performance in place; it resumes from the same mood. */
+function advanceMood() {
+  const held = hovering.value || sleeping.value || cheering.value || props.attentive || pageHidden()
+  if (!held) mood.value = MOODS[(MOODS.indexOf(mood.value) + 1) % MOODS.length]
+  scheduleMood()
 }
 
 function scheduleSleep(delay = SLEEP_AFTER_MS) {
@@ -180,7 +213,6 @@ function checkSleep() {
     scheduleSleep(SLEEP_AFTER_MS - idleFor)
     return
   }
-  clearIdle()
   resetEyes()
   sleeping.value = true
 }
@@ -232,7 +264,6 @@ function onPointerDown(e: PointerEvent) {
   if (reducedMotion.value) return
   if (e.pointerType === 'mouse' && e.button !== 0) return
   pressed.value = true
-  clearIdle()
 }
 
 function jump() {
@@ -273,7 +304,6 @@ function spawnHearts() {
 function bounce() {
   if (!motionAllowed()) return
   noteActivity()
-  clearIdle()
   const now = Date.now()
   taps = now - lastTapAt < TAP_WINDOW_MS ? taps + 1 : 1
   lastTapAt = now
@@ -299,7 +329,6 @@ function nod() {
   if (!motionAllowed()) return
   noteActivity()
   if (nodding.value || Date.now() - lastNodEndAt < NOD_REST_MS) return
-  clearIdle()
   nodding.value = true
   later('nod', NOD_MS, () => {
     nodding.value = false
@@ -311,7 +340,6 @@ function cheer() {
   if (!motionAllowed()) return
   noteActivity()
   if (cheering.value) return
-  clearIdle()
   cheering.value = true
   later('cheer', CHEER_MS, () => {
     cheering.value = false
@@ -323,10 +351,7 @@ watch(
   (on) => {
     if (!motionAllowed()) return
     noteActivity()
-    if (on) {
-      clearIdle()
-      resetEyes()
-    }
+    if (on) resetEyes()
   },
 )
 watch(() => props.typingTick, nod)
@@ -335,9 +360,8 @@ watch(() => props.cheerTick, cheer)
 function onVisibilityChange() {
   if (!motionAllowed()) return
   if (pageHidden()) {
-    cancel('idle')
+    cancel('mood')
     cancel('sleep')
-    clearIdle()
   } else {
     startAmbient()
   }
@@ -393,9 +417,10 @@ onBeforeUnmount(() => {
         attentive: attentive && !reducedMotion,
         'home-yume--static': reducedMotion,
       },
-      idleAction ? `idle-${idleAction}` : '',
+      `mood-${shownMood}`,
     ]"
     data-testid="home-yume"
+    :data-mood="shownMood"
     role="button"
     tabindex="0"
     aria-label="yume"
@@ -424,37 +449,197 @@ onBeforeUnmount(() => {
       <g class="c-float">
         <g class="c-squash">
           <g class="c-act">
-            <g class="c-breathe">
-              <!-- Overlap the root under the white body so no gap opens during a wag. -->
-              <g class="c-tail-anchor" transform="translate(138 142)">
-                <path class="k c-tail" d="M0 0 C20 -2 33 -14 30 -36" fill="none" />
-              </g>
-              <!-- Ear tips are cut below the ear overlays, so a twitching ear never reveals a second outline. -->
-              <path
-                class="k c-body"
-                d="M58 160 L58 92 L62 75 L78 70 L84 76 Q100 70 116 76 L122 70 L138 75 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z"
-                fill="#FFFFFF"
-              />
-              <path class="k c-ear-l" d="M59.9 84 L66 58 L84 76" fill="#FFFFFF" />
-              <path class="k c-ear-r" d="M116 76 L134 58 L140.1 84" fill="#FFFFFF" />
-              <g class="c-face">
-                <g class="c-eyes">
-                  <g class="c-eye"><ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a" /></g>
-                  <g class="c-eye"><ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a" /></g>
-                </g>
-                <path class="k c-mouth" d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" />
-                <path class="k c-mouth-open" d="M91 122 Q100 136 109 122 Z" fill="#1a1a1a" />
-                <g class="c-blush">
-                  <circle cx="74" cy="126" r="6" fill="#c8c8c8" opacity=".85" />
-                  <circle cx="126" cy="126" r="6" fill="#c8c8c8" opacity=".85" />
+            <g class="c-pose">
+              <g class="c-loop">
+                <g class="c-breathe">
+                  <!-- Overlap the root under the white body so no gap opens during a wag. -->
+                  <g class="c-tail-anchor" transform="translate(139 150)">
+                    <g class="c-tail-pose">
+                      <path class="k c-tail" d="M0 0 C16 1 26 -10 26 -27 C26 -35 23 -41 19 -44" fill="none" />
+                    </g>
+                  </g>
+                  <!-- Arms rest hidden behind the body edge and swing out from their shoulder. -->
+                  <g class="c-arm-anchor" transform="translate(60 126)">
+                    <g class="c-arm c-arm--l" :class="face.arms ? `arm-${face.arms}` : ''">
+                      <g class="c-arm-swing">
+                        <rect class="k" x="-7" y="-6" width="14" height="36" rx="7" fill="#FFFFFF" />
+                      </g>
+                    </g>
+                  </g>
+                  <g class="c-arm-anchor" transform="translate(140 126)">
+                    <g class="c-arm c-arm--r" :class="face.arms ? `arm-${face.arms}` : ''">
+                      <g class="c-arm-swing">
+                        <rect class="k" x="-7" y="-6" width="14" height="36" rx="7" fill="#FFFFFF" />
+                      </g>
+                    </g>
+                  </g>
+                  <!-- Ear tips are cut below the ear overlays, so a twitching ear never reveals a second outline. -->
+                  <path
+                    class="k c-body"
+                    d="M58 160 C55 136 55 108 59 90 C60 84 61 79 62 75 L77 70 L84 74 Q100 68 116 74 L123 70 L138 75 C139 79 140 84 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z"
+                    fill="#FFFFFF"
+                  />
+                  <path class="k c-ear-l" d="M59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74" fill="#FFFFFF" />
+                  <path class="k c-ear-r" d="M116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90" fill="#FFFFFF" />
+                  <g class="c-face">
+                    <g class="c-eyes">
+                      <g class="c-brows">
+                        <g class="c-part" :class="{ on: face.brows === 'angry' }">
+                          <path class="k c-brow-bold" d="M72 101 L92 108.5 M128 101 L108 108.5" fill="none" />
+                        </g>
+                        <g class="c-part" :class="{ on: face.brows === 'worry' }">
+                          <path class="k" d="M76 95 Q82 90.5 89 89 M124 95 Q118 90.5 111 89" fill="none" />
+                        </g>
+                      </g>
+                      <g class="c-gaze">
+                        <g class="c-part c-dot" :class="{ on: face.eyes === 'dot' || face.eyes === 'wink' }">
+                          <g class="c-dot-shape">
+                            <g class="c-eye">
+                              <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a" />
+                              <circle class="c-shine" :class="{ on: face.shine }" cx="86.4" cy="106.4" r="2.2" fill="#FFFFFF" />
+                            </g>
+                          </g>
+                        </g>
+                        <g class="c-part c-dot" :class="{ on: face.eyes === 'dot' }">
+                          <g class="c-dot-shape">
+                            <g class="c-eye">
+                              <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a" />
+                              <circle class="c-shine" :class="{ on: face.shine }" cx="118.4" cy="106.4" r="2.2" fill="#FFFFFF" />
+                            </g>
+                          </g>
+                        </g>
+                        <g class="c-part" :class="{ on: face.eyes === 'arc' }">
+                          <path class="k" d="M77 113 Q84 102 91 113" fill="none" />
+                        </g>
+                        <g class="c-part" :class="{ on: face.eyes === 'arc' || face.eyes === 'wink' }">
+                          <path class="k" d="M109 113 Q116 102 123 113" fill="none" />
+                        </g>
+                        <g class="c-part" :class="{ on: face.eyes === 'glare' }">
+                          <path d="M77 104 L91 109 Q92 118 84 118 Q76.5 118 77 104Z M123 104 L109 109 Q108 118 116 118 Q123.5 118 123 104Z" fill="#1a1a1a" />
+                        </g>
+                        <g class="c-part" :class="{ on: face.eyes === 'x' }">
+                          <path class="k" d="M78 103 L90 110 L78 117 M122 103 L110 110 L122 117" fill="none" />
+                        </g>
+                        <g class="c-part" :class="{ on: face.eyes === 'shut' }">
+                          <path class="k" d="M77 109 Q84 116 91 109 M109 109 Q116 116 123 109" fill="none" />
+                        </g>
+                      </g>
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'w' }">
+                      <path class="k c-mouth" d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'open' }">
+                      <path class="k c-mouth-open" d="M91 121 Q100 124 109 121 Q108 135 100 135 Q92 135 91 121Z" fill="#FFFFFF" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'o' }">
+                      <ellipse class="k" cx="100" cy="127" rx="4.5" ry="6" fill="#FFFFFF" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'tiny' }">
+                      <ellipse class="k" cx="100" cy="126" rx="2.6" ry="3" fill="#FFFFFF" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'wavy' }">
+                      <path class="k" d="M91 128 Q94.5 123.5 98 128 Q101.5 132.5 105 128 Q107 125.5 109 127" fill="none" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'frown' }">
+                      <path class="k" d="M92 130 Q96 124.5 100 128.5 Q104 124.5 108 130" fill="none" />
+                    </g>
+                    <g class="c-part" :class="{ on: face.mouth === 'hm' }">
+                      <path class="k" d="M95 127 Q100 123.5 106 126" fill="none" />
+                    </g>
+                    <g class="c-blush">
+                      <circle cx="74" cy="126" r="6" fill="#c8c8c8" opacity=".85" />
+                      <circle cx="126" cy="126" r="6" fill="#c8c8c8" opacity=".85" />
+                    </g>
+                    <g class="c-part c-paw" :class="{ on: face.paw }">
+                      <rect class="k" x="60" y="138" width="32" height="13" rx="6.5" transform="rotate(-30 76 144.5)" fill="#FFFFFF" />
+                    </g>
+                  </g>
                 </g>
               </g>
             </g>
           </g>
         </g>
+        <!-- Peek: a short pole in front of the body with both paws gripping it. -->
+        <g class="fx fx-pole" :class="{ on: face.fx === 'alert' }">
+          <path class="k" d="M143 86 L143 178" fill="none" />
+          <circle class="k" cx="143" cy="110" r="7.5" fill="#FFFFFF" />
+          <circle class="k" cx="143" cy="140" r="7.5" fill="#FFFFFF" />
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'spark' }">
+          <g class="fx-in"><path class="fx-k" d="M148 70 L157 61 M153 80 L165 77 M142 62 L145 51" /></g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'hash' }">
+          <g class="fx-in">
+            <path class="fx-k" d="M34 82 L50 80 M35 90 L51 88 M39 75 L42 96 M45 74 L48 95" />
+            <path class="fx-k" d="M150 74 L166 72 M151 82 L167 80 M155 67 L158 88 M161 66 L164 87" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'bang' }">
+          <g class="fx-in">
+            <path class="fx-k" d="M152 50 L150 66 M164 54 L159 69" />
+            <circle cx="149.5" cy="73" r="2.6" fill="#7B61FF" />
+            <circle cx="157.5" cy="75.5" r="2.6" fill="#7B61FF" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'zz' }">
+          <g class="fx-in fx-drift">
+            <path class="fx-k" d="M146 64 H155 L146 73 H155" />
+            <path class="fx-k" d="M160 46 H171 L160 57 H171" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'vein' }">
+          <g class="fx-in">
+            <path
+              class="fx-k"
+              d="M115 83 Q121 83 121 77 M127 77 Q127 83 133 83 M115 89 Q121 89 121 95 M127 95 Q127 89 133 89"
+            />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'sweat' }">
+          <g class="fx-in fx-drop">
+            <path d="M152 66 Q161 79 157 85 Q152 89 147 85 Q143 79 152 66Z" fill="#7B61FF" />
+            <path d="M164 84 Q169 91 166 94 Q163 96 160 94 Q158 91 164 84Z" fill="#7B61FF" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'cloud' }">
+          <g class="fx-in fx-bob">
+            <path
+              d="M150 52 Q141 52 143 44 Q143 36 152 38 Q155 30 164 32 Q173 28 177 36 Q185 38 183 46 Q183 54 173 53 Q163 58 157 53 Q153 55 150 52Z"
+              fill="#FFFFFF"
+              stroke="#7B61FF"
+              stroke-width="2.6"
+              stroke-linejoin="round"
+            />
+            <circle cx="143" cy="62" r="3.4" fill="#FFFFFF" stroke="#7B61FF" stroke-width="2.2" />
+            <circle cx="137" cy="70" r="2" fill="#FFFFFF" stroke="#7B61FF" stroke-width="2" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'waves' }">
+          <g class="fx-in"><path class="fx-k" d="M162 82 Q170 90 166 100 M170 74 Q182 88 175 104" /></g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'hop' }">
+          <g class="fx-in">
+            <path class="fx-k" d="M38 66 L46 74 M32 80 L43 82 M162 66 L154 74 M168 80 L157 82" />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'speed' }">
+          <g class="fx-in fx-rush">
+            <path class="fx-k" d="M152 92 L174 92 M156 103 L180 103 M152 114 L170 114" />
+            <path
+              d="M150 172 Q146 164 154 162 Q156 155 164 158 Q171 154 175 161 Q182 163 179 170 Q176 175 168 173 Q160 177 150 172Z"
+              fill="#FFFFFF"
+              stroke="#9a9a9a"
+              stroke-width="2.4"
+              stroke-linejoin="round"
+            />
+          </g>
+        </g>
+        <g class="fx" :class="{ on: face.fx === 'alert' }">
+          <g class="fx-in"><path class="fx-k" d="M38 100 L49 105 M35 114 L48 114 M38 128 L49 123" /></g>
+        </g>
         <g v-if="sleeping" class="c-zz-group">
-          <text class="c-zz" x="146" y="62">z</text>
-          <text class="c-zz c-zz--late" x="158" y="50">z</text>
+          <text class="c-zz" x="146" y="40">z</text>
+          <text class="c-zz c-zz--late" x="160" y="28">z</text>
         </g>
       </g>
     </svg>
@@ -531,6 +716,14 @@ html.light .home-yume {
   stroke-linecap: round;
 }
 
+.home-yume :deep(.fx-k) {
+  fill: none;
+  stroke: rgb(var(--c-accent, 123 97 255));
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .home-yume :deep(.c-float) {
   animation: yume-c-float 2.6s ease-in-out infinite;
   transform-box: view-box;
@@ -548,6 +741,18 @@ html.light .home-yume {
   transition: transform 320ms ease-out;
 }
 
+/* Mood pose eases with a soft overshoot; the loop layer only plays whole cycles. */
+.home-yume :deep(.c-pose) {
+  transform-box: view-box;
+  transform-origin: 100px 160px;
+  transition: transform 560ms cubic-bezier(.34, 1.36, .5, 1);
+}
+
+.home-yume :deep(.c-loop) {
+  transform-box: view-box;
+  transform-origin: 100px 160px;
+}
+
 .home-yume :deep(.c-breathe) {
   transform-box: view-box;
   transform-origin: 100px 156px;
@@ -557,6 +762,7 @@ html.light .home-yume {
 .home-yume :deep(.c-ear-l),
 .home-yume :deep(.c-ear-r) {
   transform-box: view-box;
+  transition: transform 420ms cubic-bezier(.34, 1.4, .5, 1);
 }
 .home-yume :deep(.c-ear-l) { transform-origin: 70px 80px; }
 .home-yume :deep(.c-ear-r) { transform-origin: 130px 80px; }
@@ -567,47 +773,166 @@ html.light .home-yume {
   animation: yume-c-shadow 2.6s ease-in-out infinite;
 }
 
+/* Face swaps read as a blink: the old part squeezes shut, then the new one springs open. */
+.home-yume :deep(.c-part) {
+  opacity: 0;
+  transform: scale(1, .1);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 90ms ease-in 30ms, transform 120ms ease-in;
+}
+.home-yume :deep(.c-part.on) {
+  opacity: 1;
+  transform: none;
+  transition: opacity 80ms ease-out 110ms, transform 300ms cubic-bezier(.34, 1.56, .5, 1) 110ms;
+}
+.home-yume :deep(.c-paw) { transform: translateY(14px) rotate(-12deg); transform-origin: 50% 100%; }
+
+.home-yume :deep(.c-dot-shape) {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(.34, 1.5, .5, 1);
+}
+.home-yume :deep(.c-shine) {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.home-yume :deep(.c-shine.on) { opacity: 1; }
+
 .home-yume :deep(.c-eye) {
   transform-box: fill-box;
   transform-origin: center;
   animation: yume-c-blink 5.8s infinite;
 }
-.home-yume :deep(.c-eye + .c-eye) { animation-delay: 80ms; }
+.home-yume :deep(.c-dot + .c-dot .c-eye) { animation-delay: 80ms; }
+
+.home-yume :deep(.c-gaze) {
+  transition: transform 360ms cubic-bezier(.34, 1.3, .5, 1);
+}
 
 .home-yume :deep(.c-tail) {
   transform-box: view-box;
   transform-origin: 0 0;
   animation: yume-c-wig 3.4s ease-in-out infinite;
 }
+.home-yume :deep(.c-tail-pose) {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: transform 480ms cubic-bezier(.34, 1.3, .5, 1), opacity 220ms ease;
+}
+
+.home-yume :deep(.c-brow-bold) { stroke-width: 5.5; }
+
+.home-yume :deep(.c-arm) {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: opacity 180ms ease, transform 520ms cubic-bezier(.34, 1.4, .5, 1);
+}
+.home-yume :deep(.c-arm-swing) {
+  transform-box: view-box;
+  transform-origin: 0 0;
+}
+.home-yume :deep(.c-arm.arm-wave.c-arm--r),
+.home-yume :deep(.c-arm.arm-up),
+.home-yume :deep(.c-arm.arm-run) { opacity: 1; }
+.home-yume :deep(.c-arm.arm-wave.c-arm--r) { transform: rotate(-125deg); }
+.home-yume :deep(.c-arm.arm-up.c-arm--l) { transform: rotate(130deg); }
+.home-yume :deep(.c-arm.arm-up.c-arm--r) { transform: rotate(-130deg); }
+.home-yume :deep(.c-arm.arm-run.c-arm--l) { transform: rotate(70deg); }
+.home-yume :deep(.c-arm.arm-run.c-arm--r) { transform: rotate(-45deg); }
+.home-yume :deep(.c-arm.arm-wave.c-arm--r .c-arm-swing) { animation: yume-m-wave 600ms ease-in-out infinite; }
+.home-yume :deep(.c-arm.arm-up .c-arm-swing) { animation: yume-m-flap 900ms ease-in-out infinite; }
+.home-yume :deep(.c-arm.arm-run.c-arm--l .c-arm-swing) { animation: yume-m-swing 360ms ease-in-out infinite; }
+.home-yume :deep(.c-arm.arm-run.c-arm--r .c-arm-swing) { animation: yume-m-swing-back 360ms ease-in-out infinite; }
+
+/* Mood effects pop in beside the head and keep a light pulse while shown. */
+.home-yume :deep(.fx) {
+  opacity: 0;
+  transform: scale(.4);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 140ms ease-in, transform 160ms ease-in;
+}
+.home-yume :deep(.fx.on) {
+  opacity: 1;
+  transform: none;
+  transition: opacity 180ms ease-out 140ms, transform 420ms cubic-bezier(.34, 1.6, .5, 1) 140ms;
+}
+.home-yume :deep(.fx-pole) { transform: translateX(16px); }
+.home-yume :deep(.fx-in) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.home-yume :deep(.fx.on .fx-in) { animation: yume-fx-pulse 1.2s ease-in-out infinite; }
+.home-yume :deep(.fx.on .fx-drift) { animation: yume-fx-drift 1.4s ease-in-out infinite; }
+.home-yume :deep(.fx.on .fx-drop) { animation: yume-fx-drop 1.2s ease-in-out infinite; }
+.home-yume :deep(.fx.on .fx-bob) { animation: yume-fx-bob 1.4s ease-in-out infinite; }
+.home-yume :deep(.fx.on .fx-rush) { animation: yume-fx-rush 360ms linear infinite; }
 
 .home-yume :deep(.c-eyes),
 .home-yume :deep(.c-face) { transition: transform 140ms ease-out; }
-.home-yume :deep(.c-mouth) {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 180ms ease-out, opacity 120ms ease-out;
-}
-.home-yume :deep(.c-mouth-open) {
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
 .home-yume :deep(.c-blush) { opacity: .85; transition: opacity 180ms ease-out; }
-.home-yume:is(:hover, :focus-visible) :deep(.c-breathe) { animation: yume-c-curious 2.2s ease-in-out infinite; }
-.home-yume:is(:hover, :focus-visible) :deep(.c-tail) { animation: yume-c-greet 900ms ease-in-out infinite; }
-.home-yume:is(:hover, :focus-visible) :deep(.c-face) { transform: translateY(-1px); }
-.home-yume:is(:hover, :focus-visible) :deep(.c-mouth) { transform: scale(1.12, 1.05); }
-.home-yume:is(:hover, :focus-visible) :deep(.c-blush) { opacity: 1; }
+.home-yume :deep(.c-blush circle) { transition: opacity 220ms ease; }
+
+/* Mood poses. Each loop starts and ends at rest so entering or leaving a mood never jumps. */
+.home-yume.mood-happy :deep(.c-pose) { transform: translateY(-3px) scale(1.02); }
+.home-yume.mood-happy :deep(.c-loop) { animation: yume-m-bounce 800ms ease-in-out infinite; }
+.home-yume.mood-happy :deep(.c-tail-pose) { transform: rotate(-10deg); }
+
+.home-yume.mood-laugh :deep(.c-pose) { transform: translateY(-2px) scale(1.03, .98); }
+.home-yume.mood-laugh :deep(.c-loop) { animation: yume-m-laugh 500ms ease-in-out infinite; }
+
+.home-yume.mood-surprised :deep(.c-pose) { transform: translateY(-7px) scale(.96, 1.06); }
+.home-yume.mood-surprised :deep(.c-dot-shape) { transform: scale(.85); }
+.home-yume.mood-surprised :deep(.c-ear-l) { transform: rotate(7deg); }
+.home-yume.mood-surprised :deep(.c-ear-r) { transform: rotate(-7deg); }
+.home-yume.mood-surprised :deep(.c-tail-pose) { transform: rotate(-22deg); }
+
+.home-yume.mood-sleepy :deep(.c-pose) { transform: translateY(5px) rotate(4deg) scale(1.02, .97); }
+.home-yume.mood-sleepy :deep(.c-ear-l) { transform: rotate(-9deg); }
+.home-yume.mood-sleepy :deep(.c-ear-r) { transform: rotate(9deg); }
+.home-yume.mood-sleepy :deep(.c-tail-pose) { transform: rotate(28deg); }
+
+.home-yume.mood-angry :deep(.c-pose) { transform: scale(1.04, .96); }
+.home-yume.mood-angry :deep(.c-loop) { animation: yume-m-tremble 180ms linear infinite; }
+.home-yume.mood-angry :deep(.c-ear-l) { transform: rotate(-10deg); }
+.home-yume.mood-angry :deep(.c-ear-r) { transform: rotate(10deg); }
+
+.home-yume.mood-worried :deep(.c-pose) { transform: translateY(3px) rotate(-2deg) scale(.97); }
+.home-yume.mood-worried :deep(.c-loop) { animation: yume-m-shiver 600ms ease-in-out infinite; }
+.home-yume.mood-worried :deep(.c-dot-shape) { transform: scale(1.32); }
+.home-yume.mood-worried :deep(.c-ear-l) { transform: rotate(-8deg); }
+.home-yume.mood-worried :deep(.c-ear-r) { transform: rotate(8deg); }
+
+.home-yume.mood-think :deep(.c-pose) { transform: rotate(-5deg); }
+.home-yume.mood-think :deep(.c-gaze) { transform: translate(3px, -3px); }
+.home-yume.mood-think :deep(.c-ear-r) { transform: rotate(-6deg); }
+
+.home-yume.mood-wave :deep(.c-pose) { transform: rotate(3deg); }
+.home-yume.mood-wave :deep(.c-tail-pose) { transform: rotate(-12deg); }
+.home-yume.mood-wave :deep(.c-tail) { animation-duration: 900ms; }
+
+.home-yume.mood-jump :deep(.c-loop) { animation: yume-m-hop 900ms cubic-bezier(.3, .7, .4, 1) infinite; }
+.home-yume.mood-jump :deep(.c-tail-pose) { transform: rotate(-16deg); }
+
+.home-yume.mood-run :deep(.c-pose) { transform: translateX(-4px) rotate(-8deg); }
+.home-yume.mood-run :deep(.c-loop) { animation: yume-m-run 360ms ease-in-out infinite; }
+.home-yume.mood-run :deep(.c-tail-pose) { transform: rotate(40deg); }
+.home-yume.mood-run :deep(.c-ear-l) { transform: rotate(-8deg); }
+.home-yume.mood-run :deep(.c-ear-r) { transform: rotate(8deg); }
+
+.home-yume.mood-peek :deep(.c-pose) { transform: translateX(5px) rotate(-14deg); }
+.home-yume.mood-peek :deep(.c-loop) { animation: yume-m-peek 1300ms ease-in-out infinite; }
+.home-yume.mood-peek :deep(.c-gaze) { transform: translate(1px, -1px); }
+.home-yume.mood-peek :deep(.c-face) { transform: translateX(7px); }
+.home-yume.mood-peek :deep(.c-blush circle:last-child) { opacity: 0; }
+.home-yume.mood-peek :deep(.c-tail-pose) { opacity: 0; transform: rotate(-40deg); }
 
 @keyframes yume-c-breathe {
   0%, 100% { transform: rotate(-1deg) scale(1); }
   30% { transform: rotate(1.2deg) scale(1.012, 1.018); }
   65% { transform: rotate(-.5deg) scale(1.005, .995); }
-}
-
-@keyframes yume-c-curious {
-  0%, 100% { transform: rotate(0) scale(1); }
-  45% { transform: rotate(2.5deg) scale(1.015); }
-  75% { transform: rotate(-1deg) scale(1.005); }
 }
 
 @keyframes yume-c-float {
@@ -644,52 +969,93 @@ html.light .home-yume {
   65%, 85% { transform: rotate(2deg); }
 }
 
-@keyframes yume-c-greet {
-  0%, 100% { transform: rotate(-10deg); }
-  50% { transform: rotate(12deg); }
+@keyframes yume-m-bounce {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-4px) scale(.99, 1.02); }
 }
 
-/* Idle actions: one at a time, each on its own layer. */
-.home-yume.idle-look :deep(.c-eyes) { animation: yume-c-look 1.6s ease-in-out; }
-.home-yume.idle-ear :deep(.c-ear-l) { animation: yume-c-ear-l 500ms ease-in-out; }
-.home-yume.idle-ear :deep(.c-ear-r) { animation: yume-c-ear-r 500ms ease-in-out 150ms; }
-.home-yume.idle-tilt :deep(.c-act) { animation: yume-c-tilt 1.4s ease-in-out; }
-.home-yume.idle-stretch :deep(.c-act) { animation: yume-c-stretch 1.2s ease-in-out; }
-
-@keyframes yume-c-look {
-  20%, 40% { transform: translate(-6px, 0); }
-  60%, 80% { transform: translate(6px, -2px); }
+@keyframes yume-m-laugh {
+  0%, 100% { transform: none; }
+  25% { transform: translateY(-2px) rotate(-3deg); }
+  75% { transform: translateY(-2px) rotate(3deg); }
 }
 
-@keyframes yume-c-ear-l {
-  25%, 75% { transform: rotate(-12deg); }
-  50% { transform: rotate(5deg); }
+@keyframes yume-m-tremble {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-1.2px); }
+  75% { transform: translateX(1.2px); }
 }
 
-@keyframes yume-c-ear-r {
-  25%, 75% { transform: rotate(12deg); }
-  50% { transform: rotate(-5deg); }
+@keyframes yume-m-shiver {
+  0%, 100% { transform: none; }
+  50% { transform: rotate(-1.6deg) translateX(-1px); }
 }
 
-@keyframes yume-c-tilt {
-  25%, 70% { transform: rotate(-7deg); }
+@keyframes yume-m-hop {
+  0%, 100% { transform: none; }
+  16% { transform: scale(1.07, .92); }
+  50% { transform: translateY(-18px) scale(.96, 1.05); }
+  82% { transform: scale(1.04, .96); }
 }
 
-@keyframes yume-c-stretch {
-  30% { transform: scale(1.07, 0.9); }
-  65% { transform: scale(0.95, 1.1) translateY(-3%); }
+@keyframes yume-m-run {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-5px) rotate(-1.5deg); }
 }
 
-/* Dozing: eyes shut, body sinks, z drifts up. */
-.home-yume.sleeping :deep(.c-eye) {
-  animation: none;
-  transform: scaleY(.12);
-  transition: transform 300ms ease-in;
+@keyframes yume-m-peek {
+  0%, 100% { transform: none; }
+  50% { transform: translateX(-3px) rotate(-2deg); }
 }
-.home-yume.sleeping :deep(.c-act) {
-  transform: translateY(3%) rotate(3deg);
-  transition-duration: 600ms;
+
+@keyframes yume-m-wave {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-24deg); }
 }
+
+@keyframes yume-m-flap {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(14deg); }
+}
+
+@keyframes yume-m-swing {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(28deg); }
+  75% { transform: rotate(-28deg); }
+}
+
+@keyframes yume-m-swing-back {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-28deg); }
+  75% { transform: rotate(28deg); }
+}
+
+@keyframes yume-fx-pulse {
+  0%, 100% { transform: none; }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes yume-fx-drift {
+  0%, 100% { transform: none; }
+  50% { transform: translate(3px, -5px); }
+}
+
+@keyframes yume-fx-drop {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(4px); }
+}
+
+@keyframes yume-fx-bob {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes yume-fx-rush {
+  0% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(6px); opacity: .6; }
+}
+
+/* Dozing: the sleepy mood plus drifting z. */
 .home-yume :deep(.c-zz) {
   font: 800 18px/1 ui-rounded, system-ui, sans-serif;
   fill: #c8c8c8;
@@ -757,8 +1123,6 @@ html.light .home-yume {
 .home-yume.cheer :deep(.c-squash) {
   animation: yume-c-cheer 0.6s cubic-bezier(0.2, 1.5, 0.4, 1);
 }
-.home-yume.cheer :deep(.c-mouth) { opacity: 0; }
-.home-yume.cheer :deep(.c-mouth-open) { opacity: 1; }
 
 @keyframes yume-c-cheer {
   0% { transform: scale(1.1, 0.8); }
@@ -797,16 +1161,24 @@ html.light .home-yume {
   100% { transform: translate(calc(var(--heart-drift) * 1.6), -100px) scale(.8); opacity: 0; }
 }
 
-.home-yume--static :deep(:is(.c-float, .c-squash, .c-act, .c-breathe, .c-ear-l, .c-ear-r, .c-eye, .c-eyes, .c-face, .c-mouth, .c-blush, .c-tail, .c-shadow)) {
+.home-yume--static :deep(:is(.c-float, .c-squash, .c-act, .c-pose, .c-loop, .c-breathe, .c-ear-l, .c-ear-r, .c-eye, .c-eyes, .c-gaze, .c-face, .c-blush, .c-tail, .c-tail-pose, .c-shadow)) {
   animation: none !important;
   transform: none !important;
   transition: none !important;
 }
+.home-yume--static :deep(:is(.c-part, .c-dot-shape, .c-shine, .c-arm, .c-arm-swing, .fx, .fx-in)) {
+  animation: none !important;
+  transition: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
-  .home-yume :deep(:is(.c-float, .c-squash, .c-act, .c-breathe, .c-ear-l, .c-ear-r, .c-eye, .c-eyes, .c-face, .c-mouth, .c-blush, .c-tail, .c-shadow, .c-zz)),
+  .home-yume :deep(:is(.c-float, .c-squash, .c-act, .c-pose, .c-loop, .c-breathe, .c-ear-l, .c-ear-r, .c-eye, .c-eyes, .c-gaze, .c-face, .c-blush, .c-tail, .c-tail-pose, .c-shadow, .c-zz)),
   .c-heart {
     animation: none !important;
     transform: none !important;
+    transition: none !important;
+  }
+  .home-yume :deep(:is(.c-part, .c-dot-shape, .c-shine, .c-arm, .c-arm-swing, .fx, .fx-in)) {
+    animation: none !important;
     transition: none !important;
   }
 }
