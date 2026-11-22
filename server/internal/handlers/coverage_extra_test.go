@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,36 +18,36 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-func TestListNodePreviews(t *testing.T) {
+func TestGetNodePreview(t *testing.T) {
 	hn := newHarness(t)
 	preview := services.NewPreviewService(hn.db, hn.h.Sbx.Manager())
 	hn.host.SetPreviewStore(preview)
 	hn.h.Preview = preview
 
-	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "run1", NodeID: "n1", Port: 3000, Label: "app",
 		ProxyURL: "/preview/run1/n1/3000/", Healthy: true, RegisteredAt: time.Now(),
 	})
 
-	w := hn.do("GET", "/api/runs/run1/nodes/n1/previews", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list previews: %d %s", w.Code, w.Body.String())
+	var body struct {
+		Preview *mcp.PreviewPort `json:"preview"`
 	}
-	var body map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	ports, _ := body["ports"].([]any)
-	if len(ports) == 0 {
-		t.Fatalf("expected ports: %s", w.Body.String())
+	w := hn.do("GET", "/api/runs/run1/nodes/n1/preview", nil)
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusOK ||
+		body.Preview == nil || body.Preview.Port != 3000 || body.Preview.Label != "app" {
+		t.Fatalf("active preview: %d %s (%v)", w.Code, w.Body.String(), err)
 	}
 
-	// MCP nil path
-	h2 := &harness{r: hn.r, h: hn.h, cookie: hn.cookie}
-	hn.h.MCP = nil
-	w = hn.do("GET", "/api/runs/run1/nodes/n1/previews", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("nil mcp: %d", w.Code)
+	w = hn.do("GET", "/api/runs/run1/nodes/missing/preview", nil)
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"preview":null}` {
+		t.Fatalf("missing preview: %d %s", w.Code, w.Body.String())
 	}
-	_ = h2
+
+	hn.h.MCP = nil
+	w = hn.do("GET", "/api/runs/run1/nodes/n1/preview", nil)
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"preview":null}` {
+		t.Fatalf("nil mcp: %d %s", w.Code, w.Body.String())
+	}
 }
 
 func TestPreviewProxyUnavailable(t *testing.T) {

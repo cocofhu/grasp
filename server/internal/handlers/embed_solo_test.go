@@ -49,7 +49,7 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := hn.h.Preview.ReplacePreviewPort(mcp.PreviewPort{
+	if err := hn.h.Preview.ReplacePreview(mcp.PreviewPort{
 		RunID: runID, NodeID: "solo", Port: 8899, Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true,
 	}); err != nil {
 		t.Fatal(err)

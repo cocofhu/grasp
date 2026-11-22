@@ -35,7 +35,7 @@ func seedDirectPreview(t *testing.T, hn *harness, runID, nodeID string) {
 	if err := hn.db.Save(&run).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := preview.ReplacePreviewPort(mcp.PreviewPort{
+	if err := preview.ReplacePreview(mcp.PreviewPort{
 		RunID: runID, NodeID: nodeID, Port: 18080, Label: "Direct",
 		Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true, RegisteredAt: time.Now(),
 		Mode: "direct", DirectURL: embedDirectURL,

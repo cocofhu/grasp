@@ -487,7 +487,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         <ReactArtifactStage
           :artifacts="resources?.artifacts || []"
           :preview-artifact="resources?.previewArtifact"
-          :registered-previews="status === 'running' ? resources?.ports || [] : []"
+          :registered-preview="status === 'running' ? resources?.preview ?? null : null"
           :solo-session-id="props.sessionId"
           :run-id="session.artifactRunId || ''"
           node-id="solo"

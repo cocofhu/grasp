@@ -31,7 +31,7 @@ func TestAppPreviewSetPreviewEntersReviewNoGate(t *testing.T) {
 	}
 	waitRunStatus(t, db, run.ID, "waiting_human")
 
-	if !eng.host.HasHealthyPreviewPorts(run.ID, "preview") {
+	if !eng.host.HasHealthyPreview(run.ID, "preview") {
 		t.Fatal("expected healthy preview port after RunAgent")
 	}
 

@@ -89,7 +89,7 @@ a.saveRunArtifact = async (_runId: string, name: string, content: string, ifMatc
   }
   return { ...s.artifact, content: s.content, etag: `etag-${s.artifact.revision}`, revision: s.artifact.revision, changed }
 }
-a.nodePreviews = async () => ({ ports: [] })
+a.nodePreview = async () => ({ preview: null })
 a.artifactDownloadUrl = (id: string) => `http://127.0.0.1:9/api/artifacts/${id}/download`
 
 const run = { id: RUN_ID, status: 'waiting_human', nodes: [], artifactEdit: { editable: true, reason: '' } } as unknown as Run

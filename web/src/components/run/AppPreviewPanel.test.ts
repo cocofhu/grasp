@@ -13,7 +13,7 @@ vi.mock('@novnc/novnc/lib/rfb.js', () => ({
 }))
 
 const apiMocks = vi.hoisted(() => ({
-  nodePreviews: vi.fn(),
+  nodePreview: vi.fn(),
   embedTicket: vi.fn(),
   getRunNodeSandbox: vi.fn(),
 }))
@@ -24,7 +24,7 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      nodePreviews: apiMocks.nodePreviews,
+      nodePreview: apiMocks.nodePreview,
       embedTicket: apiMocks.embedTicket,
       getRunNodeSandbox: apiMocks.getRunNodeSandbox,
     },
@@ -67,8 +67,8 @@ function mountPanel(opts: Partial<InstanceType<typeof AppPreviewPanel>['$props']
 describe('AppPreviewPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [{ port: 5173, label: '前端' }],
+    apiMocks.nodePreview.mockResolvedValue({
+      preview: { port: 5173, label: '前端' },
     })
     apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 7 })
   })
@@ -76,7 +76,7 @@ describe('AppPreviewPanel', () => {
   it('loads the active preview', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(apiMocks.nodePreviews).toHaveBeenCalledWith(
+    expect(apiMocks.nodePreview).toHaveBeenCalledWith(
       'run-1',
       'preview-1',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -85,26 +85,26 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('uses Solo registrations and the resident sandbox without workflow requests', async () => {
+  it('uses the Solo preview and the resident sandbox without workflow requests', async () => {
     const port = { runId: 'solo-session', nodeId: 'solo', kind: 'port', port: 8899, proxyUrl: '/preview/solo/', healthy: true }
-    const wrapper = mountPanel({ runId: 'solo-session', nodeId: 'solo', registeredPreviews: [port], residentSandboxId: 42 })
+    const wrapper = mountPanel({ runId: 'solo-session', nodeId: 'solo', registeredPreview: port, residentSandboxId: 42 })
     try {
       await flushPromises()
-      expect(apiMocks.nodePreviews).not.toHaveBeenCalled()
+      expect(apiMocks.nodePreview).not.toHaveBeenCalled()
       expect(apiMocks.getRunNodeSandbox).not.toHaveBeenCalled()
       expect(wrapper.get('[data-testid="novnc-stub"]').attributes()).toMatchObject({
         'data-sandbox-id': '42',
         'data-target-port': '8899',
       })
-      await wrapper.setProps({ registeredPreviews: [{ ...port, port: 5173 }] })
+      await wrapper.setProps({ registeredPreview: { ...port, port: 5173 } })
       expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('5173')
     } finally {
       wrapper.unmount()
     }
   })
 
-  it('shows the Agent desktop before any port is registered', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+  it('shows the Agent desktop before any preview is registered', async () => {
+    apiMocks.nodePreview.mockResolvedValue({ preview: null })
     const wrapper = mountPanel()
     await flushPromises()
     const novnc = wrapper.get('[data-testid="novnc-stub"]')
@@ -115,7 +115,7 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('says the sandbox is gone when ports exist but the node has none', async () => {
+  it('says the sandbox is gone when a preview exists but the node has none', async () => {
     vi.useFakeTimers()
     apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
@@ -130,8 +130,8 @@ describe('AppPreviewPanel', () => {
     vi.useRealTimers()
   })
 
-  it('shows the empty message with no sandbox and no ports', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+  it('shows the empty message with no sandbox and no preview', async () => {
+    apiMocks.nodePreview.mockResolvedValue({ preview: null })
     apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
@@ -140,18 +140,18 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('passes AbortSignal and replaces ports on node switch', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [{ port: 5173, label: '前端' }],
+  it('passes AbortSignal and replaces the preview on node switch', async () => {
+    apiMocks.nodePreview.mockResolvedValue({
+      preview: { port: 5173, label: '前端' },
     })
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.get('[data-testid="novnc-stub"]').attributes('data-target-port')).toBe('5173')
-    expect(apiMocks.nodePreviews.mock.calls[0][2]).toEqual(
+    expect(apiMocks.nodePreview.mock.calls[0][2]).toEqual(
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [{ port: 3000, label: 'NEWPORT' }],
+    apiMocks.nodePreview.mockResolvedValue({
+      preview: { port: 3000, label: 'NEWPORT' },
     })
     await wrapper.setProps({ nodeId: 'preview-2' })
     await flushPromises()
@@ -160,7 +160,7 @@ describe('AppPreviewPanel', () => {
   })
 
   it('sandboxes loadError and keeps retry without e.message', async () => {
-    apiMocks.nodePreviews.mockRejectedValue(new Error('internal-preview-token-leak'))
+    apiMocks.nodePreview.mockRejectedValue(new Error('internal-preview-token-leak'))
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="app-preview-load-error"]').exists()).toBe(true)
@@ -170,15 +170,13 @@ describe('AppPreviewPanel', () => {
   })
 
   it('direct mode keeps noVNC and adds a new-tab button carrying a drawer ticket', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        {
-          port: 18081,
-          label: '前端',
-          mode: 'direct',
-          directUrl: 'http://127.0.0.1:18081/',
-        },
-      ],
+    apiMocks.nodePreview.mockResolvedValue({
+      preview: {
+        port: 18081,
+        label: '前端',
+        mode: 'direct',
+        directUrl: 'http://127.0.0.1:18081/',
+      },
     })
     const wrapper = mountPanel()
     await flushPromises()
@@ -201,16 +199,14 @@ describe('AppPreviewPanel', () => {
   })
 
   it('external url preview iframes url directly without pick controls', async () => {
-    apiMocks.nodePreviews.mockResolvedValue({
-      ports: [
-        {
-          kind: 'url',
-          port: 0,
-          url: 'https://staging.example.com:8443/app',
-          label: 'Staging',
-          healthy: true,
-        },
-      ],
+    apiMocks.nodePreview.mockResolvedValue({
+      preview: {
+        kind: 'url',
+        port: 0,
+        url: 'https://staging.example.com:8443/app',
+        label: 'Staging',
+        healthy: true,
+      },
     })
     const wrapper = mountPanel()
     await flushPromises()
@@ -224,7 +220,7 @@ describe('AppPreviewPanel', () => {
 
   it('stops polling once the sandbox is confirmed absent', async () => {
     vi.useFakeTimers()
-    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.nodePreview.mockResolvedValue({ preview: null })
     apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
@@ -232,12 +228,12 @@ describe('AppPreviewPanel', () => {
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(wrapper.text()).toMatch(/沙箱还没启动/)
     const sandboxCalls = apiMocks.getRunNodeSandbox.mock.calls.length
-    const previewCalls = apiMocks.nodePreviews.mock.calls.length
+    const previewCalls = apiMocks.nodePreview.mock.calls.length
     expect(wrapper.attributes('aria-busy')).toBe('false')
     await vi.advanceTimersByTimeAsync(5000)
     await flushPromises()
     expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(sandboxCalls)
-    expect(apiMocks.nodePreviews.mock.calls.length).toBe(previewCalls)
+    expect(apiMocks.nodePreview.mock.calls.length).toBe(previewCalls)
     expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="app-preview-load-error"]').exists()).toBe(false)
     wrapper.unmount()
@@ -246,7 +242,7 @@ describe('AppPreviewPanel', () => {
 
   it('keeps polling while the sandbox is creating and stops once it is running', async () => {
     vi.useFakeTimers()
-    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.nodePreview.mockResolvedValue({ preview: null })
     apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 4, status: 'creating' })
     const wrapper = mountPanel()
     await flushPromises()
@@ -269,7 +265,7 @@ describe('AppPreviewPanel', () => {
 
   it('drops the previous node timer when the preview switches nodes', async () => {
     vi.useFakeTimers()
-    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.nodePreview.mockResolvedValue({ preview: null })
     apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 4, status: 'pulling' })
     const wrapper = mountPanel()
     await flushPromises()

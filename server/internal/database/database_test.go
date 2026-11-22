@@ -59,7 +59,7 @@ func TestOpenSQLiteTestClonesMigratedSchema(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacyPreviewStorageKeepsNewestRegistration(t *testing.T) {
+func TestMigrateLegacyPreviewStorageKeepsNewestPerNodeAndSandbox(t *testing.T) {
 	db, err := openSQLiteConn(":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -75,6 +75,7 @@ CREATE TABLE run_preview_ports (
   run_id TEXT NOT NULL,
   node_id TEXT NOT NULL,
   item_key TEXT NOT NULL,
+  sandbox_name TEXT,
   registered_at DATETIME NOT NULL
 )`).Error; err != nil {
 		t.Fatal(err)
@@ -82,19 +83,23 @@ CREATE TABLE run_preview_ports (
 	if err := db.Exec("CREATE UNIQUE INDEX idx_preview_run_node_item ON run_preview_ports(run_id, node_id, item_key)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO run_preview_ports(run_id, node_id, item_key, registered_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
-		"r1", "n1", "p:3000", "2026-11-22 10:00:00", "r1", "n1", "p:4000", "2026-11-22 11:00:00").Error; err != nil {
+	if err := db.Exec(`INSERT INTO run_preview_ports(run_id, node_id, item_key, sandbox_name, registered_at) VALUES
+  ('r1', 'n1', 'p:3000', 'sb-1', '2026-11-22 10:00:00'),
+  ('r1', 'n1', 'p:4000', 'sb-1', '2026-11-22 11:00:00'),
+  ('r1', 'n2', 'p:5000', 'sb-1', '2026-11-22 12:00:00'),
+  ('r2', 'n1', 'u:https://example.test', NULL, '2026-11-22 09:00:00'),
+  ('r2', 'n2', 'p:3000', 'sb-2', '2026-11-22 08:00:00')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := migrateLegacyPreviewStorage(db); err != nil {
 		t.Fatal(err)
 	}
-	var rows []legacyPreviewRegistration
-	if err := db.Table("run_preview_ports").Find(&rows).Error; err != nil {
+	var ids []uint
+	if err := db.Table("run_preview_ports").Order("id").Pluck("id", &ids).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].ID != 2 {
-		t.Fatalf("legacy rows after collapse=%+v", rows)
+	if len(ids) != 3 || ids[0] != 3 || ids[1] != 4 || ids[2] != 5 {
+		t.Fatalf("legacy rows after collapse=%v, want newest per node and sandbox [3 4 5]", ids)
 	}
 	if db.Migrator().HasIndex(&models.RunPreviewPort{}, "idx_preview_run_node_item") {
 		t.Fatal("legacy multi-preview index still exists")

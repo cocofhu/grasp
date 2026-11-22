@@ -108,13 +108,13 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   const runId = session.artifactRunId
   const content = '<!doctype html><html><body><h1>Solo preview smoke</h1></body></html>'
   const artifact = { id: 'art-demo', runId, nodeId: 'solo', name: 'demo.html', kind: 'html', sizeBytes: content.length, revision: 1, createdAt: '2026-11-03T00:00:00Z' }
-  const port = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', proxyUrl: '/preview/solo-preview-check/solo/8899/', healthy: true }
+  const registered = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', proxyUrl: '/preview/solo-preview-check/solo/8899/', healthy: true }
   await routeApi(page, '**/api/solo/sessions**', async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
     if (path.endsWith('/messages')) return route.fulfill({ json: [] })
     if (path.endsWith('/resources')) return route.fulfill({
-      json: { runId, previewArtifact: artifact.name, artifacts: [artifact], ports: [port] },
+      json: { runId, previewArtifact: artifact.name, artifacts: [artifact], preview: registered },
     })
     await route.fulfill({ json: session })
   })
@@ -210,7 +210,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
   let savedTurn: SoloMessage[] = []
   let publish: ((frame: object) => void) | undefined
   const previewUrl = direct + '/solo-preview-fixture'
-  const port = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', mode: 'direct', directUrl: previewUrl, healthy: true }
+  const registered = { runId, nodeId: 'solo', kind: 'port', port: 8899, label: 'Demo app', mode: 'direct', directUrl: previewUrl, healthy: true }
   await routeApi(page, '**/api/solo/sessions**', async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
@@ -221,7 +221,7 @@ test('a direct Solo preview streams the reply to a message with a picked element
       shareBodies.push(body)
       return route.fulfill({ json: { url: `${grasp}/public/approvals/app#t=${body.chatMode}`, expiresAt: ticket.expiresAt } })
     }
-    if (path.endsWith('/resources')) return route.fulfill({ json: { runId, artifacts: [], ports: [port] } })
+    if (path.endsWith('/resources')) return route.fulfill({ json: { runId, artifacts: [], preview: registered } })
     await route.fulfill({ json: session })
   })
   await page.routeWebSocket('**/api/solo/sessions/*/chat*', (ws) => ws.send(JSON.stringify({ type: 'session', event: 'queue_state', busy: false, items: [] })))

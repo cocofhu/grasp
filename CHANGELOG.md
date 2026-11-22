@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 应用预览接口改为单一对象：节点预览改为 `GET /api/runs/:id/nodes/:nodeId/preview`，返回 `{"preview": ... | null}`；Solo 资源和公开分享预览也改为 `preview` 字段，不再返回 `ports` 列表。旧数据库升级时按节点和沙箱都只保留最新一条预览登记。
+
 - 取消、超时或失败的回合带回的 token 用量统一标为部分用量（对齐 t3code），覆盖 DeepSeek Harness、Grok、Antigravity、DevEco、OpenClaw、Claude Code、CodeBuddy、Gemini、Pi 和 OpenCode；同一操作之后的最终用量可以替换它。token 数值不变。
 
 - 聊天时间线里的思考过程改用脑部线稿，工具完成状态改用圆环勾选，折叠后的状态行在小尺寸下更清晰。

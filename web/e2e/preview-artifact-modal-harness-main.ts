@@ -55,17 +55,15 @@ const plan: Artifact = {
   if (!hit) throw new Error('missing ' + id)
   return { ...hit }
 }
-;(api as { nodePreviews: () => Promise<{ ports: unknown[] }> }).nodePreviews = async () => ({
-  ports: [
-    {
-      port: 5173,
-      label: '前端',
-      runId: 'run-1',
-      nodeId: 'approve_1',
-      proxyUrl: '/p',
-      healthy: true,
-    },
-  ],
+;(api as { nodePreview: () => Promise<{ preview: unknown }> }).nodePreview = async () => ({
+  preview: {
+    port: 5173,
+    label: '前端',
+    runId: 'run-1',
+    nodeId: 'approve_1',
+    proxyUrl: '/p',
+    healthy: true,
+  },
 })
 ;(api as { artifactVersions: () => Promise<unknown[]> }).artifactVersions = async () => []
 ;(api as { getRunNodeSandbox: () => Promise<{ id: number }> }).getRunNodeSandbox = async () => ({ id: 42 })

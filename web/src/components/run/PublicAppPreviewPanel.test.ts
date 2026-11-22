@@ -36,7 +36,7 @@ describe('PublicAppPreviewPanel', () => {
     })
   })
 
-  it('mounts with ports and requests a ticket', async () => {
+  it('mounts with a preview and requests a ticket', async () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
@@ -45,7 +45,7 @@ describe('PublicAppPreviewPanel', () => {
     const w = mount(PublicAppPreviewPanel, {
       props: {
         token: 'share-token',
-        ports: [{ port: 5173, label: 'web', kind: 'http' }],
+        preview: { port: 5173, label: 'web', kind: 'http' },
         active: true,
       },
       global: {
@@ -70,7 +70,7 @@ describe('PublicAppPreviewPanel', () => {
     const w = mount(PublicAppPreviewPanel, {
       props: {
         token: 'share-token',
-        ports: [],
+        preview: null,
         active: false,
       },
       global: { plugins: [i18n] },
@@ -89,7 +89,7 @@ describe('PublicAppPreviewPanel', () => {
     const w = mount(PublicAppPreviewPanel, {
       props: {
         token: 'share-token',
-        ports: [{ port: 18080, label: 'web', kind: 'http', directUrl: 'http://10.0.0.5:18080/' }],
+        preview: { port: 18080, label: 'web', kind: 'http', directUrl: 'http://10.0.0.5:18080/' },
         active: true,
       },
       global: {

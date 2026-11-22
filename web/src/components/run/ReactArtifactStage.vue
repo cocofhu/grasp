@@ -15,7 +15,7 @@ import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.
 import StageWorkflow from '@/components/run/StageWorkflow.vue'
 import { api, type PreviewPort } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
-import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
+import type { PublicPreview } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { useToast } from '@/lib/composables/useToast'
@@ -91,7 +91,8 @@ const props = withDefaults(
     /** Force-hide app / sandbox remote card and tab (artifact-only embed modal). */
     hideAppPreview?: boolean
     token?: string
-    ports?: PublicPreviewPort[]
+    /** Public share: the desensitized active preview (null when none). */
+    publicPreview?: PublicPreview | null
     publicActive?: boolean
     publicMobile?: boolean
     /** Optional sandbox supplied by a standalone conversation (Solo). */
@@ -104,8 +105,8 @@ const props = withDefaults(
     sandboxLogId?: number
     /** Review stage of a non-clarify node: show the app tab once set_preview registers. */
     probeRegisteredPreview?: boolean
-    /** Standalone conversations already fetch registrations with their artifacts. */
-    registeredPreviews?: PreviewPort[]
+    /** Standalone conversations fetch the active preview with their artifacts (null when none). */
+    registeredPreview?: PreviewPort | null
     soloSessionId?: string
     /** Logged-in run hosts: allow editing run artifacts from cards and tabs. */
     editable?: boolean
@@ -124,7 +125,7 @@ const props = withDefaults(
     annotatable: false,
     hideAppPreview: false,
     token: '',
-    ports: () => [],
+    publicPreview: null,
     publicActive: true,
     publicMobile: false,
     sandbox: null,
@@ -257,7 +258,7 @@ function stopRegisteredPreviewProbe() {
   previewProbeGen++
 }
 
-async function probeRegisteredPreviews() {
+async function pollRegisteredPreview() {
   if (!probesRegisteredPreview.value) return
   const rid = String(props.runId || '').trim()
   const nid = String(props.nodeId || '').trim()
@@ -269,9 +270,9 @@ async function probeRegisteredPreviews() {
   const gen = ++previewProbeGen
   previewProbeAbort = new AbortController()
   try {
-    const r = await api.nodePreviews(rid, nid, { signal: previewProbeAbort.signal })
+    const r = await api.nodePreview(rid, nid, { signal: previewProbeAbort.signal })
     if (gen !== previewProbeGen) return
-    previewRegistered.value = (r.ports || []).length > 0
+    previewRegistered.value = r.preview != null
   } catch (e) {
     if (gen !== previewProbeGen || isAbortError(e)) return
     // Keep last known registration on transient errors.
@@ -285,17 +286,17 @@ watch(
     previewRegistered.value = false
     if (props.hideAppPreview) return
     if (!probesRegisteredPreview.value) return
-    void probeRegisteredPreviews()
-    previewProbeTimer = setInterval(() => void probeRegisteredPreviews(), REGISTERED_PREVIEW_POLL_MS)
+    void pollRegisteredPreview()
+    previewProbeTimer = setInterval(() => void pollRegisteredPreview(), REGISTERED_PREVIEW_POLL_MS)
   },
   { immediate: true },
 )
 
 const effectiveRemoteKind = computed(() => {
   if (props.hideAppPreview) return 'off'
-  if (props.registeredPreviews?.length) return 'app'
+  if (props.registeredPreview) return 'app'
   if (clarifyPreview.value) {
-    if (resolvedRemoteKind.value === 'public') return props.ports?.length ? 'public' : 'off'
+    if (resolvedRemoteKind.value === 'public') return props.publicPreview ? 'public' : 'off'
     return clarifyStageRemoteKind(previewRegistered.value)
   }
   if (props.probeRegisteredPreview && previewRegistered.value && resolvedRemoteKind.value !== 'public') return 'app'
@@ -319,7 +320,7 @@ const gridArtifacts = computed(() => {
     effectivePin.value,
     resolvedNode.value,
   )
-  if (props.registeredPreviews === undefined || !effectivePin.value) return artifacts
+  if (props.registeredPreview === undefined || !effectivePin.value) return artifacts
   const pinned = artifacts.find((a) => a.name === effectivePin.value)
   return pinned ? [pinned, ...artifacts.filter((a) => a !== pinned)] : artifacts
 })
@@ -911,7 +912,7 @@ watch(
     if (!pinEvent) return
     // Keep split homes in place. Standalone explicit pins can open inside an
     // already visible artifact drawer.
-    if (splitActive.value && (props.registeredPreviews === undefined || drawerMode.value !== 'artifacts')) return
+    if (splitActive.value && (props.registeredPreview === undefined || drawerMode.value !== 'artifacts')) return
     const canFocus = shouldFocusPinnedOrAutoTab({
       userMoved: userMoved.value,
       activeTab: activeTab.value,
@@ -1170,7 +1171,7 @@ watch(
       sandboxLoadingState.value = false
       return
     }
-    if (props.registeredPreviews !== undefined) return
+    if (props.registeredPreview !== undefined) return
     const rid = String(props.runId || '').trim()
     const nid = String(props.nodeId || '').trim()
     if (!rid || !nid) return
@@ -1200,7 +1201,7 @@ const nodeSandboxRefreshable = computed(
   () =>
     !props.hideAppPreview &&
     !props.sandbox &&
-    props.registeredPreviews === undefined &&
+    props.registeredPreview === undefined &&
     !!String(props.runId || '').trim() &&
     !!String(props.nodeId || '').trim(),
 )
@@ -1818,7 +1819,7 @@ onBeforeUnmount(() => {
         v-if="effectiveRemoteKind === 'app'"
         :run-id="runId"
         :node-id="nodeId"
-        :registered-previews="registeredPreviews"
+        :registered-preview="registeredPreview"
         :solo-session-id="soloSessionId"
         :resident-sandbox-id="sandboxId"
         fill
@@ -1829,7 +1830,7 @@ onBeforeUnmount(() => {
       <PublicAppPreviewPanel
         v-else-if="effectiveRemoteKind === 'public'"
         :token="token"
-        :ports="ports"
+        :preview="publicPreview"
         :active="publicActive"
         :mobile="publicMobile"
         fill

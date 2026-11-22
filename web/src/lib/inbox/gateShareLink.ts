@@ -353,8 +353,8 @@ export type PublicGatePreview = {
   activeItem?: PublicGateActiveItem | null
   productKind?: 'visual' | 'structured' | 'app' | string
   productName?: string
-  /** Desensitized set_preview ports for public remote / API iframe. */
-  ports?: PublicPreviewPort[]
+  /** Desensitized active set_preview for public remote / API iframe. */
+  preview?: PublicPreview
   /** Graph node type from preview DTO. Kind stays review. */
   nodeType?: string
   /** Agent interaction from the node's caps snapshot; clarify ⇒ 待澄清. */
@@ -371,7 +371,7 @@ export type PublicGateLiveEvent = {
   parts?: AgentPart[]
 }
 
-export type PublicPreviewPort = {
+export type PublicPreview = {
   port: number
   label?: string
   kind: 'port' | 'url' | string
@@ -557,7 +557,7 @@ export function publicGateContentKey(p: PublicGatePreview | null | undefined): s
     activeItem: p.activeItem || null,
     productKind: p.productKind || '',
     productName: p.productName || '',
-    ports: (p.ports || []).map((x) => ({ port: x.port, label: x.label || '', mode: x.mode || '' })),
+    preview: p.preview ? { port: p.preview.port, label: p.preview.label || '', mode: p.preview.mode || '' } : null,
     liveEvents: p.liveEvents || null,
   })
 }

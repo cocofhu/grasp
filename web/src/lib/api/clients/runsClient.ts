@@ -477,9 +477,9 @@ export const runsClient = {
     }
     return body as SandboxView
   },
-  nodePreviews: (runId: string, nodeId: string, opts?: { signal?: AbortSignal }) =>
-    req<{ ports: PreviewPort[] }>(
-      `/runs/${runId}/nodes/${nodeId}/previews`,
+  nodePreview: (runId: string, nodeId: string, opts?: { signal?: AbortSignal }) =>
+    req<{ preview: PreviewPort | null }>(
+      `/runs/${runId}/nodes/${nodeId}/preview`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
   listPreviewIssues: (runId: string, nodeId: string) =>

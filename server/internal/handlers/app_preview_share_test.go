@@ -161,7 +161,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatalf("owner drawer token reached another node: %d", w.Code)
 				}
 			}
-			if err := hn.h.Preview.ReplacePreviewPort(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, Host: app.URL, Healthy: true}); err != nil {
+			if err := hn.h.Preview.ReplacePreview(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, Host: app.URL, Healthy: true}); err != nil {
 				t.Fatal(err)
 			}
 			if w := hn.do(http.MethodPost, manage, map[string]any{"port": 9999, "chatMode": "isolated"}); w.Code != http.StatusNotFound {

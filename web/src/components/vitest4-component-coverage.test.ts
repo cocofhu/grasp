@@ -71,7 +71,7 @@ describe('component shallow mount coverage (vitest 4 remapping)', () => {
             modelValue: '',
             options: [],
             token: 't',
-            ports: [],
+            preview: null,
             existingNames: [],
             agentName: 'a',
             workspace: { name: 'n', description: '', variables: [] },

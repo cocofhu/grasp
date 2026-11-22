@@ -354,7 +354,7 @@ export function inboxStageRemoteKind(opts: {
   appPreview: boolean
   run?: Run | null
   nodeId?: string | null
-  /** When the active node is a clarify Agent: true once set_preview has registered ports/URLs. */
+  /** When the active node is a clarify Agent: true once set_preview has registered a preview. */
   hasRegisteredPreview?: boolean
 }): ReactStageRemoteKind {
   if (opts.appPreview) return 'app'

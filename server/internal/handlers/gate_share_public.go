@@ -766,7 +766,7 @@ func (h *Handlers) publicReviewExtras(lookup *gateshare.LookupResult, lane, visu
 		ex.ProductName = structName
 	}
 	if lookup.Node != nil && lookup.Node.Caps.CanPreview() {
-		ex.Ports = h.publicAppPreviewPorts(runID, nodeID)
+		ex.Preview = h.publicAppPreview(runID, nodeID)
 		if ex.ProductKind == "" {
 			ex.ProductKind = gateshare.ProductKindAppPreview
 		}

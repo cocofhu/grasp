@@ -20,8 +20,8 @@ const props = withDefaults(
     fill?: boolean
     /** When false, hide PreviewFeedbackChat (review ReAct is the primary dialogue). */
     showFeedback?: boolean
-    /** Standalone conversations provide their own sandbox and preview list. */
-    registeredPreviews?: PreviewPort[]
+    /** Standalone conversations provide their own sandbox and active preview (null when none). */
+    registeredPreview?: PreviewPort | null
     soloSessionId?: string
     residentSandboxId?: number | null
   }>(),
@@ -35,37 +35,32 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const ports = ref<PreviewPort[]>([])
+const preview = ref<PreviewPort | null>(null)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const pickedSelector = ref('')
-let portsGen = 0
-let portsAbort: AbortController | null = null
+let loadGen = 0
+let loadAbort: AbortController | null = null
 
-function isDirectPort(p: PreviewPort): boolean {
-  return p.kind !== 'url' && p.mode === 'direct' && !!(p.directUrl || '').trim()
-}
-
-const preview = computed(() => ports.value[0] || null)
-const activePort = computed(() => (preview.value && preview.value.kind !== 'url' ? preview.value.port : null))
+/** The active preview is an external URL shown over the desktop. */
+const urlTabActive = computed(() => preview.value?.kind === 'url')
+/** Port the desktop shows; null for an external URL. */
+const activePort = computed(() => (preview.value && !urlTabActive.value ? preview.value.port : null))
 const activeDirectUrl = computed(() =>
-  preview.value && isDirectPort(preview.value) ? (preview.value.directUrl || '').trim() : '',
+  activePort.value && preview.value?.mode === 'direct' ? (preview.value.directUrl || '').trim() : '',
 )
 /** The node's sandbox: its desktop is the one VNC screen for the active preview. */
 const sandboxId = ref<number | null>(null)
 /** creating/pulling keep the empty poll; absent and ready stop it. */
 const sandboxPhase = ref<'creating' | 'pulling' | 'ready' | 'absent' | null>(null)
-/** Port the desktop should show; only a chip change navigates. */
-const vncTargetPort = ref<number | null>(null)
-/** Something to show: the Agent's desktop, or registered previews. */
-const hasScreen = computed(() => sandboxId.value != null || ports.value.length > 0)
-/** The active preview is an external URL shown over the desktop. */
-const urlTabActive = computed(() => preview.value?.kind === 'url')
-
-function previewLabel(p: PreviewPort): string {
+/** Something to show: the Agent's desktop, or the active preview. */
+const hasScreen = computed(() => sandboxId.value != null || preview.value != null)
+const previewLabel = computed(() => {
+  const p = preview.value
+  if (!p) return ''
   const label = (p.label || '').trim()
   if (label) return label
-  if (p.kind === 'url') {
+  if (urlTabActive.value) {
     const url = (p.url || '').trim()
     try {
       const parsed = new URL(url)
@@ -75,12 +70,7 @@ function previewLabel(p: PreviewPort): string {
     }
   }
   return String(p.port)
-}
-
-function applyPorts(next: PreviewPort[]) {
-  ports.value = next.slice(0, 1)
-  vncTargetPort.value = preview.value && preview.value.kind !== 'url' ? preview.value.port : null
-}
+})
 
 function sandboxNumericId(id: unknown): number | null {
   const n = typeof id === 'number' ? id : Number(id)
@@ -115,7 +105,7 @@ async function loadSandbox(gen: number) {
   const runId = props.runId
   const nodeId = props.nodeId
   const sbx = await api.getRunNodeSandbox(runId, nodeId)
-  if (gen !== portsGen || props.runId !== runId || props.nodeId !== nodeId) return
+  if (gen !== loadGen || props.runId !== runId || props.nodeId !== nodeId) return
   applySandboxView(sbx)
 }
 
@@ -129,10 +119,10 @@ function onStagedPick(payload: AppPreviewPickPayload | null) {
   emit('staged-pick', payload)
 }
 
-async function loadPorts(opts?: { silent?: boolean }) {
-  portsAbort?.abort()
-  const gen = ++portsGen
-  portsAbort = new AbortController()
+async function loadPreview(opts?: { silent?: boolean }) {
+  loadAbort?.abort()
+  const gen = ++loadGen
+  loadAbort = new AbortController()
   const silent = !!opts?.silent
   // Visible loading only on first load / manual retry — empty poll must stay silent.
   if (!silent) {
@@ -141,25 +131,24 @@ async function loadPorts(opts?: { silent?: boolean }) {
   }
   try {
     const [r] = await Promise.all([
-      api.nodePreviews(props.runId, props.nodeId, { signal: portsAbort.signal }),
+      api.nodePreview(props.runId, props.nodeId, { signal: loadAbort.signal }),
       loadSandbox(gen),
     ])
-    if (gen !== portsGen) return
-    applyPorts(r.ports || [])
+    if (gen !== loadGen) return
+    preview.value = r.preview ?? null
     if (silent) loadError.value = null
   } catch (e: any) {
-    if (gen !== portsGen || isAbortError(e) || portsAbort.signal.aborted) return
+    if (gen !== loadGen || isAbortError(e) || loadAbort.signal.aborted) return
     // Silent empty polls must not surface errors or flash loading layers.
     if (silent) return
     loadError.value = t('pages.appPreview.loadFailed')
-    if (!ports.value.length) ports.value = []
   } finally {
-    if (gen === portsGen && !silent) loading.value = false
+    if (gen === loadGen && !silent) loading.value = false
   }
 }
 
-function retryLoadPorts() {
-  return loadPorts()
+function retryLoadPreview() {
+  return loadPreview()
 }
 
 const EMPTY_POLL_MS = 2500
@@ -174,21 +163,21 @@ function stopEmptyPoll() {
 watch(
   () => [props.runId, props.nodeId],
   () => {
-    if (props.registeredPreviews !== undefined) return
+    if (props.registeredPreview !== undefined) return
     stopEmptyPoll()
     sandboxId.value = null
     sandboxPhase.value = null
-    void loadPorts()
+    void loadPreview()
   },
   { immediate: true },
 )
 
 watch(
-  () => [props.registeredPreviews, props.residentSandboxId] as const,
-  ([previews, id]) => {
-    if (previews === undefined) return
+  () => [props.registeredPreview, props.residentSandboxId] as const,
+  ([registered, id]) => {
+    if (registered === undefined) return
     applySandboxView(id ? { id } : null)
-    applyPorts(previews)
+    preview.value = registered
   },
   { immediate: true },
 )
@@ -201,7 +190,7 @@ watch(
   }),
   ({ provisioning, loading: busy, err }) => {
     if (provisioning && !busy && !err) {
-      if (!emptyPoll) emptyPoll = setInterval(() => loadPorts({ silent: true }), EMPTY_POLL_MS)
+      if (!emptyPoll) emptyPoll = setInterval(() => loadPreview({ silent: true }), EMPTY_POLL_MS)
       return
     }
     stopEmptyPoll()
@@ -210,9 +199,9 @@ watch(
 
 onUnmounted(() => {
   stopEmptyPoll()
-  portsAbort?.abort()
-  portsAbort = null
-  portsGen++
+  loadAbort?.abort()
+  loadAbort = null
+  loadGen++
 })
 
 function issueDirectTicket() {
@@ -235,7 +224,7 @@ function issueDirectTicket() {
       :overlay="false"
       :stuck-after-ms="10_000"
       :stage="t('pages.appPreview.loading')"
-      @retry="retryLoadPorts"
+      @retry="retryLoadPreview"
     />
     <div
       v-if="loadError"
@@ -247,7 +236,7 @@ function issueDirectTicket() {
       <button
         type="button"
         class="rounded-lg mt-2 inline-flex min-h-11 items-center border border-line px-3 text-[12px] text-txt"
-        @click="retryLoadPorts"
+        @click="retryLoadPreview"
       >
         {{ t('common.chatImage.retry') }}
       </button>
@@ -267,13 +256,13 @@ function issueDirectTicket() {
         <ExternalUrlPreviewFrame
           v-if="preview && urlTabActive"
           :url="(preview.url || '').trim()"
-          :title="previewLabel(preview)"
+          :title="previewLabel"
         />
         <NovncPreviewPanel
           v-if="sandboxId != null"
           v-show="!urlTabActive"
           :sandbox-id="sandboxId"
-          :target-port="vncTargetPort ?? undefined"
+          :target-port="activePort ?? undefined"
           fill
           :compact="compact"
           @pick="onPick"
@@ -303,7 +292,7 @@ function issueDirectTicket() {
         </div>
       </div>
       <PreviewFeedbackChat
-        v-if="!compact && showFeedback && ports.length"
+        v-if="!compact && showFeedback && preview"
         :run-id="runId"
         :node-id="nodeId"
         :port="activePort ?? 0"

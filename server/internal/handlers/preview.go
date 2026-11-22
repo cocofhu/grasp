@@ -22,16 +22,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// ListNodePreviews returns the active preview for a run/node.
-func (h *Handlers) ListNodePreviews(c *gin.Context) {
-	runID := c.Param("id")
-	nodeID := c.Param("nodeId")
+// GetNodePreview returns the active preview for a run/node (null when none).
+func (h *Handlers) GetNodePreview(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"preview": h.activePreview(c.Param("id"), c.Param("nodeId"))})
+}
+
+// activePreview is the JSON value of a run/node's active preview: nil when none.
+func (h *Handlers) activePreview(runID, nodeID string) *mcp.PreviewPort {
 	if h.MCP == nil {
-		c.JSON(http.StatusOK, gin.H{"ports": []any{}})
-		return
+		return nil
 	}
-	ports := h.MCP.ListPreviewPorts(runID, nodeID)
-	c.JSON(http.StatusOK, gin.H{"ports": ports})
+	p, ok := h.MCP.ActivePreview(runID, nodeID)
+	if !ok {
+		return nil
+	}
+	return &p
 }
 
 // Root-absolute attribute references (src/href/action/...) that must be
@@ -348,11 +353,8 @@ func isRootAbsolute(p string) bool {
 // memory / DB without talking to the sandbox manager.
 func (h *Handlers) lookupPreviewRegistration(runID, nodeID string, port int) mcp.PreviewPort {
 	reg := mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: port}
-	if h.MCP != nil {
-		ports := h.MCP.ListPreviewPorts(runID, nodeID)
-		if len(ports) == 1 && ports[0].Port == port {
-			reg = ports[0]
-		}
+	if active := h.activePreview(runID, nodeID); active != nil && active.Port == port {
+		reg = *active
 	}
 	if (reg.Host == "" || reg.SandboxName == "") && h.Preview != nil {
 		if rec, okRec := h.Preview.GetPreviewPort(runID, nodeID, port); okRec {

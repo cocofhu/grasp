@@ -1,6 +1,6 @@
 /**
  * Browser acceptance: a clarify Agent hides the app-preview card until set_preview
- * registers ports; a reviewed Agent with set_preview keeps that card even when empty.
+ * registers a preview; a reviewed Agent with set_preview keeps that card even when empty.
  * Split drawers have no 「工作流产物」 home tab. Open the resource icon, then the card.
  */
 import { expect, test, type Page } from '@playwright/test'
@@ -26,7 +26,7 @@ function unfinishedRun(item: Record<string, unknown>) {
   }
 }
 
-type PortsState = { ports: Array<Record<string, unknown>> }
+type PreviewState = { preview: Record<string, unknown> | null }
 
 function clarifyItem() {
   return {
@@ -64,7 +64,7 @@ function previewReviewItem() {
   }
 }
 
-async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports: PortsState }) {
+async function mockApis(page: Page, opts: { item: Record<string, unknown>; preview: PreviewState }) {
   await page.route('**/api/**', async (route) => {
     if (!new URL(route.request().url()).pathname.startsWith('/api/')) {
       await route.continue()
@@ -91,8 +91,8 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/previews/)) {
-      await route.fulfill({ json: opts.ports })
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/preview$/)) {
+      await route.fulfill({ json: opts.preview })
       return
     }
 
@@ -231,7 +231,7 @@ function pathRunNode(pathname: string): { runId: string; nodeId: string } {
   return { runId: parts[3] || '', nodeId }
 }
 
-async function openGates(page: Page, opts: { item: Record<string, unknown>; ports: PortsState }) {
+async function openGates(page: Page, opts: { item: Record<string, unknown>; preview: PreviewState }) {
   await installWorkspaceApiDefaults(page)
   await mockApis(page, opts)
   await page.setViewportSize({ width: 1280, height: 800 })
@@ -243,7 +243,7 @@ async function openGates(page: Page, opts: { item: Record<string, unknown>; port
 
 test.describe('Clarify empty app preview', () => {
   test('无端口时不显示应用预览 Tab，也不出现空占位文案', async ({ page }) => {
-    await openGates(page, { item: clarifyItem(), ports: { ports: [] } })
+    await openGates(page, { item: clarifyItem(), preview: { preview: null } })
 
     const row = page.getByTestId('nav-pending-row').filter({ hasText: '澄清空预览验收' })
     await expect(row).toHaveAttribute('title', '澄清空预览验收 · 需求澄清')
@@ -278,15 +278,13 @@ test.describe('Clarify empty app preview', () => {
   test('有端口后出现应用预览 Tab 并可打开', async ({ page }) => {
     await openGates(page, {
       item: clarifyItem(),
-      ports: {
-        ports: [
-          {
-            port: 5173,
-            label: '前端',
-            status: 'healthy',
-            url: 'http://127.0.0.1:5173/',
-          },
-        ],
+      preview: {
+        preview: {
+          port: 5173,
+          label: '前端',
+          status: 'healthy',
+          url: 'http://127.0.0.1:5173/',
+        },
       },
     })
 
@@ -306,7 +304,7 @@ test.describe('Clarify empty app preview', () => {
   })
 
   test('复审 + set_preview 空端口仍保留应用预览 Tab', async ({ page }) => {
-    await openGates(page, { item: previewReviewItem(), ports: { ports: [] } })
+    await openGates(page, { item: previewReviewItem(), preview: { preview: null } })
 
     const row = page.getByTestId('nav-pending-row').filter({ hasText: '预览复审空列表仍显示 Tab' })
     await expect(row).toHaveAttribute('title', '预览复审空列表仍显示 Tab · 实现')

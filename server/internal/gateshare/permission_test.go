@@ -116,9 +116,9 @@ func TestBuildReviewPreviewDTOKeepsGraspPreviewPorts(t *testing.T) {
 		Kind: models.ShareLinkKindReview,
 		Node: &models.Node{ID: "grasp1", Type: "agent", Caps: &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}},
 	}
-	ports := []PublicPreviewPort{{Port: 18080, Kind: "port", Mode: "direct", DirectURL: "http://10.0.0.5:18080/"}}
-	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"t"}`, "n", PreviewExtras{Ports: ports})
-	if dto.ProductKind != ProductKindStructured || len(dto.Ports) != 1 || dto.Ports[0].DirectURL != "http://10.0.0.5:18080/" {
-		t.Fatalf("kind=%q ports=%+v", dto.ProductKind, dto.Ports)
+	preview := &PublicPreview{Port: 18080, Kind: "port", Mode: "direct", DirectURL: "http://10.0.0.5:18080/"}
+	dto := BuildReviewPreviewDTO(models.ShareLinkStateActive, lookup, "", "research.json", `{"title":"t"}`, "n", PreviewExtras{Preview: preview})
+	if dto.ProductKind != ProductKindStructured || dto.Preview == nil || dto.Preview.DirectURL != "http://10.0.0.5:18080/" {
+		t.Fatalf("kind=%q preview=%+v", dto.ProductKind, dto.Preview)
 	}
 }

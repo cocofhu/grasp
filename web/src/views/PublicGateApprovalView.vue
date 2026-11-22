@@ -300,7 +300,7 @@ const inspectable = computed(
     (isReview.value || productKind.value === 'visual' || productKind.value === 'app'),
 )
 const usePublicArtifactStage = computed(() => isReview.value)
-const appPreviewPorts = computed(() => preview.value?.ports || [])
+const appPreview = computed(() => preview.value?.preview ?? null)
 /** ClarifyChat shows the store's state only for its own iteration (a lane has none). */
 const chatIteration = computed(() => {
   const it = getDialogue(PUBLIC_DIALOGUE_KEY)?.iteration
@@ -1570,9 +1570,9 @@ defineExpose({
               :run="publicRunGraph"
               :node="stageNode"
               :annotatable="inspectable"
-              :remote-kind="productKind === 'app' || appPreviewPorts.length ? 'public' : 'off'"
+              :remote-kind="productKind === 'app' || appPreview ? 'public' : 'off'"
               :token="token"
-              :ports="appPreviewPorts"
+              :public-preview="appPreview"
               :public-active="isActive"
               :public-mobile="isMobile"
               @pick="onAppPreviewPick"
@@ -1600,7 +1600,7 @@ defineExpose({
               <PublicAppPreviewPanel
                 v-else-if="productKind === 'app'"
                 :token="token"
-                :ports="appPreviewPorts"
+                :preview="appPreview"
                 :active="isActive"
                 :mobile="isMobile"
                 fill

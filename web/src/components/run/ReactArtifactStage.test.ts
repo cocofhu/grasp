@@ -46,7 +46,7 @@ vi.mock('@/lib/api/api', () => ({
       content: '<html>thumb</html>',
     })),
     getRunNodeSandbox: vi.fn(async () => ({ id: 42 })),
-    nodePreviews: vi.fn(async () => ({ ports: [] })),
+    nodePreview: vi.fn(async () => ({ preview: null })),
     nodeSandboxLog: vi.fn(async () => ({ content: 'stdout line', live: true, found: true })),
     sandboxIdeUrl: (id: number) => `about:blank#ide-${id}`,
     sandboxTerminalWsUrl: (id: number) => `ws://test.local/sandboxes/${id}/terminal`,
@@ -167,7 +167,7 @@ describe('ReactArtifactStage', () => {
       createdAt: '2026-08-01T00:00:00Z',
       content: '<p>old</p>',
     })
-    vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
+    vi.mocked(api.nodePreview).mockResolvedValue({ preview: null })
     vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 42 } as never)
     vi.mocked(api.nodeSandboxLog).mockResolvedValue({ content: 'stdout line', live: true, found: true })
   })
@@ -907,8 +907,8 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('hides app preview tab for a clarify Agent when no ports are registered (plan g1.4 / g2.3)', async () => {
-    vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
+  it('hides app preview tab for a clarify Agent when no preview is registered (plan g1.4 / g2.3)', async () => {
+    vi.mocked(api.nodePreview).mockResolvedValue({ preview: null })
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
@@ -921,26 +921,24 @@ describe('ReactArtifactStage', () => {
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(api.nodePreviews).toHaveBeenCalled()
+    expect(api.nodePreview).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/尚未注册预览端口/)
     wrapper.unmount()
   })
 
-  it('honors hideAppPreview even when clarify ports are registered (artifact embed modal)', async () => {
-    vi.mocked(api.nodePreviews).mockClear()
-    vi.mocked(api.nodePreviews).mockResolvedValue({
-      ports: [
-        {
-          port: 5173,
-          label: '前端',
-          runId: 'run-approve-hide',
-          nodeId: 'approve_1',
-          proxyUrl: '/p',
-          healthy: true,
-        },
-      ],
+  it('honors hideAppPreview even when a clarify preview is registered (artifact embed modal)', async () => {
+    vi.mocked(api.nodePreview).mockClear()
+    vi.mocked(api.nodePreview).mockResolvedValue({
+      preview: {
+        port: 5173,
+        label: '前端',
+        runId: 'run-approve-hide',
+        nodeId: 'approve_1',
+        proxyUrl: '/p',
+        healthy: true,
+      },
     })
     const wrapper = mount(ReactArtifactStage, {
       props: {
@@ -954,7 +952,7 @@ describe('ReactArtifactStage', () => {
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(api.nodePreview).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="react-artifact-card-novnc"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-ide"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
@@ -969,18 +967,16 @@ describe('ReactArtifactStage', () => {
     wrapper.unmount()
   })
 
-  it('shows app preview tab for a clarify Agent after silent probe finds ports (plan g2.2)', async () => {
-    vi.mocked(api.nodePreviews).mockResolvedValue({
-      ports: [
-        {
-          port: 5173,
-          label: '前端',
-          runId: 'run-approve-ports',
-          nodeId: 'approve_1',
-          proxyUrl: '/p',
-          healthy: true,
-        },
-      ],
+  it('shows app preview tab for a clarify Agent after silent probe finds a preview (plan g2.2)', async () => {
+    vi.mocked(api.nodePreview).mockResolvedValue({
+      preview: {
+        port: 5173,
+        label: '前端',
+        runId: 'run-approve-ports',
+        nodeId: 'approve_1',
+        proxyUrl: '/p',
+        healthy: true,
+      },
     })
     const wrapper = mount(ReactArtifactStage, {
       props: {
@@ -1000,10 +996,8 @@ describe('ReactArtifactStage', () => {
   })
 
   it('upgrades a review stage of a non-clarify node to the app tab once set_preview registers', async () => {
-    vi.mocked(api.nodePreviews).mockResolvedValue({
-      ports: [
-        { port: 5173, label: '前端', runId: 'run-impl-review', nodeId: 'impl_1', proxyUrl: '/p', healthy: true },
-      ],
+    vi.mocked(api.nodePreview).mockResolvedValue({
+      preview: { port: 5173, label: '前端', runId: 'run-impl-review', nodeId: 'impl_1', proxyUrl: '/p', healthy: true },
     })
     const wrapper = mount(ReactArtifactStage, {
       props: {
@@ -1017,13 +1011,13 @@ describe('ReactArtifactStage', () => {
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(api.nodePreviews).toHaveBeenCalledWith('run-impl-review', 'impl_1', expect.anything())
+    expect(api.nodePreview).toHaveBeenCalledWith('run-impl-review', 'impl_1', expect.anything())
     expect(wrapper.find('[data-testid="app-preview-stub"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
   it('keeps the remote kind for a non-clarify node without the review probe', async () => {
-    vi.mocked(api.nodePreviews).mockClear()
+    vi.mocked(api.nodePreview).mockClear()
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'plan.json', kind: 'json', nodeId: 'impl_1' })],
@@ -1035,35 +1029,35 @@ describe('ReactArtifactStage', () => {
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(api.nodePreview).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('shows public app preview for a clarify Agent from share ports without probing', async () => {
-    vi.mocked(api.nodePreviews).mockClear()
+  it('shows public app preview for a clarify Agent from the share preview without probing', async () => {
+    vi.mocked(api.nodePreview).mockClear()
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
         node: CLARIFY_NODE,
         remoteKind: 'public',
         token: 't',
-        ports: [{ port: 18080, kind: 'port', mode: 'vnc', directUrl: 'http://10.0.0.5:18080/' }],
+        publicPreview: { port: 18080, kind: 'port', mode: 'vnc', directUrl: 'http://10.0.0.5:18080/' },
       },
       global: { plugins: [i18n()], stubs },
     })
     await flushPromises()
-    expect(api.nodePreviews).not.toHaveBeenCalled()
+    expect(api.nodePreview).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="public-app-preview-stub"]').exists()).toBe(true)
-    await wrapper.setProps({ ports: [] })
+    await wrapper.setProps({ publicPreview: null })
     expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('does not steal focus when clarify ports arrive after userMoved (plan g2.2)', async () => {
+  it('does not steal focus when a clarify preview arrives after userMoved (plan g2.2)', async () => {
     vi.useFakeTimers()
-    vi.mocked(api.nodePreviews).mockResolvedValue({ ports: [] })
+    vi.mocked(api.nodePreview).mockResolvedValue({ preview: null })
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json', nodeId: 'approve_1' })],
@@ -1081,17 +1075,15 @@ describe('ReactArtifactStage', () => {
       'true',
     )
 
-    vi.mocked(api.nodePreviews).mockResolvedValue({
-      ports: [
-        {
-          port: 5173,
-          label: '前端',
-          runId: 'run-approve-moved',
-          nodeId: 'approve_1',
-          proxyUrl: '/p',
-          healthy: true,
-        },
-      ],
+    vi.mocked(api.nodePreview).mockResolvedValue({
+      preview: {
+        port: 5173,
+        label: '前端',
+        runId: 'run-approve-moved',
+        nodeId: 'approve_1',
+        proxyUrl: '/p',
+        healthy: true,
+      },
     })
     await vi.advanceTimersByTimeAsync(2500)
     await flushPromises()
@@ -2059,14 +2051,14 @@ describe('ReactArtifactStage split drawer', () => {
         nodeId: 'solo',
         sandbox: { id: 42 },
         artifacts: [art({ id: 'demo', name: 'demo.html', kind: 'html', nodeId: 'solo', runId, content: '<p>Demo</p>' })],
-        registeredPreviews: [],
+        registeredPreview: null,
       },
       global: { plugins: [i18n()], stubs },
     })
     try {
       const card = '[data-testid="react-artifact-card-app"]'
       expect(wrapper.find(card).exists()).toBe(false)
-      await wrapper.setProps({ registeredPreviews: [{ runId, nodeId: 'solo', port: 8899, kind: 'port', proxyUrl: '/preview/solo/', healthy: true }] })
+      await wrapper.setProps({ registeredPreview: { runId, nodeId: 'solo', port: 8899, kind: 'port', proxyUrl: '/preview/solo/', healthy: true } })
       await wrapper.get(card).trigger('click')
       expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').attributes('aria-selected')).toBe('true')
       expect(wrapper.get('[data-testid="app-preview-stub"]').exists()).toBe(true)
