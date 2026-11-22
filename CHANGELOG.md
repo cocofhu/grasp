@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 移除首页背景粒子网络动画。Dashboard 不再创建粒子画布和持续的 `requestAnimationFrame` 循环，首页内容、角色、工作流和 Solo 交互保持原有入口。
+
 - 沙箱列表页重新整理为带运行概览、状态筛选和分层操作的管理台布局，保留详情、控制台、停止、销毁和空闲回收行为，并适配移动端。
 
 - 沙箱列表页改为连续的边框优先布局：统计指标、状态筛选和数据表格不再各自套独立容器，减少页面分隔感并保持信息层级。

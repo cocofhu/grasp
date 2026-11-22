@@ -223,7 +223,6 @@
       "format.ts",
       "frontmatter.ts",
       "highlightJson.ts",
-      "homeParticleMesh.ts",
       "hoverInkDirective.ts",
       "hoverInkGeometry.ts",
       "htmlPreviewSandbox.ts",

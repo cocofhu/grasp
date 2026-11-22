@@ -5,7 +5,6 @@ import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import HomeParticleMeshBackground from '@/components/dashboard/HomeParticleMeshBackground.vue'
 import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
@@ -831,7 +830,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
-    <HomeParticleMeshBackground />
     <div
       ref="homeContentEl"
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-x-hidden overflow-y-auto px-4"
@@ -1358,14 +1356,6 @@ onBeforeUnmount(() => {
 html.light .home-shell {
   --home-shadow: 0 0 0 / 0.045;
   --home-highlight: 255 255 255 / 0.9;
-}
-
-.home-shell :deep(.home-particle-mesh__canvas) {
-  opacity: 0.2;
-}
-
-html.light .home-shell :deep(.home-particle-mesh__canvas) {
-  opacity: 0.1;
 }
 
 /* Top and bottom insets shrink before the column scrolls. Top: basis 120px,
