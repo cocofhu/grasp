@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 排队消息的「立即引导」按钮改用更明确的转向箭头图标，并在悬停或键盘聚焦时播放一次路径转入动效；减弱动态效果时保持静态图标。
+
 - 应用预览每个沙箱只保留一个活动 Preview。再次调用 `set_preview` 会替换当前预览，预览界面和公开分享页不再提供多端口切换标签。
 
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
