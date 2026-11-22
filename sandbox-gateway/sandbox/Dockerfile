@@ -142,29 +142,6 @@ RUN set -eu; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
-# MongoDB 客户端（必须装上，不允许 best-effort 跳过）
-#   - mongosh / mongodb-database-tools：
-#       true → 清华 MongoDB apt + [trusted=yes]（国内规避官方 CDN / pgp SSL）
-#       false → repo.mongodb.org + server-8.0.asc signed-by（海外 CI 可达）
-RUN set -eu; \
-    if [ "$USE_CN_MIRROR" = "true" ]; then \
-      echo "deb [trusted=yes] https://mirrors.tuna.tsinghua.edu.cn/mongodb/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
-        > /etc/apt/sources.list.d/mongodb-org.list; \
-    else \
-      curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-        gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg; \
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
-        > /etc/apt/sources.list.d/mongodb-org.list; \
-    fi; \
-    ok=0; \
-    for i in 1 2 3 4 5; do \
-      if apt-get update && apt-get install -y mongodb-mongosh mongodb-database-tools; then ok=1; break; fi; \
-      echo "mongodb apt attempt $i failed; waiting for mirror re-sync..."; sleep 20; \
-    done; \
-    [ "$ok" = 1 ]; \
-    rm -rf /var/lib/apt/lists/*; \
-    command -v mongosh; command -v mongodump
-
 # Agent CLI 运行路径（cursor-agent 等下载型 CLI 装到 /root/.local/bin）。PATH 提前声明，
 # 便于 Cursor Server / SSH 等非 entrypoint 进程也能找到命令。具体 CLI 由末尾的 agent 安装层
 # 按 AGENT_PROVIDERS 装入（见 scripts/install-agent.sh）。

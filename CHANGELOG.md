@@ -76,7 +76,7 @@ All notable public-release changes are documented here.
 
 - Codex 模型选择新增 GPT-6.2 Sol、GPT-6.2 Astra 和 GPT-6.1 Terra，同步各模型的上下文窗口与推理档位。
 
-- 沙箱镜像不再安装 `mongocli`（已无用途）。`mongosh` 和 `mongodump` 等数据库工具保留。构建时不再访问 `fastdl.mongodb.org`。
+- 沙箱镜像不再安装任何 MongoDB 工具（`mongocli`、`mongosh`、`mongodump` 等 `mongodb-database-tools`），构建时不再访问 MongoDB 的 apt 源和 `fastdl.mongodb.org`。需要时可在沙箱内自行安装。
 
 - 沙箱镜像改由 sandbox-gateway 统一决定，Grasp 不再配置镜像（破坏性变更）：
   - 删除 `sandbox.image`、`sandbox.images.*`、`GRASP_SANDBOX_IMAGE` 和 `GRASP_SANDBOX_IMAGE_<BACKEND>`。仍配置时启动打印 warning 并忽略，不会启动失败。请把镜像迁到网关：Docker/K8s 用 `image` 或 `profiles`，E2B 用 `defaultTemplate` 或 `templates`，然后从 Grasp 配置中删除。
