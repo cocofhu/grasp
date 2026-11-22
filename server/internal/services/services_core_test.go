@@ -812,29 +812,3 @@ func TestArtifactServiceDeleteByID(t *testing.T) {
 		t.Fatalf("rewrite get: %q %v", content, ok)
 	}
 }
-
-func TestDashboardService(t *testing.T) {
-	db := newTestDB(t)
-	workspace := NewWorkspaceService(db)
-	s := NewDashboardService(db, workspace)
-	db.Create(&models.Run{ID: "a", Status: "running"})
-	db.Create(&models.Run{ID: "b", Status: "waiting_human"})
-	db.Create(&models.Run{ID: "c", Status: "failed"})
-	db.Create(&models.Run{ID: "d", Status: "completed"})
-	db.Create(&models.Run{ID: "e", Status: "completed"})
-	db.Create(&models.WorkflowDef{ID: "wf"})
-	db.Create(&models.Artifact{ID: "art", RunID: "a", Name: "n"})
-
-	st := s.Compute()
-	if st.Running != 1 || st.WaitingHuman != 1 || st.Failed != 1 || st.Completed != 2 {
-		t.Fatalf("stats runs: %+v", st)
-	}
-	if st.Workflows != 1 || st.Artifacts != 1 {
-		t.Fatalf("stats counts: %+v", st)
-	}
-	// No workspace usage → Token fields stay null (not 0).
-	if st.TotalTokens != nil || st.WorkflowTokens != nil {
-		t.Fatalf("expected null tokens without usage, got total=%v wf=%v",
-			st.TotalTokens, st.WorkflowTokens)
-	}
-}

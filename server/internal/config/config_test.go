@@ -18,8 +18,8 @@ func TestSetDefaults(t *testing.T) {
 	if c.Database.Path != "grasp.db" {
 		t.Errorf("default db = %q, want grasp.db", c.Database.Path)
 	}
-	if c.Engine.MaxConcurrentRuns != 5 {
-		t.Errorf("default max runs = %d, want 5", c.Engine.MaxConcurrentRuns)
+	if c.Sandbox.MaxSandboxes != 15 {
+		t.Errorf("default max sandboxes = %d, want 15", c.Sandbox.MaxSandboxes)
 	}
 	if c.Engine.ProfilesRoot != "data/profiles" {
 		t.Errorf("default profiles_root = %q", c.Engine.ProfilesRoot)
@@ -156,9 +156,8 @@ server:
   port: 6000
 database:
   path: "/tmp/file.db"
-engine:
-  max_concurrent_runs: 9
 sandbox:
+  max_sandboxes: 9
   image: "file/img:1"
   gateway_api_key: "file_key"
   agent_chat_timeout_seconds: 120
@@ -184,8 +183,8 @@ sandbox:
 	if c.Database.Path != "/tmp/file.db" {
 		t.Errorf("file value lost: %q", c.Database.Path)
 	}
-	if c.Engine.MaxConcurrentRuns != 9 {
-		t.Errorf("file max runs lost: %d", c.Engine.MaxConcurrentRuns)
+	if c.Sandbox.MaxSandboxes != 9 {
+		t.Errorf("file max sandboxes lost: %d", c.Sandbox.MaxSandboxes)
 	}
 	if got := c.AgentNodeHardCap(); got != 6*time.Hour {
 		t.Errorf("AgentNodeHardCap() = %v, want 6h", got)
@@ -210,28 +209,28 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 func TestReloadSwapsLiveConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := Load(path); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := GetConfig().Engine.MaxConcurrentRuns; got != 2 {
+	if got := GetConfig().Sandbox.MaxSandboxes; got != 2 {
 		t.Fatalf("initial max runs = %d, want 2", got)
 	}
 
-	if err := os.WriteFile(path, []byte("engine:\n  max_concurrent_runs: 8\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("sandbox:\n  max_sandboxes: 8\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	newCfg, err := Reload(path)
 	if err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
-	if newCfg.Engine.MaxConcurrentRuns != 8 {
-		t.Errorf("reloaded max runs = %d, want 8", newCfg.Engine.MaxConcurrentRuns)
+	if newCfg.Sandbox.MaxSandboxes != 8 {
+		t.Errorf("reloaded max sandboxes = %d, want 8", newCfg.Sandbox.MaxSandboxes)
 	}
-	if GetConfig().Engine.MaxConcurrentRuns != 8 {
-		t.Errorf("Reload did not swap live config: %d", GetConfig().Engine.MaxConcurrentRuns)
+	if GetConfig().Sandbox.MaxSandboxes != 8 {
+		t.Errorf("Reload did not swap live config: %d", GetConfig().Sandbox.MaxSandboxes)
 	}
 }
 

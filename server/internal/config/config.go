@@ -277,8 +277,6 @@ type DatabaseConfig struct {
 }
 
 type EngineConfig struct {
-	// MaxConcurrentRuns caps simultaneously executing runs.
-	MaxConcurrentRuns int `yaml:"max_concurrent_runs"`
 	// ProfilesRoot is where skill profiles (rules) are stored.
 	ProfilesRoot string `yaml:"profiles_root"`
 	// NodeAutoRetryMax caps how many times a node that fails with a transient /
@@ -536,9 +534,6 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_DB_DSN"); v != "" {
 		c.Database.DSN = v
 	}
-	if v := envInt("GRASP_MAX_RUNS"); v != 0 {
-		c.Engine.MaxConcurrentRuns = v
-	}
 	if v := env("GRASP_PROFILES_ROOT"); v != "" {
 		c.Engine.ProfilesRoot = v
 	}
@@ -660,9 +655,6 @@ func setDefaults(c *Config) {
 	}
 	if c.Database.Driver == "sqlite" && c.Database.Path == "" {
 		c.Database.Path = "grasp.db"
-	}
-	if c.Engine.MaxConcurrentRuns == 0 {
-		c.Engine.MaxConcurrentRuns = 5
 	}
 	if c.Engine.ProfilesRoot == "" {
 		c.Engine.ProfilesRoot = "data/profiles"

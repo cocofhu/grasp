@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。`GET /api/stats/dashboard` 已移除。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。

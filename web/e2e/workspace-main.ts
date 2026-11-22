@@ -13,8 +13,8 @@ import App from '../src/App.vue'
 const params = new URLSearchParams(window.location.search)
 const view = params.get('view') || '/workflows'
 const settingsItems = [
-  ['max_concurrent_runs', 6, 1, 64], ['sandbox_idle_ttl_minutes', 60, 1, undefined],
-  ['max_sandboxes', 15, 1, undefined], ['sandbox_memory_mb', 4096, 512, 65536],
+  ['sandbox_idle_ttl_minutes', 60, 1, undefined], ['max_sandboxes', 15, 1, undefined],
+  ['sandbox_memory_mb', 4096, 512, 65536],
   ['agent_idle_timeout_minutes', 10, 1, 120],
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
@@ -98,7 +98,6 @@ window.fetch = async (input, init) => {
   else if (path === '/sandboxes') data = []
   else if (path === '/notifications') data = { items: [], total: 0, unreadCount: 0, page: 1, pageSize: 20 }
   else if (path.startsWith('/workspace/')) data = { items: [], total: 0, page: 1, pageSize: 20 }
-  else if (path === '/stats/dashboard') data = { total: runs.length, running: 1, waitingHuman: 1, completed: 4, failed: 0, totalWorkflows: workflows.length }
   else if (path === '/auth/me' && view === '/login') return new Response(null, { status: 401 })
   else if (path === '/auth/me') data = { username: 'workspace-preview', expires_at: '2099-01-01T00:00:00Z', is_admin: true }
   else if (path === '/health') data = { status: 'ok', accepting: true }

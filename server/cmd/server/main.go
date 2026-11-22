@@ -285,7 +285,7 @@ func main() {
 		PublicAdvertise: cfg.Server.PublicAdvertise,
 		CodexLogins:     codexLogins,
 	})
-	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
+	eng := engine.New(db, provider, host, artifactSvc, cfg.Sandbox.MaxSandboxes)
 	if err := eng.InitDialogueEpoch(); err != nil {
 		log.Fatal().Err(err).Msg("init dialogue epoch")
 	}

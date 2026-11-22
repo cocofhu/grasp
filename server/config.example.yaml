@@ -35,7 +35,6 @@ database:
   path: "grasp.db"
 
 engine:
-  max_concurrent_runs: 5
   profiles_root: "data/profiles"
 
 sandbox:

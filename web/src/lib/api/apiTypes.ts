@@ -471,18 +471,6 @@ export interface SandboxView {
   endpointTransport?: 'gateway'
 }
 
-export interface DashboardStats {
-  running: number
-  waitingHuman: number
-  failed: number
-  completed: number
-  workflows: number
-  artifacts: number
-  /** Platform-wide cumulative tokens; null = never reported (UI "—"). */
-  totalTokens?: number | null
-  workflowTokens?: number | null
-}
-
 /** GET /stats/platform-status — StatusMetrics snapshot (shell chrome). */
 export interface PlatformStatusMetrics {
   accounting?: TokenAccountingStatus

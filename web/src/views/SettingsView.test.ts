@@ -18,7 +18,6 @@ const apiMocks = vi.hoisted(() => ({
   updateSettings: vi.fn(),
   updateWorkspace: vi.fn(),
   sandboxCapacity: vi.fn(),
-  dashboard: vi.fn(),
 }))
 
 const workspaceState = vi.hoisted(() => {
@@ -44,7 +43,6 @@ vi.mock('@/lib/api/api', async () => {
       updateSettings: apiMocks.updateSettings,
       updateWorkspace: apiMocks.updateWorkspace,
       sandboxCapacity: apiMocks.sandboxCapacity,
-      dashboard: apiMocks.dashboard,
     },
   }
 })
@@ -67,7 +65,6 @@ const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'Settings
 const SETTINGS = {
   brand: { product_name: 'Acme Flow', home_subtitle: 'Clarify together' },
   items: [
-    { key: 'max_concurrent_runs', value: 4, min: 1, source: 'db', locked: false },
     { key: 'sandbox_idle_ttl_minutes', value: 60, min: 1, source: 'db', locked: false },
     { key: 'max_sandboxes', value: 3, min: 1, source: 'db', locked: false },
     { key: 'sandbox_memory_mb', value: 8192, min: 0, source: 'config', locked: false },
@@ -129,7 +126,6 @@ describe('SettingsView brand copy', () => {
   it('hydrates and saves both brand fields with scheduling values', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
     apiMocks.updateSettings.mockResolvedValue({
       ...SETTINGS,
       brand: { product_name: 'New Name', home_subtitle: 'New subtitle' },
@@ -181,7 +177,6 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
   it('mounted: unit rows show chip 分钟; no-unit rows have only input on the right', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
     const w = mountSettings()
     await flushPromises()
 
@@ -192,16 +187,16 @@ describe('SettingsView number input polish (Demo 优化后)', () => {
     expect(runCtrl.querySelector('.chip')?.textContent).toContain('分钟')
     expect(runCtrl.querySelectorAll('span.w-9').length).toBe(0)
 
-    const mcr = w.find('#setting-max_concurrent_runs')
+    const mcr = w.find('#setting-max_sandboxes')
     expect(mcr.exists()).toBe(true)
     const mcrCtrl = mcr.element.parentElement!
     expect(mcrCtrl.querySelector('.chip')).toBeNull()
     expect(mcrCtrl.querySelectorAll('span.w-9').length).toBe(0)
 
     // label association: clicking title focuses input when enabled
-    const label = w.find('label[for="setting-max_concurrent_runs"]')
+    const label = w.find('label[for="setting-max_sandboxes"]')
     expect(label.exists()).toBe(true)
-    expect(label.text()).toContain('最大并发运行数')
+    expect(label.text()).toContain('最大同时运行沙箱数')
 
     w.unmount()
   })
@@ -211,7 +206,6 @@ describe('SettingsView sandbox memory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
   it('renders the memory limit with a MiB chip and saves the edited value', async () => {
@@ -279,7 +273,6 @@ describe('SettingsView first skeleton vs reset keep form', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
   it('shows form skeleton before settings arrive', async () => {
@@ -291,7 +284,7 @@ describe('SettingsView first skeleton vs reset keep form', () => {
     release!(SETTINGS)
     await flushPromises()
     expect(w.find('[data-testid="settings-form-skeleton"]').exists()).toBe(false)
-    expect(w.text()).toContain('最大并发运行数')
+    expect(w.text()).toContain('最大同时运行沙箱数')
     w.unmount()
   })
 
@@ -319,7 +312,6 @@ describe('SettingsView general page has no entry cards (plan g2.1 / f1 / f2)', (
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
   it('source has no platform-rules or integrations entry cards; keeps inline panel', () => {
@@ -399,25 +391,24 @@ describe('SettingsView grouped form behavior', () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
   })
 
   it('keeps environment-locked values read-only and omits them from saves', async () => {
     const locked = {
       ...SETTINGS,
-      items: SETTINGS.items.map((item) => item.key === 'max_concurrent_runs' ? { ...item, source: 'env', locked: true } : item),
+      items: SETTINGS.items.map((item) => item.key === 'max_sandboxes' ? { ...item, source: 'env', locked: true } : item),
     }
     apiMocks.getSettings.mockResolvedValue(locked)
     apiMocks.updateSettings.mockResolvedValue(locked)
     const w = mountSettings()
     await flushPromises()
-    expect(w.get('#setting-max_concurrent_runs').attributes('disabled')).toBeDefined()
+    expect(w.get('#setting-max_sandboxes').attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('环境变量锁定')
     await w.get('[data-testid="brand-product-name"]').setValue('Renamed')
     await w.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ brand_product_name: 'Renamed' }))
-    expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('max_concurrent_runs')
+    expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('max_sandboxes')
     w.unmount()
   })
 
@@ -428,10 +419,10 @@ describe('SettingsView grouped form behavior', () => {
     expect(w.get('[data-testid="brand-product-name"]').attributes('disabled')).toBeDefined()
     expect(w.get('[data-testid="brand-home-subtitle"]').attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('仅管理员可修改品牌文案')
-    await w.get('#setting-max_concurrent_runs').setValue(5)
+    await w.get('#setting-max_sandboxes').setValue(5)
     await w.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
-    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ max_concurrent_runs: 5 }))
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ max_sandboxes: 5 }))
     expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('brand_product_name')
     expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('brand_home_subtitle')
     w.unmount()
@@ -475,7 +466,7 @@ describe('SettingsView grouped form behavior', () => {
     await w.get('[data-testid="settings-retry"]').trigger('click')
     await flushPromises()
     expect(w.find('[data-testid="settings-failed"]').exists()).toBe(false)
-    expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '4')
+    expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '3')
     w.unmount()
   })
 
@@ -484,7 +475,6 @@ describe('SettingsView grouped form behavior', () => {
     const w = mountSettings()
     try {
       apiMocks.sandboxCapacity.mockResolvedValue({ used: 5, limit: 3 })
-      apiMocks.dashboard.mockResolvedValue({ running: 4 })
       await flushPromises()
       await vi.advanceTimersByTimeAsync(5000)
       await flushPromises()
@@ -525,7 +515,6 @@ describe('SettingsView workspace information on the general page', () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 0, limit: 3 })
-    apiMocks.dashboard.mockResolvedValue({ running: 0 })
     apiMocks.updateWorkspace.mockImplementation(async (patch: Record<string, unknown>) => ({ ...workspaceState.workspace.value, ...patch }))
   })
 
@@ -535,7 +524,7 @@ describe('SettingsView workspace information on the general page', () => {
     const titles = w.findAll('h2').map((heading) => heading.text())
     expect(titles[0]).toBe('工作区信息')
     expect(titles[1]).toBe('品牌文案')
-    expect(w.text()).toContain('管理工作区信息、品牌文案、运行并发与沙箱资源。')
+    expect(w.text()).toContain('管理工作区信息、品牌文案与沙箱资源。')
     expect(w.text()).toContain('使用页底保存')
     expect(w.get('#workspace-meta-name').element).toHaveProperty('value', 'Studio')
     expect(w.get('[data-testid="workspace-info-section"]').findAll('button').map((button) => button.text())).toEqual(['清空显示名'])
@@ -562,11 +551,11 @@ describe('SettingsView workspace information on the general page', () => {
   it('submits only changed platform values when workspace information is untouched', async () => {
     const w = mountSettings()
     await flushPromises()
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await saveButton(w).trigger('click')
     await flushPromises()
     expect(apiMocks.updateWorkspace).not.toHaveBeenCalled()
-    expect(apiMocks.updateSettings).toHaveBeenCalledWith({ max_concurrent_runs: 8 })
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith({ max_sandboxes: 8 })
     w.unmount()
   })
 
@@ -580,12 +569,12 @@ describe('SettingsView workspace information on the general page', () => {
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('Renamed')
-    await w.get('#setting-max_concurrent_runs').setValue('9')
+    await w.get('#setting-max_sandboxes').setValue('9')
     await w.get('#setting-sandbox_memory_mb').setValue('2048')
     await saveButton(w).trigger('click')
     await flushPromises()
     expect(apiMocks.updateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ name: 'Renamed' }))
-    expect(apiMocks.updateSettings).toHaveBeenCalledWith({ max_concurrent_runs: 9 })
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith({ max_sandboxes: 9 })
     expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('brand_product_name')
     expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('sandbox_memory_mb')
     w.unmount()
@@ -595,7 +584,7 @@ describe('SettingsView workspace information on the general page', () => {
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('   ')
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await saveButton(w).trigger('click')
     expect(apiMocks.updateWorkspace).not.toHaveBeenCalled()
     expect(apiMocks.updateSettings).not.toHaveBeenCalled()
@@ -622,18 +611,18 @@ describe('SettingsView workspace information on the general page', () => {
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('Kept')
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await saveButton(w).trigger('click')
     await flushPromises()
     expect(w.get('[role="alert"]').text()).toBe('平台参数保存失败：platform down')
     expect(w.get('[role="alert"]').text()).not.toContain('工作区信息保存失败')
     expect(workspaceState.workspace.value.name).toBe('Kept')
-    expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '8')
+    expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '8')
     expect(saveButton(w).attributes('disabled')).toBeUndefined()
 
     apiMocks.updateSettings.mockResolvedValueOnce({
       ...SETTINGS,
-      items: SETTINGS.items.map((item) => item.key === 'max_concurrent_runs' ? { ...item, value: 8 } : item),
+      items: SETTINGS.items.map((item) => item.key === 'max_sandboxes' ? { ...item, value: 8 } : item),
     })
     await saveButton(w).trigger('click')
     await flushPromises()
@@ -647,18 +636,18 @@ describe('SettingsView workspace information on the general page', () => {
     apiMocks.updateWorkspace.mockRejectedValueOnce(new Error('workspace down'))
     apiMocks.updateSettings.mockResolvedValueOnce({
       ...SETTINGS,
-      items: SETTINGS.items.map((item) => item.key === 'max_concurrent_runs' ? { ...item, value: 8 } : item),
+      items: SETTINGS.items.map((item) => item.key === 'max_sandboxes' ? { ...item, value: 8 } : item),
     })
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('Still editing')
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await saveButton(w).trigger('click')
     await flushPromises()
     expect(w.get('[role="alert"]').text()).toBe('工作区信息保存失败：workspace down')
     expect(w.get('[role="alert"]').text()).not.toContain('平台参数保存失败')
     expect(w.get('#workspace-meta-name').element).toHaveProperty('value', 'Still editing')
-    expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '8')
+    expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '8')
     expect(workspaceState.workspace.value.name).toBe('Studio')
     expect(saveButton(w).attributes('disabled')).toBeUndefined()
     await saveButton(w).trigger('click')
@@ -690,7 +679,7 @@ describe('SettingsView workspace information on the general page', () => {
     const w = mountSettings('en')
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('Kept')
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await w.findAll('button').find((button) => button.text() === 'Save')!.trigger('click')
     await flushPromises()
     expect(w.get('[role="alert"]').text()).toBe('Platform settings failed to save: platform down')
@@ -718,10 +707,10 @@ describe('SettingsView workspace information on the general page', () => {
     const w = mountSettings()
     await flushPromises()
     await w.get('#workspace-meta-name').setValue('Temporary')
-    await w.get('#setting-max_concurrent_runs').setValue('8')
+    await w.get('#setting-max_sandboxes').setValue('8')
     await w.findAll('button').find((button) => button.text() === '重置')!.trigger('click')
     expect(w.get('#workspace-meta-name').element).toHaveProperty('value', 'Studio')
-    expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '4')
+    expect(w.get('#setting-max_sandboxes').element).toHaveProperty('value', '3')
 
     let resolveSave!: (value: unknown) => void
     apiMocks.updateWorkspace.mockReturnValueOnce(new Promise((resolve) => { resolveSave = resolve }))
@@ -750,17 +739,14 @@ describe('SettingsView overview stats', () => {
     vi.clearAllMocks()
     apiMocks.updateSettings.mockResolvedValue(SETTINGS)
     apiMocks.sandboxCapacity.mockResolvedValue({ used: 5, limit: 15 })
-    apiMocks.dashboard.mockResolvedValue({ running: 2 })
   })
 
-  it('summarises running runs and sandbox capacity', async () => {
+  it('summarises sandbox capacity as the single limit', async () => {
     apiMocks.getSettings.mockResolvedValue(SETTINGS)
     const w = mountSettings()
     await flushPromises()
     const strip = w.get('[data-testid="settings-overview-stats"]')
     const value = (key: string) => strip.get(`[data-testid="settings-stat-${key}"] [data-testid="settings-stat-value"]`).text()
-    expect(value('running-runs')).toBe('2')
-    expect(strip.get('[data-testid="settings-stat-running-runs"]').text()).toContain('/ 4')
     expect(value('sandboxes')).toBe('5')
     expect(value('sandbox-memory')).toBe('8192')
     expect(strip.get('[data-testid="settings-stat-sandbox-memory"]').text()).toContain('MiB')

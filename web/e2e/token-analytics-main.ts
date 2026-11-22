@@ -152,12 +152,6 @@ window.fetch = async (input: RequestInfo | URL) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/stats/dashboard')) {
-    return new Response(
-      JSON.stringify({ running: 0, waitingHuman: 0, failed: 0, completed: 0 }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    )
-  }
   if (url.includes('/stats/token/events')) {
     return new Response(JSON.stringify(MOCK_EVENTS), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }

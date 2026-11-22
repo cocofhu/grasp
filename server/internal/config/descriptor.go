@@ -24,7 +24,6 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_DB", YAML: "database.path", Type: "path", Default: "grasp.db", ZH: "SQLite 数据库文件", EN: "SQLite database file"},
 		{Env: "GRASP_DB_DRIVER", YAML: "database.driver", Type: "enum", Default: "sqlite", ZH: "数据库驱动：sqlite 或 mysql", EN: "Database driver: sqlite or mysql"},
 		{Env: "GRASP_DB_DSN", YAML: "database.dsn", Type: "string", Sensitive: true, ZH: "MySQL DSN", EN: "MySQL DSN"},
-		{Env: "GRASP_MAX_RUNS", YAML: "engine.max_concurrent_runs", Type: "integer", Default: "5", ZH: "最大并发运行数", EN: "Maximum concurrent runs"},
 		{Env: "GRASP_PROFILES_ROOT", YAML: "engine.profiles_root", Type: "path", Default: "data/profiles", ZH: "Agent profile 根目录", EN: "Agent profile root"},
 		{Env: "GRASP_NODE_AUTO_RETRY", YAML: "engine.node_auto_retry_max", Type: "integer", Default: "3", ZH: "节点自动重试上限", EN: "Node automatic retry limit"},
 		{Env: "GRASP_SANDBOX_IMAGE", YAML: "sandbox.image", Type: "image", Default: "", ZH: "已废弃并忽略（含 sandbox.images.* 与 GRASP_SANDBOX_IMAGE_*）：沙箱镜像由 sandbox-gateway 配置（docker/kubernetes 的 image 或 profiles，E2B 的 defaultTemplate 或 templates），Grasp 通过 GET /api/v1/capabilities 读取", EN: "Deprecated and ignored (including sandbox.images.* and GRASP_SANDBOX_IMAGE_*): sandbox-gateway owns the image (docker/kubernetes image or profiles, E2B defaultTemplate or templates); Grasp reads it from GET /api/v1/capabilities"},

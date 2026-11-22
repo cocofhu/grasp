@@ -2,7 +2,6 @@ import type { InboxItem } from '../../shared/types'
 import { req, rootWsUrl } from '../httpCore'
 import type {
   BrandSettings,
-  DashboardStats,
   HealthResponse,
   PaginatedResponse,
   PlatformStatusMetrics,
@@ -36,7 +35,6 @@ export const settingsClient = {
     const init = params?.signal ? { signal: params.signal } : undefined
     return req<PaginatedResponse<InboxItem>>(path, init)
   },
-  dashboard: () => req<DashboardStats>('/stats/dashboard'),
   platformStatus: (params?: { timezone?: string; utcOffsetMinutes?: number }) => {
     const q = new URLSearchParams()
     if (params?.timezone) q.set('timezone', params.timezone)

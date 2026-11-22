@@ -57,7 +57,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/health", h.Health)
 		api.GET("/live", h.Live)
-		api.GET("/stats/dashboard", h.DashboardStats)
 		api.GET("/stats/token", h.GetGlobalTokenStats)
 		api.GET("/stats/token/events", h.ListTokenUsageEvents)
 		api.GET("/stats/token/pricing", h.GetTokenPricing)

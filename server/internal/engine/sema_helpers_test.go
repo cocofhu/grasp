@@ -9,12 +9,9 @@ import (
 
 func TestMaxConcurrentAndSema(t *testing.T) {
 	e, _ := setupEngine(t)
-	if e.MaxConcurrent() <= 0 {
-		t.Fatal("MaxConcurrent")
-	}
 	e.SetMaxConcurrent(3)
-	if e.MaxConcurrent() != 3 {
-		t.Fatalf("after set: %d", e.MaxConcurrent())
+	if e.sem.Limit() != 3 {
+		t.Fatalf("after set: %d", e.sem.Limit())
 	}
 	e.SetAutoRetryMax(-1)
 	if e.AutoRetryMax() != 0 {
