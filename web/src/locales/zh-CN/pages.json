@@ -3504,6 +3504,8 @@
       "search": "搜索仓库",
       "empty": "还没有仓库",
       "emptyHint": "添加一个 Git 仓库，之后在首页或 Solo 页选择它即可启动带仓库的会话。",
+      "noMatch": "没有匹配的仓库",
+      "noMatchHint": "换个名称或仓库地址试试。",
       "lastUsed": "{time}使用",
       "neverUsed": "从未使用",
       "start": "开始 Solo",

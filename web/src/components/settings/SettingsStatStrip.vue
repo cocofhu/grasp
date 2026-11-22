@@ -42,7 +42,7 @@ const skeletonCount = computed(() => Math.min(4, Math.max(1, props.items.length 
 <style scoped>
 .settings-stat-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
 .settings-stat {

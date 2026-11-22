@@ -6,6 +6,8 @@ All notable public-release changes are documented here.
 
 - 设置页只保留一个并发数字「最大同时运行沙箱数」（`sandbox.max_sandboxes`，默认 15）：它同时是 workflow 的并发运行上限，超出的运行排队等待。「最大并发运行数」设置项、`engine.max_concurrent_runs` 配置和 `GRASP_MAX_RUNS` 环境变量已移除，设置了它们的部署不再生效；默认并发运行上限随之从 5 变为 15。工作流节点创建沙箱时如果沙箱已满，会在执行日志里提示「等待沙箱名额」并等到有名额后继续，不再直接失败。`GET /api/stats/dashboard` 已移除。
 
+- 设置里的仓库页面调整为工作台式布局：统计卡片自动填充可用宽度，仓库卡片补充来源、分支和最近使用状态，并突出「开始 Solo」操作。
+
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 
 - Agent 会话更稳：
