@@ -31,8 +31,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const activeKey = ref<string | null>(null)
-const activePort = ref<number | null>(null)
 const vncWsUrl = ref('')
 const ticketBusy = ref(false)
 const ticketError = ref('')
@@ -40,17 +38,11 @@ const linkInactive = ref(false)
 let ticketAbort: AbortController | null = null
 let ticketGen = 0
 
-const sortedPorts = computed(() =>
-  props.ports.filter((p) => p.port > 0 || p.kind === 'url'),
-)
+const preview = computed(() => props.ports.find((p) => p.port > 0 || p.kind === 'url') || null)
+const activePort = computed(() => (preview.value && preview.value.kind !== 'url' ? preview.value.port : null))
 
 function isUrlPreview(p: PublicPreviewPort): boolean {
   return p.kind === 'url'
-}
-
-function publicTabKey(p: PublicPreviewPort): string {
-  if (isUrlPreview(p)) return `url:${(p.url || p.directUrl || '').trim()}`
-  return `port:${p.port}`
 }
 
 /** IP-direct sandbox port: previews over noVNC and can also open in a new tab. */
@@ -58,7 +50,7 @@ function isDirectPort(p: PublicPreviewPort): boolean {
   return !isUrlPreview(p) && !!(p.directUrl || '').trim()
 }
 
-function tabLabel(p: PublicPreviewPort): string {
+function previewLabel(p: PublicPreviewPort): string {
   const label = (p.label || '').trim()
   if (label) return label
   if (isUrlPreview(p)) {
@@ -73,9 +65,7 @@ function tabLabel(p: PublicPreviewPort): string {
   return String(p.port)
 }
 
-const activeMeta = computed(
-  () => sortedPorts.value.find((p) => publicTabKey(p) === activeKey.value) || null,
-)
+const activeMeta = computed(() => preview.value)
 const activeIsUrl = computed(() => (activeMeta.value ? isUrlPreview(activeMeta.value) : false))
 const activeIsDirect = computed(() => (activeMeta.value ? isDirectPort(activeMeta.value) : false))
 const activeDirectUrl = computed(() => {
@@ -85,12 +75,6 @@ const activeDirectUrl = computed(() => {
   }
   return (activeMeta.value.directUrl || '').trim()
 })
-
-function selectPreview(key: string) {
-  activeKey.value = key
-  const meta = sortedPorts.value.find((p) => publicTabKey(p) === key)
-  activePort.value = meta && !isUrlPreview(meta) ? meta.port : null
-}
 
 async function exchangeTicket() {
   ticketAbort?.abort()
@@ -106,7 +90,7 @@ async function exchangeTicket() {
   }
   if (props.mobile) return
 
-  // One ticket watches the node's sandbox desktop; port tabs only navigate it.
+  // One ticket watches the node's sandbox desktop.
   ticketBusy.value = true
   try {
     const res = await publicGateApi.previewTicket(props.token, 0, 'vnc', ticketAbort.signal)
@@ -134,26 +118,6 @@ async function exchangeTicket() {
     if (gen === ticketGen) ticketBusy.value = false
   }
 }
-
-watch(
-  () => [props.token, props.active, props.mobile, sortedPorts.value.map((p) => publicTabKey(p)).join(',')],
-  () => {
-    if (!sortedPorts.value.length) {
-      activeKey.value = null
-      activePort.value = null
-      return
-    }
-    if (
-      activeKey.value == null ||
-      !sortedPorts.value.some((p) => publicTabKey(p) === activeKey.value)
-    ) {
-      activeKey.value = publicTabKey(sortedPorts.value[0])
-    }
-    const meta = sortedPorts.value.find((p) => publicTabKey(p) === activeKey.value)
-    activePort.value = meta && !isUrlPreview(meta) ? meta.port : null
-  },
-  { immediate: true },
-)
 
 watch(
   () => [props.token, props.active, props.mobile],
@@ -197,28 +161,6 @@ function retry() {
     </div>
 
     <template v-else>
-      <div v-if="sortedPorts.length > 1" class="mb-2 flex shrink-0 flex-wrap gap-1 px-2 pt-2">
-        <button
-          v-for="p in sortedPorts"
-          :key="publicTabKey(p)"
-          type="button"
-          class="px-2.5 py-1 text-xs font-medium transition"
-          :class="
-            publicTabKey(p) === activeKey
-              ? 'bg-accent/15 text-accent'
-              : 'border border-line text-txt2 hover:bg-elevated hover:text-txt'
-          "
-          :data-testid="
-            isUrlPreview(p)
-              ? `public-gate-app-preview-url-${publicTabKey(p).slice('url:'.length)}`
-              : `public-gate-app-preview-port-${p.port}`
-          "
-          @click="selectPreview(publicTabKey(p))"
-        >
-          {{ tabLabel(p) }}
-        </button>
-      </div>
-
       <div class="relative min-h-0 flex-1 overflow-hidden border-t border-line bg-surface">
         <div
           v-if="linkInactive"
@@ -246,7 +188,7 @@ function retry() {
         <ExternalUrlPreviewFrame
           v-if="activeIsUrl && activeDirectUrl"
           :url="activeDirectUrl"
-          :title="activeMeta ? tabLabel(activeMeta) : 'preview'"
+          :title="activeMeta ? previewLabel(activeMeta) : 'preview'"
         />
         <NovncPreviewPanel
           v-if="vncWsUrl"

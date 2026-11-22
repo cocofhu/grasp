@@ -689,6 +689,7 @@ export interface SoloResources {
   runId: string
   artifacts: Artifact[]
   previewArtifact: string
+  /** Contains the active preview when one is registered. */
   ports: PreviewPort[]
 }
 

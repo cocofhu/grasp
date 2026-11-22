@@ -14,18 +14,21 @@ type memPreviewStore struct {
 	err   error
 }
 
-func (m *memPreviewStore) UpsertPreviewPort(rec PreviewPort) error {
+func (m *memPreviewStore) ReplacePreviewPort(rec PreviewPort) error {
 	if m.err != nil {
 		return m.err
 	}
-	key := PreviewItemKeyFor(rec)
-	for i, p := range m.ports {
-		if p.RunID == rec.RunID && p.NodeID == rec.NodeID && PreviewItemKeyFor(p) == key {
-			m.ports[i] = rec
-			return nil
+	kept := m.ports[:0]
+	for _, p := range m.ports {
+		if p.RunID == rec.RunID && p.NodeID == rec.NodeID {
+			continue
 		}
+		if rec.SandboxName != "" && p.SandboxName == rec.SandboxName {
+			continue
+		}
+		kept = append(kept, p)
 	}
-	m.ports = append(m.ports, rec)
+	m.ports = append(kept, rec)
 	return nil
 }
 func (m *memPreviewStore) ListPreviewPorts(runID, nodeID string) ([]PreviewPort, error) {
@@ -47,6 +50,17 @@ func (m *memPreviewStore) GetPreviewPort(runID, nodeID string, port int) (*Previ
 		}
 	}
 	return nil, false
+}
+func (m *memPreviewStore) ActivePreviewForSandbox(sandboxName string) (*PreviewPort, bool) {
+	var latest *PreviewPort
+	for i := range m.ports {
+		p := &m.ports[i]
+		if p.SandboxName != sandboxName || (latest != nil && !p.RegisteredAt.After(latest.RegisteredAt)) {
+			continue
+		}
+		latest = p
+	}
+	return latest, latest != nil
 }
 func (m *memPreviewStore) UpdatePreviewHealth(string, string, int, bool) error { return nil }
 
@@ -237,7 +251,7 @@ func TestParsePreviewPortTypes(t *testing.T) {
 	}
 }
 
-func TestListPreviewPortsMergeStore(t *testing.T) {
+func TestListPreviewPortsPrefersMemory(t *testing.T) {
 	h := NewHost(&memStore{})
 	store := &memPreviewStore{ports: []PreviewPort{{
 		RunID: "r", NodeID: "n", Port: 1, Label: "db", ProxyURL: "/preview/r/n/1/",
@@ -245,15 +259,15 @@ func TestListPreviewPortsMergeStore(t *testing.T) {
 	h.SetPreviewStore(store)
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.1:1"})
 
-	// memory + db merge
+	// A newly registered memory value supersedes the persisted value.
 	h.mu.Lock()
-	h.previewMem = map[string][]PreviewPort{"r|n": {{
+	h.previewMem = map[string]PreviewPort{"r|n": {
 		RunID: "r", NodeID: "n", Port: 2, Label: "mem", ProxyURL: "/preview/r/n/2/",
-	}}}
+	}}
 	h.mu.Unlock()
 	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 2 {
-		t.Fatalf("merged=%d %+v", len(ports), ports)
+	if len(ports) != 1 || ports[0].Port != 2 {
+		t.Fatalf("active=%d %+v", len(ports), ports)
 	}
 
 	reg, err := h.setPreviewPort("r", "n", 3000, "web")

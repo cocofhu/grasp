@@ -238,7 +238,6 @@
       "mobileNav.ts",
       "previewFps.ts",
       "previewPickUrl.ts",
-      "previewTabKey.ts",
       "previewVncChannel.ts",
       "refreshChrome.ts",
       "regionPolicy.ts",

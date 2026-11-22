@@ -30,7 +30,7 @@ func seedPrivatePathPreview(t *testing.T, hn *harness, upstream string) {
 		"18080": strings.TrimPrefix(upstream, "http://"),
 		"5174":  "127.0.0.1:1",
 	})
-	if err := preview.UpsertPreviewPort(mcp.PreviewPort{
+	if err := preview.ReplacePreviewPort(mcp.PreviewPort{
 		RunID: "private-run", NodeID: "app", Kind: mcp.PreviewKindPort, Port: 5174,
 		ProxyURL: "https://0123456789abcdef.preview.example.net/", Host: "http://127.0.0.1:9", InjectorPort: 18080,
 		SandboxName: row.Name, Healthy: true, RegisteredAt: time.Now(),

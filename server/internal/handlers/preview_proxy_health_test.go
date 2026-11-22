@@ -18,7 +18,7 @@ func TestPreviewProxySandboxRecycled(t *testing.T) {
 	hn.host.SetPreviewStore(preview)
 	hn.fg.Seed("sb-dead")
 	hn.fg.SetStatus("sb-dead", "stopped")
-	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
 		RunID: "run-d", NodeID: "n", Port: 3000,
 		Host: "http://127.0.0.1:9", SandboxName: "sb-dead", RegisteredAt: time.Now(),
 	})
@@ -42,7 +42,7 @@ func TestPreviewProxyUnhealthy(t *testing.T) {
 		"session": "127.0.0.1:34567",
 		"3000":    "127.0.0.1:1", // closed port → probe fail
 	})
-	_ = preview.UpsertPreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
 		RunID: "run-u", NodeID: "n", Port: 3000,
 		Host: "http://127.0.0.1:1", SandboxName: "sb-uh", RegisteredAt: time.Now(),
 	})

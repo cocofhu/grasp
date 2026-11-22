@@ -271,7 +271,7 @@ Xvfb+Chromium+x11vnc+websockify；浏览器 MCP 只经 MCP 配置启用）。VNC
 CDP `:9222` / noVNC `:6080` **不是**对外 data-plane（无应用层鉴权，不 publish
 到宿主/LB）。用户只经本服务 WebSocket：
 
-- `GET /sandbox-vnc/:sandboxId/ws`：每个沙箱只有这一个桌面地址，桌面上就是 Agent 用 chrome-devtools MCP 操作的那个浏览器；应用端口是这个桌面里的页面，不再有按端口的 VNC 地址。
+- `GET /sandbox-vnc/:sandboxId/ws`：每个沙箱只有这一个桌面地址，桌面上就是 Agent 用 chrome-devtools MCP 操作的那个浏览器；当前应用预览显示在这个桌面里，不再有按端口的 VNC 地址。
 
 鉴权始终启用时（`auth` 无开关）该路径 `RequireSession`（仅校验 Session 有效，
 **不**校验沙箱/跑步归属）；`Auth == nil` 的测试形态不 401。

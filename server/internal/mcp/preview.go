@@ -23,7 +23,6 @@ type PreviewPort struct {
 	RunID       string `json:"runId"`
 	NodeID      string `json:"nodeId"`
 	Kind        string `json:"kind,omitempty"`
-	ItemKey     string `json:"-"`
 	Port        int    `json:"port"`
 	URL         string `json:"url,omitempty"`
 	Label       string `json:"label,omitempty"`
@@ -48,12 +47,18 @@ type PreviewPort struct {
 	RegisteredAt time.Time `json:"registeredAt"`
 }
 
-// PreviewStore persists preview port registrations.
+// PreviewStore persists the active preview registration.
 type PreviewStore interface {
-	UpsertPreviewPort(rec PreviewPort) error
+	ReplacePreviewPort(rec PreviewPort) error
 	ListPreviewPorts(runID, nodeID string) ([]PreviewPort, error)
 	GetPreviewPort(runID, nodeID string, port int) (*PreviewPort, bool)
 	UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error
+}
+
+// PreviewSandboxStore can locate the active registration when workflow nodes
+// share one sandbox and a new node is replacing the previous node's preview.
+type PreviewSandboxStore interface {
+	ActivePreviewForSandbox(sandboxName string) (*PreviewPort, bool)
 }
 
 // PreviewSandboxOps resolves run sandboxes and probes in-container HTTP ports.
@@ -210,35 +215,6 @@ type PreviewDesktop interface {
 
 func previewKey(runID, nodeID string) string { return runID + "|" + nodeID }
 
-func previewItemKey(kind string, port int, externalURL string) string {
-	if kind == PreviewKindURL || strings.TrimSpace(externalURL) != "" {
-		return "u:" + strings.TrimSpace(externalURL)
-	}
-	return fmt.Sprintf("p:%d", port)
-}
-
-func previewPortKind(p PreviewPort) string {
-	if k := strings.TrimSpace(p.Kind); k != "" {
-		return k
-	}
-	if strings.TrimSpace(p.URL) != "" {
-		return PreviewKindURL
-	}
-	return PreviewKindPort
-}
-
-// PreviewItemKeyFor returns the stable upsert key for a preview registration.
-func PreviewItemKeyFor(p PreviewPort) string {
-	if k := strings.TrimSpace(p.ItemKey); k != "" {
-		return k
-	}
-	return previewItemKey(previewPortKind(p), p.Port, p.URL)
-}
-
-func previewPortItemKey(p PreviewPort) string {
-	return PreviewItemKeyFor(p)
-}
-
 // ValidatePreviewURL checks an absolute http/https URL (authority may include a port).
 func ValidatePreviewURL(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
@@ -293,86 +269,102 @@ func (h *Host) previewProxyURL(runID, nodeID string, port int) string {
 	return fmt.Sprintf("/preview/%s/%s/%d/", runID, nodeID, port)
 }
 
-// HasHealthyPreviewPorts reports whether at least one registered port is Healthy.
+// HasHealthyPreviewPorts reports whether the active preview is Healthy.
 // Unreachable registrations do not count (set_preview fails closed on probe).
 func (h *Host) HasHealthyPreviewPorts(runID, nodeID string) bool {
-	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		if p.Healthy {
-			return true
-		}
-	}
-	return false
+	ports := h.ListPreviewPorts(runID, nodeID)
+	return len(ports) == 1 && ports[0].Healthy
 }
 
-// ListPreviewKeepalivePIDs returns setsid-detached preview pids for whitelist
-// during Cancel/Abort session cleanup (sandbox Destroy still reclaims all).
+// ListPreviewKeepalivePIDs returns the active preview's detached pid for the
+// whitelist during Cancel/Abort session cleanup.
 func (h *Host) ListPreviewKeepalivePIDs(runID, nodeID string) []int {
 	ports := h.ListPreviewPorts(runID, nodeID)
-	out := make([]int, 0, len(ports))
-	seen := map[int]bool{}
-	for _, p := range ports {
-		if p.KeepalivePID > 0 && !seen[p.KeepalivePID] {
-			seen[p.KeepalivePID] = true
-			out = append(out, p.KeepalivePID)
-		}
+	if len(ports) == 1 && ports[0].KeepalivePID > 0 {
+		return []int{ports[0].KeepalivePID}
 	}
-	return out
+	return nil
 }
 
-// ListPreviewPorts returns all preview ports for a run/node (memory + DB).
+// ListPreviewPorts returns the active preview for a run/node, when present.
 func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
 	h.mu.RLock()
-	mem := append([]PreviewPort(nil), h.previewMem[previewKey(runID, nodeID)]...)
+	mem, hasMem := h.previewMem[previewKey(runID, nodeID)]
 	store := h.previewStore
 	h.mu.RUnlock()
+	if hasMem {
+		return h.annotatePreviewTransport(runID, nodeID, []PreviewPort{mem})
+	}
 	if store == nil {
-		return h.annotatePreviewTransport(runID, nodeID, mem)
+		return nil
 	}
 	dbPorts, err := store.ListPreviewPorts(runID, nodeID)
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
-			Msg("list preview ports from store failed; using memory")
-		return h.annotatePreviewTransport(runID, nodeID, mem)
+			Msg("list active preview from store failed")
+		return nil
 	}
-	if len(dbPorts) == 0 {
-		return h.annotatePreviewTransport(runID, nodeID, mem)
+	if len(dbPorts) > 1 {
+		latest := dbPorts[0]
+		for _, candidate := range dbPorts[1:] {
+			if candidate.RegisteredAt.After(latest.RegisteredAt) {
+				latest = candidate
+			}
+		}
+		dbPorts = []PreviewPort{latest}
 	}
-	if len(mem) == 0 {
-		return h.annotatePreviewTransport(runID, nodeID, dbPorts)
-	}
-	byKey := map[string]PreviewPort{}
-	for _, p := range dbPorts {
-		byKey[previewPortItemKey(p)] = p
-	}
-	for _, p := range mem {
-		byKey[previewPortItemKey(p)] = p
-	}
-	out := make([]PreviewPort, 0, len(byKey))
-	for _, p := range byKey {
-		out = append(out, p)
-	}
-	return h.annotatePreviewTransport(runID, nodeID, out)
+	return h.annotatePreviewTransport(runID, nodeID, dbPorts)
 }
 
-func (h *Host) upsertPreviewMem(runID, nodeID string, rec PreviewPort) {
-	key := previewKey(runID, nodeID)
+func (h *Host) replacePreviewMem(rec PreviewPort) {
 	if h.previewMem == nil {
-		h.previewMem = map[string][]PreviewPort{}
+		h.previewMem = map[string]PreviewPort{}
 	}
-	ports := h.previewMem[key]
-	itemKey := previewPortItemKey(rec)
-	found := false
-	for i, p := range ports {
-		if previewPortItemKey(p) == itemKey {
-			ports[i] = rec
-			found = true
-			break
+	for key, current := range h.previewMem {
+		if key == previewKey(rec.RunID, rec.NodeID) ||
+			(rec.SandboxName != "" && current.SandboxName == rec.SandboxName) {
+			delete(h.previewMem, key)
 		}
 	}
-	if !found {
-		ports = append(ports, rec)
+	h.previewMem[previewKey(rec.RunID, rec.NodeID)] = rec
+}
+
+func (h *Host) activePreview(runID, nodeID, sandboxName string) (*PreviewPort, bool) {
+	h.mu.RLock()
+	current, hasCurrent := h.previewMem[previewKey(runID, nodeID)]
+	store := h.previewStore
+	if hasCurrent {
+		copy := current
+		h.mu.RUnlock()
+		return &copy, true
 	}
-	h.previewMem[key] = ports
+	var shared *PreviewPort
+	for _, candidate := range h.previewMem {
+		if candidate.SandboxName != sandboxName ||
+			(shared != nil && !candidate.RegisteredAt.After(shared.RegisteredAt)) {
+			continue
+		}
+		copy := candidate
+		shared = &copy
+	}
+	if shared != nil {
+		h.mu.RUnlock()
+		return shared, true
+	}
+	h.mu.RUnlock()
+	if store == nil {
+		return nil, false
+	}
+	if bySandbox, ok := store.(PreviewSandboxStore); ok {
+		if preview, found := bySandbox.ActivePreviewForSandbox(sandboxName); found && preview != nil {
+			return preview, true
+		}
+	}
+	ports, err := store.ListPreviewPorts(runID, nodeID)
+	if err == nil && len(ports) > 0 {
+		return &ports[0], true
+	}
+	return nil, false
 }
 
 // PreviewRegistration is what a healthy set_preview(port) registered.
@@ -407,15 +399,15 @@ func previewPortResult(port int, reg PreviewRegistration) string {
 	return b.String()
 }
 
-func (h *Host) lockPreviewSandbox(sandboxName string) func() {
+func (h *Host) lockPreviewKey(key string) func() {
 	h.mu.Lock()
 	if h.previewLocks == nil {
 		h.previewLocks = map[string]*sync.Mutex{}
 	}
-	l, ok := h.previewLocks[sandboxName]
+	l, ok := h.previewLocks[key]
 	if !ok {
 		l = &sync.Mutex{}
-		h.previewLocks[sandboxName] = l
+		h.previewLocks[key] = l
 	}
 	h.mu.Unlock()
 	l.Lock()
@@ -443,19 +435,17 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	defer h.lockPreviewSandbox(sandboxName)()
+	defer h.lockPreviewKey("node:" + previewKey(runID, nodeID))()
+	defer h.lockPreviewKey("sandbox:" + sandboxName)()
 
 	direct := h.previewDirect(runID, nodeID)
 	sw := InjectSwitch{}
 	switcher, canSwitch := ops.(previewInjectSwitcher)
+	var previous *PreviewPort
+	if canSwitch {
+		previous, _ = h.activePreview(runID, nodeID, sandboxName)
+	}
 	if direct && canSwitch {
-		// A registration that currently uses the injector must have its own
-		// published port before the injector is pointed at another app.  Doing
-		// this before the switch keeps the old preview reachable if the gateway
-		// cannot publish or probe that port.
-		if err := h.prepareDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port); err != nil {
-			return PreviewRegistration{}, err
-		}
 		res, err := switcher.SwitchInjectUpstream(ctx, sandboxName, port)
 		if err != nil {
 			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
@@ -470,7 +460,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	case InjectNoListen:
 		return PreviewRegistration{}, fmt.Errorf("预览端口 %d 没有进程在监听：请先在沙箱里启动服务，然后重试 set_preview", port)
 	case InjectSwitched:
-		return h.registerSwitchedPreview(ctx, ops, switcher, runID, nodeID, sandboxName, port, sw.PreviewPort, label)
+		return h.registerSwitchedPreview(ctx, ops, switcher, runID, nodeID, sandboxName, port, sw.PreviewPort, label, previous)
 	}
 
 	if direct {
@@ -483,10 +473,16 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	probe := func() bool { return probePreviewPort(ctx, ops, sandboxName, port) }
 	unreachable := func() error { return previewUnreachableError(ctx, ops, sandboxName, port) }
 	if !probe() {
+		if sw.Result == InjectReset {
+			h.restorePreviousInjectUpstream(ctx, switcher, sandboxName, sw.PreviewPort, previous)
+		}
 		return PreviewRegistration{}, unreachable()
 	}
 	keepalivePID, err := h.keepalivePreview(ctx, ops, runID, nodeID, sandboxName, port, probe, unreachable)
 	if err != nil {
+		if sw.Result == InjectReset {
+			h.restorePreviousInjectUpstream(ctx, switcher, sandboxName, sw.PreviewPort, previous)
+		}
 		return PreviewRegistration{}, err
 	}
 	host := ""
@@ -495,51 +491,28 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	}
 	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, 0, label, host, keepalivePID)
 	if err != nil {
+		if sw.Result == InjectReset {
+			h.restorePreviousInjectUpstream(ctx, switcher, sandboxName, sw.PreviewPort, previous)
+		}
 		return PreviewRegistration{}, err
 	}
 	if direct {
 		reg.Picked = sw.Result == InjectReset
 		switch sw.Result {
 		case InjectBusy:
-			reg.Note = fmt.Sprintf("$PREVIEW_PORT(=%d) 已被另一个页面占用，端口 %d 的新标签页不会注入取点脚本；需要取点时只保留一个前端，或把它开在 $PREVIEW_PORT", sw.PreviewPort, port)
+			reg.Note = fmt.Sprintf("$PREVIEW_PORT(=%d) 当前无法切换，端口 %d 的活动预览不会注入取点脚本；需要取点时请把服务开在 $PREVIEW_PORT", sw.PreviewPort, port)
 		case InjectUnsupported:
-			reg.Note = fmt.Sprintf("沙箱的预览注入代理不支持切换端口（运行时较旧），端口 %d 的新标签页可能没有取点；需要取点请把服务开在 $PREVIEW_PORT", port)
+			reg.Note = fmt.Sprintf("沙箱的预览注入代理不支持切换端口（运行时较旧），端口 %d 的活动预览可能没有取点；需要取点请把服务开在 $PREVIEW_PORT", port)
 		}
 	}
 	return reg, nil
-}
-
-// prepareDisplacedPreviews makes the old app ports independently reachable
-// before the shared injector is switched to a new app. Without this barrier,
-// releasing the old InjectorPort can leave a healthy registration with no
-// Host when that app was not published at sandbox creation time.
-func (h *Host) prepareDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port int) error {
-	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		if previewPortKind(p) != PreviewKindPort || p.Port == port || p.InjectorPort == 0 {
-			continue
-		}
-		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
-		if !ok || strings.TrimSpace(base) == "" {
-			pub, canPublish := ops.(previewPortPublisher)
-			if !canPublish {
-				return fmt.Errorf("无法切换预览：旧端口 %d 没有独立发布能力", p.Port)
-			}
-			if base, ok = pub.EnsurePublishedPort(ctx, sandboxName, p.Port); !ok || strings.TrimSpace(base) == "" {
-				return fmt.Errorf("无法切换预览：旧端口 %d 发布失败，当前预览保持不变", p.Port)
-			}
-		}
-		if !probePreviewPort(ctx, ops, sandboxName, p.Port) {
-			return fmt.Errorf("无法切换预览：旧端口 %d 发布后不可达，当前预览保持不变", p.Port)
-		}
-	}
-	return nil
 }
 
 // registerSwitchedPreview finishes a set_preview whose port now sits behind
 // PREVIEW_PORT's injector: probe through PREVIEW_PORT, keep the app alive, and
 // record PREVIEW_PORT's address as the public one while Port stays the app's
 // own (the VNC desktop opens 127.0.0.1:<Port>, which bypasses the injector).
-func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOps, sw previewInjectSwitcher, runID, nodeID, sandboxName string, port, previewPort int, label string) (PreviewRegistration, error) {
+func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOps, sw previewInjectSwitcher, runID, nodeID, sandboxName string, port, previewPort int, label string, previous *PreviewPort) (PreviewRegistration, error) {
 	if pub, ok := ops.(previewPortPublisher); ok {
 		_, _ = pub.EnsurePublishedPort(ctx, sandboxName, previewPort)
 	}
@@ -548,23 +521,21 @@ func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOp
 		return fmt.Errorf("预览端口 %d 已接到 $PREVIEW_PORT(=%d)，但平台经 $PREVIEW_PORT 访问不到它：确认服务能正常返回 HTTP 后重试 set_preview", port, previewPort)
 	}
 	if !probe() {
-		h.resetInjectUpstream(ctx, sw, sandboxName, previewPort)
+		h.restorePreviousInjectUpstream(ctx, sw, sandboxName, previewPort, previous)
 		return PreviewRegistration{}, unreachable()
 	}
 	keepalivePID, err := h.keepalivePreview(ctx, ops, runID, nodeID, sandboxName, port, probe, unreachable)
 	if err != nil {
-		h.resetInjectUpstream(ctx, sw, sandboxName, previewPort)
+		h.restorePreviousInjectUpstream(ctx, sw, sandboxName, previewPort, previous)
 		return PreviewRegistration{}, err
 	}
 	host := ""
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, previewPort); ok && base != "" {
 		host = base
 	}
-	if host != "" {
-		h.releaseDisplacedPreviews(ctx, ops, runID, nodeID, sandboxName, port, previewPort, host)
-	}
 	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, previewPort, label, host, keepalivePID)
 	if err != nil {
+		h.restorePreviousInjectUpstream(ctx, sw, sandboxName, previewPort, previous)
 		return PreviewRegistration{}, err
 	}
 	reg.Picked = true
@@ -577,54 +548,22 @@ func (h *Host) resetInjectUpstream(ctx context.Context, sw previewInjectSwitcher
 	}
 }
 
-// releaseDisplacedPreviews points earlier registrations that shared host
-// (PREVIEW_PORT's address) back at their own address: the injector now serves
-// port, so their new-tab link would open the wrong app.
-func (h *Host) releaseDisplacedPreviews(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, host string) {
-	h.mu.RLock()
-	store := h.previewStore
-	h.mu.RUnlock()
-	for _, p := range h.ListPreviewPorts(runID, nodeID) {
-		sameUpstream := p.Host == host
-		if h.PrivateEndpoints() && p.InjectorPort != 0 {
-			// Private loopback ports can be republished after a gateway
-			// restart; the guest port is the durable injector identity.
-			sameUpstream = p.InjectorPort == injectorPort
-		}
-		if previewPortKind(p) != PreviewKindPort || p.Port == port || !sameUpstream {
-			continue
-		}
-		base, ok := ops.PreviewUpstream(ctx, sandboxName, p.Port)
-		// Keep this idempotent with prepareDisplacedPreviews. The fallback
-		// handles registrations restored from durable state or a gateway
-		// restart, while avoiding a second publish request in the normal path.
-		if !ok {
-			if pub, canPublish := ops.(previewPortPublisher); canPublish {
-				_, _ = pub.EnsurePublishedPort(ctx, sandboxName, p.Port)
-				base, ok = ops.PreviewUpstream(ctx, sandboxName, p.Port)
-			}
-		}
-		if !ok || strings.TrimSpace(base) == "" || base == host {
-			log.Warn().Str("run_id", runID).Int("port", p.Port).
-				Msg("displaced preview has no independent upstream; retaining registration")
-			continue
-		}
-		if !probePreviewPort(ctx, ops, sandboxName, p.Port) {
-			log.Warn().Str("run_id", runID).Int("port", p.Port).
-				Msg("displaced preview independent upstream is not reachable; retaining registration")
-			continue
-		}
-		p.Host = base
-		p.InjectorPort = 0
-		p.Mode, p.DirectURL = "", ""
-		h.mu.Lock()
-		h.upsertPreviewMem(runID, nodeID, p)
-		h.mu.Unlock()
-		if store != nil {
-			if err := store.UpsertPreviewPort(p); err != nil {
-				log.Warn().Err(err).Str("run_id", runID).Int("port", p.Port).Msg("release displaced preview failed")
-			}
-		}
+func (h *Host) restorePreviousInjectUpstream(ctx context.Context, sw previewInjectSwitcher, sandboxName string, previewPort int, previous *PreviewPort) {
+	if previous == nil {
+		h.resetInjectUpstream(ctx, sw, sandboxName, previewPort)
+		return
+	}
+	if previous.InjectorPort != previewPort || previous.Port <= 0 || previous.Port == previewPort {
+		return
+	}
+	result, err := sw.SwitchInjectUpstream(ctx, sandboxName, previous.Port)
+	if err != nil {
+		log.Warn().Err(err).Str("sandbox", sandboxName).Int("port", previous.Port).Msg("preview inject rollback failed")
+		return
+	}
+	if result.Result == InjectDenied || result.Result == InjectNoListen ||
+		!probeInjectUpstream(ctx, sw, sandboxName, previewPort, previous.Port) {
+		log.Warn().Str("sandbox", sandboxName).Int("port", previous.Port).Msg("preview inject rollback probe failed")
 	}
 }
 
@@ -649,19 +588,18 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	proxyURL := h.previewProxyURL(runID, nodeID, port)
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
-		ItemKey: previewItemKey(PreviewKindPort, port, ""),
-		Port:    port, Label: strings.TrimSpace(label),
+		Port: port, Label: strings.TrimSpace(label),
 		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort, Healthy: true,
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
-	h.mu.Lock()
-	h.upsertPreviewMem(runID, nodeID, rec)
-	h.mu.Unlock()
 	if store != nil {
-		if err := store.UpsertPreviewPort(rec); err != nil {
+		if err := store.ReplacePreviewPort(rec); err != nil {
 			return PreviewRegistration{}, err
 		}
 	}
+	h.mu.Lock()
+	h.replacePreviewMem(rec)
+	h.mu.Unlock()
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
@@ -678,23 +616,36 @@ func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error
 	if err != nil {
 		return "", err
 	}
+	defer h.lockPreviewKey("node:" + previewKey(runID, nodeID))()
+	h.mu.RLock()
+	ops := h.previewOps
+	h.mu.RUnlock()
+	sandboxName := ""
+	if ops != nil {
+		if name, ok := ops.SandboxForRunNode(runID, nodeID); ok {
+			sandboxName = name
+		}
+	}
+	if sandboxName != "" {
+		defer h.lockPreviewKey("sandbox:" + sandboxName)()
+	}
 	h.mu.RLock()
 	store := h.previewStore
 	h.mu.RUnlock()
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindURL,
-		ItemKey: previewItemKey(PreviewKindURL, 0, normalized),
-		URL:     normalized, Label: strings.TrimSpace(label),
+		SandboxName: sandboxName,
+		URL:         normalized, Label: strings.TrimSpace(label),
 		Healthy: true, RegisteredAt: time.Now(),
 	}
-	h.mu.Lock()
-	h.upsertPreviewMem(runID, nodeID, rec)
-	h.mu.Unlock()
 	if store != nil {
-		if err := store.UpsertPreviewPort(rec); err != nil {
+		if err := store.ReplacePreviewPort(rec); err != nil {
 			return "", err
 		}
 	}
+	h.mu.Lock()
+	h.replacePreviewMem(rec)
+	h.mu.Unlock()
 	return normalized, nil
 }
 
@@ -706,15 +657,14 @@ func (h *Host) PutPreviewPortForTest(runID, nodeID string, port int, label strin
 	}
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
-		ItemKey: previewItemKey(PreviewKindPort, port, ""),
-		Port:    port, Label: strings.TrimSpace(label),
+		Port: port, Label: strings.TrimSpace(label),
 		ProxyURL: h.previewProxyURL(runID, nodeID, port), Healthy: true,
 		// Non-zero sentinel so ListPreviewKeepalivePIDs / AbortRun whitelist
 		// paths exercise the same registration shape as real set_preview.
 		KeepalivePID: 1, RegisteredAt: time.Now(),
 	}
 	h.mu.Lock()
-	h.upsertPreviewMem(runID, nodeID, rec)
+	h.replacePreviewMem(rec)
 	h.mu.Unlock()
 }
 

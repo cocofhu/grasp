@@ -22,7 +22,7 @@ func TestPreviewServiceCRUD(t *testing.T) {
 		RunID: "r1", NodeID: "n1", Port: 3000, Label: "web",
 		ProxyURL: "/preview/r1/n1/3000/", Healthy: true, RegisteredAt: time.Now(),
 	}
-	if err := svc.UpsertPreviewPort(rec); err != nil {
+	if err := svc.ReplacePreviewPort(rec); err != nil {
 		t.Fatal(err)
 	}
 	list, err := svc.ListPreviewPorts("r1", "n1")
@@ -39,12 +39,12 @@ func TestPreviewServiceCRUD(t *testing.T) {
 
 	rec.Label = "web2"
 	rec.Healthy = false
-	if err := svc.UpsertPreviewPort(rec); err != nil {
+	if err := svc.ReplacePreviewPort(rec); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = svc.GetPreviewPort("r1", "n1", 3000)
 	if got.Label != "web2" {
-		t.Fatalf("upsert update label=%q", got.Label)
+		t.Fatalf("replace update label=%q", got.Label)
 	}
 	if err := svc.UpdatePreviewHealth("r1", "n1", 3000, true); err != nil {
 		t.Fatal(err)
@@ -55,6 +55,59 @@ func TestPreviewServiceCRUD(t *testing.T) {
 	got, _ = svc.GetPreviewPort("r1", "n1", 3000)
 	if !got.Healthy || got.Host != "http://10.0.0.1:3000" {
 		t.Fatalf("after updates: %+v", got)
+	}
+}
+
+func TestPreviewServiceKeepsOneRegistrationPerSandbox(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewPreviewService(db, nil)
+	first := mcp.PreviewPort{
+		RunID: "r1", NodeID: "node-a", SandboxName: "sb-1", Port: 3000,
+		ProxyURL: "/preview/r1/node-a/3000/", Healthy: true, RegisteredAt: time.Now(),
+	}
+	second := first
+	second.NodeID = "node-b"
+	second.Port = 4000
+	second.ProxyURL = "/preview/r1/node-b/4000/"
+	second.RegisteredAt = time.Now().Add(time.Second)
+	if err := svc.ReplacePreviewPort(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ReplacePreviewPort(second); err != nil {
+		t.Fatal(err)
+	}
+	old, err := svc.ListPreviewPorts("r1", "node-a")
+	if err != nil || len(old) != 0 {
+		t.Fatalf("old sandbox registration=%+v err=%v", old, err)
+	}
+	current, err := svc.ListPreviewPorts("r1", "node-b")
+	if err != nil || len(current) != 1 || current[0].Port != 4000 {
+		t.Fatalf("current sandbox registration=%+v err=%v", current, err)
+	}
+	active, ok := svc.ActivePreviewForSandbox("sb-1")
+	if !ok || active == nil || active.NodeID != "node-b" || active.Port != 4000 {
+		t.Fatalf("active sandbox registration=%+v ok=%v", active, ok)
+	}
+}
+
+func TestPreviewServiceReplacesExternalPreviewWithSandboxPreview(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewPreviewService(db, nil)
+	if err := svc.ReplacePreviewPort(mcp.PreviewPort{
+		RunID: "r1", NodeID: "n1", Kind: mcp.PreviewKindURL, URL: "https://example.test/app",
+		Healthy: true, RegisteredAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ReplacePreviewPort(mcp.PreviewPort{
+		RunID: "r1", NodeID: "n1", SandboxName: "sb-1", Port: 3000,
+		Healthy: true, RegisteredAt: time.Now().Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.ListPreviewPorts("r1", "n1")
+	if err != nil || len(current) != 1 || current[0].Port != 3000 {
+		t.Fatalf("active preview=%+v err=%v", current, err)
 	}
 }
 

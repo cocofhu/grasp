@@ -3,7 +3,6 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type PreviewPort } from '@/lib/api/api'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
-import { isUrlPreview, previewTabKey, previewTabLabel } from '@/lib/shared/previewTabKey'
 import NovncPreviewPanel from './NovncPreviewPanel.vue'
 import DirectPreviewLauncher from './DirectPreviewLauncher.vue'
 import AppPreviewShareButton from './AppPreviewShareButton.vue'
@@ -39,27 +38,20 @@ const { t } = useI18n()
 const ports = ref<PreviewPort[]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
-const activeKey = ref<string | null>(null)
 const pickedSelector = ref('')
 let portsGen = 0
 let portsAbort: AbortController | null = null
 
 function isDirectPort(p: PreviewPort): boolean {
-  return p.mode === 'direct' && !!(p.directUrl || '').trim()
+  return p.kind !== 'url' && p.mode === 'direct' && !!(p.directUrl || '').trim()
 }
 
-/** IP-direct ports also get noVNC; direct only adds an open-in-new-tab button. */
-function isVncPort(p: PreviewPort): boolean {
-  return !isUrlPreview(p)
-}
-
-const activePort = ref<number | null>(null)
-const vncPorts = computed(() => ports.value.filter(isVncPort))
-const activeVnc = computed(() => vncPorts.value.find((p) => previewTabKey(p) === activeKey.value) || null)
+const preview = computed(() => ports.value[0] || null)
+const activePort = computed(() => (preview.value && preview.value.kind !== 'url' ? preview.value.port : null))
 const activeDirectUrl = computed(() =>
-  activeVnc.value && isDirectPort(activeVnc.value) ? (activeVnc.value.directUrl || '').trim() : '',
+  preview.value && isDirectPort(preview.value) ? (preview.value.directUrl || '').trim() : '',
 )
-/** The node's sandbox: its desktop is the one VNC screen, ports are pages on it. */
+/** The node's sandbox: its desktop is the one VNC screen for the active preview. */
 const sandboxId = ref<number | null>(null)
 /** creating/pulling keep the empty poll; absent and ready stop it. */
 const sandboxPhase = ref<'creating' | 'pulling' | 'ready' | 'absent' | null>(null)
@@ -67,25 +59,27 @@ const sandboxPhase = ref<'creating' | 'pulling' | 'ready' | 'absent' | null>(nul
 const vncTargetPort = ref<number | null>(null)
 /** Something to show: the Agent's desktop, or registered previews. */
 const hasScreen = computed(() => sandboxId.value != null || ports.value.length > 0)
-/** An external-URL tab is open over the desktop. */
-const urlTabActive = computed(() => {
-  const current = ports.value.find((p) => previewTabKey(p) === activeKey.value)
-  return !!current && isUrlPreview(current)
-})
+/** The active preview is an external URL shown over the desktop. */
+const urlTabActive = computed(() => preview.value?.kind === 'url')
 
-function syncActivePort() {
-  const current = ports.value.find((p) => previewTabKey(p) === activeKey.value)
-  activePort.value = current && !isUrlPreview(current) ? current.port : null
-  if (activeVnc.value) vncTargetPort.value = activeVnc.value.port
-  else if (!vncPorts.value.some((p) => p.port === vncTargetPort.value)) vncTargetPort.value = null
+function previewLabel(p: PreviewPort): string {
+  const label = (p.label || '').trim()
+  if (label) return label
+  if (p.kind === 'url') {
+    const url = (p.url || '').trim()
+    try {
+      const parsed = new URL(url)
+      return parsed.host + parsed.pathname
+    } catch {
+      return url
+    }
+  }
+  return String(p.port)
 }
 
 function applyPorts(next: PreviewPort[]) {
-  ports.value = next
-  if (!next.some((p) => previewTabKey(p) === activeKey.value)) {
-    activeKey.value = next[0] ? previewTabKey(next[0]) : null
-  }
-  syncActivePort()
+  ports.value = next.slice(0, 1)
+  vncTargetPort.value = preview.value && preview.value.kind !== 'url' ? preview.value.port : null
 }
 
 function sandboxNumericId(id: unknown): number | null {
@@ -221,11 +215,6 @@ onUnmounted(() => {
   portsGen++
 })
 
-function selectPreview(key: string) {
-  activeKey.value = key
-  syncActivePort()
-}
-
 function issueDirectTicket() {
   return props.soloSessionId
     ? api.soloEmbedTicket(props.soloSessionId)
@@ -271,32 +260,14 @@ function issueDirectTicket() {
       {{ t('pages.appPreview.noPorts') }}
     </div>
     <template v-if="hasScreen">
-      <div v-if="ports.length > 1" class="mb-2 flex flex-wrap gap-1">
-        <button
-          v-for="p in ports"
-          :key="previewTabKey(p)"
-          type="button"
-          class="rounded-md px-2.5 py-1 text-xs font-medium transition"
-          :class="
-            previewTabKey(p) === activeKey
-              ? 'bg-accent/15 text-accent'
-              : 'border border-line text-txt2 hover:bg-elevated hover:text-txt'
-          "
-          @click="selectPreview(previewTabKey(p))"
-        >
-          {{ previewTabLabel(p) }}
-        </button>
-      </div>
       <div
         class="flex min-h-0 flex-col overflow-hidden rounded-md border border-line bg-surface"
         :class="fill ? 'flex-1' : compact ? 'h-[280px]' : 'h-[420px]'"
       >
         <ExternalUrlPreviewFrame
-          v-for="p in ports.filter((x) => isUrlPreview(x))"
-          v-show="activeKey === previewTabKey(p)"
-          :key="`url-${previewTabKey(p)}`"
-          :url="(p.url || '').trim()"
-          :title="previewTabLabel(p)"
+          v-if="preview && urlTabActive"
+          :url="(preview.url || '').trim()"
+          :title="previewLabel(preview)"
         />
         <NovncPreviewPanel
           v-if="sandboxId != null"

@@ -12,7 +12,7 @@ type SettingsResponse = { items: SettingItem[]; brand: BrandSettings }
 
 export const settingsClient = {
   health: () => req<HealthResponse>(`/health`),
-  /** The one noVNC address of a sandbox desktop; app ports are pages on it. */
+  /** The one noVNC address of a sandbox desktop and its active app preview. */
   sandboxVncWsUrl: (sandboxId: number) =>
     rootWsUrl(`/sandbox-vnc/${sandboxId}/ws`),
   /** Sound of that desktop: raw PCM frames (see lib/shared/desktopAudio). */

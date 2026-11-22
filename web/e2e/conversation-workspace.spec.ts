@@ -114,7 +114,7 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
     if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
     if (path.endsWith('/messages')) return route.fulfill({ json: [] })
     if (path.endsWith('/resources')) return route.fulfill({
-      json: { runId, previewArtifact: artifact.name, artifacts: [artifact], ports: [port, { ...port, port: 5173, label: 'Second app' }] },
+      json: { runId, previewArtifact: artifact.name, artifacts: [artifact], ports: [port] },
     })
     await route.fulfill({ json: session })
   })
@@ -127,7 +127,7 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   await page.goto(`/workspace-config.html?view=/solo/${session.id}`)
   await page.getByTestId('conversation-resource-toggle').click()
   await page.getByTestId('react-artifact-card-app').click()
-  await expect(page.getByTestId('app-preview').getByRole('button', { name: 'Demo app' })).toBeVisible()
+  await expect(page.getByTestId('app-preview')).toBeVisible()
 
   await page.getByTestId('conversation-panel-toggle').click()
   const card = page.getByTestId('react-artifact-card-demo.html')

@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -214,7 +212,7 @@ func (h *Handlers) GetSoloResources(c *gin.Context) {
 		return
 	}
 	artifacts := h.Arts.BySession(c.Param("id"))
-	ports := []mcp.PreviewPort{}
+	var preview []mcp.PreviewPort
 	if sb.RunID != "" {
 		seen := make(map[string]bool, len(artifacts))
 		for _, a := range artifacts {
@@ -226,16 +224,10 @@ func (h *Handlers) GetSoloResources(c *gin.Context) {
 			}
 		}
 		if sb.Status == "running" && h.MCP != nil {
-			ports = append(ports, h.MCP.ListPreviewPorts(sb.RunID, "solo")...)
-			slices.SortFunc(ports, func(a, b mcp.PreviewPort) int {
-				if order := cmp.Compare(a.Port, b.Port); order != 0 {
-					return order
-				}
-				return cmp.Compare(a.URL, b.URL)
-			})
+			preview = h.MCP.ListPreviewPorts(sb.RunID, "solo")
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"runId": sb.RunID, "artifacts": artifacts, "previewArtifact": sb.PreviewArtifact, "ports": ports})
+	c.JSON(http.StatusOK, gin.H{"runId": sb.RunID, "artifacts": artifacts, "previewArtifact": sb.PreviewArtifact, "ports": preview})
 }
 
 // PatchSoloSession handles PATCH /api/solo/sessions/:id (rename).
