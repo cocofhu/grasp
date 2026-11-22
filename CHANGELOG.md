@@ -16,6 +16,8 @@ All notable public-release changes are documented here.
 
 - 沙箱列表页的状态筛选改用共享 `SlidingTabs` 组件，移除选中胶囊背景并收紧列表区顶部留白。
 
+- 沙箱列表页状态筛选补回轻量底部 accent 线，让 tab 选中态更明确，同时保持低密度布局。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。
