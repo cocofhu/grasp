@@ -69,6 +69,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     queued: box.queued,
     displayQueued: ref([]),
     busy: box.busy,
+    steerable: ref(false),
     sandboxPaused: box.sandboxPaused,
     sandboxWaking: box.sandboxWaking,
     wake: () => box.wake(),
