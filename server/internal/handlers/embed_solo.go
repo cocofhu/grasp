@@ -27,7 +27,7 @@ func (h *Handlers) CreateSoloEmbedTicket(c *gin.Context) {
 		writeSoloErr(c, err)
 		return
 	}
-	if _, active := h.Preview.SoloPreviewSession(sb.RunID, user); !active || len(h.directPreviewOrigins(sb.RunID, "solo")) == 0 {
+	if _, active := h.Preview.SoloPreviewSession(sb.RunID, user); !active || h.directPreviewOrigin(sb.RunID, "solo") == "" {
 		c.JSON(http.StatusConflict, gin.H{"error": "no active direct preview"})
 		return
 	}

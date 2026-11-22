@@ -18,36 +18,36 @@ func TestSetPreviewGateAndReplace(t *testing.T) {
 	if text == "" || previewTextIsError(text) {
 		t.Fatalf("set_preview failed: %s", text)
 	}
-	if !h.HasHealthyPreviewPorts("r1", "preview1") {
+	if !h.HasHealthyPreview("r1", "preview1") {
 		t.Fatal("expected preview port registered")
 	}
-	ports := h.ListPreviewPorts("r1", "preview1")
-	if len(ports) != 1 || ports[0].Port != 5173 || ports[0].Label != "前端" {
-		t.Fatalf("unexpected ports: %+v", ports)
+	active := activePreviewOrFail(t, h, "r1", "preview1")
+	if active.Port != 5173 || active.Label != "前端" {
+		t.Fatalf("unexpected preview: %+v", active)
 	}
-	if !ports[0].Healthy || ports[0].KeepalivePID != 4242 {
-		t.Fatalf("want healthy+keepalive pid, got %+v", ports[0])
+	if !active.Healthy || active.KeepalivePID != 4242 {
+		t.Fatalf("want healthy+keepalive pid, got %+v", active)
 	}
 	wantURL := "/preview/r1/preview1/5173/"
-	if ports[0].ProxyURL != wantURL {
-		t.Fatalf("proxy url = %q, want %q", ports[0].ProxyURL, wantURL)
+	if active.ProxyURL != wantURL {
+		t.Fatalf("proxy url = %q, want %q", active.ProxyURL, wantURL)
 	}
-	if strings.Contains(ports[0].ProxyURL, "://") {
-		t.Fatalf("proxy url must be relative, got %q", ports[0].ProxyURL)
+	if strings.Contains(active.ProxyURL, "://") {
+		t.Fatalf("proxy url must be relative, got %q", active.ProxyURL)
 	}
 
 	resp2 := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":5173,"label":"Web"}}}`)
 	if previewTextIsError(previewResultText(t, resp2)) {
 		t.Fatal("upsert failed")
 	}
-	ports = h.ListPreviewPorts("r1", "preview1")
-	if len(ports) != 1 || ports[0].Label != "Web" {
-		t.Fatalf("replace label: %+v", ports)
+	active = activePreviewOrFail(t, h, "r1", "preview1")
+	if active.Label != "Web" {
+		t.Fatalf("replace label: %+v", active)
 	}
 	callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":8080,"label":"管理端"}}}`)
-	ports = h.ListPreviewPorts("r1", "preview1")
-	if len(ports) != 1 || ports[0].Port != 8080 || ports[0].Label != "管理端" {
-		t.Fatalf("replace port: %+v", ports)
+	active = activePreviewOrFail(t, h, "r1", "preview1")
+	if active.Port != 8080 || active.Label != "管理端" {
+		t.Fatalf("replace port: %+v", active)
 	}
 
 	h.SetActiveNode("r1", "preview1", capsPlain)
@@ -68,7 +68,7 @@ func TestSetPreviewAllowedOnClarify(t *testing.T) {
 	if text == "" || previewTextIsError(text) {
 		t.Fatalf("set_preview on clarify failed: %s", text)
 	}
-	if !h.HasHealthyPreviewPorts("r-clarify", "predev") {
+	if !h.HasHealthyPreview("r-clarify", "predev") {
 		t.Fatal("expected preview port registered on clarify node")
 	}
 }
@@ -83,24 +83,24 @@ func TestSetPreviewURLGateAndUpsert(t *testing.T) {
 	if text == "" || previewTextIsError(text) {
 		t.Fatalf("set_preview url failed: %s", text)
 	}
-	if !h.HasHealthyPreviewPorts("r1", "preview1") {
+	if !h.HasHealthyPreview("r1", "preview1") {
 		t.Fatal("expected url preview registered")
 	}
-	ports := h.ListPreviewPorts("r1", "preview1")
-	if len(ports) != 1 || ports[0].Kind != PreviewKindURL || ports[0].URL != "https://staging.example.com:8443/app" {
-		t.Fatalf("unexpected url ports: %+v", ports)
+	active := activePreviewOrFail(t, h, "r1", "preview1")
+	if active.Kind != PreviewKindURL || active.URL != "https://staging.example.com:8443/app" {
+		t.Fatalf("unexpected url preview: %+v", active)
 	}
-	if !ports[0].Healthy || ports[0].Port != 0 {
-		t.Fatalf("url preview must be healthy with port=0: %+v", ports[0])
+	if !active.Healthy || active.Port != 0 {
+		t.Fatalf("url preview must be healthy with port=0: %+v", active)
 	}
 
 	resp2 := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"set_preview","arguments":{"url":"https://staging.example.com:8443/app","label":"STG"}}}`)
 	if previewTextIsError(previewResultText(t, resp2)) {
 		t.Fatal("url upsert failed")
 	}
-	ports = h.ListPreviewPorts("r1", "preview1")
-	if len(ports) != 1 || ports[0].Label != "STG" {
-		t.Fatalf("url upsert label: %+v", ports)
+	active = activePreviewOrFail(t, h, "r1", "preview1")
+	if active.Label != "STG" {
+		t.Fatalf("url upsert label: %+v", active)
 	}
 }
 
@@ -153,7 +153,7 @@ func TestSetPreviewUnreachableFails(t *testing.T) {
 	if !previewResultIsError(resp) {
 		t.Fatal("expected unreachable set_preview to fail")
 	}
-	if h.HasHealthyPreviewPorts("r1", "preview1") {
+	if h.HasHealthyPreview("r1", "preview1") {
 		t.Fatal("unreachable port must not count as healthy preview")
 	}
 }
@@ -189,4 +189,13 @@ func previewResultIsError(resp map[string]any) bool {
 
 func previewTextIsError(s string) bool {
 	return len(s) >= 5 && (s[:5] == "error" || len(s) >= 18 && s[:18] == "set_preview failed")
+}
+
+func activePreviewOrFail(t *testing.T, h *Host, runID, nodeID string) PreviewPort {
+	t.Helper()
+	p, ok := h.ActivePreview(runID, nodeID)
+	if !ok {
+		t.Fatalf("no active preview for %s/%s", runID, nodeID)
+	}
+	return p
 }

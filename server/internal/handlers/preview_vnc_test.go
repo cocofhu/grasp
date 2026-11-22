@@ -90,15 +90,15 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 
 func TestPublicTicketPurpose(t *testing.T) {
 	cases := []struct {
-		port      gateshare.PublicPreviewPort
+		port      gateshare.PublicPreview
 		requested string
 		want      string
 	}{
-		{gateshare.PublicPreviewPort{Kind: "url", URL: "https://x/", DirectURL: "https://x/"}, "vnc", gateshare.PreviewPurposeAPI},
-		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000}, "api", gateshare.PreviewPurposeVNC},
-		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "vnc", gateshare.PreviewPurposeVNC},
-		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "", gateshare.PreviewPurposeVNC},
-		{gateshare.PublicPreviewPort{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "api", gateshare.PreviewPurposeAPI},
+		{gateshare.PublicPreview{Kind: "url", URL: "https://x/", DirectURL: "https://x/"}, "vnc", gateshare.PreviewPurposeAPI},
+		{gateshare.PublicPreview{Kind: "port", Port: 3000}, "api", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreview{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "vnc", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreview{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "", gateshare.PreviewPurposeVNC},
+		{gateshare.PublicPreview{Kind: "port", Port: 3000, DirectURL: "http://10.0.0.1:3000/"}, "api", gateshare.PreviewPurposeAPI},
 	}
 	for i, c := range cases {
 		if got := publicTicketPurpose(c.port, c.requested); got != c.want {

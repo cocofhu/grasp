@@ -39,7 +39,7 @@ type PreviewPort struct {
 	// DirectURL is the browser-facing http://IP:port/ when Mode=direct.
 	DirectURL string `json:"directUrl,omitempty"`
 	// Healthy is true when ProbeHTTPPort succeeded at registration time.
-	// set_preview only succeeds when Healthy; HasHealthyPreviewPorts gates
+	// set_preview only succeeds when Healthy; HasHealthyPreview gates
 	// production-phase completion / early park into review.
 	Healthy bool `json:"healthy"`
 	// KeepalivePID is the setsid-detached listener pid (0 when unknown).
@@ -47,18 +47,14 @@ type PreviewPort struct {
 	RegisteredAt time.Time `json:"registeredAt"`
 }
 
-// PreviewStore persists the active preview registration.
+// PreviewStore persists the active preview registration. A registration
+// replaces any other registration of the same run/node or sandbox.
 type PreviewStore interface {
-	ReplacePreviewPort(rec PreviewPort) error
-	ListPreviewPorts(runID, nodeID string) ([]PreviewPort, error)
-	GetPreviewPort(runID, nodeID string, port int) (*PreviewPort, bool)
-	UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error
-}
-
-// PreviewSandboxStore can locate the active registration when workflow nodes
-// share one sandbox and a new node is replacing the previous node's preview.
-type PreviewSandboxStore interface {
-	ActivePreviewForSandbox(sandboxName string) (*PreviewPort, bool)
+	ReplacePreview(rec PreviewPort) error
+	ActivePreview(runID, nodeID string) (*PreviewPort, error)
+	// ActivePreviewForSandbox finds the registration a new node replaces when
+	// workflow nodes share one sandbox.
+	ActivePreviewForSandbox(sandboxName string) (*PreviewPort, error)
 }
 
 // PreviewSandboxOps resolves run sandboxes and probes in-container HTTP ports.
@@ -269,42 +265,45 @@ func (h *Host) previewProxyURL(runID, nodeID string, port int) string {
 	return fmt.Sprintf("/preview/%s/%s/%d/", runID, nodeID, port)
 }
 
-// HasHealthyPreviewPorts reports whether the active preview is Healthy.
+// HasHealthyPreview reports whether the active preview is Healthy.
 // Unreachable registrations do not count (set_preview fails closed on probe).
-func (h *Host) HasHealthyPreviewPorts(runID, nodeID string) bool {
-	ports := h.ListPreviewPorts(runID, nodeID)
-	return len(ports) == 1 && ports[0].Healthy
+func (h *Host) HasHealthyPreview(runID, nodeID string) bool {
+	p, ok := h.ActivePreview(runID, nodeID)
+	return ok && p.Healthy
 }
 
-// ListPreviewKeepalivePIDs returns the active preview's detached pid for the
-// whitelist during Cancel/Abort session cleanup.
-func (h *Host) ListPreviewKeepalivePIDs(runID, nodeID string) []int {
-	ports := h.ListPreviewPorts(runID, nodeID)
-	if len(ports) == 1 && ports[0].KeepalivePID > 0 {
-		return []int{ports[0].KeepalivePID}
+// PreviewKeepalivePID returns the active preview's detached pid (0 when none)
+// for the whitelist during Cancel/Abort session cleanup.
+func (h *Host) PreviewKeepalivePID(runID, nodeID string) int {
+	p, ok := h.ActivePreview(runID, nodeID)
+	if !ok {
+		return 0
 	}
-	return nil
+	return p.KeepalivePID
 }
 
-// ListPreviewPorts returns the active preview for a run/node, when present.
-func (h *Host) ListPreviewPorts(runID, nodeID string) []PreviewPort {
+// ActivePreview returns the active preview for a run/node.
+func (h *Host) ActivePreview(runID, nodeID string) (PreviewPort, bool) {
 	h.mu.RLock()
 	mem, hasMem := h.previewMem[previewKey(runID, nodeID)]
 	store := h.previewStore
 	h.mu.RUnlock()
 	if hasMem {
-		return h.annotatePreviewTransport(runID, nodeID, []PreviewPort{mem})
+		return h.annotatePreviewTransport(mem), true
 	}
 	if store == nil {
-		return nil
+		return PreviewPort{}, false
 	}
-	dbPorts, err := store.ListPreviewPorts(runID, nodeID)
+	stored, err := store.ActivePreview(runID, nodeID)
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
-			Msg("list active preview from store failed")
-		return nil
+			Msg("load active preview from store failed")
+		return PreviewPort{}, false
 	}
-	return h.annotatePreviewTransport(runID, nodeID, dbPorts)
+	if stored == nil {
+		return PreviewPort{}, false
+	}
+	return h.annotatePreviewTransport(*stored), true
 }
 
 func (h *Host) replacePreviewMem(rec PreviewPort) {
@@ -320,42 +319,27 @@ func (h *Host) replacePreviewMem(rec PreviewPort) {
 	h.previewMem[previewKey(rec.RunID, rec.NodeID)] = rec
 }
 
-func (h *Host) activePreview(runID, nodeID, sandboxName string) (*PreviewPort, bool) {
+// sandboxPreview returns the registration currently owning sandboxName's
+// injector, whichever run/node registered it.
+func (h *Host) sandboxPreview(sandboxName string) *PreviewPort {
 	h.mu.RLock()
-	current, hasCurrent := h.previewMem[previewKey(runID, nodeID)]
 	store := h.previewStore
-	if hasCurrent {
-		copy := current
-		h.mu.RUnlock()
-		return &copy, true
-	}
-	var shared *PreviewPort
 	for _, candidate := range h.previewMem {
-		if candidate.SandboxName != sandboxName ||
-			(shared != nil && !candidate.RegisteredAt.After(shared.RegisteredAt)) {
-			continue
+		if candidate.SandboxName == sandboxName {
+			h.mu.RUnlock()
+			return &candidate
 		}
-		copy := candidate
-		shared = &copy
-	}
-	if shared != nil {
-		h.mu.RUnlock()
-		return shared, true
 	}
 	h.mu.RUnlock()
 	if store == nil {
-		return nil, false
+		return nil
 	}
-	if bySandbox, ok := store.(PreviewSandboxStore); ok {
-		if preview, found := bySandbox.ActivePreviewForSandbox(sandboxName); found && preview != nil {
-			return preview, true
-		}
+	stored, err := store.ActivePreviewForSandbox(sandboxName)
+	if err != nil {
+		log.Warn().Err(err).Str("sandbox", sandboxName).Msg("load sandbox preview from store failed")
+		return nil
 	}
-	ports, err := store.ListPreviewPorts(runID, nodeID)
-	if err == nil && len(ports) > 0 {
-		return &ports[0], true
-	}
-	return nil, false
+	return stored
 }
 
 // PreviewRegistration is what a healthy set_preview(port) registered.
@@ -434,7 +418,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	switcher, canSwitch := ops.(previewInjectSwitcher)
 	var previous *PreviewPort
 	if canSwitch {
-		previous, _ = h.activePreview(runID, nodeID, sandboxName)
+		previous = h.sandboxPreview(sandboxName)
 	}
 	if direct && canSwitch {
 		res, err := switcher.SwitchInjectUpstream(ctx, sandboxName, port)
@@ -584,7 +568,7 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
 	if store != nil {
-		if err := store.ReplacePreviewPort(rec); err != nil {
+		if err := store.ReplacePreview(rec); err != nil {
 			return PreviewRegistration{}, err
 		}
 	}
@@ -630,7 +614,7 @@ func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error
 		Healthy: true, RegisteredAt: time.Now(),
 	}
 	if store != nil {
-		if err := store.ReplacePreviewPort(rec); err != nil {
+		if err := store.ReplacePreview(rec); err != nil {
 			return "", err
 		}
 	}
@@ -650,7 +634,7 @@ func (h *Host) PutPreviewPortForTest(runID, nodeID string, port int, label strin
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
 		Port: port, Label: strings.TrimSpace(label),
 		ProxyURL: h.previewProxyURL(runID, nodeID, port), Healthy: true,
-		// Non-zero sentinel so ListPreviewKeepalivePIDs / AbortRun whitelist
+		// Non-zero sentinel so PreviewKeepalivePID / AbortRun whitelist
 		// paths exercise the same registration shape as real set_preview.
 		KeepalivePID: 1, RegisteredAt: time.Now(),
 	}
@@ -686,20 +670,16 @@ func (h *Host) previewDirect(runID, nodeID string) bool {
 	return ok && c.DirectPreview(runID, nodeID)
 }
 
-func (h *Host) annotatePreviewTransport(runID, nodeID string, ports []PreviewPort) []PreviewPort {
-	if !h.previewDirect(runID, nodeID) {
-		return ports
+func (h *Host) annotatePreviewTransport(p PreviewPort) PreviewPort {
+	if !h.previewDirect(p.RunID, p.NodeID) {
+		return p
 	}
-	out := make([]PreviewPort, len(ports))
-	copy(out, ports)
 	h.mu.RLock()
 	private := h.privateEndpoints
 	h.mu.RUnlock()
-	for i := range out {
-		out[i].Mode = "direct"
-		if out[i].Host != "" && !private {
-			out[i].DirectURL = strings.TrimRight(out[i].Host, "/") + "/"
-		}
+	p.Mode = "direct"
+	if p.Host != "" && !private {
+		p.DirectURL = strings.TrimRight(p.Host, "/") + "/"
 	}
-	return out
+	return p
 }

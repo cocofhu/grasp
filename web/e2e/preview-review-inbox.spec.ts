@@ -1,7 +1,7 @@
 /**
  * Browser acceptance: a reviewed Agent with set_preview parks in Gates Inbox as
  * 待复审, coexists with human_gate and other reviews, mounts the app preview
- * stage once ports register, and disappears after Confirm & continue.
+ * stage once a preview registers, and disappears after Confirm & continue.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
@@ -188,10 +188,10 @@ async function mockInboxApis(
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/previews/)) {
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/preview$/)) {
       await route.fulfill({
         json: {
-          ports: [{ port: 3000, label: '前端', proxyUrl: 'http://mock-app:3000/' }],
+          preview: { port: 3000, label: '前端', proxyUrl: 'http://mock-app:3000/' },
         },
       })
       return

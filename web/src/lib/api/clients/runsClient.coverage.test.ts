@@ -195,7 +195,8 @@ describe('runsClient request coverage', () => {
     await runsClient.gateReactCancel('r', 'n')
     await runsClient.gateReactQueueRemove('r', 'n', 'q1')
     await runsClient.gateReactQueueReorder('r', 'n', ['q1'])
-    await runsClient.nodePreviews('r', 'n')
+    await runsClient.nodePreview('r', 'n')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r/nodes/n/preview', expect.anything())
     await runsClient.listPreviewIssues('r', 'n')
     await runsClient.createPreviewIssue('r', 'n', 'broken', '#x', 8080, [])
     await runsClient.deletePreviewIssue('r', 'n', 'i1')
@@ -213,7 +214,7 @@ describe('runsClient request coverage', () => {
       expect.objectContaining({ signal }),
     )
     await runsClient.nodeSandboxLog('r', 'n', { signal })
-    await runsClient.nodePreviews('r', 'n', { signal })
+    await runsClient.nodePreview('r', 'n', { signal })
 
     fetchMock.mockResolvedValueOnce(ok({ found: false }))
     await expect(runsClient.getRunNodeSandbox('r', 'n')).resolves.toBeNull()

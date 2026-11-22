@@ -274,7 +274,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           productKind: 'app',
           productName: 'app',
           actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
-          ports: [{ port: 5173, label: 'Web · 5173', mode: 'vnc' }],
+          preview: { port: 5173, label: 'Web · 5173', mode: 'vnc' },
           turns: [{ role: 'agent', text: '应用预览已就绪（set_preview 可达）。公开页可远程与取点。', at: '2026-08-01T00:00:00Z' }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },

@@ -37,7 +37,7 @@ func TestLookupPreviewAndResolveDesktop(t *testing.T) {
 	preview := services.NewPreviewService(db, mgr)
 	hostMCP.SetPreviewStore(preview)
 
-	_ = preview.ReplacePreviewPort(mcp.PreviewPort{
+	_ = preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "r1", NodeID: "n1", Port: 3000, Label: "web",
 		Host: "http://10.0.0.5:3000", SandboxName: "sb1", Healthy: true,
 		RegisteredAt: time.Now(),

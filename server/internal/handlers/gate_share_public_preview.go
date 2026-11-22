@@ -71,19 +71,12 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 		return
 	}
 	if body.Port > 0 {
-		ports := h.publicAppPreviewPorts(lookup.Link.RunID, lookup.Link.NodeID)
-		var matched *gateshare.PublicPreviewPort
-		for i := range ports {
-			if ports[i].Port == body.Port {
-				matched = &ports[i]
-				break
-			}
-		}
-		if matched == nil {
+		preview := h.publicAppPreview(lookup.Link.RunID, lookup.Link.NodeID)
+		if preview == nil || preview.Port != body.Port {
 			c.JSON(http.StatusNotFound, gin.H{"error": "port_not_registered", "message": "预览端口未注册"})
 			return
 		}
-		purpose = publicTicketPurpose(*matched, purpose)
+		purpose = publicTicketPurpose(*preview, purpose)
 	}
 	ticket, exp, err := h.GateShareTickets.Issue(
 		lookup.Link.TokenHash, lookup.Link.RunID, lookup.Link.NodeID, body.Port, purpose,
@@ -110,7 +103,7 @@ func (h *Handlers) PublicPreviewTicket(c *gin.Context) {
 // publicTicketPurpose picks the ticket purpose for a registered port. External
 // URLs only have the API proxy and plain ports only noVNC; IP-direct ports
 // offer both, so the requested purpose wins.
-func publicTicketPurpose(p gateshare.PublicPreviewPort, requested string) string {
+func publicTicketPurpose(p gateshare.PublicPreview, requested string) string {
 	if p.Kind == "url" {
 		return gateshare.PreviewPurposeAPI
 	}
@@ -323,39 +316,28 @@ func (h *Handlers) watchSharedAppProxy(ctx context.Context, stop context.CancelF
 	}
 }
 
-func (h *Handlers) publicAppPreviewPorts(runID, nodeID string) []gateshare.PublicPreviewPort {
+func (h *Handlers) publicAppPreview(runID, nodeID string) *gateshare.PublicPreview {
 	if h.MCP == nil {
 		return nil
 	}
-	raw := h.MCP.ListPreviewPorts(runID, nodeID)
-	if len(raw) == 0 {
-		return nil
-	}
-	p := raw[0]
-	if p.Port <= 0 && strings.TrimSpace(p.URL) == "" {
+	p, ok := h.MCP.ActivePreview(runID, nodeID)
+	if !ok || (p.Port <= 0 && strings.TrimSpace(p.URL) == "") {
 		return nil
 	}
 	label := strings.TrimSpace(p.Label)
-	entry := gateshare.PublicPreviewPort{
+	out := &gateshare.PublicPreview{
 		Port:      p.Port,
 		Label:     label,
-		Kind:      strings.TrimSpace(p.Kind),
+		Kind:      p.Kind,
 		URL:       strings.TrimSpace(p.URL),
 		Mode:      gateshare.InferPreviewMode(label),
 		DirectURL: strings.TrimSpace(p.DirectURL),
 	}
-	if entry.Kind == "" {
-		if entry.URL != "" {
-			entry.Kind = "url"
-		} else {
-			entry.Kind = "port"
-		}
+	if out.Kind == "url" {
+		out.DirectURL = out.URL
+		out.Mode = "url"
 	}
-	if entry.Kind == "url" && entry.URL != "" {
-		entry.DirectURL = entry.URL
-		entry.Mode = "url"
-	}
-	return []gateshare.PublicPreviewPort{entry}
+	return out
 }
 
 func (h *Handlers) publicTicketLinkActive(tokenHash string) bool {

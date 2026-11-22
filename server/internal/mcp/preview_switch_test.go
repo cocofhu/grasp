@@ -101,9 +101,9 @@ func TestSetPreviewSwitchesInjectorToAppPort(t *testing.T) {
 	if len(store.ports) != 1 || store.ports[0].Port != 5173 || store.ports[0].Host != "http://10.0.0.8:18081" {
 		t.Fatalf("record must keep Port=app and Host=PREVIEW_PORT: %+v", store.ports)
 	}
-	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 1 || ports[0].DirectURL != "http://10.0.0.8:18081/" {
-		t.Fatalf("direct url=%+v", ports)
+	active := activePreviewOrFail(t, h, "r", "n")
+	if active.DirectURL != "http://10.0.0.8:18081/" {
+		t.Fatalf("direct url=%+v", active)
 	}
 }
 
@@ -162,9 +162,43 @@ func TestSetPreviewSwitchFailureRestoresPreviousInjector(t *testing.T) {
 	if len(ops.switches) != 3 || ops.switches[2] != 5173 {
 		t.Fatalf("injector rollback switches=%v", ops.switches)
 	}
-	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 1 || ports[0].Port != 5173 || ports[0].Label != "old" {
-		t.Fatalf("previous preview was not retained=%+v", ports)
+	active := activePreviewOrFail(t, h, "r", "n")
+	if active.Port != 5173 || active.Label != "old" {
+		t.Fatalf("previous preview was not retained=%+v", active)
+	}
+}
+
+func TestSetPreviewFailureRestoresStoredSandboxPreviewOfAnotherNode(t *testing.T) {
+	fastPreviewProbe(t)
+	store := &memPreviewStore{}
+	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
+	ops.switchesRes = []InjectSwitch{
+		{Result: InjectSwitched, PreviewPort: 18081},
+		{Result: InjectSwitched, PreviewPort: 18081},
+	}
+	first := NewHost(&memStore{})
+	first.SetPreviewStore(store)
+	first.SetPreviewSandboxOps(ops)
+	if _, err := first.setPreviewPort("r", "n", 5173, "old"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A restarted host only knows the previous node's preview from the store.
+	h := NewHost(&memStore{})
+	h.SetPreviewStore(store)
+	h.SetPreviewSandboxOps(ops)
+	ops.injectOK = false
+	if _, err := h.setPreviewPort("r", "n2", 4000, "new"); err == nil {
+		t.Fatal("failed switch should return an error")
+	}
+	if len(ops.switches) != 3 || ops.switches[2] != 5173 {
+		t.Fatalf("injector rollback switches=%v", ops.switches)
+	}
+	if active := activePreviewOrFail(t, h, "r", "n"); active.Port != 5173 {
+		t.Fatalf("previous preview was not retained=%+v", active)
+	}
+	if got, ok := h.ActivePreview("r", "n2"); ok {
+		t.Fatalf("failed preview registered=%+v", got)
 	}
 }
 
@@ -189,9 +223,9 @@ func TestSetPreviewSaveFailureRestoresPreviousInjector(t *testing.T) {
 	if len(ops.switches) != 3 || ops.switches[2] != 5173 {
 		t.Fatalf("injector rollback switches=%v", ops.switches)
 	}
-	ports := h.ListPreviewPorts("r", "n")
-	if len(ports) != 1 || ports[0].Port != 5173 || ports[0].Label != "old" {
-		t.Fatalf("previous preview was not retained=%+v", ports)
+	active := activePreviewOrFail(t, h, "r", "n")
+	if active.Port != 5173 || active.Label != "old" {
+		t.Fatalf("previous preview was not retained=%+v", active)
 	}
 }
 
@@ -212,12 +246,12 @@ func TestSetPreviewReplacesPreviousRegistration(t *testing.T) {
 	if len(store.ports) != 1 || store.ports[0].Port != 3001 || store.ports[0].Label != "new" {
 		t.Fatalf("store=%+v", store.ports)
 	}
-	if ports := h.ListPreviewPorts("r", "n"); len(ports) != 0 {
-		t.Fatalf("old sandbox preview=%+v", ports)
+	if old, ok := h.ActivePreview("r", "n"); ok {
+		t.Fatalf("old sandbox preview=%+v", old)
 	}
-	ports := h.ListPreviewPorts("r", "n2")
-	if len(ports) != 1 || ports[0].Port != 3001 || ports[0].Label != "new" {
-		t.Fatalf("active preview=%+v", ports)
+	active := activePreviewOrFail(t, h, "r", "n2")
+	if active.Port != 3001 || active.Label != "new" {
+		t.Fatalf("active preview=%+v", active)
 	}
 }
 

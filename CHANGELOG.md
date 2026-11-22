@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 应用预览接口改为单一对象：节点预览改为 `GET /api/runs/:id/nodes/:nodeId/preview`，返回 `{"preview": ... | null}`；Solo 资源和公开分享预览也改为 `preview` 字段，不再返回 `ports` 列表。旧数据库升级时按节点和沙箱都只保留最新一条预览登记。
+
 - 应用预览每个沙箱只保留一个活动 Preview。再次调用 `set_preview` 会替换当前预览，预览界面和公开分享页不再提供多端口切换标签。
 
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。

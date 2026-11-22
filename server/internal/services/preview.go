@@ -38,7 +38,7 @@ func NewPreviewService(db *gorm.DB, mgr *sandbox.Manager) *PreviewService {
 // on the sandbox desktop (before a reviewer opens the noVNC tab).
 func (s *PreviewService) SetBrowser(b *browser.Service) { s.browser = b }
 
-func (s *PreviewService) ReplacePreviewPort(rec mcp.PreviewPort) error {
+func (s *PreviewService) ReplacePreview(rec mcp.PreviewPort) error {
 	row := models.RunPreviewPort{
 		RunID: rec.RunID, NodeID: rec.NodeID,
 		Kind: rec.Kind, Port: rec.Port, ExternalURL: rec.URL, Label: rec.Label,
@@ -67,77 +67,41 @@ func (s *PreviewService) ReplacePreviewPort(rec mcp.PreviewPort) error {
 	})
 }
 
-func (s *PreviewService) ListPreviewPorts(runID, nodeID string) ([]mcp.PreviewPort, error) {
-	var rows []models.RunPreviewPort
-	if err := s.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
-		Order("registered_at desc").Limit(1).Find(&rows).Error; err != nil {
+// ActivePreview returns the run/node's registration, or nil when none.
+func (s *PreviewService) ActivePreview(runID, nodeID string) (*mcp.PreviewPort, error) {
+	return s.findPreview(s.db.Where("run_id = ? AND node_id = ?", runID, nodeID))
+}
+
+// ActivePreviewForSandbox returns the sandbox's registration, whichever
+// run/node owns it, or nil when none.
+func (s *PreviewService) ActivePreviewForSandbox(sandboxName string) (*mcp.PreviewPort, error) {
+	if strings.TrimSpace(sandboxName) == "" {
+		return nil, nil
+	}
+	return s.findPreview(s.db.Where("sandbox_name = ?", sandboxName))
+}
+
+// GetPreviewPort returns the run/node's registration when it serves port.
+func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.PreviewPort, bool) {
+	rec, err := s.findPreview(s.db.Where("run_id = ? AND node_id = ? AND port = ?", runID, nodeID, port))
+	return rec, err == nil && rec != nil
+}
+
+func (s *PreviewService) findPreview(q *gorm.DB) (*mcp.PreviewPort, error) {
+	var row models.RunPreviewPort
+	err := q.First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	out := make([]mcp.PreviewPort, 0, len(rows))
-	for _, r := range rows {
-		kind := strings.TrimSpace(r.Kind)
-		if kind == "" {
-			if strings.TrimSpace(r.ExternalURL) != "" {
-				kind = mcp.PreviewKindURL
-			} else {
-				kind = mcp.PreviewKindPort
-			}
-		}
-		out = append(out, mcp.PreviewPort{
-			RunID: r.RunID, NodeID: r.NodeID, Kind: kind,
-			Port: r.Port, URL: r.ExternalURL, Label: r.Label,
-			ProxyURL: storedPreviewProxyURL(r, kind), SandboxName: r.SandboxName, Host: r.Host, InjectorPort: r.InjectorPort, Healthy: r.Healthy,
-			KeepalivePID: r.KeepalivePID, RegisteredAt: r.RegisteredAt,
-		})
-	}
-	return out, nil
-}
-
-func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.PreviewPort, bool) {
-	var row models.RunPreviewPort
-	if err := s.db.Where("run_id = ? AND node_id = ? AND port = ?", runID, nodeID, port).First(&row).Error; err != nil {
-		return nil, false
-	}
-	rec := mcp.PreviewPort{
+	return &mcp.PreviewPort{
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind,
 		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
-		ProxyURL: storedPreviewProxyURL(row, row.Kind), SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
+		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
 		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
-	}
-	return &rec, true
-}
-
-// ActivePreviewForSandbox returns the newest active registration for a shared
-// sandbox, including registrations owned by a previous workflow node.
-func (s *PreviewService) ActivePreviewForSandbox(sandboxName string) (*mcp.PreviewPort, bool) {
-	var row models.RunPreviewPort
-	if s.db == nil || strings.TrimSpace(sandboxName) == "" || s.db.Where("sandbox_name = ?", sandboxName).
-		Order("registered_at desc").First(&row).Error != nil {
-		return nil, false
-	}
-	kind := strings.TrimSpace(row.Kind)
-	if kind == "" {
-		if strings.TrimSpace(row.ExternalURL) != "" {
-			kind = mcp.PreviewKindURL
-		} else {
-			kind = mcp.PreviewKindPort
-		}
-	}
-	rec := mcp.PreviewPort{
-		RunID: row.RunID, NodeID: row.NodeID, Kind: kind,
-		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
-		ProxyURL: storedPreviewProxyURL(row, kind), SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
-		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
-	}
-	return &rec, true
-}
-
-// storedPreviewProxyURL serves port registrations through the path proxy.
-func storedPreviewProxyURL(row models.RunPreviewPort, kind string) string {
-	if kind == mcp.PreviewKindURL || row.Port <= 0 {
-		return row.ProxyURL
-	}
-	return fmt.Sprintf("/preview/%s/%s/%d/", row.RunID, row.NodeID, row.Port)
+	}, nil
 }
 
 func (s *PreviewService) UpdatePreviewHealth(runID, nodeID string, port int, healthy bool) error {

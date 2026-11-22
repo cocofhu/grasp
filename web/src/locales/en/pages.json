@@ -2227,7 +2227,7 @@
       },
       "loading": "Loading preview…",
       "noPorts": "The Agent's sandbox has not started yet; no desktop to watch",
-      "loadFailed": "Failed to load preview ports. Retry available.",
+      "loadFailed": "Failed to load the preview. Retry available.",
       "sandboxRecycled": "Sandbox recycled; preview unavailable",
       "directOpenTab": "Open in new tab",
       "directOpenTabShort": "Open directly in new tab",

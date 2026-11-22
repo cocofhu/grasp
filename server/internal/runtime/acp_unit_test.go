@@ -154,12 +154,12 @@ func TestProviderWiringAndAbort(t *testing.T) {
 }
 
 // TestAbortRunRetiresWhenPreviewKeepalivePID ensures Cancel of the production
-// agent turn consults ListPreviewKeepalivePIDs and retires (keeps container)
+// agent turn consults PreviewKeepalivePID and retires (keeps container)
 // instead of Destroy — so setsid-detached preview survives session end.
 func TestAbortRunRetiresWhenPreviewKeepalivePID(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	host.PutPreviewPortForTest("runKeep", "nodeP", 8080, "web")
-	if pids := host.ListPreviewKeepalivePIDs("runKeep", "nodeP"); len(pids) == 0 {
+	if host.PreviewKeepalivePID("runKeep", "nodeP") == 0 {
 		t.Fatal("PutPreviewPortForTest must register keepalive pid for whitelist")
 	}
 

@@ -29,20 +29,17 @@ type embedTicketResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-// directPreviewOrigins returns the active direct preview origin. Only this
-// page may frame the chat drawer.
-func (h *Handlers) directPreviewOrigins(runID, nodeID string) []string {
+// directPreviewOrigin returns the active direct preview origin ("" when none).
+// Only this page may frame the chat drawer.
+func (h *Handlers) directPreviewOrigin(runID, nodeID string) string {
 	if h.MCP == nil {
-		return nil
+		return ""
 	}
-	ports := h.MCP.ListPreviewPorts(runID, nodeID)
-	if len(ports) == 0 || ports[0].Mode != "direct" {
-		return nil
+	p, ok := h.MCP.ActivePreview(runID, nodeID)
+	if !ok || p.Mode != "direct" {
+		return ""
 	}
-	if origin := originOf(ports[0].DirectURL); origin != "" {
-		return []string{origin}
-	}
-	return nil
+	return originOf(p.DirectURL)
 }
 
 func originOf(raw string) string {
@@ -74,7 +71,7 @@ func (h *Handlers) embedTargetReady(runID, nodeID string) (int, string) {
 	if n == nil || !models.PreviewCapableNode(n.Caps) || !services.IsShareableReviewSession(n) {
 		return http.StatusBadRequest, "node has no preview chat"
 	}
-	if len(h.directPreviewOrigins(runID, nodeID)) == 0 {
+	if h.directPreviewOrigin(runID, nodeID) == "" {
 		return http.StatusConflict, "no direct preview"
 	}
 	return 0, ""
@@ -166,7 +163,7 @@ func (h *Handlers) PublicEmbedTicket(c *gin.Context) {
 		return
 	}
 	runID, nodeID := lookup.Link.RunID, lookup.Link.NodeID
-	if len(h.directPreviewOrigins(runID, nodeID)) == 0 {
+	if h.directPreviewOrigin(runID, nodeID) == "" {
 		c.JSON(http.StatusConflict, gin.H{"error": "no direct preview"})
 		return
 	}
@@ -248,25 +245,21 @@ func (h *Handlers) RedeemEmbedSession(c *gin.Context) {
 // GET /embed/runs/:runId/nodes/:nodeId/demo
 func (h *Handlers) EmbedChatPage(c *gin.Context) {
 	ancestors := "'none'"
-	if origins := h.directPreviewOrigins(c.Param("runId"), c.Param("nodeId")); len(origins) > 0 {
+	if origin := h.directPreviewOrigin(c.Param("runId"), c.Param("nodeId")); origin != "" {
+		ancestors = origin
 		// The launcher substitutes the Grasp hostname when a preview port is
 		// published on loopback and Grasp is reached from another machine.
 		page, _ := url.Parse("http://" + c.Request.Host)
-		if page != nil && page.Hostname() != "" && !loopbackPreviewHost(page.Hostname()) {
-			for _, o := range origins {
-				u, _ := url.Parse(o)
-				if loopbackPreviewHost(u.Hostname()) {
-					host := page.Hostname()
-					if port := u.Port(); port != "" {
-						host = net.JoinHostPort(host, port)
-					} else if strings.Contains(host, ":") {
-						host = "[" + host + "]"
-					}
-					origins = append(origins, u.Scheme+"://"+host)
-				}
+		u, _ := url.Parse(origin)
+		if page != nil && page.Hostname() != "" && !loopbackPreviewHost(page.Hostname()) && loopbackPreviewHost(u.Hostname()) {
+			host := page.Hostname()
+			if port := u.Port(); port != "" {
+				host = net.JoinHostPort(host, port)
+			} else if strings.Contains(host, ":") {
+				host = "[" + host + "]"
 			}
+			ancestors += " " + u.Scheme + "://" + host
 		}
-		ancestors = strings.Join(origins, " ")
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("Referrer-Policy", "no-referrer")

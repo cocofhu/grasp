@@ -36,7 +36,7 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 	if _, err := hn.host.WriteArtifact(runID, token, "solo", "demo.html", "<p>demo</p>", "html"); err != nil {
 		t.Fatal(err)
 	}
-	if err := preview.ReplacePreviewPort(mcp.PreviewPort{RunID: runID, NodeID: "solo", Port: 8899, Healthy: true}); err != nil {
+	if err := preview.ReplacePreview(mcp.PreviewPort{RunID: runID, NodeID: "solo", Port: 8899, Healthy: true}); err != nil {
 		t.Fatal(err)
 	}
 	hn.host.PutPreviewPortForTest(runID, "solo", 5173, "second app")
@@ -63,13 +63,13 @@ func TestSoloResourcesUseCurrentOwnedSandbox(t *testing.T) {
 		RunID           string
 		PreviewArtifact string
 		Artifacts       []models.Artifact
-		Ports           []mcp.PreviewPort
+		Preview         *mcp.PreviewPort
 	}
 	res := hn.do(http.MethodGet, path, nil)
 	if err := json.Unmarshal(res.Body.Bytes(), &resources); err != nil || res.Code != http.StatusOK ||
 		resources.RunID != runID || resources.PreviewArtifact != "demo.html" ||
 		len(resources.Artifacts) != 1 || resources.Artifacts[0].Name != "demo.html" ||
-		len(resources.Ports) != 1 || resources.Ports[0].Port != 5173 {
+		resources.Preview == nil || resources.Preview.Port != 5173 {
 		t.Fatalf("resources: %d %s (%v)", res.Code, res.Body, err)
 	}
 

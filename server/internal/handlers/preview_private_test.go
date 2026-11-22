@@ -30,9 +30,9 @@ func seedPrivatePathPreview(t *testing.T, hn *harness, upstream string) {
 		"18080": strings.TrimPrefix(upstream, "http://"),
 		"5174":  "127.0.0.1:1",
 	})
-	if err := preview.ReplacePreviewPort(mcp.PreviewPort{
+	if err := preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "private-run", NodeID: "app", Kind: mcp.PreviewKindPort, Port: 5174,
-		ProxyURL: "https://0123456789abcdef.preview.example.net/", Host: "http://127.0.0.1:9", InjectorPort: 18080,
+		ProxyURL: "/preview/private-run/app/5174/", Host: "http://127.0.0.1:9", InjectorPort: 18080,
 		SandboxName: row.Name, Healthy: true, RegisteredAt: time.Now(),
 	}); err != nil {
 		t.Fatal(err)
@@ -54,9 +54,9 @@ func TestPrivatePathPreviewStripsProviderHeadersAndChecksUpstream(t *testing.T) 
 	t.Cleanup(up.Close)
 	seedPrivatePathPreview(t, hn, up.URL)
 
-	ports := hn.host.ListPreviewPorts("private-run", "app")
-	if len(ports) != 1 || ports[0].ProxyURL != "/preview/private-run/app/5174/" || ports[0].DirectURL != "" {
-		t.Fatalf("stored subdomain URL not served by the path proxy: %+v", ports)
+	active, ok := hn.host.ActivePreview("private-run", "app")
+	if !ok || active.ProxyURL != "/preview/private-run/app/5174/" || active.DirectURL != "" {
+		t.Fatalf("private preview must be served by the path proxy only: %+v", active)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/preview/private-run/app/5174/api/x", nil)

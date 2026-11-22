@@ -111,7 +111,7 @@ describe('PublicGateApproval react artifact stage', () => {
     expect(viewSrc).toMatch(/loadPublicArtifacts/)
     expect(viewSrc).toMatch(/publicGateApi\.artifacts/)
     expect(viewSrc).toMatch(
-      /:remote-kind="productKind === 'app' \|\| appPreviewPorts.length \? 'public' : 'off'"/,
+      /:remote-kind="productKind === 'app' \|\| appPreview \? 'public' : 'off'"/,
     )
     expect(viewSrc).toMatch(/data-testid="public-gate-stage"/)
   })

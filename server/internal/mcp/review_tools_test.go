@@ -39,7 +39,7 @@ func TestReviewPhaseKeepsDeclaredToolset(t *testing.T) {
 			}
 		}
 	}
-	if got := h.ListPreviewPorts("r1", "impl"); len(got) != 1 || got[0].URL != "https://example.com" {
+	if got, ok := h.ActivePreview("r1", "impl"); !ok || got.URL != "https://example.com" {
 		t.Fatalf("preview not registered on the review node: %+v", got)
 	}
 }
