@@ -402,10 +402,10 @@ onBeforeUnmount(() => {
         </div>
         <SlidingTabs
           :value="activeFilter"
-          class="flex w-fit items-center gap-0.5"
+          class="flex w-fit items-center gap-1 rounded-lg bg-elevated p-1"
           role="tablist"
           :aria-label="t('pages.sandboxes.filters.label')"
-          indicator-class="bg-transparent shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]"
+          indicator-class="rounded-md bg-surface shadow-sm"
         >
           <button
             v-for="filter in sandboxFilters"
