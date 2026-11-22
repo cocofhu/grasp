@@ -12,6 +12,8 @@ All notable public-release changes are documented here.
 
 - 停止 Claude Code 的回合后，用量统计不再把同一条模型回复重复计入：此前一条回复同时包含文字和工具调用时，输入和缓存 token 会按内容块数翻倍。需要沙箱运行时更新后生效。
 
+- Grok 和 Antigravity 的回合开始显示 token 用量，停止的回合也保留已产生的用量。Antigravity 改用常驻会话（`agy acp`），能看到工具调用和权限请求、接回原会话，模型和思考强度按会话设置；`agy` 返回执行错误时回合标为失败，不再当作正常回复。需要 `agy` 1.5 及以上和沙箱运行时更新后生效。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。

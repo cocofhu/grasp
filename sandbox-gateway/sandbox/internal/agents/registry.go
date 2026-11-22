@@ -17,7 +17,6 @@ import (
 	"backend/internal/envutil"
 	"backend/internal/provider"
 	"backend/internal/provider/acpx"
-	"backend/internal/provider/antigravity"
 	"backend/internal/provider/codex"
 	"backend/internal/provider/copilot"
 	"backend/internal/provider/deepseek"
@@ -39,12 +38,12 @@ type Name = provider.Name
 //     codebuddy / gemini. Fresh subprocess each turn; multi-turn continuity via
 //     a resume pointer. These are the primary transports.
 //   - run --format json (one-shot NDJSON): deveco.
-//   - json event lines (one-shot): copilot / openclaw / antigravity.
+//   - json event lines (one-shot): copilot / openclaw.
 //   - app-server (long-lived, JSON-RPC over stdio): codex.
 //   - serve (long-lived, HTTP + event stream): opencode.
 //   - rpc (long-lived, JSON lines over stdio): pi.
 //   - ACP (long-lived, JSON-RPC over stdio): kimi / hermes / kiro / qoder /
-//     grok / trae — these CLIs are ACP-native, so a persistent process is the
+//     grok / trae / antigravity — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
 var registry = map[Name]provider.Provider{
 	// --- stream-json family (one-shot; primary) ----------------------------
@@ -151,16 +150,6 @@ var registry = map[Name]provider.Provider{
 		ConfigRoot: "/root/.pi",
 		AuthEnvFn:  genericAuthEnv("ANTHROPIC_API_KEY", "ACP_PI_API_KEY", "PI_API_KEY"),
 	}),
-	// antigravity: `agy -p <prompt> --dangerously-skip-permissions`. Plain-text
-	// stdout; the conversation id (resume pointer) is recovered from a
-	// --log-file the engine allocates.
-	provider.Antigravity: antigravity.New(antigravity.Config{
-		AgentName:  provider.Antigravity,
-		Bin:        "agy",
-		Runtime:    "antigravity-text",
-		ConfigRoot: "/root/.antigravity",
-		AuthEnvFn:  genericAuthEnv("GEMINI_API_KEY", "ANTIGRAVITY_API_KEY", "GOOGLE_API_KEY"),
-	}),
 	// openclaw: `openclaw agent --local --json --session-id <id> --message
 	// <prompt>`. Emits a single pretty-printed JSON result document (payloads +
 	// meta); parsed whole-buffer by the dedicated openclaw codec.
@@ -179,7 +168,8 @@ var registry = map[Name]provider.Provider{
 	provider.Hermes:          acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
 	provider.Kiro:            acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
 	provider.Qoder:           acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),
-	provider.Grok:            acpSpec(provider.Grok, "grok-acp", "/root/.grok", []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}, "XAI_API_KEY"),
+	provider.Grok:            grokProvider(),
+	provider.Antigravity:     antigravityProvider(),
 }
 
 // acpSpec builds a long-lived ACP provider for a CLI without a bespoke backend
@@ -194,6 +184,46 @@ func acpSpec(name provider.Name, runtime, configRoot string, argv []string, apiK
 			return append([]string(nil), argv...)
 		},
 		AuthEnvFn: genericAuthEnv(apiKeyVar, "ACP_"+strings.ToUpper(string(name))+"_API_KEY"),
+	})
+}
+
+// grok: `grok agent stdio`. The session/prompt result's _meta.usage carries
+// the turn's per-model counters (verified grok 1.0.92).
+func grokProvider() provider.Provider {
+	return acpx.New(acpx.Spec{
+		AgentName:  provider.Grok,
+		Runtime:    "grok-acp",
+		ConfigRoot: "/root/.grok",
+		ArgvFn: func(string) []string {
+			return []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}
+		},
+		AuthEnvFn:   genericAuthEnv("XAI_API_KEY", "ACP_GROK_API_KEY"),
+		ResultUsage: true,
+	})
+}
+
+// antigravity: `agy acp`. It refuses session/new until authenticate names a
+// method; a Gemini key selects gemini-api-key, otherwise the stored Google
+// login. Model and thought level are session config options. Model API
+// failures arrive as reply text on an end_turn result (verified agy 1.5.14).
+func antigravityProvider() provider.Provider {
+	return acpx.New(acpx.Spec{
+		AgentName:  provider.Antigravity,
+		Runtime:    "antigravity-acp",
+		ConfigRoot: "/root/.antigravity",
+		ArgvFn:     func(string) []string { return []string{"agy", "acp"} },
+		AuthEnvFn:  genericAuthEnv("GEMINI_API_KEY", "ANTIGRAVITY_API_KEY", "GOOGLE_API_KEY"),
+		AuthMethodFn: func(env []string) string {
+			if envutil.Get(env, "GEMINI_API_KEY") != "" {
+				return "gemini-api-key"
+			}
+			return "oauth-personal"
+		},
+		ResultUsage: true,
+		ConfigModel: true,
+		FailureText: func(text string) bool {
+			return strings.HasPrefix(strings.TrimSpace(text), "⚠ agent executor error:")
+		},
 	})
 }
 

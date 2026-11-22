@@ -19,6 +19,12 @@ type session struct {
 	p           *acp.Panel
 	cleanup     func()
 	cleanupOnce sync.Once
+	// failed is set by the event filter when the agent reported, as text,
+	// that the turn failed.
+	failed *turnFailure
+
+	mu         sync.Mutex
+	cumulative map[string]provider.TokenUsage
 }
 
 // Wrap adapts an ACP panel into a provider.Session.
@@ -53,13 +59,33 @@ func (s *session) Info() provider.AgentInfo {
 }
 
 func (s *session) Prompt(ctx context.Context, text string, images []provider.PromptImage) (provider.TurnResult, error) {
-	stopReason, err := s.p.Prompt(ctx, text, images)
-	return provider.TurnResult{StopReason: stopReason}, err
+	if s.failed != nil {
+		s.failed.reset()
+	}
+	res, err := s.p.PromptTurn(ctx, text, images)
+	out := provider.TurnResult{StopReason: res.StopReason, Usage: res.Usage, UsagePartial: err != nil && len(res.Usage) > 0}
+	if err == nil && s.failed != nil && s.failed.seen() {
+		out.StopReason = "failed"
+	}
+	if len(res.Usage) > 0 {
+		s.mu.Lock()
+		if s.cumulative == nil {
+			s.cumulative = map[string]provider.TokenUsage{}
+		}
+		provider.AddUsage(s.cumulative, res.Usage)
+		s.mu.Unlock()
+	}
+	return out, err
 }
 
-// The ACP transport does not currently surface token usage.
-func (s *session) ReportsUsage() bool                              { return false }
-func (s *session) CumulativeUsage() map[string]provider.TokenUsage { return nil }
+// ReportsUsage is true for agents whose prompt result carries turn usage.
+func (s *session) ReportsUsage() bool { return s.p.ReportsUsage() }
+
+func (s *session) CumulativeUsage() map[string]provider.TokenUsage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return provider.CopyUsage(s.cumulative)
+}
 
 // Capabilities: ACP has no mid-turn input; resume depends on the agent.
 func (s *session) Capabilities() provider.Capabilities {

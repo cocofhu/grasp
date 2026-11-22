@@ -137,6 +137,33 @@ install_kimi() {
   log "已钉住 kimi ${ver}，实际 $(kimi --version)"
 }
 
+# Antigravity CLI: Google's auto-updater manifest names the release tarball
+# and its sha512. The backend drives `agy acp`, which needs 1.5 or later.
+install_antigravity() {
+  local base="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests"
+  local target manifest url sha dir="/opt/antigravity"
+  case "$(uname -m)" in
+    x86_64|amd64) target=linux_amd64 ;;
+    aarch64|arm64) target=linux_arm64 ;;
+    *) log "错误：antigravity 不支持架构 $(uname -m)"; return 1 ;;
+  esac
+  manifest="$(curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 60 "$base/$target.json")"
+  url="$(printf '%s' "$manifest" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).url))')"
+  sha="$(printf '%s' "$manifest" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).sha512))')"
+  case "$url" in
+    https://storage.googleapis.com/antigravity-public/antigravity-cli/*) ;;
+    *) log "错误：antigravity 清单给出的下载地址不可信：$url"; return 1 ;;
+  esac
+  curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 900 "$url" -o /tmp/antigravity.tgz
+  echo "$sha  /tmp/antigravity.tgz" | sha512sum -c - >/dev/null || { log "错误：antigravity 下载校验失败"; rm -f /tmp/antigravity.tgz; return 1; }
+  rm -rf "$dir" && mkdir -p "$dir"
+  tar -C "$dir" -xzf /tmp/antigravity.tgz
+  rm -f /tmp/antigravity.tgz
+  chmod +x "$dir/antigravity"
+  ln -sf "$dir/antigravity" /usr/local/bin/agy
+  agy --version
+}
+
 install_one() {
   local provider="$1"
   log "安装 provider=$provider"
@@ -162,7 +189,9 @@ install_one() {
       npm_global @google/gemini-cli && gemini --version ;;
     copilot)
       npm_global @github/copilot && copilot --version ;;
-    kiro|qoder|grok|kimi|hermes|deveco|openclaw|antigravity|pi)
+    antigravity)
+      install_antigravity ;;
+    kiro|qoder|grok|kimi|hermes|deveco|openclaw|pi)
       log "错误：provider=$provider 暂无内置安装方式。"
       log "请通过 --build-arg AGENT_INSTALL_CMD='<安装命令>' 提供其官方安装步骤后再构建。"
       return 1 ;;
