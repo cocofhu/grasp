@@ -22,6 +22,7 @@ type turnAccumulator struct {
 	input *turnInput
 
 	usage               map[string]provider.TokenUsage
+	messageUsage        map[string]map[string]provider.TokenUsage
 	usagePartial        bool
 	usageIsSessionTotal bool
 	tracksSessionUsage  bool
@@ -64,11 +65,21 @@ func (a *turnAccumulator) apply(pr ParseResult) {
 			a.usagePartial = true
 		} else {
 			a.usage = make(map[string]provider.TokenUsage, len(pr.Usage))
+			a.messageUsage = nil
 			a.usagePartial = pr.UsagePartial
 			a.usageIsSessionTotal = pr.UsageIsSessionTotal
 		}
 	} else if len(pr.Usage) > 0 {
 		a.usagePartial = a.usagePartial || pr.UsagePartial
+		if id := pr.UsageMessageID; id != "" {
+			for model, prev := range a.messageUsage[id] {
+				a.usage[model] = minusUsage(a.usage[model], prev)
+			}
+			if a.messageUsage == nil {
+				a.messageUsage = map[string]map[string]provider.TokenUsage{}
+			}
+			a.messageUsage[id] = provider.CopyUsage(pr.Usage)
+		}
 	}
 	provider.AddUsage(a.usage, pr.Usage)
 	for _, m := range pr.Msgs {
