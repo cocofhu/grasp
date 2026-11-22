@@ -57,6 +57,7 @@ export type DialogueState = {
   turns: DialogueTurn[]
   orphan?: DialogueOrphan | null
   busy: boolean
+  steerable?: boolean
   done: boolean
   observe?: boolean
 }
@@ -94,17 +95,21 @@ type ApplyResult = {
  */
 export function applyFrame(cur: DialogueState | null, frame: DialogueState): ApplyResult {
   if (cur && !versionLess(cur, frame)) return { state: cur, resync: false, applied: false }
-  if (frame.mode !== 'tail') return { state: asFull(frame, frame.rows), resync: false, applied: true }
+  if (frame.mode !== 'tail') return { state: asFull(frame, frame.rows, cur?.steerable), resync: false, applied: true }
   const n = frame.prefixLen ?? 0
   if (!cur || cur.iteration !== frame.iteration || cur.rows.length < n || prefixDigest(cur.rows.slice(0, n)) !== frame.prefixDigest) {
     return { state: cur, resync: true, applied: false }
   }
-  return { state: asFull(frame, [...cur.rows.slice(0, n), ...frame.rows]), resync: false, applied: true }
+  return { state: asFull(frame, [...cur.rows.slice(0, n), ...frame.rows], cur.steerable), resync: false, applied: true }
 }
 
-function asFull(frame: DialogueState, rows: DialogueRow[]): DialogueState {
+function asFull(frame: DialogueState, rows: DialogueRow[], previousSteerable?: boolean): DialogueState {
   const { prefixLen: _len, prefixDigest: _digest, ...rest } = frame
-  return { ...rest, mode: 'full', rows }
+  const out: DialogueState = { ...rest, mode: 'full', rows }
+  if (frame.steerable !== undefined || previousSteerable === true) {
+    out.steerable = frame.steerable ?? previousSteerable
+  }
+  return out
 }
 
 /** A send accepted on this page that the server state does not show yet. */
@@ -157,6 +162,7 @@ export type DialogueView = {
   streamingIndex: number
   orphan: DialogueOrphan | null
   busy: boolean
+  steerable: boolean
   done: boolean
   observe: boolean
   iteration: number
@@ -221,6 +227,7 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
     streamingIndex,
     orphan: state?.orphan ?? null,
     busy,
+    steerable: !!state?.steerable,
     done: !!state?.done,
     observe: !!state?.observe,
     iteration: state?.iteration ?? 0,

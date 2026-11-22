@@ -1139,6 +1139,7 @@ let reactQueueToastTimer = 0
 const reactThinking = ref(false)
 /** True between turn_begin and turn_done/error (mirrors ClarifyChat liveAgentIdx). */
 const reactInFlight = ref(false)
+const reactSteerable = ref(false)
 /** Queue ids whose steer request is still pending; repeat clicks are ignored. */
 const reactSteering = new Set<string>()
 const reactStreamText = ref('')
@@ -1526,6 +1527,7 @@ function applyReviewFrame(frame: {
   waiting?: number
   items?: SessionFrameItem[]
   busy?: boolean
+  sandboxSteerable?: boolean
   activeItem?: SessionFrameItem | null
 }) {
   const producer = props.gate.reactUpstreamNodeId
@@ -1535,6 +1537,7 @@ function applyReviewFrame(frame: {
     return
   }
   if (!reviewStateCursor.accept(frame)) return
+  if (typeof frame.sandboxSteerable === 'boolean') reactSteerable.value = frame.sandboxSteerable
   switch (frame.event) {
     case 'request_rejected':
       reactError.value = frame.message || reactError.value
@@ -1672,6 +1675,7 @@ async function cancelReactRevise() {
   reactQueued.value = []
   reactTurns.value = reactTurns.value.filter(turn => turn.status !== 'pending')
   reactThinking.value = false
+  reactSteerable.value = false
   reactInFlight.value = false
   reactInterrupted.value = true
   reactStreamCompletedAt.value = null
@@ -2073,6 +2077,7 @@ provide(gateApprovalKey, {
     editReactQueuedItem,
     reactThinking,
     reactInFlight,
+    reactSteerable,
     reactStreamText,
     reactTranscriptTurns,
     reactStreamThought,

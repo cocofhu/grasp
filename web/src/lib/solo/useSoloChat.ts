@@ -78,6 +78,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     return [...ranked, ...server.filter((item) => !rank.has(item.id)), ...queued.value.filter((item) => item.local)]
   })
   const busy = ref(false)
+  const steerable = ref(false)
   const sessionStateCursor = createReviewStateCursor()
   const phase = ref<SoloPhase>('')
   const link = ref<SoloLink>('idle')
@@ -169,6 +170,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     const preserveSelection = pendingSettings > 0 && session.value
     const next = preserveSelection ? { ...v, ...modelSettings(session.value!) } : v
     session.value = next
+    steerable.value = next.steerable === true
     if (!preserveSelection) confirmedSettings = modelSettings(v)
     sessions.upsert(next)
     schedulePoll()
@@ -192,6 +194,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (typeof frame.serviceTier === 'string') patch.serviceTier = frame.serviceTier
     if (Array.isArray(frame.serviceTiers)) patch.serviceTiers = frame.serviceTiers.filter((tier: unknown): tier is string => typeof tier === 'string')
     if (typeof frame.modelNotice === 'string') patch.modelNotice = frame.modelNotice
+    if (typeof frame.steerable === 'boolean') patch.steerable = frame.steerable
     if (!Object.keys(patch).length) return
     patchSession(patch)
     // Invalidate getSoloSession calls that started before this subscribe snapshot.
@@ -207,6 +210,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     if (!cur) return
     const next = { ...cur, ...patch }
     session.value = next
+    if (typeof patch.steerable === 'boolean') steerable.value = patch.steerable
     sessions.upsert(next)
   }
 
@@ -671,6 +675,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         queued.value = [...serverItems, ...locals]
         orderOverlay.value = null
         busy.value = !!frame.busy
+        if (typeof frame.steerable === 'boolean') steerable.value = frame.steerable
         patchSession({ busy: busy.value, waiting: queued.value.length })
         if (subscriptionSnapshot) applyResumeSnapshot(frame)
         applyExecution(frame)
@@ -1198,6 +1203,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     queued,
     displayQueued,
     busy,
+    steerable,
     phase,
     link,
     loading,

@@ -75,6 +75,15 @@ func (e *Engine) SandboxBridgeState(runID, nodeID string) (runtime.BridgeStatus,
 	return insp.SessionBridgeState(runID, nodeID)
 }
 
+// VisitorSandboxBridgeState exposes the bridge view for one share-link lane.
+func (e *Engine) VisitorSandboxBridgeState(runID, nodeID, lane string) (runtime.BridgeStatus, bool) {
+	insp, ok := e.provider.(runtime.VisitorSessionBridgeInspector)
+	if !ok {
+		return runtime.BridgeStatus{}, false
+	}
+	return insp.VisitorSessionBridgeState(runID, nodeID, lane)
+}
+
 // attachSandboxState copies the bridge's own busy view onto a review frame so
 // the dialogue UI can show an orphan-turn banner when the platform FIFO is idle.
 func (e *Engine) attachSandboxState(runID, nodeID string, payload map[string]any) {
@@ -90,6 +99,7 @@ func (e *Engine) attachSandboxState(runID, nodeID string, payload map[string]any
 	}
 	payload["sandboxBusy"] = st.Busy
 	payload["sandboxDesynced"] = st.Desynced
+	payload["sandboxSteerable"] = st.Steerable
 	payload["sandboxWaiting"] = st.Waiting
 	if st.RunningOpID != "" {
 		payload["sandboxRunningOpId"] = st.RunningOpID

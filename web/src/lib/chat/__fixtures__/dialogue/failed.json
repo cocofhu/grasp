@@ -45,6 +45,7 @@
         }
       ],
       "busy": true,
+      "steerable": false,
       "done": false
     },
     {
@@ -80,6 +81,7 @@
         }
       ],
       "busy": false,
+      "steerable": false,
       "done": false
     }
   ],
@@ -123,6 +125,7 @@
       }
     ],
     "busy": false,
+    "steerable": false,
     "done": false
   }
 }

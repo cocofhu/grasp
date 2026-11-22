@@ -16,7 +16,7 @@ import (
 var publicDialogueKeys = map[string]bool{
 	// state
 	"type": true, "nodeId": true, "iteration": true, "epoch": true, "seq": true, "mode": true,
-	"rows": true, "turns": true, "orphan": true, "busy": true, "done": true, "observe": true, "desynced": true,
+	"rows": true, "turns": true, "orphan": true, "busy": true, "steerable": true, "done": true, "observe": true, "desynced": true,
 	// gateshare.PreviewTurn / PreviewActiveItem / PreviewImage / PreviewAnnotation
 	"role": true, "text": true, "at": true, "interrupted": true, "images": true, "annotations": true,
 	"questions": true, "forms": true, "narration": true, "live": true, "tools": true, "parts": true,
