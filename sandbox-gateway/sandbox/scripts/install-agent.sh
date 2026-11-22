@@ -36,29 +36,14 @@ curl_install() {
   retry 3 bash -o pipefail -c "curl -fsSL --connect-timeout 20 --max-time 120 '$1' | $2"
 }
 
+# Cursor 走 @cursor/sdk：Dockerfile 把锁定版本的 package.json / package-lock.json 放进
+# /opt/grasp/cursor-sdk，这里按锁文件安装（含 linux 原生包），再确认能加载。
 install_cursor() {
-  # 官方 install.sh 无重试/无超时且会吞掉失败；改为解析版本→带重试下载解压→建软链→校验。
-  local ok=0 script ver url dest
-  for i in 1 2 3 4 5; do
-    script="$(curl -fsSL --connect-timeout 20 --max-time 60 https://cursor.com/install || true)"
-    ver="$(printf '%s' "$script" | grep -oE 'lab/[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-f0-9]+/' | head -1 | sed -E 's#lab/(.+)/#\1#')"
-    if [ -n "$ver" ]; then
-      url="https://downloads.cursor.com/lab/${ver}/linux/x64/agent-cli-package.tar.gz"
-      dest="/root/.local/share/cursor-agent/versions/${ver}"
-      mkdir -p "$dest" /root/.local/bin
-      if curl -fSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 900 "$url" -o /tmp/agent.tgz \
-         && tar --strip-components=1 -xzf /tmp/agent.tgz -C "$dest"; then
-        rm -f /tmp/agent.tgz
-        ln -sf "$dest/cursor-agent" /root/.local/bin/agent
-        ln -sf "$dest/cursor-agent" /root/.local/bin/cursor-agent
-        ok=1; break
-      fi
-      rm -f /tmp/agent.tgz
-    fi
-    log "cursor-agent 安装第 $i 次失败，重试..."; sleep 10
-  done
-  [ "$ok" = 1 ]
-  cursor-agent --version
+  local dir="${GRASP_CURSOR_SDK_DIR:-/opt/grasp/cursor-sdk}"
+  [ -f "$dir/package-lock.json" ] || { log "错误：缺少 $dir/package-lock.json"; return 1; }
+  (cd "$dir" && retry 3 npm ci --omit=dev --no-audit --no-fund)
+  (cd "$dir" && node -e 'const s=require("@cursor/sdk");if(typeof s.Agent?.create!=="function")process.exit(1);console.log("@cursor/sdk "+JSON.parse(require("fs").readFileSync("node_modules/@cursor/sdk/package.json","utf8")).version)')
+  rm -rf /root/.npm
 }
 
 install_claude_native() {

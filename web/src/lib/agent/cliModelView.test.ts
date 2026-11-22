@@ -131,7 +131,8 @@ describe('formatting', () => {
   })
 
   it('previews the launch command per backend', () => {
-    expect(launchCommand('cursor', 'gpt-5')).toBe('cursor-agent --model gpt-5')
+    expect(launchCommand('cursor', 'gpt-5.5')).toBe('@cursor/sdk model=gpt-5.5')
+    expect(launchCommand('cursor', '')).toBe('@cursor/sdk')
     expect(launchCommand('codex', 'gpt-5-codex')).toBe('codex app-server -c model="gpt-5-codex"')
     expect(launchCommand('codex', '')).toBe('codex app-server')
     expect(launchCommand('claude_code', '')).toBe('claude')

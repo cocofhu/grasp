@@ -1,6 +1,6 @@
 # Grasp 后端(Go)
 
-有限状态机(FSM)编排引擎 + 按 run 隔离的 grasp-tool + 真实沙箱执行(cursor-agent)。
+有限状态机(FSM)编排引擎 + 按 run 隔离的 grasp-tool + 真实沙箱执行(各编码 Agent,默认 Cursor,经 `@cursor/sdk`)。
 
 ## 执行后端(ExecProvider)
 
@@ -62,7 +62,7 @@ Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
-| `cursor` | `cursor-agent -p --output-format stream-json` | `/root/.cursor` | `CURSOR_API_KEY` |
+| `cursor` | `@cursor/sdk` 本地 Agent（常驻，Node 桥接） | `/root/.cursor` | `CURSOR_API_KEY` |
 | `claude_code` | `claude -p --output-format stream-json` | `/root/.claude` | `ANTHROPIC_API_KEY` |
 | `codebuddy` | `codebuddy -p --output-format stream-json` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
@@ -313,7 +313,7 @@ GRASP_LIVE_MCP=1 GRASP_CURSOR_API_KEY=crsr_xxx \
 
 ### E2E(真实沙箱端到端)
 
-live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → ACP 驱动 cursor-agent → 按
+live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → 驱动沙箱里的 Cursor Agent → 按
 `produces` 契约取回产物。需要一个可达的 sandbox-gateway + Cursor API key,慢(分钟级),
 所以默认单测不跑。运行前先起好 sandbox-gateway(见其仓库 `start.sh`),再:
 

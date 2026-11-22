@@ -431,8 +431,9 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	return changed, nil
 }
 
-// resolveChatEffort keeps a saved level and otherwise prefers max, falling back
-// to the last advertised choice. Models without a list stay empty.
+// resolveChatEffort keeps a saved level and otherwise takes the tool's own
+// default for the model, then max, falling back to the last advertised
+// choice. Models without a list stay empty.
 func (s *SoloService) resolveChatEffort(ctx context.Context, row *models.SoloSession, model, effort string) string {
 	effort = strings.TrimSpace(effort)
 	if effort != "" || row == nil {
@@ -449,10 +450,30 @@ func (s *SoloService) resolveChatEffort(ctx context.Context, row *models.SoloSes
 	if len(choices) == 0 {
 		return ""
 	}
+	if def := s.toolDefaultEffort(agent, model); slices.Contains(choices, def) {
+		return def
+	}
 	if slices.Contains(choices, "max") {
 		return "max"
 	}
 	return choices[len(choices)-1]
+}
+
+// toolDefaultEffort is the level a platform tool runs the model at when its
+// catalog says; empty otherwise.
+func (s *SoloService) toolDefaultEffort(agent Agent, requestedModel string) string {
+	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" {
+		return ""
+	}
+	configuration, err := NewModelConfigurationService(s.db).Get(agent.ModelBinding.ConfigurationID)
+	if err != nil || configuration.Binding.Kind != "platform" {
+		return ""
+	}
+	id := strings.TrimSpace(requestedModel)
+	if id == "" {
+		id = strings.TrimSpace(configuration.Binding.ModelID)
+	}
+	return modelrouting.DefaultReasoningEffort(configuration.Backend, id)
 }
 
 func (s *SoloService) persistResolvedEffort(row *models.SoloSession, stored, resolved string) error {

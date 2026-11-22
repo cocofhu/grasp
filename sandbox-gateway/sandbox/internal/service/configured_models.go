@@ -108,11 +108,11 @@ func ReasoningEffortSelectable(model, effort string) bool {
 	return false
 }
 
-// ServiceTiers accepts only server-declared speed tiers for Codex. Other
-// adapters must never inherit this setting.
+// ServiceTiers accepts only server-declared speed tiers for the adapters that
+// apply them. Other adapters must never inherit this setting.
 func ServiceTiers(model string) []string {
 	model = strings.TrimSpace(model)
-	if model == "" || agents.Current().Name() != provider.Codex {
+	if model == "" || !appliesServiceTier(agents.Current().Name()) {
 		return nil
 	}
 	spec, configured, err := parseConfiguredModels()
@@ -134,9 +134,21 @@ func ServiceTierSelectable(model, tier string) bool {
 	return tier == "" || slices.Contains(ServiceTiers(model), tier)
 }
 
+func appliesServiceTier(backend provider.Name) bool {
+	return backend == provider.Codex || backend == provider.Cursor
+}
+
+func appliesReasoningEffort(backend provider.Name) bool {
+	switch backend {
+	case provider.Codex, provider.Cursor, provider.DeepSeekHarness, provider.OpenCode, provider.KimiCode:
+		return true
+	}
+	return false
+}
+
 func configuredReasoningOptions(model string) []string {
 	backend := agents.Current().Name()
-	if backend != provider.Codex && backend != provider.DeepSeekHarness && backend != provider.OpenCode && backend != provider.KimiCode {
+	if !appliesReasoningEffort(backend) {
 		return nil
 	}
 	spec, configured, err := parseConfiguredModels()
@@ -209,7 +221,7 @@ func projectConfiguredModels(spec []configuredModelSpec, catalog []AgentModel, c
 		id := strings.TrimSpace(item.ID)
 		vendor := strings.TrimSpace(item.Vendor)
 		var tiers []string
-		if id != "" && agents.Current().Name() == provider.Codex {
+		if id != "" && appliesServiceTier(agents.Current().Name()) {
 			tiers = append(tiers, item.ServiceTiers...)
 		}
 		if item.ReasoningDisabled {

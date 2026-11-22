@@ -11,7 +11,9 @@ export function listedEfforts(efforts?: readonly string[]): string[] {
   return [...new Set((efforts || []).map(value => value.trim()).filter(Boolean))]
 }
 
-export function defaultReasoningEffort(levels: readonly string[]): string {
+/** The coding tool's own level when it names a listed one, else max, else the last. */
+export function defaultReasoningEffort(levels: readonly string[], preferred = ''): string {
+  if (preferred && levels.includes(preferred)) return preferred
   return levels.includes('max') ? 'max' : levels.at(-1) || ''
 }
 
@@ -25,6 +27,8 @@ export interface ConfiguredModelChoice {
   unavailable: boolean
   /** Exact levels accepted by this model and its coding-tool adapter. */
   efforts?: string[]
+  /** The listed level the coding tool runs this model at by default. */
+  defaultEffort?: string
   /** Speed tiers beyond standard that this exact model accepts. */
   serviceTiers?: string[]
   configurationId?: string
@@ -103,9 +107,10 @@ export function configuredModelChoices(input: {
     const name = cli?.name || connection?.name || id
     const vendor = modelVendor(id, cli?.name || connection?.name, cli?.vendor || input.providerId || '')
     const known = !!cli || !!connection
-    const supportsEffort = input.backend === 'codex' || input.backend === 'deepseek_harness' || input.backend === 'kimi_code'
-    const declaredEfforts = input.backend === 'kimi_code' ? cli?.efforts : connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
-    const adapterEfforts = supportsEffort && (input.backend === 'kimi_code' || connection?.capabilities?.reasoning !== false) ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
+    const catalogOnly = input.backend === 'kimi_code' || input.backend === 'cursor'
+    const supportsEffort = catalogOnly || input.backend === 'codex' || input.backend === 'deepseek_harness'
+    const declaredEfforts = catalogOnly ? cli?.efforts : connection?.reasoningEfforts?.length ? connection.reasoningEfforts : input.backend === 'codex' ? cli?.efforts : undefined
+    const adapterEfforts = supportsEffort && (catalogOnly || connection?.capabilities?.reasoning !== false) ? [...new Set((declaredEfforts || []).map(value => value.trim()).filter(Boolean))] : []
     const catalogEfforts = input.backend === 'opencode' ? effortChoices(input.backend, binding.kind, input.providerId, input.baseUrl, id) : []
     const savedEffort = binding.toolSettings?.modelEfforts?.[id]?.trim() || ''
     const efforts = input.backend === 'opencode' && validEffortToken(savedEffort) && !catalogEfforts.includes(savedEffort) ? [] : input.backend === 'opencode' ? catalogEfforts : adapterEfforts
@@ -117,7 +122,8 @@ export function configuredModelChoices(input: {
       backend: !vendor,
       unavailable: input.catalogReady && !known,
       efforts,
-      ...(binding.kind === 'platform' && input.backend === 'codex' && cli?.id === id && cli.serviceTiers?.length ? { serviceTiers: [...cli.serviceTiers] } : {}),
+      ...(cli?.defaultEffort && efforts.includes(cli.defaultEffort) ? { defaultEffort: cli.defaultEffort } : {}),
+      ...(binding.kind === 'platform' && (input.backend === 'codex' || input.backend === 'cursor') && cli?.id === id && cli.serviceTiers?.length ? { serviceTiers: [...cli.serviceTiers] } : {}),
     })
   }
   return choices

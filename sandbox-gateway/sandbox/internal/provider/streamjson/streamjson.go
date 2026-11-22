@@ -1,9 +1,7 @@
 // Package streamjson implements the Anthropic-style "stream-json" NDJSON codec
 // (as emitted by `claude -p --output-format stream-json`). Each stdout line is a
-// JSON object describing an init / assistant / user / result event. cursor-agent
-// speaks the same dialect except that tools arrive as top-level tool_call
-// events (cursor_tool.go). The codec is transport-agnostic and driven by the
-// oneshot engine.
+// JSON object describing an init / assistant / user / result event. The codec
+// is transport-agnostic and driven by the oneshot engine.
 package streamjson
 
 import (
@@ -21,17 +19,14 @@ import (
 	"backend/internal/provider/oneshot"
 )
 
-// PromptMode selects how the user turn is delivered to the CLI. The three
-// shapes cover the observed stream-json CLIs: some take the prompt as the value
-// of the print flag (argv), some read it raw from stdin, and some read a
-// stream-json user message envelope from stdin.
+// PromptMode selects how the user turn is delivered to the CLI: some
+// stream-json CLIs take the prompt as the value of the print flag (argv),
+// others read a stream-json user message envelope from stdin.
 type PromptMode int
 
 const (
 	// PromptArg passes the prompt as the value of the print flag: `-p <prompt>`.
 	PromptArg PromptMode = iota
-	// PromptStdinRaw keeps `-p` standalone and feeds the prompt raw on stdin.
-	PromptStdinRaw
 	// PromptStdinJSON keeps `-p` standalone, adds `--input-format stream-json`,
 	// and feeds a `{"type":"user","message":{...}}` envelope on stdin. stdin
 	// stays open for the turn: further envelopes steer it, and
@@ -132,11 +127,6 @@ func (d *codec) StdinBytes(prompt string, images []provider.PromptImage) []byte 
 func (d *codec) AuthEnv(env []string) []string {
 	if d.c.AuthEnvFn != nil {
 		env = d.c.AuthEnvFn(env)
-	}
-	if d.c.AgentName == provider.Cursor {
-		if root := strings.TrimSpace(envutil.Get(env, "CONFIG_ROOT")); root != "" {
-			env = envutil.Upsert(env, "CURSOR_CONFIG_DIR", root)
-		}
 	}
 	return env
 }
@@ -342,7 +332,7 @@ type streamEvent struct {
 	Subtype    string               `json:"subtype"`
 	SessionID  string               `json:"session_id"`
 	Model      string               `json:"model"`
-	Text       string               `json:"text"` // top-level text (e.g. cursor's thinking deltas)
+	Text       string               `json:"text"` // top-level text (e.g. thinking deltas)
 	Message    *message             `json:"message"`
 	Usage      *wireUsage           `json:"usage"`
 	ModelUsage map[string]wireUsage `json:"modelUsage"`
@@ -394,9 +384,6 @@ func (d *codec) ParseLine(line []byte) oneshot.ParseResult {
 	}
 
 	switch ev.Type {
-	case "tool_call":
-		// cursor-agent reports tools as top-level events, not tool_use blocks.
-		res.Msgs = append(res.Msgs, parseCursorTool(line)...)
 	case "thinking":
 		// Some CLIs stream reasoning as top-level events with subtype
 		// delta/completed rather than as assistant content blocks.
@@ -515,7 +502,7 @@ func extractText(raw json.RawMessage) string {
 
 // ClaudeAuthEnv normalizes the Anthropic key aliases. It also caps how long
 // claude -p waits on background shells after its last turn (10m by default,
-// then it kills them) at SANDBOX_BG_TASK_GRACE, the limit cursor-agent gets;
+// then it kills them) at SANDBOX_BG_TASK_GRACE, the oneshot background grace;
 // an explicit CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS wins.
 func ClaudeAuthEnv(env []string) []string {
 	env = envutil.SetIfEmpty(env, "ANTHROPIC_API_KEY",

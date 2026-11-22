@@ -5,7 +5,7 @@ export const BACKEND_AUTH_HINTS: Record<
   BackendId,
   { key: string; note: string }
 > = {
-  cursor: { key: 'GRASP_CURSOR_API_KEY', note: 'Cursor ACP 鉴权' },
+  cursor: { key: 'GRASP_CURSOR_API_KEY', note: 'Cursor SDK 鉴权' },
   claude_code: {
     key: 'GRASP_CLAUDE_API_KEY',
     note: 'Claude Code ACP 鉴权',

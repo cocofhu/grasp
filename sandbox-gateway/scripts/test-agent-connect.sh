@@ -12,8 +12,9 @@
 #   host.docker.internal 访问。配置与平台一致：GRASP_OPENCODE_PROVIDER=custom、
 #   GRASP_OPENCODE_BASE_URL、OpenAI 兼容适配器写入 opencode.json，模型为 custom/ci-e2e。
 #   请求没打到替身、缺标记、stopReason 不是 end_turn 或超时，检查失败并打印容器日志。
-#   设置 CURSOR_API_KEY 时，额外对 cursor 跑一轮真实对话（回复里须含约定标记）。
-#   未设置则只跳过这条真实对话，不跳过 opencode 的 mock 对话。
+#   cursor 走 @cursor/sdk：打开会话需要账号的模型列表，只有设置 CURSOR_API_KEY 时才做
+#   握手并额外跑一轮真实对话（回复里须含约定标记）；否则只校验 SDK 可加载（仍能发现漏装）。
+#   未设置不影响 opencode 的 mock 对话。
 #   trae 的 ACP 服务启动前必须登录：只有设置 TRAECLI_PERSONAL_ACCESS_TOKEN 时才做握手，
 #   否则只校验 `traecli acp serve --help`（仍能发现漏装）。
 #   deepseek_harness 始终校验 dsh 版本与 ACP 握手；未设置 DEEPSEEK_API_KEY 时仅向容器
@@ -191,10 +192,10 @@ check_provider() {
   done
   log "provider=$provider: code-server 可访问（HTTP $code）"
 
-  # one-shot provider 的 connect 只查 PATH；这里确认二进制真能跑。
+  # 确认 Agent 的二进制或 SDK 真能跑。
   local probe
   case "$provider" in
-    cursor) probe="cursor-agent --version" ;;
+    cursor) probe="cd /opt/grasp/cursor-sdk && node -e 'if (typeof require(\"@cursor/sdk\").Agent?.create !== \"function\") process.exit(1)'" ;;
     claude_code) probe="claude --version" ;;
     codebuddy) probe="codebuddy --version" ;;
     opencode) probe="opencode --version" ;;
@@ -208,7 +209,9 @@ check_provider() {
     log "provider=$provider: \`$probe\` 正常"
   fi
 
-  if [ "$provider" = trae ] && [ -z "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
+  if [ "$provider" = cursor ] && [ -z "${CURSOR_API_KEY:-}" ]; then
+    log "provider=$provider: 未设置 CURSOR_API_KEY，仅校验 @cursor/sdk 可加载，跳过握手"
+  elif [ "$provider" = trae ] && [ -z "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     log "provider=$provider: 未设置 TRAECLI_PERSONAL_ACCESS_TOKEN，跳过握手"
   elif [ "$provider" = kimi_code ] && [ -z "${KIMI_CODE_API_KEY:-}" ]; then
     log "provider=$provider: 未设置 KIMI_CODE_API_KEY，仅校验 kimi 版本，跳过握手"
@@ -257,6 +260,6 @@ for p in "${list[@]}"; do
   [ -n "$p" ] && check_provider "$p"
 done
 if [ -z "${CURSOR_API_KEY:-}" ]; then
-  log "未设置 CURSOR_API_KEY：已跳过 cursor 真实对话（opencode 的 mock 对话不依赖该密钥）"
+  log "未设置 CURSOR_API_KEY：已跳过 cursor 握手与真实对话（opencode 的 mock 对话不依赖该密钥）"
 fi
 log "全部通过：$providers"

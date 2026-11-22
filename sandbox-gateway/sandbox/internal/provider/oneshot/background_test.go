@@ -15,7 +15,7 @@ import (
 	"backend/internal/provider"
 )
 
-// bgFake is cursor-agent with a background service: the CLI starts a shell in
+// bgFake is a one-shot CLI with a background service: it starts a shell in
 // its own session, reports it as a background tool result, and only reports
 // its result and exits once that shell has ended.
 type bgFake struct{ baseFake }

@@ -32,9 +32,22 @@ class MatrixContracts(unittest.TestCase):
             runner.validate_inventory(tools, [])
 
     def test_platform_wire_coverage_must_be_explicit(self):
-        tools = [{'id': 'cursor', 'mode': 'platform-wire-fixture'}]
-        with self.assertRaisesRegex(AssertionError, 'missing native coverage'):
-            runner.validate_inventory(tools, [{'toolId': 'cursor'}])
+        for mode in ['platform-wire-fixture', 'platform-sdk-fixture']:
+            with self.assertRaisesRegex(AssertionError, 'missing native coverage'):
+                runner.validate_inventory([{'id': 'cursor', 'mode': mode}], [{'toolId': 'cursor'}])
+
+    def test_cursor_matrix_runs_the_sdk_with_its_default_effort(self):
+        tools = json.loads(Path(__file__).with_name('agent-e2e-matrix.json').read_text())['tools']
+        tool = next(tool for tool in tools if tool['id'] == 'cursor')
+        self.assertEqual((tool['mode'], tool['sdk']), ('platform-sdk-fixture', '/opt/grasp/cursor-sdk'))
+        self.assertIn('vendor inference is not covered', tool['reason'])
+        test = runner.E2E.__new__(runner.E2E)
+        test.tools, test.nonce, test.marker, test.run, test.model = [tool], 'task-'+'a'*24, 'checkpoint.txt', 'unit-test', 'http://localhost'
+        test.request = lambda *_args, **_kwargs: None
+        test.scenario(['cursor'])
+        self.assertEqual([step.get('effort') for step in test.plan if step['kind'] == 'effort'], ['low', 'high', ''])
+        self.assertEqual([test.resolved_effort(step) for step in test.plan], ['medium', 'low', 'high', 'medium'])
+        self.assertFalse([step for step in test.plan if step['kind'] == 'model'])
 
     def test_kimi_matrix_covers_efforts_reset_and_supported_and_unsupported_auxiliary_models(self):
         tools = json.loads(Path(__file__).with_name('agent-e2e-matrix.json').read_text())['tools']

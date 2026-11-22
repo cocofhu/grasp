@@ -19,6 +19,7 @@ import (
 	"backend/internal/provider/acpx"
 	"backend/internal/provider/codex"
 	"backend/internal/provider/copilot"
+	"backend/internal/provider/cursorsdk"
 	"backend/internal/provider/deepseek"
 	"backend/internal/provider/kimicode"
 	"backend/internal/provider/openclaw"
@@ -34,7 +35,8 @@ type Name = provider.Name
 // registry maps each agent name to its provider (one singleton per agent).
 //
 // Default transport per agent tracks each CLI's primary headless contract:
-//   - stream-json (one-shot, spawn per turn + --resume): cursor / claude_code /
+//   - @cursor/sdk (long-lived Node bridge, JSON lines over stdio): cursor.
+//   - stream-json (one-shot, spawn per turn + --resume): claude_code /
 //     codebuddy / gemini. Fresh subprocess each turn; multi-turn continuity via
 //     a resume pointer. These are the primary transports.
 //   - run --format json (one-shot NDJSON): deveco.
@@ -46,23 +48,15 @@ type Name = provider.Name
 //     grok / trae / antigravity — these CLIs are ACP-native, so a persistent process is the
 //     right fit.
 var registry = map[Name]provider.Provider{
-	// --- stream-json family (one-shot; primary) ----------------------------
-	// cursor-agent: `-p --output-format stream-json --yolo --workspace <cwd>`,
-	// prompt fed raw on stdin (keeps user text off every command line).
-	// --approve-mcps: headless -p must auto-approve seeded ~/.cursor/mcp.json
-	// or grasp-tool tools stay connected-but-not-injected.
-	provider.Cursor: streamjson.New(streamjson.Config{
-		AgentName:     provider.Cursor,
-		Bin:           "cursor-agent",
-		Runtime:       "cursor-agent-stream-json",
-		ConfigRoot:    "/root/.cursor",
-		PromptMode:    streamjson.PromptStdinRaw,
-		BaseArgs:      []string{"--yolo", "--approve-mcps"},
-		WorkspaceFlag: "--workspace",
-		ResumeFlag:    "--resume",
-		ModelFlag:     "--model",
-		AuthEnvFn:     genericAuthEnv("CURSOR_API_KEY", "ACP_CURSOR_API_KEY"),
+	// --- @cursor/sdk (long-lived Node bridge) --------------------------------
+	// Loads project and user settings (~/.cursor rules and mcp.json), not
+	// plugins or team policy; the session's MCP servers are passed inline.
+	provider.Cursor: cursorsdk.New(cursorsdk.Config{
+		Runtime:    "cursor-sdk",
+		ConfigRoot: "/root/.cursor",
+		AuthEnvFn:  genericAuthEnv("CURSOR_API_KEY", "ACP_CURSOR_API_KEY"),
 	}),
+	// --- stream-json family (one-shot; primary) ----------------------------
 	// claude: `-p --output-format stream-json --input-format stream-json`,
 	// prompt fed as a stream-json user envelope on stdin. Autonomous headless
 	// run => bypass permissions; the interactive question tool is disabled.

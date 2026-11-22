@@ -142,7 +142,7 @@ RUN set -eu; \
     [ "$ok" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
-# Agent CLI 运行路径（cursor-agent 等下载型 CLI 装到 /root/.local/bin）。PATH 提前声明，
+# Agent CLI 运行路径（claude 等下载型 CLI 装到 /root/.local/bin）。PATH 提前声明，
 # 便于 Cursor Server / SSH 等非 entrypoint 进程也能找到命令。具体 CLI 由末尾的 agent 安装层
 # 按 AGENT_PROVIDERS 装入（见 scripts/install-agent.sh）。
 RUN mkdir -p /root/.local/bin && \
@@ -320,6 +320,7 @@ ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_ha
 ARG AGENT_OPTIONAL_PROVIDERS=
 ARG AGENT_INSTALL_CMD=
 COPY scripts/install-agent.sh /usr/local/bin/install-agent.sh
+COPY cursor-sdk/package.json cursor-sdk/package-lock.json /opt/grasp/cursor-sdk/
 RUN chmod +x /usr/local/bin/install-agent.sh && \
     AGENT_INSTALL_CMD="${AGENT_INSTALL_CMD}" \
     AGENT_OPTIONAL_PROVIDERS="${AGENT_OPTIONAL_PROVIDERS}" \

@@ -471,6 +471,35 @@ func TestSoloNextTurnReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestSoloCursorEffortDefaultsToCursorsOwnLevel(t *testing.T) {
+	solo, _, _, _ := newSoloFixture(t, 0, 3)
+	var configuration models.ModelConfiguration
+	if err := solo.db.First(&configuration, "id = ?", "sandbox-fixture").Error; err != nil {
+		t.Fatal(err)
+	}
+	configuration.Binding.ModelID = "gpt-5.5"
+	if err := solo.db.Save(&configuration).Error; err != nil {
+		t.Fatal(err)
+	}
+	row := &models.SoloSession{ID: "cursor-default", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, CurrentModelSet: true, AppliedModelSet: true}
+	if err := solo.db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := solo.resolveChatEffort(context.Background(), row, "", ""); got != "medium" {
+		t.Fatalf("empty effort resolved to %q, want Cursor's default medium", got)
+	}
+	if got := solo.resolveChatEffort(context.Background(), row, "", "xhigh"); got != "xhigh" {
+		t.Fatalf("saved effort replaced: %q", got)
+	}
+	view, err := solo.Get(context.Background(), row.ID, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.DefaultReasoningEffort != "medium" || !strings.Contains(strings.Join(view.ReasoningEfforts, " "), "xhigh") {
+		t.Fatalf("view efforts %v default %q", view.ReasoningEfforts, view.DefaultReasoningEffort)
+	}
+}
+
 func TestSoloLegacyNullEffortStillRollsBackModel(t *testing.T) {
 	solo, _, _, _ := newSoloFixture(t, 0, 3)
 	prepareSoloEfforts(t, solo)

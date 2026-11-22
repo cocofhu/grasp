@@ -1824,7 +1824,7 @@
         "allVendors": "全部",
         "searchPlaceholder": "搜索模型名称、ID 或厂商",
         "contextShort": "{n} 上下文",
-        "commandAutoNote": "不指定 --model，使用 CLI 默认",
+        "commandAutoNote": "不指定模型，使用编码工具默认",
         "resetAuto": "恢复自动",
         "unlistedName": "自定义模型",
         "unlisted": "不在内置清单中，会原样传给 CLI",
