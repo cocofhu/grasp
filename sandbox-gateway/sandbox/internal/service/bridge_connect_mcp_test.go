@@ -16,7 +16,7 @@ func TestMcpChanged(t *testing.T) {
 		incoming    json.RawMessage
 		wantUpgrade bool
 	}{
-		{"empty to servers", json.RawMessage(`[]`), json.RawMessage(`[{"name":"artifact-store","type":"http","url":"http://x"}]`), true},
+		{"empty to servers", json.RawMessage(`[]`), json.RawMessage(`[{"name":"grasp-tool","type":"http","url":"http://x"}]`), true},
 		{"nil to servers", nil, json.RawMessage(`[{"name":"a"}]`), true},
 		{"null to servers", json.RawMessage(`null`), json.RawMessage(`[{"name":"a"}]`), true},
 		{"other servers", json.RawMessage(`[{"name":"a"}]`), json.RawMessage(`[{"name":"b"}]`), true},
@@ -34,11 +34,11 @@ func TestMcpChanged(t *testing.T) {
 }
 
 func TestMcpServerSummary(t *testing.T) {
-	count, names := mcpServerSummary(json.RawMessage(`[{"name":"artifact-store"},{"name":"other"}]`))
-	if count != 2 || len(names) != 2 || names[0] != "artifact-store" || names[1] != "other" {
+	count, names := mcpServerSummary(json.RawMessage(`[{"name":"grasp-tool"},{"name":"other"}]`))
+	if count != 2 || len(names) != 2 || names[0] != "grasp-tool" || names[1] != "other" {
 		t.Fatalf("array summary count=%d names=%v", count, names)
 	}
-	count, names = mcpServerSummary(json.RawMessage(`{"artifact-store":{},"e2e":{}}`))
+	count, names = mcpServerSummary(json.RawMessage(`{"grasp-tool":{},"e2e":{}}`))
 	if count != 2 || len(names) != 2 {
 		t.Fatalf("object summary count=%d names=%v", count, names)
 	}
@@ -94,7 +94,7 @@ func TestEnsureAgentRebuildsOnEmptyToNonEmptyMCP(t *testing.T) {
 		return newSess, nil
 	}
 
-	incoming := json.RawMessage(`[{"name":"artifact-store","type":"http","url":"http://x"}]`)
+	incoming := json.RawMessage(`[{"name":"grasp-tool","type":"http","url":"http://x"}]`)
 	got, err := b.EnsureAgent("/tmp", "/tmp", incoming, nil)
 	if err != nil {
 		t.Fatalf("EnsureAgent: %v", err)

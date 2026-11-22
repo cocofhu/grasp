@@ -78,7 +78,7 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if len(ag.ModelBinding.ConfigurationIDs) != 2 || ag.ModelBinding.ConfigurationID != "model-team" {
 		t.Fatalf("engineer lost model group bindings: %+v", ag.ModelBinding)
 	}
-	if len(ag.MCP) == 0 || ag.MCP[0].Name != "artifact-store" {
+	if len(ag.MCP) == 0 || ag.MCP[0].Name != "grasp-tool" {
 		t.Fatalf("mcp=%+v", ag.MCP)
 	}
 	for _, r := range cur.Resources {

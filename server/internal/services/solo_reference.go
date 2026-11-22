@@ -212,7 +212,7 @@ func (s *SoloService) renderSoloReference(ref models.MessageReference) string {
 	if summary != "" {
 		b.WriteString("  " + strings.ReplaceAll(summary, "\n", "\n  ") + "\n")
 	}
-	fmt.Fprintf(&b, "  完整对话：artifact-store.read_reference(ref=%q, view=\"messages\")\n", ref.ID)
+	fmt.Fprintf(&b, "  完整对话：grasp-tool.read_reference(ref=%q, view=\"messages\")\n", ref.ID)
 	return b.String()
 }
 
@@ -223,7 +223,7 @@ func renderReferenceIndex(rows []models.SoloMessage) string {
 	for _, row := range rows {
 		for _, ref := range row.References {
 			if ref.Kind == models.ReferenceKindSolo {
-				lines = append(lines, fmt.Sprintf("- %s  会话「%s」：artifact-store.read_reference(ref=%q)", ref.ID, ref.Title, ref.ID))
+				lines = append(lines, fmt.Sprintf("- %s  会话「%s」：grasp-tool.read_reference(ref=%q)", ref.ID, ref.Title, ref.ID))
 				continue
 			}
 			lines = append(lines, fmt.Sprintf("- GitHub %s  %s：%s", ref.Target, ref.URL, githubReferenceCommands(ref)))

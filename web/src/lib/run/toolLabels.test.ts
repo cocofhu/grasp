@@ -5,7 +5,7 @@ describe('graspToolName', () => {
   it('strips agent prefixes but not partial words', () => {
     expect(graspToolName('set_plan')).toBe('set_plan')
     expect(graspToolName('mcp__grasp__set_plan')).toBe('set_plan')
-    expect(graspToolName('artifact-store.write_artifact')).toBe('write_artifact')
+    expect(graspToolName('grasp-tool.write_artifact')).toBe('write_artifact')
     expect(graspToolName('grasp: page_click')).toBe('page_click')
     expect(graspToolName('reset_plan')).toBe('')
     expect(graspToolName('Shell')).toBe('')

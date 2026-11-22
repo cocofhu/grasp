@@ -5,7 +5,7 @@ import { apiMcpToDraft, type DraftMCP } from '@/lib/agent/agentStudioDraft'
 export type { MCPPreset }
 
 export const MCP_PRESET_LABEL_KEYS: Record<MCPPreset['id'], string> = {
-  'artifact-store': 'pages.agentStudio.mcp.addArtifactStore',
+  'grasp-tool': 'pages.agentStudio.mcp.addGraspTool',
   browser: 'pages.agentStudio.mcp.addBrowser',
   desktop: 'pages.agentStudio.mcp.addDesktop',
   blender: 'pages.agentStudio.mcp.addBlender',

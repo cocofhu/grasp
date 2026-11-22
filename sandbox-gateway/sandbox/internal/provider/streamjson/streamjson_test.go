@@ -300,7 +300,7 @@ func TestArgsStrictMcpConfigAddsMcpConfigPath(t *testing.T) {
 
 func TestArgsStrictMcpConfigUsesConfigRoot(t *testing.T) {
 	root := t.TempDir()
-	const managedMCP = `{"mcpServers":{"artifact-store":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/run-1"}}}`
+	const managedMCP = `{"mcpServers":{"grasp-tool":{"type":"http","url":"http://127.0.0.1:9999/mcp/runs/run-1"}}}`
 	if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(managedMCP), 0o600); err != nil {
 		t.Fatal(err)
 	}

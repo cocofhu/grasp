@@ -39,7 +39,7 @@ export type AgentStudioDraft = {
 export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
 const DEFAULT_WORKSPACE_DIR = '/root/workspace'
 
-export const ARTIFACT_STORE = 'artifact-store'
+export const GRASP_TOOL = 'grasp-tool'
 export function recToKV(rec?: Record<string, string>): KV[] {
   return Object.entries(rec || {}).map(([k, v]) => ({ k, v }))
 }
@@ -151,5 +151,5 @@ export function hydrateStudioDraft(a: Agent): AgentStudioDraft {
 }
 
 export function isPlatformPresetName(name: string) {
-  return name.trim() === ARTIFACT_STORE
+  return name.trim() === GRASP_TOOL
 }

@@ -361,11 +361,11 @@ func TestInheritFromDefault(t *testing.T) {
 
 	attach(def, &stubSess{id: "s-def"})
 	def.mu.Lock()
-	def.lastMCP = json.RawMessage(`[{"name":"artifact-store"}]`)
+	def.lastMCP = json.RawMessage(`[{"name":"grasp-tool"}]`)
 	def.mu.Unlock()
 
 	cwd, fs, mcp = tab.inheritFromDefault("", "", json.RawMessage(`null`))
-	if cwd != "/tmp" || fs != "/tmp" || string(mcp) != `[{"name":"artifact-store"}]` {
+	if cwd != "/tmp" || fs != "/tmp" || string(mcp) != `[{"name":"grasp-tool"}]` {
 		t.Fatalf("inherit got %q %q %s", cwd, fs, mcp)
 	}
 	// Explicit values win.

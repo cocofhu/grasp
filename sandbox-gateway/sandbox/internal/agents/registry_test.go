@@ -54,7 +54,7 @@ func TestTransportSplit(t *testing.T) {
 func TestCodeBuddyKeepsStrictMcpIsolation(t *testing.T) {
 	// Regression lock: codebuddy must keep --strict-mcp-config (isolation) and
 	// a ConfigRoot so streamjson can attach --mcp-config <root>/mcp.json.
-	// Without that pair, artifact-store from seeded mcp.json never reaches -p.
+	// Without that pair, grasp-tool from seeded mcp.json never reaches -p.
 	p := registry[provider.CodeBuddy]
 	if p.DefaultConfigRoot() != "/root/.codebuddy" {
 		t.Fatalf("codebuddy ConfigRoot=%q", p.DefaultConfigRoot())

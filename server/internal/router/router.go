@@ -268,7 +268,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/sandboxes/:id/desktop/control", h.SandboxDesktopControl)
 	}
 
-	// Run-scoped artifact-store MCP (outside /api): the in-container
+	// Run-scoped grasp-tool MCP (outside /api): the in-container
 	// cursor-agent connects here via host.docker.internal with a per-run
 	// Bearer token. Streamable-HTTP over POST; GET/DELETE are no-ops.
 	r.POST("/mcp/runs/:runId", h.MCPRPC)

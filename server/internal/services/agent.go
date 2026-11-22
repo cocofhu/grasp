@@ -47,11 +47,11 @@ func NewAgentService(root string) *AgentService {
 	return s
 }
 
-// ArtifactStoreMCP is the conventional name for the platform's run-scoped
-// artifact-store. The whole MCP config is user-authored; an Agent wires the
-// artifact-store by referencing the run-scoped template vars
+// GraspToolMCP is the conventional name for the platform's run-scoped
+// grasp-tool. The whole MCP config is user-authored; an Agent wires the
+// grasp-tool by referencing the run-scoped template vars
 // (${GRASP_ARTIFACT_URL} / ${GRASP_ARTIFACT_TOKEN}) in its url/headers.
-const ArtifactStoreMCP = "artifact-store"
+const GraspToolMCP = "grasp-tool"
 
 // WorkDirName is the subfolder under each agent that holds its working-dir tree.
 const WorkDirName = "workspace"
@@ -208,11 +208,11 @@ type agentConfig struct {
 }
 
 // DefaultPlatformMCP returns the platform's built-in MCP server (the run-scoped
-// artifact-store) wired via template vars — the run URL/token are resolved per
+// grasp-tool) wired via template vars — the run URL/token are resolved per
 // run (see runtime.mcpVars), so no secret is persisted. New agents get this by
 // default so they can read/write artifacts and use plan/ask tools out of the box.
 func DefaultPlatformMCP() []MCPServer {
-	m, _ := MCPPresetServer(MCPPresetArtifactStore)
+	m, _ := MCPPresetServer(MCPPresetGraspTool)
 	return []MCPServer{m}
 }
 

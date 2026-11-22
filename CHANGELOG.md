@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
+
 - Agent 会话更稳：
   - 停止或看门狗中断回合后，平台会等 Agent 真正停下再发送下一条消息；Agent 15 秒内不响应中断时重启它，并接回原会话。
   - 沙箱后端重启后，Agent 接回重启前的会话。

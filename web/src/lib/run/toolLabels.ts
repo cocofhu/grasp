@@ -90,7 +90,7 @@ const BUILTIN: Record<string, { key: string; kind: ToolKind }> = {
 
 /**
  * The Grasp MCP tool a title names, whatever prefix the agent puts on it
- * (`set_plan`, `mcp__grasp__set_plan`, `grasp-set_plan`, `artifact-store.write_artifact`).
+ * (`set_plan`, `mcp__grasp__set_plan`, `grasp-set_plan`, `grasp-tool.write_artifact`).
  */
 export function graspToolName(title: string): string {
   const s = title.trim().toLowerCase()

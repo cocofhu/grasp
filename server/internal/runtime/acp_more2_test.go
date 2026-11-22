@@ -75,7 +75,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	agentJSON := `{"inheritModel":false,"mcp":[
-		{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}},
+		{"name":"grasp-tool","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}},
 		{"name":"cmd","command":"run","args":["a"],"env":{"K":"v"}},
 		{"name":"","url":"x"},
 		{"name":"empty"},
@@ -101,7 +101,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	}
 	js := p.mcpServers(req)
 	s := string(js)
-	if !strings.Contains(s, "artifact-store") || !strings.Contains(s, "\"command\":\"run\"") {
+	if !strings.Contains(s, "grasp-tool") || !strings.Contains(s, "\"command\":\"run\"") {
 		t.Fatalf("mcpServers json missing url/command entries: %s", s)
 	}
 	if !strings.Contains(s, `"type":"http"`) {
@@ -253,7 +253,7 @@ func TestIsRetiredPlatformMCPMatchesNamesAndEndpoints(t *testing.T) {
 		{"tpl", "${GRASP_MEMORY_URL}", true},
 		{"Memory-Store", "", true},
 		{"pm-workflow-write", "", true},
-		{"artifact-store", "${GRASP_ARTIFACT_URL}", false},
+		{"grasp-tool", "${GRASP_ARTIFACT_URL}", false},
 		{"git", "http://example.com/mcp/git", false},
 	}
 	for _, c := range cases {

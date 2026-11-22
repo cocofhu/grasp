@@ -38,16 +38,16 @@ type ConfigHomeSpec struct {
 	// e.g. "skills/live-variants") copied into the config home. They land
 	// after the agent workspace, so the platform copy wins on a name clash.
 	EmbeddedSkills []string
-	// IncludeArtifactStore writes the artifact-store convention rule. Only set
-	// when the Agent has opted into the artifact-store MCP (convention-first):
+	// IncludeGraspTool writes the grasp-tool convention rule. Only set
+	// when the Agent has opted into the grasp-tool MCP (convention-first):
 	// the platform never auto-injects it.
-	IncludeArtifactStore bool
-	// OmitOutcomeRule strips the「完成标记」section from artifact-store.md.
+	IncludeGraspTool bool
+	// OmitOutcomeRule strips the「完成标记」section from grasp-tool.md.
 	// Used for clarify Agents so the always-on rule file never names the
 	// outcome tool; the confirm turn introduces it instead.
 	OmitOutcomeRule bool
 	// MCP are the MCP servers (from the Agent config, with the reserved
-	// artifact-store entry already resolved to its run-scoped URL+token by the
+	// grasp-tool entry already resolved to its run-scoped URL+token by the
 	// runtime) written into mcp.json.
 	MCP []MCPServerSpec
 	// OpenCode enables OpenCode-native MCP configuration. OpenCode does not read
@@ -118,17 +118,17 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "rules"), 0o755); err != nil {
 		return "", err
 	}
-	// Always-on base rule; artifact-store rule only when the Agent opted in.
+	// Always-on base rule; grasp-tool rule only when the Agent opted in.
 	embedded := []string{"rules/base.md"}
-	if spec.IncludeArtifactStore {
-		embedded = append(embedded, "rules/artifact-store.md")
+	if spec.IncludeGraspTool {
+		embedded = append(embedded, "rules/grasp-tool.md")
 	}
 	for _, name := range embedded {
 		b, err := skillAssets.ReadFile("skills_embed/" + name)
 		if err != nil {
 			return "", fmt.Errorf("resolve platform rule %s: %w", name, err)
 		}
-		if spec.OmitOutcomeRule && name == "rules/artifact-store.md" {
+		if spec.OmitOutcomeRule && name == "rules/grasp-tool.md" {
 			b = stripOutcomeRuleSection(b)
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
@@ -395,7 +395,7 @@ func asStringAnyMap(v any) map[string]any {
 	}
 }
 
-// stripOutcomeRuleSection removes the「完成标记」section from artifact-store.md
+// stripOutcomeRuleSection removes the「完成标记」section from grasp-tool.md
 // so a clarify Agent never sees the outcome tool name in always-on rules.
 func stripOutcomeRuleSection(b []byte) []byte {
 	const heading = "## 完成标记"

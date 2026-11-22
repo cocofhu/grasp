@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   listModelConnections: vi.fn(),
   listToolCapabilities: vi.fn(),
   listMcpPresets: vi.fn(async () => ({
-    presets: [{ id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } }],
+    presets: [{ id: 'grasp-tool', requiresDesktop: false, server: { name: 'grasp-tool', url: '${GRASP_ARTIFACT_URL}', headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' } } }],
   })),
 }))
 vi.mock('@/lib/api/api', async () => {

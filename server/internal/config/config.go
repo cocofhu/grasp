@@ -233,7 +233,7 @@ type ServerConfig struct {
 	// to loopback development; other values trigger warnings when auth is empty.
 	DeploymentMode string `yaml:"deployment_mode"`
 	// MCPAdvertise is the base URL the in-container cursor-agent uses to reach
-	// the run-scoped artifact-store MCP. Empty defaults to
+	// the run-scoped grasp-tool MCP. Empty defaults to
 	// http://host.docker.internal:<port>.
 	MCPAdvertise string `yaml:"mcp_advertise"`
 	// PublicAdvertise is the browser-facing base URL for preview proxy links.

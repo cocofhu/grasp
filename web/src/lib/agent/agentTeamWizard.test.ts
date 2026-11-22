@@ -14,7 +14,7 @@ describe('agentTeamWizard', () => {
     expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual(['team', 'model', 'mcp', 'env', 'review'])
   })
 
-  it('starts without MCP or env (the wizard seeds artifact-store from server presets)', () => {
+  it('starts without MCP or env (the wizard seeds grasp-tool from server presets)', () => {
     const d = freshTeamDraft()
     expect(d.mcp).toEqual([])
     expect(d.env).toEqual([])
@@ -55,12 +55,12 @@ describe('agentTeamWizard', () => {
   it('assembles bootstrap payload with mcp/env', () => {
     const d = freshTeamDraft()
     d.teamName = 'Demo'
-    d.mcp.push({ name: 'artifact-store', transport: 'url', url: '${GRASP_ARTIFACT_URL}', headers: [], command: '', args: '', env: [] })
+    d.mcp.push({ name: 'grasp-tool', transport: 'url', url: '${GRASP_ARTIFACT_URL}', headers: [], command: '', args: '', env: [] })
     syncDerivedNames(d)
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload).not.toHaveProperty('teamName')
     expect(payload.prefix).toBe('Demo')
-    expect(payload.mcp.some((m) => m.name === 'artifact-store')).toBe(true)
+    expect(payload.mcp.some((m) => m.name === 'grasp-tool')).toBe(true)
     expect(payload.env).toEqual({})
   })
 })

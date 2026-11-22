@@ -18,7 +18,7 @@ func TestConnectedOpenCodeKeepsCurrentManagedMCPWithoutOldRouting(t *testing.T) 
 			root := t.TempDir()
 			url := "http://127.0.0.1:9999/mcp/runs/" + session
 			managed := map[string]any{
-				"mcp": map[string]any{"artifact-store": map[string]any{"type": "remote", "url": url,
+				"mcp": map[string]any{"grasp-tool": map[string]any{"type": "remote", "url": url,
 					"headers": map[string]any{"Authorization": "Bearer synthetic-" + session}, "enabled": true}},
 				"instructions": []any{filepath.Join(root, "AGENTS.md")},
 				"model":        "old/model", "small_model": "old/fast", "enabled_providers": []string{"old"},

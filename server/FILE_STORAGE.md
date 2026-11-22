@@ -1,6 +1,6 @@
 # 文件存储、交付与升级
 
-Agent 的 `send_file(path, name?, caption?)` 会从当前授权沙箱导入文件，并向当前活动对话登记附件。`upload_file_artifact` 只导入；`send_artifact` 发送当前运行中有权读取的已有产物，可指定版本。工作流和 Solo 使用原有 artifact-store MCP，无须新增 Agent 后端。
+Agent 的 `send_file(path, name?, caption?)` 会从当前授权沙箱导入文件，并向当前活动对话登记附件。`upload_file_artifact` 只导入；`send_artifact` 发送当前运行中有权读取的已有产物，可指定版本。工作流和 Solo 使用原有 grasp-tool MCP，无须新增 Agent 后端。
 
 附件固定引用产物 ID 与 revision；覆盖同名文件产生新版本，不改变已发送文件。重复发送同一版本不会生成重复卡片。文件先复制到服务端持久目录，沙箱关闭或重建不影响已交付文件。主动删除产物后，原附件会显示文件不可用。
 

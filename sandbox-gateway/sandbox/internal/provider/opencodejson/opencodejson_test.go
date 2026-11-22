@@ -70,11 +70,11 @@ func TestParseToolUseFinished(t *testing.T) {
 		}
 	})
 	t.Run("error", func(t *testing.T) {
-		pr := c.ParseLine([]byte(`{"type":"tool_use","part":{"tool":"artifact-store_get_plan","callID":"c2","state":{"status":"error","input":{},"error":"get_plan failed: denied"}}}`))
+		pr := c.ParseLine([]byte(`{"type":"tool_use","part":{"tool":"grasp-tool_get_plan","callID":"c2","state":{"status":"error","input":{},"error":"get_plan failed: denied"}}}`))
 		if len(pr.Msgs) != 2 {
 			t.Fatalf("msgs=%+v", pr.Msgs)
 		}
-		if pr.Msgs[0].Kind != oneshot.KindToolUse || pr.Msgs[0].ToolCallID != "c2" || pr.Msgs[0].ToolTitle != "artifact-store_get_plan" {
+		if pr.Msgs[0].Kind != oneshot.KindToolUse || pr.Msgs[0].ToolCallID != "c2" || pr.Msgs[0].ToolTitle != "grasp-tool_get_plan" {
 			t.Fatalf("use=%+v", pr.Msgs[0])
 		}
 		got := pr.Msgs[1]

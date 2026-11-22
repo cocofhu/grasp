@@ -1,5 +1,5 @@
 // Command server boots the approving backend: config, logging, database +
-// seed, the artifact-store MCP host, the execution provider, the FSM
+// seed, the grasp-tool MCP host, the execution provider, the FSM
 // engine, and the HTTP/WS API.
 package main
 

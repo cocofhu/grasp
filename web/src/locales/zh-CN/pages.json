@@ -1485,7 +1485,7 @@
         }
       },
       "mcp": {
-        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。",
+        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 grasp-tool,可自行增删。",
         "formEdit": "表单编辑",
         "rawJson": "原始 JSON",
         "runVarsTitle": "运行级变量(运行时替换到 url / headers / args / env)",
@@ -1493,14 +1493,14 @@
         "artifactUrl": "本次运行隔离的产物 MCP 端点",
         "artifactToken": "绑定该 run 的访问令牌",
         "globalVar": "{'${vars.<全局变量名>}'} — 工作流全局变量,如 {'${vars.feature}'}",
-        "addArtifactStore": "+ 添加产物存储",
+        "addGraspTool": "+ 添加 Grasp Tool",
         "addBrowser": "+ 浏览器",
         "addDesktop": "+ 桌面控制",
         "addBlender": "+ Blender",
         "requiresDesktop": "需要桌面镜像",
         "quickAddLabel": "快捷添加",
         "displayName": {
-          "artifact": "产物存储"
+          "artifact": "Grasp Tool"
         },
         "scopeNote": {
           "artifact": "本次运行隔离的产物服务。",
@@ -1692,12 +1692,12 @@
           "prefix": "命名前缀"
         },
         "mcp": {
-          "meta": "写入团队默认 mcp[]；创建工程师时一并带上。默认已放入 artifact-store。",
+          "meta": "写入团队默认 mcp[]；创建工程师时一并带上。默认已放入 grasp-tool。",
           "namePh": "名称",
           "headers": "请求头",
           "addHeader": "添加 Header",
           "add": "添加 MCP",
-          "restoreArtifact": "恢复 artifact-store 预设",
+          "restoreArtifact": "恢复 grasp-tool 预设",
           "runVars": "运行变量：{'${GRASP_ARTIFACT_URL}'} / {'${GRASP_ARTIFACT_TOKEN}'}"
         },
         "env": {
@@ -1708,7 +1708,7 @@
           "team": "团队",
           "none": "无",
           "roster": "编制：4 名工程师",
-          "noArtifactWarn": "工作流角色通常需要 artifact-store；当前 MCP 列表未包含它。"
+          "noArtifactWarn": "工作流角色通常需要 grasp-tool；当前 MCP 列表未包含它。"
         },
         "errors": {
           "teamNameRequired": "请填写团队名",
@@ -2490,7 +2490,7 @@
       "changes": "变更",
       "changedFiles": "变更文件 ({n})",
       "gitDetection": "Git 检测",
-      "artifactsMcp": "产物 · 经 artifact-store MCP 写入",
+      "artifactsMcp": "产物 · 经 grasp-tool MCP 写入",
       "output": "输出",
       "noPreviewCardsTitle": "本次没有可预览的结果卡",
       "noPreviewCardsBody": "运行已成功完成。最终结果来源为空，或本次未执行输出节点。这不是加载失败。",

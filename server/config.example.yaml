@@ -19,7 +19,7 @@ server:
   # 本文件仅用于 loopback 本地演示。非本地部署改为 production，并通过
   # GRASP_AUTH_USERS 注入自有账号哈希。
   deployment_mode: local-demo
-  # 沙箱内 agent / MCP 客户端回连宿主 run 级 artifact-store MCP 的 base URL。
+  # 沙箱内 agent / MCP 客户端回连宿主 run 级 grasp-tool MCP 的 base URL。
   # 留空默认 http://host.docker.internal:<port>(本地 Docker / DinD 预览可用)。
   #
   # 部署时务必设为沙箱容器内可达、且已挂载 /mcp/runs/:runId 的 API 基址。

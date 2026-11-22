@@ -122,7 +122,7 @@ fi
 INJECT_DIR="$(mktemp -d)"
 mkdir -p "$INJECT_DIR/seed/rules"
 # CAPA A8: seed must contain mcpServers (not a hollow {"ok":true} shell).
-echo '{"mcpServers":{"artifact-store":{"url":"http://example.invalid/mcp"}}}' >"$INJECT_DIR/seed/mcp.json"
+echo '{"mcpServers":{"grasp-tool":{"url":"http://example.invalid/mcp"}}}' >"$INJECT_DIR/seed/mcp.json"
 echo rule >"$INJECT_DIR/seed/rules/r.md"
 tar -C "$INJECT_DIR/seed" -czf "$INJECT_DIR/bundle.tgz" mcp.json rules
 
@@ -175,9 +175,9 @@ if [ "$code" != 200 ]; then
   exit 1
 fi
 
-# CAPA A8: MCP health = file exists AND content smoke (mcpServers + artifact-store).
+# CAPA A8: MCP health = file exists AND content smoke (mcpServers + grasp-tool).
 # Do not treat `test -f mcp.json` alone as healthy.
-docker exec "sbx-$ID" bash -c 'test -f /root/.cursor/mcp.json && grep -q mcpServers /root/.cursor/mcp.json && grep -q artifact-store /root/.cursor/mcp.json'
+docker exec "sbx-$ID" bash -c 'test -f /root/.cursor/mcp.json && grep -q mcpServers /root/.cursor/mcp.json && grep -q grasp-tool /root/.cursor/mcp.json'
 docker exec "sbx-$ID" test -f /root/.cursor/rules/r.md
 
 curl -sS -o /dev/null -w "%{http_code}" "$GW/api/v1/sandboxes/$ID/hosts/8765" | grep -q 200
@@ -194,7 +194,7 @@ for i in $(seq 1 40); do
 done
 docker exec "sbx-$ID" sh -c '! test -f /root/.cursor/MARKER'
 # CAPA A8: re-inject must also restore mcpServers content, not merely the file.
-docker exec "sbx-$ID" bash -c 'test -f /root/.cursor/mcp.json && grep -q mcpServers /root/.cursor/mcp.json && grep -q artifact-store /root/.cursor/mcp.json'
+docker exec "sbx-$ID" bash -c 'test -f /root/.cursor/mcp.json && grep -q mcpServers /root/.cursor/mcp.json && grep -q grasp-tool /root/.cursor/mcp.json'
 
 curl -sS -X POST "$GW/api/v1/sandboxes/$ID/stop" | grep -q stopped
 curl -sS -X POST "$GW/api/v1/sandboxes/$ID/start" >/dev/null

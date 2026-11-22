@@ -14,7 +14,7 @@
         "read": "read"
       }
     },
-    "artifactStore": {
+    "graspTool": {
       "desc": "平台产物存储 · 全局注入到本次运行的每个节点(含沙箱 Agent),用于读写中间/最终产物",
       "overview": "平台内置产物存储 MCP。每次运行开始时由编排器注入到本次 run 的全部节点（含沙箱 Agent），凭 run token 隔离作用域。Agent 通过 MCP 读写中间/最终产物，编排器作为 Host 负责持久化。",
       "convention": "沙箱约定(强制):节点声明的「产物契约 produces」中的文件,Agent 必须在结束当前轮次前通过 write_artifact 全部写入;写完产物后还必须调用 node_complete 标记完成。否则编排器在节点完成时校验失败。校验顺序固定为「平台默认检查必须通过 → 再可选业务 RPC」。该约定由平台注入的 system rules 强制下发到沙箱。",

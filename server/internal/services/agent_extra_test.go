@@ -118,7 +118,7 @@ func TestSafeRel(t *testing.T) {
 
 func TestDefaultPlatformMCP(t *testing.T) {
 	mcps := DefaultPlatformMCP()
-	if len(mcps) != 1 || mcps[0].Name != ArtifactStoreMCP {
+	if len(mcps) != 1 || mcps[0].Name != GraspToolMCP {
 		t.Fatalf("default mcp: %+v", mcps)
 	}
 }

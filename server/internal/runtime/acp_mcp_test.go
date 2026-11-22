@@ -16,7 +16,7 @@ import (
 )
 
 // TestCursorLiveMCP verifies the in-container cursor-agent natively connects
-// to the run-scoped artifact-store MCP (injected at ACP session/new + via
+// to the run-scoped grasp-tool MCP (injected at ACP session/new + via
 // /root/.cursor/mcp.json) and calls write_artifact. No produces contract is
 // set, so harvest does NOT run: an artifact in the store proves the MCP path.
 //
@@ -61,7 +61,7 @@ func TestCursorLiveMCP(t *testing.T) {
 		"ACP_BRIDGE_MODEL":     model,
 	}
 	envJSON, _ := json.Marshal(agentEnv)
-	agentJSON := `{"acpBackend":"cursor","mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":` + string(envJSON) + `}`
+	agentJSON := `{"acpBackend":"cursor","mcp":[{"name":"grasp-tool","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":` + string(envJSON) + `}`
 	profilesRoot := writeAgent(t, "go-backend", agentJSON)
 	t.Logf("model=%s mcp=http://host.docker.internal:%d gateway=%s", model, port, gatewayURL)
 	provider := newACPProvider(host, Options{
@@ -78,7 +78,7 @@ func TestCursorLiveMCP(t *testing.T) {
 		NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{
 			"agent_profile": "go-backend",
-			"prompt": "请直接调用 artifact-store MCP 的 write_artifact 工具,写入一个名为 result.json 的产物," +
+			"prompt": "请直接调用 grasp-tool MCP 的 write_artifact 工具,写入一个名为 result.json 的产物," +
 				"内容为 {\"ok\": true, \"via\": \"mcp\"}。只用 MCP 工具完成,不要在磁盘创建文件。完成后回复一句确认。",
 		},
 		Vars: map[string]any{},
