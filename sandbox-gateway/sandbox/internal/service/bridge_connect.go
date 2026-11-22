@@ -111,6 +111,14 @@ func (b *Bridge) ConnectedPayload(p provider.Session) map[string]any {
 
 // StartDefaultAgent 在进程启动后于后台拉起全局唯一 Agent；失败仅打日志，浏览器 connect 会重试。
 func (b *Bridge) StartDefaultAgent() {
+	// Cursor's MCP list is supplied by the first frontend connect. Starting it
+	// before that connect would create an empty-MCP session and force a native
+	// Agent resume when the platform tools arrive, which can overlap the old
+	// Cursor run cleanup.
+	if b.agent().Name() == provider.Cursor {
+		return
+	}
+
 	go func() {
 		t := true
 		_, err := b.EnsureAgent("", "", nil, &t)

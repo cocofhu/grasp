@@ -19,6 +19,7 @@ import (
 // lifeAgent is a provider whose sessions resume by id, like a CLI that keeps
 // its conversations on disk.
 type lifeAgent struct {
+	name      provider.Name
 	transport provider.TransportKind
 	noResume  bool // sessions do not report Capabilities.Resume
 	forget    bool // a resume pointer is not found: a new conversation starts
@@ -29,14 +30,20 @@ type lifeAgent struct {
 	// failOpens fails that many opens first.
 	failOpens int
 	// config is what sessions report as provider.ConfigReader files.
-	config []string
+	config       []string
+	openedSignal chan struct{}
 
 	mu    sync.Mutex
 	opens []provider.OpenOptions
 	sess  []*lifeSess
 }
 
-func (a *lifeAgent) Name() provider.Name                                  { return "life" }
+func (a *lifeAgent) Name() provider.Name {
+	if a.name != "" {
+		return a.name
+	}
+	return "life"
+}
 func (a *lifeAgent) Runtime() string                                      { return "life" }
 func (a *lifeAgent) DefaultConfigRoot() string                            { return "" }
 func (a *lifeAgent) Transport() provider.TransportKind                    { return a.transport }
@@ -57,6 +64,12 @@ func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEven
 		return nil, errors.New("agent is not installed yet")
 	}
 	a.opens = append(a.opens, opts)
+	if a.openedSignal != nil {
+		select {
+		case a.openedSignal <- struct{}{}:
+		default:
+		}
+	}
 	id := fmt.Sprintf("native-%d", len(a.opens))
 	if opts.ResumeSessionID != "" && !a.forget {
 		id = opts.ResumeSessionID
@@ -175,6 +188,24 @@ func awaitOpens(t *testing.T, agent *lifeAgent, n int) ([]provider.OpenOptions, 
 			t.Fatalf("opened %d sessions, want %d", len(opens), n)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestStartDefaultAgentSkipsCursorPrewarm(t *testing.T) {
+	opened := make(chan struct{}, 1)
+	agent := &lifeAgent{name: provider.Cursor, transport: provider.LongLived, openedSignal: opened}
+	b := NewBridge()
+	b.agentProvider = agent
+
+	b.StartDefaultAgent()
+
+	select {
+	case <-opened:
+		t.Fatal("Cursor must wait for the first connect to receive MCP servers")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if opens, _ := agent.opened(); len(opens) != 0 {
+		t.Fatalf("Cursor prewarm opened %d sessions", len(opens))
 	}
 }
 
