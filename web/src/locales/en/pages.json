@@ -3504,6 +3504,8 @@
       "search": "Search repositories",
       "empty": "No repositories yet",
       "emptyHint": "Add a Git repository, then pick it on the home page or the Solo page to start a session with it.",
+      "noMatch": "No matching repositories",
+      "noMatchHint": "Try a different name or repository URL.",
       "lastUsed": "Used {time}",
       "neverUsed": "Never used",
       "start": "Start Solo",
