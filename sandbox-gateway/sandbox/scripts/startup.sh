@@ -569,7 +569,7 @@ cat > /root/.local/share/code-server/User/settings.json <<'EOF'
 }
 EOF
 
-# 加载 Agent CLI 与开发工具 PATH（/root/.local/bin、Go / Java / MongoDB 等），确保 code-server 及其子进程也可见
+# 加载 Agent CLI 与开发工具 PATH（/root/.local/bin、Go / Java 等），确保 code-server 及其子进程也可见
 [ -f /etc/profile.d/agent-path.sh ] && . /etc/profile.d/agent-path.sh
 [ -f /etc/profile.d/devtools-path.sh ] && . /etc/profile.d/devtools-path.sh
 
