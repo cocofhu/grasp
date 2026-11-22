@@ -341,7 +341,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="mb-6 grid shrink-0 grid-cols-2 gap-y-4 py-1 md:grid-cols-4 md:gap-8 md:py-2">
+    <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line/80 bg-surface/30">
+    <div class="grid shrink-0 grid-cols-2 gap-y-4 px-4 py-4 md:grid-cols-4 md:gap-8 md:px-5 md:py-5">
       <article class="sandbox-stat-card">
         <div class="flex items-center justify-between gap-2">
           <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.total') }}</span>
@@ -390,7 +391,7 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="mb-4 flex shrink-0 flex-col gap-3 md:flex-row md:items-center">
+    <div class="flex shrink-0 flex-col gap-3 px-4 pb-3 md:flex-row md:items-center md:px-5">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>
@@ -692,6 +693,8 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </div>
+
+    </section>
 
     <!-- Sandbox detail (metadata / proxy URLs / named endpoints) -->
     <AppModal :open="detailOpen" :title="t('pages.sandboxes.detail.title')" :width="560" @close="closeDetail">
