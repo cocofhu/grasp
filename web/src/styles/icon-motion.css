@@ -65,6 +65,11 @@
 .app-icon[data-icon="check-draw"][data-icon-motion="once"] .grasp-check-draw{animation:iconMotion_check_draw_drawCheck 1050ms cubic-bezier(.3,.05,.25,1) 1}
 @keyframes iconMotion_check_draw_drawCheck{0%,12%{stroke-dashoffset:1}76%,100%{stroke-dashoffset:0}}
 
+/* icon: check-circle */
+.app-icon[data-icon="check-circle"] .check-circle-mark{stroke-dasharray:1}
+.app-icon[data-icon="check-circle"][data-icon-motion="once"] .check-circle-mark{animation:iconMotion_check_circle_drawCheck 530ms ease-in-out 1}
+@keyframes iconMotion_check_circle_drawCheck{0%{stroke-dashoffset:1}78%,100%{stroke-dashoffset:0}}
+
 /* icon: bell */
 .app-icon[data-icon="bell"] .bell-body{transform-origin:12px 3px}
 .app-icon[data-icon="bell"][data-icon-motion="once"] .bell-body{animation:iconMotion_bell_ringBell 1200ms ease-in-out}

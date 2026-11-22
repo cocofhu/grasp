@@ -136,7 +136,7 @@ function openPreview() {
     >
       <Icon v-if="overall === 'running'" name="spinner" busy :size="12" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
       <Icon v-else-if="overall === 'failed'" name="alert" :size="12" class="agent-tool-icon agent-tool-failed" aria-hidden="true" />
-      <Icon v-else name="check" :size="12" class="agent-tool-icon" aria-hidden="true" />
+      <Icon v-else name="check-circle" :size="12" class="agent-tool-icon" aria-hidden="true" />
       <span class="agent-tools-count">{{ t('pages.clarify.toolsUsed', { n: tools.length }, tools.length) }}</span>
       <span v-if="failedCount && overall === 'failed'" class="agent-tools-count agent-tool-failed" data-testid="agent-tool-group-failed">{{
         t('pages.clarify.toolFailedCount', { n: failedCount })
