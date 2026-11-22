@@ -36,6 +36,11 @@ type session struct {
 	text      sanitizer
 	cumUsage  map[string]provider.TokenUsage
 	openTools map[string]bool
+	// strays counts reasons Pi may hold input no turn accounts for: input
+	// it took in after its turn ended, or steers still queued when a turn was
+	// stopped or failed (Pi keeps its queue across an abort and hands it to
+	// the next run). The next holder of turnMu withdraws it first.
+	strays int
 
 	closeOnce sync.Once
 }
@@ -133,6 +138,9 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	text, err := provider.WithAttachments(text, images)
 	if err != nil {
 		return s.finishFailed(ctx, err)
+	}
+	if err := s.dropStrays(ctx); err != nil {
+		return s.finishFailed(ctx, fmt.Errorf("pi: 无法撤回上一回合结束后送达的引导: %w", err))
 	}
 	t := &activeTurn{done: make(chan struct{}), posted: 1, usage: map[string]provider.TokenUsage{}}
 	s.mu.Lock()
@@ -238,7 +246,9 @@ func (s *session) Steer(text string) error {
 	s.mu.Unlock()
 	answer := make(chan steerAnswer, 1)
 	go func() {
-		r, err := s.proc.call(context.Background(), map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
+		ctx, cancel := context.WithTimeout(context.Background(), steerAnswerLimit)
+		defer cancel()
+		r, err := s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
 		answer <- steerAnswer{r, err}
 	}()
 	select {
@@ -251,9 +261,13 @@ func (s *session) Steer(text string) error {
 	}
 }
 
-// steerTimeout bounds how long Steer waits for Pi's answer. A var so tests
-// can shrink it.
-var steerTimeout = provider.SteerTimeout
+// steerTimeout bounds how long Steer waits for Pi's answer; past it the turn
+// waits for the answer, at most steerAnswerLimit, after which an agent that
+// never answered is taken to have refused. Vars so tests can shrink them.
+var (
+	steerTimeout     = provider.SteerTimeout
+	steerAnswerLimit = 10 * provider.SteerTimeout
+)
 
 type steerAnswer struct {
 	r   response
@@ -261,45 +275,78 @@ type steerAnswer struct {
 }
 
 // steerAnswered applies Pi's answer to a steer. A late refusal fails the
-// turn it was reported in; late input that reaches an agent whose turn
-// already ended is withdrawn, since no turn would account for it.
+// turn it was reported in. A turn settles with steers unanswered only when
+// it was stopped or failed; input Pi takes in after that belongs to no turn
+// and is withdrawn.
 func (s *session) steerAnswered(t *activeTurn, text string, a steerAnswer, late bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t.inflight--
 	if a.err != nil {
 		t.posted--
-		if late && t.errText == "" {
+		switch {
+		case t.settled:
+			log.Printf("pi: 回合结束后引导被拒绝，未送达: %v", a.err)
+		case late && t.errText == "":
 			t.errText = fmt.Sprintf("pi: 引导未送达: %v", a.err)
 		}
 		s.evaluateLocked(t)
 		return a.err
 	}
 	t.steers = append(t.steers, text)
-	if late && t.settled && s.turn == nil {
-		var res struct {
-			Disposition string `json:"disposition"`
-		}
-		_ = json.Unmarshal(a.r.Data, &res)
-		go s.withdraw(res.Disposition)
+	if t.settled {
+		s.strays++
+		go s.withdrawStrays()
 	}
 	s.evaluateLocked(t)
 	return nil
 }
 
-// withdraw undoes input that reached the agent after its turn ended: a run
-// it started is aborted, a queued message cleared.
-func (s *session) withdraw(disposition string) {
-	ctx, cancel := context.WithTimeout(context.Background(), provider.InterruptGrace)
+// withdrawStrays withdraws stray input unless a turn that started first
+// already did. Holding turnMu keeps it from touching a newer turn.
+func (s *session) withdrawStrays() {
+	s.turnMu.Lock()
+	defer s.turnMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := map[string]any{"type": "clear_queue"}
-	if disposition == "started" {
-		cmd = map[string]any{"type": "abort"}
+	if err := s.dropStrays(ctx); err != nil {
+		log.Printf("pi: 撤回回合结束后送达的引导失败，下一回合开始前重试: %v", err)
 	}
-	log.Printf("pi: 回合结束后才送达的引导（%s）已撤回", disposition)
-	if _, err := s.proc.call(ctx, cmd); err != nil {
-		log.Printf("pi: 撤回迟到的引导失败: %v", err)
+}
+
+// dropStrays undoes input Pi took in after its turn ended: a run it started
+// is aborted, and the session is reloaded, which keeps the history but drops
+// Pi's queue (the RPC has no command that clears it). The caller holds turnMu.
+func (s *session) dropStrays(ctx context.Context) error {
+	s.mu.Lock()
+	n := s.strays
+	s.mu.Unlock()
+	if n == 0 {
+		return nil
 	}
+	r, err := s.proc.call(ctx, map[string]any{"type": "get_state"})
+	if err != nil {
+		return err
+	}
+	var state agentState
+	if err := json.Unmarshal(r.Data, &state); err != nil {
+		return err
+	}
+	if state.IsStreaming {
+		if _, err := s.proc.call(ctx, map[string]any{"type": "abort"}); err != nil {
+			return err
+		}
+	}
+	if state.IsStreaming || state.PendingCount > 0 {
+		if err := s.reloadSession(ctx); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.strays -= n
+	s.mu.Unlock()
+	log.Printf("pi: 回合结束后才送达的 %d 条引导已撤回", n)
+	return nil
 }
 
 // Cancel aborts the running run. Prompt waits for it to settle.
@@ -395,9 +442,19 @@ func (s *session) checkQueued(t *activeTurn) {
 	s.evaluateLocked(t)
 }
 
-// redeliver clears the agent's queue by reloading its own session, which
-// keeps the history, and sends the withdrawn input as a prompt.
+// redeliver clears the agent's queue and sends the withdrawn input as a
+// prompt.
 func (s *session) redeliver(ctx context.Context, text string) error {
+	if err := s.reloadSession(ctx); err != nil {
+		return err
+	}
+	_, err := s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
+	return err
+}
+
+// reloadSession reopens the agent's own session file: the history stays,
+// queued messages are dropped.
+func (s *session) reloadSession(ctx context.Context) error {
 	r, err := s.proc.call(ctx, map[string]any{"type": "switch_session", "sessionPath": s.sessionFile})
 	if err != nil {
 		return err
@@ -408,8 +465,7 @@ func (s *session) redeliver(ctx context.Context, text string) error {
 	if json.Unmarshal(r.Data, &res) == nil && res.Cancelled {
 		return errors.New("session reload was cancelled")
 	}
-	_, err = s.proc.call(ctx, map[string]any{"type": "prompt", "message": text, "streamingBehavior": "steer"})
-	return err
+	return nil
 }
 
 func (s *session) settleLocked(t *activeTurn) {
@@ -431,6 +487,9 @@ func (s *session) finishTurn(ctx context.Context, t *activeTurn, interrupted boo
 		provider.AddUsage(s.cumUsage, usage)
 	}
 	errText := t.errText
+	if (interrupted || errText != "") && t.users < t.posted {
+		s.strays++
+	}
 	s.mu.Unlock()
 	if interrupted {
 		return provider.EndInterrupted(ctx, s.emit, s.sessionFile, usage)

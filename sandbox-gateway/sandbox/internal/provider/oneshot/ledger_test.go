@@ -127,3 +127,21 @@ func TestUnreadableBaselineStartsOver(t *testing.T) {
 		t.Fatalf("usage=%+v", usage)
 	}
 }
+
+func TestALedgerEntryInUseIsNotEvicted(t *testing.T) {
+	l := &sessionLedger{}
+	held, unlock := l.lock("", "held")
+	for i := range ledgerSessions {
+		_, u := l.lock("", fmt.Sprintf("s%d", i))
+		u()
+	}
+	unlock()
+	again, unlock := l.lock("", "held")
+	defer unlock()
+	if again != held {
+		t.Fatal("an entry in use was evicted; its session now has two baselines")
+	}
+	if len(l.sessions) > ledgerSessions+1 {
+		t.Fatalf("ledger grew to %d entries", len(l.sessions))
+	}
+}

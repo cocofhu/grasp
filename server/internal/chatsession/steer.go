@@ -80,7 +80,10 @@ func (s *Session[T]) steerGated(ctx context.Context, id string) (SteerOutcome, *
 		return "", nil, ErrNotFound
 	}
 	item, active, hasActive := s.queue[idx], s.active, s.hasActive
-	deliverCtx, stop := context.WithCancel(ctx)
+	// Once sent, input may land whatever the caller does; giving up on the
+	// answer would run it a second time. Only cancel stops the delivery, and
+	// SteerTurn bounds it.
+	deliverCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
 	s.steerStop = stop
 	s.mu.Unlock()

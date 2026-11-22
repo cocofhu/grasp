@@ -35,8 +35,9 @@ type sessionLedger struct {
 // reports together with their file reads and writes, so a slow state
 // directory delays that session only.
 type ledgerEntry struct {
-	mu sync.Mutex
-	b  *sessionBaseline // loaded on first use
+	users int // holders and waiters, guarded by sessionLedger.mu; never evicted while positive
+	mu    sync.Mutex
+	b     *sessionBaseline // loaded on first use
 }
 
 type sessionBaseline struct {
@@ -48,7 +49,8 @@ type sessionBaseline struct {
 
 // lock returns the session's baseline, loaded from dir on first use, with
 // the session locked until unlock. Entries beyond ledgerSessions are evicted
-// oldest first.
+// oldest first, skipping ones in use: two entries for one session would each
+// save their own baseline over the other's.
 func (l *sessionLedger) lock(dir, session string) (b *sessionBaseline, unlock func()) {
 	l.mu.Lock()
 	e, ok := l.sessions[session]
@@ -56,20 +58,36 @@ func (l *sessionLedger) lock(dir, session string) (b *sessionBaseline, unlock fu
 		if l.sessions == nil {
 			l.sessions = map[string]*ledgerEntry{}
 		}
-		if len(l.order) == ledgerSessions {
-			delete(l.sessions, l.order[0])
-			l.order = l.order[1:]
+		if len(l.order) >= ledgerSessions {
+			l.evictIdleLocked()
 		}
 		e = &ledgerEntry{}
 		l.sessions[session] = e
 		l.order = append(l.order, session)
 	}
+	e.users++
 	l.mu.Unlock()
 	e.mu.Lock()
 	if e.b == nil {
 		e.b = loadBaseline(dir, session)
 	}
-	return e.b, e.mu.Unlock
+	return e.b, func() {
+		e.mu.Unlock()
+		l.mu.Lock()
+		e.users--
+		l.mu.Unlock()
+	}
+}
+
+// evictIdleLocked drops the oldest entry not in use; its baseline is on disk.
+func (l *sessionLedger) evictIdleLocked() {
+	for i, session := range l.order {
+		if l.sessions[session].users == 0 {
+			delete(l.sessions, session)
+			l.order = slices.Delete(l.order, i, i+1)
+			return
+		}
+	}
 }
 
 // modelDelta differences per-model running totals against the session's last

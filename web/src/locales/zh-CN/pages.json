@@ -2106,6 +2106,7 @@
       "steerLabel": "引导",
       "queueCancelled": "已取消：「{text}」",
       "queueReordered": "顺序已更新",
+      "queueActionFailed": "排队操作失败：{msg}",
       "queueEditRefilled": "已回填输入区，修改后再次发送即可入队",
       "visitEndedResend": "运行已结束，这条消息没有发送；续跑后请重新发送",
       "visitEndedAutoRetry": "运行已结束，这条消息没有发送；续跑后会自动发送",

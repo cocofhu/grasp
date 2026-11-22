@@ -2106,6 +2106,7 @@
       "steerLabel": "Steer",
       "queueCancelled": "Removed: “{text}”",
       "queueReordered": "Order updated",
+      "queueActionFailed": "Queue update failed: {msg}",
       "queueEditRefilled": "Moved back to the composer — send again to re-queue",
       "visitEndedResend": "The run has ended, so this message was not sent. Send it again after resuming.",
       "visitEndedAutoRetry": "The run has ended, so this message was not sent. It will be sent automatically after resuming.",

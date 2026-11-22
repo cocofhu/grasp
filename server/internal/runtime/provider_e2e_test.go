@@ -282,42 +282,76 @@ func TestReactReplyRestartsPoisonedResumeInPlace(t *testing.T) {
 	}
 }
 
-func TestReactReplyHandsOffTheDialogueAfterAnUnresumedSwitch(t *testing.T) {
-	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
-		return func(turn int) turnAction {
-			if turn == 0 {
-				return turnAction{narration: "need info"}
+func TestAnUnresumedSwitchHandsOffThePriorDialogueOnce(t *testing.T) {
+	for _, revise := range []bool{false, true} {
+		p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+			return func(turn int) turnAction {
+				if turn == 0 {
+					return turnAction{narration: "need info", questions: []models.ReactQuestion{{ID: "q1", Prompt: "用亮色吗", Options: []models.ReactOption{{ID: "a", Label: "亮色"}}}}}
+				}
+				return turnAction{narration: "继续"}
 			}
-			return turnAction{narration: "继续"}
+		})
+		clarifyFirstTurn(p, req)
+		send := func(hist []models.ReactMessage, human string) ReactTurn {
+			if revise {
+				return p.ReviseInPlace(context.Background(), req, hist, human, nil)
+			}
+			return p.ReactReply(context.Background(), req, hist, human, nil, false)
 		}
+		hist := []models.ReactMessage{
+			{Role: "agent", Text: "need info", Questions: []models.ReactQuestion{{ID: "q1", Prompt: "用亮色吗", Options: []models.ReactOption{{ID: "a", Label: "亮色"}}}}},
+			{Role: "human", Text: "默认用亮色主题"},
+		}
+		p.mu.Lock()
+		p.sessions[reactKey(req)].contextLost = true
+		p.mu.Unlock()
+		if reply := send(hist, "默认用亮色主题"); reply.Err != nil {
+			t.Fatalf("revise=%v reply: %v", revise, reply.Err)
+		}
+		br := mgr.bridge(0)
+		prime := br.promptAt(1)
+		if !strings.Contains(prime, "会话恢复") || !strings.Contains(prime, "用亮色吗") || strings.Contains(prime, "默认用亮色主题") {
+			t.Errorf("revise=%v handoff must carry the prior dialogue only: %q", revise, prime)
+		}
+		if !strings.Contains(br.promptAt(2), "默认用亮色主题") {
+			t.Errorf("revise=%v reply prompt = %q", revise, br.promptAt(2))
+		}
+		hist = append(hist, models.ReactMessage{Role: "agent", Text: "继续"}, models.ReactMessage{Role: "human", Text: "好"})
+		if reply := send(hist, "好"); reply.Err != nil {
+			t.Fatal(reply.Err)
+		}
+		handoffs := 0
+		for i := 0; i < br.promptCount(); i++ {
+			if strings.Contains(br.promptAt(i), "会话恢复") {
+				handoffs++
+			}
+		}
+		if handoffs != 1 {
+			t.Fatalf("revise=%v handoffs = %d, want 1", revise, handoffs)
+		}
+	}
+}
+
+func TestAnUnresumedSwitchWithoutPriorDialogueSkipsTheHandoff(t *testing.T) {
+	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(int) turnAction { return turnAction{narration: "好的"} }
 	})
 	clarifyFirstTurn(p, req)
-	hist := []models.ReactMessage{
-		{Role: "agent", Text: "need info", Questions: []models.ReactQuestion{{ID: "q1", Prompt: "用亮色吗", Options: []models.ReactOption{{ID: "a", Label: "亮色"}}}}},
-		{Role: "human", Text: "默认用亮色主题"},
-	}
 	p.mu.Lock()
 	p.sessions[reactKey(req)].contextLost = true
 	p.mu.Unlock()
-	if reply := p.ReactReply(context.Background(), req, hist, "默认用亮色主题", nil, false); reply.Err != nil || reply.Msg != "继续" {
-		t.Fatalf("reply = msg %q err %v", reply.Msg, reply.Err)
-	}
-	br := mgr.bridge(0)
-	if br.promptCount() != 3 {
-		t.Fatalf("prompts = %d, want 3 (open, handoff, reply)", br.promptCount())
-	}
-	if prime := br.promptAt(1); !strings.Contains(prime, "会话恢复") || !strings.Contains(prime, "用亮色吗") {
-		t.Errorf("handoff prompt = %q", prime)
-	}
-	if !strings.Contains(br.promptAt(2), "默认用亮色主题") {
-		t.Errorf("reply prompt = %q", br.promptAt(2))
-	}
-	hist = append(hist, models.ReactMessage{Role: "agent", Text: "继续"}, models.ReactMessage{Role: "human", Text: "好"})
-	if reply := p.ReactReply(context.Background(), req, hist, "好", nil, false); reply.Err != nil {
+	if reply := p.ReactReply(context.Background(), req, []models.ReactMessage{{Role: "human", Text: "开始"}}, "开始", nil, false); reply.Err != nil {
 		t.Fatal(reply.Err)
 	}
-	if br.promptCount() != 4 {
-		t.Fatalf("prompts = %d, want 4: the handoff happens once", br.promptCount())
+	if n := mgr.bridge(0).promptCount(); n != 2 {
+		t.Fatalf("prompts = %d, want 2 (open, reply)", n)
+	}
+	p.mu.Lock()
+	lost := p.sessions[reactKey(req)].contextLost
+	p.mu.Unlock()
+	if lost {
+		t.Fatal("nothing to hand off still left the session marked")
 	}
 }
 

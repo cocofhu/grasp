@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { replyTail } from '@/lib/run/replyTail'
+import { reactQueueActions } from '@/lib/run/reactQueueActions'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ClarifyChat from '../ClarifyChat.vue'
 import ClarifyMessageThread from '../ClarifyMessageThread.vue'
@@ -204,28 +205,10 @@ async function onRetryLast() {
   if (current) await api.reactReply(props.run.id, current.nodeId, '', [], false, [], true)
 }
 
-/** Queue edits race the running turn (the item may already be handled); the next queue_state shows the outcome. */
-async function queueAction(name: string, call: (nodeId: string) => Promise<unknown>) {
+const { queueRemove: onQueueRemove, queueSteer: onQueueSteer, queueReorder: onQueueReorder } = reactQueueActions(() => {
   const current = thread.value.current
-  if (!current) return
-  try {
-    await call(current.nodeId)
-  } catch (e: any) {
-    console.warn(`${name} failed`, e?.message || e)
-  }
-}
-
-function onQueueRemove(id: string | undefined) {
-  if (id) return queueAction('reactQueueRemove', (nodeId) => api.reactQueueRemove(props.run.id, nodeId, id))
-}
-
-function onQueueSteer(id: string) {
-  return queueAction('reactQueueSteer', (nodeId) => api.reactQueueSteer(props.run.id, nodeId, id))
-}
-
-function onQueueReorder(ids: string[]) {
-  return queueAction('reactQueueReorder', (nodeId) => api.reactQueueReorder(props.run.id, nodeId, ids))
-}
+  return current ? { runId: props.run.id, nodeId: current.nodeId } : null
+})
 </script>
 
 <template>

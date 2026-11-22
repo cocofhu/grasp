@@ -235,7 +235,7 @@ func TestCancelEndsAnInFlightSteer(t *testing.T) {
 	}
 }
 
-func TestASteerWhoseCallerLeftDoesNotInterrupt(t *testing.T) {
+func TestASteerOutlivesItsCaller(t *testing.T) {
 	h := newHarness()
 	gate := h.hold("a")
 	cfg := h.config()
@@ -243,20 +243,24 @@ func TestASteerWhoseCallerLeftDoesNotInterrupt(t *testing.T) {
 	var cancels atomic.Int32
 	cfg.CancelTurn = func() { cancels.Add(1) }
 	cfg.SteerTurn = func(ctx context.Context, _, _ *testItem) SteerResult {
-		<-ctx.Done()
-		return SteerRejected
+		select {
+		case <-ctx.Done():
+			return SteerRejected
+		case <-time.After(80 * time.Millisecond):
+			return SteerJoined
+		}
 	}
 	s := New(cfg)
 	_, _ = s.Enqueue(&testItem{id: "a"}, nil)
 	waitFor(t, func() bool { return s.Snapshot().Busy })
 	_, _ = s.Enqueue(&testItem{id: "b"}, nil)
 	_, _ = s.Enqueue(&testItem{id: "c"}, nil)
-	ctx, leave := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, leave := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer leave()
-	if out, err := s.Steer(ctx, "c"); err != nil || out != SteerOutcomeNext || cancels.Load() != 0 || s.CancelRequested() {
-		t.Fatalf("steer = %q %v, interrupts = %d", out, err, cancels.Load())
+	if out, err := s.Steer(ctx, "c"); err != nil || out != SteerOutcomeJoined || cancels.Load() != 0 {
+		t.Fatalf("a delivery whose caller left was abandoned: %q %v, interrupts = %d", out, err, cancels.Load())
 	}
-	if got := pendingIDs(s); !slices.Equal(got, []string{"c", "b"}) {
+	if got := pendingIDs(s); !slices.Equal(got, []string{"b"}) {
 		t.Fatalf("pending = %v", got)
 	}
 	close(gate)

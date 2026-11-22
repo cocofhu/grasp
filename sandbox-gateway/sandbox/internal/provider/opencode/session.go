@@ -281,7 +281,8 @@ func (s *session) Steer(text string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), steerTimeout)
 	defer cancel()
 	err := s.post(ctx, text, id)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if rejected := (*httpError)(nil); err != nil && !errors.As(err, &rejected) {
+		// No answer: the server may have taken it.
 		err = s.steerLanded(id)
 	}
 	if err != nil {

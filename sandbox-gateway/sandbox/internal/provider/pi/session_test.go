@@ -263,6 +263,33 @@ func TestInputThatLandsAfterItsTurnEndedIsWithdrawn(t *testing.T) {
 	}
 }
 
+func TestASteerStillQueuedWhenItsTurnStopsIsWithdrawn(t *testing.T) {
+	installFake(t)
+	users := filepath.Join(t.TempDir(), "users")
+	t.Setenv("GRASP_FAKE_PI_USERS", users)
+	s, rec := open(t, provider.OpenOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(ctx, "hang until steered", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("parked note"); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-out; !errors.Is(err, context.Canceled) {
+		t.Fatalf("stopped turn: %v", err)
+	}
+	if res, err := s.Prompt(turnCtx(t), "hello", nil); err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("next turn: %+v %v", res, err)
+	}
+	if got, _ := os.ReadFile(users); strings.Contains(string(got), "parked") {
+		t.Fatalf("the stopped turn's queued steer reached the next turn:\n%s", got)
+	}
+}
+
 func TestSteerQueuedAfterTheRunEndedIsTakenInOnce(t *testing.T) {
 	installFake(t)
 	users := filepath.Join(t.TempDir(), "users")

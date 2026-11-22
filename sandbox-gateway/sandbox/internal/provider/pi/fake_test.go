@@ -18,8 +18,12 @@ import (
 // leaves a steer queued after the run ends; reloading the session drops the
 // queue. "retry" fails its first request and recovers on Pi's automatic
 // retry, "retry giveup" gives up during the backoff. Anything else gets a
-// reply. A steer containing "slow" is answered late, and refused when it
-// also contains "refuse". After a run ends, get_state may keep reporting streaming
+// reply. A steer containing "slow" is decided at once but answered late
+// (a queued one reaches the run only then), and refused when it also
+// contains "refuse". A steer containing "parked" stays queued until the next
+// run starts, which takes it in first. As in Pi, a steer while a run
+// streams is queued and one while idle starts a run; the prompt answer
+// carries no data. After a run ends, get_state may keep reporting streaming
 // (GRASP_FAKE_PI_LATE_STREAMING reads) or fail (GRASP_FAKE_PI_STATE_FAILS),
 // and the run may stay busy a while past its agent_end
 // (GRASP_FAKE_PI_LINGER_MS).
@@ -53,6 +57,7 @@ type fakePi struct {
 	mu        sync.Mutex
 	streaming bool
 	queued    int
+	parked    []string
 	ended     bool
 	late      int
 	abort     chan struct{}
@@ -107,15 +112,33 @@ func (f *fakePi) handle(cmd map[string]any) {
 		switch {
 		case streaming && cmd["streamingBehavior"] == nil:
 			f.respond(cmd, false, nil, "Agent is already processing.")
+		case streaming && strings.Contains(text, "parked"):
+			f.mu.Lock()
+			f.queued++
+			f.parked = append(f.parked, text)
+			f.mu.Unlock()
+			f.respond(cmd, true, nil, "")
 		case strings.Contains(text, "slow"):
+			refused := strings.Contains(text, "refuse")
+			switch {
+			case refused:
+			case streaming:
+				f.mu.Lock()
+				f.queued++
+				f.mu.Unlock()
+			default:
+				go f.run(text)
+			}
 			go func() {
 				time.Sleep(150 * time.Millisecond)
-				if strings.Contains(text, "refuse") {
+				if refused {
 					f.respond(cmd, false, nil, "input rejected")
 					return
 				}
-				f.respond(cmd, true, map[string]any{"disposition": "queued"}, "")
-				f.steer <- text
+				if streaming {
+					f.steer <- text
+				}
+				f.respond(cmd, true, nil, "")
 			}()
 		case streaming:
 			f.respond(cmd, true, nil, "")
@@ -143,10 +166,8 @@ func (f *fakePi) handle(cmd map[string]any) {
 		}()
 	case "switch_session":
 		f.mu.Lock()
-		f.queued = 0
+		f.queued, f.parked = 0, nil
 		f.mu.Unlock()
-		f.respond(cmd, true, map[string]any{"cancelled": false}, "")
-	case "clear_queue":
 		for drained := false; !drained; {
 			select {
 			case <-f.steer:
@@ -154,7 +175,7 @@ func (f *fakePi) handle(cmd map[string]any) {
 				drained = true
 			}
 		}
-		f.respond(cmd, true, nil, "")
+		f.respond(cmd, true, map[string]any{"cancelled": false}, "")
 	case "extension_ui_response":
 		f.dialog <- cmd["cancelled"] == true
 	}
@@ -188,6 +209,14 @@ func (f *fakePi) delta(kind, text string) {
 func (f *fakePi) run(text string) {
 	f.write(map[string]any{"type": "agent_start"})
 	f.user(text)
+	f.mu.Lock()
+	parked := f.parked
+	f.queued -= len(parked)
+	f.parked = nil
+	f.mu.Unlock()
+	for _, p := range parked {
+		f.user(p)
+	}
 	agentEnd := true
 	defer func() {
 		if agentEnd {
@@ -214,6 +243,9 @@ func (f *fakePi) run(text string) {
 			f.assistant("aborted", "Request was aborted.")
 			return
 		case steer := <-f.steer:
+			f.mu.Lock()
+			f.queued = max(f.queued-1, 0)
+			f.mu.Unlock()
 			f.write(map[string]any{"type": "tool_execution_end", "toolCallId": "call-1", "toolName": "bash",
 				"result": map[string]any{"content": []map[string]string{{"type": "text", "text": "done"}}}})
 			f.assistant("toolUse", "")

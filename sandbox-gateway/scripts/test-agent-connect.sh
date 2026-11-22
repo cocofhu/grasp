@@ -43,7 +43,7 @@ mock_log=""
 config_stage=""
 cleanup() {
   [ -n "$name" ] && docker rm -f "$name" >/dev/null 2>&1 || true
-  [ -n "$config_stage" ] && rm -rf "$config_stage"
+  [ -n "$config_stage" ] && rm -rf "$config_stage" || true
   if [ -n "$mock_pid" ]; then
     kill "$mock_pid" >/dev/null 2>&1 || true
     wait "$mock_pid" 2>/dev/null || true
@@ -106,7 +106,7 @@ install_opencode_mock_config() {
   [ -s "$config_stage/root/.config/opencode/opencode.json" ] || die "provider=opencode: opencode.json 为空"
   tar -C "$config_stage" --owner=0 --group=0 -cf - root/.config/opencode/opencode.json | docker cp - "$name:/" \
     || die "provider=opencode: 无法写入 opencode.json"
-  rm -rf "$config_stage"
+  rm -rf "$config_stage" || die "provider=opencode: 无法清理临时配置目录 $config_stage"
   config_stage=""
   log "provider=opencode: GRASP_OPENCODE_BASE_URL=${base}（custom / OpenAI 兼容适配器）"
 }

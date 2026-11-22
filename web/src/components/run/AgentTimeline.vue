@@ -152,13 +152,15 @@ const workBlocks = computed(() => {
  * Steers keep their place around the reply: before it above the rule, after
  * it below.
  */
-const steers = (after: boolean) =>
-  computed(() => (settled.value
-    ? blocks.value.flatMap((block, i) =>
-      block.kind === 'steer' && (tailAt.value >= 0 && i > tailAt.value) === after ? [block] : [])
-    : []))
-const steersBeforeTail = steers(false)
-const steersAfterTail = steers(true)
+type TextBlock = Exclude<ReturnType<typeof timelineBlocks>[number], { kind: 'tools' }>
+const steerSlots = computed(() => {
+  const slots = { beforeTail: [] as TextBlock[], afterTail: [] as TextBlock[] }
+  if (!settled.value) return slots
+  blocks.value.forEach((block, i) => {
+    if (block.kind === 'steer') (tailAt.value >= 0 && i > tailAt.value ? slots.afterTail : slots.beforeTail).push(block)
+  })
+  return slots
+})
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
 const manualOpen = ref<boolean | null>(null)
@@ -297,14 +299,14 @@ function onToggle(index: number, last: boolean, e: Event) {
           </div>
         </template>
       </div>
-      <div v-for="b in steersBeforeTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+      <div v-for="b in steerSlots.beforeTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
         <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
       </div>
       <hr class="agent-elapsed-rule" data-testid="agent-timeline-rule" />
       <div v-if="tailBlock" class="chat-prose md min-w-0" :data-testid="messageTestId" :title="replyTime">
         <span v-html="renderChatMarkdown(tailBlock.text)" />
       </div>
-      <div v-for="b in steersAfterTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
+      <div v-for="b in steerSlots.afterTail" :key="b.key" class="agent-steer" data-testid="agent-timeline-steer">
         <span class="agent-steer-label">{{ t('pages.clarify.steerLabel') }}</span>{{ b.text }}
       </div>
     </template>

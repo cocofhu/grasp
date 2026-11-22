@@ -172,12 +172,9 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
-	if sess.contextLost && dialogue.Pending == "" && len(history) > 0 {
-		if _, err := c.handOff(chatCtx, sess.acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), history, sess.sb), req.PromptImages); err != nil {
-			return ReactTurn{Msg: "(切换模型后交接上下文失败:" + err.Error() + ")", Err: err}
-		}
+	if _, err := c.handOffLostContext(chatCtx, req, sess, dialogue); err != nil {
+		return ReactTurn{Msg: "(切换模型后交接上下文失败:" + err.Error() + ")", Err: err}
 	}
-	sess.contextLost = false
 	human, skillErr := c.skillPrompt(req, sess.sb, sess.home, human)
 	if skillErr != nil {
 		return ReactTurn{Msg: skillErr.Error(), Err: skillErr}
@@ -382,6 +379,11 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
+	handed, herr := c.handOffLostContext(chatCtx, req, sess, dialogue)
+	if herr != nil {
+		return ReactTurn{Msg: "(切换模型后交接上下文失败:" + herr.Error() + ")", Err: herr}
+	}
+	rehydrated = rehydrated || handed
 	human, skillErr := c.skillPrompt(req, sess.sb, sess.home, human)
 	if skillErr != nil {
 		return ReactTurn{Msg: skillErr.Error(), Err: skillErr}
@@ -819,6 +821,27 @@ func (c *acpProvider) reopenPoisonedReact(ctx context.Context, req NodeReq, sess
 	prime := c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), historyWithoutTrailingHuman(history), cur.sb)
 	_, err = c.handOff(ctx, cur.acp, req, prime, nil)
 	return err
+}
+
+// handOffLostContext gives an agent that a model or tool switch restarted
+// without its native conversation the dialogue before the current message,
+// which ends dialogue.Messages. A pending /compact or /new rebuilds the
+// context itself. It reports whether a handoff was sent; on failure the
+// session stays marked and the next turn tries again.
+func (c *acpProvider) handOffLostContext(ctx context.Context, req NodeReq, sess *reactSession, dialogue models.ChatContext) (bool, error) {
+	if !sess.contextLost {
+		return false, nil
+	}
+	prior := historyWithoutTrailingHuman(dialogue.Messages)
+	if dialogue.Pending != "" || len(prior) == 0 {
+		sess.contextLost = false
+		return false, nil
+	}
+	if _, err := c.handOff(ctx, sess.acp, req, c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), prior, sess.sb), nil); err != nil {
+		return false, err
+	}
+	sess.contextLost = false
+	return true, nil
 }
 
 func historyWithoutTrailingHuman(history []models.ReactMessage) []models.ReactMessage {

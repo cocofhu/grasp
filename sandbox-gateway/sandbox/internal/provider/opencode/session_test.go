@@ -241,6 +241,26 @@ func TestAnUnansweredSteerIsSettledByTheSessionsMessages(t *testing.T) {
 	}
 }
 
+func TestASteerWhoseAnswerWasCutOffIsSettledByTheSessionsMessages(t *testing.T) {
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	out := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(promptCtx(t), "hang until steered", nil)
+		out <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	if err := s.Steer("cutoff, now finish"); err != nil {
+		t.Fatalf("a steer the server took, whose answer was lost: %v", err)
+	}
+	if err := <-out; err != nil {
+		t.Fatal(err)
+	}
+	if p := f.prompts(t); len(p) != 2 {
+		t.Fatalf("prompts = %+v", p)
+	}
+}
+
 func TestMessageIDsFollowOpenCodesOrder(t *testing.T) {
 	a, b := newMessageID(), newMessageID()
 	if !regexp.MustCompile(`^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$`).MatchString(a) || b[:16] <= a[:16] {

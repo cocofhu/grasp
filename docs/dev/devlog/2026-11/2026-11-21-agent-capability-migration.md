@@ -69,7 +69,7 @@
         - OpenCode 第一次读子会话状态失败时，父回合原来直接成功结束，现在同样按未知继续查询。
         - Pi 的 `agent_end` 带 `willRetry: true` 时，平台原来立即报失败，Pi 随后自动重试成功并照常执行。现在等重试结果；重试成功不报上一次的错误，退避期间放弃或被取消（之后没有 `agent_end`）以 `auto_retry_end` 收尾。
         - Pi 发出 `agent_end` 后可能还在收尾，紧接着的下一轮 `prompt` 会被以「Agent is already processing」拒绝。现在遇到这个拒绝就等 Pi 空闲后重发一次。
-        - OpenCode 与 Pi 的引导回执超过 20s 时原来直接报失败，平台中断回合并把引导再跑一遍，而 Agent 可能已经收下。OpenCode 现在按 OpenCode 自己的格式（`msg_` + 毫秒时钟 + 随机串，与会话消息同序）生成 `messageID` 随引导发送，超时后 `GET /session/{id}/message/{messageID}`：有即送达，404 才报失败，查询出错报「无法确认」。Pi 超时不报失败，回合等这条引导的应答再结算；应答在回合结束后才到时，按 `disposition` 中止或清空队列撤回，不让它混进下一轮。
+        - OpenCode 与 Pi 的引导回执超过 20s 时原来直接报失败，平台中断回合并把引导再跑一遍，而 Agent 可能已经收下。OpenCode 现在按 OpenCode 自己的格式（`msg_` + 毫秒时钟 + 随机串，与会话消息同序）生成 `messageID` 随引导发送，超时后 `GET /session/{id}/message/{messageID}`：有即送达，404 才报失败，查询出错报「无法确认」。Pi 超时不报失败，回合等这条引导的应答再结算；应答在回合结束后才到时撤回，不让它混进下一轮（撤回方式见第六轮）。
         - 引导投递期间整段持有切换锁，用户此时点停止要等投递超时（最长 30s）。现在 `cancel` 先结束进行中的投递再取锁；被取消打断、Agent 没收下的引导排到队首，不再额外中断一次，是否保留由取消的 `clearQueue` 决定。
         - Codex、OpenCode 停止回合时同步发 `turn/interrupt` / `abort`（最长 30s）后才开始计 `InterruptGrace`。现在先计时、请求在后台发；`halt` 与 `haltSubagents` 里的状态查询和中断请求也都受同一个截止时间约束。
         - 引导的调用方（HTTP 请求、聊天 WebSocket）断开时，投递随之结束，且不中断回合；条目留在队首。聊天 WebSocket 原来每条引导起一个协程，现在每个连接一个按序执行的协程，最多排 8 条，连接关闭即停止。`Steer` 的队列帧改在释放切换锁之后发布，与 `cancel` 一致。
@@ -98,6 +98,19 @@
         - 公开审批页的时间线不再丢引导。
         - 运行记录页的排队操作失败只记警告，不再变成未处理的 Promise 拒绝。
       - 一致性：前端 `steerText` 与服务端 `models.SteerText` 共用 `web/src/lib/run/__fixtures__/steer_text.json` 测试，措辞变动任一侧都会失败。`ReplyTool` 改由 `AgentTool` 派生。
+    - 评审第六轮：
+      - Pi 撤回：
+        - 原来的撤回依赖 `clear_queue` 命令和 prompt 应答里的 `disposition`，核对上游 0.73.1 两者都不存在，测试夹具模拟的是假行为。现在先用 `get_state` 查状态：Agent 还在运行就 `abort`，队列里还有消息就用 `switch_session` 重载会话（保留历史、丢掉队列）。
+        - 撤回在 `turnMu` 下进行，不会误伤下一回合；下一回合发 prompt 前也会先做这次清理。
+        - 同时修复一个更常见的漏洞：上游的 `abort` 不清队列，回合被中断或失败时还没收下的引导会混进下一回合，现在也会撤回。
+        - 夹具改为与上游一致：排队与开新 run 由收到时的状态决定，应答不带数据。
+        - 引导应答的后台等待加上限（10 倍 `SteerTimeout`）；回合结束后才被拒绝的引导会记日志。
+      - 引导投递与调用方解绑：上一轮把 HTTP 请求的 ctx 传进投递，调用方离开时投递被放弃、条目留在队首，之后会再执行一次。现在投递只受用户的「取消」和 `SteerDeliveryTimeout` 约束；聊天 socket 关闭时，正在进行的投递照常完成，还在排队的引导丢弃，不会被逐条放回队首而颠倒顺序。
+      - OpenCode 引导：除了明确的 HTTP 拒绝，任何没拿到应答的失败（不只是超时，也包括连接中断）都先按消息 id 查回执，服务端已收下的引导不再被当作失败而重复执行。
+      - 切模型后的交接：交接只带当前消息之前的对话，当前消息不再出现两次；没有更早的对话就不交接。交接收进 `handOffLostContext`，`ReviseInPlace`（复审修改、审批驳回）也会执行。
+      - one-shot 用量 ledger：上一轮改成每个会话一把锁后，正在使用的条目可能被淘汰，同一会话出现两份基线，后写的覆盖先写的。现在条目带使用计数，淘汰时跳过在用的条目。
+      - 前端：Run Live、运行记录、收件箱和运行详情的排队删除、引导、重排收进共享的 `reactQueueActions`，请求失败时会弹出提示（原来只记控制台），四份重复实现删除；`AgentTimeline` 的引导一次遍历分到回复前后两组。
+      - 脚本：`test-agent-connect.sh` 的清理步骤失败不再中断后续的进程回收。
     - 合并前瘦身：Codex、OpenCode、Pi 各自复制的回合收尾（中断、失败）、用量累计和等待子 Agent 的轮询收进 `provider`（`EndInterrupted` / `EndFailed`、`TokenUsage.Plus` / `AddUsage` / `CopyUsage`、`AwaitSubagents`），各家只提供怎么查询子 Agent、怎么停下它们；`oneshot` 的用量相加也改用同一实现。OpenCode 测试夹具的开关统一走 `Options`。删除失去调用方的 `containsArg` 和 main 上已无人使用的 `runtime.EnvEnabled`。
     - 实测发现、未改：Claude Code 新版的自动记忆按工作目录写入 `$CONFIG_ROOT/projects/<目录>/memory/`，「新开上下文」后的新会话仍能读到其中内容。这是 CLI 自身的持久记忆，不属于会话状态。
 - 为什么：#1311 要求所有 Agent 走长驻、可引导、可接回的会话，并用有预算、有优先级、可追踪送达的交接替代按字符截断最早记录的旧做法。旧做法超长时会先丢掉最初需求。

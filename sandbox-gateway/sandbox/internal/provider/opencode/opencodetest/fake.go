@@ -8,7 +8,8 @@
 // it is aborted, "background" starts a child that reports busy only after a
 // moment, "replay" re-publishes an earlier turn's failed answer. Any other
 // prompt gets Reply. A prompt containing "receipt" is answered a second
-// late, and not taken at all when it contains "lostreceipt".
+// late, and not taken at all when it contains "lostreceipt"; one containing
+// "cutoff" is taken but its connection drops before the answer.
 package opencodetest
 
 import (
@@ -194,7 +195,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(text, "receipt") {
 			time.Sleep(time.Second)
 		}
-		if f.o.DropPromptReceipt {
+		if f.o.DropPromptReceipt || strings.Contains(text, "cutoff") {
 			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
 				_ = conn.Close()
 			}

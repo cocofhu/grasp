@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { replyTail } from '@/lib/run/replyTail'
+import { reactQueueActions } from '@/lib/run/reactQueueActions'
 import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -3590,37 +3591,14 @@ async function onClarifyCancel() {
   }
 }
 
-async function onClarifyQueueRemove(itemId: string | undefined) {
-  if (!itemId) return
+const {
+  queueRemove: onClarifyQueueRemove,
+  queueSteer: onClarifyQueueSteer,
+  queueReorder: onClarifyQueueReorder,
+} = reactQueueActions(() => {
   const it = active.value
-  if (!it || it.type !== 'clarify' || it.done) return
-  try {
-    await api.reactQueueRemove(it.runId, it.nodeId, itemId)
-  } catch (e: any) {
-    console.warn('reactQueueRemove failed', e?.message || e)
-  }
-}
-
-async function onClarifyQueueSteer(itemId: string) {
-  const it = active.value
-  if (!it || it.type !== 'clarify' || it.done) return
-  try {
-    await api.reactQueueSteer(it.runId, it.nodeId, itemId)
-  } catch (e: any) {
-    console.warn('reactQueueSteer failed', e?.message || e)
-  }
-}
-
-async function onClarifyQueueReorder(itemIds: string[]) {
-  if (!itemIds.length) return
-  const it = active.value
-  if (!it || it.type !== 'clarify' || it.done) return
-  try {
-    await api.reactQueueReorder(it.runId, it.nodeId, itemIds)
-  } catch (e: any) {
-    console.warn('reactQueueReorder failed', e?.message || e)
-  }
-}
+  return it && it.type === 'clarify' && !it.done ? { runId: it.runId, nodeId: it.nodeId } : null
+})
 
 function onFocus() {
   peek({ source: 'focus' })
