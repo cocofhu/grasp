@@ -94,6 +94,8 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.mocked(api.getRunNodeSandbox).mockReset()
     vi.mocked(api.getRunNodeSandbox).mockResolvedValue({ id: 42 } as never)
+    vi.mocked(api.sandboxLog).mockClear()
+    vi.mocked(api.nodeSandboxLog).mockClear()
     setVisibility('visible')
   })
   afterEach(() => {
@@ -218,6 +220,8 @@ describe('ReactArtifactStage sandbox lifecycle', () => {
       await flushPromises()
       expect(wrapper.get('[data-testid="react-artifact-preview-log"]').find('[data-testid="react-artifact-sandbox-paused"]').exists()).toBe(false)
       expect(api.getRunNodeSandbox).not.toHaveBeenCalled()
+      expect(api.sandboxLog).toHaveBeenCalledWith(5, expect.anything())
+      expect(api.nodeSandboxLog).not.toHaveBeenCalled()
       wrapper.unmount()
     })
   })

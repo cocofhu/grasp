@@ -96,9 +96,10 @@ async function fetchLog() {
   logAbort = new AbortController()
   logLoading.value = true
   try {
-    const next = rid && nid
-      ? await api.nodeSandboxLog(rid, nid, { signal: logAbort.signal })
-      : await api.sandboxLog(sid, { signal: logAbort.signal })
+    // A standalone sandbox has no run-node row; its run/node ids only scope artifacts.
+    const next = Number.isFinite(sid) && sid > 0
+      ? await api.sandboxLog(sid, { signal: logAbort.signal })
+      : await api.nodeSandboxLog(rid, nid, { signal: logAbort.signal })
     if (gen !== logGen) return
     log.value = next
   } catch (e) {
