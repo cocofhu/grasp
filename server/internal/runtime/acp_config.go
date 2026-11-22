@@ -36,16 +36,16 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 	specs := c.resolvedMCPSpecs(req)
 	backend := c.routeTool(req)
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
-		BaseWorkDirSrc:       c.sharedWorkDir(req),
-		WorkDirSrc:           c.workDir(profile),
-		EmbeddedSkills:       liveVariantSkills(req),
-		IncludeArtifactStore: hasArtifactStore(specs),
-		OmitOutcomeRule:      req.Caps.Clarify(),
-		MCP:                  specs,
-		OpenCode:             backend == BackendOpenCode,
-		Codex:                backend == BackendCodex,
-		DeepSeekHarness:      backend == BackendDeepSeekHarness,
-		Settings:             CodeBuddySettingsForEnv(backend, env),
+		BaseWorkDirSrc:   c.sharedWorkDir(req),
+		WorkDirSrc:       c.workDir(profile),
+		EmbeddedSkills:   liveVariantSkills(req),
+		IncludeGraspTool: hasGraspTool(specs),
+		OmitOutcomeRule:  req.Caps.Clarify(),
+		MCP:              specs,
+		OpenCode:         backend == BackendOpenCode,
+		Codex:            backend == BackendCodex,
+		DeepSeekHarness:  backend == BackendDeepSeekHarness,
+		Settings:         CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {
 		if c.backend == BackendDeepSeekHarness || env[EnvModelConnection] != "" {
@@ -215,17 +215,17 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	return out
 }
 
-// reservedArtifactStore is the conventional name for the platform's run-scoped
-// artifact-store MCP. It is NOT special-cased in mcp.json: the whole MCP config
+// reservedGraspTool is the conventional name for the platform's run-scoped
+// grasp-tool MCP. It is NOT special-cased in mcp.json: the whole MCP config
 // is user-authored. The run-scoped endpoint + token are exposed only as
 // template vars (see mcpVars) that the user references inside their config,
 // e.g. url "${GRASP_ARTIFACT_URL}" + header "Bearer ${GRASP_ARTIFACT_TOKEN}".
 // The name is used only to gate the convention doc rule and as the UI default.
-const reservedArtifactStore = "artifact-store"
+const reservedGraspTool = "grasp-tool"
 
 // mcpVars are the run-scoped template variables substituted into the Agent's
 // MCP config and env values at runtime. They are the only way the dynamic
-// artifact-store URL/token reach the user-authored mcp.json — so the token is
+// grasp-tool URL/token reach the user-authored mcp.json — so the token is
 // never persisted in config and stays bound to this run (per-run isolation).
 func (c *acpProvider) mcpVars(req NodeReq) map[string]string {
 	m := map[string]string{
@@ -321,7 +321,7 @@ func SubstSlice(s []string, vars map[string]string) []string {
 
 // resolvedMCPSpecs maps the Agent's user-authored MCP servers to sandbox specs,
 // substituting the run-scoped template vars into every string field. A server
-// whose URL/command resolves to empty (e.g. artifact-store while the MCP
+// whose URL/command resolves to empty (e.g. grasp-tool while the MCP
 // endpoint is disabled) is dropped.
 //
 // Workflow ACP never auto-injects live memory/context/scheduler endpoints;
@@ -375,18 +375,18 @@ func IsRetiredPlatformMCP(name, url string) bool {
 	return false
 }
 
-// hasArtifactStore reports whether a server named artifact-store survived
+// hasGraspTool reports whether a server named grasp-tool survived
 // resolution (used only to gate its convention doc rule).
-func hasArtifactStore(specs []sandbox.MCPServerSpec) bool {
+func hasGraspTool(specs []sandbox.MCPServerSpec) bool {
 	for _, s := range specs {
-		if s.Name == reservedArtifactStore {
+		if s.Name == reservedGraspTool {
 			return true
 		}
 	}
 	return false
 }
 
-// mcpURL is the run-scoped artifact-store MCP endpoint reachable from inside
+// mcpURL is the run-scoped grasp-tool MCP endpoint reachable from inside
 // the sandbox (matches router path /mcp/runs/:runId). Empty when unconfigured.
 // Prefers live config (hot-reload) over the boot-time Options snapshot.
 func (c *acpProvider) mcpURL(req NodeReq) string {
@@ -398,7 +398,7 @@ func (c *acpProvider) mcpURL(req NodeReq) string {
 }
 
 // mcpServers builds the ACP mcpServers array injected at session/new from the
-// Agent's declared MCP servers (with artifact-store resolved to its run-scoped
+// Agent's declared MCP servers (with grasp-tool resolved to its run-scoped
 // URL+token). Returns nil when the Agent declares none.
 func (c *acpProvider) mcpServers(req NodeReq) json.RawMessage {
 	return MCPServersJSON(c.resolvedMCPSpecs(req))

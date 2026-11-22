@@ -57,7 +57,7 @@ function compileErrors(source: string): number[] {
 describe('locale message-compiler scan', () => {
   it('baseCompile fails on unescaped ${GRASP_ARTIFACT_URL/TOKEN} (regression probe)', () => {
     const bad =
-      '在 Agent Studio 添加 artifact-store（${GRASP_ARTIFACT_URL/TOKEN}）。'
+      '在 Agent Studio 添加 grasp-tool（${GRASP_ARTIFACT_URL/TOKEN}）。'
     const codes = compileErrors(bad)
     expect(codes.length).toBeGreaterThan(0)
     expect(codes).toContain(CompileErrorCodes.INVALID_TOKEN_IN_PLACEHOLDER)

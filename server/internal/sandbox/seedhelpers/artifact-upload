@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""artifact-upload: 把本地文件上传到本次运行的产物存储 (artifact-store MCP)。
+"""artifact-upload: 把本地文件上传到本次运行的产物存储 (grasp-tool MCP)。
 
 测试节点常用它上传浏览器/UI 截图:CLI 在本地读文件、base64 编码,经 HTTP 调用
 upload_image_artifact 工具写入产物存储,然后把产物名打印到 stdout。Agent 只需把
 这个短产物名填进 set_test_result 的 screenshots[].artifact,无需内联 base64。
 
 环境变量(由平台在沙箱容器内注入):
-  GRASP_ARTIFACT_URL    运行级 artifact-store MCP 端点 (/mcp/runs/<runId>)
+  GRASP_ARTIFACT_URL    运行级 grasp-tool MCP 端点 (/mcp/runs/<runId>)
   GRASP_ARTIFACT_TOKEN  运行级 Bearer 令牌
 
 用法:

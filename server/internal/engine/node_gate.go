@@ -58,7 +58,7 @@ func (e *Engine) resolveGateUpstreamPointer(c *execCtx, node *models.Node) (stri
 }
 
 // captureDeliverable persists an Agent's primary textual output as a run
-// artifact when it has not already written one via the artifact-store MCP, so
+// artifact when it has not already written one via the grasp-tool MCP, so
 // an Agent that declares no products is still reflected in the run's artifacts.
 func (e *Engine) captureDeliverable(c *execCtx, node *models.Node, res runtime.NodeResult) {
 	content := pickDeliverable(res)

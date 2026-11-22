@@ -53,7 +53,7 @@ type Options struct {
 	// a running sandbox. Must stay >= the gateway's FinalizeTimeout so approving
 	// does not give up during a slow cold-start. 0 → Manager default.
 	SandboxCreateTimeout time.Duration
-	// MCPEndpoint is the artifact-store MCP base URL reachable from inside
+	// MCPEndpoint is the grasp-tool MCP base URL reachable from inside
 	// a sandbox container (e.g. http://host.docker.internal:8090).
 	MCPEndpoint string
 	// InjectStore holds short-lived ConfigHome .tgz for gateway bundleUrl inject.

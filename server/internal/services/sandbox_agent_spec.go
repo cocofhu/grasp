@@ -98,14 +98,14 @@ func (s *SandboxService) prepareAgentContainer(profile, threadID, runID, sharedT
 		track.mark(env, EnvSourceSystem)
 	}
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
-		BaseWorkDirSrc:       sharedWorkDir,
-		WorkDirSrc:           s.skills.WorkDir(profile),
-		IncludeArtifactStore: false,
-		MCP:                  specs,
-		OpenCode:             backend == runtime.BackendOpenCode,
-		Codex:                backend == runtime.BackendCodex,
-		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
-		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
+		BaseWorkDirSrc:   sharedWorkDir,
+		WorkDirSrc:       s.skills.WorkDir(profile),
+		IncludeGraspTool: false,
+		MCP:              specs,
+		OpenCode:         backend == runtime.BackendOpenCode,
+		Codex:            backend == runtime.BackendCodex,
+		DeepSeekHarness:  backend == runtime.BackendDeepSeekHarness,
+		Settings:         runtime.CodeBuddySettingsForEnv(backend, env),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build cursor home: %w", err)

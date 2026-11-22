@@ -1441,7 +1441,7 @@ func TestSandboxOpenCreateFailure(t *testing.T) {
 func TestSandboxHelpers(t *testing.T) {
 	vars := map[string]string{"A": "1", "B": "2"}
 	specs := resolveAgentMCP([]MCPServer{
-		{Name: "artifact-store", URL: "${A}"},
+		{Name: "grasp-tool", URL: "${A}"},
 		{Name: "cmd", Command: "run ${B}", Args: []string{"${A}"}, Env: map[string]string{"E": "${B}"}},
 		{Name: "empty"},      // no url/cmd -> dropped
 		{Name: "", URL: "x"}, // no name -> dropped
@@ -1452,15 +1452,15 @@ func TestSandboxHelpers(t *testing.T) {
 	if resolveAgentMCP(nil, vars) != nil {
 		t.Fatal("resolveAgentMCP nil")
 	}
-	if !hasArtifactStoreSpec(specs) {
-		t.Fatal("hasArtifactStoreSpec")
+	if !hasGraspToolSpec(specs) {
+		t.Fatal("hasGraspToolSpec")
 	}
-	if hasArtifactStoreSpec(nil) {
-		t.Fatal("hasArtifactStoreSpec nil should be false")
+	if hasGraspToolSpec(nil) {
+		t.Fatal("hasGraspToolSpec nil should be false")
 	}
 
 	js := runtime.MCPServersJSON(specs)
-	if len(js) == 0 || !strings.Contains(string(js), "artifact-store") {
+	if len(js) == 0 || !strings.Contains(string(js), "grasp-tool") {
 		t.Fatalf("MCPServersJSON: %s", js)
 	}
 
@@ -1479,7 +1479,7 @@ func TestSandboxHelpers(t *testing.T) {
 
 func TestFilterAgentPlatformMCPDropsRetiredEntries(t *testing.T) {
 	specs := filterAgentPlatformMCP(resolveAgentMCP([]MCPServer{
-		{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}"},
+		{Name: "grasp-tool", URL: "${GRASP_ARTIFACT_URL}"},
 		{Name: "memory-store", URL: "${GRASP_MEMORY_URL}"},
 		{Name: "sched", URL: "http://grasp/mcp/task-scheduler/a"},
 		{Name: "pm-workflow-read", URL: "http://grasp/mcp/pm/pm-workflow-read"},
@@ -1501,7 +1501,7 @@ func TestResolveAgentMCPSubstitutesMergedEnv(t *testing.T) {
 	})
 	specs := resolveAgentMCP([]MCPServer{
 		{Name: "server-log", URL: "https://logs.example/mcp", Headers: map[string]string{"Authorization": "Bearer ${LOG_CENTER_TOKEN}"}},
-		{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}", Headers: map[string]string{"Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"}},
+		{Name: "grasp-tool", URL: "${GRASP_ARTIFACT_URL}", Headers: map[string]string{"Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"}},
 	}, vars)
 	if len(specs) != 2 {
 		t.Fatalf("specs=%d", len(specs))
@@ -1513,8 +1513,8 @@ func TestResolveAgentMCPSubstitutesMergedEnv(t *testing.T) {
 	if got := byName["server-log"].Headers["Authorization"]; got != "Bearer secret-from-shared" {
 		t.Fatalf("server-log Authorization=%q", got)
 	}
-	if got := byName["artifact-store"].Headers["Authorization"]; got != "Bearer tok" {
-		t.Fatalf("artifact-store Authorization=%q", got)
+	if got := byName["grasp-tool"].Headers["Authorization"]; got != "Bearer tok" {
+		t.Fatalf("grasp-tool Authorization=%q", got)
 	}
 }
 

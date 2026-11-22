@@ -43,7 +43,7 @@ vi.mock('@/lib/api/api', async () => {
       listToolCapabilities: async () => ({ items: [] }),
       listMcpPresets: async () => ({
         presets: [
-          { id: 'artifact-store', requiresDesktop: false, server: { name: 'artifact-store', url: '${GRASP_ARTIFACT_URL}' } },
+          { id: 'grasp-tool', requiresDesktop: false, server: { name: 'grasp-tool', url: '${GRASP_ARTIFACT_URL}' } },
           { id: 'browser', requiresDesktop: false, server: { name: 'chrome-devtools', command: 'chrome-devtools-mcp' } },
         ],
       }),
@@ -271,26 +271,26 @@ describe('AgentStudio MCP tab', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    const btn = wrapper.get('[data-test="mcp-add-artifact-store"]')
+    const btn = wrapper.get('[data-test="mcp-add-grasp-tool"]')
     expect(btn.classes()).toContain('text-[11px]')
     expect(btn.classes()).toContain('px-2')
     expect(btn.classes()).toContain('py-1')
     expect(btn.classes()).not.toContain('text-xs')
     expect(btn.classes()).not.toContain('py-0.5')
-    expect(btn.text()).toBe('+ 添加产物存储')
+    expect(btn.text()).toBe('+ 添加 Grasp Tool')
     expect(wrapper.get('[data-test="mcp-add-browser"]').text()).toBe('+ 浏览器')
     for (const retired of ['mcp-add-memory', 'mcp-add-context', 'mcp-add-scheduler']) {
       expect(wrapper.find(`[data-test="${retired}"]`).exists()).toBe(false)
     }
   })
 
-  it('renders artifact-store as a platform card', async () => {
+  it('renders grasp-tool as a platform card', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
         mcp: [
           {
-            name: 'artifact-store',
+            name: 'grasp-tool',
             url: '${GRASP_ARTIFACT_URL}',
             headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },
@@ -306,20 +306,20 @@ describe('AgentStudio MCP tab', () => {
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('运行级变量(运行时替换')
     expect(wrapper.get('[data-test="mcp-help-link"]').text()).toBe('帮助')
-    expect(wrapper.find('[data-test="mcp-add-artifact-store"]').exists()).toBe(false)
-    expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
-    expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-preset-key"]').text()).toBe('artifact-store')
-    expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-scope-note"]').text()).toContain('本次运行隔离的产物服务')
-    expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'artifact-store')).toHaveLength(0)
+    expect(wrapper.find('[data-test="mcp-add-grasp-tool"]').exists()).toBe(false)
+    expect(wrapper.get('[data-mcp-name="grasp-tool"] [data-test="mcp-display-name"]').text()).toBe('Grasp Tool')
+    expect(wrapper.get('[data-mcp-name="grasp-tool"] [data-test="mcp-preset-key"]').text()).toBe('grasp-tool')
+    expect(wrapper.get('[data-mcp-name="grasp-tool"] [data-test="mcp-scope-note"]').text()).toContain('本次运行隔离的产物服务')
+    expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'grasp-tool')).toHaveLength(0)
   })
 
-  it('drops platform display after renaming artifact-store in raw JSON', async () => {
+  it('drops platform display after renaming grasp-tool in raw JSON', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
         mcp: [
           {
-            name: 'artifact-store',
+            name: 'grasp-tool',
             url: '${GRASP_ARTIFACT_URL}',
             headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },
@@ -330,15 +330,15 @@ describe('AgentStudio MCP tab', () => {
     await flushPromises()
     await openMcpTab(wrapper)
 
-    expect(wrapper.find('[data-mcp-name="artifact-store"] [data-test="mcp-scope-note"]').exists()).toBe(true)
-    expect(wrapper.get('[data-mcp-name="artifact-store"] [data-test="mcp-display-name"]').text()).toBe('产物存储')
+    expect(wrapper.find('[data-mcp-name="grasp-tool"] [data-test="mcp-scope-note"]').exists()).toBe(true)
+    expect(wrapper.get('[data-mcp-name="grasp-tool"] [data-test="mcp-display-name"]').text()).toBe('Grasp Tool')
     await wrapper.findAll('button').find((item) => item.text() === '原始 JSON')!.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="mcp-help-link"]').exists()).toBe(false)
     await wrapper.get('[data-test="code-editor"]').setValue(
       JSON.stringify([
         {
-          name: 'artifact_store',
+          name: 'grasp_tool',
           url: '${GRASP_ARTIFACT_URL}',
           headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
         },
@@ -346,19 +346,19 @@ describe('AgentStudio MCP tab', () => {
     )
     await wrapper.findAll('button').find((item) => item.text() === '表单编辑')!.trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(false)
+    expect(wrapper.find('[data-mcp-name="grasp-tool"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="mcp-scope-note"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="mcp-custom-name"]').element).toMatchObject({ value: 'artifact_store' })
+    expect(wrapper.get('[data-test="mcp-custom-name"]').element).toMatchObject({ value: 'grasp_tool' })
     expect(wrapper.find('[data-test="mcp-help-link"]').exists()).toBe(true)
   })
 
-  it('removing a custom MCP keeps artifact-store intact', async () => {
+  it('removing a custom MCP keeps grasp-tool intact', async () => {
     mocks.listAgents.mockResolvedValue([
       {
         ...agent(),
         mcp: [
           {
-            name: 'artifact-store',
+            name: 'grasp-tool',
             url: '${GRASP_ARTIFACT_URL}',
             headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },
@@ -377,7 +377,7 @@ describe('AgentStudio MCP tab', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-mcp-name="docs"]').exists()).toBe(false)
-    expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(true)
+    expect(wrapper.find('[data-mcp-name="grasp-tool"]').exists()).toBe(true)
   })
 })
 
@@ -430,7 +430,7 @@ describe('AgentStudio MCP config help', () => {
         ...agent(),
         mcp: [
           {
-            name: 'artifact-store',
+            name: 'grasp-tool',
             url: '${GRASP_ARTIFACT_URL}',
             headers: { Authorization: 'Bearer ${GRASP_ARTIFACT_TOKEN}' },
           },

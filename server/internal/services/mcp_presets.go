@@ -3,10 +3,10 @@ package services
 // Built-in MCP preset ids. The MCP tab offers each preset as a quick-add
 // entry; DefaultPlatformMCP and onboarding read the same definitions.
 const (
-	MCPPresetArtifactStore = "artifact-store"
-	MCPPresetBrowser       = "browser"
-	MCPPresetDesktop       = "desktop"
-	MCPPresetBlender       = "blender"
+	MCPPresetGraspTool = "grasp-tool"
+	MCPPresetBrowser   = "browser"
+	MCPPresetDesktop   = "desktop"
+	MCPPresetBlender   = "blender"
 )
 
 // GraspDesktopBin is where the runtime bundle installs grasp-desktop inside a
@@ -29,9 +29,9 @@ type MCPPreset struct {
 func MCPPresets() []MCPPreset {
 	return []MCPPreset{
 		{
-			ID: MCPPresetArtifactStore,
+			ID: MCPPresetGraspTool,
 			Server: MCPServer{
-				Name:    ArtifactStoreMCP,
+				Name:    GraspToolMCP,
 				URL:     "${GRASP_ARTIFACT_URL}",
 				Headers: map[string]string{"Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"},
 			},

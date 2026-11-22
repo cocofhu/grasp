@@ -4,7 +4,7 @@
   "acpBackend": "cursor",
   "mcp": [
     {
-      "name": "artifact-store",
+      "name": "grasp-tool",
       "url": "${GRASP_ARTIFACT_URL}",
       "headers": {
         "Authorization": "Bearer ${GRASP_ARTIFACT_TOKEN}"

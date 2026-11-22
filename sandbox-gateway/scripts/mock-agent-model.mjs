@@ -177,9 +177,9 @@ function resolveAction(action, tools, items, callID) {
       const search = tools.find((tool) => isToolSearch(tool.name))
       if (!search) throw new Error('native get_history tool is unavailable')
       const properties = search.schema.properties || {}
-      const searchArgs = 'tool_names' in properties ? {tool_names: ['mcp__artifact-store__get_history']}
-        : 'queries' in properties ? {queries: ['artifact-store get_history']}
-          : 'query' in properties ? {query: '+artifact-store get_history'} : undefined
+      const searchArgs = 'tool_names' in properties ? {tool_names: ['mcp__grasp-tool__get_history']}
+        : 'queries' in properties ? {queries: ['grasp-tool get_history']}
+          : 'query' in properties ? {query: '+grasp-tool get_history'} : undefined
       if (!searchArgs) throw new Error('native tool discovery schema has no supported query field')
       if ('top_k' in properties) searchArgs.top_k = 5
       if ('max_results' in properties) searchArgs.max_results = 5
@@ -189,7 +189,7 @@ function resolveAction(action, tools, items, callID) {
     if (discovery.isError || !/get_history/.test(discovery.text)) throw new Error('native history discovery did not return get_history')
     const deferred = tools.find((tool) => isDeferred(tool.name))
     if (!deferred) throw new Error('native deferred tool execution is unavailable')
-    const discoveredName = discovery.text.match(/mcp__[\w.-]*__get_history/)?.[0] || 'mcp__artifact-store__get_history'
+    const discoveredName = discovery.text.match(/mcp__[\w.-]*__get_history/)?.[0] || 'mcp__grasp-tool__get_history'
     return nativeCall(deferred, callID, {toolName: discoveredName, params: args})
   }
   const tool = tools.find((candidate) => /(?:^|\.)(?:bash|exec_command|shell|run_shell_command|execute_bash)$/i.test(candidate.name))

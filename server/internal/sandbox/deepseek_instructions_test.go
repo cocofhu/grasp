@@ -28,7 +28,7 @@ func TestBuildDeepSeekConfigHomePreservesOverlayRulesAndSkills(t *testing.T) {
 	for _, omitOutcome := range []bool{false, true} {
 		dir, err := BuildConfigHome(ConfigHomeSpec{
 			BaseWorkDirSrc: base, WorkDirSrc: agent, DeepSeekHarness: true,
-			IncludeArtifactStore: true, OmitOutcomeRule: omitOutcome,
+			IncludeGraspTool: true, OmitOutcomeRule: omitOutcome,
 			EmbeddedSkills: []string{"skills/live-variants"},
 		})
 		if err != nil {
@@ -40,7 +40,7 @@ func TestBuildDeepSeekConfigHomePreservesOverlayRulesAndSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		for _, required := range []string{"agent delivery contract", "team-wide rule", "基础约定", "artifact-store MCP"} {
+		for _, required := range []string{"agent delivery contract", "team-wide rule", "基础约定", "grasp-tool MCP"} {
 			if !strings.Contains(text, required) {
 				t.Errorf("missing instructions %q", required)
 			}

@@ -1,11 +1,11 @@
 ---
-description: 通过 artifact-store MCP 读写运行产物(强制产物契约)
+description: 通过 grasp-tool MCP 读写运行产物(强制产物契约)
 alwaysApply: true
 ---
 
-# 产物 (artifact-store MCP)
+# 产物 (grasp-tool MCP)
 
-本次运行已为你注入名为 `artifact-store` 的 MCP(按本次运行隔离)。所有"产物"必须通过它读写,
+本次运行已为你注入名为 `grasp-tool` 的 MCP(按本次运行隔离)。所有"产物"必须通过它读写,
 而不是只在工作区留文件:
 
 - `write_artifact(name, content, kind?)`:把内容写入平台产物存储,返回 artifact_id。

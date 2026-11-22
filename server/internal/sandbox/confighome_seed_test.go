@@ -62,7 +62,7 @@ func TestManagerCreateSSHFallbackWhenNoInject(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "rules"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	wantMCP := `{"mcpServers":{"artifact-store":{"url":"http://api.example.com/mcp/runs/r1"}}}`
+	wantMCP := `{"mcpServers":{"grasp-tool":{"url":"http://api.example.com/mcp/runs/r1"}}}`
 	if err := os.WriteFile(filepath.Join(home, "mcp.json"), []byte(wantMCP), 0o644); err != nil {
 		t.Fatal(err)
 	}

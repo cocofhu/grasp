@@ -86,7 +86,7 @@ func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	cfg := SharedAgentConfig{
 		Env:   map[string]string{"K1": "v1"},
 		Files: []AgentFile{{Path: "AGENTS.md", Content: "hello"}},
-		MCP:   []MCPServer{{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}"}},
+		MCP:   []MCPServer{{Name: "grasp-tool", URL: "${GRASP_ARTIFACT_URL}"}},
 	}
 	if err := svc.Save(cfg); err != nil {
 		t.Fatal(err)

@@ -25,10 +25,10 @@ func TestBuildConfigHome(t *testing.T) {
 	t.Cleanup(func() { HomeBaseDir = "" })
 
 	dir, err := BuildConfigHome(ConfigHomeSpec{
-		WorkDirSrc:           src,
-		IncludeArtifactStore: true,
+		WorkDirSrc:       src,
+		IncludeGraspTool: true,
 		MCP: []MCPServerSpec{
-			{Name: "artifact-store", URL: "http://host:9099", Headers: map[string]string{"Authorization": "Bearer x"}},
+			{Name: "grasp-tool", URL: "http://host:9099", Headers: map[string]string{"Authorization": "Bearer x"}},
 			{Name: "local", Command: "node", Args: []string{"server.js"}, Env: map[string]string{"K": "V"}},
 			{Name: ""},           // skipped (no name)
 			{Name: "empty-drop"}, // skipped (no url/command)
@@ -46,8 +46,8 @@ func TestBuildConfigHome(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "skills", "s.md")); err != nil {
 		t.Error("nested skill file not copied")
 	}
-	// Only the platform base and artifact-store rules are embedded.
-	for _, r := range []string{"rules/base.md", "rules/artifact-store.md"} {
+	// Only the platform base and grasp-tool rules are embedded.
+	for _, r := range []string{"rules/base.md", "rules/grasp-tool.md"} {
 		if _, err := os.Stat(filepath.Join(dir, r)); err != nil {
 			t.Errorf("missing embedded rule %s: %v", r, err)
 		}
@@ -85,7 +85,7 @@ func TestBuildConfigHomeHTTPTypeRequired(t *testing.T) {
 	HomeBaseDir = ""
 	dir, err := BuildConfigHome(ConfigHomeSpec{
 		MCP: []MCPServerSpec{{
-			Name: "artifact-store",
+			Name: "grasp-tool",
 			URL:  "http://host.docker.internal:8080/mcp/runs/r1",
 			Headers: map[string]string{
 				"Authorization": "Bearer tok",
@@ -106,7 +106,7 @@ func TestBuildConfigHomeHTTPTypeRequired(t *testing.T) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		t.Fatal(err)
 	}
-	got := doc.MCPServers["artifact-store"]
+	got := doc.MCPServers["grasp-tool"]
 	if got["type"] != "http" {
 		t.Fatalf("mcp.json missing type:http: %s", b)
 	}
@@ -226,24 +226,24 @@ func TestBuildConfigHomeNoSettingsWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestBuildConfigHomeArtifactStoreConditional(t *testing.T) {
+func TestBuildConfigHomeGraspToolConditional(t *testing.T) {
 	HomeBaseDir = ""
-	dir, err := BuildConfigHome(ConfigHomeSpec{IncludeArtifactStore: false})
+	dir, err := BuildConfigHome(ConfigHomeSpec{IncludeGraspTool: false})
 	if err != nil {
 		t.Fatalf("BuildConfigHome: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	if _, err := os.Stat(filepath.Join(dir, "rules/artifact-store.md")); !os.IsNotExist(err) {
-		t.Fatal("artifact-store should be omitted when IncludeArtifactStore=false")
+	if _, err := os.Stat(filepath.Join(dir, "rules/grasp-tool.md")); !os.IsNotExist(err) {
+		t.Fatal("grasp-tool should be omitted when IncludeGraspTool=false")
 	}
 
-	dir2, err := BuildConfigHome(ConfigHomeSpec{IncludeArtifactStore: true})
+	dir2, err := BuildConfigHome(ConfigHomeSpec{IncludeGraspTool: true})
 	if err != nil {
 		t.Fatalf("BuildConfigHome: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir2) })
-	if _, err := os.Stat(filepath.Join(dir2, "rules/artifact-store.md")); err != nil {
-		t.Fatalf("artifact-store missing when enabled: %v", err)
+	if _, err := os.Stat(filepath.Join(dir2, "rules/grasp-tool.md")); err != nil {
+		t.Fatalf("grasp-tool missing when enabled: %v", err)
 	}
 }
 

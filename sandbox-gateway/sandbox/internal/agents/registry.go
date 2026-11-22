@@ -51,7 +51,7 @@ var registry = map[Name]provider.Provider{
 	// cursor-agent: `-p --output-format stream-json --yolo --workspace <cwd>`,
 	// prompt fed raw on stdin (keeps user text off every command line).
 	// --approve-mcps: headless -p must auto-approve seeded ~/.cursor/mcp.json
-	// or artifact-store tools stay connected-but-not-injected.
+	// or grasp-tool tools stay connected-but-not-injected.
 	provider.Cursor: streamjson.New(streamjson.Config{
 		AgentName:     provider.Cursor,
 		Bin:           "cursor-agent",
@@ -69,7 +69,7 @@ var registry = map[Name]provider.Provider{
 	// run => bypass permissions; the interactive question tool is disabled.
 	// --strict-mcp-config + streamjson auto --mcp-config: headless -p does not
 	// load ConfigRoot/mcp.json by default (verified claude 2.1.241); without this
-	// pair artifact-store from SANDBOX_INJECT never reaches the tool list.
+	// pair grasp-tool from SANDBOX_INJECT never reaches the tool list.
 	provider.ClaudeCode: streamjson.New(streamjson.Config{
 		AgentName:  provider.ClaudeCode,
 		Bin:        "claude",
@@ -84,7 +84,7 @@ var registry = map[Name]provider.Provider{
 	// codebuddy: Claude-compatible stream-json fork. --strict-mcp-config
 	// isolates MCP to --mcp-config only (ignores user/project mcp.json).
 	// streamjson.Args auto-adds --mcp-config <ConfigRoot>/mcp.json so the
-	// Approving-seeded artifact-store is not wiped to "zero MCP servers".
+	// Approving-seeded grasp-tool is not wiped to "zero MCP servers".
 	provider.CodeBuddy: streamjson.New(streamjson.Config{
 		AgentName:  provider.CodeBuddy,
 		Bin:        "codebuddy",

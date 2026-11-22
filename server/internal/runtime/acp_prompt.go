@@ -187,7 +187,7 @@ func runInputSeed(req NodeReq) string {
 // pull them on demand through the read_artifact MCP tool. It deliberately does
 // NOT write anything into the workspace: seeding files under .grasp/artifacts/
 // polluted the node's code-change report (they showed up as untracked changes)
-// and is unnecessary, since the artifact-store MCP is always mounted in-sandbox.
+// and is unnecessary, since the grasp-tool MCP is always mounted in-sandbox.
 func (c *acpProvider) upstreamArtifacts(req NodeReq) []string {
 	infos, err := c.host.ListArtifacts(req.RunID, req.Token)
 	if err != nil || len(infos) == 0 {

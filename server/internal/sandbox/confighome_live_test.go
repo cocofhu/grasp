@@ -28,7 +28,7 @@ func TestLiveGatewayConfigHomeInject(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "rules"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mcpBody := `{"mcpServers":{"artifact-store":{"url":"http://api.example.com/mcp/runs/live-inject-test","headers":{"Authorization":"Bearer live-tok"}}}}`
+	mcpBody := `{"mcpServers":{"grasp-tool":{"url":"http://api.example.com/mcp/runs/live-inject-test","headers":{"Authorization":"Bearer live-tok"}}}}`
 	if err := os.WriteFile(filepath.Join(home, "mcp.json"), []byte(mcpBody), 0o644); err != nil {
 		t.Fatal(err)
 	}

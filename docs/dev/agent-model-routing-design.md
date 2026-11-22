@@ -49,7 +49,7 @@ GitHub / GitLab 凭据保存 `host`，默认分别为 `https://github.com` / `ht
 
 Solo 创建支持 `initialConfigurationId` 和原有 `initialModelId`；切换支持 `configurationId`、`modelId`、推理强度。会话分别保存初始、当前请求和实际已应用的模型组；模型标识必须与模型组共同定位，不能按原始模型 ID 跨账号去重。省略模型组保留当前组，显式空组选择 Agent 默认组。保存后立即通知同一会话已连接的视图，当前轮使用原路由，新请求在下一轮应用；忙时保留下一轮生效提示，早先发起的详情读取不能覆盖新的选择通知。失败回退使用包含组标识的条件更新，避免覆盖较新的用户选择。
 
-新工具首次输入主动携带早期用户要求及近期对话，保留原始消息 ID、失败状态、附件引用与可见工具结果；超出输入预算的部分明确标注摘录并提供历史入口。artifact-store 的只读 `get_history(view="summary"|"messages", cursor?, limit?)` 复用原始 `SoloMessage` 数据；默认当前会话，Token 与当前沙箱代次决定范围，调用方不能指定其他会话。分页固定快照并按时间/消息 ID 读取，返回 `history_version`、`next_cursor`；页内顺序为正序，游标继续读取更早消息。关闭会话和旧沙箱代次失去访问权限。现有工作流 `list_run_history` / `get_history_detail` 保留原执行历史语义。
+新工具首次输入主动携带早期用户要求及近期对话，保留原始消息 ID、失败状态、附件引用与可见工具结果；超出输入预算的部分明确标注摘录并提供历史入口。grasp-tool 的只读 `get_history(view="summary"|"messages", cursor?, limit?)` 复用原始 `SoloMessage` 数据；默认当前会话，Token 与当前沙箱代次决定范围，调用方不能指定其他会话。分页固定快照并按时间/消息 ID 读取，返回 `history_version`、`next_cursor`；页内顺序为正序，游标继续读取更早消息。关闭会话和旧沙箱代次失去访问权限。现有工作流 `list_run_history` / `get_history_detail` 保留原执行历史语义。
 
 模型组、连接、凭据、Agent 和默认配置成功保存后发出目录失效通知。本页使用响应式版本更新，浏览器其他标签页通过 BroadcastChannel/storage 通知重读；不广播密钥、对话或执行状态。读取代次阻止旧请求盖回新目录，读取失败保留已选项，失效引用要求用户重新选择。其他用户刷新时读取当前服务端配置。
 
