@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ListNodePreviews returns registered preview ports for a run/node.
+// ListNodePreviews returns the active preview for a run/node.
 func (h *Handlers) ListNodePreviews(c *gin.Context) {
 	runID := c.Param("id")
 	nodeID := c.Param("nodeId")
@@ -349,11 +349,9 @@ func isRootAbsolute(p string) bool {
 func (h *Handlers) lookupPreviewRegistration(runID, nodeID string, port int) mcp.PreviewPort {
 	reg := mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: port}
 	if h.MCP != nil {
-		for _, p := range h.MCP.ListPreviewPorts(runID, nodeID) {
-			if p.Port == port {
-				reg = p
-				break
-			}
+		ports := h.MCP.ListPreviewPorts(runID, nodeID)
+		if len(ports) == 1 && ports[0].Port == port {
+			reg = ports[0]
 		}
 	}
 	if (reg.Host == "" || reg.SandboxName == "") && h.Preview != nil {

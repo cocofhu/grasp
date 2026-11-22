@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSetPreviewGateAndUpsert(t *testing.T) {
+func TestSetPreviewGateAndReplace(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewBaseURL("http://app.example.com")
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.1:5173"})
@@ -42,11 +42,16 @@ func TestSetPreviewGateAndUpsert(t *testing.T) {
 	}
 	ports = h.ListPreviewPorts("r1", "preview1")
 	if len(ports) != 1 || ports[0].Label != "Web" {
-		t.Fatalf("upsert label: %+v", ports)
+		t.Fatalf("replace label: %+v", ports)
+	}
+	callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":8080,"label":"管理端"}}}`)
+	ports = h.ListPreviewPorts("r1", "preview1")
+	if len(ports) != 1 || ports[0].Port != 8080 || ports[0].Label != "管理端" {
+		t.Fatalf("replace port: %+v", ports)
 	}
 
 	h.SetActiveNode("r1", "preview1", capsPlain)
-	bad := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":8080}}}`)
+	bad := callPreviewTool(t, h, "r1", tok, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"set_preview","arguments":{"port":8081}}}`)
 	if !previewResultIsError(bad) {
 		t.Fatal("expected set_preview rejected without the grant")
 	}

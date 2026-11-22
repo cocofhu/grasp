@@ -31,8 +31,8 @@ func TestOutcomeContractSeparatesVerdictFromFailure(t *testing.T) {
 func TestPreviewContractSteersPortUse(t *testing.T) {
 	for _, want := range []string{
 		"set_preview(port=实际端口)",
-		"同一时刻只有一个端口带取点",
-		"只登记用户当前要看的那一个前端页面",
+		"每个沙箱只保留一个活动预览",
+		"只登记用户当前要看的前端页面",
 		"非页面服务不要登记",
 		"会被拒绝",
 		"http://127.0.0.1:<应用实际端口>/",

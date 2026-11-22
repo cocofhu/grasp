@@ -133,8 +133,8 @@ func (s *previewMainSnapshot) frameAfter(previous *previewMainSnapshot) gin.H {
 }
 
 // One source subscription and one coalescing loop serve every viewer of a
-// conversation, including different ports/share links. The last viewer owns
-// cleanup; no transcript or subscription survives after it disconnects.
+// conversation and share link. The last viewer owns cleanup; no transcript or
+// subscription survives after it disconnects.
 func (h *Handlers) subscribePreviewMain(link *models.GateShareLink, sb models.Sandbox) (<-chan previewMainUpdate, func()) {
 	key := previewMainStreamKey{link.RunID, link.NodeID, link.CreatedBy, sb.ID, link.Iteration}
 	h.previewMainMu.Lock()

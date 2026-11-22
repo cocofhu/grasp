@@ -17,8 +17,8 @@ type switchPreviewOps struct {
 	injectOK    bool
 	injectCalls []int
 	published   []int
-	events      []string
 	upFor       map[int]string
+	switchesRes []InjectSwitch
 }
 
 func newSwitchOps(res InjectSwitch) *switchPreviewOps {
@@ -31,8 +31,12 @@ func newSwitchOps(res InjectSwitch) *switchPreviewOps {
 }
 
 func (s *switchPreviewOps) SwitchInjectUpstream(_ context.Context, _ string, port int) (InjectSwitch, error) {
-	s.events = append(s.events, "switch:"+strconv.Itoa(port))
 	s.switches = append(s.switches, port)
+	if len(s.switchesRes) > 0 {
+		res := s.switchesRes[0]
+		s.switchesRes = s.switchesRes[1:]
+		return res, nil
+	}
 	if len(s.switches) > 1 {
 		return InjectSwitch{Result: InjectReset, PreviewPort: s.res.PreviewPort}, nil
 	}
@@ -45,7 +49,6 @@ func (s *switchPreviewOps) ProbeInjectUpstream(_ context.Context, _ string, prev
 }
 
 func (s *switchPreviewOps) EnsurePublishedPort(_ context.Context, _ string, port int) (string, bool) {
-	s.events = append(s.events, "publish:"+strconv.Itoa(port))
 	s.published = append(s.published, port)
 	if base, ok := s.upFor[port]; ok {
 		return base, true
@@ -138,68 +141,83 @@ func TestSetPreviewSwitchKeepaliveFailureResetsInjector(t *testing.T) {
 	}
 }
 
-func TestSetPreviewSwitchReleasesDisplacedRegistration(t *testing.T) {
+func TestSetPreviewSwitchFailureRestoresPreviousInjector(t *testing.T) {
 	fastPreviewProbe(t)
 	h := NewHost(&memStore{})
-	store := &memPreviewStore{ports: []PreviewPort{{
-		RunID: "r", NodeID: "n", Kind: PreviewKindPort, Port: 3001,
-		ProxyURL: "/preview/r/n/3001/", Host: "http://10.0.0.8:18081", Healthy: true,
-	}}}
+	store := &memPreviewStore{}
 	h.SetPreviewStore(store)
 	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
+	ops.switchesRes = []InjectSwitch{
+		{Result: InjectSwitched, PreviewPort: 18081},
+		{Result: InjectSwitched, PreviewPort: 18081},
+	}
 	h.SetPreviewSandboxOps(ops)
-
-	if _, err := h.setPreviewPort("r", "n", 5173, ""); err != nil {
+	if _, err := h.setPreviewPort("r", "n", 5173, "old"); err != nil {
 		t.Fatal(err)
 	}
-	byPort := map[int]PreviewPort{}
-	for _, p := range store.ports {
-		byPort[p.Port] = p
+	ops.injectOK = false
+	if _, err := h.setPreviewPort("r", "n", 4000, "new"); err == nil {
+		t.Fatal("failed switch should return an error")
 	}
-	if byPort[3001].Host != "http://10.0.0.8:49153" {
-		t.Fatalf("displaced 3001 must go back to its own address: %+v", byPort[3001])
+	if len(ops.switches) != 3 || ops.switches[2] != 5173 {
+		t.Fatalf("injector rollback switches=%v", ops.switches)
 	}
-	if byPort[5173].Host != "http://10.0.0.8:18081" {
-		t.Fatalf("5173=%+v", byPort[5173])
+	ports := h.ListPreviewPorts("r", "n")
+	if len(ports) != 1 || ports[0].Port != 5173 || ports[0].Label != "old" {
+		t.Fatalf("previous preview was not retained=%+v", ports)
 	}
 }
 
-func TestSetPreviewSwitchPublishesDisplacedPortBeforeInjectorSwitch(t *testing.T) {
+func TestSetPreviewSaveFailureRestoresPreviousInjector(t *testing.T) {
 	fastPreviewProbe(t)
 	h := NewHost(&memStore{})
-	store := &memPreviewStore{ports: []PreviewPort{{
-		RunID: "r", NodeID: "n", Kind: PreviewKindPort, Port: 3001,
-		ProxyURL: "/preview/r/n/3001/", Host: "http://10.0.0.8:18081", InjectorPort: 18081, Healthy: true,
-	}}}
+	store := &memPreviewStore{}
 	h.SetPreviewStore(store)
 	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
-	delete(ops.upFor, 3001) // reproduce an app port absent from the initial publish set
+	ops.switchesRes = []InjectSwitch{
+		{Result: InjectSwitched, PreviewPort: 18081},
+		{Result: InjectSwitched, PreviewPort: 18081},
+	}
 	h.SetPreviewSandboxOps(ops)
-
-	if _, err := h.setPreviewPort("r", "n", 5173, "new"); err != nil {
+	if _, err := h.setPreviewPort("r", "n", 5173, "old"); err != nil {
 		t.Fatal(err)
 	}
-	byPort := map[int]PreviewPort{}
-	for _, p := range store.ports {
-		byPort[p.Port] = p
+	store.err = errors.New("store unavailable")
+	if _, err := h.setPreviewPort("r", "n", 4000, "new"); err == nil {
+		t.Fatal("store failure should return an error")
 	}
-	if got := byPort[3001].Host; got == "" || got == "http://10.0.0.8:18081" {
-		t.Fatalf("displaced app was not independently published: %+v", byPort[3001])
+	if len(ops.switches) != 3 || ops.switches[2] != 5173 {
+		t.Fatalf("injector rollback switches=%v", ops.switches)
 	}
-	if byPort[3001].InjectorPort != 0 {
-		t.Fatalf("displaced app still records the injector: %+v", byPort[3001])
+	ports := h.ListPreviewPorts("r", "n")
+	if len(ports) != 1 || ports[0].Port != 5173 || ports[0].Label != "old" {
+		t.Fatalf("previous preview was not retained=%+v", ports)
 	}
-	publish, sw := -1, -1
-	for i, event := range ops.events {
-		if event == "publish:3001" && publish < 0 {
-			publish = i
-		}
-		if event == "switch:5173" && sw < 0 {
-			sw = i
-		}
+}
+
+func TestSetPreviewReplacesPreviousRegistration(t *testing.T) {
+	fastPreviewProbe(t)
+	h := NewHost(&memStore{})
+	store := &memPreviewStore{}
+	h.SetPreviewStore(store)
+	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
+	h.SetPreviewSandboxOps(ops)
+
+	if _, err := h.setPreviewPort("r", "n", 5173, "old"); err != nil {
+		t.Fatal(err)
 	}
-	if publish < 0 || sw < 0 || publish >= sw {
-		t.Fatalf("old port must publish before injector switch: events=%v", ops.events)
+	if _, err := h.setPreviewPort("r", "n2", 3001, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.ports) != 1 || store.ports[0].Port != 3001 || store.ports[0].Label != "new" {
+		t.Fatalf("store=%+v", store.ports)
+	}
+	if ports := h.ListPreviewPorts("r", "n"); len(ports) != 0 {
+		t.Fatalf("old sandbox preview=%+v", ports)
+	}
+	ports := h.ListPreviewPorts("r", "n2")
+	if len(ports) != 1 || ports[0].Port != 3001 || ports[0].Label != "new" {
+		t.Fatalf("active preview=%+v", ports)
 	}
 }
 
@@ -231,7 +249,7 @@ func TestSetPreviewBusyKeepsPreviewPortAndExplains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Picked || !strings.Contains(reg.Note, "已被另一个页面占用") || !strings.Contains(reg.Note, "18081") {
+	if reg.Picked || !strings.Contains(reg.Note, "当前无法切换") || !strings.Contains(reg.Note, "18081") {
 		t.Fatalf("reg=%+v", reg)
 	}
 	if len(ops.published) != 1 || ops.published[0] != 3001 {

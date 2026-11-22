@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 应用预览每个沙箱只保留一个活动 Preview。再次调用 `set_preview` 会替换当前预览，预览界面和公开分享页不再提供多端口切换标签。
+
 - 修复状态栏「执行中」把环境仍开着但空闲的 Solo 会话也算进去的问题：现在只统计启动中或正在执行回合的 Solo 会话。
 
 - 移除首页背景粒子网络动画。Dashboard 不再创建粒子画布和持续的 `requestAnimationFrame` 循环，首页内容、角色、工作流和 Solo 交互保持原有入口。

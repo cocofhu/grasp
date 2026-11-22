@@ -93,10 +93,9 @@ func (h *Handlers) ManageAppPreviewShare(c *gin.Context) {
 }
 
 func (h *Handlers) directAppPreviewURL(runID, nodeID string, port int) string {
-	for _, reg := range h.MCP.ListPreviewPorts(runID, nodeID) {
-		if reg.Port == port && reg.Mode == "direct" && originOf(reg.DirectURL) != "" {
-			return reg.DirectURL
-		}
+	ports := h.MCP.ListPreviewPorts(runID, nodeID)
+	if len(ports) == 1 && ports[0].Port == port && ports[0].Mode == "direct" && originOf(ports[0].DirectURL) != "" {
+		return ports[0].DirectURL
 	}
 	return ""
 }
@@ -109,7 +108,9 @@ func (h *Handlers) appPreviewSandbox(runID, nodeID string, port int) (models.San
 	if !ok || sb.Status != "running" {
 		return models.Sandbox{}, false
 	}
-	for _, reg := range h.MCP.ListPreviewPorts(runID, nodeID) {
+	ports := h.MCP.ListPreviewPorts(runID, nodeID)
+	if len(ports) == 1 {
+		reg := ports[0]
 		if reg.Port == port && reg.Kind != "url" && (reg.SandboxName == "" || reg.SandboxName == sb.Name) &&
 			(reg.Host != "" || reg.SandboxName != "") {
 			return sb, true

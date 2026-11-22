@@ -250,6 +250,9 @@ func gormConfig() *gorm.Config {
 
 // finalize runs the shared post-open steps (migrate + initial seed) for any driver.
 func finalize(db *gorm.DB) (*gorm.DB, error) {
+	if err := migrateLegacyPreviewStorage(db); err != nil {
+		return nil, err
+	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return nil, err
 	}
