@@ -78,6 +78,8 @@ All notable public-release changes are documented here.
 
 - 沙箱镜像不再安装任何 MongoDB 工具（`mongocli`、`mongosh`、`mongodump` 等 `mongodb-database-tools`），构建时不再访问 MongoDB 的 apt 源和 `fastdl.mongodb.org`。需要时可在沙箱内自行安装。
 
+- 桌面沙箱镜像构建时，Blender、Godot、draw.io 和 3D Slicer 的下载在连接中途断开后也会自动重试；Slicer 安装包会断点续传，不再因网络抖动导致构建失败。
+
 - 沙箱镜像改由 sandbox-gateway 统一决定，Grasp 不再配置镜像（破坏性变更）：
   - 删除 `sandbox.image`、`sandbox.images.*`、`GRASP_SANDBOX_IMAGE` 和 `GRASP_SANDBOX_IMAGE_<BACKEND>`。仍配置时启动打印 warning 并忽略，不会启动失败。请把镜像迁到网关：Docker/K8s 用 `image` 或 `profiles`，E2B 用 `defaultTemplate` 或 `templates`，然后从 Grasp 配置中删除。
   - Grasp 创建沙箱时不再传镜像，只在命名网关连接配置了 `profile` 时传环境名。不再支持按编码工具使用不同镜像；所有编码工具共用网关的同一环境，切换模型分组或编码工具时也不再因镜像不同而拒绝原地切换。
