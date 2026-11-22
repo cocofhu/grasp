@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { api, type SandboxView } from '@/lib/api/api'
 import { httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
@@ -377,6 +378,8 @@ onBeforeUnmount(() => {
       </article>
     </div>
 
+    <div class="flex min-h-0 flex-1 flex-col border-t border-line/70">
+
     <div
       v-if="error && !initialLoading && rows.length && !initialLoadFailed && !loadDenied"
       class="mb-3 shrink-0 border-l-2 border-err/40 py-2 pl-3 text-[13px] text-err"
@@ -391,24 +394,30 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="flex shrink-0 flex-col gap-3 px-4 pb-3 md:flex-row md:items-center md:px-5">
+    <div class="flex shrink-0 flex-col px-4 pb-2 pt-0 md:flex-row md:items-center md:px-5">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>
           <span class="font-mono text-[11px] font-medium text-txt3">{{ rows.length }}</span>
         </div>
-        <div class="flex items-center gap-1" role="tablist" :aria-label="t('pages.sandboxes.filters.label')">
+        <SlidingTabs
+          :value="activeFilter"
+          class="flex w-fit items-center gap-0.5"
+          role="tablist"
+          :aria-label="t('pages.sandboxes.filters.label')"
+          indicator-class="bg-transparent shadow-none"
+        >
           <button
             v-for="filter in sandboxFilters"
             :key="filter.key"
             type="button"
             role="tab"
             :aria-selected="activeFilter === filter.key"
-            class="px-2 py-1.5 text-[11px] font-medium text-txt3 transition hover:text-txt"
+            class="relative rounded-md bg-transparent px-2.5 py-1.5 text-[11px] font-medium text-txt3 transition hover:bg-transparent hover:text-txt"
             :class="activeFilter === filter.key ? 'font-semibold text-txt' : ''"
             @click="activeFilter = filter.key"
           >{{ filter.label }} <span v-if="filter.key !== 'all'" class="ml-0.5 text-[10px] opacity-70">{{ filter.count }}</span></button>
-        </div>
+        </SlidingTabs>
       </div>
     </div>
 
@@ -694,6 +703,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    </div>
     </section>
 
     <!-- Sandbox detail (metadata / proxy URLs / named endpoints) -->
