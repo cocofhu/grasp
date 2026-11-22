@@ -57,7 +57,6 @@ let detailSeq = 0
 type SandboxFilter = 'all' | 'running' | 'busy' | 'creating'
 
 const activeFilter = ref<SandboxFilter>('all')
-const searchQuery = ref('')
 
 function filterFor(s: SandboxView): Exclude<SandboxFilter, 'all'> | 'other' {
   if (s.status === 'pulling' || s.status === 'creating') return 'creating'
@@ -66,14 +65,7 @@ function filterFor(s: SandboxView): Exclude<SandboxFilter, 'all'> | 'other' {
 }
 
 const filteredRows = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  return rows.value.filter((s) => {
-    const matchesFilter = activeFilter.value === 'all' || filterFor(s) === activeFilter.value
-    const matchesSearch = !query || [s.name, s.profile, s.workflowName, s.workflowId, s.runId, s.nodeId]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(query))
-    return matchesFilter && matchesSearch
-  })
+  return rows.value.filter((s) => activeFilter.value === 'all' || filterFor(s) === activeFilter.value)
 })
 
 const sandboxStats = computed(() => ({
@@ -398,7 +390,7 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <div class="mb-3 flex shrink-0 flex-col gap-3 rounded-xl border border-line bg-surface px-3.5 py-3 md:flex-row md:items-center md:justify-between">
+    <div class="mb-3 flex shrink-0 flex-col gap-3 rounded-xl border border-line bg-surface px-3.5 py-3 md:flex-row md:items-center">
       <div class="flex min-w-0 flex-wrap items-center gap-2.5">
         <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
           <span>{{ t('pages.sandboxes.listTitle') }}</span>
@@ -417,17 +409,6 @@ onBeforeUnmount(() => {
           >{{ filter.label }} <span v-if="filter.key !== 'all'" class="ml-0.5 text-[10px] opacity-70">{{ filter.count }}</span></button>
         </div>
       </div>
-      <label class="flex h-8 w-full items-center gap-2 rounded-lg border border-line bg-base px-2.5 text-txt3 transition focus-within:border-accent-2/60 focus-within:ring-2 focus-within:ring-accent-2/10 md:w-52">
-        <Icon name="search" :size="14" />
-        <input
-          v-model="searchQuery"
-          type="search"
-          :placeholder="t('pages.sandboxes.searchPlaceholder')"
-          :aria-label="t('pages.sandboxes.searchPlaceholder')"
-          class="min-w-0 flex-1 bg-transparent text-[12px] text-txt outline-none placeholder:text-txt3"
-          @keydown.esc="searchQuery = ''"
-        />
-      </label>
     </div>
 
     <!-- Mobile records use the same flat list hierarchy as the desktop table. -->

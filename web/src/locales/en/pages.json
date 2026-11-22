@@ -1285,7 +1285,6 @@
       "title": "Sandboxes",
       "runtimeLabel": "Agent runtime",
       "listTitle": "All sandboxes",
-      "searchPlaceholder": "Search sandbox ID",
       "noMatching": "No matching sandboxes",
       "filters": {
         "label": "Filter sandboxes by status",

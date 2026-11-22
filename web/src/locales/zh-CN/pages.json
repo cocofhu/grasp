@@ -1285,7 +1285,6 @@
       "title": "沙箱",
       "runtimeLabel": "Agent 运行环境",
       "listTitle": "全部沙箱",
-      "searchPlaceholder": "搜索沙箱 ID",
       "noMatching": "没有匹配的沙箱",
       "filters": {
         "label": "沙箱状态筛选",
