@@ -1,8 +1,8 @@
 import type { CliCatalogModel, CliModelTag } from '@/lib/api/apiTypes'
 
-/** The argv head each backend's sandbox launches; the picker previews `--model` against it. */
+/** The argv head each backend's sandbox launches (Cursor: the SDK it runs); the picker previews the model against it. */
 const LAUNCH_HEAD: Record<string, string> = {
-  cursor: 'cursor-agent',
+  cursor: '@cursor/sdk',
   claude_code: 'claude',
   codebuddy: 'codebuddy',
   trae: 'traecli acp serve',
@@ -119,6 +119,11 @@ export function contextRatio(k?: number): number {
   return Math.min(1, k / CONTEXT_FULL_K)
 }
 
+/** How the backend is told the model: a `--model` flag, or Cursor's SDK selection. */
+export function modelArg(backend: string, modelId: string): string {
+  return backend === 'cursor' ? `model=${modelId}` : `--model ${modelId}`
+}
+
 export function launchCommand(backend: string, modelId: string): string {
   const head = LAUNCH_HEAD[backend] || backend
   // DeepSeek and Kimi Code write the model into their own config, not a CLI flag.
@@ -126,7 +131,7 @@ export function launchCommand(backend: string, modelId: string): string {
   if (!modelId) return head
   // The Codex app-server takes its model as a config override.
   if (backend === 'codex') return `${head} -c model="${modelId}"`
-  return `${head} --model ${modelId}`
+  return `${head} ${modelArg(backend, modelId)}`
 }
 
 function hasTag(m: CliCatalogModel | null | undefined, tag: CliModelTag): boolean {

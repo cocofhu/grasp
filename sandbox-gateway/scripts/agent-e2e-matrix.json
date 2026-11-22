@@ -1,6 +1,6 @@
 {
   "tools": [
-    {"id": "cursor", "bin": "cursor-agent", "mode": "platform-wire-fixture", "model": "gpt-5", "efforts": [], "reason": "Cursor uses its authenticated proprietary service, not an OpenAI model endpoint."},
+    {"id": "cursor", "sdk": "/opt/grasp/cursor-sdk", "mode": "platform-sdk-fixture", "model": "gpt-5.5", "efforts": ["low", "high"], "defaultEffort": "medium", "unsupportedEfforts": ["minimal", "max"], "reason": "Cursor runs on its authenticated proprietary service through @cursor/sdk, not an OpenAI model endpoint. Grasp's real SDK bridge is exercised against a stand-in package; vendor inference is not covered."},
     {"id": "claude_code", "bin": "claude", "mode": "native-cli", "protocol": "anthropic-messages", "model": "claude-sonnet-4-6", "efforts": []},
     {"id": "codebuddy", "bin": "codebuddy", "mode": "native-cli", "protocol": "openai-chat-completions", "model": "gpt-5", "efforts": []},
     {"id": "trae", "bin": "traecli", "mode": "platform-wire-fixture", "model": "gpt-5", "efforts": [], "reason": "Trae requires its own platform authorization; a DeepSeek key cannot replace it."},

@@ -15,7 +15,7 @@ func FixedEffortBinding(backend string, connection *Connection) bool {
 
 // ReasoningEfforts returns only declared choices for adapters that apply a
 // separate effort. Model identifiers remain opaque; their spelling grants no
-// capabilities. Kimi Code uses its CLI shortlist; compatible connection
+// capabilities. Kimi Code and Cursor use their CLI shortlist; compatible connection
 // adapters may take their levels from connection metadata.
 func ReasoningEfforts(backend, modelID string, connection *Connection) []string {
 	modelID = strings.TrimSpace(modelID)
@@ -28,7 +28,7 @@ func ReasoningEfforts(backend, modelID string, connection *Connection) []string 
 		}
 		return providerModelEfforts(connection, modelID)
 	}
-	if backend == "kimi_code" {
+	if backend == "kimi_code" || backend == "cursor" {
 		return cliModelEfforts(backend, modelID)
 	}
 	if backend != "codex" && backend != "deepseek_harness" {
@@ -57,6 +57,18 @@ func ReasoningEfforts(backend, modelID string, connection *Connection) []string 
 		return cliModelEfforts(backend, modelID)
 	}
 	return nil
+}
+
+// DefaultReasoningEffort is the level the tool itself runs a shortlisted
+// model at when the session picks none; empty when its catalog does not say.
+func DefaultReasoningEffort(backend, modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	for _, model := range clicatalog.Models(backend) {
+		if model.ID == modelID {
+			return model.DefaultEffort
+		}
+	}
+	return ""
 }
 
 func cliModelEfforts(backend, modelID string) []string {

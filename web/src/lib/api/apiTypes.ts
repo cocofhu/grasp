@@ -552,6 +552,8 @@ export interface CliCatalogModel {
   recommended?: boolean
   /** Reasoning levels the CLI accepts for this model; absent means none. */
   efforts?: string[]
+  /** The level the coding tool runs the model at when none is chosen. */
+  defaultEffort?: string
   /** Fast mode is declared by the coding-tool catalog. */
   serviceTiers?: string[]
 }
@@ -651,6 +653,8 @@ export interface SoloSession {
   reasoningEffort?: string
   /** Exact supported levels for the current model. Empty/absent means unsupported. */
   reasoningEfforts?: string[]
+  /** The listed level the coding tool itself runs the model at, when known. */
+  defaultReasoningEffort?: string
   serviceTier?: string
   serviceTiers?: string[]
   /** Stable code set when a model switch is rolled back. */

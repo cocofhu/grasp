@@ -56,7 +56,7 @@ export function resolveHomeLaunchModel(input: {
     model: {
       configurationId: picked.configurationId || parseModelRoute(picked.id).configurationId || '',
       modelId,
-      reasoningEffort: effort || defaultReasoningEffort(listed),
+      reasoningEffort: effort || defaultReasoningEffort(listed, picked.defaultEffort),
       ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     },
   }

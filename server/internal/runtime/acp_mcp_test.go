@@ -15,7 +15,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 )
 
-// TestCursorLiveMCP verifies the in-container cursor-agent natively connects
+// TestCursorLiveMCP verifies the in-container Cursor agent natively connects
 // to the run-scoped grasp-tool MCP (injected at ACP session/new + via
 // /root/.cursor/mcp.json) and calls write_artifact. No produces contract is
 // set, so harvest does NOT run: an artifact in the store proves the MCP path.
