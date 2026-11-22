@@ -220,6 +220,14 @@ func TestPlatformStatus_activeSoloCountsStayFresh(t *testing.T) {
 	if err := db.Create(&sessions).Error; err != nil {
 		t.Fatal(err)
 	}
+	turns := []models.ChatPendingTurn{
+		{ID: "turn-a", Surface: soloPendingSurface, SessionKey: "solo-running-a", Position: 0, Started: true},
+		{ID: "turn-closed", Surface: soloPendingSurface, SessionKey: "solo-closed", Position: 0, Started: true},
+		{ID: "turn-other", Surface: "pm", SessionKey: "solo-running-b", Position: 0, Started: true},
+	}
+	if err := db.Create(&turns).Error; err != nil {
+		t.Fatal(err)
+	}
 	dash := NewDashboardService(db, NewWorkspaceService(db))
 	q := PlatformStatusQuery{Timezone: "UTC", Now: time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)}
 	assertCounts := func(running, queued int64) {
@@ -231,6 +239,12 @@ func TestPlatformStatus_activeSoloCountsStayFresh(t *testing.T) {
 		if got.RunningCount != running || got.QueuedCount != queued {
 			t.Fatalf("running/queued=%d/%d want %d/%d", got.RunningCount, got.QueuedCount, running, queued)
 		}
+	}
+	// Starting and busy running-a count; idle running-b and a different
+	// surface's active turn do not.
+	assertCounts(2, 0)
+	if err := db.Create(&models.ChatPendingTurn{ID: "turn-b", Surface: soloPendingSurface, SessionKey: "solo-running-b", Position: 0, Started: true}).Error; err != nil {
+		t.Fatal(err)
 	}
 	assertCounts(3, 0)
 	runs := []models.Run{
