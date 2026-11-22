@@ -10,6 +10,8 @@ import {
   runArtifactUnreadOnPanel,
 } from '@/lib/chat/artifactUnread'
 import { CONVERSATION_PANEL_SHOWN_EVENT, conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
+import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { mobileNavAvailable, openMobileNav, useInlineMobileNav } from '@/lib/shared/mobileNav'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -33,6 +35,9 @@ const open = defineModel<boolean>('open', { default: false })
 const mode = defineModel<'resources' | 'artifacts' | null>('mode', { default: null })
 provide(conversationPanelVisibleKey, computed(() => open.value && props.panelEnabled))
 const { t } = useI18n()
+const { isMobile } = useBreakpoint()
+const inlineNav = computed(() => props.showToolbar && isMobile.value && mobileNavAvailable.value)
+useInlineMobileNav(inlineNav)
 const root = ref<HTMLElement | null>(null)
 const main = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
@@ -320,6 +325,7 @@ defineExpose({ toggleFromArtifactIcon, openAtDefault, hidePanel, close })
 <template>
   <div ref="root" class="conversation-workspace chat-thread" :class="{ 'is-compact': compact, 'is-resizing': dragging, 'is-covered': chatCovered }" data-testid="conversation-workspace" :data-panel-open="open && panelEnabled ? 'true' : 'false'">
     <header v-if="showToolbar" class="conversation-toolbar">
+      <button v-if="inlineNav" type="button" class="conversation-nav" data-testid="conversation-mobile-nav" :aria-label="t('shell.aria.openNav')" :title="t('shell.aria.openNav')" @click="openMobileNav"><Icon name="menu" :size="18" aria-hidden="true" /></button>
       <slot name="toolbar">
         <slot name="leading" />
         <span class="conversation-heading">
@@ -360,6 +366,9 @@ defineExpose({ toggleFromArtifactIcon, openAtDefault, hidePanel, close })
 .conversation-workspace { display: flex; position: relative; min-width: 0; min-height: 0; height: 100%; flex: 1; flex-direction: column; overflow: hidden; background: rgb(var(--c-surface)); }
 .conversation-toolbar { display: flex; min-height: 44px; flex: none; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid rgb(var(--c-line) / .65); }
 .conversation-heading { display: inline-flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; overflow: hidden; color: rgb(var(--c-txt2)); font-size: 12px; font-weight: 500; }
+.conversation-nav { display: inline-flex; width: 44px; height: 44px; flex: none; align-items: center; justify-content: center; margin-left: -12px; margin-right: -8px; border-radius: 10px; color: rgb(var(--c-txt2)); }
+.conversation-nav:hover { background: rgb(var(--c-txt) / .05); color: rgb(var(--c-txt)); }
+.conversation-nav:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
 .conversation-title-skeleton { display: flex; width: 7.5rem; align-items: center; }
 .conversation-title-skeleton > span { display: block; width: 60%; height: 8px; border-radius: 9999px; background: rgb(var(--c-txt) / 0.08); }
 .conversation-panel-toggle, .conversation-close { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; overflow: visible; border: 1px solid transparent; border-radius: 9px; padding: 0 10px; color: rgb(var(--c-txt2)); font-size: 12px; transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }

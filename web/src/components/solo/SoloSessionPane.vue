@@ -706,21 +706,23 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                   class="solo-stop-env"
                   :disabled="sandboxWaking"
                   :title="t('pages.solo.wake.hint')"
+                  :aria-label="sandboxWaking ? t('pages.solo.wake.waking') : t('pages.solo.wake.action')"
                   data-testid="solo-wake-sandbox"
                   @click="doWake"
                 >
-                  <Icon :name="sandboxWaking ? 'spinner' : 'play'" :size="12" />{{ sandboxWaking ? t('pages.solo.wake.waking') : t('pages.solo.wake.action') }}
+                  <Icon :name="sandboxWaking ? 'spinner' : 'play'" :size="12" /><span class="solo-stop-env-label">{{ sandboxWaking ? t('pages.solo.wake.waking') : t('pages.solo.wake.action') }}</span>
                 </button>
                 <button
                   v-else
                   type="button"
-                  class="solo-stop-env"
+                  class="solo-stop-env solo-stop-env--stop"
                   :disabled="busy || queued.length > 0"
                   :title="busy || queued.length ? t('pages.solo.stop.busy') : t('pages.solo.stop.hint')"
+                  :aria-label="t('pages.solo.stop.action')"
                   data-testid="solo-stop-sandbox"
                   @click="confirmStop = true"
                 >
-                  <Icon name="stop" :size="12" />{{ t('pages.solo.stop.action') }}
+                  <Icon name="stop" :size="12" /><span class="solo-stop-env-label">{{ t('pages.solo.stop.action') }}</span>
                 </button>
               </template>
             </template>
@@ -866,6 +868,21 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 .solo-stop-env:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+@container chat-pane (max-width: 480px) {
+  .solo-stop-env {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+  }
+  .solo-stop-env-label {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  .solo-stop-env--stop {
+    display: none;
+  }
 }
 .solo-closed {
   display: flex;

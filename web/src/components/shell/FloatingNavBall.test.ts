@@ -11,6 +11,7 @@ import {
   setSidebarHidden,
   sidebarHidden,
 } from '@/lib/shared/sidebarHidden'
+import { inlineMobileNavHosts } from '@/lib/shared/mobileNav'
 
 const isMobileRef = ref(false)
 
@@ -129,6 +130,20 @@ describe('FloatingNavBall (g2.1–g2.5)', () => {
     await wrapper.find('[data-testid="floating-nav-ball"]').trigger('click')
     expect(wrapper.emitted('open-drawer')).toHaveLength(1)
     expect(sidebarHidden.value).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('yields on mobile while a header hosts its own nav button', async () => {
+    isMobileRef.value = true
+    const wrapper = mountBall()
+    const wrap = () => wrapper.find('[data-testid="floating-nav-ball-wrap"]')
+    expect(wrap().classes()).toContain('pointer-events-auto')
+    inlineMobileNavHosts.value = 1
+    await nextTick()
+    expect(wrap().classes()).toContain('invisible')
+    inlineMobileNavHosts.value = 0
+    await nextTick()
+    expect(wrap().classes()).toContain('pointer-events-auto')
     wrapper.unmount()
   })
 

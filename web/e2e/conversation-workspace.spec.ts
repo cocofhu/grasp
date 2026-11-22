@@ -137,6 +137,33 @@ test('Solo opens a registered app and the pinned HTML from its thumbnail', async
   await expect(page.getByTestId('react-artifact-preview-demo.html').frameLocator('iframe:visible').getByText('Solo preview smoke')).toBeVisible()
 })
 
+test('390px Solo keeps composer actions on one row and moves navigation into the header', async ({ page }) => {
+  await installWorkspaceApiDefaults(page)
+  const session = { id: 'mobile-composer', title: 'Solo', agentName: 'Solo', status: 'running', sandboxId: 42 }
+  await routeApi(page, '**/api/solo/sessions**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/solo/sessions') return route.fulfill({ json: { sessions: [session], maxSandboxes: 8 } })
+    if (path.endsWith('/messages')) return route.fulfill({ json: [] })
+    await route.fulfill({ json: session })
+  })
+  let chat: WebSocketRoute | undefined
+  await page.routeWebSocket('**/api/solo/sessions/*/chat*', (ws) => { chat = ws })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/workspace-config.html?view=/solo/${session.id}`)
+  const plus = page.getByTestId('solo-plus')
+  const send = page.getByTestId('solo-send')
+  await expect(send).toBeVisible()
+  await expect.poll(() => !!chat).toBe(true)
+  chat!.send(JSON.stringify({ type: 'session', event: 'queue_state', seq: 1, busy: true, items: [] }))
+  await expect(page.getByTestId('solo-stop')).toBeVisible()
+  await expect(page.getByTestId('solo-stop-sandbox')).toBeHidden()
+  const [plusBox, sendBox] = [await plus.boundingBox(), await send.boundingBox()]
+  expect(Math.abs(plusBox!.y + plusBox!.height / 2 - (sendBox!.y + sendBox!.height / 2))).toBeLessThan(4)
+  await expect(page.getByTestId('floating-nav-ball')).toBeHidden()
+  await page.getByTestId('conversation-mobile-nav').click()
+  await expect(page.getByTestId('mobile-nav-drawer')).toBeVisible()
+})
+
 test('Solo slash commands open in the composer and support keyboard and pointer selection', async ({ page }) => {
   await installWorkspaceApiDefaults(page)
   const session = { id: 'slash-commands', title: 'Solo', agentName: 'Demo', status: 'running', skills: ['review'] }

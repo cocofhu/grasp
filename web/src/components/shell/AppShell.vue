@@ -24,6 +24,7 @@ import { useRoutePending } from '@/lib/shared/routePending'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import ServiceCommitBadge from './ServiceCommitBadge.vue'
 import { sidebarHidden } from '@/lib/shared/sidebarHidden'
+import { provideMobileNavOpener } from '@/lib/shared/mobileNav'
 import { loadBrandSettings } from '@/lib/composables/useBrandSettings'
 import { provideSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 
@@ -86,6 +87,7 @@ function closeDrawer() {
 function openDrawer() {
   drawerOpen.value = true
 }
+provideMobileNavOpener(openDrawer)
 
 function onShellViewRun(runId: string) {
   void router.push('/runs/' + runId)
