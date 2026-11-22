@@ -73,7 +73,7 @@ func resolveModel(catalog []sdkModel, modelID, effort, tier string) (selection, 
 		i = slices.IndexFunc(catalog, func(m sdkModel) bool { return slices.Contains(m.Aliases, modelID) })
 	}
 	if i < 0 {
-		return selection{}, fmt.Errorf("Cursor 不提供模型 %q", modelID)
+		return selection{}, fmt.Errorf("Cursor 不提供模型 %q，请在模型配置里重新选择", modelID)
 	}
 	m := catalog[i]
 	want := map[string]string{}

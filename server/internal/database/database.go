@@ -262,9 +262,6 @@ func finalize(db *gorm.DB) (*gorm.DB, error) {
 	if err := retireRemovedFeatures(db); err != nil {
 		return nil, err
 	}
-	if err := migrateLegacyCursorModels(db); err != nil {
-		return nil, err
-	}
 	if err := ensureWorkspace(db); err != nil {
 		return nil, err
 	}

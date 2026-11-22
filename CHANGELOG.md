@@ -10,7 +10,7 @@ All notable public-release changes are documented here.
 
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 
-- Cursor 改用官方 `@cursor/sdk` 运行，Agent 进程常驻：回合进行中可以「立即引导」，停止的回合保留已产生的 token 用量，切换模型、思考强度或速度档位后接回原会话。模型列表改为基础模型，思考强度和 Fast 单独选择，不再是 `gpt-5.5-high-fast` 这类组合名。已保存的旧模型 id 会自动改写为基础模型，原来带的思考强度和 Fast 保留在会话和运行记录里；Claude 的 thinking 与非 thinking 旧 id 合并为同一个模型，按 Cursor 默认开启思考。没选思考强度时按 Cursor 自己的默认强度运行，部分模型的默认组合是 Max 模式（1M 上下文）。Cursor 不再加载插件、团队与 MDM 配置，`~/.cursor/mcp.json` 照常生效。需要新的沙箱镜像（`IMAGE_LEVEL` 3）和运行时更新后生效。
+- Cursor 改用官方 `@cursor/sdk` 运行，Agent 进程常驻：回合进行中可以「立即引导」，停止的回合保留已产生的 token 用量，切换模型、思考强度或速度档位后接回原会话。模型列表改为基础模型，思考强度和 Fast 单独选择，不再是 `gpt-5.5-high-fast` 这类组合名。**不兼容变更**：旧模型 id 不迁移，升级后请在 Cursor 的模型配置里重新选择模型；还用旧 id 的会话会报「Cursor 不提供模型」。Claude 的 thinking 与非 thinking 合并为同一个模型，按 Cursor 默认开启思考。没选思考强度时按 Cursor 自己的默认强度运行，部分模型的默认组合是 Max 模式（1M 上下文）。Cursor 不再加载插件、团队与 MDM 配置，`~/.cursor/mcp.json` 照常生效。需要新的沙箱镜像（`IMAGE_LEVEL` 3）和运行时更新后生效。
 
 - 停止 Claude Code 的回合后，用量统计不再把同一条模型回复重复计入：此前一条回复同时包含文字和工具调用时，输入和缓存 token 会按内容块数翻倍。需要沙箱运行时更新后生效。
 
