@@ -1,6 +1,6 @@
 # Grasp 后端(Go)
 
-有限状态机(FSM)编排引擎 + 按 run 隔离的 grasp-tool + 真实沙箱执行(cursor-agent)。
+有限状态机(FSM)编排引擎 + 按 run 隔离的 grasp-tool + 真实沙箱执行(各编码 Agent,默认 Cursor,经 `@cursor/sdk`)。
 
 ## 执行后端(ExecProvider)
 
@@ -40,7 +40,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
   - 平台在同一 Gin 端口暴露 `POST /mcp/runs/:runId`(Streamable-HTTP JSON-RPC:`initialize` / `tools/list` / `tools/call`),按 run-token 鉴权。
   - 注入方式有两条、互为冗余:ACP `session/new` 的 `mcpServers`(URL+`Authorization: Bearer <token>`)+ 容器内 `{configRoot}/mcp.json`。
   - 容器经 `host.docker.internal:<GRASP_PORT>` 回连平台(`--add-host host.docker.internal:host-gateway` 已设)。
-  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:cursor-agent 完成 initialize→tools/list→tools/call 全链路)。
+  - 工具:`write_artifact` / `read_artifact` / `list_artifacts` / `node_complete` 等。Agent **原生调用** `write_artifact` 写回产物,结束前必须 `node_complete` 标记完成(已 live 验证:Cursor agent 完成 initialize→tools/list→tools/call 全链路)。
 - **`{configRoot}` 配置树(对齐 auto-coder)**:每个节点按 Agent profile 的 `acpBackend` 解析 configRoot(Agent 卡片可覆盖),在控制面生成一份配置树后注入沙箱:
   - 默认映射:`cursor`→`/root/.cursor`、`claude_code`→`/root/.claude`、`codebuddy`→`/root/.codebuddy`、`trae`→`/root/.trae`、`opencode`→`/root/.config/opencode`、`codex`→`/root/.codex`、`deepseek_harness`→`/root/.dsh`;
   - `rules/base.md`(基础约束,alwaysApply)、`rules/grasp-tool.md`(产物 MCP 与 `node_complete` 用法),两者内嵌、不可修改;
@@ -62,7 +62,7 @@ Codex 平台授权使用登录文件，启动前写入沙箱 `auth.json`。
 
 | acpBackend | 沙箱内 CLI | 默认 configRoot | 容器内鉴权变量 |
 |------------|------------|-----------------|----------------|
-| `cursor` | `cursor-agent -p --output-format stream-json` | `/root/.cursor` | `CURSOR_API_KEY` |
+| `cursor` | `@cursor/sdk` 本地 Agent（常驻，Node 桥接） | `/root/.cursor` | `CURSOR_API_KEY` |
 | `claude_code` | `claude -p --output-format stream-json` | `/root/.claude` | `ANTHROPIC_API_KEY` |
 | `codebuddy` | `codebuddy -p --output-format stream-json` | `/root/.codebuddy` | `CODEBUDDY_API_KEY` |
 | `trae` | `traecli acp serve` | `/root/.trae` | `TRAECLI_PERSONAL_ACCESS_TOKEN` |
@@ -313,7 +313,7 @@ GRASP_LIVE_MCP=1 GRASP_CURSOR_API_KEY=crsr_xxx \
 
 ### E2E(真实沙箱端到端)
 
-live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → ACP 驱动 cursor-agent → 按
+live 测试跑真实沙箱路径:经 sandbox-gateway 起沙箱 → 驱动沙箱里的 Cursor Agent → 按
 `produces` 契约取回产物。需要一个可达的 sandbox-gateway + Cursor API key,慢(分钟级),
 所以默认单测不跑。运行前先起好 sandbox-gateway(见其仓库 `start.sh`),再:
 

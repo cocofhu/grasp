@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {createInterface} from 'node:readline'
 import http from 'node:http'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
@@ -7,7 +8,7 @@ import {spawn} from 'node:child_process'
 import {once} from 'node:events'
 import {fileURLToPath} from 'node:url'
 import {test} from 'node:test'
-import {checkpointOperation, kimiConfiguration} from './agent-platform-wire-fixture.mjs'
+import {checkpointOperation, cursorSelection, kimiConfiguration} from './agent-platform-wire-fixture.mjs'
 
 const syntheticKey = 'synthetic-kimi-fixture-key'
 const kimiConfig = (effort, model = 'k3.1-pro', wireModel = model) => `default_model = "${model}"
@@ -151,4 +152,95 @@ test('Kimi saved K3 alias remains selectable and reaches the canonical native mo
   assert.equal(modelOption.currentValue, 'kimi-k3')
   assert.ok(modelOption.options.some((option) => option.value === 'kimi-k3'))
   assert.equal(modelRequests[0].model, 'k3')
+})
+
+test('Cursor SDK stand-in accepts only offered variants and forwards their reasoning', () => {
+  const pick = (reasoning, fast = 'false') => ({id: 'gpt-5.5', params: [{id: 'reasoning', value: reasoning}, {id: 'fast', value: fast}]})
+  assert.deepEqual(cursorSelection(pick('extra-high', 'true')), {model: 'gpt-5.5', effort: 'xhigh', fast: true})
+  assert.equal(cursorSelection(pick('none')).effort, '')
+  assert.throws(() => cursorSelection(pick('max')), /not an offered variant/)
+  assert.throws(() => cursorSelection({id: 'gpt-5.5'}), /not an offered variant/)
+  assert.throws(() => cursorSelection({id: 'gpt-5.5-high'}), /unknown fixture Cursor model/)
+})
+
+async function cursorBridge(env, commands) {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../sandbox/internal/provider/cursorsdk/bridge.mjs', import.meta.url))], {env, stdio: ['pipe', 'pipe', 'pipe']})
+  let errors = ''
+  child.stderr.on('data', (chunk) => { errors += chunk })
+  const frames = []
+  const waiters = []
+  createInterface({input: child.stdout}).on('line', (line) => {
+    const frame = JSON.parse(line)
+    frames.push(frame)
+    for (const waiter of waiters.splice(0)) waiter()
+  })
+  const until = async (match) => {
+    while (!frames.some(match)) await new Promise((resolve) => waiters.push(resolve))
+    return frames.find(match)
+  }
+  try {
+    for (const [index, command] of commands.entries()) {
+      child.stdin.write(JSON.stringify({id: index+1, ...command})+'\n')
+      const response = await until((frame) => frame.type === 'response' && frame.id === index+1)
+      assert.ok(response.ok, response.error+errors)
+      if (command.type === 'send') await until((frame) => frame.type === 'run_end' && frame.runId === response.data.runId)
+    }
+  } finally {
+    child.stdin.end()
+    await once(child, 'close')
+  }
+  return frames
+}
+
+test('Cursor bridge drives the SDK stand-in: MCP, reasoning, usage and resume', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'grasp-cursor-sdk-'))
+  const modelRequests = []
+  const server = http.createServer(async (req, res) => {
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    const body = JSON.parse(raw)
+    let reply
+    if (req.url === '/mcp') {
+      assert.equal(req.headers.authorization, 'Bearer scoped')
+      reply = {jsonrpc: '2.0', id: body.id, result: body.method === 'tools/list' ? {tools: [{name: 'get_history', inputSchema: {type: 'object'}}]} : body.method === 'tools/call' ? {content: [{type: 'text', text: 'history page'}]} : {}}
+    } else {
+      modelRequests.push(body)
+      const called = body.messages.some((message) => message.role === 'tool')
+      reply = {choices: [{message: called || modelRequests.length > 2 ? {role: 'assistant', content: 'fixture completion'} : {role: 'assistant', content: '', tool_calls: [{id: 'call-1', type: 'function', function: {name: 'mcp__grasp-tool__get_history', arguments: '{}'}}]}}]}
+    }
+    res.writeHead(200, {'content-type': 'application/json'})
+    res.end(JSON.stringify(reply))
+  })
+  try {
+    const pkg = path.join(root, 'sdk', 'node_modules', '@cursor', 'sdk')
+    mkdirSync(pkg, {recursive: true})
+    copyFileSync(fileURLToPath(new URL('./agent-cursor-sdk-fixture.cjs', import.meta.url)), path.join(pkg, 'index.js'))
+    writeFileSync(path.join(pkg, 'package.json'), '{"name":"@cursor/sdk","main":"index.js"}')
+    writeFileSync(path.join(root, 'sdk', 'package.json'), '{}')
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const base = `http://127.0.0.1:${server.address().port}`
+    const env = {PATH: process.env.PATH, GRASP_CURSOR_SDK_DIR: path.join(root, 'sdk'), GRASP_CURSOR_SDK_FIXTURE: new URL('./agent-platform-wire-fixture.mjs', import.meta.url).href, GRASP_CURSOR_FIXTURE_STORE: path.join(root, 'store'), GRASP_CI_MOCK_URL: base}
+    const open = (effort, agentId) => ({type: 'open', cwd: root, apiKey: 'synthetic', ...(agentId ? {agentId} : {}), model: {id: 'gpt-5.5', params: [{id: 'reasoning', value: effort}, {id: 'fast', value: 'false'}]}, mcpServers: {'grasp-tool': {type: 'http', url: base+'/mcp', headers: {Authorization: 'Bearer scoped'}}}})
+    const first = await cursorBridge(env, [{type: 'models', apiKey: 'synthetic'}, open('high'), {type: 'send', text: 'remember the nonce'}])
+    assert.equal(first.find((frame) => frame.id === 1).data[0].id, 'gpt-5.5')
+    const agentId = first.find((frame) => frame.id === 2).data.agentId
+    const updates = first.filter((frame) => frame.type === 'delta').map((frame) => frame.update)
+    assert.deepEqual(updates.map((update) => update.type), ['tool-call-started', 'tool-call-completed', 'text-delta'])
+    assert.equal(updates[0].toolCall.args.toolName, 'get_history')
+    assert.equal(updates[1].toolCall.result.value.content[0].text, '{"content":[{"type":"text","text":"history page"}]}')
+    assert.deepEqual(first.find((frame) => frame.type === 'run_end').usage, {inputTokens: 128, outputTokens: 32, cacheReadTokens: 0, cacheWriteTokens: 0})
+
+    const second = await cursorBridge(env, [open('extra-high', agentId), {type: 'send', text: 'continue'}])
+    assert.deepEqual(second.find((frame) => frame.id === 1).data, {agentId, resumed: true})
+    assert.equal(second.find((frame) => frame.type === 'run_end').status, 'finished')
+    assert.deepEqual(modelRequests.map((request) => [request.model, request.reasoning_effort]), [['gpt-5.5', 'high'], ['gpt-5.5', 'high'], ['gpt-5.5', 'xhigh']])
+    assert.ok(modelRequests[2].messages.some((message) => message.content === 'remember the nonce'))
+
+    const lost = await cursorBridge(env, [open('high', 'agent-unknown')])
+    assert.match(lost.find((frame) => frame.id === 1).data.resumeError, /was not found/)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+    rmSync(root, {recursive: true, force: true})
+  }
 })

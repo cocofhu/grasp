@@ -36,29 +36,14 @@ curl_install() {
   retry 3 bash -o pipefail -c "curl -fsSL --connect-timeout 20 --max-time 120 '$1' | $2"
 }
 
+# Cursor 走 @cursor/sdk：Dockerfile 把锁定版本的 package.json / package-lock.json 放进
+# /opt/grasp/cursor-sdk，这里按锁文件安装（含 linux 原生包），再确认能加载。
 install_cursor() {
-  # 官方 install.sh 无重试/无超时且会吞掉失败；改为解析版本→带重试下载解压→建软链→校验。
-  local ok=0 script ver url dest
-  for i in 1 2 3 4 5; do
-    script="$(curl -fsSL --connect-timeout 20 --max-time 60 https://cursor.com/install || true)"
-    ver="$(printf '%s' "$script" | grep -oE 'lab/[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[a-f0-9]+/' | head -1 | sed -E 's#lab/(.+)/#\1#')"
-    if [ -n "$ver" ]; then
-      url="https://downloads.cursor.com/lab/${ver}/linux/x64/agent-cli-package.tar.gz"
-      dest="/root/.local/share/cursor-agent/versions/${ver}"
-      mkdir -p "$dest" /root/.local/bin
-      if curl -fSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 900 "$url" -o /tmp/agent.tgz \
-         && tar --strip-components=1 -xzf /tmp/agent.tgz -C "$dest"; then
-        rm -f /tmp/agent.tgz
-        ln -sf "$dest/cursor-agent" /root/.local/bin/agent
-        ln -sf "$dest/cursor-agent" /root/.local/bin/cursor-agent
-        ok=1; break
-      fi
-      rm -f /tmp/agent.tgz
-    fi
-    log "cursor-agent 安装第 $i 次失败，重试..."; sleep 10
-  done
-  [ "$ok" = 1 ]
-  cursor-agent --version
+  local dir="${GRASP_CURSOR_SDK_DIR:-/opt/grasp/cursor-sdk}"
+  [ -f "$dir/package-lock.json" ] || { log "错误：缺少 $dir/package-lock.json"; return 1; }
+  (cd "$dir" && retry 3 npm ci --omit=dev --no-audit --no-fund)
+  (cd "$dir" && node -e 'const s=require("@cursor/sdk");if(typeof s.Agent?.create!=="function")process.exit(1);console.log("@cursor/sdk "+JSON.parse(require("fs").readFileSync("node_modules/@cursor/sdk/package.json","utf8")).version)')
+  rm -rf /root/.npm
 }
 
 install_claude_native() {
@@ -137,6 +122,33 @@ install_kimi() {
   log "已钉住 kimi ${ver}，实际 $(kimi --version)"
 }
 
+# Antigravity CLI: Google's auto-updater manifest names the release tarball
+# and its sha512. The backend drives `agy acp`, which needs 1.5 or later.
+install_antigravity() {
+  local base="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests"
+  local target manifest url sha dir="/opt/antigravity"
+  case "$(uname -m)" in
+    x86_64|amd64) target=linux_amd64 ;;
+    aarch64|arm64) target=linux_arm64 ;;
+    *) log "错误：antigravity 不支持架构 $(uname -m)"; return 1 ;;
+  esac
+  manifest="$(curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 60 "$base/$target.json")"
+  url="$(printf '%s' "$manifest" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).url))')"
+  sha="$(printf '%s' "$manifest" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).sha512))')"
+  case "$url" in
+    https://storage.googleapis.com/antigravity-public/antigravity-cli/*) ;;
+    *) log "错误：antigravity 清单给出的下载地址不可信：$url"; return 1 ;;
+  esac
+  curl -fsSL --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 900 "$url" -o /tmp/antigravity.tgz
+  echo "$sha  /tmp/antigravity.tgz" | sha512sum -c - >/dev/null || { log "错误：antigravity 下载校验失败"; rm -f /tmp/antigravity.tgz; return 1; }
+  rm -rf "$dir" && mkdir -p "$dir"
+  tar -C "$dir" -xzf /tmp/antigravity.tgz
+  rm -f /tmp/antigravity.tgz
+  chmod +x "$dir/antigravity"
+  ln -sf "$dir/antigravity" /usr/local/bin/agy
+  agy --version
+}
+
 install_one() {
   local provider="$1"
   log "安装 provider=$provider"
@@ -162,7 +174,9 @@ install_one() {
       npm_global @google/gemini-cli && gemini --version ;;
     copilot)
       npm_global @github/copilot && copilot --version ;;
-    kiro|qoder|grok|kimi|hermes|deveco|openclaw|antigravity|pi)
+    antigravity)
+      install_antigravity ;;
+    kiro|qoder|grok|kimi|hermes|deveco|openclaw|pi)
       log "错误：provider=$provider 暂无内置安装方式。"
       log "请通过 --build-arg AGENT_INSTALL_CMD='<安装命令>' 提供其官方安装步骤后再构建。"
       return 1 ;;

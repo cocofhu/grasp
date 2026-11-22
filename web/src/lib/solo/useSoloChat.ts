@@ -1028,7 +1028,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         // A model switch clears an effort the new model does not offer. The
         // selector shows the new model's default in its place.
         if (kind === 'model' && latest() && !row.reasoningEffort?.trim()) {
-          const effort = defaultReasoningEffort(listedEfforts(row.reasoningEfforts))
+          const effort = defaultReasoningEffort(listedEfforts(row.reasoningEfforts), row.defaultReasoningEffort)
           if (effort) {
             row = await transport.setSoloSessionReasoningEffort(id, effort)
             if (!isCurrentSession() || row.id !== id) return false

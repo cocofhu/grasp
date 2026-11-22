@@ -304,7 +304,7 @@ export function useHomeApproveChat() {
     }
     const listed = listedEfforts(picked?.efforts)
     if (effort && !listed.includes(effort)) {
-      const next = defaultReasoningEffort(listed)
+      const next = defaultReasoningEffort(listed, picked?.defaultEffort)
       launchReasoningEffort.value = next
       writeLaunchMemory(wfId, { modelId, effort: next, serviceTier: launchServiceTier.value })
       if (launchResetAnnounced !== announce) {
@@ -408,7 +408,7 @@ export function useHomeApproveChat() {
     const listed = listedEfforts(picked?.efforts)
     if (!picked?.serviceTiers?.includes(launchServiceTier.value)) launchServiceTier.value = ''
     if (previousEffort && !listed.includes(previousEffort)) {
-      launchReasoningEffort.value = defaultReasoningEffort(listed)
+      launchReasoningEffort.value = defaultReasoningEffort(listed, picked?.defaultEffort)
       toast.warn(t('pages.solo.modelSelect.effortResetNotice'))
     }
     rememberLaunchSelection()

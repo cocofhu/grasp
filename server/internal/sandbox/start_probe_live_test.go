@@ -70,7 +70,7 @@ func TestLiveStartWithPasswordsAndInject(t *testing.T) {
 	// Unified auth (WS layer): the bridge must reject an unauthenticated /ws
 	// dial and accept one carrying the login cookie. This is exactly what the
 	// platform's ACP client + WaitForACPReady rely on. (The in-container
-	// cursor-agent's own session/new login needs a real CURSOR_API_KEY, which a
+	// Cursor agent's own session/new login needs a real CURSOR_API_KEY, which a
 	// bare probe sandbox lacks, so we assert the bridge auth, not agent auth.)
 	if err := WaitForACPReady(ctx, sb.Host, sb.Port, "", 15*time.Second); err == nil {
 		t.Fatal("bridge accepted unauthenticated /ws dial; expected auth to be enforced")

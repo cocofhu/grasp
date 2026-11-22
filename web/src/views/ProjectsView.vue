@@ -134,13 +134,13 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" data-testid="projects-view">
-    <SettingsPageHeader class="mb-5 shrink-0" icon="git" :title="t('pages.projects.title')" :description="t('pages.projects.subtitle')">
+  <div class="projects-page flex h-full min-h-0 flex-col" data-testid="projects-view">
+    <SettingsPageHeader class="projects-page__header mb-5 shrink-0" icon="git" :title="t('pages.projects.title')" :description="t('pages.projects.subtitle')">
       <template #actions>
-        <div v-if="projects.length > 4" class="relative">
+        <label v-if="projects.length" class="projects-search">
           <Icon name="search" :size="14" class="pointer-events-none absolute left-2.5 top-2.5 text-txt3" />
-          <input v-model="query" class="input w-56 !pl-8 text-[13px]" :placeholder="t('pages.projects.search')" />
-        </div>
+          <input v-model="query" class="input w-64 !pl-8 text-[13px]" :placeholder="t('pages.projects.search')" />
+        </label>
         <AppButton variant="primary" icon="plus" data-testid="projects-new" @click="openNew">{{ t('pages.projects.new') }}</AppButton>
       </template>
     </SettingsPageHeader>
@@ -148,32 +148,47 @@ onMounted(load)
 
     <p v-if="error" class="mb-3 border-l-2 border-err/40 py-2 pl-3 text-[13px] text-err">{{ error }}</p>
 
-    <div class="scroll-area min-h-0 flex-1 overflow-y-auto">
+    <div class="projects-content scroll-area min-h-0 flex-1 overflow-y-auto">
       <div v-if="loading" class="py-10 text-center text-txt3"><Icon name="spinner" :size="16" class="inline" /></div>
       <EmptyState v-else-if="!projects.length" icon="git" :title="t('pages.projects.empty')" :desc="t('pages.projects.emptyHint')">
         <AppButton variant="primary" icon="plus" @click="openNew">{{ t('pages.projects.new') }}</AppButton>
       </EmptyState>
+      <div v-else-if="!shown.length" class="projects-no-results">
+        <span class="projects-no-results__icon" aria-hidden="true"><Icon name="search" :size="18" :interactive="false" /></span>
+        <p class="projects-no-results__title">{{ t('pages.projects.noMatch') }}</p>
+        <p class="projects-no-results__hint">{{ t('pages.projects.noMatchHint') }}</p>
+      </div>
       <div v-else class="projects-grid">
         <article v-for="p in shown" :key="p.id" class="project-card" :data-testid="`project-card-${p.id}`">
-          <div class="flex items-start gap-2">
-            <Icon name="git" :size="16" class="mt-0.5 shrink-0 text-accent" />
-            <div class="min-w-0 flex-1">
-              <h3 class="truncate text-[14px] font-semibold text-txt">{{ p.name }}</h3>
-              <p class="truncate font-mono text-[11.5px] text-txt3" :title="p.repoUrl">{{ repoShort(p.repoUrl) }}</p>
+          <div class="project-card__header">
+            <div class="project-card__identity">
+              <span class="project-card__mark" aria-hidden="true"><Icon name="git" :size="17" :interactive="false" /></span>
+              <div class="min-w-0">
+                <h3 class="truncate text-[15px] font-semibold text-txt">{{ p.name }}</h3>
+                <p class="project-card__repo truncate font-mono" :title="p.repoUrl">{{ repoShort(p.repoUrl) }}</p>
+              </div>
             </div>
-            <button type="button" class="project-card__icon" :aria-label="t('common.buttons.edit')" :title="t('common.buttons.edit')" @click="openEdit(p)">
-              <Icon name="edit" :size="14" />
-            </button>
-            <button type="button" class="project-card__icon project-card__icon--danger" :aria-label="t('common.buttons.delete')" :title="t('common.buttons.delete')" @click="askDelete(p)">
-              <Icon name="trash" :size="14" />
-            </button>
+            <div class="project-card__actions">
+              <button type="button" class="project-card__icon" :aria-label="t('common.buttons.edit')" :title="t('common.buttons.edit')" @click="openEdit(p)">
+                <Icon name="edit" :size="14" />
+              </button>
+              <button type="button" class="project-card__icon project-card__icon--danger" :aria-label="t('common.buttons.delete')" :title="t('common.buttons.delete')" @click="askDelete(p)">
+                <Icon name="trash" :size="14" />
+              </button>
+            </div>
           </div>
-          <p v-if="p.description" class="line-clamp-2 text-[12px] text-txt2">{{ p.description }}</p>
-          <div class="flex flex-wrap gap-1.5">
-            <span class="project-card__tag"><Icon name="branch" :size="11" />{{ p.defaultBranch || t('pages.solo.env.remoteDefault') }}</span>
+          <div class="project-card__body">
+            <p v-if="p.description" class="project-card__description line-clamp-2 text-[12px] text-txt2">{{ p.description }}</p>
+            <div class="project-card__meta">
+              <span class="project-card__tag"><Icon name="branch" :size="11" :interactive="false" />{{ p.defaultBranch || t('pages.solo.env.remoteDefault') }}</span>
+              <span v-if="repoHost(p.repoUrl)" class="project-card__host"><span class="project-card__host-dot" aria-hidden="true" />{{ repoHost(p.repoUrl) }}</span>
+            </div>
           </div>
-          <div class="mt-auto flex items-center justify-between gap-2 pt-1">
-            <span class="text-[11px] text-txt3">{{ p.lastUsedAt ? t('pages.projects.lastUsed', { time: relTime(p.lastUsedAt) }) : t('pages.projects.neverUsed') }}</span>
+          <div class="project-card__footer">
+            <span class="project-card__activity" :class="{ 'project-card__activity--used': p.lastUsedAt }">
+              <Icon name="clock" :size="12" :interactive="false" />
+              {{ p.lastUsedAt ? t('pages.projects.lastUsed', { time: relTime(p.lastUsedAt) }) : t('pages.projects.neverUsed') }}
+            </span>
             <RouterLink :to="`/solo?new=1&project=${encodeURIComponent(p.id)}`" class="project-card__start" :data-testid="`project-start-${p.id}`">
               <Icon name="terminal" :size="13" />{{ t('pages.projects.start') }}
             </RouterLink>
@@ -199,35 +214,178 @@ onMounted(load)
 </template>
 
 <style scoped>
+.projects-page {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+}
+.projects-page__header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgb(var(--c-line) / .6);
+}
+.projects-search {
+  position: relative;
+  display: block;
+}
+.projects-content {
+  padding-top: 20px;
+}
+.projects-no-results {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgb(var(--c-line-strong) / .7);
+  border-radius: 16px;
+  background: rgb(var(--c-surface) / .55);
+  text-align: center;
+}
+.projects-no-results__icon {
+  display: flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt2));
+}
+.projects-no-results__title {
+  margin: 14px 0 0;
+  color: rgb(var(--c-txt));
+  font-size: 14px;
+  font-weight: 600;
+}
+.projects-no-results__hint {
+  margin: 4px 0 0;
+  color: rgb(var(--c-txt3));
+  font-size: 12px;
+}
 .projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 14px;
   padding-bottom: 24px;
 }
 .project-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
-  min-height: 150px;
+  min-height: 224px;
   flex-direction: column;
-  gap: 10px;
   border: 1px solid rgb(var(--c-line));
-  border-radius: 12px;
-  background: rgb(var(--c-surface));
-  padding: 14px;
-  transition: border-color 0.15s ease;
+  border-radius: 13px;
+  background: rgb(var(--c-surface) / .78);
+  transition: border-color var(--dur-ui), box-shadow var(--dur-ui), transform var(--dur-ui);
 }
 .project-card:hover {
-  border-color: rgb(var(--c-accent) / 0.3);
+  border-color: rgb(var(--c-accent) / .38);
+  background: rgb(var(--c-surface));
+  box-shadow: 0 8px 18px rgb(var(--c-txt) / .06);
+  transform: translateY(-1px);
 }
+.project-card__header,
+.project-card__identity,
+.project-card__actions,
+.project-card__meta,
+.project-card__footer {
+  display: flex;
+  align-items: center;
+}
+.project-card__header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 13px;
+}
+.project-card__identity {
+  min-width: 0;
+  gap: 10px;
+}
+.project-card__mark {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--c-accent) / .22);
+  border-radius: 9px;
+  background: rgb(var(--c-accent) / .08);
+  color: rgb(var(--c-accent-2));
+}
+.project-card__repo {
+  margin-top: 2px;
+  color: rgb(var(--c-txt3));
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.project-card__actions {
+  flex: none;
+  gap: 1px;
+}
+.project-card__body {
+  display: flex;
+  min-height: 84px;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px 12px;
+}
+.project-card__description {
+  min-height: 36px;
+  line-height: 18px;
+}
+.project-card__meta {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.project-card__host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgb(var(--c-txt3));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.project-card__host-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--c-ok));
+  box-shadow: 0 0 0 3px rgb(var(--c-ok) / .12);
+}
+.project-card__footer {
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgb(var(--c-line) / .72);
+  padding: 12px 16px 14px;
+  background: rgb(var(--c-base) / .12);
+}
+.project-card__activity {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: rgb(var(--c-txt3));
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-card__activity--used { color: rgb(var(--c-txt2)); }
+.project-card__activity--used .app-icon { color: rgb(var(--c-accent-2)); }
 .project-card__icon {
   display: flex;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: 8px;
   color: rgb(var(--c-txt3));
+  transition: background var(--dur-ui), color var(--dur-ui);
 }
 .project-card__icon:hover {
   background: rgb(var(--c-elevated));
@@ -242,21 +400,37 @@ onMounted(load)
   gap: 4px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 999px;
-  padding: 1px 8px;
+  background: rgb(var(--c-elevated) / .58);
+  padding: 3px 9px;
   color: rgb(var(--c-txt2));
   font-size: 11px;
 }
 .project-card__start {
   display: inline-flex;
+  min-height: 32px;
   align-items: center;
   gap: 5px;
-  border: 1px solid rgb(var(--c-accent) / 0.4);
+  border: 1px solid rgb(var(--c-accent) / .38);
   border-radius: 8px;
-  padding: 3px 10px;
+  background: transparent;
+  padding: 0 11px;
   color: rgb(var(--c-accent-2));
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  box-shadow: none;
+  transition: background var(--dur-ui), border-color var(--dur-ui), box-shadow var(--dur-ui), transform var(--dur-ui);
 }
 .project-card__start:hover {
-  background: rgb(var(--c-accent) / 0.08);
+  border-color: rgb(var(--c-accent-hover));
+  background: rgb(var(--c-accent-dim));
+  box-shadow: none;
+  transform: none;
+}
+@media (max-width: 767px) {
+  .projects-page__header { padding-bottom: 16px; }
+  .projects-search { flex: 1 1 180px; }
+  .projects-search input { width: 100%; }
+  .projects-content { padding-top: 16px; }
+  .project-card { min-height: 208px; }
 }
 </style>

@@ -16,6 +16,7 @@ import {
   formatContext,
   highlight,
   launchCommand,
+  modelArg,
   modelVendor,
   strengthKeys,
   vendorLabel,
@@ -24,7 +25,7 @@ import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 
 const props = withDefaults(
   defineProps<{
-    /** Model id passed as `--model`. Empty means the CLI default, unless emptyMode is required. */
+    /** Model id the tool runs (see modelArg). Empty means the tool's default, unless emptyMode is required. */
     modelValue: string
     backend: string
     /** full: list plus a detail pane. compact: list only, highlight without an extra row. */
@@ -284,7 +285,7 @@ watch([query, vendor], () => {
 let copyTimer: ReturnType<typeof setTimeout> | undefined
 async function copyFlag(id: string) {
   try {
-    await navigator.clipboard.writeText(`--model ${id}`)
+    await navigator.clipboard.writeText(modelArg(props.backend, id))
     copied.value = true
     clearTimeout(copyTimer)
     copyTimer = setTimeout(() => (copied.value = false), 1400)
@@ -595,7 +596,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     data-testid="cli-model-inline-detail"
                   >
                     <span>{{ strengthKeys(r.model).map((k) => t(`pages.agentStudio.cliModel.strengths.${k}`)).join(' · ') }}</span>
-                    <code class="font-mono text-txt2">--model {{ r.model.id }}</code>
+                    <code class="font-mono text-txt2">{{ modelArg(backend, r.model.id) }}</code>
                   </div>
                 </template>
 
@@ -666,7 +667,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                   <div class="mt-4 border-t border-line/70 pt-3">
                     <p class="cms-dt">{{ t('pages.agentStudio.cliModel.flagLabel') }}</p>
                     <div class="flex items-start gap-1.5 rounded-md border border-line bg-surface py-1 pl-2 pr-1">
-                      <code class="min-w-0 flex-1 break-all pt-px font-mono text-[11px] leading-[18px] text-txt">--model {{ activeRow.model.id }}</code>
+                      <code class="min-w-0 flex-1 break-all pt-px font-mono text-[11px] leading-[18px] text-txt">{{ modelArg(backend, activeRow.model.id) }}</code>
                       <button
                         type="button"
                         tabindex="-1"
@@ -690,7 +691,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
                     </div>
                   </div>
                   <p class="mt-4 text-[11.5px] leading-5 text-txt2">{{ t('pages.agentStudio.cliModel.typedDetail', { cli: cliLabel }) }}</p>
-                  <code class="mt-3 block break-all rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">--model {{ query.trim() }}</code>
+                  <code class="mt-3 block break-all rounded-md border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt">{{ modelArg(backend, query.trim()) }}</code>
                 </div>
 
                 <div v-else-if="allowAuto" key="auto" class="flex flex-col">

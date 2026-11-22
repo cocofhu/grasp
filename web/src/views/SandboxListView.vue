@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { api, type SandboxView } from '@/lib/api/api'
 import { httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
@@ -53,6 +54,34 @@ const detailListSnapshot = ref<SandboxView | null>(null)
 const copiedKey = ref('')
 let detailCopiedTimer: number | undefined
 let detailSeq = 0
+
+type SandboxFilter = 'all' | 'running' | 'busy' | 'creating'
+
+const activeFilter = ref<SandboxFilter>('all')
+
+function filterFor(s: SandboxView): Exclude<SandboxFilter, 'all'> | 'other' {
+  if (s.status === 'pulling' || s.status === 'creating') return 'creating'
+  if (s.busy) return 'busy'
+  return s.containerStatus === 'running' ? 'running' : 'other'
+}
+
+const filteredRows = computed(() => {
+  return rows.value.filter((s) => activeFilter.value === 'all' || filterFor(s) === activeFilter.value)
+})
+
+const sandboxStats = computed(() => ({
+  total: rows.value.length,
+  running: rows.value.filter((s) => filterFor(s) === 'running').length,
+  busy: rows.value.filter((s) => filterFor(s) === 'busy').length,
+  creating: rows.value.filter((s) => filterFor(s) === 'creating').length,
+}))
+
+const sandboxFilters = computed(() => [
+  { key: 'all' as const, label: t('pages.sandboxes.filters.all'), count: sandboxStats.value.total },
+  { key: 'running' as const, label: t('pages.sandboxes.filters.running'), count: sandboxStats.value.running },
+  { key: 'busy' as const, label: t('pages.sandboxes.filters.busy'), count: sandboxStats.value.busy },
+  { key: 'creating' as const, label: t('pages.sandboxes.filters.creating'), count: sandboxStats.value.creating },
+])
 
 async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   if (inFlight && !showLoading) return
@@ -299,10 +328,57 @@ onBeforeUnmount(() => {
   >
     <div class="mb-5 flex shrink-0 flex-col items-start gap-2.5 md:flex-row md:items-end md:justify-between">
       <div class="min-w-0">
-        <h2 class="text-lg font-semibold text-txt">{{ t('pages.sandboxes.title') }}</h2>
+        <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-2">
+          <span class="h-1.5 w-1.5 rotate-45 rounded-[2px] bg-accent-2" />
+          <span>{{ t('pages.sandboxes.runtimeLabel') }}</span>
+        </div>
+        <h2 class="text-[26px] font-semibold leading-none tracking-[-0.04em] text-txt">{{ t('pages.sandboxes.title') }}</h2>
       </div>
-      <AppButton variant="outline" icon="trash" @click="cleanupOpen = true">{{ t('common.buttons.cleanupIdle') }}</AppButton>
+      <div class="flex items-center gap-2">
+        <AppButton variant="ghost" icon="refresh" size="sm" :loading="loading" @click="load({ showLoading: true })">
+          {{ t('common.buttons.refresh') }}
+        </AppButton>
+        <AppButton variant="outline" icon="trash" @click="cleanupOpen = true">{{ t('common.buttons.cleanupIdle') }}</AppButton>
+      </div>
     </div>
+
+    <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line/80 bg-surface/30">
+    <div class="grid shrink-0 grid-cols-2 gap-y-4 px-4 py-4 md:grid-cols-4 md:gap-8 md:px-5 md:py-5">
+      <article class="sandbox-stat-card">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.total') }}</span>
+          <span class="sandbox-stat-icon sandbox-stat-icon-accent"><Icon name="layout" :size="15" /></span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-1.5"><strong>{{ sandboxStats.total }}</strong><span>{{ t('pages.sandboxes.stats.instances') }}</span></div>
+        <div class="mt-1 text-[11px] text-txt3">{{ t('pages.sandboxes.stats.totalHint') }}</div>
+      </article>
+      <article class="sandbox-stat-card">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.running') }}</span>
+          <span class="sandbox-stat-icon sandbox-stat-icon-ok"><Icon name="check" :size="15" /></span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-1.5"><strong>{{ sandboxStats.running }}</strong><span>{{ t('pages.sandboxes.stats.instances') }}</span></div>
+        <div class="mt-1 text-[11px] text-txt3">{{ t('pages.sandboxes.stats.runningHint') }}</div>
+      </article>
+      <article class="sandbox-stat-card">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.busy') }}</span>
+          <span class="sandbox-stat-icon sandbox-stat-icon-warn"><Icon name="chat" :size="15" /></span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-1.5"><strong>{{ sandboxStats.busy }}</strong><span>{{ t('pages.sandboxes.stats.instances') }}</span></div>
+        <div class="mt-1 text-[11px] text-txt3">{{ t('pages.sandboxes.stats.busyHint') }}</div>
+      </article>
+      <article class="sandbox-stat-card">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[12px] font-medium text-txt2">{{ t('pages.sandboxes.stats.creating') }}</span>
+          <span class="sandbox-stat-icon sandbox-stat-icon-info"><Icon name="clock" :size="15" /></span>
+        </div>
+        <div class="mt-3 flex items-baseline gap-1.5"><strong>{{ sandboxStats.creating }}</strong><span>{{ t('pages.sandboxes.stats.instances') }}</span></div>
+        <div class="mt-1 text-[11px] text-txt3">{{ t('pages.sandboxes.stats.creatingHint') }}</div>
+      </article>
+    </div>
+
+    <div class="flex min-h-0 flex-1 flex-col border-t border-line/70">
 
     <div
       v-if="error && !initialLoading && rows.length && !initialLoadFailed && !loadDenied"
@@ -316,6 +392,33 @@ onBeforeUnmount(() => {
       aria-hidden="true"
     >
       <i class="admin-list-thin-bar bg-accent" />
+    </div>
+
+    <div class="flex shrink-0 flex-col px-4 pb-2 pt-2 md:flex-row md:items-center md:px-5">
+      <div class="flex min-w-0 flex-wrap items-center gap-2.5">
+        <div class="flex items-center gap-2 text-[13px] font-semibold text-txt">
+          <span>{{ t('pages.sandboxes.listTitle') }}</span>
+          <span class="font-mono text-[11px] font-medium text-txt3">{{ rows.length }}</span>
+        </div>
+        <SlidingTabs
+          :value="activeFilter"
+          class="flex w-fit items-center gap-1 rounded-lg bg-elevated p-1"
+          role="tablist"
+          :aria-label="t('pages.sandboxes.filters.label')"
+          indicator-class="rounded-md bg-surface shadow-sm"
+        >
+          <button
+            v-for="filter in sandboxFilters"
+            :key="filter.key"
+            type="button"
+            role="tab"
+            :aria-selected="activeFilter === filter.key"
+            class="relative rounded-md bg-transparent px-2.5 py-1.5 text-[11px] font-medium text-txt3 transition hover:bg-transparent hover:text-txt"
+            :class="activeFilter === filter.key ? 'font-semibold text-txt' : ''"
+            @click="activeFilter = filter.key"
+          >{{ filter.label }} <span v-if="filter.key !== 'all'" class="ml-0.5 text-[10px] opacity-70">{{ filter.count }}</span></button>
+        </SlidingTabs>
+      </div>
     </div>
 
     <!-- Mobile records use the same flat list hierarchy as the desktop table. -->
@@ -370,9 +473,12 @@ onBeforeUnmount(() => {
       <div v-else-if="!rows.length" class="px-5 py-10 text-center text-[13px] text-txt3">
         {{ t('pages.sandboxes.empty') }}
       </div>
+      <div v-else-if="!filteredRows.length" class="px-5 py-10 text-center text-[13px] text-txt3">
+        {{ t('pages.sandboxes.noMatching') }}
+      </div>
       <div v-else class="flex flex-col gap-2">
         <div
-          v-for="s in rows"
+          v-for="s in filteredRows"
           :key="s.id"
           class="border-b border-line/60 py-4 last:border-b-0"
         >
@@ -384,7 +490,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="mt-1 text-[12px] text-txt2">{{ s.profile }}</div>
             </div>
-            <span class="chip shrink-0" :class="statusOf(s).cls">{{ statusOf(s).label }}</span>
+            <span class="chip sandbox-status shrink-0" :class="statusOf(s).cls">{{ statusOf(s).label }}</span>
           </div>
 
           <div class="mt-2.5 flex flex-wrap gap-1.5">
@@ -458,21 +564,21 @@ onBeforeUnmount(() => {
     <!-- Desktop table -->
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-line/60"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden"
       :class="{ 'table-loading': showTableLoading }"
     >
       <div class="scroll-area min-h-0 flex-1 overflow-auto">
         <table class="w-full min-w-[920px] text-left text-[13px]">
-          <thead class="border-b border-line text-[11px] uppercase tracking-wider text-txt3">
+          <thead class="border-b border-line/80 text-[11px] uppercase tracking-wider text-txt3">
             <tr>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.sandbox') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.agent') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.purpose') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.source') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.status') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.recycleCountdown') }}</th>
-              <th class="px-4 py-2.5 font-medium">{{ t('common.table.createdAt') }}</th>
-              <th class="px-4 py-2.5 text-right font-medium">{{ t('common.table.actions') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.sandbox') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.agent') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.purpose') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.source') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.status') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.recycleCountdown') }}</th>
+              <th class="px-4 py-3 font-medium">{{ t('common.table.createdAt') }}</th>
+              <th class="px-4 py-3 text-right font-medium">{{ t('common.table.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -532,8 +638,13 @@ onBeforeUnmount(() => {
                 {{ t('pages.sandboxes.empty') }}
               </td>
             </tr>
+            <tr v-else-if="!filteredRows.length">
+              <td colspan="8" class="px-4 py-10 text-center text-sm text-txt3">
+                {{ t('pages.sandboxes.noMatching') }}
+              </td>
+            </tr>
             <template v-else>
-              <tr v-for="s in rows" :key="s.id" class="border-b border-line/60 last:border-0 hover:bg-elevated/40">
+              <tr v-for="s in filteredRows" :key="s.id" class="border-b border-line/60 last:border-0 transition hover:bg-elevated/40">
                 <td class="px-4 py-2.5">
                   <div class="flex items-center gap-1.5 font-mono text-[12px] text-txt2">
                     <Icon name="terminal" :size="13" class="text-accent-2" />{{ s.name }}
@@ -557,7 +668,7 @@ onBeforeUnmount(() => {
                   </template>
                   <span v-else class="text-[12px] text-txt3">{{ sourceText(s) }}</span>
                 </td>
-                <td class="px-4 py-2.5"><span class="chip" :class="statusOf(s).cls">{{ statusOf(s).label }}</span></td>
+                <td class="px-4 py-2.5"><span class="chip sandbox-status" :class="statusOf(s).cls">{{ statusOf(s).label }}</span></td>
                 <td class="px-4 py-2.5 font-mono text-[12px] text-txt3">{{ ttl(s) }}</td>
                 <td class="px-4 py-2.5 text-[12px] text-txt3">{{ new Date(s.createdAt).toLocaleString() }}</td>
                 <td class="px-4 py-2.5">
@@ -591,6 +702,9 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </div>
+
+    </div>
+    </section>
 
     <!-- Sandbox detail (metadata / proxy URLs / named endpoints) -->
     <AppModal :open="detailOpen" :title="t('pages.sandboxes.detail.title')" :width="560" @close="closeDetail">
@@ -725,6 +839,36 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.sandbox-stat-card {
+  @apply min-w-0 px-0 py-1;
+}
+.sandbox-stat-card strong {
+  @apply text-[24px] font-semibold leading-none tracking-[-0.04em] text-txt;
+}
+.sandbox-stat-icon {
+  @apply flex h-5 w-5 items-center justify-center;
+}
+.sandbox-stat-icon-accent {
+  color: rgb(var(--c-accent-2));
+}
+.sandbox-stat-icon-ok {
+  color: rgb(var(--c-ok));
+}
+.sandbox-stat-icon-warn {
+  color: rgb(var(--c-warn));
+}
+.sandbox-stat-icon-info {
+  color: rgb(var(--c-info));
+}
+.sandbox-status::before {
+  width: 6px;
+  height: 6px;
+  margin-right: 1px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+  content: '';
+}
 .table-loading {
   opacity: 0.55;
 }

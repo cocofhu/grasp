@@ -55,7 +55,7 @@ export function useRunDetailSelection(opts: {
     () => isClarifyNode(selNode.value) && selStatus.value === 'failed' && !!selRun.value?.error,
   )
 
-  // Agent nodes run the in-container cursor-agent, so they get both the ACP
+  // Agent nodes run the in-container Cursor agent, so they get both the ACP
   // 执行日志 and 沙箱日志 tabs.
   const hasLog = computed(() => selNode.value?.type === 'agent')
 

@@ -461,6 +461,6 @@ func AgentRuntimeLabel(b AcpBackend) string {
 	case BackendKimiCode:
 		return "kimi-code-acp"
 	default:
-		return "cursor-agent-stream-json"
+		return "cursor-sdk"
 	}
 }

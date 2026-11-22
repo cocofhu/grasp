@@ -112,7 +112,21 @@ type Panel struct {
 	// 返回本轮用量；为空或返回空 map 时帧结构与旧版完全一致。
 	PromptUsage func() map[string]provider.TokenUsage
 
+	// resultUsage reads the turn's usage from the session/prompt result.
+	resultUsage ResultUsage
+
 	Permissions PermissionChooser
+}
+
+// ResultUsage extracts per-model usage from a session/prompt result. model is
+// the session's current model, for agents that report one unnamed bucket.
+type ResultUsage func(result json.RawMessage, model string) map[string]provider.TokenUsage
+
+// PromptResult is the outcome of one session/prompt call.
+type PromptResult struct {
+	StopReason string
+	// Usage is what the agent reported for the turn (nil when it reports none).
+	Usage map[string]provider.TokenUsage
 }
 
 // PanelSpec describes the agent subprocess and the session a Panel opens.
@@ -127,6 +141,12 @@ type PanelSpec struct {
 	// CanResume); otherwise, or when the agent rejects it, a new session is
 	// started and Panel.SessionID differs from it.
 	ResumeSessionID string
+	// AuthMethod, when set, is sent as `authenticate` before any session
+	// request (agents that refuse session/new until a method is chosen).
+	AuthMethod string
+	// ResultUsage, when set, reads each turn's usage from the session/prompt
+	// result; the agent must report per-turn (not session-total) counters.
+	ResultUsage ResultUsage
 }
 
 // NewPanel 启动子进程（ACP JSON-RPC over stdio），再执行 initialize，接回旧会话或 session/new。
@@ -162,6 +182,7 @@ func NewPanel(procCtx, rpcCtx context.Context, spec PanelSpec) (*Panel, error) {
 		FSRoot:      fsRoot,
 		OnEvent:     spec.OnEvent,
 		Permissions: spec.Permissions,
+		resultUsage: spec.ResultUsage,
 	}
 	conn.SetNotificationHandler(p.onAgentNotification)
 	conn.SetRequestHandler(p.onAgentRequest)
@@ -215,6 +236,12 @@ func NewPanel(procCtx, rpcCtx context.Context, spec PanelSpec) (*Panel, error) {
 		p.reopenMethod = "session/load"
 	}
 	log.Printf("acp: initialize 完成 agent name=%q version=%q reopen=%q", p.AgentName, p.AgentVersion, p.reopenMethod)
+	if spec.AuthMethod != "" {
+		if _, err := conn.Call(rpcCtx, "authenticate", map[string]any{"methodId": spec.AuthMethod}); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("authenticate %s: %w", spec.AuthMethod, err)
+		}
+	}
 
 	mcp := json.RawMessage(`[]`)
 	if len(spec.MCPServers) > 0 && string(spec.MCPServers) != "null" {
@@ -685,6 +712,17 @@ type PromptImage = provider.PromptImage
 
 // Prompt sends a user message (text + optional images) and waits until the Agent completes the turn.
 func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (stopReason string, err error) {
+	res, err := p.PromptTurn(ctx, text, images)
+	return res.StopReason, err
+}
+
+// ReportsUsage reports whether turns carry usage read from the prompt result.
+func (p *Panel) ReportsUsage() bool { return p.resultUsage != nil }
+
+// PromptTurn is Prompt plus the usage the agent reported. A turn cancelled
+// through ctx returns ctx's error with an empty stop reason (no prompt_done is
+// emitted) and whatever usage the agent's cancelled answer carried.
+func (p *Panel) PromptTurn(ctx context.Context, text string, images []PromptImage) (PromptResult, error) {
 	var prompt []map[string]any
 	if text != "" {
 		prompt = append(prompt, map[string]any{"type": "text", "text": text})
@@ -705,33 +743,50 @@ func (p *Panel) Prompt(ctx context.Context, text string, images []PromptImage) (
 	}
 	res, err := p.callPrompt(ctx, params)
 	if err != nil {
-		return "", err
+		return PromptResult{Usage: p.readResultUsage(res)}, err
 	}
 	var out struct {
 		StopReason string `json:"stopReason"`
 	}
 	if err := json.Unmarshal(res, &out); err != nil {
-		return "", err
+		return PromptResult{}, err
 	}
+	result := PromptResult{StopReason: out.StopReason, Usage: p.readResultUsage(res)}
 	frame := map[string]any{
 		"type":       "prompt_done",
 		"sessionId":  p.SessionID,
 		"stopReason": out.StopReason,
 	}
+	usage := result.Usage
 	if p.PromptUsage != nil {
-		if usage := p.PromptUsage(); len(usage) > 0 {
-			frame["usage"] = usage
+		if hooked := p.PromptUsage(); len(hooked) > 0 {
+			usage = hooked
 		}
 	}
+	if len(usage) > 0 {
+		frame["usage"] = usage
+	}
 	p.emit(frame)
-	return out.StopReason, nil
+	return result, nil
+}
+
+func (p *Panel) readResultUsage(res json.RawMessage) map[string]provider.TokenUsage {
+	if p.resultUsage == nil || len(res) == 0 {
+		return nil
+	}
+	model := p.ModelID
+	if model == "" {
+		model = "default"
+	}
+	return p.resultUsage(res, model)
 }
 
 // callPrompt runs session/prompt until the agent answers. Once ctx is
 // cancelled it asks the agent to stop and still waits for that answer, so the
 // next prompt never overlaps a turn that is still running; an agent that has
 // not answered within provider.InterruptGrace is closed. An answer already
-// there when ctx ends is kept: that turn finished.
+// there when ctx ends is kept: that turn finished. The cancelled turn's
+// answer is returned alongside ctx's error for the usage it reports.
 func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, error) {
 	type reply struct {
 		raw json.RawMessage
@@ -755,14 +810,15 @@ func (p *Panel) callPrompt(ctx context.Context, params any) (json.RawMessage, er
 	if err := p.Cancel(); err != nil {
 		log.Printf("acp: session %s 取消通知失败: %v", p.SessionID, err)
 	}
+	var last reply
 	select {
-	case <-answered:
+	case last = <-answered:
 	case <-time.After(provider.InterruptGrace):
 		log.Printf("acp: session %s 未在 %s 内响应中断，结束 Agent", p.SessionID, provider.InterruptGrace)
 		_ = p.conn.Close()
-		<-answered
+		last = <-answered
 	}
-	return nil, ctx.Err()
+	return last.raw, ctx.Err()
 }
 
 // Cancel sends session/cancel (and $/cancel_request for the in-flight prompt id when applicable).

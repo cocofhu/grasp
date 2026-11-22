@@ -1,0 +1,1288 @@
+[
+ {
+  "id": "default",
+  "displayName": "Auto",
+  "aliases": [
+   "auto"
+  ],
+  "variants": [
+   {
+    "params": [],
+    "displayName": "Auto",
+    "isDefault": true
+   }
+  ]
+ },
+ {
+  "id": "composer-2.5",
+  "displayName": "Composer 2.5",
+  "aliases": [
+   "composer-latest",
+   "composer",
+   "composer-2-5"
+  ],
+  "parameters": [
+   {
+    "id": "fast",
+    "displayName": "Fast",
+    "values": [
+     {
+      "value": "false"
+     },
+     {
+      "value": "true",
+      "displayName": "Fast"
+     }
+    ]
+   }
+  ],
+  "variants": [
+   {
+    "params": [
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Composer 2.5",
+    "isDefault": true
+   },
+   {
+    "params": [
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Composer 2.5"
+   }
+  ]
+ },
+ {
+  "id": "claude-opus-5-5",
+  "displayName": "Claude Opus 5.5",
+  "aliases": [
+   "opus-latest",
+   "opus",
+   "opus-5.5",
+   "opus-5-5"
+  ],
+  "parameters": [
+   {
+    "id": "context",
+    "displayName": "Context",
+    "values": [
+     {
+      "value": "300k",
+      "displayName": "300K"
+     },
+     {
+      "value": "1m",
+      "displayName": "1M"
+     }
+    ]
+   },
+   {
+    "id": "effort",
+    "displayName": "Effort",
+    "values": [
+     {
+      "value": "low",
+      "displayName": "Low"
+     },
+     {
+      "value": "medium",
+      "displayName": "Medium"
+     },
+     {
+      "value": "high",
+      "displayName": "High"
+     },
+     {
+      "value": "xhigh",
+      "displayName": "Extra High"
+     },
+     {
+      "value": "max",
+      "displayName": "Max"
+     }
+    ]
+   },
+   {
+    "id": "fast",
+    "displayName": "Fast",
+    "values": [
+     {
+      "value": "false"
+     },
+     {
+      "value": "true",
+      "displayName": "Fast"
+     }
+    ]
+   }
+  ],
+  "variants": [
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "max"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "300k"
+     },
+     {
+      "id": "effort",
+      "value": "max"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isDefault": true,
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "max"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "cyber",
+      "value": "false"
+     },
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "effort",
+      "value": "max"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 5.5",
+    "isMaxMode": true
+   }
+  ]
+ },
+ {
+  "id": "gpt-5.5",
+  "displayName": "GPT-5.5",
+  "aliases": [
+   "gpt-5-5"
+  ],
+  "parameters": [
+   {
+    "id": "context",
+    "displayName": "Context",
+    "values": [
+     {
+      "value": "272k",
+      "displayName": "272K"
+     },
+     {
+      "value": "1m",
+      "displayName": "1M"
+     }
+    ]
+   },
+   {
+    "id": "reasoning",
+    "displayName": "Reasoning",
+    "values": [
+     {
+      "value": "none",
+      "displayName": "None"
+     },
+     {
+      "value": "low",
+      "displayName": "Low"
+     },
+     {
+      "value": "medium",
+      "displayName": "Medium"
+     },
+     {
+      "value": "high",
+      "displayName": "High"
+     },
+     {
+      "value": "extra-high",
+      "displayName": "Extra High"
+     }
+    ]
+   },
+   {
+    "id": "fast",
+    "displayName": "Fast",
+    "values": [
+     {
+      "value": "false"
+     },
+     {
+      "value": "true",
+      "displayName": "Fast"
+     }
+    ]
+   }
+  ],
+  "variants": [
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "none"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "none"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "extra-high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "272k"
+     },
+     {
+      "id": "reasoning",
+      "value": "extra-high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "GPT-5.5"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "reasoning",
+      "value": "none"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "reasoning",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "reasoning",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5",
+    "isDefault": true,
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "reasoning",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "1m"
+     },
+     {
+      "id": "reasoning",
+      "value": "extra-high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "GPT-5.5",
+    "isMaxMode": true
+   }
+  ]
+ },
+ {
+  "id": "grok-4.7",
+  "displayName": "Grok 4.7",
+  "parameters": [
+   {
+    "id": "context",
+    "displayName": "Context",
+    "values": [
+     {
+      "value": "256k",
+      "displayName": "256K"
+     },
+     {
+      "value": "500k",
+      "displayName": "500K"
+     }
+    ]
+   },
+   {
+    "id": "reasoning_effort",
+    "displayName": "Effort",
+    "values": [
+     {
+      "value": "low",
+      "displayName": "Low"
+     },
+     {
+      "value": "medium",
+      "displayName": "Medium"
+     },
+     {
+      "value": "high",
+      "displayName": "High"
+     },
+     {
+      "value": "xhigh",
+      "displayName": "Extra High"
+     }
+    ]
+   },
+   {
+    "id": "fast",
+    "displayName": "Fast",
+    "values": [
+     {
+      "value": "false"
+     },
+     {
+      "value": "true",
+      "displayName": "Fast​​"
+     }
+    ]
+   }
+  ],
+  "variants": [
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Low"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Low Fast​​"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Medium"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Medium Fast​​"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  High"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  High Fast​​"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Extra High"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "256k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Extra High Fast​​"
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Low",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "low"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Low Fast​​",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Medium",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "medium"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Medium Fast​​",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  High",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "high"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  High Fast​​",
+    "isDefault": true,
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "false"
+     }
+    ],
+    "displayName": "Grok 4.7  Extra High",
+    "isMaxMode": true
+   },
+   {
+    "params": [
+     {
+      "id": "context",
+      "value": "500k"
+     },
+     {
+      "id": "reasoning_effort",
+      "value": "xhigh"
+     },
+     {
+      "id": "fast",
+      "value": "true"
+     }
+    ],
+    "displayName": "Grok 4.7  Extra High Fast​​",
+    "isMaxMode": true
+   }
+  ]
+ },
+ {
+  "id": "claude-opus-4-5",
+  "displayName": "Claude Opus 4.5",
+  "aliases": [
+   "opus",
+   "opus-4.5",
+   "opus-4-5"
+  ],
+  "parameters": [
+   {
+    "id": "thinking",
+    "displayName": "Thinking",
+    "values": [
+     {
+      "value": "false"
+     },
+     {
+      "value": "true"
+     }
+    ]
+   }
+  ],
+  "variants": [
+   {
+    "params": [
+     {
+      "id": "thinking",
+      "value": "false"
+     }
+    ],
+    "displayName": "Claude Opus 4.5"
+   },
+   {
+    "params": [
+     {
+      "id": "thinking",
+      "value": "true"
+     }
+    ],
+    "displayName": "Claude Opus 4.5",
+    "isDefault": true
+   }
+  ]
+ },
+ {
+  "id": "gemini-3.1-pro",
+  "displayName": "Gemini 3.1 Pro",
+  "aliases": [
+   "gemini-latest",
+   "gemini-pro-latest",
+   "gemini",
+   "gemini-pro"
+  ],
+  "variants": [
+   {
+    "params": [],
+    "displayName": "Gemini 3.1 Pro",
+    "isDefault": true
+   }
+  ]
+ }
+]

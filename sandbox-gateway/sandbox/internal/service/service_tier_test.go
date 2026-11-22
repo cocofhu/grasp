@@ -11,7 +11,7 @@ import (
 
 func tierPtr(tier string) *string { return &tier }
 
-func TestServiceTiersRequireExactDeclarationAndCodexAdapter(t *testing.T) {
+func TestServiceTiersRequireExactDeclarationAndATieredAdapter(t *testing.T) {
 	t.Setenv("AGENT_PROVIDER", "codex")
 	t.Setenv(envConfiguredModels, `[{"id":"supported","serviceTiers":["fast","turbo"]},{"id":"standard"}]`)
 	if !slices.Equal(ServiceTiers(" supported "), []string{"fast", "turbo"}) || ServiceTiers("supported-extra") != nil || ServiceTiers("standard") != nil || ServiceTiers("") != nil {
@@ -25,6 +25,10 @@ func TestServiceTiersRequireExactDeclarationAndCodexAdapter(t *testing.T) {
 		t.Fatalf("capability projection = %+v, %v", rows, err)
 	}
 	t.Setenv("AGENT_PROVIDER", "cursor")
+	if !slices.Equal(ServiceTiers("supported"), []string{"fast", "turbo"}) {
+		t.Fatal("Cursor did not get its declared speed tiers")
+	}
+	t.Setenv("AGENT_PROVIDER", "claude_code")
 	if ServiceTiers("supported") != nil {
 		t.Fatal("service tiers leaked into an adapter without a speed tier")
 	}

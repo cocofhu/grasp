@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -99,8 +100,11 @@ type SoloSessionView struct {
 	ArtifactRunID    string                    `json:"artifactRunId,omitempty"`
 	Capabilities     *models.AgentCapabilities `json:"capabilities,omitempty"`
 	ReasoningEfforts []string                  `json:"reasoningEfforts"`
-	ServiceTiers     []string                  `json:"serviceTiers"`
-	Steerable        bool                      `json:"steerable,omitempty"`
+	// DefaultReasoningEffort is the listed level the tool itself runs the
+	// model at, when its catalog names one.
+	DefaultReasoningEffort string   `json:"defaultReasoningEffort,omitempty"`
+	ServiceTiers           []string `json:"serviceTiers"`
+	Steerable              bool     `json:"steerable,omitempty"`
 	// Backend and Model describe the Agent CLI for display.
 	Backend string   `json:"backend,omitempty"`
 	Model   string   `json:"model,omitempty"`
@@ -363,6 +367,9 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 					if choices := s.liveReasoningEfforts(ctx, row, agent, chatModelID(row)); choices != nil {
 						v.ReasoningEfforts = choices
 					}
+				}
+				if def := s.toolDefaultEffort(agent, chatModelID(row)); slices.Contains(v.ReasoningEfforts, def) {
+					v.DefaultReasoningEffort = def
 				}
 			} else {
 				v.Backend, v.Model = "", ""

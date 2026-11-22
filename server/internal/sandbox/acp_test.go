@@ -163,7 +163,7 @@ func TestACPConnectDialFailure(t *testing.T) {
 }
 
 // TestACPConnectAuthWarmupRetry covers the cold-start race: the bridge's WS
-// port is up but the in-container cursor-agent hasn't finished authenticating,
+// port is up but the in-container Cursor agent hasn't finished authenticating,
 // so the first session/new is rejected with "Authentication required". Connect
 // must re-dial and succeed once the agent warms up, instead of failing the node.
 func TestACPConnectAuthWarmupRetry(t *testing.T) {

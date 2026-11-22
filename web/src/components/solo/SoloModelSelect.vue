@@ -36,7 +36,7 @@ const label = computed(() => {
 })
 const efforts = computed(() => listedEfforts(current.value?.efforts))
 const effortMax = computed(() => Math.max(0, efforts.value.length - 1))
-const defaultEffort = computed(() => defaultReasoningEffort(efforts.value))
+const defaultEffort = computed(() => defaultReasoningEffort(efforts.value, current.value?.defaultEffort))
 const restoreCount = ref(0)
 const resolvedEffort = computed(() => efforts.value.includes(props.reasoningEffort) ? props.reasoningEffort : defaultEffort.value)
 const effortIndex = computed(() => Math.max(0, efforts.value.indexOf(resolvedEffort.value)))
