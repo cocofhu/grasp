@@ -404,6 +404,22 @@ func TestModelErrorFailsTheTurn(t *testing.T) {
 	if e := rec.ofType("error_text"); len(e) != 1 || !strings.Contains(e[0]["text"].(string), "upstream model failed") {
 		t.Fatalf("error_text: %v", e)
 	}
+	if res.Usage != nil || res.UsagePartial {
+		t.Fatalf("a turn that spent nothing reported usage: %+v", res)
+	}
+}
+
+func TestAFailedTurnReportsTheStepsItFinishedAsPartial(t *testing.T) {
+	f := installFake(t)
+	s, rec := f.open(t, "", "", "")
+	res, err := s.Prompt(promptCtx(t), "fail after a step", nil)
+	want := provider.TokenUsage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 4, CacheWriteTokens: 1}
+	if err == nil || res.StopReason != "failed" || res.Usage["default"] != want || !res.UsagePartial {
+		t.Fatalf("failed turn: %+v %v", res, err)
+	}
+	if done := rec.ofType("prompt_done"); len(done) != 1 || done[0]["usagePartial"] != true {
+		t.Fatalf("prompt_done: %v", done)
+	}
 }
 
 func TestTurnWaitsForBusySubagents(t *testing.T) {

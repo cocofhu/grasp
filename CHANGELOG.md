@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 取消、超时或失败的回合带回的 token 用量统一标为部分用量（对齐 t3code），覆盖 DeepSeek Harness、Grok、Antigravity、DevEco、OpenClaw、Claude Code、CodeBuddy、Gemini、Pi 和 OpenCode；同一操作之后的最终用量可以替换它。token 数值不变。
+
 - 聊天时间线里的思考过程改用脑部线稿，工具完成状态改用圆环勾选，折叠后的状态行在小尺寸下更清晰。
 
 - 排队消息的「立即引导」按钮改用更明确的转向箭头图标，并在悬停或键盘聚焦时播放一次路径转入动效；减弱动态效果时保持静态图标。

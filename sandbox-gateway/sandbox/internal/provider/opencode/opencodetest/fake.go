@@ -424,6 +424,9 @@ func (f *fake) run(s *fakeSession, text string) {
 			}
 		case strings.Contains(text, "fail"):
 			errInfo := map[string]any{"name": "APIError", "data": map[string]string{"message": "upstream model failed"}}
+			if strings.Contains(text, "after a step") {
+				f.stepFinish(sid, msg)
+			}
 			f.assistant(sid, msg, parent, errInfo, true)
 			f.publish("session.error", map[string]any{"sessionID": sid, "error": errInfo})
 			f.finish(s)
@@ -449,10 +452,7 @@ func (f *fake) run(s *fakeSession, text string) {
 			}
 			f.text(sid, msg, "text", f.o.Reply)
 		}
-		f.publish("message.part.updated", map[string]any{"sessionID": sid, "part": map[string]any{
-			"id": f.nextID("prt"), "sessionID": sid, "messageID": msg, "type": "step-finish",
-			"tokens": map[string]any{"input": 10, "output": 3, "reasoning": 2, "cache": map[string]int{"read": 4, "write": 1}},
-		}})
+		f.stepFinish(sid, msg)
 		f.assistant(sid, msg, parent, nil, true)
 		select {
 		case steer := <-s.steer:
@@ -505,6 +505,13 @@ func (f *fake) text(sid, msg, kind, text string) {
 	}
 	part["text"] = text
 	f.publish("message.part.updated", map[string]any{"sessionID": sid, "part": part})
+}
+
+func (f *fake) stepFinish(sid, msg string) {
+	f.publish("message.part.updated", map[string]any{"sessionID": sid, "part": map[string]any{
+		"id": f.nextID("prt"), "sessionID": sid, "messageID": msg, "type": "step-finish",
+		"tokens": map[string]any{"input": 10, "output": 3, "reasoning": 2, "cache": map[string]int{"read": 4, "write": 1}},
+	}})
 }
 
 func (f *fake) tool(sid, msg, call, status string) {

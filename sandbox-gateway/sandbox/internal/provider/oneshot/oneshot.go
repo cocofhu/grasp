@@ -401,6 +401,9 @@ func (e *engine) Prompt(ctx context.Context, text string, images []provider.Prom
 	if errors.Is(err, context.Canceled) && (res.stopReason == "" || res.stopReason == "failed") {
 		res.stopReason = "cancelled"
 	}
+	if err != nil || res.stopReason == "failed" {
+		res.usagePartial = res.usagePartial || len(res.usage) > 0
+	}
 	// A failed resume attempt may have emitted structured errors before the
 	// fresh-session fallback succeeded. Publish only the final attempt's
 	// diagnostics, so an error from the abandoned attempt cannot fail that turn.

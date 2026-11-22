@@ -360,6 +360,9 @@ func TestPermissionsAndCancelThenContinue(t *testing.T) {
 				if err == nil && res.StopReason != "cancelled" {
 					err = fmt.Errorf("unexpected stop: %s", res.StopReason)
 				}
+				if err == nil && (len(res.Usage) == 0 || !res.UsagePartial) {
+					err = fmt.Errorf("cancelled turn usage %+v partial=%v", res.Usage, res.UsagePartial)
+				}
 				finished <- err
 			}()
 			select {
@@ -580,6 +583,7 @@ func TestDSHProcess(t *testing.T) {
 		_ = json.NewEncoder(trace).Encode(map[string]any{"method": req.Method, "params": req.Params})
 		if req.Method == "" && string(req.ID) == `"permission"` {
 			notify(string(req.Result))
+			writeUsageCache()
 			respond(permissionPrompt, map[string]any{"stopReason": "end_turn"})
 			continue
 		}
@@ -658,6 +662,7 @@ func TestDSHProcess(t *testing.T) {
 			}
 		case "session/cancel":
 			if waiting != nil {
+				writeUsageCache()
 				respond(waiting, map[string]any{"stopReason": "cancelled"})
 				waiting = nil
 			}
