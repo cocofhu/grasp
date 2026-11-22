@@ -235,6 +235,34 @@ func TestCancelBeforeCursorSavedTheRunReplaysIt(t *testing.T) {
 	}
 }
 
+func TestReplayDroppedAgainIsReplayedAgain(t *testing.T) {
+	s, rec := open(t, installFake(t), provider.OpenOptions{})
+	cancelled := func(text string) {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		out := make(chan error, 1)
+		calls := len(rec.updates("tool_call"))
+		go func() {
+			_, err := s.Prompt(ctx, text, nil)
+			out <- err
+		}()
+		waitFor(t, func() bool { return len(rec.updates("tool_call")) == calls+1 })
+		cancel()
+		if err := <-out; !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s: %v", text, err)
+		}
+	}
+	cancelled("first hang")
+	cancelled("second hang")
+	if _, err := s.Prompt(turnCtx(t), "next", nil); err != nil {
+		t.Fatal(err)
+	}
+	got := rec.text("agent_message_chunk")
+	if !strings.Contains(got, "first hang\n\nsecond hang\n\nNew message:\n\nnext") {
+		t.Fatalf("replay %q", got)
+	}
+}
+
 func TestFailedRunEndsTheTurnFailed(t *testing.T) {
 	s, rec := open(t, installFake(t), provider.OpenOptions{})
 	res, err := s.Prompt(turnCtx(t), "fail", nil)

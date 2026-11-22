@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -158,8 +159,10 @@ func (s *session) Prompt(ctx context.Context, text string, images []provider.Pro
 	if err != nil {
 		return s.finishFailed(ctx, err)
 	}
-	t := &activeTurn{done: make(chan struct{}), inputs: []string{text}}
 	s.mu.Lock()
+	// The replayed input rides on this turn, so a run Cursor drops again
+	// replays it again.
+	t := &activeTurn{done: make(chan struct{}), inputs: append(slices.Clone(s.lost), text)}
 	message := withLost(s.lost, text)
 	s.turn = t
 	s.mu.Unlock()
