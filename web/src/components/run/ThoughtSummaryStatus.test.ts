@@ -24,6 +24,12 @@ function mountStatus(props: {
 }
 
 describe('ThoughtSummaryStatus', () => {
+  it('uses the brain mark for an idle thought row', () => {
+    const w = mountStatus({})
+    expect(w.get('icon-stub').attributes('name')).toBe('brain')
+    w.unmount()
+  })
+
   it('replaces the running indicator when the turn completes or is interrupted', async () => {
     const w = mountStatus({ busy: true })
     expect(w.findAll('icon-stub')).toHaveLength(1)

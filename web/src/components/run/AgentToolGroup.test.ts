@@ -39,6 +39,7 @@ describe('AgentToolGroup', () => {
     ])
     const g = w.find('[data-testid="agent-tool-group"]')
     expect(g.attributes('data-state')).toBe('done')
+    expect(w.get('[data-testid="agent-tool-group-head"] icon-stub').attributes('name')).toBe('check-circle')
     expect(g.text()).toContain('使用了 5 个工具')
     expect(w.find('[data-testid="agent-tool-group-names"]').text()).toBe('读取文件 · 搜索代码 · 运行命令 …')
     expect(w.find('[data-testid="agent-tool-list"]').exists()).toBe(false)

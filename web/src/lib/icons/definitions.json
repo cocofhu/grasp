@@ -71,6 +71,14 @@
     "strokeWidth": 1.7,
     "note": "从左侧起笔，经过折点，向右上方完成勾选"
   },
+  "check-circle": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"8.6\"/><path pathLength=\"1\" class=\"check-circle-mark\" d=\"M7.6 12.1l3 3 5.8-6.2\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "圆环固定，完成勾轻轻画出"
+  },
   "check-draw": {
     "body": "<path pathLength=\"1\" class=\"grasp-check-draw\" d=\"M7.6 12.4l3.6 3.6L18.2 7.4\"/>",
     "duration": 1050,

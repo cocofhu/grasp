@@ -70,7 +70,7 @@ const iconName = computed(() => {
   if (state.value === 'generating') return props.busyIcon || 'arc-spinner'
   if (state.value === 'interrupted') return 'warn-pulse'
   if (state.value === 'done') return 'check-draw'
-  return 'sparkles'
+  return 'brain'
 })
 </script>
 
