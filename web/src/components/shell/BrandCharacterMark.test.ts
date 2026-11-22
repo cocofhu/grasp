@@ -131,7 +131,7 @@ describe('BrandCharacterMark', () => {
 
   const idleClasses = (classes: string[]) => classes.filter((c) => c.startsWith('idle-'))
 
-  it('alternates look and tilt every 8–14s and skips while hovered', async () => {
+  it('plays the expression set in order every 8–14s and skips while hovered', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
     const wrapper = mount(BrandCharacterMark, { props: { size: 28 }, attachTo: document.body })
     await flushPromises()
@@ -143,18 +143,31 @@ describe('BrandCharacterMark', () => {
     await vi.advanceTimersByTimeAsync(1400)
     expect(idleClasses(root.classes())).toEqual([])
     await vi.advanceTimersByTimeAsync(8000 - 1400)
-    expect(idleClasses(root.classes())).toEqual(['idle-tilt'])
-    await vi.advanceTimersByTimeAsync(1400)
+    expect(idleClasses(root.classes())).toEqual(['idle-happy'])
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(idleClasses(root.classes())).toEqual([])
 
     await root.trigger('pointerenter')
     await vi.advanceTimersByTimeAsync(30_000)
     expect(idleClasses(root.classes())).toEqual([])
     await root.trigger('pointerleave')
-    // Hovered slots at 24s/32s/40s were skipped; the next one lands at 48s.
-    await vi.advanceTimersByTimeAsync(600)
-    expect(idleClasses(root.classes())).toEqual(['idle-look'])
+    // Hovered slots at 24s/32s/40s were skipped; the next one lands at 48s and keeps the order.
+    await vi.advanceTimersByTimeAsync(400)
+    expect(idleClasses(root.classes())).toEqual(['idle-tilt'])
+    for (const expected of ['idle-surprised', 'idle-wink', 'idle-sleepy', 'idle-look']) {
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(idleClasses(root.classes())).toEqual([expected])
+    }
     wrapper.unmount()
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('draws every expression from shared face parts', () => {
+    const wrapper = mount(BrandCharacterMark, { props: { size: 28 } })
+    for (const part of ['.bc-dot', '.bc-arc', '.bc-arc--r', '.bc-shut', '.bc-mouth', '.bc-open', '.bc-o']) {
+      expect(wrapper.find(part).exists(), part).toBe(true)
+    }
+    wrapper.unmount()
   })
 
   it('flips on a rapid second tap and keeps its fixed size', async () => {

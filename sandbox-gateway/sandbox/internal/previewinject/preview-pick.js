@@ -444,14 +444,39 @@ var GraspRuntimeIcons=(function(d){"use strict";const A={"file-audio":{body:'<pa
     '.dhead .mark .brand-character__motion{animation:grasp-brand-sway 5.6s ease-in-out infinite}' +
     '.dhead .mark .brand-character__breath{animation:grasp-brand-breathe 3.8s ease-in-out infinite}' +
     '.dhead .mark .brand-character__face{transition:transform 220ms ease}' +
+    '.dhead .mark .brand-character__tail{transform-box:view-box;transform-origin:139px 150px;animation:grasp-brand-wag 3.4s ease-in-out infinite}' +
+    '.dhead .mark:hover .brand-character__tail{animation-duration:1.4s}' +
     '.dhead .mark .brand-character__eye{transform-box:fill-box;transform-origin:center;animation:grasp-brand-blink 6.8s ease-in-out infinite}' +
     '.dhead .mark .brand-character__eye--right{animation-delay:35ms}' +
     '.dhead .mark:hover .brand-character__response{transform:translateY(-1.5%) rotate(-3deg) scale(1.035)}' +
     '.dhead .mark:hover .brand-character__face{transform:translateY(-1px)}' +
     '@keyframes grasp-brand-sway{0%,100%{transform:translateY(0) rotate(-.8deg)}50%{transform:translateY(-1.5%) rotate(.8deg)}}' +
+    '@keyframes grasp-brand-wag{0%,100%{transform:rotate(0)}30%{transform:rotate(12deg)}70%{transform:rotate(-6deg)}}' +
     '@keyframes grasp-brand-breathe{0%,100%{transform:scale(1)}45%{transform:scale(1.012,1.023)}}' +
     '@keyframes grasp-brand-blink{0%,64%,70%,76%,100%{transform:scaleY(1)}66%,68%{transform:scaleY(.1)}72%,74%{transform:scaleY(.16)}}' +
-    '@media (prefers-reduced-motion:reduce){.dhead .mark :is(.brand-character__response,.brand-character__motion,.brand-character__breath,.brand-character__face,.brand-character__eye){animation:none!important;transition:none!important;transform:none!important}}' +
+    '.dhead .mark .bc-line{fill:none;stroke:#1a1a1a;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}' +
+    '.dhead .mark .bc-part{opacity:0;transform:scale(1,.1);transform-box:fill-box;transform-origin:center;transition:opacity 80ms ease-in 30ms,transform 110ms ease-in}' +
+    '.dhead .mark .bc-part.on{opacity:1;transform:none;transition:opacity 80ms ease-out 100ms,transform 260ms cubic-bezier(.34,1.56,.5,1) 100ms}' +
+    '.dhead .mark .bc-dot:not(.bc-dot--r){animation:grasp-face-dot-l 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-dot--r{animation:grasp-face-dot-r 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-arc:not(.bc-arc--r){animation:grasp-face-arc-l 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-arc--r{animation:grasp-face-arc-r 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-shut{animation:grasp-face-shut 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-mouth{animation:grasp-face-mouth 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-open{animation:grasp-face-open 48s ease-in-out infinite}' +
+    '.dhead .mark .bc-o{animation:grasp-face-o 48s ease-in-out infinite}' +
+    '@keyframes grasp-face-dot-l{0%{opacity:1;transform:none}16.667%{opacity:1;transform:none}16.896%{opacity:0;transform:scale(1,.1)}20.833%{opacity:0;transform:scale(1,.1)}21.062%{opacity:0;transform:scale(1,.1)}21.354%{opacity:1;transform:scale(1.06,1.12)}21.583%{opacity:1;transform:none}41.667%{opacity:1;transform:none}42.188%{opacity:1;transform:scale(.85)}45.417%{opacity:1;transform:scale(.85)}45.938%{opacity:1;transform:none}87.5%{opacity:1;transform:none}87.729%{opacity:0;transform:scale(1,.1)}93.75%{opacity:0;transform:scale(1,.1)}93.979%{opacity:0;transform:scale(1,.1)}94.271%{opacity:1;transform:scale(1.06,1.12)}94.5%{opacity:1;transform:none}100%{opacity:1;transform:none}}' +
+    '@keyframes grasp-face-dot-r{0%{opacity:1;transform:none}16.667%{opacity:1;transform:none}16.896%{opacity:0;transform:scale(1,.1)}20.833%{opacity:0;transform:scale(1,.1)}21.062%{opacity:0;transform:scale(1,.1)}21.354%{opacity:1;transform:scale(1.06,1.12)}21.583%{opacity:1;transform:none}41.667%{opacity:1;transform:none}42.188%{opacity:1;transform:scale(.85)}45.417%{opacity:1;transform:scale(.85)}45.938%{opacity:1;transform:none}66.667%{opacity:1;transform:none}66.896%{opacity:0;transform:scale(1,.1)}69.583%{opacity:0;transform:scale(1,.1)}69.812%{opacity:0;transform:scale(1,.1)}70.104%{opacity:1;transform:scale(1.06,1.12)}70.333%{opacity:1;transform:none}87.5%{opacity:1;transform:none}87.729%{opacity:0;transform:scale(1,.1)}93.75%{opacity:0;transform:scale(1,.1)}93.979%{opacity:0;transform:scale(1,.1)}94.271%{opacity:1;transform:scale(1.06,1.12)}94.5%{opacity:1;transform:none}100%{opacity:1;transform:none}}' +
+    '@keyframes grasp-face-arc-l{0%{opacity:0;transform:scale(1,.1)}16.667%{opacity:0;transform:scale(1,.1)}16.896%{opacity:0;transform:scale(1,.1)}17.188%{opacity:1;transform:scale(1.06,1.12)}17.417%{opacity:1;transform:none}20.833%{opacity:1;transform:none}21.062%{opacity:0;transform:scale(1,.1)}100%{opacity:0;transform:scale(1,.1)}}' +
+    '@keyframes grasp-face-arc-r{0%{opacity:0;transform:scale(1,.1)}16.667%{opacity:0;transform:scale(1,.1)}16.896%{opacity:0;transform:scale(1,.1)}17.188%{opacity:1;transform:scale(1.06,1.12)}17.417%{opacity:1;transform:none}20.833%{opacity:1;transform:none}21.062%{opacity:0;transform:scale(1,.1)}66.667%{opacity:0;transform:scale(1,.1)}66.896%{opacity:0;transform:scale(1,.1)}67.188%{opacity:1;transform:scale(1.06,1.12)}67.417%{opacity:1;transform:none}69.583%{opacity:1;transform:none}69.812%{opacity:0;transform:scale(1,.1)}100%{opacity:0;transform:scale(1,.1)}}' +
+    '@keyframes grasp-face-shut{0%{opacity:0;transform:scale(1,.1)}87.5%{opacity:0;transform:scale(1,.1)}87.729%{opacity:0;transform:scale(1,.1)}88.021%{opacity:1;transform:scale(1.06,1.12)}88.25%{opacity:1;transform:none}93.75%{opacity:1;transform:none}93.979%{opacity:0;transform:scale(1,.1)}100%{opacity:0;transform:scale(1,.1)}}' +
+    '@keyframes grasp-face-mouth{0%{opacity:1;transform:none}16.667%{opacity:1;transform:none}16.896%{opacity:0;transform:scale(1,.1)}20.833%{opacity:0;transform:scale(1,.1)}21.062%{opacity:0;transform:scale(1,.1)}21.354%{opacity:1;transform:scale(1.06,1.12)}21.583%{opacity:1;transform:none}41.667%{opacity:1;transform:none}41.896%{opacity:0;transform:scale(1,.1)}45.417%{opacity:0;transform:scale(1,.1)}45.646%{opacity:0;transform:scale(1,.1)}45.938%{opacity:1;transform:scale(1.06,1.12)}46.167%{opacity:1;transform:none}66.667%{opacity:1;transform:none}66.896%{opacity:0;transform:scale(1,.1)}69.583%{opacity:0;transform:scale(1,.1)}69.812%{opacity:0;transform:scale(1,.1)}70.104%{opacity:1;transform:scale(1.06,1.12)}70.333%{opacity:1;transform:none}87.5%{opacity:1;transform:none}87.729%{opacity:0;transform:scale(1,.1)}93.75%{opacity:0;transform:scale(1,.1)}93.979%{opacity:0;transform:scale(1,.1)}94.271%{opacity:1;transform:scale(1.06,1.12)}94.5%{opacity:1;transform:none}100%{opacity:1;transform:none}}' +
+    '@keyframes grasp-face-open{0%{opacity:0;transform:scale(1,.1)}16.667%{opacity:0;transform:scale(1,.1)}16.896%{opacity:0;transform:scale(1,.1)}17.188%{opacity:1;transform:scale(1.06,1.12)}17.417%{opacity:1;transform:none}20.833%{opacity:1;transform:none}21.062%{opacity:0;transform:scale(1,.1)}66.667%{opacity:0;transform:scale(1,.1)}66.896%{opacity:0;transform:scale(1,.1)}67.188%{opacity:1;transform:scale(1.06,1.12)}67.417%{opacity:1;transform:none}69.583%{opacity:1;transform:none}69.812%{opacity:0;transform:scale(1,.1)}100%{opacity:0;transform:scale(1,.1)}}' +
+    '@keyframes grasp-face-o{0%{opacity:0;transform:scale(1,.1)}41.667%{opacity:0;transform:scale(1,.1)}41.896%{opacity:0;transform:scale(1,.1)}42.188%{opacity:1;transform:scale(1.06,1.12)}42.417%{opacity:1;transform:none}45.417%{opacity:1;transform:none}45.646%{opacity:0;transform:scale(1,.1)}87.5%{opacity:0;transform:scale(1,.1)}87.729%{opacity:0;transform:scale(1,.1)}88.25%{opacity:1;transform:scale(.55)}93.75%{opacity:1;transform:scale(.55)}93.979%{opacity:0;transform:scale(1,.1)}100%{opacity:0;transform:scale(1,.1)}}' +
+    '.dhead .mark:hover .bc-part{animation:none}' +
+    '.dhead .mark:hover :is(.bc-dot,.bc-mouth,.bc-shut,.bc-o){opacity:0;transform:scale(1,.1);transition:opacity 80ms ease-in 30ms,transform 110ms ease-in}' +
+    '.dhead .mark:hover :is(.bc-arc,.bc-open){opacity:1;transform:none;transition:opacity 80ms ease-out 100ms,transform 260ms cubic-bezier(.34,1.56,.5,1) 100ms}' +
+    '@media (prefers-reduced-motion:reduce){.dhead .mark :is(.brand-character__response,.brand-character__motion,.brand-character__breath,.brand-character__tail,.brand-character__face,.brand-character__eye){animation:none!important;transition:none!important;transform:none!important}.dhead .mark .bc-part{animation:none!important;transition:none!important}}' +
     '.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:-0.01em;' +
     'line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.dhead button{width:30px;height:30px;padding:0;display:grid;place-items:center;flex:none;' +
@@ -1360,13 +1385,20 @@ var GraspRuntimeIcons=(function(d){"use strict";const A={"file-audio":{body:'<pa
       '<span class="drag" data-icon-host data-role="drawer-grip" aria-hidden="true">' + ICON_GRIP + '</span>' +
       '<span class="mark" aria-hidden="true">' +
       // Match the Grasp lockup in BrandCharacterMark.vue, including its idle motion.
-      '<svg class="brand-character__svg" viewBox="48 52 104 118" focusable="false" aria-hidden="true">' +
+      '<svg class="brand-character__svg" viewBox="50 51 120 119" focusable="false" aria-hidden="true">' +
       '<g class="brand-character__response"><g class="brand-character__motion"><g class="brand-character__breath">' +
-      '<path d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"/>' +
+      '<g class="brand-character__tail"><path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/>' +
+      '<path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/></g>' +
+      '<path d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="5" stroke-linejoin="round"/>' +
       '<g class="brand-character__face"><g class="brand-character__eyes">' +
-      '<ellipse class="brand-character__eye" cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>' +
-      '<ellipse class="brand-character__eye brand-character__eye--right" cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>' +
-      '</g><path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>' +
+      '<g class="bc-part bc-dot on"><ellipse class="brand-character__eye" cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>' +
+      '<g class="bc-part bc-dot bc-dot--r on"><ellipse class="brand-character__eye brand-character__eye--right" cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/></g>' +
+      '<path class="bc-part bc-line bc-arc" d="M77 113 Q84 101 91 113"/>' +
+      '<path class="bc-part bc-line bc-arc bc-arc--r" d="M109 113 Q116 101 123 113"/>' +
+      '<path class="bc-part bc-line bc-shut" d="M77 109 Q84 117 91 109 M109 109 Q116 117 123 109"/>' +
+      '</g><path class="bc-part bc-mouth on" d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>' +
+      '<path class="bc-part bc-open" d="M90 121 Q100 124 110 121 Q109 137 100 137 Q91 137 90 121Z" fill="#fff" stroke="#1a1a1a" stroke-width="5" stroke-linejoin="round"/>' +
+      '<ellipse class="bc-part bc-o" cx="100" cy="127" rx="5" ry="6.5" fill="#fff" stroke="#1a1a1a" stroke-width="5"/>' +
       '<circle cx="74" cy="126" r="6" fill="#c8c8c8"/>' +
       '<circle cx="126" cy="126" r="6" fill="#c8c8c8"/>' +
       '</g></g></g></g>' +

@@ -192,38 +192,73 @@ describe('HomeYumeCharacter', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  const idleClasses = (classes: string[]) => classes.filter((c) => c.startsWith('idle-'))
+  const mood = (root: DOMWrapper<Element>) => root.attributes('data-mood')
+  const SEQUENCE: [string, number][] = [
+    ['idle', 3200],
+    ['happy', 2400],
+    ['laugh', 2500],
+    ['surprised', 1800],
+    ['sleepy', 2800],
+    ['angry', 2160],
+    ['worried', 2400],
+    ['think', 2800],
+    ['wave', 2400],
+    ['jump', 2700],
+    ['run', 2520],
+    ['peek', 2600],
+  ]
 
-  it('plays a random idle action every 6–10s without repeating the previous one', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0)
+  it('performs every expression and action of sheet A in order, then loops', async () => {
     const wrapper = mount(HomeYumeCharacter, { attachTo: document.body })
     await flushPromises()
     const root = wrapper.get('[data-testid="home-yume"]')
-    await vi.advanceTimersByTimeAsync(5999)
-    expect(idleClasses(root.classes())).toEqual([])
-    await vi.advanceTimersByTimeAsync(1)
-    expect(idleClasses(root.classes())).toEqual(['idle-look'])
-    await vi.advanceTimersByTimeAsync(1600)
-    expect(idleClasses(root.classes())).toEqual([])
-    await vi.advanceTimersByTimeAsync(6000 - 1600)
-    expect(idleClasses(root.classes())).toEqual(['idle-ear'])
+    for (const [name, hold] of [...SEQUENCE, SEQUENCE[0]]) {
+      expect(mood(root)).toBe(name)
+      expect(root.classes()).toContain(`mood-${name}`)
+      await vi.advanceTimersByTimeAsync(hold - 1)
+      expect(mood(root)).toBe(name)
+      await vi.advanceTimersByTimeAsync(1)
+    }
     wrapper.unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('skips idle actions while hovered or while the composer is focused', async () => {
+  it('blinks between shared face parts instead of swapping drawings', async () => {
+    const wrapper = mount(HomeYumeCharacter, { attachTo: document.body })
+    await flushPromises()
+    const shown = () => wrapper.findAll('.c-part.on').length
+    expect(shown()).toBeGreaterThan(0)
+    const root = wrapper.get('[data-testid="home-yume"]')
+    await vi.advanceTimersByTimeAsync(3200)
+    expect(mood(root)).toBe('happy')
+    expect(wrapper.findAll('.c-dot.on')).toHaveLength(0)
+    expect(wrapper.find('.c-mouth-open').element.parentElement?.classList.contains('on')).toBe(true)
+    expect(wrapper.findAll('.fx.on')).toHaveLength(1)
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
+    expect(src).toMatch(/\.c-part\)\s*\{[^}]*transition:/)
+    expect(src).toMatch(/\.c-pose\)\s*\{[^}]*transition:/)
+    wrapper.unmount()
+  })
+
+  it('waves while hovered, settles while the composer is focused, and resumes the same mood after', async () => {
     const wrapper = mount(HomeYumeCharacter, { attachTo: document.body })
     await flushPromises()
     const root = wrapper.get('[data-testid="home-yume"]')
     await root.trigger('pointerenter')
+    expect(mood(root)).toBe('wave')
+    expect(wrapper.findAll('.c-arm.arm-wave')).toHaveLength(2)
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(idleClasses(root.classes())).toEqual([])
+    expect(mood(root)).toBe('wave')
     await root.trigger('pointerleave')
+    expect(mood(root)).toBe('idle')
 
     await wrapper.setProps({ attentive: true })
     expect(root.classes()).toContain('attentive')
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(idleClasses(root.classes())).toEqual([])
+    expect(mood(root)).toBe('idle')
+    await wrapper.setProps({ attentive: false })
+    await vi.advanceTimersByTimeAsync(3200)
+    expect(mood(root)).toBe('happy')
     wrapper.unmount()
   })
 
@@ -247,8 +282,9 @@ describe('HomeYumeCharacter', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(root.classes()).toContain('sleeping')
     expect(wrapper.findAll('.c-zz')).toHaveLength(2)
+    expect(mood(root)).toBe('sleepy')
     await vi.advanceTimersByTimeAsync(30_000)
-    expect(idleClasses(root.classes())).toEqual([])
+    expect(mood(root)).toBe('sleepy')
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
     await flushPromises()
@@ -290,7 +326,7 @@ describe('HomeYumeCharacter', () => {
     expect(vi.getTimerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(60_000)
     expect(root.classes()).not.toContain('sleeping')
-    expect(idleClasses(root.classes())).toEqual([])
+    expect(mood(root)).toBe('idle')
 
     hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
@@ -388,7 +424,7 @@ describe('HomeYumeCharacter', () => {
     for (const cls of ['attentive', 'nod', 'cheer', 'jump', 'flip', 'sleeping', 'wake']) {
       expect(root.classes()).not.toContain(cls)
     }
-    expect(idleClasses(root.classes())).toEqual([])
+    expect(mood(root)).toBe('idle')
     wrapper.unmount()
   })
 

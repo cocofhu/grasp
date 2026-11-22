@@ -40,6 +40,10 @@ All notable public-release changes are documented here.
 
 - 设置里的仓库页面调整为工作台式布局：统计卡片自动填充可用宽度，仓库卡片补充来源、分支和最近使用状态，并突出「开始 Solo」操作。
 
+- 首页角色改为 A 方案的多表情连续动画：会依次做出待机、开心、大笑、惊讶、困倦、生气、担心、思考、挥手、跳跃、奔跑和探头，切换表情时像眨眼一样先闭上再弹开新表情，不再出现两张脸叠在一起的灰影；悬停时挥手，输入时专注，提交时跳跃。侧边栏图标和 Page Harness CoCo 工具栏里的角色也会轮换开心、惊讶、眨眼、困倦等表情。角色轮廓（含 Logo、favicon 和桌面图标）从直线改为圆润的曲线和浅波浪下摆，Logo 也加上了 A 方案的尾巴并换成更细的描边，深色底上尾巴带白边也能看清；横幅 PNG、`favicon.ico` 和 `yume-mark.png` 已重新导出。表情特效改用项目主色 #7B61FF，嘴巴内部为白色，和黑白灰的角色配色一致。
+
+- 桌面启动页的吉祥物改为连续动作角色动画（造型与 Logo 一致：曲线轮廓、新尾巴、白色张嘴）：保留原有气泡、时钟和应用布局，角色会在待机、开心、惊讶、困倦、思考、挥手、跳跃、奔跑和探头等状态之间平滑过渡，并支持悬停、点击和键盘触发互动。
+
 - 平台内置 MCP `artifact-store` 改名为 `grasp-tool`，Agent 看到的工具名随之变为 `mcp__grasp-tool__*`（Codex 下为 `mcp__grasp_tool`），Agent Studio 中显示为「Grasp Tool」。不兼容旧名：Agent 的 MCP 配置里仍写 `artifact-store` 的条目需改为 `grasp-tool`，否则不会收到产物约定、无法写入产物；AGENTS.md 或 skill 里写死的旧工具名也需同步修改。`GRASP_ARTIFACT_URL` / `GRASP_ARTIFACT_TOKEN` 不变。
 
 - Cursor 改用官方 `@cursor/sdk` 运行，Agent 进程常驻：回合进行中可以「立即引导」，停止的回合保留已产生的 token 用量，切换模型、思考强度或速度档位后接回原会话。模型列表改为基础模型，思考强度和 Fast 单独选择，不再是 `gpt-5.5-high-fast` 这类组合名。**不兼容变更**：旧模型 id 不迁移，升级后请在 Cursor 的模型配置里重新选择模型；还用旧 id 的会话会报「Cursor 不提供模型」。Claude 的 thinking 与非 thinking 合并为同一个模型，按 Cursor 默认开启思考。没选思考强度时按 Cursor 自己的默认强度运行，部分模型的默认组合是 Max 模式（1M 上下文）。Cursor 不再加载插件、团队与 MDM 配置，`~/.cursor/mcp.json` 照常生效。需要新的沙箱镜像（`IMAGE_LEVEL` 3）和运行时更新后生效。
