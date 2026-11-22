@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/clicatalog"
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/modelrouting"
+	"github.com/cocofhu/grasp/internal/models"
 )
 
 func TestLegacyCursorModelsLandOnOfferedChoices(t *testing.T) {

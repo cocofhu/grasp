@@ -51,10 +51,10 @@ type sdkProvider struct {
 // New returns the Cursor SDK provider.
 func New(c Config) provider.Provider { return &sdkProvider{c: c, models: &modelCache{}} }
 
-func (*sdkProvider) Name() provider.Name                 { return provider.Cursor }
-func (p *sdkProvider) Runtime() string                   { return p.c.Runtime }
-func (p *sdkProvider) DefaultConfigRoot() string         { return p.c.ConfigRoot }
-func (*sdkProvider) Transport() provider.TransportKind    { return provider.LongLived }
+func (*sdkProvider) Name() provider.Name               { return provider.Cursor }
+func (p *sdkProvider) Runtime() string                 { return p.c.Runtime }
+func (p *sdkProvider) DefaultConfigRoot() string       { return p.c.ConfigRoot }
+func (*sdkProvider) Transport() provider.TransportKind { return provider.LongLived }
 func (p *sdkProvider) AuthEnv(env []string) []string {
 	if p.c.AuthEnvFn == nil {
 		return env
