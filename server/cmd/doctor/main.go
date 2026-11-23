@@ -329,15 +329,3 @@ func callMCP(ctx context.Context, apiURL, runID, token string, id int, tool stri
 	}
 	return out, resp.StatusCode, nil
 }
-
-func remaining(ctx context.Context, maximum time.Duration) time.Duration {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return maximum
-	}
-	left := time.Until(deadline)
-	if left < maximum {
-		return left
-	}
-	return maximum
-}
