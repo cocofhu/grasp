@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"net"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -46,6 +48,49 @@ func (h *Handlers) DoctorArtifactSession(c *gin.Context) {
 	case http.MethodDelete:
 		if err := h.cleanupDoctorArtifactSession(c.Param("id"), c.GetHeader("X-Grasp-Doctor-Cleanup")); err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	default:
+		c.Status(http.StatusMethodNotAllowed)
+	}
+}
+
+// DoctorSandbox provisions a short-lived sandbox through the product manager.
+// It exists only for the local doctor and is protected by the same loopback
+// token as the artifact diagnostic endpoint.
+func (h *Handlers) DoctorSandbox(c *gin.Context) {
+	if !isLoopbackRequest(c.Request) || !validDoctorToken(c.GetHeader("Authorization")) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	if h.Sbx == nil || h.Sbx.Manager() == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sandbox service unavailable"})
+		return
+	}
+
+	switch c.Request.Method {
+	case http.MethodPost:
+		password := uuid.NewString()
+		sb, err := h.Sbx.Manager().Create(c.Request.Context(), sandbox.Spec{
+			Env:    map[string]string{sandbox.BridgePasswordEnv: password},
+			Labels: map[string]string{"approving.doctor": "true"},
+		})
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"id": sb.ID})
+	case http.MethodDelete:
+		id := strings.TrimSpace(c.Param("id"))
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sandbox id is required"})
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+		if err := h.Sbx.Manager().DestroyByName(cleanupCtx, id); err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
 		c.Status(http.StatusNoContent)

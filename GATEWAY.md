@@ -224,7 +224,8 @@ build automation are separate from this opt-in application change.
 | Optional v2 | Authenticated `GET /api/v2/info` advertises protocol, ports, profiles and capabilities. `GET /api/v2/sandboxes/{nativeID}/connect/{guestPort}` upgrades to `grasp-tcp-v1`. Reverse proxies must forward WebSocket upgrades and allow long connections. See the [wire contract](sandbox-gateway/gateway/docs/API.md#authenticated-tcp-transport-v2). |
 | Auth | Bearer token: gateway `SBGW_API_KEYS` / client `GRASP_SANDBOX_GATEWAY_API_KEY` (compose default `grasp-local-demo` via `SANDBOX_GATEWAY_API_KEY`) |
 
-`grasp doctor --run-demo` verifies health, create, ready, and cleanup after failure.
+`grasp doctor --run-demo` verifies health, creates a sandbox through Grasp's
+normal runtime-injection path, checks artifact isolation, and cleans it up.
 
 ## Published images
 
