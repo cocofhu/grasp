@@ -26,6 +26,9 @@ const props = defineProps<{
   /** A turn is running that a queued message can be steered into. Only rows
    * the server acknowledged (with an id) can be steered. */
   steerable?: boolean
+  /** A turn is running whose agent has not connected yet: whether it can be
+   * steered is still unknown. */
+  steerPending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -141,6 +144,17 @@ function onDrop(toIndex: number, e: DragEvent) {
             @click.stop="emit('steer', qi)"
           >
             <Icon name="steer" :size="14" />
+          </button>
+          <button
+            v-else-if="steerPending && q.id"
+            type="button"
+            disabled
+            class="flex h-6 w-6 cursor-wait items-center justify-center rounded-md text-txt3"
+            :title="t('pages.clarify.queueSteerPendingTitle')"
+            :aria-label="t('pages.clarify.queueSteerPendingTitle')"
+            data-testid="clarify-queue-steer-pending"
+          >
+            <Icon name="spinner" :size="14" />
           </button>
           <button
             type="button"

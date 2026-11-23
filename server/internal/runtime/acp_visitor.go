@@ -147,6 +147,7 @@ func (c *acpProvider) openVisitorLane(ctx context.Context, req NodeReq, lane str
 	}
 	c.visitors[key] = vl
 	c.mu.Unlock()
+	c.noteBridgeLive(req.RunID, req.NodeID, lane)
 	return vl, nil
 }
 

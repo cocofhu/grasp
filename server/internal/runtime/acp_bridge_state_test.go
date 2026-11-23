@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -36,6 +37,30 @@ func TestSessionBridgeStateDropsFinishedEchoWhenIdle(t *testing.T) {
 	st, ok := p.SessionBridgeState("run", "clarify")
 	if !ok || st.Busy || st.Desynced || st.RunningOpID != "" || st.InFlightOpID != "" {
 		t.Fatalf("plan g1.1: finished echo still live: %+v ok=%v", st, ok)
+	}
+}
+
+func TestParkReactSessionNotifiesBridgeLive(t *testing.T) {
+	acp := sandbox.NewACPClient("127.0.0.1", 9)
+	acp.SeedBridgeForTest(sandbox.BridgeState{Known: true}, "", "")
+	p := &acpProvider{sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{}}
+	type call struct {
+		runID, nodeID, lane string
+		live                bool
+	}
+	got := make(chan call, 1)
+	p.SetBridgeLiveSink(func(runID, nodeID, lane string) {
+		_, live := p.SessionBridgeState(runID, nodeID)
+		got <- call{runID, nodeID, lane, live}
+	})
+	p.parkReactSession(NodeReq{RunID: "run", NodeID: "clarify"}, nil, acp, "")
+	select {
+	case c := <-got:
+		if c.runID != "run" || c.nodeID != "clarify" || c.lane != "" || !c.live {
+			t.Fatalf("bridge live notice = %+v", c)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("parking a session did not notify the bridge-live sink")
 	}
 }
 

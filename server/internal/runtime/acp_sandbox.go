@@ -206,6 +206,20 @@ func (c *acpProvider) SetEventSink(fn func(runID, nodeID string, events []models
 	c.emit = fn
 }
 
+// SetBridgeLiveSink wires the callback run when a session's ACP client becomes
+// visible to the bridge-state readers. Optional.
+func (c *acpProvider) SetBridgeLiveSink(fn func(runID, nodeID, lane string)) {
+	c.bridgeLive = fn
+}
+
+// noteBridgeLive runs the callback off the caller's goroutine: the engine reads
+// the bridge state back through c.mu, which callers may hold.
+func (c *acpProvider) noteBridgeLive(runID, nodeID, lane string) {
+	if c.bridgeLive != nil {
+		go c.bridgeLive(runID, nodeID, lane)
+	}
+}
+
 // SetSandboxRegistry wires the platform sandbox store so per-run node
 // sandboxes are recorded (and shown in the UI) for their lifetime.
 func (c *acpProvider) SetSandboxRegistry(r SandboxRegistry) {

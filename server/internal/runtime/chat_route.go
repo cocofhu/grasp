@@ -321,6 +321,7 @@ func (c *acpProvider) switchSessionTool(ctx context.Context, req NodeReq, sess *
 	if c.shared != nil {
 		c.shared.notePrimed(req.RunID, sess.sb, want)
 	}
+	c.noteBridgeLive(req.RunID, req.NodeID, "")
 	return nil
 }
 

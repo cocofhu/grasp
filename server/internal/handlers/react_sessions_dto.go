@@ -43,6 +43,8 @@ func reactSessionsDTO(snaps []engine.ReviewSessionSnapshot) gin.H {
 			if s.SandboxRunningOpID != "" {
 				row["sandboxRunningOpId"] = s.SandboxRunningOpID
 			}
+		} else if s.SandboxSteerPending {
+			row["sandboxSteerPending"] = true
 		}
 		byNode[s.NodeID] = row
 	}

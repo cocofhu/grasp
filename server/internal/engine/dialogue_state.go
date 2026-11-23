@@ -81,8 +81,11 @@ type DialogueState struct {
 	Orphan       *DialogueOrphan `json:"orphan,omitempty"`
 	Busy         bool            `json:"busy"`
 	Steerable    bool            `json:"steerable"`
-	Done         bool            `json:"done"`
-	Observe      bool            `json:"observe,omitempty"`
+	// SteerPending: a turn is running but its sandbox session has not
+	// connected yet, so whether it can steer is not known.
+	SteerPending bool `json:"steerPending,omitempty"`
+	Done         bool `json:"done"`
+	Observe      bool `json:"observe,omitempty"`
 }
 
 // Version is the state's (epoch, seq).
@@ -141,6 +144,8 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	platformBusy := view.HasActive || len(view.Pending) > 0
 	if bridge, live := e.SandboxBridgeState(runID, nodeID); live {
 		st.Steerable = bridge.Steerable
+	} else {
+		st.SteerPending = view.HasActive && e.hasSandboxBridge("")
 	}
 
 	// A finished automatic visit stays observed only for viewers who watched
@@ -265,6 +270,8 @@ func (e *Engine) buildLaneDialogue(entry *dialogueEntry, st DialogueState) Dialo
 	st.Busy = view.HasActive || len(view.Pending) > 0
 	if bridge, live := e.VisitorSandboxBridgeState(entry.runID, entry.nodeID, entry.lane); live {
 		st.Steerable = bridge.Steerable
+	} else {
+		st.SteerPending = view.HasActive && e.hasSandboxBridge(entry.lane)
 	}
 	for _, et := range entry.ended {
 		st.Turns = append(st.Turns, endedDialogueTurn(et, st.Rows))

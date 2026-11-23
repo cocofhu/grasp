@@ -58,6 +58,8 @@ export type DialogueState = {
   orphan?: DialogueOrphan | null
   busy: boolean
   steerable?: boolean
+  /** A turn runs but its sandbox has not connected: steerable is not known yet. */
+  steerPending?: boolean
   done: boolean
   observe?: boolean
 }
@@ -163,6 +165,7 @@ export type DialogueView = {
   orphan: DialogueOrphan | null
   busy: boolean
   steerable: boolean
+  steerPending: boolean
   done: boolean
   observe: boolean
   iteration: number
@@ -228,6 +231,7 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
     orphan: state?.orphan ?? null,
     busy,
     steerable: !!state?.steerable,
+    steerPending: !state?.steerable && !!state?.steerPending,
     done: !!state?.done,
     observe: !!state?.observe,
     iteration: state?.iteration ?? 0,

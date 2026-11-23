@@ -2118,6 +2118,7 @@
       "queueCancelAria": "Remove from queue",
       "queueSteerTitle": "Steer now: joins the running turn when the agent supports it, otherwise interrupts it and runs next",
       "queueSteerAria": "Handle this queued message now",
+      "queueSteerPendingTitle": "The agent is connecting; steering is available once it is confirmed",
       "steerLabel": "Steer",
       "queueCancelled": "Removed: “{text}”",
       "queueReordered": "Order updated",

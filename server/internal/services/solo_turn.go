@@ -57,7 +57,20 @@ func (c *soloChat) setPhase(phase string) {
 	}
 	c.phase = phase
 	c.mu.Unlock()
-	c.stream.Session(SoloEventPhase, map[string]any{"phase": phase}, chatsession.KeepAppend)
+	c.publishPhase()
+}
+
+// publishPhase sends the turn's phase, with the sandbox's steer capability
+// once the turn has a sandbox.
+func (c *soloChat) publishPhase() {
+	c.mu.Lock()
+	payload := map[string]any{"phase": c.phase}
+	sid := c.sandboxID
+	c.mu.Unlock()
+	if c.svc.sbx != nil && sid != 0 {
+		payload["steerable"] = c.svc.sbx.SupportsSteer(sid)
+	}
+	c.stream.Session(SoloEventPhase, payload, chatsession.KeepAppend)
 }
 
 func (c *soloChat) onAcp(raw json.RawMessage) {
@@ -254,6 +267,10 @@ func (c *soloChat) prepareTurn(ctx context.Context, turnID string, started time.
 	prep = soloTurnPrep{sandboxID: sandboxID, row: row, noticeBefore: strings.TrimSpace(row.ModelNotice)}
 	if prep.switched, err = s.alignSessionModel(ctx, c, sandboxID, row); err != nil {
 		return prep, ctx.Err() != nil, err
+	}
+	if prep.switched {
+		// The switch reconnected the agent, which may steer differently.
+		c.publishPhase()
 	}
 	if row.ContextResetPending != "" {
 		if err := s.sbx.restartSoloAgent(ctx, sandboxID); err != nil {

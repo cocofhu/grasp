@@ -138,6 +138,11 @@ type acpProvider struct {
 	// processing the turn) used to drive the running/idle indicator.
 	emit func(runID, nodeID string, events []models.AcpEvent, busy bool)
 
+	// bridgeLive, when set by the engine, is told that a session's ACP client
+	// became reachable through SessionBridgeState / VisitorSessionBridgeState,
+	// so capabilities announced at connect (steer) reach viewers right away.
+	bridgeLive func(runID, nodeID, lane string)
+
 	mu sync.Mutex
 	// carry holds usage spent outside a returned turn (session rehydrate
 	// priming, retried ReactOpen attempts) until the next react turn for the

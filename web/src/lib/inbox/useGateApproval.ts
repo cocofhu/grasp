@@ -1140,6 +1140,8 @@ const reactThinking = ref(false)
 /** True between turn_begin and turn_done/error (mirrors ClarifyChat liveAgentIdx). */
 const reactInFlight = ref(false)
 const reactSteerable = ref(false)
+/** The running turn's sandbox has not connected yet, so reactSteerable is unknown. */
+const reactSteerPending = ref(false)
 /** Queue ids whose steer request is still pending; repeat clicks are ignored. */
 const reactSteering = new Set<string>()
 const reactStreamText = ref('')
@@ -1528,6 +1530,7 @@ function applyReviewFrame(frame: {
   items?: SessionFrameItem[]
   busy?: boolean
   sandboxSteerable?: boolean
+  sandboxSteerPending?: boolean
   activeItem?: SessionFrameItem | null
 }) {
   const producer = props.gate.reactUpstreamNodeId
@@ -1538,6 +1541,11 @@ function applyReviewFrame(frame: {
   }
   if (!reviewStateCursor.accept(frame)) return
   if (typeof frame.sandboxSteerable === 'boolean') reactSteerable.value = frame.sandboxSteerable
+  if (frame.event === 'queue_state') {
+    reactSteerPending.value = frame.sandboxSteerPending === true
+    // A pending frame carries no capability; the last one belongs to an earlier session.
+    if (reactSteerPending.value) reactSteerable.value = false
+  }
   switch (frame.event) {
     case 'request_rejected':
       reactError.value = frame.message || reactError.value
@@ -1676,6 +1684,7 @@ async function cancelReactRevise() {
   reactTurns.value = reactTurns.value.filter(turn => turn.status !== 'pending')
   reactThinking.value = false
   reactSteerable.value = false
+  reactSteerPending.value = false
   reactInFlight.value = false
   reactInterrupted.value = true
   reactStreamCompletedAt.value = null
@@ -2078,6 +2087,7 @@ provide(gateApprovalKey, {
     reactThinking,
     reactInFlight,
     reactSteerable,
+    reactSteerPending,
     reactStreamText,
     reactTranscriptTurns,
     reactStreamThought,

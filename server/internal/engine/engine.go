@@ -182,6 +182,11 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 	}); ok {
 		sink.SetEventSink(e.publishAcp)
 	}
+	if sink, ok := provider.(interface {
+		SetBridgeLiveSink(func(runID, nodeID, lane string))
+	}); ok {
+		sink.SetBridgeLiveSink(e.sandboxBridgeLive)
+	}
 
 	e.attachHost()
 	// Reconcile before the dispatcher starts so adopted runs reserve their

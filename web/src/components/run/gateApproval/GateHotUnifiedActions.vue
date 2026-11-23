@@ -144,6 +144,7 @@ const showSend = computed(() => {
     :notice="s.reactQueueNotice"
     :toast="s.reactQueueToast"
     :steerable="s.reactInFlight && s.reactSteerable"
+    :steer-pending="s.reactInFlight && s.reactSteerPending"
     @steer="s.steerReactQueuedItem"
     @cancel="s.cancelReactQueuedItem"
     @edit="s.editReactQueuedItem"

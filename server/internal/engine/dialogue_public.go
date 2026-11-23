@@ -43,19 +43,20 @@ type PublicDialogueOrphan struct {
 // no run id, the public node id, sanitized rows. Prefix digests are over row
 // ids and revisions, which are unchanged, so tail logic still works.
 type PublicDialogueState struct {
-	Type      string                `json:"type"`
-	NodeID    string                `json:"nodeId"`
-	Iteration int                   `json:"iteration"`
-	Epoch     int64                 `json:"epoch"`
-	Seq       uint64                `json:"seq"`
-	Mode      string                `json:"mode"`
-	Rows      []PublicDialogueRow   `json:"rows"`
-	Turns     []PublicDialogueTurn  `json:"turns"`
-	Orphan    *PublicDialogueOrphan `json:"orphan,omitempty"`
-	Busy      bool                  `json:"busy"`
-	Steerable bool                  `json:"steerable"`
-	Done      bool                  `json:"done"`
-	Observe   bool                  `json:"observe,omitempty"`
+	Type         string                `json:"type"`
+	NodeID       string                `json:"nodeId"`
+	Iteration    int                   `json:"iteration"`
+	Epoch        int64                 `json:"epoch"`
+	Seq          uint64                `json:"seq"`
+	Mode         string                `json:"mode"`
+	Rows         []PublicDialogueRow   `json:"rows"`
+	Turns        []PublicDialogueTurn  `json:"turns"`
+	Orphan       *PublicDialogueOrphan `json:"orphan,omitempty"`
+	Busy         bool                  `json:"busy"`
+	Steerable    bool                  `json:"steerable"`
+	SteerPending bool                  `json:"steerPending,omitempty"`
+	Done         bool                  `json:"done"`
+	Observe      bool                  `json:"observe,omitempty"`
 }
 
 // PublicDialogue redacts st for share-link viewers. Opaque image indexes run
@@ -63,7 +64,7 @@ type PublicDialogueState struct {
 func PublicDialogue(st DialogueState) PublicDialogueState {
 	out := PublicDialogueState{Type: "dialogue", NodeID: gateshare.PublicDialogueNodeID, Iteration: st.Iteration,
 		Epoch: st.Epoch, Seq: st.Seq, Mode: "full", Rows: []PublicDialogueRow{}, Turns: []PublicDialogueTurn{},
-		Busy: st.Busy, Steerable: st.Steerable, Done: st.Done, Observe: st.Observe}
+		Busy: st.Busy, Steerable: st.Steerable, SteerPending: st.SteerPending, Done: st.Done, Observe: st.Observe}
 	idx := 0
 	for _, r := range st.Rows {
 		var turns []gateshare.PreviewTurn

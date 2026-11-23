@@ -44,6 +44,18 @@ describe('PendingSendQueuePanel', () => {
     expect(w.emitted('steer')).toEqual([[1]])
   })
 
+  it('shows a disabled pending steer while the capability is unknown', async () => {
+    const w = mountPanel({ items: [row('a'), row('', { id: undefined })], steerPending: true })
+    const pending = w.findAll('[data-testid="clarify-queue-steer-pending"]')
+    expect(pending).toHaveLength(1)
+    expect(pending[0]!.attributes('disabled')).toBeDefined()
+    await pending[0]!.trigger('click')
+    expect(w.emitted('steer')).toBeUndefined()
+    const known = mountPanel({ items: [row('a')], steerable: true, steerPending: true })
+    expect(known.find('[data-testid="clarify-queue-steer"]').exists()).toBe(true)
+    expect(known.find('[data-testid="clarify-queue-steer-pending"]').exists()).toBe(false)
+  })
+
   it('renders unlocked rows with handle, edit and cancel, and emits each action', async () => {
     const w = mountPanel({ items: [row('a'), row('b')] })
     const rows = w.findAll('[data-testid="clarify-queue-item"]')
