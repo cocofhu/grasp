@@ -114,11 +114,21 @@ async function send({ text, images }) {
   turn = t;
   try {
     const message = images?.length ? { text, images } : text;
-    const run = await agent.send(message, {
+    const options = {
       onDelta: ({ update }) => {
         if (turn === t) emit({ type: "delta", update });
       },
-    });
+    };
+    let run;
+    try {
+      run = await agent.send(message, options);
+    } catch (err) {
+      // This process runs one turn at a time, so a persisted active run here
+      // was left by a bridge that died mid-turn and would block the Agent for
+      // good. The SDK's force send expires it.
+      if (!/already has active run/.test(err?.message ?? "")) throw err;
+      run = await agent.send(message, { ...options, local: { force: true } });
+    }
     follow(t, run);
     return { runId: run.id };
   } catch (err) {

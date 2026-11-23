@@ -32,6 +32,9 @@ type lifeAgent struct {
 	// config is what sessions report as provider.ConfigReader files.
 	config       []string
 	openedSignal chan struct{}
+	// emitOnClose makes Close report one last event, like a process that
+	// flushes its cancelled run while shutting down.
+	emitOnClose bool
 
 	mu    sync.Mutex
 	opens []provider.OpenOptions
@@ -50,7 +53,7 @@ func (a *lifeAgent) Transport() provider.TransportKind                    { retu
 func (a *lifeAgent) ListModels(context.Context) ([]provider.Model, error) { return nil, nil }
 func (a *lifeAgent) AuthEnv(env []string) []string                        { return env }
 
-func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEvent func(json.RawMessage), _ provider.PermissionChooser) (provider.Session, error) {
+func (a *lifeAgent) Open(ctx, _ context.Context, opts provider.OpenOptions, onEvent func(json.RawMessage), _ provider.PermissionChooser) (provider.Session, error) {
 	if opts.ResumeSessionID != "" && a.hold != nil {
 		<-a.hold
 		if a.failResume {
@@ -75,7 +78,8 @@ func (a *lifeAgent) Open(_, _ context.Context, opts provider.OpenOptions, onEven
 		id = opts.ResumeSessionID
 	}
 	s := &lifeSess{stubSess: stubSess{id: id}, cwd: opts.Cwd, config: a.config, resume: !a.noResume, onEvent: onEvent,
-		done: make(chan struct{}), started: make(chan string, 8), release: make(chan struct{})}
+		done: make(chan struct{}), started: make(chan string, 8), release: make(chan struct{}),
+		ctx: ctx, emitOnClose: a.emitOnClose}
 	a.sess = append(a.sess, s)
 	return s, nil
 }
@@ -98,6 +102,12 @@ type lifeSess struct {
 	closeOnce sync.Once
 	started   chan string
 	release   chan struct{}
+
+	ctx         context.Context
+	emitOnClose bool
+	closing     sync.Once
+	// killedFirst: the process context was cancelled before Close ran.
+	killedFirst bool
 }
 
 func (s *lifeSess) Capabilities() provider.Capabilities {
@@ -106,8 +116,17 @@ func (s *lifeSess) Capabilities() provider.Capabilities {
 func (s *lifeSess) CWD() string           { return s.cwd }
 func (s *lifeSess) ConfigFiles() []string { return s.config }
 func (s *lifeSess) Done() <-chan struct{} { return s.done }
-func (s *lifeSess) Close() error          { s.die(); return nil }
-func (s *lifeSess) die()                  { s.closeOnce.Do(func() { close(s.done) }) }
+func (s *lifeSess) Close() error {
+	s.closing.Do(func() {
+		s.killedFirst = s.ctx != nil && s.ctx.Err() != nil
+		if s.emitOnClose {
+			s.onEvent(json.RawMessage(`{"type":"agent_message_chunk","text":"closing"}`))
+		}
+	})
+	s.die()
+	return nil
+}
+func (s *lifeSess) die() { s.closeOnce.Do(func() { close(s.done) }) }
 
 func (s *lifeSess) Prompt(ctx context.Context, text string, _ []provider.PromptImage) (provider.TurnResult, error) {
 	s.started <- text
@@ -206,6 +225,33 @@ func TestStartDefaultAgentSkipsCursorPrewarm(t *testing.T) {
 	}
 	if opens, _ := agent.opened(); len(opens) != 0 {
 		t.Fatalf("Cursor prewarm opened %d sessions", len(opens))
+	}
+}
+
+// A Cursor bridge killed before it releases its Agent leaves the run active in
+// the SDK store; the resumed Agent then rejects every send.
+func TestReconnectClosesTheAgentBeforeKillingIt(t *testing.T) {
+	agent := &lifeAgent{name: provider.Cursor, transport: provider.LongLived, emitOnClose: true}
+	b, first := lifeBridge(t, agent)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := b.SwitchModelSettings("next-model", "", nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("closing the replaced agent blocked on its own events")
+	}
+	if first.killedFirst {
+		t.Fatal("the replaced agent was killed before it could close")
+	}
+	if first.ctx.Err() == nil {
+		t.Fatal("the replaced agent's process context was left running")
 	}
 }
 
