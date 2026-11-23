@@ -330,3 +330,37 @@ func TestConfirmTurnTimeoutMarksInterrupted(t *testing.T) {
 		t.Fatalf("expected Interrupted agent: %+v", conv.Messages)
 	}
 }
+
+func TestAttachSandboxStateMarksSteerPendingUntilBridgeLive(t *testing.T) {
+	eng, db, provider := setupEngineGraphP(t, reactOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "clarify")
+
+	connecting := map[string]any{"waiting": 1, "busy": true, "activeItem": map[string]any{"text": "继续"}}
+	eng.attachSandboxState(run.ID, "clarify", connecting)
+	if pending, _ := connecting["sandboxSteerPending"].(bool); !pending {
+		t.Fatalf("a running turn without a live bridge must mark steer pending: %#v", connecting)
+	}
+	if _, ok := connecting["sandboxSteerable"]; ok {
+		t.Fatalf("pending frame must not claim a capability: %#v", connecting)
+	}
+
+	idle := map[string]any{"waiting": 0, "busy": false}
+	eng.attachSandboxState(run.ID, "clarify", idle)
+	if _, ok := idle["sandboxSteerPending"]; ok {
+		t.Fatalf("an idle session has nothing to steer into: %#v", idle)
+	}
+
+	provider.sandboxBusy = true
+	live := map[string]any{"waiting": 1, "busy": true, "activeItem": map[string]any{"text": "继续"}}
+	eng.attachSandboxState(run.ID, "clarify", live)
+	if _, ok := live["sandboxSteerPending"]; ok {
+		t.Fatalf("a live bridge reports the capability itself: %#v", live)
+	}
+	if _, ok := live["sandboxSteerable"]; !ok {
+		t.Fatalf("a live bridge must report sandboxSteerable: %#v", live)
+	}
+}

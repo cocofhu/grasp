@@ -84,11 +84,38 @@ func (e *Engine) VisitorSandboxBridgeState(runID, nodeID, lane string) (runtime.
 	return insp.VisitorSessionBridgeState(runID, nodeID, lane)
 }
 
+// hasSandboxBridge reports whether the provider exposes bridge state for the
+// node's own session (lane "") or a visitor lane at all. With one, a running
+// turn whose session is not live yet is still connecting, so its steer
+// capability is unknown rather than absent.
+func (e *Engine) hasSandboxBridge(lane string) bool {
+	if lane == "" {
+		_, ok := e.provider.(runtime.SessionBridgeInspector)
+		return ok
+	}
+	_, ok := e.provider.(runtime.VisitorSessionBridgeInspector)
+	return ok
+}
+
+// sandboxBridgeLive republishes a session once its ACP client is reachable,
+// so the steer capability it announced at connect reaches viewers now instead
+// of with the agent's first output.
+func (e *Engine) sandboxBridgeLive(runID, nodeID, lane string) {
+	if s := e.laneSession(runID, nodeID, lane); s != nil {
+		s.PublishQueueState()
+		return
+	}
+	e.dialogueChangedLane(runID, nodeID, lane, true)
+}
+
 // attachSandboxState copies the bridge's own busy view onto a review frame so
 // the dialogue UI can show an orphan-turn banner when the platform FIFO is idle.
 func (e *Engine) attachSandboxState(runID, nodeID string, payload map[string]any) {
 	st, ok := e.SandboxBridgeState(runID, nodeID)
 	if !ok {
+		if busy, _ := payload["busy"].(bool); busy && e.hasSandboxBridge("") {
+			payload["sandboxSteerPending"] = true
+		}
 		return
 	}
 	// plan g1.1: on an idle replay, a normally completed assistant turn whose

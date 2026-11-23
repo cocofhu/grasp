@@ -693,6 +693,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
         break
       case 'phase':
         phase.value = frame.phase || ''
+        if (typeof frame.steerable === 'boolean') steerable.value = frame.steerable
         break
       case 'artifact': {
         if (!frame.userMsgId || frame.userMsgId !== activeId.value) break

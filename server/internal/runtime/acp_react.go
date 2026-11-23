@@ -909,6 +909,7 @@ func (c *acpProvider) parkReactSession(req NodeReq, sb *sandbox.Sandbox, acp *sa
 		host, port = sb.Host, sb.Port
 	}
 	c.mu.Unlock()
+	c.noteBridgeLive(req.RunID, req.NodeID, "")
 	if c.timeline != nil && sb != nil {
 		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp, c.emit != nil))
 	}

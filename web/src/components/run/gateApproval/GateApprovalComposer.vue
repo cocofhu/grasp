@@ -50,6 +50,7 @@ const producerConversation = computed(() => s.run?.clarifyByNode?.[s.gate.reactU
     :thinking="s.reactThinking"
     :turn-running="s.reactInFlight"
     :turn-steerable="s.reactSteerable"
+    :turn-steer-pending="s.reactSteerPending"
     :stream-text="s.reactStreamText"
     :stream-thought="s.reactStreamThought"
     :stream-tools="s.reactStreamTools"

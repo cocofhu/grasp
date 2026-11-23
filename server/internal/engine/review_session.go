@@ -298,20 +298,23 @@ func (e *Engine) laneSnapshot(s *reviewSession) (ReviewSessionSnapshot, bool) {
 // refresh and the open page share one orphan-banner fact. SandboxKnown is
 // false when the bridge has no view; the DTO then omits the sandbox fields.
 type ReviewSessionSnapshot struct {
-	SessionGeneration  uint64           `json:"sessionGeneration"`
-	Revision           uint64           `json:"revision"`
-	NodeID             string           `json:"nodeId"`
-	Kind               string           `json:"kind"`
-	Waiting            int              `json:"waiting"`
-	Busy               bool             `json:"busy"`
-	Items              []map[string]any `json:"items"`
-	ActiveItem         map[string]any   `json:"activeItem,omitempty"`
-	SandboxKnown       bool             `json:"-"`
-	SandboxBusy        bool             `json:"sandboxBusy"`
-	SandboxDesynced    bool             `json:"sandboxDesynced"`
-	SandboxSteerable   bool             `json:"sandboxSteerable"`
-	SandboxWaiting     int              `json:"sandboxWaiting,omitempty"`
-	SandboxRunningOpID string           `json:"sandboxRunningOpId,omitempty"`
+	SessionGeneration uint64           `json:"sessionGeneration"`
+	Revision          uint64           `json:"revision"`
+	NodeID            string           `json:"nodeId"`
+	Kind              string           `json:"kind"`
+	Waiting           int              `json:"waiting"`
+	Busy              bool             `json:"busy"`
+	Items             []map[string]any `json:"items"`
+	ActiveItem        map[string]any   `json:"activeItem,omitempty"`
+	SandboxKnown      bool             `json:"-"`
+	SandboxBusy       bool             `json:"sandboxBusy"`
+	SandboxDesynced   bool             `json:"sandboxDesynced"`
+	SandboxSteerable  bool             `json:"sandboxSteerable"`
+	// SandboxSteerPending: the platform runs a turn whose sandbox session has
+	// not connected yet (steer capability unknown). Only set when !SandboxKnown.
+	SandboxSteerPending bool   `json:"sandboxSteerPending,omitempty"`
+	SandboxWaiting      int    `json:"sandboxWaiting,omitempty"`
+	SandboxRunningOpID  string `json:"sandboxRunningOpId,omitempty"`
 }
 
 // ReviewSessionsForRun returns authoritative busy/queue snapshots for refresh resume.
@@ -344,6 +347,7 @@ func (e *Engine) decorateSessionSnapshot(runID string, snap ReviewSessionSnapsho
 	}
 	e.attachSandboxState(runID, snap.NodeID, payload)
 	if _, ok := payload["sandboxBusy"]; !ok {
+		snap.SandboxSteerPending, _ = payload["sandboxSteerPending"].(bool)
 		return snap
 	}
 	snap.SandboxKnown = true
@@ -392,6 +396,8 @@ func (e *Engine) SendReviewSessions(runID string, write func([]byte) error) erro
 			if snap.SandboxRunningOpID != "" {
 				payload["sandboxRunningOpId"] = snap.SandboxRunningOpID
 			}
+		} else if snap.SandboxSteerPending {
+			payload["sandboxSteerPending"] = true
 		}
 		msg, err := json.Marshal(payload)
 		if err != nil {

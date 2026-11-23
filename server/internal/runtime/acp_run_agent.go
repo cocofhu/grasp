@@ -236,6 +236,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		c.live[key] = sb
 		delete(c.inflightACP, key)
 		c.mu.Unlock()
+		c.noteBridgeLive(req.RunID, req.NodeID, "")
 		parked = true
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("parked live session for post-run ReAct review")
@@ -595,6 +596,7 @@ func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandb
 	c.live[key] = sb
 	delete(c.inflightACP, key)
 	c.mu.Unlock()
+	c.noteBridgeLive(req.RunID, req.NodeID, "")
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Bool("abort_acked", acked).
 		Msg("parked live session after user takeover")
 	return true

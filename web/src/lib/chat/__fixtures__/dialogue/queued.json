@@ -57,6 +57,7 @@
       ],
       "busy": true,
       "steerable": false,
+      "steerPending": true,
       "done": false
     },
     {

@@ -125,6 +125,8 @@ const props = withDefaults(
     turnRunning?: boolean
     /** Gate mode: the active Agent accepts an in-flight steer. */
     turnSteerable?: boolean
+    /** Gate mode: the running turn's Agent has not connected, so turnSteerable is unknown. */
+    turnSteerPending?: boolean
   }>(),
   {
     iteration: 1,
@@ -151,6 +153,7 @@ const props = withDefaults(
     thinking: false,
     turnRunning: false,
     turnSteerable: false,
+    turnSteerPending: false,
     streamText: '',
     streamThought: '',
     streamTools: () => [],
@@ -616,6 +619,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
           :notice="queueNotice"
           :toast="queueToast"
           :steerable="turnRunning && turnSteerable"
+          :steer-pending="turnRunning && turnSteerPending"
           @steer="(i) => emit('queue-steer-item', i)"
           @cancel="(i) => emit('queue-cancel-item', i)"
           @edit="(i) => emit('queue-edit', i)"

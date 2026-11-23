@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复工作流 Chat、审批热修改和 Solo 在沙箱与 Agent 启动期间排队消息的 Steer 按钮延迟出现：Agent 连上后立即推送能力，连接中在 Steer 位置显示等待状态，不再与「不支持引导」混淆。无需更新沙箱运行时。
+
 - 收紧移动端对话输入框的两行提示行高，并让工具与思考行沿用桌面的 20px 行高，避免移动端时间线纵向间距被触屏点击高度拉大。
 
 ## 4.0.1 — 2026-11-23

@@ -164,6 +164,16 @@ describe('render', () => {
     expect(render(busy, rejectOptimistic(list, 'c3')).queue).toHaveLength(1)
   })
 
+  it('keeps steer capability unknown until the sandbox connects', () => {
+    const running = { busy: true, turns: [{ turnId: 't1', phase: 'running' as const }] }
+    const connecting = render(state([], 1, { ...running, steerable: false, steerPending: true }))
+    expect([connecting.steerable, connecting.steerPending]).toEqual([false, true])
+    const connected = render(state([], 2, { ...running, steerable: true }))
+    expect([connected.steerable, connected.steerPending]).toEqual([true, false])
+    const unsupported = render(state([], 3, { ...running, steerable: false }))
+    expect([unsupported.steerable, unsupported.steerPending]).toEqual([false, false])
+  })
+
   it('finds the streaming reply and turns ended without rows', () => {
     const s = state([], 1, { busy: true, turns: [{ turnId: 'gone', phase: 'ended', outcome: 'dropped' }] })
     s.rows = [

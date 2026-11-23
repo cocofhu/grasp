@@ -1088,6 +1088,8 @@ export interface Run {
       sandboxBusy?: boolean
       sandboxDesynced?: boolean
       sandboxSteerable?: boolean
+      /** A turn runs but the bridge has no session yet: steer capability unknown. */
+      sandboxSteerPending?: boolean
       sandboxRunningOpId?: string
       items?: { id?: string; clientMessageId?: string; text?: string }[]
       activeItem?: {

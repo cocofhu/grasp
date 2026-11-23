@@ -410,6 +410,16 @@ func (r *ProviderRegistry) SetEventSink(fn func(runID, nodeID string, events []m
 	}
 }
 
+func (r *ProviderRegistry) SetBridgeLiveSink(fn func(runID, nodeID, lane string)) {
+	for _, p := range r.providers {
+		if sink, ok := p.(interface {
+			SetBridgeLiveSink(func(runID, nodeID, lane string))
+		}); ok {
+			sink.SetBridgeLiveSink(fn)
+		}
+	}
+}
+
 func (r *ProviderRegistry) SetSandboxRegistry(reg SandboxRegistry) {
 	r.sandboxRegistry = reg
 	for _, p := range r.providers {
