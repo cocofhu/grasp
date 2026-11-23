@@ -36,7 +36,9 @@ export SBGW_API_KEYS="${SBGW_API_KEYS:-$SANDBOX_GATEWAY_API_KEY}"
 
 cleanup() {
   docker compose -f "$COMPOSE_FILE" down --volumes --remove-orphans >>"$LOG" 2>&1 || true
-  rm -rf .localdata
+  if ! rm -rf .localdata; then
+    sudo rm -rf .localdata
+  fi
 }
 trap cleanup EXIT INT TERM
 
