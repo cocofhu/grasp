@@ -120,11 +120,16 @@ function cursorAgent(options, agentId) {
     if (!fs.existsSync(file)) throw new Error(`agent ${agentId} was not found`)
     history = JSON.parse(fs.readFileSync(file, 'utf8'))
   } else save(history)
+  // Like the SDK store, a run stays active until it ends, so a process killed
+  // mid-run wedges the agent until a force send expires it.
+  const active = `${file}.active`
   return {
     agentId: id,
-    async send(message, {onDelta} = {}) {
+    async send(message, {onDelta, local} = {}) {
+      if (fs.existsSync(active) && !local?.force) throw new Error(`Agent ${id} already has active run`)
       const text = typeof message === 'string' ? message : message.text
       const runId = `run-${randomUUID()}`
+      fs.writeFileSync(active, runId, {mode: 0o600})
       const delta = (update) => onDelta?.({update})
       const calls = new Map()
       const done = (async () => {
@@ -143,6 +148,7 @@ function cursorAgent(options, agentId) {
         }, selected.effort ? {reasoning_effort: selected.effort} : {})
         history = messages
         save(history)
+        fs.rmSync(active, {force: true})
         delta({type: 'text-delta', text: reply})
         return {id: runId, status: 'finished', usage: {inputTokens: 128, outputTokens: 32, cacheReadTokens: 0, cacheWriteTokens: 0}}
       })()

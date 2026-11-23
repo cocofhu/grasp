@@ -237,6 +237,11 @@ test('Cursor bridge drives the SDK stand-in: MCP, reasoning, usage and resume', 
     assert.deepEqual(modelRequests.map((request) => [request.model, request.reasoning_effort]), [['gpt-5.5', 'high'], ['gpt-5.5', 'high'], ['gpt-5.5', 'xhigh']])
     assert.ok(modelRequests[2].messages.some((message) => message.content === 'remember the nonce'))
 
+    // A bridge killed mid-turn leaves its run active in the store.
+    writeFileSync(path.join(root, 'store', `${agentId}.json.active`), 'run-killed')
+    const wedged = await cursorBridge(env, [open('high', agentId), {type: 'send', text: 'after the crash'}])
+    assert.equal(wedged.find((frame) => frame.type === 'run_end').status, 'finished')
+
     const lost = await cursorBridge(env, [open('high', 'agent-unknown')])
     assert.match(lost.find((frame) => frame.id === 1).data.resumeError, /was not found/)
   } finally {

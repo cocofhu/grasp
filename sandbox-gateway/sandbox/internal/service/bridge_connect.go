@@ -262,11 +262,8 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 		b.enqueueMu.Unlock()
 		return nil, ErrChatNotFound
 	}
-	if b.sess != nil {
-		b.agentCancel()
-		logging.WarnErr(b.sess.Close(), "agent session close on reconnect", nil)
-		b.sess = nil
-	}
+	prev, prevCancel := b.sess, b.agentCancel
+	b.sess = nil
 	b.agentCtx, b.agentCancel = context.WithCancel(context.Background())
 	b.agentGeneration++
 	b.lostSession.Store("")
@@ -275,6 +272,14 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 	}
 	ctx := b.agentCtx
 	b.mu.Unlock()
+	if prev != nil {
+		// Close before cancelling: the agent context SIGKILLs the process, and
+		// a killed Cursor bridge leaves its run active in the SDK store, so
+		// the resumed Agent rejects every send. Its closing events broadcast
+		// under b.mu, which therefore must not be held here.
+		logging.WarnErr(prev.Close(), "agent session close on reconnect", nil)
+		prevCancel()
+	}
 	m := b.EffectiveModel()
 
 	if !spec.keepHistory {
