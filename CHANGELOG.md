@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 收紧移动端对话输入框的两行提示行高，并让工具与思考行沿用桌面的 20px 行高，避免移动端时间线纵向间距被触屏点击高度拉大。
+
 ## 4.0.0 — 2026-11-23
 
 - 修复 Cursor 常驻 SDK 在首次注入 MCP 时重启 Agent 造成 `already has active run` 的 Solo 回合失败：Cursor 等待首次连接后再启动，桥接关闭时等待 Agent 释放。需要沙箱运行时更新后生效。
