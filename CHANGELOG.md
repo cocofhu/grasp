@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 4.0.1 — 2026-11-23
+
 - 修复 `grasp doctor --run-demo` 绕过 Grasp 创建沙箱导致的误报，并让 release smoke 在启动前预拉 sandbox 镜像；gateway 在沙箱启动失败时现在报告退出码和末尾日志。
 
 ## 4.0.0 — 2026-11-23
