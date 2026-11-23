@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 4.0.0 — 2026-11-23
+
 - 修复 Cursor 常驻 SDK 在首次注入 MCP 时重启 Agent 造成 `already has active run` 的 Solo 回合失败：Cursor 等待首次连接后再启动，桥接关闭时等待 Agent 释放。需要沙箱运行时更新后生效。
 
 - 应用预览接口改为单一对象：节点预览改为 `GET /api/runs/:id/nodes/:nodeId/preview`，返回 `{"preview": ... | null}`；Solo 资源和公开分享预览也改为 `preview` 字段，不再返回 `ports` 列表。旧数据库升级时按节点和沙箱都只保留最新一条预览登记。
