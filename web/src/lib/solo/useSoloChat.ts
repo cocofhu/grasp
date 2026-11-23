@@ -486,11 +486,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     }
     const started = new Date().toISOString()
     activeId.value = id
-    const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`)
+    // A file delivered mid-turn persists the reply row early. Reopened during
+    // that turn, history already holds it; the live turn takes its place.
+    const saved = turns.value.find((x) => x.id === `a:reply:${id}`)
+    const live = emptyAgentTurn(`live:${id}`, true, started)
+    if (saved?.files?.length) live.files = [...saved.files]
+    if (saved?.questions?.length) live.questions = saved.questions
+    if (saved?.forms?.length) live.forms = saved.forms
+    const next = turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}` && x !== saved)
     const firstPending = next.findIndex((turn) => openSends.some((row) => !row.started && turn.id === `u:${sendKey(row)}`))
     next.splice(firstPending < 0 ? next.length : firstPending, 0,
       { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, references: item.references, annotations: item.annotations, createdAt: started },
-      emptyAgentTurn(`live:${id}`, true, started),
+      live,
     )
     turns.value = next
     busy.value = true

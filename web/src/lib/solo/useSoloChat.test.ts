@@ -129,6 +129,25 @@ describe('useSoloChat', () => {
     next.app.unmount()
   })
 
+  it('folds the delivery placeholder into the live turn when reopened mid-turn', async () => {
+    const file = { artifactId: 'artifact-1', revision: 1, name: 'shot.png', kind: 'image', sizeBytes: 100 }
+    mocks.getSoloSession.mockResolvedValue(session({ busy: true }))
+    mocks.listSoloMessages.mockResolvedValue([
+      { id: 'user-1', role: 'user', content: 'look', createdAt: '' },
+      { id: 'reply:user-1', turnId: 'user-1', role: 'assistant', content: '', files: [file], createdAt: '' },
+    ])
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    await flushPromises()
+    socket.emit({ type: 'session', event: 'turn_begin', userMsgId: 'user-1', text: 'look', images: [] })
+    socket.emit({ type: 'session', event: 'artifact', userMsgId: 'user-1', file })
+    expect(chat.turns.value.map(turn => turn.id)).toEqual(['u:user-1', 'live:user-1'])
+    expect(chat.turns.value[1]!.files).toEqual([file])
+    app.unmount()
+  })
+
   it.each(['turn_done', 'error'] as const)('rejects an older busy queue snapshot after %s', async (event) => {
     const { chat, app } = mountChat()
     await flushPromises()
