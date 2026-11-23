@@ -27,7 +27,7 @@ function sfcStyle(source: string): string {
 describe('collapsed reply spacing', () => {
   const style = timeline.slice(timeline.indexOf('<style scoped>'))
 
-  it('locks process fold rows at 20px and only raises them for a coarse pointer', () => {
+  it('keeps process fold rows at the desktop 20px height on coarse pointers', () => {
     const thought = block(style, '\\.agent-thought-summary')
     expect(thought).toContain('height: 20px')
     expect(thought).toContain('min-height: 20px')
@@ -46,9 +46,9 @@ describe('collapsed reply spacing', () => {
     expect(toolsHead).toContain('max-height: 20px')
 
     expect(style).toMatch(/@media \(pointer: coarse\)/)
-    expect(style).toMatch(/\.agent-thought-summary \{ height: 44px; min-height: 44px; max-height: 44px;/)
-    expect(chat).toMatch(/@media \(pointer: coarse\)[\s\S]*\.chat-thought-summary \{ height: 44px; min-height: 44px; max-height: 44px;/)
-    expect(tools).toMatch(/@media \(pointer: coarse\)[\s\S]*\.agent-tools-head \{ height: 44px; min-height: 44px; max-height: 44px;/)
+    expect(style).toMatch(/\.agent-thought-summary \{ height: 20px; min-height: 20px; max-height: 20px;/)
+    expect(chat).toMatch(/@media \(pointer: coarse\)[\s\S]*\.chat-thought-summary \{ height: 20px; min-height: 20px; max-height: 20px;/)
+    expect(tools).toMatch(/@media \(pointer: coarse\)[\s\S]*\.agent-tools-head \{ height: 20px; min-height: 20px; max-height: 20px;/)
 
     expect(style).not.toMatch(/@media \(max-width:\s*767px\)[^{]*\{[^}]*\.agent-thought-summary/)
     expect(chat).not.toMatch(/@media \(max-width:\s*767px\)[^{]*\{[^}]*\.chat-thought-summary/)
@@ -127,6 +127,10 @@ describe('collapsed reply spacing', () => {
     expect(block(chat, '\\.chat-thread \\.chat-prose blockquote')).toContain('margin-block: 1em')
     expect(block(chat, '\\.chat-thread \\.chat-prose table')).toContain('margin-block: 1em')
     expect(block(chat, '\\.chat-thread \\.chat-prose hr')).toContain('margin-block: 1.5em')
+  })
+
+  it('keeps the mobile composer hint from inheriting an inflated 16px row', () => {
+    expect(chat).toMatch(/@media \(max-width:\s*767px\)[\s\S]*?\.chat-composer \.chat-input\s*\{\s*line-height:\s*1\.5;/)
   })
 
   it('uses a 2px block gap and lines the thought summary up with the tool row', () => {

@@ -297,12 +297,17 @@ nav.chat-message-rail + .scroll-area {
 @keyframes chat-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
 @media (pointer: coarse) {
-  .chat-thought-summary { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
+  .chat-thought-summary { height: 20px; min-height: 20px; max-height: 20px; line-height: 20px; }
 }
 @media (max-width: 767px), (pointer: coarse) {
   .chat-action-button, .chat-action-confirm, .chat-action-secondary, .chat-choice-option, .chat-choice-other { min-width: 44px; min-height: 44px; }
   .chat-request-back { min-height: 44px; }
   .chat-composer .chat-toolbar { height: auto; min-height: 52px; padding-block: 4px; }
+}
+@media (max-width: 767px) {
+  /* Mobile form zoom raises the composer to 16px. Keep its two-line hint
+     aligned with the desktop text block instead of inflating to 28px rows. */
+  .chat-composer .chat-input { line-height: 1.5; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-composer, .chat-action-button, .chat-action-confirm, .chat-action-secondary, .chat-thought-summary, .chat-thought-chevron { transition: none; }

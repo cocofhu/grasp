@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 收紧移动端对话输入框的两行提示行高，并让工具与思考行沿用桌面的 20px 行高，避免移动端时间线纵向间距被触屏点击高度拉大。
+
 ## 4.0.1 — 2026-11-23
 
 - 修复 `grasp doctor --run-demo` 绕过 Grasp 创建沙箱导致的误报，并让 release smoke 在启动前预拉 sandbox 镜像；gateway 在沙箱启动失败时现在报告退出码和末尾日志。

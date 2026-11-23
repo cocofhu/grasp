@@ -138,7 +138,7 @@ button.agent-tool-row-main:focus-visible,
 .agent-tool-code--failed { border-left: 2px solid rgb(var(--c-err) / .45); padding-left: 12px; }
 .agent-tool-running.animate-spin { animation-duration: 1.4s; }
 @media (pointer: coarse) {
-  .agent-tools-head { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
+  .agent-tools-head { height: 20px; min-height: 20px; max-height: 20px; line-height: 20px; }
 }
 @media (max-width: 767px) {
   button.agent-tool-row-main,

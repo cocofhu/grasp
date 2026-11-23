@@ -445,7 +445,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-thought-body p:last-child { margin-bottom: 0; }
 @media (pointer: coarse) {
   .agent-elapsed,
-  .agent-thought-summary { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
+  .agent-thought-summary { height: 20px; min-height: 20px; max-height: 20px; line-height: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-elapsed-chevron,
