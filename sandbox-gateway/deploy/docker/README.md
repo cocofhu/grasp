@@ -36,9 +36,9 @@ openssl rand -base64 32    # GRASP_SECRETS_KEY，32 字节密钥的 base64 表�
 在 `$grasp_deploy_dir/production.env` 写入以下内容，替换所有占位值。三个镜像应使用同一次经过验收的发布，生产固定到实际 digest；下列 tag 是示例，不代表自动升级到最新版本。
 
 ```dotenv
-GRASP_IMAGE=ghcr.io/cocofhu/grasp:4.0.0
-SANDBOX_GATEWAY_IMAGE=ghcr.io/cocofhu/sandbox-gateway:4.0.0
-SANDBOX_IMAGE=ghcr.io/cocofhu/universal-sandbox:4.0.0
+GRASP_IMAGE=ghcr.io/cocofhu/grasp:4.0.1
+SANDBOX_GATEWAY_IMAGE=ghcr.io/cocofhu/sandbox-gateway:4.0.1
+SANDBOX_IMAGE=ghcr.io/cocofhu/universal-sandbox:4.0.1
 GRASP_PORT=8080
 GRASP_GATEWAY_PORT=8899
 SANDBOX_GATEWAY_API_KEY=REPLACE_WITH_GENERATED_GATEWAY_KEY
@@ -85,7 +85,7 @@ grasp_compose=(docker compose --project-name grasp \
 "${grasp_compose[@]}" config --quiet
 "${grasp_compose[@]}" pull
 # 预热沙箱镜像；改为 production.env 中实际选择的 tag 或 digest。
-docker pull ghcr.io/cocofhu/universal-sandbox:4.0.0
+docker pull ghcr.io/cocofhu/universal-sandbox:4.0.1
 "${grasp_compose[@]}" up -d
 "${grasp_compose[@]}" ps
 curl --fail --silent http://127.0.0.1:8080/api/health
