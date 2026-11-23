@@ -10,6 +10,11 @@ name: release-smoke
 # Local: export the three digest refs, then ./release-smoke.sh (see CONTRIBUTING).
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Published image version, without the leading v
+        required: true
+        default: 4.0.1
 
 permissions:
   contents: read
@@ -20,15 +25,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - name: Require digest-pinned images
-        env:
-          GRASP_IMAGE: ${{ secrets.GRASP_IMAGE }}
-          SANDBOX_GATEWAY_IMAGE: ${{ secrets.SANDBOX_GATEWAY_IMAGE }}
-          SANDBOX_IMAGE: ${{ secrets.SANDBOX_IMAGE }}
+      - name: Resolve published image digests
         run: |
-          test -n "$GRASP_IMAGE"
-          test -n "$SANDBOX_GATEWAY_IMAGE"
-          test -n "$SANDBOX_IMAGE"
+          version='${{ inputs.version }}'
+          test -n "$version"
+          pull_digest() {
+            image="$1:$version"
+            docker pull "$image" >&2
+            digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")"
+            test -n "$digest"
+            printf '%s\n' "$digest"
+          }
+          {
+            printf 'GRASP_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/grasp)"
+            printf 'SANDBOX_GATEWAY_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/sandbox-gateway)"
+            printf 'SANDBOX_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/universal-sandbox)"
+          } > "$GITHUB_ENV"
+          set -a
+          . "$GITHUB_ENV"
+          set +a
           export GRASP_IMAGE SANDBOX_GATEWAY_IMAGE SANDBOX_IMAGE
           ./release-smoke.sh
       - uses: actions/upload-artifact@v7

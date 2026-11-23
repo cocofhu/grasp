@@ -309,6 +309,8 @@ func New(h *handlers.Handlers) *gin.Engine {
 	// --run-demo` to exercise the live MCP HTTP control plane.
 	r.POST("/_internal/doctor/artifact-sessions", h.DoctorArtifactSession)
 	r.DELETE("/_internal/doctor/artifact-sessions/:id", h.DoctorArtifactSession)
+	r.POST("/_internal/doctor/sandboxes", h.DoctorSandbox)
+	r.DELETE("/_internal/doctor/sandboxes/:id", h.DoctorSandbox)
 
 	// Pre-start ConfigHome inject for sandbox-gateway (SANDBOX_INJECT). Bearer
 	// token is minted at Create; sandboxes fetch before agent/acp-bridge start.

@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/sandbox"
-
 	"github.com/google/uuid"
 )
 
@@ -58,28 +56,14 @@ func run(args []string, out io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(out, "Sandbox gateway .......... healthy")
 
-	client := sandbox.NewGatewayClient(opts.gatewayURL, opts.gatewayAPIKey)
-	caps, err := client.Capabilities(ctx)
-	if err != nil {
-		return fmt.Errorf("sandbox gateway capabilities: %w", err)
-	}
-	_, _ = fmt.Fprintf(out, "Sandbox image ............ %s (%s)\n", caps.DefaultImage, caps.Driver)
-	created, err := client.Create(ctx, sandbox.GWCreateRequest{
-		Labels: map[string]string{
-			"approving.doctor": "true",
-		},
-		Ports: []int{8765},
-	})
+	created, err := createDemoSandbox(ctx, opts.apiURL, opts.doctorToken)
 	if err != nil {
 		return fmt.Errorf("create demo sandbox: %w", err)
-	}
-	if strings.TrimSpace(created.ID) == "" {
-		return errors.New("create demo sandbox: gateway returned an empty id")
 	}
 	cleanup := func() error {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cleanupCancel()
-		return client.Destroy(cleanupCtx, created.ID)
+		return deleteDemoSandbox(cleanupCtx, opts.apiURL, opts.doctorToken, created.ID)
 	}
 	cleaned := false
 	defer func() {
@@ -88,9 +72,6 @@ func run(args []string, out io.Writer) error {
 		}
 	}()
 
-	if _, err := client.WaitRunning(ctx, created.ID, remaining(ctx, 2*time.Minute)); err != nil {
-		return fmt.Errorf("wait for demo sandbox: %w", err)
-	}
 	_, _ = fmt.Fprintln(out, "Demo sandbox ............. passed")
 
 	if err := verifyArtifactIsolation(ctx, opts.apiURL, opts.doctorToken); err != nil {
@@ -171,6 +152,53 @@ type artifactSession struct {
 	RunB         string `json:"run_b"`
 	TokenB       string `json:"token_b"`
 	CleanupToken string `json:"cleanup_token"`
+}
+
+type demoSandbox struct {
+	ID string `json:"id"`
+}
+
+func createDemoSandbox(ctx context.Context, apiURL, doctorToken string) (demoSandbox, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL+"/_internal/doctor/sandboxes", nil)
+	if err != nil {
+		return demoSandbox{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+doctorToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return demoSandbox{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return demoSandbox{}, fmt.Errorf("create sandbox returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var sandbox demoSandbox
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&sandbox); err != nil {
+		return demoSandbox{}, err
+	}
+	if strings.TrimSpace(sandbox.ID) == "" {
+		return demoSandbox{}, errors.New("create sandbox returned an empty id")
+	}
+	return sandbox, nil
+}
+
+func deleteDemoSandbox(ctx context.Context, apiURL, doctorToken, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, apiURL+"/_internal/doctor/sandboxes/"+id, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+doctorToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return fmt.Errorf("delete sandbox returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 type rpcResponse struct {

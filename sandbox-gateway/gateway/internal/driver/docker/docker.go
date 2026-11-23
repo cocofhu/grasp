@@ -358,6 +358,9 @@ func (d *Driver) endpoints(ctx context.Context, name string, ports, internal []i
 		for _, p := range ports {
 			hp, err := d.hostPort(ctx, name, p)
 			if err != nil {
+				if diagnostic := d.startFailure(ctx, name); diagnostic != "" {
+					return nil, fmt.Errorf("sandbox container exited while resolving port %d: %s", p, diagnostic)
+				}
 				return nil, err
 			}
 			res[p] = fmt.Sprintf("%s:%d", d.bindIP, hp)
@@ -390,6 +393,30 @@ func (d *Driver) endpoints(ctx context.Context, name string, ports, internal []i
 		}
 	}
 	return d.withInternalEndpoints(ctx, name, res, internal)
+}
+
+// startFailure explains the common case where the container exits between
+// docker run and endpoint discovery. Docker removes published port mappings
+// for an exited container, which otherwise produces a misleading port error.
+func (d *Driver) startFailure(ctx context.Context, name string) string {
+	status, err := d.status(ctx, name)
+	if err != nil || status != driver.StatusStopped {
+		return ""
+	}
+	out, err := d.run(ctx, 10*time.Second, "inspect", "--format", "{{.State.ExitCode}}", name)
+	if err != nil {
+		return "container stopped"
+	}
+	exitCode := strings.TrimSpace(out)
+	logs, err := d.run(ctx, 10*time.Second, "logs", "--tail", "20", name)
+	if err != nil {
+		return fmt.Sprintf("exit %s", exitCode)
+	}
+	logs = strings.TrimSpace(logs)
+	if logs == "" {
+		return fmt.Sprintf("exit %s", exitCode)
+	}
+	return fmt.Sprintf("exit %s: %s", exitCode, logs)
 }
 
 func (d *Driver) withInternalEndpoints(ctx context.Context, name string, eps map[int]string, internal []int) (map[int]string, error) {
