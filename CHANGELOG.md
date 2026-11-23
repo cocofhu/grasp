@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 `grasp doctor --run-demo` 绕过 Grasp 创建沙箱导致的误报，并让 release smoke 在启动前预拉 sandbox 镜像；gateway 在沙箱启动失败时现在报告退出码和末尾日志。
+
 ## 4.0.0 — 2026-11-23
 
 - 修复 Cursor 常驻 SDK 在首次注入 MCP 时重启 Agent 造成 `already has active run` 的 Solo 回合失败：Cursor 等待首次连接后再启动，桥接关闭时等待 Agent 释放。需要沙箱运行时更新后生效。

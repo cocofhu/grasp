@@ -52,6 +52,12 @@ trap cleanup EXIT INT TERM
 } >"$LOG"
 
 docker compose -f "$COMPOSE_FILE" config --quiet >>"$LOG" 2>&1
+# Pull the large sandbox image before starting the stack. This keeps the
+# sandbox cold-start out of the doctor's readiness timeout and records the
+# download separately in the evidence log.
+printf 'sandbox_pull_started_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$LOG"
+docker pull "$SANDBOX_IMAGE" >>"$LOG" 2>&1
+printf 'sandbox_pull_completed_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$LOG"
 docker compose -f "$COMPOSE_FILE" pull >>"$LOG" 2>&1
 docker compose -f "$COMPOSE_FILE" up -d --wait >>"$LOG" 2>&1
 docker compose -f "$COMPOSE_FILE" exec -T grasp \
