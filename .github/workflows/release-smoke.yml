@@ -36,14 +36,12 @@ jobs:
             test -n "$digest"
             printf '%s\n' "$digest"
           }
-          {
-            printf 'GRASP_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/grasp)"
-            printf 'SANDBOX_GATEWAY_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/sandbox-gateway)"
-            printf 'SANDBOX_IMAGE=%s\n' "$(pull_digest ghcr.io/cocofhu/universal-sandbox)"
-          } > "$GITHUB_ENV"
-          set -a
-          . "$GITHUB_ENV"
-          set +a
+          GRASP_IMAGE="$(pull_digest ghcr.io/cocofhu/grasp)"
+          SANDBOX_GATEWAY_IMAGE="$(pull_digest ghcr.io/cocofhu/sandbox-gateway)"
+          SANDBOX_IMAGE="$(pull_digest ghcr.io/cocofhu/universal-sandbox)"
+          printf 'GRASP_IMAGE=%s\n' "$GRASP_IMAGE" >> "$GITHUB_ENV"
+          printf 'SANDBOX_GATEWAY_IMAGE=%s\n' "$SANDBOX_GATEWAY_IMAGE" >> "$GITHUB_ENV"
+          printf 'SANDBOX_IMAGE=%s\n' "$SANDBOX_IMAGE" >> "$GITHUB_ENV"
           export GRASP_IMAGE SANDBOX_GATEWAY_IMAGE SANDBOX_IMAGE
           ./release-smoke.sh
       - uses: actions/upload-artifact@v7
