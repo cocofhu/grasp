@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -161,6 +162,29 @@ func TestWorkflowCapacityRejectsBeforeProvisioning(t *testing.T) {
 	_, _, _, _, err := h.p.openNodeSandbox(context.Background(), h.req("n1"))
 	if err == nil || h.mgr.createCount() != 0 {
 		t.Fatalf("capacity rejection created workload: %v", err)
+	}
+}
+
+func TestCancelledSlotWaitIsNotASetupFailure(t *testing.T) {
+	withSlotPoll(t, time.Hour)
+	h := newSharedHarness(t, nil)
+	h.p.shared = nil
+	h.p.registry = &slotRegistry{full: 1 << 30}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, _, _, err := h.p.openNodeSandbox(ctx, h.req("n1"))
+	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrSandboxCapacity) || isRetryableSandboxErr(err) || h.mgr.createCount() != 0 {
+		t.Fatalf("err = %v, want non-retryable context.Canceled", err)
+	}
+}
+
+func TestAdmissionErrorStaysRetryableSetupFailure(t *testing.T) {
+	h := newSharedHarness(t, nil)
+	h.p.shared = nil
+	h.p.registry = &recoveryRegistry{admissionFailure: errors.New("db down")}
+	_, _, _, _, err := h.p.openNodeSandbox(context.Background(), h.req("n1"))
+	if !errors.Is(err, errSandboxSetup) {
+		t.Fatalf("err = %v, want errSandboxSetup", err)
 	}
 }
 

@@ -330,6 +330,37 @@ if [ -e "$TMP/root/.grasp/repo-credentials" ] || [ -e "$TMP/root/.ssh/grasp-repo
 fi
 echo "OK: Agent catalog replaces explicit repository grants and GIT_REPOS stays a clone list"
 
+# Any failed clone (HTTPS included) must stop startup: a sandbox that reports
+# ready with a missing repository is worse than a failed node.
+CLONE_START=$(grep -n '^repo_name_from_url()' "$STARTUP" | head -1 | cut -d: -f1)
+CLONE_HELPERS_END=$(grep -n '^# --- 契约注入' "$STARTUP" | head -1 | cut -d: -f1)
+LOOP_START=$(grep -n '^# --- 克隆代码仓库' "$STARTUP" | head -1 | cut -d: -f1)
+LOOP_END=$(awk -v s="$LOOP_START" 'NR>s && /^fi$/ {print NR; exit}' "$STARTUP")
+{
+  echo 'set -e'
+  sed -n "${CLONE_START},$((CLONE_HELPERS_END - 1))p" "$STARTUP"
+  sed -n "${LOOP_START},${LOOP_END}p" "$STARTUP"
+} | sed 's|/root|'"$TMP/root"'|g' >"$TMP/clone.sh"
+git init -q --bare "$TMP/origin.git"
+git -C "$TMP/origin.git" symbolic-ref HEAD refs/heads/main
+run_clone() {
+  rm -rf "$TMP/ws" "$TMP/root/.sandbox"
+  WORKSPACE_DIR="$TMP/ws" GIT_REPOS="$1" GIT_TERMINAL_PROMPT=0 bash "$TMP/clone.sh" >"$TMP/clone.out" 2>&1
+}
+if run_clone "good|$TMP/origin.git|,bad|https://127.0.0.1:9/missing.git|"; then
+  echo "FAIL: HTTPS clone failure must abort startup" >&2
+  cat "$TMP/clone.out" >&2
+  exit 1
+fi
+grep -q 'clone bad 失败，fail-fast' "$TMP/clone.out"
+if [ -e "$TMP/root/.sandbox/repos.json" ] || [ -e "$TMP/ws/bad" ]; then
+  echo "FAIL: failed clone still recorded a repository manifest or left its directory" >&2
+  exit 1
+fi
+run_clone "one|$TMP/origin.git|,two|$TMP/origin.git|" || { cat "$TMP/clone.out" >&2; exit 1; }
+grep -q '"name":"two"' "$TMP/root/.sandbox/repos.json"
+echo "OK: HTTPS clone failure fails fast; successful clones still record the manifest"
+
 echo "OK: git auth unit smoke passed"
 
 # Keep file-only catalog and shared-workflow isolation covered by the existing

@@ -269,7 +269,9 @@ func (c *acpProvider) beginRunSandbox(req NodeReq, name, home string) error {
 var sandboxSlotPoll = 5 * time.Second
 
 // waitRunSandboxSlot reserves the node's sandbox slot, waiting while the shared
-// limit is full. Only ctx (run cancel, node time limit) ends the wait.
+// limit is full. Only ctx (run cancel, node time limit) ends the wait, and then
+// its cause is returned: the node failed because it was stopped, not because
+// capacity stayed full.
 func (c *acpProvider) waitRunSandboxSlot(ctx context.Context, req NodeReq, name, home string) error {
 	notified := false
 	for {
@@ -283,7 +285,7 @@ func (c *acpProvider) waitRunSandboxSlot(ctx context.Context, req NodeReq, name,
 		}
 		select {
 		case <-ctx.Done():
-			return err
+			return context.Cause(ctx)
 		case <-time.After(sandboxSlotPoll):
 		}
 	}
@@ -413,6 +415,9 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 	if err := c.waitRunSandboxSlot(ctx, req, placeholder, home); err != nil {
 		c.unregisterCodexLogin(req)
 		removeHome(home)
+		if ctx.Err() != nil {
+			return nil, nil, "", spec, fmt.Errorf("wait for sandbox slot: %w", err)
+		}
 		return nil, nil, "", spec, fmt.Errorf("%w: sandbox capacity: %v", errSandboxSetup, err)
 	}
 	sb, err := c.mgr.Create(ctx, spec)
