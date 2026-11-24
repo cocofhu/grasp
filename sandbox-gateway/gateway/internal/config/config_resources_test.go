@@ -38,8 +38,8 @@ func TestResolveResourcesDefaultsAndMax(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsNegativesAndEmptyDefaults(t *testing.T) {
-	d := ResourceDefaults{} // zeros: after fill, values stay <= 0
+func TestResolveRejectsNegatives(t *testing.T) {
+	d := ResourceDefaults{}
 	if _, _, _, err := d.Resolve(-1, 0, 0); err == nil {
 		t.Fatal("negative cpu")
 	}
@@ -49,15 +49,19 @@ func TestResolveRejectsNegativesAndEmptyDefaults(t *testing.T) {
 	if _, _, _, err := d.Resolve(0, 0, -1); err == nil {
 		t.Fatal("negative disk")
 	}
-	if _, _, _, err := d.Resolve(0, 0, 0); err == nil {
-		t.Fatal("empty defaults must reject zero effective cpu")
+}
+
+func TestResolveEmptyDefaultsMeanUnlimited(t *testing.T) {
+	d := ResourceDefaults{MaxCPUCores: 8, MaxMemoryMB: 16384, MaxDiskGi: 500}
+	cpu, mem, disk, err := d.Resolve(0, 0, 0)
+	if err != nil || cpu != 0 || mem != 0 || disk != 0 {
+		t.Fatalf("empty defaults: got %v %v %v %v", cpu, mem, disk, err)
 	}
-	d.DefaultCPUCores = 1
-	if _, _, _, err := d.Resolve(0, 0, 0); err == nil {
-		t.Fatal("empty memory/disk defaults")
+	cpu, mem, _, err = d.Resolve(4, 0, 0)
+	if err != nil || cpu != 4 || mem != 0 {
+		t.Fatalf("explicit cpu with unlimited memory: got %v %v %v", cpu, mem, err)
 	}
-	d.DefaultMemoryMB = 512
-	if _, _, _, err := d.Resolve(0, 0, 0); err == nil {
-		t.Fatal("empty disk default")
+	if _, _, _, err := d.Resolve(16, 0, 0); err == nil {
+		t.Fatal("explicit request must still respect max")
 	}
 }

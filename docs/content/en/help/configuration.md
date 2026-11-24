@@ -21,7 +21,7 @@ Use two YAML files: Grasp platform configuration and the selected backend's gate
 
 Ordinary settings use environment > YAML > defaults. Settings-page controls use environment > saved database value > YAML > defaults. Environment values lock the corresponding UI field.
 
-Grasp defaults to `http://127.0.0.1:8899` with `direct` transport, an empty image and memory override `0`, following the gateway or selected template. Setting memory back to `0` clears the override for future sandboxes. Docker and Kubernetes each default to `2 CPU / 4096 MiB / 25 GiB`. E2B has no built-in template or resource defaults: copy actual build results.
+Grasp defaults to `http://127.0.0.1:8899` with `direct` transport, an empty image and memory override `0`, following the gateway or selected template. Setting memory back to `0` clears the override for future sandboxes. Docker sandboxes default to no CPU or memory limit and share the host; Kubernetes defaults to `2 CPU / 4096 MiB / 25 GiB`. E2B has no built-in template or resource defaults: copy actual build results.
 
 E2B uses an explicit `apiURL`, optional `sandboxURL` and named `templates`. Self-hosted deployments use their own API and private sandbox proxy origins, without an implicit cloud address. In `templates.standard`, `standard` is your local template name; `templateID` is returned by E2B. One template is selected automatically; several require `defaultTemplate`. A named Grasp connection can select a template with `profile`. Grasp need not repeat its name or memory. See the [build and paired configuration examples](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md).
 

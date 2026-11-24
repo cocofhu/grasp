@@ -56,7 +56,7 @@ chmod 600 "$grasp_deploy_dir/production.env"
 
 `.env` / `--env-file` 只是 Compose 的变量输入，**不会自动把所有变量传进容器**。附带的 override 显式转发回连地址、公开地址、鉴权和 transport，并让 gateway 与 Grasp 使用同一把 key；仅在原 `.env` 中添加 `GRASP_MCP_ADVERTISE` 不会改变原 release Compose 的服务环境。确认当前 shell 没有 export 同名旧值，以免覆盖环境文件。其他配置也须添加到服务 `environment`，或挂载配置文件并设置 `CONFIG_PATH`（Grasp）/ `SBGW_CONFIG`（gateway）。应用实际配置优先级为进程环境 > 配置文件 > 默认值。
 
-`SANDBOX_IMAGE` 通过 `SBGW_DOCKER_IMAGE` 只传给 gateway，Grasp 默认省略镜像和资源覆盖。默认资源为 `2 CPU / 4096 MiB / 25 GiB`；需要调整时挂载 Docker gateway YAML，在 `docker.resources.default/max` 中配置。Grasp 设置页内存覆盖为 `0` 才会跟随网关；已有保存值不会自动清除。
+`SANDBOX_IMAGE` 通过 `SBGW_DOCKER_IMAGE` 只传给 gateway，Grasp 默认省略镜像和资源覆盖。默认不限制 CPU 与内存（不加 `--cpus`/`--memory`，沙箱共享宿主资源）；需要限制时挂载 Docker gateway YAML，在 `docker.resources.default/max` 中配置。Grasp 设置页内存覆盖为 `0` 才会跟随网关；已有保存值不会自动清除。
 
 ## 2. 配置网络与入口
 

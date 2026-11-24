@@ -21,7 +21,7 @@ Grasp 读取 `CONFIG_PATH`（默认 `config.yaml`），gateway 通过 `SBGW_CONF
 
 普通配置是环境变量 > YAML > 程序默认值；设置页管理的参数是环境变量 > 设置页保存值 > YAML > 默认值。环境变量锁定相应设置页字段。
 
-Grasp 默认连接 `http://127.0.0.1:8899`，使用 `direct` transport，镜像为空、内存覆盖为 `0`，跟随网关或所选模板。设置页把内存填回 `0` 可清除覆盖，对之后新建的沙箱生效。Docker/Kubernetes 默认资源各自为 `2 CPU / 4096 MiB / 25 GiB`；E2B 没有内置模板和规格，必须填写实际构建结果。
+Grasp 默认连接 `http://127.0.0.1:8899`，使用 `direct` transport，镜像为空、内存覆盖为 `0`，跟随网关或所选模板。设置页把内存填回 `0` 可清除覆盖，对之后新建的沙箱生效。Docker 默认不限制 CPU 与内存，沙箱共享宿主资源；Kubernetes 默认 `2 CPU / 4096 MiB / 25 GiB`；E2B 没有内置模板和规格，必须填写实际构建结果。
 
 E2B 配置只包含明确的 `apiURL`、可选的 `sandboxURL` 和 `templates`。自建填写自己的 E2B API 与沙箱代理地址，没有隐式云服务地址。`templates.standard` 的 `standard` 是本地模板名，`templateID` 才是构建返回的实际标识；单模板自动选择，多模板指定 `defaultTemplate`，也可以在 Grasp 命名连接里用 `profile` 选择。Grasp 无需重复填写模板名和内存。见 [E2B 构建与两份配置示例](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)。
 

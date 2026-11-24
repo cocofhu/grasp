@@ -49,10 +49,18 @@ func (c *Config) validate() error {
 	} else {
 		resources = c.Kubernetes.Resources
 	}
-	for _, values := range []ResourceValues{resources.Default, resources.Max} {
-		if values.CPUCores <= 0 || math.IsNaN(values.CPUCores) || math.IsInf(values.CPUCores, 0) || values.MemoryMB <= 0 || values.DiskGi <= 0 {
-			return fmt.Errorf("%s.resources default and max require positive finite cpuCores, memoryMB and diskGi", c.Driver)
+	caps := resources.Max
+	if caps.CPUCores <= 0 || math.IsNaN(caps.CPUCores) || math.IsInf(caps.CPUCores, 0) || caps.MemoryMB <= 0 || caps.DiskGi <= 0 {
+		return fmt.Errorf("%s.resources.max requires positive finite cpuCores, memoryMB and diskGi", c.Driver)
+	}
+	def := resources.Default
+	if c.Docker != nil {
+		// Zero defaults leave docker sandboxes unlimited (shared host resources).
+		if def.CPUCores < 0 || math.IsNaN(def.CPUCores) || math.IsInf(def.CPUCores, 0) || def.MemoryMB < 0 || def.DiskGi < 0 {
+			return fmt.Errorf("docker.resources.default requires non-negative finite cpuCores, memoryMB and diskGi (0 = no limit)")
 		}
+	} else if def.CPUCores <= 0 || math.IsNaN(def.CPUCores) || math.IsInf(def.CPUCores, 0) || def.MemoryMB <= 0 || def.DiskGi <= 0 {
+		return fmt.Errorf("%s.resources.default requires positive finite cpuCores, memoryMB and diskGi", c.Driver)
 	}
 	if resources.Default.CPUCores > resources.Max.CPUCores || resources.Default.MemoryMB > resources.Max.MemoryMB || resources.Default.DiskGi > resources.Max.DiskGi {
 		return fmt.Errorf("%s.resources.default cannot exceed resources.max", c.Driver)

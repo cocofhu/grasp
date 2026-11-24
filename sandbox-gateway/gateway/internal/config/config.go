@@ -28,6 +28,12 @@ func defaultResources() ResourceConfig {
 	return ResourceConfig{Default: ResourceValues{CPUCores: 2, MemoryMB: 4096, DiskGi: 25}, Max: ResourceValues{CPUCores: 8, MemoryMB: 16384, DiskGi: 500}}
 }
 
+// Docker sandboxes share the host by default: no --cpus/--memory unless the
+// caller asks for them, still capped by Max.
+func dockerResources() ResourceConfig {
+	return ResourceConfig{Max: defaultResources().Max}
+}
+
 // Default is the Docker configuration used when no file or driver is selected.
 func Default() *Config {
 	c, _ := DefaultForDriver("docker")
@@ -45,7 +51,7 @@ func DefaultForDriver(driver string) (*Config, error) {
 	}
 	switch driver {
 	case "docker":
-		c.Docker = &DockerConfig{Image: "universal-sandbox:local", BindIP: "127.0.0.1", NamePrefix: "sbx-", ShmSize: "1g", Resources: defaultResources()}
+		c.Docker = &DockerConfig{Image: "universal-sandbox:local", BindIP: "127.0.0.1", NamePrefix: "sbx-", ShmSize: "1g", Resources: dockerResources()}
 	case "kubernetes":
 		c.Kubernetes = &KubernetesConfig{Image: "universal-sandbox:local", Namespace: "sandboxes", NamePrefix: "sbx-", ImagePullPolicy: "IfNotPresent", EnableLoadBalancer: true,
 			Resources: defaultResources(), CPURequestCores: 0.25, MemoryRequestMB: 512, CPURequestRatio: 0.25, MemoryRequestRatio: 0.25}

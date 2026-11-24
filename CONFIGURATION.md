@@ -33,7 +33,8 @@ Grasp 默认跟随网关：镜像为空、内存覆盖为 `0`。镜像、模板�
 | Grasp image | 空 | 使用网关默认镜像或模板 |
 | Grasp 内存覆盖 | `0` | 使用所选环境的内存 |
 | Docker/K8s 镜像 | `universal-sandbox:local` | 发布栈通过 `SANDBOX_IMAGE` 给 Docker 网关指定镜像 |
-| Docker/K8s 默认资源 | `2 CPU / 4096 MiB / 25 GiB` | 各自后端独立配置 |
+| Docker 默认资源 | 不限制 | 不加 `--cpus`/`--memory`，沙箱共享宿主 CPU 与内存 |
+| K8s 默认资源 | `2 CPU / 4096 MiB / 25 GiB` | 各自后端独立配置 |
 | Docker/K8s 资源上限 | `8 CPU / 16384 MiB / 500 GiB` | Docker 的磁盘字段不建立配额；K8s 用于 PVC |
 | E2B 模板与资源 | **无内置模板或规格** | 必须填实际构建结果；示例的 `2 / 3072 / 20` 只是示例 |
 | E2B API 地址 | **无默认值，必填** | 自建填自己的 API；云服务显式填 `https://api.e2b.app` |
@@ -63,11 +64,11 @@ server:
 docker:
   image: universal-sandbox:local
   resources:
-    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    default: {cpuCores: 0, memoryMB: 0, diskGi: 0}
     max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
 ```
 
-使用编译好的程序，分别运行 `grasp /absolute/path/grasp.yaml` 和 `sandbox-gateway -config /absolute/path/gateway.docker.yaml`。两端鉴权 key 分别通过 `GRASP_SANDBOX_GATEWAY_API_KEY` 与 `SBGW_API_KEYS` 注入相同值。这组配置创建的沙箱采用网关的 **2 CPU、4096 MiB**。
+使用编译好的程序，分别运行 `grasp /absolute/path/grasp.yaml` 和 `sandbox-gateway -config /absolute/path/gateway.docker.yaml`。两端鉴权 key 分别通过 `GRASP_SANDBOX_GATEWAY_API_KEY` 与 `SBGW_API_KEYS` 注入相同值。这组配置创建的沙箱**不限 CPU 与内存**，共享宿主资源。
 
 完整部署步骤见 [Docker](sandbox-gateway/deploy/docker/README.md)、[Kubernetes](sandbox-gateway/deploy/k8s/README.md) 和 [E2B](sandbox-gateway/deploy/e2b/README.md) 指南。K8s 使用 [独立 K8s 文件](sandbox-gateway/gateway/config.kubernetes.example.yaml)，Grasp 仍只连接 gateway。
 
@@ -202,7 +203,7 @@ GitHub 设备码登录（`github.oauth_client_id`，默认空）、Codex 登录�
 | `bindIP` | `SBGW_DOCKER_BIND_IP` | `127.0.0.1` | 发布端口的宿主地址 |
 | `network` | `SBGW_DOCKER_NETWORK` | 空 | Docker 网络 |
 | `namePrefix` / `shmSize` | — | `sbx-` / `1g` | 容器名称前缀及共享内存 |
-| `resources.default` | — | CPU `2`、memory `4096`、disk `25` | 请求省略资源时采用；字段为 `cpuCores/memoryMB/diskGi` |
+| `resources.default` | — | CPU `0`、memory `0`、disk `0` | 请求省略资源时采用；`0` 表示不限制；字段为 `cpuCores/memoryMB/diskGi` |
 | `resources.max` | — | CPU `8`、memory `16384`、disk `500` | API 请求上限；不等于 Docker 磁盘配额 |
 | `profiles` | — | `{}` | 可选 `名称: {image: OCI镜像}`，供 Grasp 命名连接选择 |
 

@@ -8,6 +8,8 @@ All notable public-release changes are documented here.
 
 - 修复 Cursor 回合被打断后 SDK 清理后台进程时抛出的异常使 Cursor 桥接进程退出、紧接着的回合以空回复结束且消息丢失：这类 SDK 内部异常不再结束进程；Agent 进程在回合中意外退出时，这一轮显示失败和原因，可直接重试这条消息。需要沙箱运行时更新后生效。
 
+- Docker 网关创建的沙箱默认不再限制 CPU 与内存（不加 `--cpus`/`--memory`），多个沙箱共享宿主资源；需要限制时在 `docker.resources.default` 中配置，`resources.max` 仍约束显式请求。Grasp 设置页的内存覆盖不为 `0` 时仍会生效。需要更新 sandbox-gateway 镜像。
+
 ## 4.0.2 — 2026-11-24
 
 - 升级 `gorilla/websocket` 修复 GO-2026-6278：Grasp、sandbox-gateway 和沙箱运行时作为 WebSocket 客户端时，掩码密钥改用安全随机数生成。
