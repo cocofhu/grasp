@@ -253,7 +253,7 @@ func TestKubernetesDeploymentConfigLoads(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.Driver != "kubernetes" || c.DefaultImage() != "ghcr.io/cocofhu/universal-sandbox:4.0.3" || c.Kubernetes.EnableLoadBalancer {
+		if c.Driver != "kubernetes" || c.DefaultImage() != "ghcr.io/cocofhu/universal-sandbox:4.0.4" || c.Kubernetes.EnableLoadBalancer {
 			t.Fatal("incorrect deployment configuration")
 		}
 		cpu, memory, disk, err := c.ResourcePolicy().Resolve(c.DefaultImage(), 0, 0, 0)

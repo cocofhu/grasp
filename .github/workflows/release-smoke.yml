@@ -14,7 +14,7 @@ on:
       version:
         description: Published image version, without the leading v
         required: true
-        default: 4.0.3
+        default: 4.0.4
 
 permissions:
   contents: read
