@@ -69,3 +69,35 @@ func TestDriverStatusOfHangingRelayFailsWithinObserveBudget(t *testing.T) {
 		t.Fatalf("recovered relay reported %q, %v", status, err)
 	}
 }
+
+func TestDriverStatusOfFailedBootstrapKeepsLogFetchWithinObserveBudget(t *testing.T) {
+	f := newLifecycleProvider(t)
+	d := openLifecycleDriver(t, lifecycleOptions(t, f))
+	if _, err := d.Create(t.Context(), lifecycleSpec("hung-logs")); err != nil {
+		t.Fatal(err)
+	}
+	budget := observeTimeout
+	observeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { observeTimeout = budget })
+	code := 1
+	f.mu.Lock()
+	f.bootstrapExit = &code
+	f.beforeRequest = func(r *http.Request) {
+		if r.URL.Path == "/_bridge/logs" {
+			<-r.Context().Done()
+		}
+	}
+	f.mu.Unlock()
+	e, _ := d.lookup("hung-logs")
+	e.mu.Lock()
+	e.statusAt = time.Time{}
+	e.mu.Unlock()
+
+	started := time.Now()
+	if status, err := d.Status(t.Context(), "hung-logs"); err == nil || status != driver.StatusError {
+		t.Fatalf("failed bootstrap reported %q, %v", status, err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("bootstrap log fetch held the entry for %s", elapsed)
+	}
+}

@@ -669,6 +669,33 @@ func TestDriverCreateFailureRetiresOnlyOwnedGuests(t *testing.T) {
 	}
 }
 
+func TestDriverBootstrapFailureCarriesRedactedLogTail(t *testing.T) {
+	f := newLifecycleProvider(t)
+	code := 1
+	f.bootstrapExit = &code
+	f.logs = "early line\nCloning wireguard-proxy...\nremote: HTTP Basic: Access denied workspace-password\nstartup.sh: clone wireguard-proxy 失败，fail-fast 1\n"
+	d := openLifecycleDriver(t, lifecycleOptions(t, f))
+	_, err := d.Create(t.Context(), lifecycleSpec("gw-bootstrap-log"))
+	if err == nil {
+		t.Fatal("failed bootstrap succeeded")
+	}
+	msg := err.Error()
+	if !strings.HasPrefix(msg, "E2B bootstrap exited with code 1:\n") || !strings.Contains(msg, "Access denied [redacted]") || !strings.HasSuffix(msg, "fail-fast 1") || strings.Contains(msg, "workspace-password") {
+		t.Fatalf("bootstrap error lacks redacted log tail: %q", msg)
+	}
+}
+
+func TestDriverBootstrapFailureWithoutLogKeepsPlainError(t *testing.T) {
+	f := newLifecycleProvider(t)
+	code := 1
+	f.bootstrapExit = &code
+	f.logs = " \n"
+	d := openLifecycleDriver(t, lifecycleOptions(t, f))
+	if _, err := d.Create(t.Context(), lifecycleSpec("gw-bootstrap-nolog")); err == nil || err.Error() != "E2B bootstrap exited with code 1" {
+		t.Fatalf("empty log changed bootstrap error: %v", err)
+	}
+}
+
 func TestDriverCancelCreateAndCleanupRetry(t *testing.T) {
 	f := newLifecycleProvider(t)
 	f.ready = false
