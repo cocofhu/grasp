@@ -23,7 +23,7 @@ docker:
   namePrefix: sbx-
   shmSize: 1g
   resources:
-    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    default: {cpuCores: 0, memoryMB: 0, diskGi: 0} # 0 = no limit, sandboxes share the host
     max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
   # diskGi validates requests; Docker does not enforce a disk quota.
   profiles: {} # optional named environments, e.g. universal: {image: my/image:tag}

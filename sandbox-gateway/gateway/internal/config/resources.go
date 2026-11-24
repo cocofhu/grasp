@@ -15,7 +15,8 @@ type ResourceDefaults struct {
 }
 
 // ResolveResources fills zeros with defaults and validates against max caps.
-// Negative values are rejected. Returns the effective limits.
+// Negative values are rejected. Returns the effective limits; a zero that
+// survives defaulting means no limit for that resource.
 func (d ResourceDefaults) Resolve(cpuCores float64, memoryMB, diskGi int64) (float64, int64, int64, error) {
 	if math.IsNaN(cpuCores) || math.IsInf(cpuCores, 0) || cpuCores < 0 {
 		return 0, 0, 0, fmt.Errorf("cpuCores must be greater than 0")
@@ -34,15 +35,6 @@ func (d ResourceDefaults) Resolve(cpuCores float64, memoryMB, diskGi int64) (flo
 	}
 	if diskGi == 0 {
 		diskGi = d.DefaultDiskGi
-	}
-	if cpuCores <= 0 {
-		return 0, 0, 0, fmt.Errorf("cpuCores must be greater than 0")
-	}
-	if memoryMB <= 0 {
-		return 0, 0, 0, fmt.Errorf("memoryMB must be greater than 0")
-	}
-	if diskGi <= 0 {
-		return 0, 0, 0, fmt.Errorf("diskGi must be greater than 0")
 	}
 	if d.MaxCPUCores > 0 && cpuCores > d.MaxCPUCores {
 		return 0, 0, 0, fmt.Errorf("cpuCores cannot exceed %.2f", d.MaxCPUCores)

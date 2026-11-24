@@ -29,7 +29,10 @@ func TestBackendDefaultsAndIsolation(t *testing.T) {
 			t.Fatal("incorrect defaults")
 		}
 		cpu, mem, disk, err := c.ResourcePolicy().Resolve(c.DefaultImage(), 0, 0, 0)
-		if err != nil || cpu != 2 || mem != 4096 || disk != 25 {
+		if driver == "docker" && (err != nil || cpu != 0 || mem != 0 || disk != 0) {
+			t.Fatal("docker sandboxes must default to unlimited resources")
+		}
+		if driver == "kubernetes" && (err != nil || cpu != 2 || mem != 4096 || disk != 25) {
 			t.Fatal("incorrect resources")
 		}
 		if c.FinalizeTimeout() != 20*time.Minute || c.OrphanGCInterval() != 5*time.Minute || c.OrphanGCMinAge() != 10*time.Minute {
@@ -59,7 +62,9 @@ func TestStrictConfiguration(t *testing.T) {
 		"image: {ref: old}", "profiles: {}", "driver: docker\ndocker: {imag: typo}",
 		"driver: e2b\ne2b: {domain: e2b.app}", "database: {driver: invalid}",
 		"docker: {image: ''}", "docker: {profiles: {universal: {image: ''}}}", "docker: {profiles: {'': {image: x}}}",
-		"docker: {resources: {default: {memoryMB: 0}}}", "docker: {resources: {max: {cpuCores: 1}}}",
+		"docker: {resources: {default: {memoryMB: -1}}}", "docker: {resources: {default: {cpuCores: 9}}}",
+		"docker: {resources: {max: {memoryMB: 0}}}",
+		"driver: kubernetes\nkubernetes: {resources: {default: {memoryMB: 0}}}",
 		"docker: {resources: {default: {cpuCores: .nan}}}", "docker: {resources: {max: {diskGi: -1}}}",
 		"server: {listen: ''}", "server: {finalizeTimeoutSeconds: 0}", "server: {finalizeTimeoutSeconds: 99999999999}",
 		"orphanGC: {intervalSeconds: 0}", "orphanGC: {minAgeSeconds: -1}", "database: {port: 65536}",
