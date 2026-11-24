@@ -569,7 +569,7 @@ func (d *Driver) waitHealthy(ctx context.Context, r *record, checkCapacity bool)
 				return errors.New("E2B relay identity mismatch")
 			}
 			if h.BootstrapExit != nil && *h.BootstrapExit != 0 {
-				return fmt.Errorf("E2B bootstrap exited with code %d", *h.BootstrapExit)
+				return d.bootstrapFailure(ctx, r, *h.BootstrapExit)
 			}
 			if h.Ports["22"] && h.Ports["8765"] && h.Ports["8744"] {
 				if checkCapacity && (h.Workspace == nil || h.Workspace.AvailableBytes < r.Profile.DiskGi*(1<<30)) {
@@ -639,7 +639,7 @@ func (d *Driver) observe(ctx context.Context, r *record) error {
 		return errors.New("E2B relay identity mismatch")
 	}
 	if h.BootstrapExit != nil && *h.BootstrapExit != 0 {
-		return fmt.Errorf("E2B bootstrap exited with code %d", *h.BootstrapExit)
+		return d.bootstrapFailure(ctx, r, *h.BootstrapExit)
 	}
 	return nil
 }
@@ -1120,7 +1120,23 @@ func (d *Driver) Logs(ctx context.Context, id string, tail int) (string, error) 
 	if !d.owns(current, id) {
 		return "", errors.New("E2B provider ownership mismatch")
 	}
-	creds, err := d.credentials(&e.record)
+	content, err := d.guestLog(ctx, &e.record)
+	if err != nil {
+		return "", err
+	}
+	if tail <= 0 {
+		tail = 200
+	}
+	return tailLines(content, tail), nil
+}
+
+// minRedactLen keeps short non-secret env values such as "1" or "0" from
+// masking every matching character of the log.
+const minRedactLen = 8
+
+// guestLog reads the bootstrap log through the relay with every known secret masked.
+func (d *Driver) guestLog(ctx context.Context, r *record) (string, error) {
+	creds, err := d.credentials(r)
 	if err != nil {
 		return "", err
 	}
@@ -1130,23 +1146,39 @@ func (d *Driver) Logs(ctx context.Context, id string, tail int) (string, error) 
 	if err = d.tunnels.Control(ctx, creds, http.MethodGet, "/_bridge/logs", nil, &response); err != nil {
 		return "", err
 	}
-
-	secrets := append(append([]string{}, e.record.Secrets...), d.opts.APIKey, e.record.RelayKey, e.record.Provider.EnvdAccessToken, e.record.Provider.TrafficAccessToken)
+	secrets := append(append([]string{}, r.Secrets...), d.opts.APIKey, r.RelayKey, r.Provider.EnvdAccessToken, r.Provider.TrafficAccessToken)
 	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
 	for _, secret := range secrets {
-		if secret != "" {
+		if len(secret) >= minRedactLen {
 			response.Content = strings.ReplaceAll(response.Content, secret, "[redacted]")
 		}
 	}
+	return response.Content, nil
+}
 
-	if tail <= 0 {
-		tail = 200
+func tailLines(content string, n int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
 	}
-	lines := strings.Split(response.Content, "\n")
-	if len(lines) > tail {
-		lines = lines[len(lines)-tail:]
+	return strings.Join(lines, "\n")
+}
+
+const bootstrapErrorLines = 20
+
+// bootstrapFailure attaches the log tail so the cause survives the guest's
+// cleanup after a failed create. The fetch stays within the caller's deadline:
+// observe runs under the entry lock and must remain a bounded probe.
+func (d *Driver) bootstrapFailure(ctx context.Context, r *record, code int) error {
+	err := fmt.Errorf("E2B bootstrap exited with code %d", code)
+	logCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	content, logErr := d.guestLog(logCtx, r)
+	content = strings.TrimSpace(content)
+	if logErr != nil || content == "" {
+		return err
 	}
-	return strings.Join(lines, "\n"), nil
+	return fmt.Errorf("%w:\n%s", err, tailLines(content, bootstrapErrorLines))
 }
 func (d *Driver) maintain(ctx context.Context) {
 	defer close(d.done)
