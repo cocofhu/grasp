@@ -14,7 +14,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-rod/rod v0.116.2
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/sftp v1.13.12
 	github.com/rs/zerolog v1.35.1
