@@ -208,9 +208,9 @@ set them Public under GitHub → Packages if anonymous pulls are required.
 
 Default tags used by `./start.sh` (overridable in `.env`):
 
-- `ghcr.io/cocofhu/grasp:4.0.2`
-- `ghcr.io/cocofhu/sandbox-gateway:4.0.2`
-- `ghcr.io/cocofhu/universal-sandbox:4.0.2`
+- `ghcr.io/cocofhu/grasp:4.0.3`
+- `ghcr.io/cocofhu/sandbox-gateway:4.0.3`
+- `ghcr.io/cocofhu/universal-sandbox:4.0.3`
   (one image for every `acpBackend`; `SANDBOX_IMAGE` configures it on the gateway as `SBGW_DOCKER_IMAGE` — used by release-smoke).
 
 ### release-smoke (manual; not a PR required check)
