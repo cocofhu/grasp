@@ -141,7 +141,9 @@ describe('renderChatMarkdown', () => {
   it('keeps fenced code characters that look like tags', () => {
     const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
     expect(html).toContain('language-html')
-    expect(html.replace(/<[^>]*>/g, '')).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).toContain('&lt;<span class="hljs-name">script</span>&gt;')
+    expect(html).toContain('>alert</span>(<span class="hljs-number">1</span>)')
+    expect(html).toContain('&lt;/<span class="hljs-name">script</span>&gt;')
     expect(html).not.toContain('<script')
   })
 
