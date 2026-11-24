@@ -9,7 +9,8 @@ docker:
   image: universal-sandbox:local # override with SBGW_DOCKER_IMAGE
   bindIP: "127.0.0.1"
   resources:
-    default: {cpuCores: 2, memoryMB: 4096, diskGi: 25}
+    # 0 = no --cpus/--memory: sandboxes share host CPU and memory.
+    default: {cpuCores: 0, memoryMB: 0, diskGi: 0}
     max: {cpuCores: 8, memoryMB: 16384, diskGi: 500}
 auth:
   apiKeys: [] # local demo only; set SBGW_API_KEYS for gateway transport

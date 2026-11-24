@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Docker 网关创建的沙箱默认不再限制 CPU 与内存（不加 `--cpus`/`--memory`），多个沙箱共享宿主资源；需要限制时在 `docker.resources.default` 中配置，`resources.max` 仍约束显式请求。Grasp 设置页的内存覆盖不为 `0` 时仍会生效。需要更新 sandbox-gateway 镜像。
+
 ## 4.0.2 — 2026-11-24
 
 - 升级 `gorilla/websocket` 修复 GO-2026-6278：Grasp、sandbox-gateway 和沙箱运行时作为 WebSocket 客户端时，掩码密钥改用安全随机数生成。
