@@ -17,7 +17,7 @@ data:
       driver: sqlite
       path: /data/gateway.db
     kubernetes:
-      image: ghcr.io/cocofhu/universal-sandbox:4.0.3
+      image: ghcr.io/cocofhu/universal-sandbox:4.0.4
       inCluster: true
       namespace: grasp-sandboxes
       namePrefix: sbx-
@@ -68,7 +68,7 @@ spec:
         kubernetes.io/arch: amd64
       containers:
         - name: gateway
-          image: ghcr.io/cocofhu/sandbox-gateway:4.0.3
+          image: ghcr.io/cocofhu/sandbox-gateway:4.0.4
           env:
             - name: SBGW_CONFIG
               value: /etc/sandbox-gateway/config.yaml
@@ -172,7 +172,7 @@ spec:
         kubernetes.io/arch: amd64
       containers:
         - name: grasp
-          image: ghcr.io/cocofhu/grasp:4.0.3
+          image: ghcr.io/cocofhu/grasp:4.0.4
           env:
             - name: CONFIG_PATH
               value: /etc/grasp/config.yaml
