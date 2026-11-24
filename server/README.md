@@ -345,7 +345,7 @@ Agent 元信息 env 中的非敏感项（如 `GITHUB_URL`）支持模板替换�
 
 **双路径能力差**:Agent 侧可按远端主机在 `glab` / `gh` 间分流创建合并请求（MR/PR）；平台自动建单本迭代**仍仅 GitLab**。GitHub 场景依赖 Agent 执行 `gh`，开启 `create_mr` 也不会由平台代建 PR。匹配不上的托管商（如 Gitea）应先完成冲突解决与 `git push`，再以建单失败结束（失败摘要标明已推送）。
 
-Gitea/Bitbucket/Codeberg 等 **HTTPS 不支持 Token 注入**,请改用 SSH。`startup.sh` 在 clone 前按每个仓库 URL 的 scheme 路由凭据(HTTPS 与 SSH 互斥);SSH 未配 known_hosts 时 fail-fast。仓库列表通过 `GIT_REPOS`(逗号分隔,每项 `name|url|branch`)注入,每个仓 clone 到 `/root/workspace/<name>/`。
+Gitea/Bitbucket/Codeberg 等 **HTTPS 不支持 Token 注入**,请改用 SSH。`startup.sh` 在 clone 前按每个仓库 URL 的 scheme 路由凭据(HTTPS 与 SSH 互斥);SSH 未配 known_hosts 时 fail-fast。仓库列表通过 `GIT_REPOS`(逗号分隔,每项 `name|url|branch`)注入,每个仓 clone 到 `/root/workspace/<name>/`;任一仓库 clone 失败(HTTPS 与 SSH 相同)都会使沙箱启动失败,不会带着缺仓的工作区就绪。
 
 仓库在「设置 → 仓库」登记，每个仓库保存地址、默认分支、目录名、访问凭据（工作区凭据里的 Git Token 或 SSH 私钥）和提交用户名/邮箱。工作流在设置里绑定仓库（`defaults.repos`），启动运行时可以取消部分仓库或改分支，所选仓库快照在 Run 上；平台据此生成 `GIT_REPOS` 和 `GIT_REPO_AUTHORS`，凭据只对该仓库地址生效。Agent 环境变量不能设置这两个键，也没有 Agent 级 Git 授权；没有绑定仓库时不会 clone/push。
 

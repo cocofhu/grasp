@@ -505,12 +505,9 @@ if [ -n "$GIT_REPOS" ]; then
             if ! git clone "$_url" "$_dest"; then
                 echo "Failed to clone ${_name} from ${_url}" >&2
                 rm -rf "$_dest"
-                # SSH clone 失败 fail-fast；HTTPS 仍 continue 以兼容旧行为。
-                if [ "$(repo_scheme "$_url")" = "ssh" ]; then
-                    echo "startup.sh: SSH clone 失败，fail-fast" >&2
-                    exit 1
-                fi
-                continue
+                # 任一仓库 clone 失败都 fail-fast：继续启动会让沙箱显示就绪而工作区缺仓。
+                echo "startup.sh: clone ${_name} 失败，fail-fast" >&2
+                exit 1
             fi
         fi
         if [ -n "$_branch" ] && git -C "$_dest" rev-parse --git-dir >/dev/null 2>&1; then

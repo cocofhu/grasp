@@ -54,8 +54,30 @@ func TestWaitRunSandboxSlotStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err := p.waitRunSandboxSlot(ctx, NodeReq{}, "sb", "")
-	if !errors.Is(err, ErrSandboxCapacity) || reg.calls != 1 {
-		t.Fatalf("err = %v calls = %d", err, reg.calls)
+	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrSandboxCapacity) || reg.calls != 1 {
+		t.Fatalf("err = %v calls = %d, want context.Canceled", err, reg.calls)
+	}
+}
+
+func TestWaitRunSandboxSlotReportsDeadline(t *testing.T) {
+	withSlotPoll(t, time.Hour)
+	p := &acpProvider{registry: &slotRegistry{full: 1 << 30}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	err := p.waitRunSandboxSlot(ctx, NodeReq{}, "sb", "")
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrSandboxCapacity) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestWaitRunSandboxSlotReportsCancelCause(t *testing.T) {
+	withSlotPoll(t, time.Hour)
+	p := &acpProvider{registry: &slotRegistry{full: 1 << 30}}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(&nodeBudgetError{limit: time.Minute, used: time.Minute})
+	err := p.waitRunSandboxSlot(ctx, NodeReq{}, "sb", "")
+	if !errors.Is(err, ErrNodeBudget) {
+		t.Fatalf("err = %v, want ErrNodeBudget", err)
 	}
 }
 
