@@ -164,6 +164,19 @@ describe('render', () => {
     expect(render(busy, rejectOptimistic(list, 'c3')).queue).toHaveLength(1)
   })
 
+  it('passes a queued turn steer mark through and drops unknown ones', () => {
+    const v = render(state([], 1, {
+      busy: true,
+      turns: [
+        { turnId: 't1', phase: 'running' },
+        { turnId: 't2', phase: 'queued', position: 0, item: { text: 'a', steer: 'pending' } },
+        { turnId: 't3', phase: 'queued', position: 1, item: { text: 'b', steer: 'queued' } },
+        { turnId: 't4', phase: 'queued', position: 2, item: { text: 'c', steer: 'other' as never } },
+      ],
+    }))
+    expect(v.queue.map((q) => [q.id, q.steer])).toEqual([['t2', 'pending'], ['t3', 'queued'], ['t4', undefined]])
+  })
+
   it('keeps steer capability unknown until the sandbox connects', () => {
     const running = { busy: true, turns: [{ turnId: 't1', phase: 'running' as const }] }
     const connecting = render(state([], 1, { ...running, steerable: false, steerPending: true }))

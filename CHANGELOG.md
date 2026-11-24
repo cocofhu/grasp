@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- 修复 Cursor 运行中引导（Steer）在 Agent 执行较慢的工具时被判失败、随即打断当前回合并显示「已停止」：引导现在一直等到 Cursor 并入或本轮结束；Agent 退回或投递失败的消息排在当前回合之后、本轮结束后发送，不再打断；队列里的消息显示「引导中」和「本轮结束后处理」。只有不支持引导的 Agent 仍会先中断再发送。
+
+- 修复 Cursor 回合被打断后 SDK 清理后台进程时抛出的异常使 Cursor 桥接进程退出、紧接着的回合以空回复结束且消息丢失：这类 SDK 内部异常不再结束进程；Agent 进程在回合中意外退出时，这一轮显示失败和原因，可直接重试这条消息。需要沙箱运行时更新后生效。
+
 ## 4.0.2 — 2026-11-24
 
 - 升级 `gorilla/websocket` 修复 GO-2026-6278：Grasp、sandbox-gateway 和沙箱运行时作为 WebSocket 客户端时，掩码密钥改用安全随机数生成。

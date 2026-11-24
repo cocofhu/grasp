@@ -138,6 +138,7 @@ func TestSteerAckStatuses(t *testing.T) {
 		wantErr string
 	}{
 		{ack: SteerNoTurn},
+		{ack: SteerDeclined},
 		{ack: SteerUnsupported},
 		{ack: SteerFailed, wantErr: "broken pipe"},
 	} {
@@ -156,24 +157,41 @@ func TestSteerAckStatuses(t *testing.T) {
 	}
 }
 
+// A steer waits as long as its turn runs; once the turn has ended an answer
+// that never comes is given up on.
 func TestSteerWaitEnds(t *testing.T) {
-	old := steerAckWait
-	steerAckWait = 50 * time.Millisecond
-	t.Cleanup(func() { steerAckWait = old })
+	old := steerSettleWait
+	steerSettleWait = 50 * time.Millisecond
+	t.Cleanup(func() { steerSettleWait = old })
 	b := &steerBridge{capable: true}
 	h, p := wsServer(t, b.handle)
 	c := connectAndClient(t, h, p)
 	turn := startSteerTurn(t, c)
-	if _, err := c.Steer(context.Background(), "x", nil); err == nil || !strings.Contains(err.Error(), "timeout") {
-		t.Fatalf("unanswered steer = %v", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := c.Steer(ctx, "x", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled steer = %v", err)
 	}
+	steered := make(chan error, 1)
+	go func() {
+		_, err := c.Steer(context.Background(), "x", nil)
+		steered <- err
+	}()
+	select {
+	case err := <-steered:
+		t.Fatalf("steer gave up while its turn was running: %v", err)
+	case <-time.After(4 * steerSettleWait):
+	}
 	_ = c.Cancel()
 	<-turn
+	select {
+	case err := <-steered:
+		if err == nil || !strings.Contains(err.Error(), "after the turn ended") {
+			t.Fatalf("unanswered steer = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("steer still waiting after its turn ended")
+	}
 	c.Close()
 	if _, err := c.Steer(context.Background(), "x", nil); !errors.Is(err, ErrConnClosed) {
 		t.Fatalf("steer on a closed client = %v", err)

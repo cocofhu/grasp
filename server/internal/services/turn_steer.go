@@ -47,7 +47,5 @@ func steerSandboxTurn(ctx context.Context, backend any, id uint, text string, im
 	if !ok || id == 0 {
 		return chatsession.SteerRejected
 	}
-	ctx, cancel := context.WithTimeout(ctx, runtime.SteerDeliveryTimeout)
-	defer cancel()
 	return runtime.SteerResult(st.Steer(ctx, id, text, images))
 }

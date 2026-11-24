@@ -221,7 +221,7 @@ func (e *Engine) buildDialogue(entry *dialogueEntry, runID, nodeID string) (Dial
 	if active != nil {
 		e.appendActiveTurn(entry, &st, active, view.LiveEvents, persisted, agentIdx)
 	}
-	appendQueuedTurns(&st, view.Pending)
+	appendQueuedTurns(&st, view.Pending, view.SteerMarks)
 	st.Busy = platformBusy
 	if conv != nil && conv.HasFileDeliveries {
 		e.attachDialogueFiles(&st)
@@ -266,7 +266,7 @@ func (e *Engine) buildLaneDialogue(entry *dialogueEntry, st DialogueState) Dialo
 	if view.HasActive {
 		e.appendActiveTurn(entry, &st, view.Active, view.LiveEvents, persisted, agentIdx)
 	}
-	appendQueuedTurns(&st, view.Pending)
+	appendQueuedTurns(&st, view.Pending, view.SteerMarks)
 	st.Busy = view.HasActive || len(view.Pending) > 0
 	if bridge, live := e.VisitorSandboxBridgeState(entry.runID, entry.nodeID, entry.lane); live {
 		st.Steerable = bridge.Steerable
@@ -279,12 +279,15 @@ func (e *Engine) buildLaneDialogue(entry *dialogueEntry, st DialogueState) Dialo
 	return st
 }
 
-func appendQueuedTurns(st *DialogueState, pending []*reviewQueueItem) {
+func appendQueuedTurns(st *DialogueState, pending []*reviewQueueItem, marks map[string]string) {
 	for i, it := range pending {
 		pos := i
-		v := reviewItemView(it)
+		item := reviewItemView(it).Frame()
+		if mark := marks[it.ID]; mark != "" {
+			item["steer"] = mark
+		}
 		st.Turns = append(st.Turns, DialogueTurn{TurnID: it.ID, ClientMessageID: it.ClientMessageID,
-			Phase: turnQueued, Position: &pos, Item: v.Frame()})
+			Phase: turnQueued, Position: &pos, Item: item})
 	}
 }
 

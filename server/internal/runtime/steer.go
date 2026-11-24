@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
@@ -10,12 +9,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 )
-
-// SteerDeliveryTimeout bounds the wait for the bridge's answer to a steer.
-// It exceeds the bridge's own bound on the native delivery (20s), so the
-// answer is definite unless the connection drops. chatsession holds its
-// transition gate meanwhile.
-const SteerDeliveryTimeout = 30 * time.Second
 
 // SessionTurnSteerer is an optional provider capability: deliver input into
 // the in-flight turn of a parked review session (lane "") or of a visitor
@@ -26,16 +19,19 @@ type SessionTurnSteerer interface {
 
 // SteerResult maps a bridge steer answer onto the chatsession contract: a
 // delivered input joined the turn, a turn that already ended needs no
-// interrupt, and anything else (unsupported or failed) falls back to
-// interrupting the turn.
+// interrupt, an agent that cannot take input mid-turn is interrupted, and an
+// input the agent handed back or that failed to arrive waits for the turn to
+// finish: the turn's work is worth more than the head start.
 func SteerResult(status sandbox.SteerStatus, err error) chatsession.SteerResult {
 	switch {
 	case err == nil && status == sandbox.SteerDelivered:
 		return chatsession.SteerJoined
 	case err == nil && status == sandbox.SteerNoTurn:
 		return chatsession.SteerDeferred
+	case err == nil && status == sandbox.SteerUnsupported:
+		return chatsession.SteerRejected
 	case err != nil:
-		log.Warn().Err(err).Str("status", string(status)).Msg("steer: native delivery failed; interrupting the turn instead")
+		log.Warn().Err(err).Str("status", string(status)).Msg("steer: native delivery failed; the input runs after the turn")
 	}
-	return chatsession.SteerRejected
+	return chatsession.SteerDeclined
 }

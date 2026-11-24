@@ -27,6 +27,11 @@ var ErrTurnRecover = errors.New("turn recover")
 // apart from the stop reason.
 var ErrTurnStuck = fmt.Errorf("%w: agent stuck", ErrTurnTimeout)
 
+// ErrAgentExited is the cancel cause of a turn whose agent process exited
+// under it. The turn ends failed, not interrupted: nobody stopped it, and the
+// user's input must stay retryable.
+var ErrAgentExited = errors.New("Agent 进程意外退出，本轮未完成，可重试这条消息")
+
 // InterruptGrace bounds how long a cancelled turn may take to stop. A
 // long-lived transport whose agent ignores the interrupt closes the process;
 // the bridge then revives it on the native session like a crash. Prompt

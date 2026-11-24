@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 )
@@ -507,5 +508,16 @@ func TestDialogueSandboxFlipFaultIsCaught(t *testing.T) {
 	t.Cleanup(func() { faultSandboxWhileBusy(false) })
 	if bad := sandboxFlipScenario(t); len(bad) == 0 {
 		t.Fatal("sandboxWhileBusy fault went unnoticed")
+	}
+}
+
+func TestQueuedTurnsCarryTheirSteerMark(t *testing.T) {
+	var st DialogueState
+	appendQueuedTurns(&st, []*reviewQueueItem{{ID: "a", Text: "first"}, {ID: "b", Text: "second"}}, map[string]string{"a": chatsession.SteerMarkQueued})
+	if len(st.Turns) != 2 || st.Turns[0].Item["steer"] != chatsession.SteerMarkQueued {
+		t.Fatalf("turns = %+v", st.Turns)
+	}
+	if _, marked := st.Turns[1].Item["steer"]; marked {
+		t.Fatalf("an unmarked item gained a mark: %+v", st.Turns[1].Item)
 	}
 }

@@ -129,6 +129,7 @@ func TestSteerTurnStatuses(t *testing.T) {
 		{name: "idle", sess: base(), opID: "op-A", text: "x", status: SteerNoTurn},
 		{name: "other turn", sess: base(), running: true, opID: "op-B", text: "x", status: SteerNoTurn},
 		{name: "turn ended in the agent", sess: &steerSess{blockingSess: blockingSess{stubSess: stubSess{id: "s1"}}, err: provider.ErrNoActiveTurn}, running: true, opID: "op-A", text: "x", status: SteerNoTurn},
+		{name: "handed back", sess: &steerSess{blockingSess: blockingSess{stubSess: stubSess{id: "s1"}}, err: provider.ErrSteerDeclined}, running: true, opID: "op-A", text: "x", status: SteerDeclined},
 		{name: "write failed", sess: &steerSess{blockingSess: blockingSess{stubSess: stubSess{id: "s1"}}, err: errors.New("broken pipe")}, running: true, opID: "op-A", text: "x", status: SteerFailed, message: "broken pipe"},
 		{name: "bad attachment", sess: base(), running: true, opID: "op-A", images: []PromptImage{{Data: "%%%", MimeType: "image/png"}}, status: SteerFailed, message: "附件保存失败"},
 	} {

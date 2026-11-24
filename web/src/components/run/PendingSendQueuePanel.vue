@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import ReferenceChip from '@/components/solo/ReferenceChip.vue'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
-import type { MessageReference } from '@/lib/api/apiTypes'
+import type { MessageReference, QueueSteerMark } from '@/lib/api/apiTypes'
 
 export type PendingQueueRow = {
   id?: string
@@ -14,6 +14,9 @@ export type PendingQueueRow = {
   references?: MessageReference[]
   /** Not yet acknowledged: shown, but not draggable, editable or a drop target. */
   locked?: boolean
+  /** Server steer state: being offered to the running turn, or handed back
+   * and waiting for that turn to finish. Neither can be steered again. */
+  steer?: QueueSteerMark
 }
 
 const props = defineProps<{
@@ -133,9 +136,27 @@ function onDrop(toIndex: number, e: DragEvent) {
         <span v-if="q.annotations.length" class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3">
           {{ t('pages.clarify.queueAnnotationBadge') }}
         </span>
+        <span
+          v-if="q.steer === 'queued'"
+          class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3"
+          :title="t('pages.clarify.queueSteerQueuedTitle')"
+          data-testid="clarify-queue-steer-queued"
+        >
+          {{ t('pages.clarify.queueSteerQueuedBadge') }}
+        </span>
         <span v-if="!readonly && !q.locked" class="flex shrink-0 gap-0.5">
+          <span
+            v-if="q.steer === 'pending'"
+            role="status"
+            class="flex h-6 items-center gap-1 px-1 text-[11px] text-txt3"
+            :title="t('pages.clarify.queueSteeringTitle')"
+            data-testid="clarify-queue-steering"
+          >
+            <Icon name="spinner" :size="14" />
+            {{ t('pages.clarify.queueSteering') }}
+          </span>
           <button
-            v-if="steerable && q.id"
+            v-else-if="steerable && q.id && !q.steer"
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt hover:bg-accent/10 hover:text-accent"
             :title="t('pages.clarify.queueSteerTitle')"
@@ -146,7 +167,7 @@ function onDrop(toIndex: number, e: DragEvent) {
             <Icon name="steer" :size="14" />
           </button>
           <button
-            v-else-if="steerPending && q.id"
+            v-else-if="steerPending && q.id && !q.steer"
             type="button"
             disabled
             class="flex h-6 w-6 cursor-wait items-center justify-center rounded-md text-txt3"
@@ -157,6 +178,7 @@ function onDrop(toIndex: number, e: DragEvent) {
             <Icon name="spinner" :size="14" />
           </button>
           <button
+            v-if="q.steer !== 'pending'"
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-base hover:text-txt"
             :title="t('pages.clarify.queueEditTitle')"

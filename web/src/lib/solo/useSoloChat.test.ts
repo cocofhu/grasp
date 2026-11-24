@@ -676,6 +676,23 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('carries the server steer mark and keeps quiet when a long steer request is cut off after the server took it', async () => {
+    const { chat, app, ws } = await openChat()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'active', text: 'first', images: [] } })
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'q', text: 'x', images: [], steer: 'bogus' }] })
+    expect(chat.queued.value[0]!.steer).toBeUndefined()
+    mocks.steerSoloQueued.mockImplementationOnce(async () => {
+      ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'q', text: 'x', images: [], steer: 'pending' }] })
+      throw new Error('Gateway Timeout')
+    })
+    await chat.steerQueued('q')
+    expect(chat.queued.value[0]!.steer).toBe('pending')
+    expect(chat.actionError.value).toBe('')
+    ws.emit({ type: 'session', event: 'queue_state', busy: true, userMsgId: 'active', items: [{ id: 'q', text: 'x', images: [], steer: 'queued' }] })
+    expect(chat.queued.value[0]!.steer).toBe('queued')
+    app.unmount()
+  })
+
   it.each(['cancel', 'remove'] as const)('cleans pending transcript rows after queue %s', async action => {
     const { chat, app, ws } = await openChat()
     mocks.removeSoloQueued.mockResolvedValue({ ok: true })

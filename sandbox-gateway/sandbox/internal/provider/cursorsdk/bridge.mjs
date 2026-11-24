@@ -14,6 +14,41 @@ process.stderr.on("error", () => {});
 
 const emit = (frame) => writeOut(JSON.stringify(frame) + "\n");
 
+// The SDK settles some promises nothing awaits. These are its own recovery and
+// must not end the agent: a final frame written to a stream a cancel already
+// closed, its stall detector aborting a request, and a shell spawn it already
+// reported to the tool call.
+const shellSpawnMarkers = ["dump_zsh_state", "dump_bash_state", "__CURSOR_SANDBOX_ENV_RESTORE"];
+
+function benignSdkRejection(reason) {
+  if (!(reason instanceof Error)) return false;
+  if (reason.name === "WriteIterableClosedError") return true;
+  if (reason.name === "ConnectError" && reason.cause?.code === "ERR_STREAM_WRITE_AFTER_END") return true;
+  if (reason.name === "AbortError" && /^\s+at (?:\S+\.)?onStall\b/m.test(reason.stack ?? "")) return true;
+  return (
+    typeof reason.syscall === "string" &&
+    reason.syscall.startsWith("spawn") &&
+    Array.isArray(reason.spawnargs) &&
+    reason.spawnargs.some((arg) => typeof arg === "string" && shellSpawnMarkers.some((m) => arg.includes(m)))
+  );
+}
+
+// Node prints the throwing source line first, which for the minified SDK fills
+// the stderr tail the backend reports; the message and stack go first instead.
+function fatal(kind, err) {
+  console.error(`cursor sdk ${kind}: ${err instanceof Error ? (err.stack ?? errorText(err)) : String(err)}`);
+  process.exit(1);
+}
+
+process.on("unhandledRejection", (reason) => {
+  if (benignSdkRejection(reason)) {
+    console.error(`cursor sdk: ignored ${errorText(reason)}`);
+    return;
+  }
+  fatal("unhandled rejection", reason);
+});
+process.on("uncaughtException", (err) => fatal("uncaught exception", err));
+
 const sdkDir = process.env.GRASP_CURSOR_SDK_DIR || "/opt/grasp/cursor-sdk";
 const sdk = createRequire(`${sdkDir}/package.json`)("@cursor/sdk");
 

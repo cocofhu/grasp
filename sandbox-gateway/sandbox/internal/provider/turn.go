@@ -20,6 +20,9 @@ func EndInterrupted(ctx context.Context, emit func(map[string]any), session stri
 	case errors.Is(cause, ErrTurnTimeout):
 		res.StopReason, err = TimeoutStopReason(cause), cause
 		emit(ErrorFrame(cause.Error()))
+	case errors.Is(cause, ErrAgentExited):
+		res.StopReason, err = "failed", cause
+		emit(ErrorFrame(cause.Error()))
 	default:
 		res.StopReason = "cancelled"
 	}

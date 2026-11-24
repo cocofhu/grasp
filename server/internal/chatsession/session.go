@@ -9,6 +9,7 @@ package chatsession
 import (
 	"context"
 	"errors"
+	"maps"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -97,7 +98,8 @@ type Config[T any] struct {
 	// calls it even with no active item, to stop a turn started elsewhere.
 	CancelTurn func()
 	// SteerTurn (optional) offers a pending item to the active turn (Steer).
-	// It runs under the transition gate, so it must be bounded; without it
+	// It runs under the transition gate and must return once ctx ends, which
+	// happens on cancel and shortly after the active turn ends; without it
 	// every steer interrupts the active turn.
 	SteerTurn func(ctx context.Context, active, item T) SteerResult
 	// ErrorExtra (optional) adds fields to the error frame for a failed turn,
@@ -124,13 +126,17 @@ type Session[T any] struct {
 	active       T
 	hasActive    bool
 	cancelFn     context.CancelFunc
-	pumping      bool
+	// turnCtx is the active turn's context; it ends with the turn.
+	turnCtx context.Context
+	pumping bool
 	// cancelRequested is set by Cancel; the active turn saves partial output
 	// as interrupted when it returns.
 	cancelRequested bool
 	// steerStop ends the steer delivery into the active turn, so a cancel
 	// need not wait it out at the transition gate.
 	steerStop context.CancelFunc
+	// steerMarks holds the SteerMark* of pending items, by item id.
+	steerMarks map[string]string
 	// liveEvents is the in-flight stream kept for reconnect seeding by
 	// surfaces whose runtime does not hold one.
 	liveEvents []models.AcpEvent
@@ -274,6 +280,7 @@ func (s *Session[T]) Remove(id string) error {
 		return ErrNotFound
 	}
 	s.queue = append(s.queue[:idx], s.queue[idx+1:]...)
+	delete(s.steerMarks, id)
 	frame := s.queueFrameLocked(s.hasActive)
 	state := s.persistStateLocked()
 	s.mu.Unlock()
@@ -351,6 +358,7 @@ func (s *Session[T]) cancel(clearQueue bool, turnID string) bool {
 	if clearQueue {
 		dropped = s.queue
 		s.queue = nil
+		clear(s.steerMarks)
 	}
 	s.cancelRequested = true
 	frame := s.queueFrameLocked(s.hasActive)
@@ -451,6 +459,8 @@ type View[T any] struct {
 	Pending    []T
 	LiveEvents []models.AcpEvent
 	Pumping    bool
+	// SteerMarks are the SteerMark* of pending items, by item id.
+	SteerMarks map[string]string
 }
 
 // View returns the session's current state.
@@ -458,6 +468,9 @@ func (s *Session[T]) View() View[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := View[T]{Active: s.active, HasActive: s.hasActive, Pending: append([]T(nil), s.queue...), Pumping: s.pumping}
+	if len(s.steerMarks) > 0 {
+		v.SteerMarks = maps.Clone(s.steerMarks)
+	}
 	if s.hasActive {
 		v.LiveEvents = append([]models.AcpEvent(nil), s.liveEvents...)
 	}
@@ -485,7 +498,12 @@ func (s *Session[T]) PublishQueueState() {
 func (s *Session[T]) itemsLocked() []map[string]any {
 	out := make([]map[string]any, 0, len(s.queue))
 	for _, it := range s.queue {
-		out = append(out, s.cfg.View(it).Frame())
+		v := s.cfg.View(it)
+		f := v.Frame()
+		if mark := s.steerMarks[v.ID]; mark != "" {
+			f["steer"] = mark
+		}
+		out = append(out, f)
 	}
 	return out
 }
@@ -534,8 +552,9 @@ func (s *Session[T]) pump() {
 		s.active, s.hasActive = item, true
 		s.cancelRequested = false
 		s.liveEvents = nil
+		delete(s.steerMarks, s.cfg.View(item).ID)
 		ctx, cancel := context.WithCancel(context.Background())
-		s.cancelFn = cancel
+		s.cancelFn, s.turnCtx = cancel, ctx
 		queueFrame := s.queueFrameLocked(true)
 		begin := s.snapshotLocked().QueueState()
 		begin["item"] = s.cfg.View(item).Frame()
@@ -575,8 +594,9 @@ func (s *Session[T]) pump() {
 		s.mu.Lock()
 		var zero T
 		s.active, s.hasActive = zero, false
-		s.cancelFn = nil
+		s.cancelFn, s.turnCtx = nil, nil
 		s.liveEvents = nil
+		clear(s.steerMarks)
 		wasCancel := s.cancelRequested || interrupted
 		s.cancelRequested = false
 		terminal := s.snapshotLocked().QueueState()

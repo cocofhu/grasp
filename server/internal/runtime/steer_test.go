@@ -21,8 +21,10 @@ func TestSteerResult(t *testing.T) {
 		{sandbox.SteerDelivered, nil, chatsession.SteerJoined},
 		{sandbox.SteerNoTurn, nil, chatsession.SteerDeferred},
 		{sandbox.SteerUnsupported, nil, chatsession.SteerRejected},
-		{sandbox.SteerFailed, boom, chatsession.SteerRejected},
-		{sandbox.SteerDelivered, boom, chatsession.SteerRejected},
+		{sandbox.SteerDeclined, nil, chatsession.SteerDeclined},
+		{sandbox.SteerFailed, boom, chatsession.SteerDeclined},
+		{sandbox.SteerDelivered, boom, chatsession.SteerDeclined},
+		{"", context.DeadlineExceeded, chatsession.SteerDeclined},
 	} {
 		if got := SteerResult(tc.status, tc.err); got != tc.want {
 			t.Errorf("SteerResult(%q, %v) = %v, want %v", tc.status, tc.err, got, tc.want)

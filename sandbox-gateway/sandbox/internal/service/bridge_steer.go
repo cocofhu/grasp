@@ -19,6 +19,10 @@ const (
 	// SteerUnsupported: this agent cannot take input mid-turn. The caller
 	// interrupts the turn and runs the input as the next one.
 	SteerUnsupported = "unsupported"
+	// SteerDeclined: the agent handed the input back (the turn ended or went
+	// on without it). The turn keeps running; the caller runs the input after
+	// it.
+	SteerDeclined = "declined"
 	// SteerNoTurn: the named turn is not running (finished, or never started).
 	SteerNoTurn = "no_turn"
 	// SteerFailed: delivery was attempted and failed; message says why.
@@ -83,7 +87,7 @@ func (b *Bridge) steer(opID, steerID, text string, images []PromptImage) (status
 		return SteerNoTurn, ""
 	}
 	if errors.Is(err, provider.ErrSteerDeclined) {
-		return SteerUnsupported, ""
+		return SteerDeclined, ""
 	}
 	if err != nil {
 		return SteerFailed, err.Error()

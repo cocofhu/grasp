@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -295,4 +296,52 @@ func TestBridgeRecoversAfterACPProtocolFailure(t *testing.T) {
 		}
 	}
 	t.Fatal("replacement Agent did not finish its prompt")
+}
+
+// exitingSess runs a turn until its agent process exits under it.
+type exitingSess struct {
+	stubSess
+	done    chan struct{}
+	started chan struct{}
+	result  chan provider.TurnResult
+}
+
+func (s *exitingSess) Done() <-chan struct{} { return s.done }
+
+func (s *exitingSess) Prompt(ctx context.Context, _ string, _ []provider.PromptImage) (provider.TurnResult, error) {
+	close(s.started)
+	<-ctx.Done()
+	res, err := provider.EndInterrupted(ctx, func(map[string]any) {}, s.id, nil)
+	s.result <- res
+	return res, err
+}
+
+// An agent that dies mid-turn fails that turn with the reason, so the user's
+// message stays retryable instead of ending as an empty "cancelled" reply.
+func TestAgentExitMidTurnFailsTheTurn(t *testing.T) {
+	sess := &exitingSess{stubSess: stubSess{id: "s1"}, done: make(chan struct{}), started: make(chan struct{}), result: make(chan provider.TurnResult, 1)}
+	b := newTestBridge(sess)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.agentCtx, b.agentCancel = ctx, cancel
+	c := dialBridge(t, b)
+	if err := b.ChatWithLimits("work", "op-A", "chat", nil, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	awaitSignal(t, sess.started)
+	watched := make(chan struct{})
+	go func() { b.watchAgentConn(sess); close(watched) }()
+	close(sess.done)
+	select {
+	case res := <-sess.result:
+		if res.StopReason != "failed" {
+			t.Fatalf("stop reason = %q", res.StopReason)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("turn did not end when its agent exited")
+	}
+	readUntil(t, c, func(f wsFrame) bool {
+		return f.Op == "error" && f.OpID == "op-A" && strings.Contains(f.Message, "意外退出")
+	})
+	awaitSignal(t, watched)
 }

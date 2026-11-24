@@ -81,10 +81,11 @@ func dialBridge(t *testing.T, b *Bridge) *websocket.Conn {
 }
 
 type wsFrame struct {
-	Op     string          `json:"op"`
-	OpID   string          `json:"opId"`
-	Status string          `json:"status"`
-	Data   json.RawMessage `json:"data"`
+	Op      string          `json:"op"`
+	OpID    string          `json:"opId"`
+	Status  string          `json:"status"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
 }
 
 // readUntil reads frames until match returns true.

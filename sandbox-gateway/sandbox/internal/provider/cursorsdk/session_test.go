@@ -228,6 +228,47 @@ func TestSteerReachesTheRunningTurn(t *testing.T) {
 	}
 }
 
+// A steer waits as long as the run does: Cursor takes input at the run's next
+// step, which may be behind a long tool call. Input the run ends without is
+// handed back, and an answer that never comes is given up on once the run
+// has ended.
+func TestSteerWaitsForTheRunToTakeOrHandBackInput(t *testing.T) {
+	old := steerSettle
+	steerSettle = 50 * time.Millisecond
+	t.Cleanup(func() { steerSettle = old })
+	s, rec := open(t, installFake(t), provider.OpenOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	turn := make(chan error, 1)
+	go func() {
+		_, err := s.Prompt(ctx, "hang", nil)
+		turn <- err
+	}()
+	waitFor(t, func() bool { return len(rec.updates("tool_call")) == 1 })
+	steers := make(chan error, 2)
+	for _, text := range []string{"please wait", "silent"} {
+		go func() { steers <- s.Steer(text) }()
+	}
+	select {
+	case err := <-steers:
+		t.Fatalf("steer answered while the run was still busy: %v", err)
+	case <-time.After(3 * steerSettle):
+	}
+	cancel()
+	if err := <-turn; !errors.Is(err, context.Canceled) {
+		t.Fatalf("turn: %v", err)
+	}
+	for range 2 {
+		select {
+		case err := <-steers:
+			if !errors.Is(err, provider.ErrSteerDeclined) {
+				t.Fatalf("steer after the run ended: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("steer still waiting after the run ended")
+		}
+	}
+}
+
 func TestCancelBeforeCursorSavedTheRunReplaysIt(t *testing.T) {
 	s, rec := open(t, installFake(t), provider.OpenOptions{})
 	ctx, cancel := context.WithCancel(context.Background())

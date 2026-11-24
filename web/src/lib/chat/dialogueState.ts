@@ -3,7 +3,7 @@
  * automatic visit). The server decides every row, turn phase and outcome; this
  * module only keeps the newest version and says when to refetch. No Vue.
  */
-import type { MessageReference } from '../api/apiTypes'
+import { queueSteerMark, type MessageReference, type QueueSteerMark } from '../api/apiTypes'
 import type { ClarifyImage, ClarifyTurn, DialogueOutcome, ReactAnnotation } from '../shared/types'
 
 export type DialogueRowPhase = 'running' | 'orphan' | 'sealed'
@@ -23,6 +23,7 @@ export type DialogueItem = {
   images?: ClarifyImage[]
   annotations?: ReactAnnotation[]
   references?: MessageReference[]
+  steer?: QueueSteerMark
 }
 
 export type DialogueTurn = {
@@ -153,6 +154,7 @@ export type DialogueQueueRow = {
   references?: MessageReference[]
   /** Sent from this page; the server has not listed it yet. */
   local?: boolean
+  steer?: QueueSteerMark
 }
 
 export type DialogueView = {
@@ -188,6 +190,7 @@ export function render(state: DialogueState | null, optimistic: readonly Optimis
       images: t.item?.images ?? [],
       annotations: t.item?.annotations ?? [],
       ...(t.item?.references?.length ? { references: t.item.references } : {}),
+      ...(queueSteerMark(t.item?.steer) ? { steer: t.item!.steer } : {}),
     }))
   const pending = pendingOptimistic(state, optimistic)
   const busy = !!state?.busy

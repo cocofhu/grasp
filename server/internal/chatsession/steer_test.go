@@ -267,6 +267,123 @@ func TestASteerOutlivesItsCaller(t *testing.T) {
 	h.waitIdle(t)
 }
 
+func steerMark(items any, id string) any {
+	list, _ := items.([]map[string]any)
+	for _, it := range list {
+		if it["id"] == id {
+			return it["steer"]
+		}
+	}
+	return nil
+}
+
+func TestSteerMarksTheItemPendingWhileDelivering(t *testing.T) {
+	h := newHarness()
+	gate := h.hold("a")
+	cfg := h.config()
+	cfg.Capacity = 8
+	var seen any
+	cfg.SteerTurn = func(context.Context, *testItem, *testItem) SteerResult {
+		seen = steerMark(h.last(EventQueueState)["items"], "b")
+		return SteerJoined
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{id: "a"}, nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue(&testItem{id: "b"}, nil)
+	if out, err := s.Steer(context.Background(), "b"); err != nil || out != SteerOutcomeJoined {
+		t.Fatalf("steer = %q %v", out, err)
+	}
+	if seen != SteerMarkPending {
+		t.Fatalf("queue_state during delivery marked b %v", seen)
+	}
+	close(gate)
+	h.waitIdle(t)
+}
+
+// An item the active turn handed back waits for that turn instead of
+// interrupting it, marked so viewers can say so.
+func TestSteerDeclinedWaitsForTheActiveTurn(t *testing.T) {
+	h := newHarness()
+	gate := h.hold("a")
+	s, cancels, _ := steerSession(t, h, SteerDeclined)
+	out, err := s.Steer(context.Background(), "d")
+	if err != nil || out != SteerOutcomeQueued || cancels.Load() != 0 || s.CancelRequested() {
+		t.Fatalf("steer = %q %v cancels=%d", out, err, cancels.Load())
+	}
+	if got := pendingIDs(s); !slices.Equal(got, []string{"d", "b", "c"}) {
+		t.Fatalf("pending = %v", got)
+	}
+	items := h.last(EventQueueState)["items"]
+	if steerMark(items, "d") != SteerMarkQueued || steerMark(items, "b") != nil {
+		t.Fatalf("queue_state after a declined steer = %v", items)
+	}
+	close(gate)
+	h.waitIdle(t)
+	h.mu.Lock()
+	ran := slices.Clone(h.ran)
+	h.mu.Unlock()
+	if !slices.Equal(ran, []string{"a", "d", "b", "c"}) {
+		t.Fatalf("ran = %v", ran)
+	}
+	if done := h.last(EventTurnDone); done == nil || done["interrupted"] == true {
+		t.Fatalf("no turn was interrupted: %v", done)
+	}
+	if len(s.Snapshot().Items) != 0 || len(s.steerMarks) != 0 {
+		t.Fatalf("marks left behind: %v", s.steerMarks)
+	}
+}
+
+// A runtime that never answers is given up on shortly after the turn ends;
+// the item then runs next without interrupting anything.
+func TestSteerDeliveryEndsWithTheActiveTurn(t *testing.T) {
+	old := steerTurnEndGrace
+	steerTurnEndGrace = 20 * time.Millisecond
+	t.Cleanup(func() { steerTurnEndGrace = old })
+	h := newHarness()
+	gate := h.hold("a")
+	cfg := h.config()
+	cfg.Capacity = 8
+	var cancels atomic.Int32
+	cfg.CancelTurn = func() { cancels.Add(1) }
+	delivering := make(chan struct{})
+	cfg.SteerTurn = func(ctx context.Context, _, _ *testItem) SteerResult {
+		close(delivering)
+		<-ctx.Done()
+		return SteerDeclined
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{id: "a"}, nil)
+	waitFor(t, func() bool { return s.Snapshot().Busy })
+	_, _ = s.Enqueue(&testItem{id: "b"}, nil)
+	steered := make(chan SteerOutcome, 1)
+	go func() {
+		out, _ := s.Steer(context.Background(), "b")
+		steered <- out
+	}()
+	<-delivering
+	select {
+	case out := <-steered:
+		t.Fatalf("delivery ended while the turn was running: %q", out)
+	case <-time.After(5 * steerTurnEndGrace):
+	}
+	close(gate)
+	select {
+	case out := <-steered:
+		if out != SteerOutcomeNext || cancels.Load() != 0 {
+			t.Fatalf("steer = %q, interrupts = %d", out, cancels.Load())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("delivery outlived the turn")
+	}
+	h.waitIdle(t)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !slices.Equal(h.ran, []string{"a", "b"}) {
+		t.Fatalf("ran = %v", h.ran)
+	}
+}
+
 func TestSteerIdleSessionMovesToHead(t *testing.T) {
 	h := newHarness()
 	cfg := h.config()

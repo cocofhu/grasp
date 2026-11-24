@@ -778,10 +778,21 @@ export interface ReferenceSearchResult<T> {
 }
 
 /**
- * How a steered queue item was handled: joined the running turn, or that turn
- * was interrupted and the item runs next.
+ * How a steered queue item was handled: joined the running turn; runs next
+ * (a turn that cannot take input at all was interrupted); or queued, waiting
+ * for a running turn that handed it back to finish.
  */
-export type SteerOutcome = 'joined' | 'next'
+export type SteerOutcome = 'joined' | 'next' | 'queued'
+
+/**
+ * A queue item's steer state from the server: being offered to the running
+ * turn, or handed back and waiting for that turn to finish.
+ */
+export type QueueSteerMark = 'pending' | 'queued'
+
+export function queueSteerMark(raw: unknown): QueueSteerMark | undefined {
+  return raw === 'pending' || raw === 'queued' ? raw : undefined
+}
 
 export interface SoloMessage {
   files?: ArtifactAttachment[]

@@ -2,7 +2,7 @@ import { parseModelRoute } from '@/lib/agent/modelBindings'
 import { computed, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import type { MessageReference, SoloMessage, SoloSession } from '@/lib/api/apiTypes'
+import { queueSteerMark, type MessageReference, type QueueSteerMark, type SoloMessage, type SoloSession } from '@/lib/api/apiTypes'
 import type { ChatExecution, ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
@@ -12,7 +12,7 @@ import { soloErrorText } from './soloErrors'
 import { defaultReasoningEffort, listedEfforts } from './configuredModels'
 import { useSoloSessions } from './useSoloSessions'
 
-export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean }
+export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; annotations?: ReactAnnotation[]; references?: MessageReference[]; local?: boolean; steer?: QueueSteerMark }
 type SoloPhase = '' | 'preparing' | 'running'
 type SoloLink = 'idle' | 'connecting' | 'open' | 'reconnecting'
 
@@ -34,12 +34,14 @@ function parseFrame(data: unknown): any {
 }
 
 function queueItem(raw: any): SoloQueueItem {
+  const steer = queueSteerMark(raw?.steer)
   return {
     id: String(raw?.id ?? ''),
     text: String(raw?.text ?? ''),
     images: Array.isArray(raw?.images) ? raw.images : [],
     ...(Array.isArray(raw?.annotations) && raw.annotations.length ? { annotations: raw.annotations } : {}),
     ...(Array.isArray(raw?.references) && raw.references.length ? { references: raw.references } : {}),
+    ...(steer ? { steer } : {}),
   }
 }
 
@@ -1116,12 +1118,18 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   /**
    * Handle a queued item now. The server's queue_state and the turn's
    * user_steer frame show the result; a failure leaves the queue as it was.
+   * Delivery can last as long as the running turn, so a request cut off on
+   * the way back is not an error once the server has taken the item up.
    */
   async function steerQueued(turnId: string) {
     const id = sessionId.value
     const target = queued.value.find((q) => q.id === turnId)
     if (!id || !target || target.local) return
+    const epoch = chatEpoch
     await run(() => transport.steerSoloQueued(id, turnId))
+    if (!actionError.value || epoch !== chatEpoch) return
+    const now = queued.value.find((q) => q.id === turnId)
+    if (!now || now.steer) actionError.value = ''
   }
 
   /**
