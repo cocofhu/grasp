@@ -21,7 +21,7 @@ import ThinkingBusyCue from '@/components/run/ThinkingBusyCue.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createReviewStateCursor } from '@/lib/chat/sessionQueue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
-import type { Project, RepoChoice } from '@/lib/api/apiTypes'
+import { queueSteerMark, type Project, type QueueSteerMark, type RepoChoice } from '@/lib/api/apiTypes'
 import {
   attachmentDisplayName,
   inferImageMimeFromUrl,
@@ -54,7 +54,7 @@ const { t, te } = useI18n()
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 type ImageAtt = ClarifyImage
-type QueueItem = { id: string; text: string; images: ImageAtt[] }
+type QueueItem = { id: string; text: string; images: ImageAtt[]; steer?: QueueSteerMark }
 type Turn = AcpReply & {
   id: string
   role: 'user' | 'agent'
@@ -450,8 +450,9 @@ function parseFrame(data: string | undefined): any {
 
 function serverItem(raw: any): QueueItem {
   const id = String(raw?.id ?? '')
+  const steer = queueSteerMark(raw?.steer)
   const local = id ? sentItems.get(id) : undefined
-  if (local) return local
+  if (local) return { ...local, steer }
   const images: ImageAtt[] = Array.isArray(raw?.images)
     ? raw.images
         .filter((im: any) => im && typeof im.data === 'string')
@@ -462,7 +463,7 @@ function serverItem(raw: any): QueueItem {
           ...(im.name ? { name: String(im.name) } : {}),
         }))
     : []
-  return { id, text: String(raw?.text ?? ''), images }
+  return { id, text: String(raw?.text ?? ''), images, steer }
 }
 
 function applyQueueState(frame: any) {
@@ -1173,8 +1174,21 @@ onBeforeUnmount(() => {
           <span class="chat-meta flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line">{{ qi + 1 }}</span>
           <span v-if="q.images.length" class="chat-meta shrink-0">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
           <span class="min-w-0 flex-1 truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
+          <span
+            v-if="q.steer === 'queued'"
+            class="chat-meta shrink-0"
+            :title="t('pages.clarify.queueSteerQueuedTitle')"
+            data-testid="tester-queue-steer-queued"
+          >{{ t('pages.clarify.queueSteerQueuedBadge') }}</span>
+          <span
+            v-if="q.steer === 'pending'"
+            role="status"
+            class="chat-meta flex shrink-0 items-center gap-1"
+            :title="t('pages.clarify.queueSteeringTitle')"
+            data-testid="tester-queue-steering"
+          ><Icon name="spinner" :size="14" />{{ t('pages.clarify.queueSteering') }}</span>
           <button
-            v-if="status === 'thinking' && steerable"
+            v-else-if="status === 'thinking' && steerable && !q.steer"
             type="button"
             class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt hover:bg-accent/10 hover:text-accent"
             :title="t('pages.clarify.queueSteerTitle')"

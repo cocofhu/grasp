@@ -349,6 +349,22 @@ func (b *Bridge) connect(spec openSpec) (provider.Session, error) {
 // 客户端（避免仍显示「已连接」但一发消息就 broken pipe）。
 func (b *Bridge) watchAgentConn(watched provider.Session) {
 	<-watched.Done()
+	// The running turn ends failed, not cancelled: nobody stopped it. Its
+	// cause must be set before the agent context ends it.
+	b.mu.Lock()
+	current := b.sess == watched
+	b.mu.Unlock()
+	if current {
+		var fail context.CancelCauseFunc
+		b.turnMu.Lock()
+		if th := b.activeTurn; th != nil {
+			fail = th.cancelCause
+		}
+		b.turnMu.Unlock()
+		if fail != nil {
+			fail(provider.ErrAgentExited)
+		}
+	}
 	// Invalidate before reaping: Done can mean a fatal protocol error while
 	// the subprocess is still alive. Serialize queue cleanup with reconnects
 	// and new messages so an old watcher cannot clear a replacement's queue.

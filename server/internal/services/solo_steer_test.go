@@ -94,7 +94,6 @@ func TestSoloSteerJoinsRunningTurn(t *testing.T) {
 func TestSoloSteerFallsBackToInterrupt(t *testing.T) {
 	for name, chat := range map[string]soloChatter{
 		"unsupported": &steerChat{gateChat: newGateChat(true), status: sandbox.SteerUnsupported},
-		"failed":      &steerChat{gateChat: newGateChat(true), status: sandbox.SteerFailed, err: errors.New("broken pipe")},
 		"no steerer":  newGateChat(true),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -110,6 +109,37 @@ func TestSoloSteerFallsBackToInterrupt(t *testing.T) {
 			}
 			waitFor(t, "second turn ran", func() bool { return gate.count() == 2 && solo.lookup(id).sess.Ready() })
 			if got := gate.snapshot(); got[1] != "two" {
+				t.Fatalf("prompts = %v", got)
+			}
+		})
+	}
+}
+
+// Input the agent hands back, or that fails to arrive, waits for the running
+// turn instead of interrupting it: that turn's work is not thrown away.
+func TestSoloSteerDeclinedWaitsForTheRunningTurn(t *testing.T) {
+	for name, chat := range map[string]*steerChat{
+		"declined": {gateChat: newGateChat(true), status: sandbox.SteerDeclined},
+		"failed":   {gateChat: newGateChat(true), status: sandbox.SteerFailed, err: errors.New("broken pipe")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			solo, id := startSteerSolo(t, chat)
+			two := queueBehindRunningTurn(t, solo, id, chat.gateChat)
+			out, err := solo.SteerQueued(context.Background(), id, "alice", two)
+			if err != nil || out != chatsession.SteerOutcomeQueued {
+				t.Fatalf("steer = %q %v", out, err)
+			}
+			sess := solo.lookup(id).sess
+			if sess.CancelRequested() {
+				t.Fatal("a declined steer must not interrupt the running turn")
+			}
+			items := sess.Snapshot().Items
+			if len(items) != 1 || items[0]["id"] != two || items[0]["steer"] != chatsession.SteerMarkQueued {
+				t.Fatalf("queue = %v", items)
+			}
+			chat.release()
+			waitFor(t, "second turn ran", func() bool { return chat.count() == 2 && sess.Ready() })
+			if got := chat.snapshot(); got[1] != "two" {
 				t.Fatalf("prompts = %v", got)
 			}
 		})

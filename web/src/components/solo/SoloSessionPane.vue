@@ -326,7 +326,7 @@ function submitAskForms() {
 
 // --- queue ------------------------------------------------------------------
 const queueRows = computed<PendingQueueRow[]>(() =>
-  displayQueued.value.map((q) => ({ id: q.id, ...readPreviewMessage(q.text, q.annotations), images: q.images, locked: !!q.local })),
+  displayQueued.value.map((q) => ({ id: q.id, ...readPreviewMessage(q.text, q.annotations), images: q.images, locked: !!q.local, steer: q.steer })),
 )
 
 function cancelQueued(index: number) {

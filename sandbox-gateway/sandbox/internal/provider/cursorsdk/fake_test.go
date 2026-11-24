@@ -12,7 +12,10 @@ import (
 // TestFakeBridge is a scripted bridge.mjs. The sent text selects the run:
 // "hang" calls a tool and waits for a steer or a cancel (cancelled before
 // Cursor saved the run), "fail" ends with an error, anything else echoes the
-// text and finishes. A steer containing "decline" is handed back.
+// text and finishes. A steer containing "decline" is handed back; one
+// containing "wait" stays unanswered until the run ends and is then handed
+// back, as Cursor does with input a run ends without; one containing "silent"
+// is never answered.
 func TestFakeBridge(t *testing.T) {
 	if os.Getenv("GRASP_FAKE_CURSOR_BRIDGE") == "" {
 		return
@@ -33,6 +36,7 @@ type fakeBridge struct {
 	out     sync.Mutex
 	mu      sync.Mutex
 	running bool
+	waiting []map[string]any
 }
 
 func (f *fakeBridge) emit(v map[string]any) {
@@ -51,9 +55,14 @@ func (f *fakeBridge) delta(u map[string]any) { f.emit(map[string]any{"type": "de
 func (f *fakeBridge) end(v map[string]any) {
 	f.mu.Lock()
 	f.running = false
+	waiting := f.waiting
+	f.waiting = nil
 	f.mu.Unlock()
 	v["type"], v["runId"] = "run_end", "run-1"
 	f.emit(v)
+	for _, cmd := range waiting {
+		f.reply(cmd, map[string]any{"outcome": "revert_to_followup"})
+	}
 }
 
 var fakeUsage = map[string]any{"inputTokens": 100, "outputTokens": 10, "cacheReadTokens": 60, "cacheWriteTokens": 15}
@@ -101,6 +110,11 @@ func (f *fakeBridge) handle(cmd map[string]any) {
 		switch {
 		case !running:
 			f.reply(cmd, map[string]any{"outcome": "no_turn"})
+		case strings.Contains(text, "silent"):
+		case strings.Contains(text, "wait"):
+			f.mu.Lock()
+			f.waiting = append(f.waiting, cmd)
+			f.mu.Unlock()
 		case strings.Contains(text, "decline"):
 			f.reply(cmd, map[string]any{"outcome": "revert_to_followup"})
 		default:

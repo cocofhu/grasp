@@ -249,3 +249,75 @@ test('Cursor bridge drives the SDK stand-in: MCP, reasoning, usage and resume', 
     rmSync(root, {recursive: true, force: true})
   }
 })
+
+// Each run's text names a failure the stub SDK leaves unawaited, as the real
+// SDK does when a cancel closes a shell's output before its close timer fires.
+const unhandledSdk = `
+const failures = {
+  'closed-stream': () => Object.assign(new Error('WritableIterable is closed'), {name: 'WriteIterableClosedError'}),
+  'write-after-end': () => Object.assign(new Error('[aborted] write after end'), {name: 'ConnectError', cause: Object.assign(new Error('write after end'), {code: 'ERR_STREAM_WRITE_AFTER_END'})}),
+  'shell-spawn': () => Object.assign(new Error('spawn /bin/zsh EAGAIN'), {syscall: 'spawn /bin/zsh', code: 'EAGAIN', spawnargs: ['-c', 'dump_zsh_state_light']}),
+  'other': () => new TypeError('stub sdk bug'),
+}
+exports.Agent = {create: async () => ({agentId: 'agent-stub', close: async () => {}, send: async (text) => ({id: 'run-' + text, wait: async () => {
+  if (text === 'throw') setTimeout(() => { throw new RangeError('stub timer bug') })
+  else Promise.reject(failures[text]())
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  return {status: 'finished'}
+}})})}
+`
+
+async function unhandledSdkBridge(texts) {
+  const root = mkdtempSync(path.join(tmpdir(), 'grasp-cursor-unhandled-'))
+  try {
+    const pkg = path.join(root, 'node_modules', '@cursor', 'sdk')
+    mkdirSync(pkg, {recursive: true})
+    writeFileSync(path.join(pkg, 'index.js'), unhandledSdk)
+    writeFileSync(path.join(pkg, 'package.json'), '{"name":"@cursor/sdk","main":"index.js"}')
+    writeFileSync(path.join(root, 'package.json'), '{}')
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../sandbox/internal/provider/cursorsdk/bridge.mjs', import.meta.url))], {env: {PATH: process.env.PATH, GRASP_CURSOR_SDK_DIR: root}, stdio: ['pipe', 'pipe', 'pipe']})
+    let errors = ''
+    child.stderr.on('data', (chunk) => { errors += chunk })
+    const frames = []
+    let wake = () => {}
+    createInterface({input: child.stdout}).on('line', (line) => { frames.push(JSON.parse(line)); wake() })
+    const closed = once(child, 'close')
+    let exited = false
+    void closed.then(() => { exited = true; wake() })
+    const until = async (match) => {
+      while (!exited && !frames.some(match)) await new Promise((resolve) => { wake = resolve })
+    }
+    const commands = [{type: 'open', cwd: root, apiKey: 'synthetic', model: {id: 'stub'}}, ...texts.map((text) => ({type: 'send', text}))]
+    for (const [index, command] of commands.entries()) {
+      if (exited) break
+      child.stdin.write(JSON.stringify({id: index+1, ...command})+'\n')
+      await until((frame) => frame.type === 'response' && frame.id === index+1)
+      if (command.type === 'send') await until((frame) => frame.type === 'run_end' && frame.runId === 'run-' + command.text)
+    }
+    child.stdin.end()
+    const [code] = await closed
+    return {code, errors, ends: frames.filter((frame) => frame.type === 'run_end').map((frame) => frame.runId)}
+  } finally {
+    rmSync(root, {recursive: true, force: true})
+  }
+}
+
+test('Cursor bridge survives the SDK promises it leaves unawaited after a cancel', {timeout: 20000}, async () => {
+  for (const text of ['closed-stream', 'write-after-end', 'shell-spawn']) {
+    const {code, errors, ends} = await unhandledSdkBridge([text])
+    assert.equal(code, 0, errors)
+    assert.deepEqual(ends, ['run-' + text])
+    assert.match(errors, /cursor sdk: ignored/)
+  }
+})
+
+test('Cursor bridge exits on any other unhandled failure and reports it first', {timeout: 20000}, async () => {
+  const rejected = await unhandledSdkBridge(['other'])
+  assert.equal(rejected.code, 1)
+  assert.deepEqual(rejected.ends, [])
+  assert.match(rejected.errors, /^cursor sdk unhandled rejection: TypeError: stub sdk bug\n\s+at /m)
+
+  const thrown = await unhandledSdkBridge(['throw'])
+  assert.equal(thrown.code, 1)
+  assert.match(thrown.errors, /^cursor sdk uncaught exception: RangeError: stub timer bug/m)
+})

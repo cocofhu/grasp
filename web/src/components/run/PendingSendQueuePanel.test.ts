@@ -13,7 +13,7 @@ function mountPanel(props: Record<string, unknown>, slots: Record<string, unknow
     props: props as never,
     slots: slots as never,
     global: {
-      plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { pages } } })],
+      plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': pages } })],
       stubs: { Icon: true },
     },
   })
@@ -54,6 +54,28 @@ describe('PendingSendQueuePanel', () => {
     const known = mountPanel({ items: [row('a')], steerable: true, steerPending: true })
     expect(known.find('[data-testid="clarify-queue-steer"]').exists()).toBe(true)
     expect(known.find('[data-testid="clarify-queue-steer-pending"]').exists()).toBe(false)
+  })
+
+  it('shows a row being steered as loading, without steer or edit, until the server settles it', async () => {
+    const w = mountPanel({ items: [row('a', { steer: 'pending' }), row('b')], steerable: true })
+    const rows = w.findAll('[data-testid="clarify-queue-item"]')
+    expect(rows[0]!.find('[data-testid="clarify-queue-steering"]').text()).toContain('引导中')
+    expect(rows[0]!.find('[data-testid="clarify-queue-steer"]').exists()).toBe(false)
+    expect(rows[0]!.find('[data-testid="clarify-queue-edit"]').exists()).toBe(false)
+    expect(rows[0]!.find('[data-testid="clarify-queue-cancel"]').exists()).toBe(true)
+    expect(rows[1]!.find('[data-testid="clarify-queue-steer"]').exists()).toBe(true)
+    await w.setProps({ items: [row('b')] })
+    expect(w.find('[data-testid="clarify-queue-steering"]').exists()).toBe(false)
+  })
+
+  it('labels a row the running turn handed back and does not offer to steer it again', () => {
+    const w = mountPanel({ items: [row('a', { steer: 'queued' })], steerable: true, steerPending: true })
+    const badge = w.find('[data-testid="clarify-queue-steer-queued"]')
+    expect(badge.text()).toBe('本轮结束后处理')
+    expect(badge.attributes('title')).toContain('本轮结束后发送')
+    expect(w.find('[data-testid="clarify-queue-steer"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-queue-steer-pending"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-queue-edit"]').exists()).toBe(true)
   })
 
   it('renders unlocked rows with handle, edit and cancel, and emits each action', async () => {

@@ -18,6 +18,7 @@ func TestTurnEndsFollowTheCancelCause(t *testing.T) {
 		{ErrTurnRecover, "recover", ErrTurnRecover, nil},
 		{ErrTurnTimeout, StopReasonTimeout, ErrTurnTimeout, []string{"error_text", "prompt_done"}},
 		{ErrTurnStuck, StopReasonStuck, ErrTurnStuck, []string{"error_text", "prompt_done"}},
+		{ErrAgentExited, "failed", ErrAgentExited, []string{"error_text", "prompt_done"}},
 		{context.Canceled, "cancelled", context.Canceled, []string{"prompt_done"}},
 	} {
 		ctx, cancel := context.WithCancelCause(context.Background())

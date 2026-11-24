@@ -186,6 +186,9 @@ func (c *ACPClient) runTurn(ctx context.Context, text string, images []models.Pr
 	opID := newTurnOpID()
 	c.turnOpID.Store(opID)
 	defer c.turnOpID.Store("")
+	end := &turnEnd{opID: opID, done: make(chan struct{})}
+	c.turnEnd.Store(end)
+	defer close(end.done)
 	idle := c.agentIdle()
 	msg := chatMessage(text, images, opID)
 	if ctx.Value(userChatCommandKey{}) == true {

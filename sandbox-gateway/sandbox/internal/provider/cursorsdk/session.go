@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"backend/internal/provider"
 )
@@ -212,8 +213,15 @@ func (s *session) cancelRun(t *activeTurn) {
 	}
 }
 
+// steerSettle bounds the wait for the bridge's answer once the run has ended.
+// A var so tests can shrink it.
+var steerSettle = 10 * time.Second
+
 // Steer sends text into the running run. Cursor either takes it into the
 // run, queues it as a follow-up run the turn then includes, or hands it back.
+// Cursor delivers it at the run's next step, which can wait out a long tool
+// call, and hands back what the run ends without; so the run, not a timer,
+// bounds the wait.
 func (s *session) Steer(text string) error {
 	s.mu.Lock()
 	t := s.turn
@@ -221,10 +229,30 @@ func (s *session) Steer(text string) error {
 	if t == nil {
 		return provider.ErrNoActiveTurn
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), provider.SteerTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	answered := make(chan struct{})
+	defer close(answered)
+	settle := steerSettle
+	go func() {
+		select {
+		case <-t.done:
+		case <-answered:
+			return
+		}
+		timer := time.NewTimer(settle)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			cancel()
+		case <-answered:
+		}
+	}()
 	r, err := s.proc.call(ctx, map[string]any{"type": "steer", "text": text})
 	if err != nil {
+		if ctx.Err() != nil {
+			return provider.ErrSteerDeclined
+		}
 		return err
 	}
 	var ack struct {

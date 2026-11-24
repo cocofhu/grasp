@@ -203,6 +203,8 @@ type ACPClient struct {
 	// ("" when none); lastDoneOpID the last one that ended with prompt_done.
 	turnOpID     atomic.Value
 	lastDoneOpID atomic.Value
+	// turnEnd is the chat in flight and a channel closed when it ends.
+	turnEnd atomic.Pointer[turnEnd]
 
 	// bridge mirrors the latest queue_state regardless of whether a chat is in
 	// flight, plus the local desync flag (cancel never acknowledged).

@@ -226,8 +226,6 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 			if !ok || !it.joinsRunningTurn() {
 				return chatsession.SteerRejected
 			}
-			ctx, cancel := context.WithTimeout(ctx, runtime.SteerDeliveryTimeout)
-			defer cancel()
 			return runtime.SteerResult(sp.SteerSessionTurn(ctx, runID, producerID, lane, it.Text, it.Images))
 		},
 		OnIdle: func() { e.dropLaneSessionIfIdle(runID, producerID, lane) },
