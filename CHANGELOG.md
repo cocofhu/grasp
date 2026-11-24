@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+## 4.0.2 — 2026-11-24
+
 - 彻底修复 Cursor 工作流节点和 Solo 回合报 `already has active run`：沙箱重开 Agent（切换模型、MCP 变化、上下文交接重启等）时，先让旧 Cursor 进程正常释放运行再结束它，不再直接强杀；被强杀或崩溃残留的活动运行，会在下一次发送时自动过期后重发，不再一直卡住同一个 Agent。需要沙箱运行时更新后生效。
 
 - 修复工作流 Chat、审批热修改和 Solo 在沙箱与 Agent 启动期间排队消息的 Steer 按钮延迟出现：Agent 连上后立即推送能力，连接中在 Steer 位置显示等待状态，不再与「不支持引导」混淆。无需更新沙箱运行时。
