@@ -26,10 +26,10 @@ vi.mock('mermaid', () => ({
 const SOURCE = 'flowchart LR\n  A[凭证页] --> B[CodexLoginManager]'
 const FENCE = `\`\`\`mermaid\n${SOURCE}\n\`\`\``
 
-/** SVG tagged with the theme Mermaid was initialized with. */
-function themedSvg() {
+/** SVG tagged with the theme Mermaid was initialized with, using the render id like Mermaid does. */
+function themedSvg(id: string) {
   const theme = mermaidInitialize.mock.calls.at(-1)?.[0]?.theme
-  return `<svg data-theme="${theme}"><g><text>A</text></g></svg>`
+  return `<svg id="${id}" data-theme="${theme}"><marker id="${id}_arrow"></marker><path marker-end="url(#${id}_arrow)"></path></svg>`
 }
 
 async function settle() {
@@ -50,7 +50,7 @@ function mountHtml(html: string) {
 beforeEach(() => {
   document.documentElement.className = ''
   mermaidParse.mockResolvedValue(true)
-  mermaidRender.mockImplementation(async () => ({ svg: themedSvg() }))
+  mermaidRender.mockImplementation(async (id: string) => ({ svg: themedSvg(id) }))
 })
 
 afterEach(() => {
@@ -135,13 +135,59 @@ describe('markdown mermaid hydration', () => {
     expect(mermaidRender).toHaveBeenCalledTimes(1)
   })
 
-  it('renders two identical blocks once', async () => {
+  it('renders two identical blocks once, each with its own ids', async () => {
     const host = mountHtml(renderMarkdown(`${FENCE}\n\n${FENCE}`))
     await settle()
     const pres = host.querySelectorAll<HTMLElement>('pre.md-mermaid')
     expect(pres).toHaveLength(2)
     expect([...pres].every((p) => p.dataset.mermaid === 'done')).toBe(true)
     expect(mermaidRender).toHaveBeenCalledTimes(1)
+
+    const renderId = mermaidRender.mock.calls[0][0] as string
+    const ids = [...host.querySelectorAll('.md-mermaid-svg svg')].map((svg) => svg.id)
+    expect(new Set(ids).size).toBe(2)
+    expect(ids).not.toContain(renderId)
+    for (const pre of pres) {
+      const svg = pre.querySelector('svg')!
+      expect(svg.querySelector('marker')!.id).toBe(`${svg.id}_arrow`)
+      expect(svg.querySelector('path')!.getAttribute('marker-end')).toBe(`url(#${svg.id}_arrow)`)
+    }
+  })
+
+  it('does not retry a diagram that failed to render on later scans', async () => {
+    mermaidRender.mockRejectedValue(new Error('broken'))
+    const host = mountHtml(renderMarkdown(FENCE))
+    await settle()
+    expect(host.querySelector<HTMLElement>('pre.md-mermaid')!.dataset.mermaid).toBe('failed')
+    expect(mermaidRender).toHaveBeenCalledTimes(2)
+
+    mountHtml(renderChatMarkdown(FENCE))
+    await settle()
+    expect(mermaidRender).toHaveBeenCalledTimes(2)
+  })
+
+  it('never shows a render that finished after the theme switched', async () => {
+    let releaseDark!: () => void
+    mermaidRender.mockImplementationOnce(
+      (id: string) => new Promise((resolve) => {
+        const svg = themedSvg(id)
+        releaseDark = () => resolve({ svg })
+      }),
+    )
+    const host = mountHtml(renderMarkdown(FENCE))
+    await vi.waitFor(() => expect(mermaidRender).toHaveBeenCalledTimes(1))
+    const themes: string[] = []
+    new MutationObserver(() => {
+      const theme = host.querySelector('.md-mermaid-svg svg')?.getAttribute('data-theme')
+      if (theme) themes.push(theme)
+    }).observe(host, { childList: true, subtree: true })
+
+    document.documentElement.classList.add('light')
+    releaseDark()
+    await settle()
+
+    expect(host.querySelector('.md-mermaid-svg svg')?.getAttribute('data-theme')).toBe('base')
+    expect(themes).not.toContain('dark')
   })
 
   it('does not draw into a block that left the page', async () => {

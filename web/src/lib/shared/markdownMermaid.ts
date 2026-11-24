@@ -14,13 +14,24 @@ const CACHE_MAX = 32
 /** Smallest fit-to-width scale; 16px Mermaid labels stay at the 12px code size. */
 const MIN_SCALE = 0.75
 
-const svgCache = new Map<string, string>()
-const inflight = new Map<string, Promise<string | null>>()
+/** Mermaid prefixes every internal id (styles, markers) with the render id. */
+type Rendered = { svg: string; id: string }
+
+const svgCache = new Map<string, Rendered>()
+const inflight = new Map<string, Promise<Rendered | null>>()
+/** Parse errors do not depend on the theme; render errors are kept per theme+source. */
 const failedSources = new Set<string>()
+const failedKeys = new Set<string>()
 let contentObserver: MutationObserver | null = null
 let themeObserver: MutationObserver | null = null
+let shownTheme = ''
 let scanQueued = false
 let renderSeq = 0
+
+function nextRenderId(): string {
+  renderSeq += 1
+  return `md-mmd-${Date.now()}-${renderSeq}`
+}
 
 function themeKey(): string {
   return `${mermaidThemeName()}\n${JSON.stringify(themeVars())}`
@@ -30,23 +41,24 @@ function sourceOf(pre: Element): string {
   return (pre.querySelector(':scope > code')?.textContent ?? '').trim()
 }
 
-function cacheSvg(key: string, svg: string) {
+function cacheSvg(key: string, rendered: Rendered) {
   svgCache.delete(key)
-  svgCache.set(key, svg)
+  svgCache.set(key, rendered)
   if (svgCache.size > CACHE_MAX) {
     const oldest = svgCache.keys().next().value
     if (oldest !== undefined) svgCache.delete(oldest)
   }
 }
 
-function applySvg(pre: HTMLElement, key: string, svg: string) {
+function applySvg(pre: HTMLElement, key: string, rendered: Rendered) {
   let box = pre.querySelector<HTMLElement>(':scope > .md-mermaid-svg')
   if (!box) {
     box = document.createElement('span')
     box.className = 'md-mermaid-svg'
     pre.appendChild(box)
   }
-  box.innerHTML = svg
+  // Each copy gets its own ids so a second block with the same diagram keeps its markers and styles.
+  box.innerHTML = rendered.svg.split(rendered.id).join(nextRenderId())
   const el = box.querySelector('svg')
   const width = Number(el?.getAttribute('viewBox')?.split(/[\s,]+/)[2])
   // Past MIN_SCALE a wide diagram scrolls inside the card instead of shrinking.
@@ -57,7 +69,7 @@ function applySvg(pre: HTMLElement, key: string, svg: string) {
 
 class MermaidParseError extends Error {}
 
-function renderSvg(source: string, key: string): Promise<string | null> {
+function renderSvg(source: string, key: string): Promise<Rendered | null> {
   const pending = inflight.get(key)
   if (pending) return pending
   const task = withMermaidSerial(async (mermaid) => {
@@ -75,10 +87,9 @@ function renderSvg(source: string, key: string): Promise<string | null> {
     }
     let lastErr: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
-      renderSeq += 1
-      const id = `md-mmd-${Date.now()}-${renderSeq}`
+      const id = nextRenderId()
       try {
-        return (await mermaid.render(id, source)).svg
+        return { svg: (await mermaid.render(id, source)).svg, id }
       } catch (err) {
         lastErr = err
       } finally {
@@ -87,12 +98,13 @@ function renderSvg(source: string, key: string): Promise<string | null> {
     }
     throw lastErr
   })
-    .then((svg) => {
-      cacheSvg(key, svg)
-      return svg
+    .then((rendered) => {
+      cacheSvg(key, rendered)
+      return rendered
     })
     .catch((err) => {
       if (err instanceof MermaidParseError) failedSources.add(source)
+      else failedKeys.add(key)
       return null
     })
     .finally(() => inflight.delete(key))
@@ -105,7 +117,7 @@ function hydrate(pre: HTMLElement, theme: string) {
   if (!source) return
   const key = `${theme}\n${source}`
   if (pre.dataset.mermaidKey === key) return
-  if (failedSources.has(source)) {
+  if (failedSources.has(source) || failedKeys.has(key)) {
     // A theme redraw keeps the SVG already shown; only a never-drawn block falls back.
     if (pre.dataset.mermaid !== 'done') pre.dataset.mermaid = 'failed'
     return
@@ -115,12 +127,15 @@ function hydrate(pre: HTMLElement, theme: string) {
     applySvg(pre, key, cached)
     return
   }
-  void renderSvg(source, key).then((svg) => {
+  void renderSvg(source, key).then((rendered) => {
     if (!pre.isConnected || sourceOf(pre) !== source) return
-    if (svg !== null) {
-      // The theme may have flipped while this one rendered; the next scan redraws it.
-      if (pre.dataset.mermaidKey !== key) applySvg(pre, key, svg)
-      if (key !== `${themeKey()}\n${source}`) scheduleScan()
+    if (key !== `${themeKey()}\n${source}`) {
+      // The theme flipped while this one rendered; the scan for the new theme draws it.
+      scheduleScan()
+      return
+    }
+    if (rendered !== null) {
+      if (pre.dataset.mermaidKey !== key) applySvg(pre, key, rendered)
     } else if (pre.dataset.mermaid !== 'done') {
       pre.dataset.mermaid = 'failed'
     }
@@ -160,19 +175,28 @@ export function ensureMarkdownMermaid(): void {
     if (addsMermaid(records)) scheduleScan()
   })
   contentObserver.observe(document.documentElement, { childList: true, subtree: true })
-  themeObserver = new MutationObserver(scheduleScan)
+  // `<html>` also carries route and motion classes; only a light/dark flip redraws.
+  shownTheme = mermaidThemeName()
+  themeObserver = new MutationObserver(() => {
+    const next = mermaidThemeName()
+    if (next === shownTheme) return
+    shownTheme = next
+    scheduleScan()
+  })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   scheduleScan()
 }
 
-/** Test hook: stop observing and forget cached SVGs and parse failures. */
+/** Test hook: stop observing and forget cached SVGs and failures. */
 export function resetMarkdownMermaidForTest(): void {
   contentObserver?.disconnect()
   themeObserver?.disconnect()
   contentObserver = null
   themeObserver = null
+  shownTheme = ''
   scanQueued = false
   svgCache.clear()
   inflight.clear()
   failedSources.clear()
+  failedKeys.clear()
 }
