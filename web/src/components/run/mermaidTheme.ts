@@ -17,12 +17,15 @@ export function themeVars(root: Element = document.documentElement): Record<stri
   const light = isLightTheme(root)
   const txt = cssTokenColor('--c-txt', light ? 'rgb(24, 24, 27)' : 'rgb(237, 237, 240)', root)
   const txt2 = cssTokenColor('--c-txt2', light ? 'rgb(82, 82, 91)' : 'rgb(161, 161, 170)', root)
+  const border = cssTokenColor('--c-line-strong', light ? 'rgb(208, 208, 216)' : 'rgb(54, 54, 62)', root)
   return {
     background: cssTokenColor('--c-base', light ? 'rgb(250, 250, 251)' : 'rgb(10, 10, 11)', root),
     primaryColor: cssTokenColor('--c-elevated', light ? 'rgb(244, 244, 245)' : 'rgb(28, 28, 33)', root),
     primaryTextColor: txt,
-    primaryBorderColor: cssTokenColor('--c-line', light ? 'rgb(229, 229, 232)' : 'rgb(38, 38, 43)', root),
-    lineColor: cssTokenColor('--c-line-strong', light ? 'rgb(212, 212, 216)' : 'rgb(54, 54, 62)', root),
+    primaryBorderColor: border,
+    clusterBorder: border,
+    // Edges are thin strokes; a border token disappears against the light canvas.
+    lineColor: cssTokenColor('--c-txt3', light ? 'rgb(82, 82, 91)' : 'rgb(110, 110, 120)', root),
     secondaryColor: cssTokenColor('--c-elevated', light ? 'rgb(244, 244, 245)' : 'rgb(28, 28, 33)', root),
     tertiaryColor: cssTokenColor('--c-base', light ? 'rgb(250, 250, 251)' : 'rgb(10, 10, 11)', root),
     // Node / edge / secondary labels: keep readable on light chrome (avoid faint gray-on-white).

@@ -1068,6 +1068,28 @@ html.theme-color-motion .app-sidebar-card {
 .md pre code {
   @apply bg-transparent p-0 text-txt2;
 }
+/* Drawn ```mermaid fence (lib/shared/markdownMermaid). The card stays a <pre>
+   so chat block spacing still applies; prose rules must not reach the labels. */
+pre.md-mermaid[data-mermaid='done'] > code {
+  display: none;
+}
+.md-mermaid-svg {
+  display: block;
+  white-space: normal;
+  font-family: inherit;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.md-mermaid-svg svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+.md-mermaid-svg p {
+  margin: 0;
+}
 .md table {
   @apply my-3 w-full border-collapse text-xs;
 }

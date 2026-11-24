@@ -1,6 +1,7 @@
 import { Marked, Renderer, Tokenizer, marked } from 'marked'
 import type { Tokens } from 'marked'
 import DOMPurify from 'dompurify'
+import { ensureMarkdownMermaid } from './markdownMermaid'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -150,12 +151,41 @@ function cjkEmStrong(
   }
 }
 
+/** Closing fence line: same character as the opener, at least as long. */
+function isClosedFence(raw: string): boolean {
+  const lines = raw.replace(/\n+$/, '').split('\n')
+  if (lines.length < 2) return false
+  const open = /^ {0,3}(`{3,}|~{3,})/.exec(lines[0])
+  const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(lines[lines.length - 1])
+  return !!open && !!close && close[1][0] === open[1][0] && close[1].length >= open[1].length
+}
+
+function escapeCode(src: string): string {
+  return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/**
+ * A closed ```mermaid fence becomes `pre.md-mermaid`, which markdownMermaid
+ * draws as SVG; the source stays as the fallback. A fence still streaming
+ * has no closing line yet and renders as plain code until it does.
+ */
+function mermaidCode(token: Tokens.Code): string | false {
+  const lang = /^\S*/.exec(token.lang ?? '')?.[0].toLowerCase()
+  if (lang !== 'mermaid' || !isClosedFence(token.raw)) return false
+  ensureMarkdownMermaid()
+  const text = token.text.replace(/\n$/, '')
+  return `<pre class="md-mermaid"><code class="language-mermaid">${escapeCode(text)}</code></pre>\n`
+}
+
 marked.use({
   tokenizer: {
     url(src: string) {
       return truncateBareUrl(src)
     },
     emStrong: cjkEmStrong,
+  },
+  renderer: {
+    code: mermaidCode,
   },
 })
 
@@ -267,6 +297,7 @@ chatMarked.use({
     emStrong: cjkEmStrong,
   },
   renderer: {
+    code: mermaidCode,
     html({ text }) {
       return escapeHtmlText(text)
     },

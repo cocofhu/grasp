@@ -235,6 +235,7 @@
       "loadingTypes.ts",
       "locale.ts",
       "markdown.ts",
+      "markdownMermaid.ts",
       "mobileNav.ts",
       "previewFps.ts",
       "previewPickUrl.ts",
@@ -293,7 +294,7 @@
     "inbox": 47,
     "onboarding": 2,
     "run": 76,
-    "shared": 41,
+    "shared": 42,
     "solo": 16,
     "workflow": 3,
     "workspace": 6

@@ -15,6 +15,7 @@ import {
   renderMarkdown,
   renderMarkdownBlocks,
   resetMarkdownParseCount,
+  type MarkdownBlockCache,
 } from './markdown'
 
 afterEach(() => {
@@ -356,5 +357,52 @@ describe('CJK emphasis boundary', () => {
       )
       expect(render('注意 **这里 还有 **重点**')).toContain('注意 **这里 还有 <strong>重点</strong>')
     }
+  })
+})
+
+describe('mermaid fences', () => {
+  const renders = [renderMarkdown, renderChatMarkdown]
+  const SOURCE = 'flowchart LR\n  UI[凭证页<br/>设备码] --> DF\n  A -->|x & y| B'
+
+  it('marks a closed mermaid fence for drawing and keeps the source escaped', () => {
+    for (const render of renders) {
+      const html = render(`前文\n\n\`\`\`mermaid\n${SOURCE}\n\`\`\`\n\n后文`)
+      expect(html).toContain('<pre class="md-mermaid"><code class="language-mermaid">flowchart LR\n')
+      expect(html).toContain('UI[凭证页&lt;br/&gt;设备码] --&gt; DF')
+      expect(html).toContain('A --&gt;|x &amp; y| B</code></pre>')
+      expect(html).toContain('<p>后文</p>')
+    }
+  })
+
+  it('accepts tilde fences, an info string after the language and any case', () => {
+    expect(renderMarkdown(`~~~Mermaid title\n${SOURCE}\n~~~`)).toContain('class="md-mermaid"')
+    expect(renderChatMarkdown(`\`\`\`\`mermaid\n${SOURCE}\n\`\`\`\``)).toContain('class="md-mermaid"')
+  })
+
+  it('leaves a fence that is still streaming as plain code', () => {
+    for (const render of renders) {
+      const html = render(`\`\`\`mermaid\n${SOURCE}`)
+      expect(html).not.toContain('md-mermaid')
+      expect(html).toContain('<code class="language-mermaid">')
+    }
+    expect(renderMarkdown(`\`\`\`\`mermaid\n${SOURCE}\n\`\`\``)).not.toContain('md-mermaid')
+  })
+
+  it('does not touch other languages', () => {
+    for (const render of renders) {
+      const html = render('```ts\nconst a = 1\n```')
+      expect(html).toContain('<code class="language-ts">')
+      expect(html).not.toContain('md-mermaid')
+    }
+  })
+
+  it('marks the block once its closing fence arrives in a stream', () => {
+    const cache: MarkdownBlockCache = new Map()
+    const open = renderChatMarkdownBlocks(`说明\n\n\`\`\`mermaid\n${SOURCE}`, cache)
+    expect(open.at(-1)).not.toContain('md-mermaid')
+    const closed = renderChatMarkdownBlocks(`说明\n\n\`\`\`mermaid\n${SOURCE}\n\`\`\`\n\n后文`, cache)
+    expect(closed).toHaveLength(3)
+    expect(closed[1]).toContain('<pre class="md-mermaid">')
+    expect(renderMarkdownBlocks(`\`\`\`mermaid\n${SOURCE}\n\`\`\``, new Map())[0]).toContain('md-mermaid')
   })
 })
