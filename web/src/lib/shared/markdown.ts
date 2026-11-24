@@ -1,6 +1,12 @@
 import { Marked, Renderer, Tokenizer, marked } from 'marked'
 import type { Tokens } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/common'
+import { computed } from 'vue'
+import { iconDefinitions } from '@/lib/icons/catalog'
+import { copyToClipboard } from './copyToClipboard'
+import { escapeHtml } from './highlightJson'
+import { i18n } from './i18n'
 import { ensureMarkdownMermaid } from './markdownMermaid'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -160,21 +166,65 @@ function isClosedFence(raw: string): boolean {
   return !!open && !!close && close[1][0] === open[1][0] && close[1].length >= open[1].length
 }
 
-function escapeCode(src: string): string {
-  return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const copyCodeLabel = computed(() => i18n.global.t('common.markdown.copyCode', 'Copy code'))
+const copyReset = new WeakMap<HTMLButtonElement, number>()
+let copyListenerInstalled = false
+
+function codeCopyIcon(name: 'copy' | 'check'): string {
+  const { body, viewBox, strokeWidth } = iconDefinitions[name]
+  return `<svg aria-hidden="true" data-icon="${name}" width="15" height="15" viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
+}
+
+const codeCopyIcons = codeCopyIcon('copy') + codeCopyIcon('check')
+
+async function onCopyCode(event: MouseEvent) {
+  if (!(event.target instanceof Element)) return
+  const button = event.target.closest<HTMLButtonElement>('button.md-code-copy')
+  const code = button?.closest('pre.md-code-block')?.querySelector(':scope > code')
+  const status = button?.parentElement?.querySelector('.md-code-status')
+  if (!button || !code || !status || button.dataset.copyState === 'pending') return
+
+  window.clearTimeout(copyReset.get(button))
+  status.textContent = ''
+  button.dataset.copyState = 'pending'
+  const copied = await copyToClipboard(code.textContent ?? '')
+  if (!button.isConnected) return
+
+  button.dataset.copyState = copied ? 'copied' : 'failed'
+  status.textContent = copied
+    ? i18n.global.t('common.markdown.copied', 'Copied')
+    : i18n.global.t('common.toast.copyFailed', 'Copy failed')
+  copyReset.set(button, window.setTimeout(() => {
+    delete button.dataset.copyState
+    status.textContent = ''
+    copyReset.delete(button)
+  }, 1800))
 }
 
 /**
- * A closed ```mermaid fence becomes `pre.md-mermaid`, which markdownMermaid
- * draws as SVG; the source stays as the fallback. A fence still streaming
- * has no closing line yet and renders as plain code until it does.
+ * Closed Mermaid fences are hydrated as diagrams. Other code blocks keep
+ * source text in <code> so the same copy action works with or without highlighting.
  */
-function mermaidCode(token: Tokens.Code): string | false {
-  const lang = /^\S*/.exec(token.lang ?? '')?.[0].toLowerCase()
-  if (lang !== 'mermaid' || !isClosedFence(token.raw)) return false
-  ensureMarkdownMermaid()
-  const text = token.text.replace(/\n$/, '')
-  return `<pre class="md-mermaid"><code class="language-mermaid">${escapeCode(text)}</code></pre>\n`
+function renderCode({ lang, raw, text }: Tokens.Code): string {
+  const language = /^\S+/.exec(lang ?? '')?.[0].toLowerCase()
+  if (language === 'mermaid' && isClosedFence(raw)) {
+    ensureMarkdownMermaid()
+    return `<pre class="md-mermaid"><code class="language-mermaid">${escapeHtml(text.replace(/\n$/, ''))}</code></pre>\n`
+  }
+
+  // The click listener also covers HTML that Vue replaces while a reply streams.
+  if (!copyListenerInstalled && typeof document !== 'undefined') {
+    document.addEventListener('click', onCopyCode)
+    copyListenerInstalled = true
+  }
+  const label = escapeHtml(copyCodeLabel.value)
+  const toolbar = `<span class="md-code-toolbar"><span class="md-code-status" role="status"></span><button type="button" class="md-code-copy" aria-label="${label}" title="${label}">${codeCopyIcons}</button></span>`
+  const languageClass = language ? ` class="language-${escapeHtml(language)}"` : ''
+  // Large blocks can grow each animation frame while they stream.
+  const source = language && text.length <= 32_768 && hljs.getLanguage(language)
+    ? hljs.highlight(text, { language, ignoreIllegals: true }).value
+    : escapeHtml(text)
+  return `<pre class="md-code-block">${toolbar}<code${languageClass}>${source}</code></pre>\n`
 }
 
 marked.use({
@@ -185,7 +235,7 @@ marked.use({
     emStrong: cjkEmStrong,
   },
   renderer: {
-    code: mermaidCode,
+    code: renderCode,
   },
 })
 
@@ -220,7 +270,8 @@ export function markdownCacheSize(): number {
  * Identical inputs reuse the previous HTML and skip marked+DOMPurify.
  */
 export function renderMarkdown(src: string): string {
-  const key = src ?? ''
+  const source = src ?? ''
+  const key = `${copyCodeLabel.value}\u0000${source}`
   const hit = htmlCache.get(key)
   if (hit !== undefined) {
     // Refresh LRU order
@@ -229,7 +280,7 @@ export function renderMarkdown(src: string): string {
     return hit
   }
   parseCount += 1
-  const raw = marked.parse(key, { async: false }) as string
+  const raw = marked.parse(source, { async: false }) as string
   const html = DOMPurify.sanitize(raw)
   htmlCache.set(key, html)
   if (htmlCache.size > CACHE_MAX) {
@@ -239,7 +290,7 @@ export function renderMarkdown(src: string): string {
   return html
 }
 
-/** Per-stream cache for renderMarkdownBlocks: `type\0raw` → sanitized block HTML. */
+/** Per-stream cache for renderMarkdownBlocks: localized token → sanitized block HTML. */
 export type MarkdownBlockCache = Map<string, string>
 
 /** Unused blocks kept beyond the live set before the cache is pruned. */
@@ -253,11 +304,12 @@ const BLOCK_SLACK = 64
  */
 export function renderMarkdownBlocks(src: string, cache: MarkdownBlockCache): string[] {
   const tokens = marked.lexer(src ?? '')
+  const label = copyCodeLabel.value
   const out: string[] = []
   const used = new Set<string>()
   for (const tok of tokens) {
     if (tok.type === 'space') continue
-    const key = `${tok.type}\u0000${tok.raw}`
+    const key = `${label}\u0000${tok.type}\u0000${tok.raw}`
     let html = cache.get(key)
     if (html === undefined) {
       parseCount += 1
@@ -274,15 +326,6 @@ export function renderMarkdownBlocks(src: string, cache: MarkdownBlockCache): st
   return out
 }
 
-/** Visible text for a raw HTML token. Quotes included so attributes cannot reopen a tag. */
-function escapeHtmlText(src: string): string {
-  return src
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
 /**
  * Same breaks/gfm options as the shared marked instance, but raw HTML tokens
  * become text before DOMPurify. Fenced code, emphasis, lists and links stay
@@ -297,9 +340,9 @@ chatMarked.use({
     emStrong: cjkEmStrong,
   },
   renderer: {
-    code: mermaidCode,
+    code: renderCode,
     html({ text }) {
-      return escapeHtmlText(text)
+      return escapeHtml(text)
     },
     link(token) {
       return Renderer.prototype.link.call(this, token).replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ')
@@ -344,7 +387,8 @@ const CHAT_SANITIZE = { ADD_ATTR: ['target'] }
  * their inner text instead of being deleted with the tag.
  */
 export function renderChatMarkdown(src: string): string {
-  const key = src ?? ''
+  const source = src ?? ''
+  const key = `${copyCodeLabel.value}\u0000${source}`
   const hit = chatHtmlCache.get(key)
   if (hit !== undefined) {
     chatHtmlCache.delete(key)
@@ -352,7 +396,7 @@ export function renderChatMarkdown(src: string): string {
     return hit
   }
   parseCount += 1
-  const raw = chatMarked.parse(key, { async: false }) as string
+  const raw = chatMarked.parse(source, { async: false }) as string
   const html = DOMPurify.sanitize(raw, CHAT_SANITIZE)
   chatHtmlCache.set(key, html)
   if (chatHtmlCache.size > CACHE_MAX) {
@@ -365,11 +409,12 @@ export function renderChatMarkdown(src: string): string {
 /** Block renderer for ReAct assistant streams. Same escaping as renderChatMarkdown. */
 export function renderChatMarkdownBlocks(src: string, cache: MarkdownBlockCache): string[] {
   const tokens = chatMarked.lexer(src ?? '')
+  const label = copyCodeLabel.value
   const out: string[] = []
   const used = new Set<string>()
   for (const tok of tokens) {
     if (tok.type === 'space') continue
-    const key = `${tok.type}\u0000${tok.raw}`
+    const key = `${label}\u0000${tok.type}\u0000${tok.raw}`
     let html = cache.get(key)
     if (html === undefined) {
       parseCount += 1

@@ -166,6 +166,10 @@
       "selectNode": "选择一个节点",
       "selectNodeDesc": "在左侧画布点选节点查看输出与日志"
     },
+    "markdown": {
+      "copyCode": "复制代码",
+      "copied": "已复制"
+    },
     "toast": {
       "draftSaved": "草稿已保存",
       "draftTooLarge": "草稿过大，请减少图片或文字",

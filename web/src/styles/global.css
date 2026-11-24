@@ -1068,6 +1068,93 @@ html.theme-color-motion .app-sidebar-card {
 .md pre code {
   @apply bg-transparent p-0 text-txt2;
 }
+pre.md-code-block {
+  @apply my-3 rounded-md border border-line bg-base;
+}
+pre.md-code-block,
+.md pre.md-code-block,
+.chat-thread .chat-prose pre.md-code-block {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+pre.md-code-block > code,
+.md pre.md-code-block > code,
+.chat-thread .chat-prose pre.md-code-block > code {
+  display: block;
+  overflow-x: auto;
+  padding: 2px 14px 12px;
+  white-space: pre;
+  font-size: 12px;
+  line-height: 1.75;
+  color: rgb(var(--c-txt2));
+}
+.md-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 4px 6px 0;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  user-select: none;
+}
+.md-code-copy {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  color: rgb(var(--c-txt2));
+}
+.md-code-copy:hover {
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-txt));
+}
+.md-code-copy:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 1px;
+}
+.md-code-copy [data-icon='check'],
+.md-code-copy[data-copy-state='copied'] [data-icon='copy'] {
+  display: none;
+}
+.md-code-copy[data-copy-state='copied'] [data-icon='check'] {
+  display: block;
+}
+.md-code-toolbar:has([data-copy-state='copied']) :is(.md-code-copy, .md-code-status) {
+  color: rgb(var(--c-hue-5));
+}
+.md-code-toolbar:has([data-copy-state='failed']) .md-code-status {
+  color: rgb(var(--c-err));
+}
+@media (pointer: coarse) {
+  .md-code-copy {
+    width: 36px;
+    height: 36px;
+  }
+}
+.md-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta) {
+  color: rgb(var(--c-hue-1));
+}
+.md-code-block :is(.hljs-title, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-attr, .hljs-attribute) {
+  color: rgb(var(--c-hue-2));
+}
+.md-code-block :is(.hljs-type, .hljs-built_in, .hljs-symbol, .hljs-variable) {
+  color: rgb(var(--c-hue-4));
+}
+.md-code-block :is(.hljs-string, .hljs-regexp, .hljs-addition) {
+  color: rgb(var(--c-hue-5));
+}
+.md-code-block :is(.hljs-number, .hljs-literal) {
+  color: rgb(var(--c-hue-7));
+}
+.md-code-block .hljs-deletion {
+  color: rgb(var(--c-hue-8));
+}
+.md-code-block :is(.hljs-comment, .hljs-quote) {
+  color: color-mix(in srgb, rgb(var(--c-txt2)) 72%, rgb(var(--c-base)));
+}
 /* Drawn ```mermaid fence (lib/shared/markdownMermaid). The card stays a <pre>
    so chat block spacing still applies; prose rules must not reach the labels. */
 pre.md-mermaid[data-mermaid='done'] > code {

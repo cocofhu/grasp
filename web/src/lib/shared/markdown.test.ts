@@ -100,7 +100,7 @@ describe('renderChatMarkdown', () => {
     expect(html).toContain('&lt;script&gt;')
     expect(html).not.toContain('<script')
     expect(html).toContain('<strong>加粗</strong>')
-    expect(html).toContain('const x = 1')
+    expect(html).toContain('<span class="hljs-keyword">const</span>')
     expect(html).toContain('language-js')
   })
 
@@ -141,7 +141,7 @@ describe('renderChatMarkdown', () => {
   it('keeps fenced code characters that look like tags', () => {
     const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
     expect(html).toContain('language-html')
-    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html.replace(/<[^>]*>/g, '')).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script')
   })
 
@@ -150,8 +150,31 @@ describe('renderChatMarkdown', () => {
     const blocks = renderChatMarkdownBlocks(src, cache)
     expect(blocks.join('')).toContain('关键步骤')
     expect(blocks.join('')).toContain('<strong>加粗</strong>')
-    expect(blocks.join('')).toContain('const x = 1')
+    expect(blocks.join('')).toContain('<span class="hljs-keyword">const</span>')
     expect(blocks.join('')).not.toContain('<script')
+  })
+})
+
+describe('Markdown code blocks', () => {
+  it('highlights Go using the language tag in full and streaming Markdown', () => {
+    const src = '```Go title\nfunc sum(x int) int {\n\treturn x + 1\n}\n```'
+    const renders = [
+      renderMarkdown(src),
+      renderChatMarkdown(src),
+      ...renderMarkdownBlocks(src, new Map()),
+      ...renderChatMarkdownBlocks(src, new Map()),
+    ]
+    for (const html of renders) {
+      expect(html).toContain('class="language-go"')
+      expect(html).toContain('<span class="hljs-keyword">func</span>')
+      expect(html).toContain('<button type="button" class="md-code-copy"')
+    }
+  })
+
+  it.each(['', 'unknown'])('makes plain code copyable for the %j language tag', (language) => {
+    const html = renderChatMarkdown(`\`\`\`${language}\n  <tag> & text\n\`\`\``)
+    expect(html).toContain('  &lt;tag&gt; &amp; text</code>')
+    expect(html).toContain('<button type="button" class="md-code-copy"')
   })
 })
 
@@ -388,7 +411,7 @@ describe('mermaid fences', () => {
     expect(renderMarkdown(`\`\`\`\`mermaid\n${SOURCE}\n\`\`\``)).not.toContain('md-mermaid')
   })
 
-  it('does not touch other languages', () => {
+  it('renders TypeScript fences as code', () => {
     for (const render of renders) {
       const html = render('```ts\nconst a = 1\n```')
       expect(html).toContain('<code class="language-ts">')
