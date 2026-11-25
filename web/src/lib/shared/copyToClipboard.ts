@@ -27,24 +27,25 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 function legacyCopy(text: string): boolean {
   if (typeof document === 'undefined') return false
+  const focused = document.activeElement
   try {
     const ta = document.createElement('textarea')
     ta.value = text
     ta.setAttribute('readonly', '')
     ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;'
     document.body.appendChild(ta)
-    ta.focus()
-    ta.select()
-    ta.setSelectionRange(0, text.length)
-    let ok = false
     try {
-      ok = document.execCommand('copy')
-    } catch {
-      ok = false
+      ta.focus()
+      ta.select()
+      ta.setSelectionRange(0, text.length)
+      return !!document.execCommand('copy')
     } finally {
+      const restoreFocus = document.activeElement === ta
       ta.remove()
+      if (restoreFocus && focused instanceof HTMLElement && focused.isConnected) {
+        focused.focus({ preventScroll: true })
+      }
     }
-    return !!ok
   } catch {
     return false
   }

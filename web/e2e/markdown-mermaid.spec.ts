@@ -95,3 +95,45 @@ test('a streaming fence stays source until it closes', async ({ page }) => {
   await expectDrawn(stream)
   await expect(stream).toContainText('继续输出。')
 })
+
+test('Markdown highlights Go and copies the exact source with the mouse or keyboard', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/markdown-mermaid.html?theme=light')
+
+  const block = page.getByTestId('chat').locator('pre.md-code-block')
+  const code = block.locator('code.language-go')
+  const keyword = code.locator('.hljs-keyword').first()
+  await expect(keyword).toHaveText('func')
+  const color = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).color)
+  const light = await color(keyword)
+  expect(light).not.toBe(await color(code))
+  await page.getByTestId('theme-dark').click()
+  expect(await color(keyword)).not.toBe(light)
+
+  const button = block.getByRole('button', { name: '复制代码' })
+  const before = (await button.boundingBox())?.x
+  expect(before).toBeDefined()
+  expect(await code.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth
+    return el.scrollLeft
+  })).toBeGreaterThan(0)
+  expect((await button.boundingBox())?.x).toBe(before)
+
+  await button.click()
+  await expect(block.getByRole('status')).toHaveText('已复制')
+  await expect(button.locator('[data-icon="check"]')).toBeVisible()
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText())
+  expect(clipboard).toBe(await code.textContent())
+  expect(clipboard).toContain('\n\tif timeLeft <= 0 {\n\t\treturn 0\n\t}\n\n\treturn')
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', { value: undefined })
+  })
+  const artifact = page.getByTestId('artifact').locator('pre.md-code-block')
+  const artifactCopy = artifact.getByRole('button', { name: '复制代码' })
+  await artifactCopy.press('Enter')
+  await expect(artifactCopy).toBeFocused()
+  await expect(artifact.getByRole('status')).toHaveText('已复制')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("const lessThanEntity = '&lt;'")
+})

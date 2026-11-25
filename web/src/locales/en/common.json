@@ -166,6 +166,10 @@
       "selectNode": "Select a node",
       "selectNodeDesc": "Click a node on the canvas to view output and logs"
     },
+    "markdown": {
+      "copyCode": "Copy code",
+      "copied": "Copied"
+    },
     "toast": {
       "draftSaved": "Draft saved",
       "draftTooLarge": "Draft too large; reduce text or images",

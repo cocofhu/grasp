@@ -39,6 +39,15 @@ const SEQUENCE = `sequenceDiagram
   S-->>B: 推送 auth.json
   Note over B,S: 401 时重新对齐`
 
+const GO = `func getMaxAllowedTTL(now time.Time, startTime time.Time, duration, maxInstanceLength time.Duration) time.Duration {
+\ttimeLeft := maxInstanceLength - now.Sub(startTime)
+\tif timeLeft <= 0 {
+\t\treturn 0
+\t}
+
+\treturn min(timeLeft, duration)
+}`
+
 const REPLY = `OpenAI 打交道的那一层换成 \`codex app-server\`，沙箱侧和产品层保持不变。
 
 ### Grasp 现状
@@ -47,7 +56,11 @@ const REPLY = `OpenAI 打交道的那一层换成 \`codex app-server\`，沙箱�
 ${FLOW}
 \`\`\`
 
-上图之后的段落保持正常间距。`
+上图之后的段落保持正常间距。
+
+\`\`\`go
+${GO}
+\`\`\``
 
 const ARTIFACT = `# 设计文档
 
@@ -63,7 +76,7 @@ flowchart LR
 \`\`\`
 
 \`\`\`ts
-const plain = 'code block'
+const lessThanEntity = '&lt;'
 \`\`\`
 `
 
