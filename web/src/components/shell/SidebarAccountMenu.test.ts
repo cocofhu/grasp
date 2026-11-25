@@ -15,6 +15,7 @@ async function render(username = 'preview') {
     routes: [
       { path: '/dashboard', component: { template: '<div />' } },
       { path: '/settings', component: { template: '<div />' } },
+      { path: '/settings/ssh-keys', component: { template: '<div />' } },
     ],
   })
   await router.push('/dashboard')
@@ -105,9 +106,13 @@ describe('SidebarAccountMenu', () => {
     await trigger.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     const settings = item('sidebar-account-settings')
+    const sshKeys = item('sidebar-account-ssh-keys')
     const logout = item('sidebar-logout')
     expect(document.activeElement).toBe(settings)
     await key(settings, 'ArrowDown')
+    expect(document.activeElement).toBe(sshKeys)
+    expect(sshKeys.getAttribute('href')).toBe('/settings/ssh-keys')
+    await key(sshKeys, 'ArrowDown')
     expect(document.activeElement).toBe(logout)
     await key(logout, 'ArrowDown')
     expect(document.activeElement).toBe(settings)

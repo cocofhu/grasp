@@ -24,6 +24,7 @@
     "credentials": "Credentials",
     "runLive": "Live run",
     "solo": "Solo chats",
-    "projects": "Repositories"
+    "projects": "Repositories",
+    "sshKeys": "SSH keys"
   }
 }

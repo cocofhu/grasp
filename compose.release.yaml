@@ -40,6 +40,18 @@ services:
       GRASP_DOCTOR_TOKEN: ${GRASP_DOCTOR_TOKEN:-}
       GRASP_DEPLOYMENT_MODE: ${GRASP_DEPLOYMENT_MODE:-local-demo}
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
+      # Local IDEs (VS Code / Cursor Remote-SSH) reach sandboxes through the
+      # SSH gateway; open its port (default 2222) in the firewall when enabled.
+      # Unset values stay empty so the Grasp YAML and built-in defaults apply.
+      GRASP_SSH_GATEWAY_ENABLED: ${GRASP_SSH_GATEWAY_ENABLED:-}
+      GRASP_SSH_GATEWAY_LISTEN: ${GRASP_SSH_GATEWAY_LISTEN:-}
+      GRASP_SSH_GATEWAY_PUBLIC_HOST: ${GRASP_SSH_GATEWAY_PUBLIC_HOST:-}
+      GRASP_SSH_GATEWAY_PUBLIC_PORT: ${GRASP_SSH_GATEWAY_PUBLIC_PORT:-}
+      GRASP_SSH_GATEWAY_ADMINS_ONLY: ${GRASP_SSH_GATEWAY_ADMINS_ONLY:-}
+      GRASP_SSH_GATEWAY_MAX_CONNS: ${GRASP_SSH_GATEWAY_MAX_CONNS:-}
+      GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX: ${GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX:-}
+      # Kept on the persistent /data volume.
+      GRASP_SSH_GATEWAY_HOST_KEY_PATH: ${GRASP_SSH_GATEWAY_HOST_KEY_PATH:-/data/ssh-gateway/host_ed25519_key}
     volumes:
       - ./.localdata/db:/data
       # Agent profiles / org (WORKDIR-relative data/*). Keep separate from SQLite /data.

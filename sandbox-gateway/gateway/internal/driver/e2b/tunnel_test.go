@@ -395,6 +395,29 @@ func TestTunnelTLSAndDiscoveryFailure(t *testing.T) {
 	_ = conn.Close()
 }
 
+func TestEmbeddedGuestRelayUnmaskMatchesBytewise(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal("python3 is required for the E2B guest transport test")
+	}
+	relayPath := filepath.Join(t.TempDir(), "relay.py")
+	if err := os.WriteFile(relayPath, []byte(GuestRelaySource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	program := `import importlib.util, os, sys
+spec=importlib.util.spec_from_file_location('relay',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+for size in (0,1,3,4,5,7,8,125,126,65535,65536,1<<20):
+ data=os.urandom(size);mask=os.urandom(4)
+ assert m.unmask(data,mask)==bytes(v^mask[i%4] for i,v in enumerate(data)),size
+ assert m.unmask(m.unmask(data,mask),mask)==data,size
+assert m.unmask(b'\x00\x00',b'\xff\x00\x00\x00')==b'\xff\x00'
+print('ok')`
+	out, err := exec.Command(python, "-c", program, relayPath).CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "ok" {
+		t.Fatalf("unmask mismatch: %v\n%s", err, out)
+	}
+}
+
 // This subprocess runs only the embedded relay on owned loopback ports. It
 // verifies real stdlib WS-to-TCP behavior, private auth, dynamic allowlists and
 // an idle interval longer than the original ten-second connect-timeout bug.

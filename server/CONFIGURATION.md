@@ -62,4 +62,12 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_GITHUB_OAUTH_CLIENT_ID` | `github.oauth_client_id` | string | `Not set` | Public | Client ID of a GitHub OAuth App with Enable Device Flow checked; enables "Sign in with GitHub" for github.com workspace credentials (no client secret needed) |
 | `GRASP_CODEX_LOGIN_REFRESH_LEAD` | `codex_login.refresh_lead` | duration | `96h` | Public | How long before the access token expires the platform renews a Codex ChatGPT login |
 | `GRASP_CODEX_LOGIN_CHECK_INTERVAL` | `codex_login.check_interval` | duration | `10m` | Public | How often the platform checks whether Codex logins need renewal |
+| `GRASP_SSH_GATEWAY_ENABLED` | `ssh_gateway.enabled` | boolean | `false` | Public | Enable the built-in SSH gateway so local IDEs (VS Code, Cursor) open sandboxes over Remote-SSH (user sbx-<sandbox id>, keys registered in Settings) |
+| `GRASP_SSH_GATEWAY_LISTEN` | `ssh_gateway.listen` | host:port | `:2222` | Public | SSH gateway listen address; expose this TCP port in the deployment |
+| `GRASP_SSH_GATEWAY_PUBLIC_HOST` | `ssh_gateway.public_host` | string | `Not set` | Public | Gateway host name users put in ~/.ssh/config; empty uses the host name the browser opened Grasp with |
+| `GRASP_SSH_GATEWAY_PUBLIC_PORT` | `ssh_gateway.public_port` | integer | `listen port` | Public | Gateway port users connect to (set when a port mapping or load balancer changes it) |
+| `GRASP_SSH_GATEWAY_HOST_KEY_PATH` | `ssh_gateway.host_key_path` | path | `data/ssh-gateway/host_ed25519_key` | Sensitive | Gateway host private key, generated on first start; keep it on a persistent volume shared by all replicas or clients will warn that the host key changed |
+| `GRASP_SSH_GATEWAY_MAX_CONNS` | `ssh_gateway.max_conns` | integer | `200` | Public | Maximum concurrent gateway connections |
+| `GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX` | `ssh_gateway.max_conns_per_sandbox` | integer | `10` | Public | Maximum concurrent connections per sandbox |
+| `GRASP_SSH_GATEWAY_ADMINS_ONLY` | `ssh_gateway.admins_only` | boolean | `false` | Public | Allow only admin accounts through the SSH gateway; when off, Solo session owners may enter their own sandboxes and other sandboxes (workflows) stay admin-only |
 | `GRASP_CODEX_LOGIN_AUTH_BASE_URL` | `codex_login.auth_base_url` | URL | `https://auth.openai.com` | Public | OpenAI auth server for Codex login renewal and device-code sign-in; requests honor HTTPS_PROXY |

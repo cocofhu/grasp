@@ -71,6 +71,9 @@ type Handlers struct {
 	// FrameAncestors are the origins allowed to embed workspace pages.
 	FrameAncestors []string
 	Team           *services.TeamService
+	SSHKeys        *services.SSHKeyService
+	// SSHGateway is nil when the SSH gateway is disabled.
+	SSHGateway *SSHGatewayInfo
 	// CanViewAudit optionally overrides the default audit ACL
 	// (is_admin OR authenticated user who can UpdateWorkspace). Tests use this
 	// to simulate a read-only member denial while production keeps the hook nil.

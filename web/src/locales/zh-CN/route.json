@@ -24,6 +24,7 @@
     "credentials": "凭据",
     "runLive": "实时执行",
     "solo": "Solo 对话",
-    "projects": "仓库"
+    "projects": "仓库",
+    "sshKeys": "SSH 公钥"
   }
 }

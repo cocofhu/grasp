@@ -14,6 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/ssh"
 )
 
 // acpHostPort resolves the live ACP host/port for a sandbox, preferring the
@@ -275,15 +276,96 @@ func (s *SandboxService) resumeForAccess(ctx context.Context, row *models.Sandbo
 	if s.mgr == nil || row.Name == "" {
 		return nil
 	}
-	if row.Purpose == SandboxPurposeSolo {
-		var session models.SoloSession
-		if s.db.Where("sandbox_id = ?", row.ID).First(&session).Error == nil &&
-			(session.Status == models.SoloStatusStopped || session.Status == models.SoloStatusStopping) {
-			return errors.New("会话已手动停止，请先恢复")
-		}
+	if err := s.soloStoppedByUser(row, false); err != nil {
+		return err
 	}
 	_, _, err := s.EnsureRunning(ctx, row.ID)
 	return err
+}
+
+// soloStoppedByUser rejects a Solo environment the user stopped (or, with
+// closed, also one whose session was closed).
+func (s *SandboxService) soloStoppedByUser(row *models.Sandbox, closed bool) error {
+	if row.Purpose != SandboxPurposeSolo {
+		return nil
+	}
+	var session models.SoloSession
+	if s.db.Where("sandbox_id = ?", row.ID).First(&session).Error != nil {
+		return nil
+	}
+	switch {
+	case session.Status == models.SoloStatusStopped || session.Status == models.SoloStatusStopping:
+		return errors.New("会话已手动停止，请先恢复")
+	case closed && session.Status == models.SoloStatusClosed:
+		return errors.New("会话已关闭")
+	}
+	return nil
+}
+
+// DialSSH opens a root SSH client to sandbox id for the SSH gateway and holds
+// it against idle reclaim until release is called. Like the web terminal it
+// wakes a paused environment, but never one the user stopped. Waking, dialing
+// and taking the hold share the recovery lock, so an idle save either finishes
+// before the wake or sees the hold.
+func (s *SandboxService) DialSSH(ctx context.Context, id uint) (*ssh.Client, func(), error) {
+	row, err := s.Get(id)
+	if err != nil {
+		return nil, nil, errSSHNoAccess(id)
+	}
+	if s.mgr == nil || row.Name == "" {
+		return nil, nil, errors.New("沙箱尚未就绪")
+	}
+	if err := s.soloStoppedByUser(row, true); err != nil {
+		return nil, nil, err
+	}
+	unlock, err := s.lockSoloRecovery(ctx, row.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlock()
+	sb, _, err := s.ensureRunningLocked(ctx, row.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	cli, err := sb.DialSSH(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cli, s.AcquireExternalSession(row.ID), nil
+}
+
+func errSSHNoAccess(id uint) error {
+	return fmt.Errorf("沙箱 %d 不存在或无权访问", id)
+}
+
+// SetSSHAdminLookup reports admin accounts for SSH gateway authorization.
+func (s *SandboxService) SetSSHAdminLookup(isAdmin func(username string) bool) {
+	s.mu.Lock()
+	s.sshAdmin = isAdmin
+	s.mu.Unlock()
+}
+
+// AuthorizeSSH lets the owner of a Solo session into its sandbox and admins
+// into any sandbox. Workflow and test sandboxes have no owner, so only admins
+// may enter them. Missing and forbidden sandboxes give the same error.
+func (s *SandboxService) AuthorizeSSH(username string, id uint) error {
+	row, err := s.Get(id)
+	if err != nil || strings.TrimSpace(username) == "" {
+		return errSSHNoAccess(id)
+	}
+	s.mu.Lock()
+	isAdmin := s.sshAdmin
+	s.mu.Unlock()
+	if isAdmin != nil && isAdmin(username) {
+		return nil
+	}
+	if row.Purpose == SandboxPurposeSolo {
+		var n int64
+		if s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND user_id = ?", row.ID, username).Count(&n).Error == nil && n > 0 {
+			return nil
+		}
+	}
+	return errSSHNoAccess(id)
 }
 
 // EnsureRunningByName wakes an explicitly accessed environment, including a
@@ -458,8 +540,8 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		Password:        row.Token,
 	}
 	v.DestroyAt = nil
-	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) {
-		deadline := s.modelIdleSince(row).Add(s.IdleTTL())
+	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) && !s.externalBusy(row.ID) {
+		deadline := s.reclaimIdleSince(row).Add(s.IdleTTL())
 		v.DestroyAt = &deadline
 	}
 	s.applyGatewayLifecycle(ctx, row, &v)

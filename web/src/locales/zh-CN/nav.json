@@ -48,6 +48,7 @@
     "credentials": "凭据",
     "searchWorkflows": "搜索工作流",
     "noMatchingWorkflows": "没有匹配的工作流",
-    "projects": "仓库"
+    "projects": "仓库",
+    "sshKeys": "SSH 公钥"
   }
 }

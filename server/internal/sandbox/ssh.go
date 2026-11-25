@@ -285,11 +285,24 @@ func (c sshCreds) dialOnce(ctx context.Context) (*ssh.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
+	// The handshake honors the dial timeout and ctx; the session that follows
+	// keeps its own lifetime.
+	deadline := time.Now().Add(15 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetDeadline(deadline)
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, c.clientConfig())
+	if !stop() && err == nil {
+		_ = sshConn.Close()
+		err = ctx.Err()
+	}
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
 	}
+	_ = conn.SetDeadline(time.Time{})
 	return ssh.NewClient(sshConn, chans, reqs), nil
 }
 
@@ -530,6 +543,12 @@ func (t *SSHTerminal) Close() error {
 		return t.client.Close()
 	}
 	return nil
+}
+
+// DialSSH opens an authenticated root SSH client to this sandbox with the same
+// credentials as the platform's own terminal. Callers must Close it.
+func (s *Sandbox) DialSSH(ctx context.Context) (*ssh.Client, error) {
+	return s.creds().dial(ctx)
 }
 
 // openTerminal starts an interactive login shell with a PTY over SSH.

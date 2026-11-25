@@ -3520,6 +3520,92 @@
         "stopping": "Saving the environment and releasing runtime resources…",
         "backup": "Saved {time} · {size}",
         "resume": "Resume"
+      },
+      "sandboxInfo": {
+        "button": "Sandbox info",
+        "title": "Sandbox",
+        "state": {
+          "preparing": "Preparing",
+          "running": "Running",
+          "busy": "Running · Agent working",
+          "paused": "Paused",
+          "waking": "Waking…",
+          "stopping": "Stopping…",
+          "stopped": "Stopped",
+          "closed": "Closed",
+          "error": "Error"
+        },
+        "step": {
+          "pulling": "Pulling the image",
+          "creating": "Creating the environment"
+        },
+        "action": {
+          "stop": "Stop environment",
+          "wake": "Wake",
+          "resume": "Resume",
+          "restart": "Start again",
+          "stopBusy": "The Agent is working or messages are queued; stop is unavailable for now"
+        },
+        "lifecycle": {
+          "title": "Lifecycle",
+          "kind": "Environment",
+          "kindSnapshot": "E2B (saved and paused when idle)",
+          "kindFiles": "Docker / Kubernetes (never reclaimed for idling)",
+          "reclaim": "Idle reclaim",
+          "countdown": "Saved and paused in {time}",
+          "soon": "Saving and pausing soon",
+          "exempt": "Never reclaimed; only a manual stop releases it",
+          "keptAlive": "Kept running; never reclaimed",
+          "connected": "Local IDE connected; countdown paused",
+          "keepAlive": "Keep running",
+          "lastModel": "Last model activity",
+          "lastModelHint": "Only Agent turns reset the idle countdown; opening the IDE or terminal does not",
+          "backup": "Last backup"
+        },
+        "ide": {
+          "title": "Local IDE",
+          "connections": "{n} open connections",
+          "pausedHint": "The sandbox is paused and wakes when you connect; this can take tens of seconds.",
+          "command": "SSH command",
+          "commandHint": "Runs in any terminal without configuration",
+          "config": "Optional: SSH host alias",
+          "configHint": "To use a short name such as ssh grasp, add these lines to ~/.ssh/config on your machine. The IDE buttons do not need it.",
+          "timeoutHint": "If the IDE times out, raise remote.SSH.connectTimeout to 60 seconds.",
+          "hostKey": "Gateway host fingerprint",
+          "noKey": "Register an SSH public key to connect from your machine",
+          "addKey": "Add key",
+          "adminsOnly": "SSH access is limited to admins",
+          "unavailable": {
+            "preparing": "Available once the environment is ready",
+            "stopping": "The environment is stopping",
+            "stopped": "The environment is stopped; resume it to connect",
+            "closed": "The session is closed",
+            "error": "The environment has an error"
+          },
+          "openIn": "Open in {ide}",
+          "connectWith": "Connect with {ide}",
+          "choose": "Choose IDE",
+          "menuTitle": "Local IDE (Remote-SSH)",
+          "cnEdition": "China edition",
+          "info": "SSH connection details",
+          "user": "User",
+          "host": "Host",
+          "port": "Port",
+          "path": "Project folder",
+          "jetbrainsHint": "In JetBrains Gateway choose SSH → New Connection, enter the user, host and port below, and use /root/workspace as the project folder."
+        },
+        "details": {
+          "title": "Details",
+          "sandbox": "Sandbox",
+          "agent": "Agent",
+          "repo": "Repository",
+          "workdir": "Workspace",
+          "created": "Created",
+          "emptyRepo": "Empty workspace"
+        },
+        "copy": "Copy",
+        "copied": "Copied",
+        "webIde": "Browser IDE"
       }
     },
     "projects": {
@@ -3778,6 +3864,29 @@
         "verified": "Verified",
         "work_kind": "Work kind"
       }
+    },
+    "sshKeys": {
+      "title": "SSH keys",
+      "subtitle": "Register a public key to open sandboxes from VS Code, Cursor or a terminal over SSH. Keys stay in Grasp and are never written into sandboxes.",
+      "add": "Add key",
+      "name": "Name",
+      "namePlaceholder": "Empty uses the comment at the end of the key",
+      "key": "Public key",
+      "keyPlaceholder": "Paste the full contents of ~/.ssh/id_ed25519.pub",
+      "empty": "No keys registered",
+      "emptyHint": "Run ssh-keygen -t ed25519 on your machine, then paste the contents of the .pub file here.",
+      "fingerprint": "Fingerprint",
+      "addedAt": "Added {time}",
+      "lastUsed": "Last used {time}",
+      "neverUsed": "Never used",
+      "delete": "Delete",
+      "deleteTitle": "Delete key",
+      "deleteBody": "SSH connections using \"{name}\" are closed immediately.",
+      "gatewayOff": "An admin has not enabled the SSH gateway yet, so registered keys cannot be used.",
+      "adminsOnly": "The SSH gateway is limited to admins.",
+      "howTo": "In a Solo session, click the info icon at the top to copy the SSH command or open the sandbox in VS Code / Cursor.",
+      "saved": "Key added",
+      "deleted": "Key deleted"
     }
   }
 }

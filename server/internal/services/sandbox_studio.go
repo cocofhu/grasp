@@ -727,6 +727,9 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 			}
 			continue
 		}
+		if s.externalBusy(row.ID) {
+			continue
+		}
 		if exempt || !s.idleDue(&row, now) || s.keepAlive(&row) {
 			s.maybeTrimMemory(ctx, row, now)
 			continue
