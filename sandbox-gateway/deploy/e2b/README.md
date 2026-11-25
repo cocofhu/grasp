@@ -16,7 +16,7 @@ E2B 是 sandbox-gateway 的一种独立驱动，适用于 E2B Cloud 或自托管
 - 用户平台来源与 guest 回连来源分开配置，例如 `https://grasp.example.com` 和 `https://callback.internal.example.com`。不配置子域名基址时预览仅走 noVNC，不需要额外域名或通配符证书；如需恢复新标签打开、取点、浮动对话与应用分享，可按连接或全局配置 `preview.expose.subdomain.base_url`（或 `GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL`），并提供通配 DNS、通配证书及保留原始 `Host` 的入口 TLS 终止（`production` 模式要求 `https` 且与平台分属不同可注册根域）。
 - 只有边缘代理应能访问平台 HTTP listener。用宿主防火墙保护 Grasp 原始端口，gateway 控制面仅监听 loopback；不要把 E2B 管理端口、relay、CDP 或动态本地端口开放到公网。
 
-未配置子域名时，路径代理与 Docker/Kubernetes 一样在 CSP sandbox 的不透明来源中运行（不提供新标签入口），代理只服务当前沙箱代次的注册端口，并在双向剥离 E2B 路由头。启用 `subdomain` 策略后，每个活动预览获得 128-bit 随机能力子域名（会出现在 DNS 查询与 TLS SNI 中；不随分享链接撤销立即失效，随预览替换或沙箱回收失效），反代剥离所有 `Set-Cookie` 的 `Domain` 属性以隔离同基址下的不同预览，并在 E2B 沙箱暂停时自动唤醒。
+未配置子域名时，路径代理与 Docker/Kubernetes 一样在 CSP sandbox 的不透明来源中运行（不提供新标签入口），代理只服务当前沙箱代次的注册端口，并在双向剥离 E2B 路由头。启用 `subdomain` 策略后，每个活动预览获得 128-bit 随机能力子域名（会出现在 DNS 查询与 TLS SNI 中；不随分享链接撤销立即失效，随预览替换或沙箱回收失效），反代剥离所有 `Set-Cookie` 的 `Domain` 属性以隔离同基址下的不同预览，并在 E2B 沙箱暂停时自动唤醒。更换 `base_url` 后，旧基址下的预览链接返回 404、不会进入平台页面；轮换完成后仍应在边缘入口撤掉旧的通配 DNS 与证书。
 
 ## 内网访问
 

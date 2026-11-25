@@ -313,6 +313,12 @@ func (s *PreviewService) ProbeHTTPPort(ctx context.Context, sandboxName string, 
 	return ok && probePreviewHTTP(ctx, base, 0)
 }
 
+// previewProbeClient judges only the first hop: an app that redirects "/" to
+// a login page is healthy, and the injector marker is on that first response.
+var previewProbeClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
 func probePreviewHTTP(ctx context.Context, base string, wantUpstream int) bool {
 	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -320,7 +326,7 @@ func probePreviewHTTP(ctx context.Context, base string, wantUpstream int) bool {
 	if err != nil {
 		return false
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := previewProbeClient.Do(req)
 	if err != nil {
 		return false
 	}

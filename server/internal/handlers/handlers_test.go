@@ -51,7 +51,7 @@ func (fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history
 }
 
 type harness struct {
-	r      *gin.Engine
+	r      http.Handler
 	h      *handlers.Handlers
 	db     *gorm.DB
 	host   *mcp.Host

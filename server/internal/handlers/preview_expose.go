@@ -12,26 +12,36 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PreviewExposeMiddleware intercepts requests targeting any configured inbound
-// preview host (e.g. wildcard subdomains) before CORS, static assets, API, and
-// SPA fallback routes. Claimed hosts never fall through to platform routes.
-func (h *Handlers) PreviewExposeMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if h.PreviewExpose == nil {
-			c.Next()
+// PreviewExposeRouter sends preview hosts to their own route-less engine
+// before platform matches a route, so platform redirects (trailing slash)
+// never rewrite app paths and claimed hosts never reach CORS, static assets,
+// API or SPA routes. A ticket host that no configured base claims (a retired
+// base_url whose wildcard DNS still points here) gets 404 as well.
+func (h *Handlers) PreviewExposeRouter(platform http.Handler) http.Handler {
+	previews := gin.New()
+	previews.Use(gin.Recovery())
+	previews.NoRoute(func(c *gin.Context) {
+		inb, key, _ := h.matchPreviewHost(c.Request.Host)
+		h.serveExposedPreview(c, inb, key)
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, claimed := h.matchPreviewHost(r.Host); claimed {
+			previews.ServeHTTP(w, r)
 			return
 		}
-		for _, inb := range h.PreviewExpose.Inbounds() {
-			key, claimed := inb.MatchHost(c.Request.Host)
-			if !claimed {
-				continue
-			}
-			c.Abort()
-			h.serveExposedPreview(c, inb, key)
-			return
+		platform.ServeHTTP(w, r)
+	})
+}
+
+// matchPreviewHost returns the inbound that claims authority and its key.
+// A retired ticket host is claimed with no inbound and an empty key.
+func (h *Handlers) matchPreviewHost(authority string) (previewexpose.Inbound, string, bool) {
+	for _, inb := range h.PreviewExpose.Inbounds() {
+		if key, claimed := inb.MatchHost(authority); claimed {
+			return inb, key, true
 		}
-		c.Next()
 	}
+	return nil, "", previewexpose.TicketHost(authority)
 }
 
 // exposedSecurityHeaders are set once on every claimed-host response and

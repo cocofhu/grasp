@@ -55,7 +55,10 @@ func seedExposedSubdomainHarness(t *testing.T, baseA, baseB string, upstreamURL 
 		"5173":  "127.0.0.1:1",
 	})
 
-	key := "0123456789abcdef0123456789abcdef"
+	key, err := previewexpose.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := preview.ReplacePreview(mcp.PreviewPort{
 		RunID: "run-sub", NodeID: "app", Kind: mcp.PreviewKindPort, Port: 5173,
 		ProxyURL: "/preview/run-sub/app/5173/", Host: upstreamURL, InjectorPort: 18080,
@@ -108,6 +111,23 @@ func TestSubdomainInboundProxySecurityAndBehavior(t *testing.T) {
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("host %q on /api/health: got %d, want 404", host, w.Code)
 		}
+	}
+
+	// 1b. A ticket host under a retired base_url (still routed here by old
+	// wildcard DNS) must 404 rather than reach platform routes.
+	for _, path := range []string{"/api/health", "/", "/login"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = key + ".preview-old.retired.test"
+		if w := serve(hn, req); w.Code != http.StatusNotFound || w.Body.String() != "preview not found" {
+			t.Fatalf("retired ticket host %s: got %d %q, want 404", path, w.Code, w.Body.String())
+		}
+	}
+
+	// 1c. Platform trailing-slash redirects never apply to app paths.
+	slashReq := httptest.NewRequest(http.MethodGet, "/api/health/", nil)
+	slashReq.Host = validHost
+	if w := serve(hn, slashReq); w.Code != http.StatusOK || w.Body.String() != "ok:/api/health/" {
+		t.Fatalf("app path /api/health/ on preview host: %d %q, want upstream 200", w.Code, w.Body.String())
 	}
 
 	// 2. Cross-base ownership check: gateway A's key on gateway B's base_url must 404.

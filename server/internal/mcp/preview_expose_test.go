@@ -165,6 +165,24 @@ func TestPreviewExposeLegacyRowsMultiGatewayAndUnknownConnection(t *testing.T) {
 		t.Fatalf("legacy direct row DirectURL = %q", got.DirectURL)
 	}
 
+	// Rows bound under another strategy stay closed after the connection
+	// switches to direct, until set_preview registers them again.
+	ticket, err := previewexpose.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, stored := range []previewexpose.Binding{{Strategy: previewexpose.StrategyNone}, {Strategy: previewexpose.StrategySubdomain, Key: ticket}} {
+		runID := "r-switched-" + stored.Strategy
+		h.replacePreviewMem(PreviewPort{
+			RunID: runID, NodeID: "n1", Kind: PreviewKindPort, Port: 5174 + i,
+			SandboxName: "sb-direct", Host: "http://10.0.0.5:18080", Healthy: true,
+			ExposeStrategy: stored.Strategy, ExposeKey: stored.Key,
+		})
+		if got := activePreviewOrFail(t, h, runID, "n1"); got.DirectURL != "" {
+			t.Fatalf("%s row exposed after switching to direct: %q", stored.Strategy, got.DirectURL)
+		}
+	}
+
 	// Legacy row on subdomain gateway without ExposeKey does NOT lazy-bind.
 	h.replacePreviewMem(PreviewPort{
 		RunID: "r-e2b-old", NodeID: "n1", Kind: PreviewKindPort, Port: 5173,

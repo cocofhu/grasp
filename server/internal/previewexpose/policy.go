@@ -71,7 +71,7 @@ func NewPolicy(opts PolicyOptions) (*Policy, []string, error) {
 			transport = "direct"
 		}
 		rawStrategy := strings.ToLower(strings.TrimSpace(conn.Strategy))
-		if rawStrategy == "" {
+		if rawStrategy == "" || rawStrategy == StrategyAuto {
 			rawStrategy = globalStrategy
 		}
 		switch rawStrategy {

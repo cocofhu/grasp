@@ -808,10 +808,13 @@ func (h *Host) annotatePreviewTransport(p PreviewPort) PreviewPort {
 	}
 	p.Mode = "direct"
 	exp := h.previewExposer(p.SandboxName)
-	var binding previewexpose.Binding
-	if p.ExposeStrategy == exp.Name() {
-		binding = previewexpose.Binding{Strategy: p.ExposeStrategy, Key: p.ExposeKey}
+	// A registration bound under another strategy waits for the next
+	// set_preview. Rows from before #1368 carry no strategy; only the
+	// stateless direct exposer can serve them, from Host alone.
+	if p.ExposeStrategy != "" && p.ExposeStrategy != exp.Name() {
+		return p
 	}
+	binding := previewexpose.Binding{Strategy: p.ExposeStrategy, Key: p.ExposeKey}
 	p.DirectURL = exp.URL(previewexpose.Target{Upstream: p.Host}, binding)
 	return p
 }

@@ -218,6 +218,15 @@ func (s *SubdomainExposer) MatchHost(authority string) (key string, claimed bool
 	return label, true
 }
 
+// TicketHost reports whether authority's first DNS label is a canonical expose
+// key, the shape of every subdomain preview origin this package issues. Such a
+// host must never reach platform routes, even after its base_url is retired.
+func TicketHost(authority string) bool {
+	host, _ := authorityParts(authority)
+	label, rest, ok := strings.Cut(host, ".")
+	return ok && rest != "" && ValidKey(label)
+}
+
 func authorityParts(authority string) (host, port string) {
 	raw := strings.TrimSpace(authority)
 	if raw == "" {

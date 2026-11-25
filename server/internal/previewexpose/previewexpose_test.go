@@ -43,7 +43,10 @@ func TestParseBaseAndMatchHost(t *testing.T) {
 	}
 
 	sub := NewSubdomain(base)
-	key := "0123456789abcdef0123456789abcdef"
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := sub.URL(Target{}, Binding{Strategy: StrategySubdomain, Key: key}); got != "https://"+key+".preview.example.com/" {
 		t.Fatalf("URL = %q", got)
 	}
@@ -73,6 +76,20 @@ func TestParseBaseAndMatchHost(t *testing.T) {
 		gotKey, claimed := sub.MatchHost(tc.host)
 		if gotKey != tc.wantKey || claimed != tc.claimed {
 			t.Errorf("MatchHost(%q) = (%q, %v), want (%q, %v)", tc.host, gotKey, claimed, tc.wantKey, tc.claimed)
+		}
+	}
+
+	for host, want := range map[string]bool{
+		key + ".retired.example.com":       true,
+		key + ".retired.example.com:8080":  true,
+		strings.ToUpper(key) + ".OLD.TEST": true,
+		key:                                false,
+		"grasp.example.com":                false,
+		"a." + key + ".example.com":        false,
+		key[:31] + ".example.com":          false,
+	} {
+		if got := TicketHost(host); got != want {
+			t.Errorf("TicketHost(%q) = %v, want %v", host, got, want)
 		}
 	}
 }
@@ -178,7 +195,7 @@ func TestPolicyEffectiveRulesAndValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("explicit conn auto overrides global none when non-private", func(t *testing.T) {
+	t.Run("explicit conn auto inherits the global strategy", func(t *testing.T) {
 		p, _, err := NewPolicy(PolicyOptions{
 			GlobalStrategy:  StrategyNone,
 			PublicAdvertise: "http://grasp.example.com",
@@ -189,8 +206,8 @@ func TestPolicyEffectiveRulesAndValidation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewPolicy: %v", err)
 		}
-		if p.For("dir-auto", true).Name() != StrategyDirect {
-			t.Fatalf("dir-auto = %s, want direct", p.For("dir-auto", true).Name())
+		if p.For("dir-auto", true).Name() != StrategyNone {
+			t.Fatalf("dir-auto = %s, want none from global", p.For("dir-auto", true).Name())
 		}
 	})
 
