@@ -79,6 +79,7 @@ Solo、工作流和 Agent 测试使用同一套聊天展示。悬停消息可查
 - 单个文件归档默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`）；超限或校验失败时保留原环境。
 - `solo_backup.keep`（`GRASP_SOLO_BACKUP_KEEP`）统一控制文件和快照的恢复点数量，默认 **1**。新保存成功后才淘汰旧版本，恢复总用最新成功版本。取消运行/关闭会话删除其全部恢复点，失败会重试。
 - [沙箱生命周期](sandbox-lifecycle.md) 说明等待人工、手动停止、恢复和清理失败的行为。
+- [用本地 IDE 连接沙箱](local-ide.md) 说明内置 SSH 网关的开启、部署和使用。
 
 ## 数据库与附件同生命周期
 

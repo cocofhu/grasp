@@ -40,6 +40,10 @@ services:
       GRASP_DOCTOR_TOKEN: ${GRASP_DOCTOR_TOKEN:-}
       GRASP_DEPLOYMENT_MODE: ${GRASP_DEPLOYMENT_MODE:-local-demo}
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:-}
+      # Local IDEs (VS Code / Cursor Remote-SSH) reach sandboxes through this port.
+      GRASP_SSH_GATEWAY_ENABLED: ${GRASP_SSH_GATEWAY_ENABLED:-false}
+      GRASP_SSH_GATEWAY_LISTEN: ":${GRASP_SSH_GATEWAY_PORT:-2222}"
+      GRASP_SSH_GATEWAY_HOST_KEY_PATH: /data/ssh-gateway/host_ed25519_key
     volumes:
       - ./.localdata/db:/data
       # Agent profiles / org (WORKDIR-relative data/*). Keep separate from SQLite /data.

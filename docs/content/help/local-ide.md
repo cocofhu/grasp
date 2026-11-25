@@ -1,0 +1,66 @@
+# 用本地 IDE 连接沙箱
+
+开启内置 SSH 网关后，可以用本地的 VS Code、Cursor（Remote-SSH）或任意终端直接打开沙箱，E2B、Docker、Kubernetes 用同一种方式。本地只需要 IDE 和系统自带的 OpenSSH，不用安装其他程序。
+
+```
+VS Code / Cursor ──SSH──> Grasp SSH 网关（默认 2222 端口）──> 沙箱 sshd
+```
+
+SSH 用户名决定连哪个沙箱：`sbx-<沙箱 ID>`。网关用你在 Grasp 登记的公钥认证，再以 root 身份连进沙箱。公钥只保存在 Grasp，不会写入沙箱；删除公钥后，使用它的连接会立即断开。
+
+## 管理员：开启网关
+
+| 配置 | 环境变量 | 说明 |
+| --- | --- | --- |
+| `ssh_gateway.enabled` | `GRASP_SSH_GATEWAY_ENABLED` | 设为 `true` 开启，默认关闭 |
+| `ssh_gateway.listen` | `GRASP_SSH_GATEWAY_LISTEN` | 监听地址，默认 `:2222` |
+| `ssh_gateway.public_host` | `GRASP_SSH_GATEWAY_PUBLIC_HOST` | 用户连接的主机名；留空使用浏览器访问 Grasp 的主机名 |
+| `ssh_gateway.public_port` | `GRASP_SSH_GATEWAY_PUBLIC_PORT` | 用户连接的端口；端口映射或负载均衡改了端口时设置 |
+| `ssh_gateway.host_key_path` | `GRASP_SSH_GATEWAY_HOST_KEY_PATH` | 网关主机私钥，首次启动自动生成 |
+| `ssh_gateway.max_conns` / `max_conns_per_sandbox` | 同名大写 | 全局 / 单沙箱连接上限，默认 200 / 10 |
+| `ssh_gateway.admins_only` | `GRASP_SSH_GATEWAY_ADMINS_ONLY` | 只允许管理员账号连接 |
+
+部署时注意：
+
+- **对外开放 TCP 端口。** Docker Compose 示例使用主机网络，放行防火墙端口即可。Kubernetes 的 Ingress 只转发 HTTP，需要另建 `LoadBalancer` 或 `NodePort` 类型的 Service，示例见 `sandbox-gateway/deploy/k8s/stack.example.yaml` 末尾的 `grasp-ssh`。公司网络只放行 443 时，这个端口可能不通。
+- **主机私钥要持久化。** 所有沙箱共用这一把主机密钥，所以沙箱重建或 E2B 恢复后不会出现「主机密钥已变更」的提示。它必须放在持久卷上（示例都放在 `/data` 下），多副本部署时还要共享，否则每次重新部署客户端都会报警。
+- **配置只在启动时读取**，修改后需要重启服务。
+
+## 安全说明
+
+- 目前沙箱还没有按用户隔离：任何登记了公钥的账号都能以 root 进入任意沙箱，和网页终端的规则一致。需要收紧时开启 `admins_only`。
+- 网关会解开并重新建立 SSH 连接，能看到会话明文。平台本来就持有沙箱的 root 权限，安全边界不变。
+- 只支持公钥认证。同一来源地址在 5 分钟内连续认证失败 20 次后会被暂时拒绝。
+- 不支持远程端口转发（`-R`）、agent 转发和 X11 转发；本地端口转发（`-L`）、SFTP 和 VS Code/Cursor 需要的通道都可用。
+- 网关重启时现有连接会断开，IDE 会自动重连。
+
+## 用户：第一次连接
+
+1. 在本机生成密钥（已有可跳过）：`ssh-keygen -t ed25519`。
+2. 在左下角账号菜单打开 **「SSH 公钥」**，粘贴 `~/.ssh/id_ed25519.pub` 的内容。支持 ed25519、ECDSA 和至少 2048 位的 RSA。
+3. 打开一个 Solo 会话，点击顶部右侧的 **信息图标**。「本地 IDE」区域会给出：
+   - 一条 SSH 命令，例如 `ssh -p 2222 sbx-12@grasp.example.com`，无需任何配置即可在终端运行；
+   - 一段 `~/.ssh/config` 配置，定义名为 `grasp` 的主机别名；
+   - 「用 VS Code 打开」「用 Cursor 打开」按钮，依赖上面的 `grasp` 别名，会直接打开 `/root/workspace`。
+
+配置片段示例：
+
+```
+Host grasp
+  HostName grasp.example.com
+  Port 2222
+  ServerAliveInterval 30
+```
+
+之后也可以在 VS Code 里执行 **Remote-SSH: Connect to Host**，输入 `sbx-12@grasp`。一台电脑可以同时连接多个沙箱，每个沙箱一个窗口。
+
+## 连接与沙箱状态
+
+- **已暂停的 E2B 沙箱**会在连接时自动唤醒，可能需要几十秒。VS Code 默认 15 秒超时，如果连接失败，把设置 `remote.SSH.connectTimeout` 调到 60。
+- **手动停止或已关闭的会话**不会被 SSH 连接唤醒，终端会显示原因，例如「会话已手动停止，请先恢复」。先在 Grasp 中恢复会话再连接。
+- **连接期间不会被空闲回收。** 只要还有 IDE 连接，E2B 沙箱就不会被自动保存并暂停，也不会清理内存缓存；最后一个连接断开后重新开始计时。信息面板里会显示「本地 IDE 连接中，暂停计时」。
+- 信息面板还会显示环境类型、自动回收倒计时、最近模型活动和最近备份，并提供停止、唤醒、恢复和「保持运行」开关。
+
+## 资源占用
+
+VS Code / Cursor 会在沙箱里运行远程服务端，约占 0.5–1.5 GB 内存（JetBrains 约 2–4 GB），规格较小的模板可能挤占 Agent 的内存。Docker/Kubernetes 沙箱停止后，`~/.vscode-server`、`~/.cursor-server` 不在工作区归档内，下次连接会重新下载。

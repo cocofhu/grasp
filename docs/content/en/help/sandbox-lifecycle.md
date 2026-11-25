@@ -29,7 +29,9 @@ waiting for tool results never counts as idle, and every new turn restarts the
 interval. The interval is persisted across platform restarts. Page polling,
 WebSockets, IDE/preview access and terminal activity do not extend it, so dev
 servers, downloads or background commands left after a turn are saved and paused
-with the environment when it expires.
+with the environment when it expires. The exception is a local IDE connected
+through the [SSH gateway](local-ide.md): while one is open the environment is not
+reclaimed, and the interval restarts when the last connection closes.
 
 To keep an environment, right-click the session or run under Running in the
 sidebar and check **Never auto-reclaim**. The choice is stored on the session or

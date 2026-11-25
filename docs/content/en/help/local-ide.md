@@ -1,0 +1,66 @@
+# Open sandboxes from a local IDE
+
+With the built-in SSH gateway enabled, you can open any sandbox (E2B, Docker or Kubernetes) from VS Code, Cursor (Remote-SSH) or a terminal on your own machine. You only need the IDE and the OpenSSH client that ships with your OS.
+
+```
+VS Code / Cursor ──SSH──> Grasp SSH gateway (port 2222 by default) ──> sandbox sshd
+```
+
+The SSH user name selects the sandbox: `sbx-<sandbox id>`. The gateway authenticates the public key you registered in Grasp, then logs into the sandbox as root. Keys stay in Grasp and are never written into sandboxes; deleting a key closes every connection that used it.
+
+## Admins: enable the gateway
+
+| Setting | Environment variable | Meaning |
+| --- | --- | --- |
+| `ssh_gateway.enabled` | `GRASP_SSH_GATEWAY_ENABLED` | `true` turns it on; off by default |
+| `ssh_gateway.listen` | `GRASP_SSH_GATEWAY_LISTEN` | Listen address, default `:2222` |
+| `ssh_gateway.public_host` | `GRASP_SSH_GATEWAY_PUBLIC_HOST` | Host name users connect to; empty uses the host name the browser opened Grasp with |
+| `ssh_gateway.public_port` | `GRASP_SSH_GATEWAY_PUBLIC_PORT` | Port users connect to; set it when a port mapping or load balancer changes it |
+| `ssh_gateway.host_key_path` | `GRASP_SSH_GATEWAY_HOST_KEY_PATH` | Gateway host private key, generated on first start |
+| `ssh_gateway.max_conns` / `max_conns_per_sandbox` | Same names in upper case | Global / per-sandbox connection limits, default 200 / 10 |
+| `ssh_gateway.admins_only` | `GRASP_SSH_GATEWAY_ADMINS_ONLY` | Allow only admin accounts |
+
+When deploying:
+
+- **Expose the TCP port.** The Docker Compose examples use host networking, so open the port in the firewall. A Kubernetes Ingress only carries HTTP; add a `LoadBalancer` or `NodePort` Service such as the commented `grasp-ssh` at the end of `sandbox-gateway/deploy/k8s/stack.example.yaml`. Networks that only allow port 443 may block it.
+- **Persist the host key.** Every sandbox is served under this one key, so rebuilt or resumed sandboxes never trigger a "host key changed" warning. Keep it on a persistent volume (the examples use `/data`) and share it between replicas, or clients will warn after every redeploy.
+- **Settings are read at startup**; restart the server after changing them.
+
+## Security notes
+
+- Sandboxes are not yet isolated per user: any account with a registered key can enter any sandbox as root, the same rule as the web terminal. Turn on `admins_only` to restrict it.
+- The gateway terminates and re-opens the SSH connection, so it can see session contents. The platform already holds root on every sandbox, so the trust boundary does not change.
+- Only public-key authentication is accepted. A source address is refused for a while after 20 failed attempts within 5 minutes.
+- Remote forwarding (`-R`), agent forwarding and X11 are not supported. Local forwarding (`-L`), SFTP and the channels VS Code and Cursor need all work.
+- Restarting the server drops open connections; IDEs reconnect on their own.
+
+## Users: first connection
+
+1. Create a key if you do not have one: `ssh-keygen -t ed25519`.
+2. Open **SSH keys** from the account menu at the bottom left and paste the contents of `~/.ssh/id_ed25519.pub`. ed25519, ECDSA and RSA of at least 2048 bits are supported.
+3. In a Solo session, click the **info icon** at the top right. The **Local IDE** section gives you:
+   - an SSH command such as `ssh -p 2222 sbx-12@grasp.example.com` that works in any terminal without configuration;
+   - a `~/.ssh/config` snippet that defines a host alias named `grasp`;
+   - **Open in VS Code** and **Open in Cursor** buttons, which use that `grasp` alias and open `/root/workspace` directly.
+
+Example snippet:
+
+```
+Host grasp
+  HostName grasp.example.com
+  Port 2222
+  ServerAliveInterval 30
+```
+
+You can also run **Remote-SSH: Connect to Host** in VS Code and enter `sbx-12@grasp`. One machine can connect to several sandboxes at once, one window each.
+
+## Connections and sandbox state
+
+- **A paused E2B sandbox** wakes when you connect, which can take tens of seconds. VS Code times out after 15 seconds by default; if it fails, raise `remote.SSH.connectTimeout` to 60.
+- **A session you stopped or closed** is not woken by SSH. The terminal shows why, for example that the session was stopped manually. Resume it in Grasp first.
+- **Connected sandboxes are not reclaimed for idling.** While any IDE connection is open, an E2B sandbox is neither saved and paused nor memory-trimmed; the idle countdown restarts when the last connection closes. The info panel shows "Local IDE connected; countdown paused".
+- The info panel also shows the environment type, the idle reclaim countdown, the last model activity and the last backup, and offers stop, wake, resume and **Keep running**.
+
+## Resource use
+
+VS Code and Cursor run a remote server inside the sandbox that uses about 0.5–1.5 GB of memory (JetBrains about 2–4 GB), which can crowd the Agent on small templates. After a Docker/Kubernetes sandbox stops, `~/.vscode-server` and `~/.cursor-server` are not in the workspace archive, so the next connection downloads them again.

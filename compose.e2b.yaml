@@ -51,6 +51,12 @@ services:
       GRASP_SANDBOX_RUNTIME_BUNDLE: /app/sandbox-runtime/sandbox-runtime.tgz
       GRASP_SANDBOX_WORK_DIR: /data/sandbox-home
       GRASP_PROFILES_ROOT: /app/data/profiles
+      # Local IDEs (VS Code / Cursor Remote-SSH) reach sandboxes through this
+      # port; open it in the firewall when enabled. The host key must persist.
+      GRASP_SSH_GATEWAY_ENABLED: ${GRASP_SSH_GATEWAY_ENABLED:-false}
+      GRASP_SSH_GATEWAY_LISTEN: ":${GRASP_SSH_GATEWAY_PORT:-2222}"
+      GRASP_SSH_GATEWAY_PUBLIC_HOST: ${GRASP_SSH_GATEWAY_PUBLIC_HOST:-}
+      GRASP_SSH_GATEWAY_HOST_KEY_PATH: /data/ssh-gateway/host_ed25519_key
     volumes:
       - ${GRASP_CONFIG:?Set GRASP_CONFIG to your Grasp YAML}:/etc/grasp/grasp.yaml:ro
       - e2b-server-data:/data
