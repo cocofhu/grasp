@@ -1019,6 +1019,10 @@ type RunPreviewPort struct {
 	Healthy bool   `json:"healthy"`
 	// InjectorPort is the published upstream when it differs from the app port.
 	InjectorPort int `json:"-"`
+	// ExposeStrategy records the resolved preview exposure strategy (direct / subdomain / none).
+	ExposeStrategy string `json:"-"`
+	// ExposeKey is the unique opaque route key for inbound strategies (NULL when unused).
+	ExposeKey *string `gorm:"uniqueIndex:idx_preview_expose_key" json:"-"`
 	// KeepalivePID is the setsid-detached listener pid recorded by KeepalivePort
 	// so Cancel/Abort session cleanup can whitelist it (sandbox Destroy still
 	// reclaims the whole container with the Run/gate lifecycle).

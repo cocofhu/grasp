@@ -82,45 +82,10 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
-
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
-	host, sandboxName := reg.Host, reg.SandboxName
 	private := h.privateEndpoints()
-	if private && !h.privatePreviewBound(reg) {
-		c.String(http.StatusGone, "preview expired")
-		return
-	}
-
-	// When co-located with the sandbox manager, enforce liveness + health and
-	// refresh a stale/empty upstream host (container IP changes across restarts).
-	if h.Sbx != nil {
-		if mgr := h.Sbx.Manager(); mgr != nil && sandboxName != "" {
-			if mgr.Status(ctx, sandboxName) != "running" {
-				if err := h.Sbx.EnsureRunningByName(c.Request.Context(), sandboxName); err != nil {
-					if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrSoloSandboxGone) {
-						c.String(http.StatusGone, "sandbox recycled")
-						return
-					}
-					c.String(http.StatusConflict, "sandbox recovery unavailable: %v", err)
-					return
-				}
-				// Restoration can exceed the short upstream health-probe budget.
-				cancel()
-				ctx, cancel = context.WithTimeout(c.Request.Context(), 5*time.Second)
-				defer cancel()
-			}
-			h.Sbx.TouchActivityByName(sandboxName)
-			var ok bool
-			if host, ok = h.refreshPreviewHost(ctx, c, reg); !ok {
-				return
-			}
-		}
-	}
-
-	if host == "" {
-		c.String(http.StatusNotFound, "preview not registered")
+	host, ok := h.livePreviewUpstream(c, reg, private)
+	if !ok {
 		return
 	}
 	target, err := url.Parse(host)
@@ -159,6 +124,47 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 
 	forwardCookiesToUpstream(c.Request)
 	servePreviewUpstream(c, proxy, target, prefix, private)
+}
+
+// livePreviewUpstream verifies generation binding (when requireBound), wakes
+// a paused sandbox using the request context, touches activity, and refreshes
+// the registered upstream host. Writes the HTTP error response and returns
+// ok=false on failure.
+func (h *Handlers) livePreviewUpstream(c *gin.Context, reg mcp.PreviewPort, requireBound bool) (string, bool) {
+	if requireBound && !h.privatePreviewBound(reg) {
+		c.String(http.StatusGone, "preview expired")
+		return "", false
+	}
+	host, sandboxName := reg.Host, reg.SandboxName
+	if h.Sbx != nil {
+		if mgr := h.Sbx.Manager(); mgr != nil && sandboxName != "" {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			if mgr.Status(ctx, sandboxName) != "running" {
+				cancel()
+				// Restoration can exceed the short upstream health-probe budget.
+				if err := h.Sbx.EnsureRunningByName(c.Request.Context(), sandboxName); err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrSoloSandboxGone) {
+						c.String(http.StatusGone, "sandbox recycled")
+						return "", false
+					}
+					c.String(http.StatusConflict, "sandbox recovery unavailable: %v", err)
+					return "", false
+				}
+				ctx, cancel = context.WithTimeout(c.Request.Context(), 5*time.Second)
+			}
+			defer cancel()
+			h.Sbx.TouchActivityByName(sandboxName)
+			var ok bool
+			if host, ok = h.refreshPreviewHost(ctx, c, reg); !ok {
+				return "", false
+			}
+		}
+	}
+	if host == "" {
+		c.String(http.StatusNotFound, "preview not registered")
+		return "", false
+	}
+	return host, true
 }
 
 // refreshPreviewHost probes reg's port in its running sandbox, persists the

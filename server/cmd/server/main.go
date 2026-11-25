@@ -461,10 +461,26 @@ func main() {
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
+	previewExposePolicy, _, err := cfg.BuildPreviewExposePolicy()
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid preview expose configuration")
+	}
+	for _, s := range previewExposePolicy.Summaries() {
+		conn := s.ConnID
+		if conn == "" {
+			conn = "legacy"
+		}
+		ev := log.Info().Str("connection", conn).Str("strategy", s.Strategy)
+		if s.BaseURL != "" {
+			ev = ev.Str("base_url", s.BaseURL)
+		}
+		ev.Msg("preview expose strategy configured")
+	}
 	host.SetPreviewStore(previewSvc)
 	host.SetPreviewSandboxOps(previewSvc)
 	host.SetPreviewBaseURL(cfg.Server.PublicAdvertise)
-	host.SetPrivateEndpoints(cfg.Sandbox.PrivateEndpoints)
+	host.SetPreviewProxyHardening(cfg.Sandbox.PreviewProxyHardening())
+	host.SetPreviewExposePolicy(previewExposePolicy)
 
 	// Preview feedback: humans report problems from the preview UI (one-way).
 	// The engine snapshots them into the preview_issues run variable at gate
@@ -541,6 +557,7 @@ func main() {
 		GateShareSessions:   gateShareSessions,
 		GateShareLimiter:    gateshare.NewIPLimiter(),
 		PublicAdvertise:     cfg.Server.PublicAdvertise,
+		PreviewExpose:       previewExposePolicy,
 		FrameAncestors:      frameAncestors,
 		InjectBundles:       injectStore,
 		Blobs:               blobStore,

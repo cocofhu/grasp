@@ -16,6 +16,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
@@ -65,6 +66,8 @@ type Handlers struct {
 	// compares Origin/Referer to this request's Host (never client
 	// X-Forwarded-Host; advertise host is not used for CSRF).
 	PublicAdvertise string
+	// PreviewExpose maps gateway connections to browser preview exposure strategies.
+	PreviewExpose *previewexpose.Policy
 	// FrameAncestors are the origins allowed to embed workspace pages.
 	FrameAncestors []string
 	Team           *services.TeamService

@@ -867,6 +867,14 @@ func (m *Manager) ContainerIP(ctx context.Context, id string) (string, error) {
 	return host, nil
 }
 
+// ConnectionID returns the owning gateway connection ID for sandbox id.
+func (m *Manager) ConnectionID(id string) (string, error) {
+	if m.gw == nil {
+		return "", fmt.Errorf("no gateway client")
+	}
+	return m.gw.ConnectionID(id)
+}
+
 // HostForPort resolves the reachable "host:port" address for an in-sandbox
 // container port (e.g. an app's 3000/5173) via the gateway. Empty when absent.
 func (m *Manager) HostForPort(ctx context.Context, id string, port int) (string, error) {

@@ -39,10 +39,15 @@ func NewPreviewService(db *gorm.DB, mgr *sandbox.Manager) *PreviewService {
 func (s *PreviewService) SetBrowser(b *browser.Service) { s.browser = b }
 
 func (s *PreviewService) ReplacePreview(rec mcp.PreviewPort) error {
+	var exposeKey *string
+	if k := strings.TrimSpace(rec.ExposeKey); k != "" {
+		exposeKey = &k
+	}
 	row := models.RunPreviewPort{
 		RunID: rec.RunID, NodeID: rec.NodeID,
 		Kind: rec.Kind, Port: rec.Port, ExternalURL: rec.URL, Label: rec.Label,
-		ProxyURL: rec.ProxyURL, SandboxName: rec.SandboxName, Host: rec.Host, InjectorPort: rec.InjectorPort, Healthy: rec.Healthy,
+		ProxyURL: rec.ProxyURL, SandboxName: rec.SandboxName, Host: rec.Host, InjectorPort: rec.InjectorPort,
+		ExposeStrategy: strings.TrimSpace(rec.ExposeStrategy), ExposeKey: exposeKey, Healthy: rec.Healthy,
 		KeepalivePID: rec.KeepalivePID, RegisteredAt: rec.RegisteredAt,
 	}
 	if strings.TrimSpace(row.Kind) == "" {
@@ -87,6 +92,15 @@ func (s *PreviewService) GetPreviewPort(runID, nodeID string, port int) (*mcp.Pr
 	return rec, err == nil && rec != nil
 }
 
+// PreviewByExposeKey looks up the active preview registration bound to an inbound expose key.
+func (s *PreviewService) PreviewByExposeKey(key string) (*mcp.PreviewPort, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, nil
+	}
+	return s.findPreview(s.db.Where("expose_key = ?", key))
+}
+
 func (s *PreviewService) findPreview(q *gorm.DB) (*mcp.PreviewPort, error) {
 	var row models.RunPreviewPort
 	err := q.First(&row).Error
@@ -96,10 +110,15 @@ func (s *PreviewService) findPreview(q *gorm.DB) (*mcp.PreviewPort, error) {
 	if err != nil {
 		return nil, err
 	}
+	exposeKey := ""
+	if row.ExposeKey != nil {
+		exposeKey = *row.ExposeKey
+	}
 	return &mcp.PreviewPort{
 		RunID: row.RunID, NodeID: row.NodeID, Kind: row.Kind,
 		Port: row.Port, URL: row.ExternalURL, Label: row.Label,
-		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort, Healthy: row.Healthy,
+		ProxyURL: row.ProxyURL, SandboxName: row.SandboxName, Host: row.Host, InjectorPort: row.InjectorPort,
+		ExposeStrategy: row.ExposeStrategy, ExposeKey: exposeKey, Healthy: row.Healthy,
 		KeepalivePID: row.KeepalivePID, RegisteredAt: row.RegisteredAt,
 	}, nil
 }
@@ -215,6 +234,19 @@ func (s *PreviewService) SoloMCPBinding(runID string) (models.Sandbox, *models.A
 		return models.Sandbox{}, nil, false
 	}
 	return row, agent.Capabilities.Clone(), true
+}
+
+// PreviewConnection returns the owning gateway connection ID for sandboxName.
+// Returns ("", false) when the sandbox manager is absent or the binding is invalid.
+func (s *PreviewService) PreviewConnection(sandboxName string) (string, bool) {
+	if s.mgr == nil || strings.TrimSpace(sandboxName) == "" {
+		return "", false
+	}
+	connID, err := s.mgr.ConnectionID(sandboxName)
+	if err != nil {
+		return "", false
+	}
+	return connID, true
 }
 
 // PreviewUpstream resolves the reachable base URL (http://host:hostPort) for an

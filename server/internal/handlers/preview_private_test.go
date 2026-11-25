@@ -16,7 +16,7 @@ import (
 
 func seedPrivatePathPreview(t *testing.T, hn *harness, upstream string) {
 	t.Helper()
-	hn.host.SetPrivateEndpoints(true)
+	hn.host.SetPreviewProxyHardening(true)
 	preview := services.NewPreviewService(hn.db, hn.h.Sbx.Manager())
 	hn.h.Preview = preview
 	hn.host.SetPreviewStore(preview)

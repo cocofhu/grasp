@@ -10,15 +10,23 @@ import (
 // IDs are durable routing keys, not backend names. Keep the old entry while
 // its sandboxes exist. Secrets can be supplied through APIKeyEnv.
 type GatewayConnectionConfig struct {
-	ID        string `yaml:"id"`
-	URL       string `yaml:"url"`
-	APIKey    string `yaml:"api_key" json:"-"`
-	APIKeyEnv string `yaml:"api_key_env"`
-	Transport string `yaml:"transport"`
-	Profile   string `yaml:"profile"`
+	ID            string               `yaml:"id"`
+	URL           string               `yaml:"url"`
+	APIKey        string               `yaml:"api_key" json:"-"`
+	APIKeyEnv     string               `yaml:"api_key_env"`
+	Transport     string               `yaml:"transport"`
+	Profile       string               `yaml:"profile"`
+	PreviewExpose *PreviewExposeConfig `yaml:"preview_expose"`
 }
 
 var gatewayIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+
+// PreviewProxyHardening reports whether the path preview proxy and public
+// preview-api proxy should enforce generation binding, injector upstream
+// verification, and provider header stripping.
+func (s SandboxConfig) PreviewProxyHardening() bool {
+	return s.PrivateEndpoints || s.UsesGatewayTransport()
+}
 
 func (s SandboxConfig) UsesGatewayTransport() bool {
 	if s.GatewayTransport == "gateway" {

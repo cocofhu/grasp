@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -29,6 +30,7 @@ import (
 // Config is the resolved server configuration.
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
+	Preview  PreviewConfig  `yaml:"preview"`
 	Database DatabaseConfig `yaml:"database"`
 	Engine   EngineConfig   `yaml:"engine"`
 	Sandbox  SandboxConfig  `yaml:"sandbox"`
@@ -244,6 +246,24 @@ type ServerConfig struct {
 	FrameAncestors string `yaml:"frame_ancestors"`
 }
 
+// PreviewConfig configures global defaults for browser-facing app previews.
+type PreviewConfig struct {
+	Expose PreviewExposeConfig `yaml:"expose"`
+}
+
+// PreviewExposeConfig selects how previews are exposed to browsers.
+type PreviewExposeConfig struct {
+	// Strategy is auto (default), direct (connection-level only), subdomain, or none.
+	Strategy  string                 `yaml:"strategy"`
+	Subdomain PreviewSubdomainConfig `yaml:"subdomain"`
+}
+
+// PreviewSubdomainConfig configures wildcard subdomain preview origins.
+type PreviewSubdomainConfig struct {
+	// BaseURL is an HTTP(S) DNS origin whose wildcard subdomains route to Grasp.
+	BaseURL string `yaml:"base_url"`
+}
+
 // FrameAncestorOrigins returns the valid http(s) origins in FrameAncestors
 // and the entries that are not origins.
 func (s ServerConfig) FrameAncestorOrigins() (origins, invalid []string) {
@@ -300,13 +320,15 @@ type SandboxConfig struct {
 	GatewayAPIKey string `yaml:"gateway_api_key"`
 	// GatewayTransport is direct (legacy) or gateway (authenticated TCP relay).
 	GatewayTransport string `yaml:"gateway_transport"`
+	// PreviewExpose optionally overrides preview exposure for the primary gateway connection.
+	PreviewExpose *PreviewExposeConfig `yaml:"preview_expose"`
 	// Gateways are stable, named connections. DefaultGateway affects creates
 	// only; existing opaque sandbox IDs retain their original connection.
 	Gateways       []GatewayConnectionConfig `yaml:"gateways"`
 	DefaultGateway string                    `yaml:"default_gateway"`
-	// PrivateEndpoints keeps sandbox endpoints server-only: previews go through
-	// the Grasp path proxy. Gateway transport enables it for every driver;
-	// legacy same-host E2B can opt in.
+	// PrivateEndpoints marks sandbox endpoints as server-only (user intent).
+	// It affects auto preview exposure expansion and legacy E2B startup waits;
+	// it is no longer overwritten automatically by gateway transport.
 	PrivateEndpoints bool `yaml:"private_endpoints"`
 	// OpenCodeCatalogURL overrides where the OpenCode model catalog is read from
 	// (models.dev by default). Point it at a mirror when egress is restricted.
@@ -487,7 +509,51 @@ func parse(path string) (*Config, error) {
 	if err := validateSoloBackup(c.SoloBackup); err != nil {
 		return nil, err
 	}
+	if _, warnings, err := c.BuildPreviewExposePolicy(); err != nil {
+		return nil, err
+	} else {
+		for _, w := range warnings {
+			log.Warn().Msg(w)
+		}
+	}
 	return c, nil
+}
+
+// BuildPreviewExposePolicy validates and resolves per-connection preview exposure strategies.
+func (c *Config) BuildPreviewExposePolicy() (*previewexpose.Policy, []string, error) {
+	legacyStrategy, legacyBase := "", ""
+	if c.Sandbox.PreviewExpose != nil {
+		legacyStrategy = c.Sandbox.PreviewExpose.Strategy
+		legacyBase = c.Sandbox.PreviewExpose.Subdomain.BaseURL
+	}
+	conns := make([]previewexpose.ConnSpec, 0, 1+len(c.Sandbox.Gateways))
+	conns = append(conns, previewexpose.ConnSpec{
+		ConnID:    "",
+		Transport: c.Sandbox.GatewayTransport,
+		Strategy:  legacyStrategy,
+		BaseURL:   legacyBase,
+	})
+	for _, g := range c.Sandbox.Gateways {
+		st, base := "", ""
+		if g.PreviewExpose != nil {
+			st = g.PreviewExpose.Strategy
+			base = g.PreviewExpose.Subdomain.BaseURL
+		}
+		conns = append(conns, previewexpose.ConnSpec{
+			ConnID:    g.ID,
+			Transport: g.Transport,
+			Strategy:  st,
+			BaseURL:   base,
+		})
+	}
+	return previewexpose.NewPolicy(previewexpose.PolicyOptions{
+		GlobalStrategy:   c.Preview.Expose.Strategy,
+		GlobalBaseURL:    c.Preview.Expose.Subdomain.BaseURL,
+		PrivateEndpoints: c.Sandbox.PrivateEndpoints,
+		PublicAdvertise:  c.Server.PublicAdvertise,
+		Production:       strings.EqualFold(strings.TrimSpace(c.Server.DeploymentMode), "production"),
+		Connections:      conns,
+	})
 }
 
 // rejectSandboxSecretEnv keeps credentials out of platform-wide sandbox env:
@@ -520,6 +586,15 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_FRAME_ANCESTORS"); v != "" {
 		c.Server.FrameAncestors = v
+	}
+	if v := env("GRASP_PREVIEW_EXPOSE_STRATEGY"); v != "" {
+		c.Preview.Expose.Strategy = v
+	}
+	if v := env("GRASP_PREVIEW_ADVERTISE"); v != "" {
+		c.Preview.Expose.Subdomain.BaseURL = v
+	}
+	if v := env("GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL"); v != "" {
+		c.Preview.Expose.Subdomain.BaseURL = v
 	}
 	if v := env("GRASP_DB"); v != "" {
 		c.Database.Path = v
@@ -687,9 +762,6 @@ func setDefaults(c *Config) {
 		if c.Sandbox.Gateways[i].Transport == "" {
 			c.Sandbox.Gateways[i].Transport = "gateway"
 		}
-	}
-	if c.Sandbox.UsesGatewayTransport() {
-		c.Sandbox.PrivateEndpoints = true
 	}
 	mergeAcpEnv(c)
 	if c.Sandbox.ChatIdleTimeoutSeconds == 0 {

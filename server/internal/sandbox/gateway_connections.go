@@ -281,6 +281,17 @@ func (g *GatewayClient) UsesGatewayTransport(id string) bool {
 	return (err != nil && strings.HasPrefix(id, gatewayIDPrefix)) || (err == nil && client.bridge != nil)
 }
 
+// ConnectionID returns the owning gateway connection ID for sandbox id
+// ("" for the primary/legacy connection, or the named connection's ID).
+// Invalid or removed bindings return an error so callers fail closed.
+func (g *GatewayClient) ConnectionID(id string) (string, error) {
+	client, _, err := g.resolveID(id)
+	if err != nil {
+		return "", err
+	}
+	return client.id, nil
+}
+
 func (g *GatewayClient) endpointForPort(ctx context.Context, id string, port int, fallback string) (string, error) {
 	if port < 1 || port > 65535 {
 		return "", errors.New("invalid sandbox guest port")
