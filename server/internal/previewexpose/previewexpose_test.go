@@ -125,6 +125,62 @@ func TestValidatePlatformOrigin(t *testing.T) {
 	if _, err := base.ValidatePlatformOrigin("https://grasp-preview.other-site.com", false); err == nil {
 		t.Fatal("expected identical host to fail")
 	}
+
+	// A Unicode platform host and a Punycode preview base on the same
+	// registrable site must still be recognized as the same site.
+	idnBase, err := ParseBase("https://preview.xn--fsqu00a.com")
+	if err != nil {
+		t.Fatalf("ParseBase punycode: %v", err)
+	}
+	if _, err := idnBase.ValidatePlatformOrigin("https://grasp.例子.com", true); err == nil {
+		t.Fatal("expected production same-site error for Unicode/Punycode spellings of one site")
+	}
+	if warn, err := idnBase.ValidatePlatformOrigin("https://grasp.例子.com", false); err != nil || warn == "" {
+		t.Fatalf("expected non-prod same-site warning for IDN site, got warn=%q err=%v", warn, err)
+	}
+	idnNested, _ := ParseBase("https://preview.xn--fsqu00a.com")
+	if _, err := idnNested.ValidatePlatformOrigin("https://例子.com", false); err == nil {
+		t.Fatal("expected preview base nested under Unicode platform host to fail")
+	}
+	// Pure-ASCII hosts the IDNA profile rejects (container names) still work.
+	if _, err := base.ValidatePlatformOrigin("http://grasp_server:8080", false); err != nil {
+		t.Fatalf("underscore platform host rejected: %v", err)
+	}
+}
+
+func TestRetiredTicketHostSparesPlatformHost(t *testing.T) {
+	platformKey, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := NewPolicy(PolicyOptions{
+		GlobalStrategy:  StrategyNone,
+		PublicAdvertise: "https://" + platformKey + ".example.com",
+		Connections:     []ConnSpec{{ConnID: "", Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	for host, want := range map[string]bool{
+		platformKey + ".example.com":                   false,
+		platformKey + ".example.com:443":               false,
+		strings.ToUpper(platformKey) + ".EXAMPLE.COM.": false,
+		otherKey + ".example.com":                      true,
+		platformKey + ".retired.example.net":           true,
+		"grasp.example.com":                            false,
+	} {
+		if got := p.RetiredTicketHost(host); got != want {
+			t.Errorf("RetiredTicketHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+	var nilPolicy *Policy
+	if !nilPolicy.RetiredTicketHost(otherKey + ".example.com") {
+		t.Error("nil policy should still treat ticket hosts as retired")
+	}
 }
 
 func TestPolicyEffectiveRulesAndValidation(t *testing.T) {

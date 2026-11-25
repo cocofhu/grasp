@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/idna"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -103,7 +104,10 @@ func (b Base) ValidatePlatformOrigin(platformRaw string, production bool) (warni
 		(u.Path != "" && u.Path != "/") {
 		return "", fmt.Errorf("subdomain preview requires server.public_advertise to be an http(s) origin")
 	}
-	platformHost := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	platformHost, err := asciiHost(u.Hostname())
+	if err != nil {
+		return "", fmt.Errorf("server.public_advertise %q has an invalid hostname: %w", platformRaw, err)
+	}
 	previewHost := b.Hostname()
 	if b.ContainsHost(platformHost) || platformHost == previewHost || strings.HasSuffix(previewHost, "."+platformHost) {
 		return "", fmt.Errorf("preview subdomain base_url %q must not share or nest with server.public_advertise %q", b.Origin(), platformRaw)
@@ -216,6 +220,41 @@ func (s *SubdomainExposer) MatchHost(authority string) (key string, claimed bool
 		return "", true
 	}
 	return label, true
+}
+
+// asciiHost lowercases host and converts internationalized names to their
+// Punycode form, so a Unicode and an ASCII spelling of the same name compare
+// equal. Pure-ASCII names the IDNA profile rejects (e.g. underscores in
+// container service names) are kept as-is: they have no other spelling.
+func asciiHost(host string) (string, error) {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" || net.ParseIP(host) != nil {
+		return host, nil
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err == nil {
+		return strings.ToLower(ascii), nil
+	}
+	for i := 0; i < len(host); i++ {
+		if host[i] >= 0x80 {
+			return "", err
+		}
+	}
+	return host, nil
+}
+
+// platformHostOf returns the normalized hostname of the platform origin, or
+// "" when it cannot be parsed.
+func platformHostOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil {
+		return ""
+	}
+	host, err := asciiHost(u.Hostname())
+	if err != nil {
+		return ""
+	}
+	return host
 }
 
 // TicketHost reports whether authority's first DNS label is a canonical expose

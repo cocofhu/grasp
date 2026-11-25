@@ -35,6 +35,9 @@ type Policy struct {
 	byConn    map[string]Exposer
 	inbounds  []Inbound
 	summaries []ConnSummary
+	// platformHost is server.public_advertise's hostname; it is never a
+	// retired preview ticket host, whatever its first label looks like.
+	platformHost string
 }
 
 // NewPolicy validates and resolves effective preview exposure strategies per connection.
@@ -53,8 +56,9 @@ func NewPolicy(opts PolicyOptions) (*Policy, []string, error) {
 	globalBase := strings.TrimSpace(opts.GlobalBaseURL)
 
 	p := &Policy{
-		byConn:    make(map[string]Exposer, len(opts.Connections)),
-		summaries: make([]ConnSummary, 0, len(opts.Connections)),
+		byConn:       make(map[string]Exposer, len(opts.Connections)),
+		summaries:    make([]ConnSummary, 0, len(opts.Connections)),
+		platformHost: platformHostOf(opts.PublicAdvertise),
 	}
 	byOrigin := make(map[string]*SubdomainExposer)
 	var bases []Base
@@ -173,4 +177,20 @@ func (p *Policy) Summaries() []ConnSummary {
 	out := make([]ConnSummary, len(p.summaries))
 	copy(out, p.summaries)
 	return out
+}
+
+// RetiredTicketHost reports whether authority looks like a preview ticket
+// host that no current inbound claims (e.g. a retired base_url still routed
+// here by wildcard DNS) and must therefore 404 instead of reaching platform
+// routes. The platform's own host is never treated as one, even when its
+// first label happens to be 32 hex characters.
+func (p *Policy) RetiredTicketHost(authority string) bool {
+	if !TicketHost(authority) {
+		return false
+	}
+	if p == nil || p.platformHost == "" {
+		return true
+	}
+	host, _ := authorityParts(authority)
+	return host != p.platformHost
 }

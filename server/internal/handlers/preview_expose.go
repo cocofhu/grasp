@@ -34,14 +34,15 @@ func (h *Handlers) PreviewExposeRouter(platform http.Handler) http.Handler {
 }
 
 // matchPreviewHost returns the inbound that claims authority and its key.
-// A retired ticket host is claimed with no inbound and an empty key.
+// A retired ticket host is claimed with no inbound and an empty key; the
+// platform's own host is never claimed this way.
 func (h *Handlers) matchPreviewHost(authority string) (previewexpose.Inbound, string, bool) {
 	for _, inb := range h.PreviewExpose.Inbounds() {
 		if key, claimed := inb.MatchHost(authority); claimed {
 			return inb, key, true
 		}
 	}
-	return nil, "", previewexpose.TicketHost(authority)
+	return nil, "", h.PreviewExpose.RetiredTicketHost(authority)
 }
 
 // exposedSecurityHeaders are set once on every claimed-host response and

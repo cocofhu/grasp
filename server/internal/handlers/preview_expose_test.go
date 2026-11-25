@@ -320,3 +320,39 @@ func TestPublicApprovalTicketWithSubdomainDirectURL(t *testing.T) {
 		t.Fatalf("PublicPreview DirectURL = %q", pub.DirectURL)
 	}
 }
+
+// A platform whose public_advertise host happens to start with a 32-hex label
+// must keep serving platform routes; only other ticket-shaped hosts 404.
+func TestPlatformHostShapedLikeTicketReachesPlatform(t *testing.T) {
+	hn := newHarness(t)
+	platformKey, err := previewexpose.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey, err := previewexpose.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	platformHost := platformKey + ".example.com"
+	pol, _, err := previewexpose.NewPolicy(previewexpose.PolicyOptions{
+		PublicAdvertise: "https://" + platformHost,
+		Connections:     []previewexpose.ConnSpec{{ConnID: "", Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	hn.h.PreviewExpose = pol
+	hn.r = router.New(hn.h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Host = platformHost
+	if w := serve(hn, req); w.Code != http.StatusOK {
+		t.Fatalf("platform host %s /api/health: got %d %q, want 200", platformHost, w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Host = otherKey + ".example.com"
+	if w := serve(hn, req); w.Code != http.StatusNotFound || w.Body.String() != "preview not found" {
+		t.Fatalf("other ticket host: got %d %q, want 404", w.Code, w.Body.String())
+	}
+}
