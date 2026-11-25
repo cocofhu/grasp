@@ -38,12 +38,17 @@ When deploying:
 
 1. Create a key if you do not have one: `ssh-keygen -t ed25519`.
 2. Open **SSH keys** from the account menu at the bottom left and paste the contents of `~/.ssh/id_ed25519.pub`. ed25519, ECDSA and RSA of at least 2048 bits are supported.
-3. In a Solo session, click the **info icon** at the top right. The **Local IDE** section gives you:
-   - an SSH command such as `ssh -p 2222 sbx-12@grasp.example.com` that works in any terminal without configuration;
-   - a `~/.ssh/config` snippet that defines a host alias named `grasp`;
-   - **Open in VS Code** and **Open in Cursor** buttons, which use that `grasp` alias and open `/root/workspace` directly.
+3. In a Solo session, click the **info icon** at the top right and choose **Open in VS Code** under **Local IDE**. The drop-down switches to Cursor, CodeBuddy, Trae (`CN` opens the China edition) or JetBrains Gateway, and remembers your choice.
+4. The browser asks to open the app, and the IDE asks once whether to open the remote folder; accept both. The IDE connects to `sbx-12@grasp.example.com:2222` and opens `/root/workspace` directly, with no `~/.ssh/config` change.
 
-Example snippet:
+| IDE | How it opens |
+| --- | --- |
+| VS Code | Needs the Remote - SSH extension |
+| Cursor | Install Cursor's Remote SSH extension when prompted the first time |
+| CodeBuddy / Trae | Remote-SSH is built in; the international and China editions are separate apps with separate menu entries |
+| JetBrains Gateway | No one-click link: Gateway links only attach to an IDE already installed on the host. The entry shows the connection details; in Gateway choose SSH → New Connection, enter the user, host and port, and use `/root/workspace` as the project folder. The first connection downloads the IDE backend into the sandbox |
+
+**SSH connection details** in the drop-down lists the user, host, port and an SSH command such as `ssh -p 2222 sbx-12@grasp.example.com` that runs in any terminal. For a short name such as `ssh grasp`, add the optional snippet from the panel to `~/.ssh/config`:
 
 ```
 Host grasp
@@ -52,7 +57,7 @@ Host grasp
   ServerAliveInterval 30
 ```
 
-You can also run **Remote-SSH: Connect to Host** in VS Code and enter `sbx-12@grasp`. One machine can connect to several sandboxes at once, one window each.
+One machine can connect to several sandboxes at once, one window each.
 
 ## Connections and sandbox state
 

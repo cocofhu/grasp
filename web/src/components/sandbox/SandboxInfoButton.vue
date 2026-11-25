@@ -11,9 +11,10 @@ import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { formatBytes, relTime } from '@/lib/shared/format'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { sandboxDisplayState, sandboxLifecycle, type SandboxAction } from '@/lib/sandbox/sandboxDisplayState'
-import { SANDBOX_WORKSPACE, remoteIDELink, sshCommand, sshConfigSnippet, sshEndpoint, type RemoteIDE } from '@/lib/sandbox/sshConnect'
+import { SANDBOX_WORKSPACE } from '@/lib/sandbox/sshConnect'
 import { useSSHGateway } from '@/lib/sandbox/useSSHGateway'
 import { formatRemaining } from './idleCountdown'
+import SandboxIdeMenu from './SandboxIdeMenu.vue'
 
 const props = withDefaults(defineProps<{
   session: SoloSession
@@ -95,9 +96,6 @@ const repoText = computed(() => {
 
 const ssh = computed(() => gateway.info.value)
 const sshVisible = computed(() => !!ssh.value?.enabled && sandboxId.value > 0)
-const endpoint = computed(() => ssh.value ? sshEndpoint(ssh.value, window.location.hostname) : null)
-const command = computed(() => endpoint.value ? sshCommand(sandboxId.value, endpoint.value) : '')
-const configSnippet = computed(() => endpoint.value ? sshConfigSnippet(endpoint.value) : '')
 /** Why local IDE connections are unavailable right now, or '' when they work. */
 const ideBlocked = computed(() => {
   switch (display.value.kind) {
@@ -203,13 +201,9 @@ function runAction() {
   if (display.value.action && !display.value.actionDisabled) emit('action', display.value.action)
 }
 
-/** The link itself opens the IDE; a paused sandbox starts waking at the same time. */
-function onIDEClick() {
+/** The IDE link opens the app; a paused sandbox starts waking at the same time. */
+function onIDELaunch() {
   if (display.value.kind === 'paused' && !props.readonly) emit('action', 'wake')
-}
-
-function ideLink(ide: RemoteIDE) {
-  return remoteIDELink(ide, sandboxId.value)
 }
 </script>
 
@@ -315,46 +309,10 @@ function ideLink(ide: RemoteIDE) {
             <span>{{ t('pages.solo.sandboxInfo.ide.noKey') }}</span>
             <RouterLink to="/settings/ssh-keys" class="sandbox-info-link" @click="hide()">{{ t('pages.solo.sandboxInfo.ide.addKey') }}</RouterLink>
           </div>
-          <template v-else>
+          <template v-else-if="ssh">
             <p v-if="ideBlocked" class="sandbox-info-note" data-testid="sandbox-info-ide-blocked">{{ ideBlocked }}</p>
-            <div class="grid grid-cols-2 gap-2">
-              <component
-                :is="ideBlocked ? 'span' : 'a'"
-                v-for="ide in (['vscode', 'cursor'] as const)"
-                :key="ide"
-                class="sandbox-info-ide"
-                :class="{ 'is-disabled': !!ideBlocked }"
-                :href="ideBlocked ? undefined : ideLink(ide)"
-                :aria-disabled="ideBlocked ? 'true' : undefined"
-                :data-testid="`sandbox-info-open-${ide}`"
-                @click="ideBlocked || onIDEClick()"
-              >
-                <Icon name="stage-ide" :size="14" aria-hidden="true" />{{ t(`pages.solo.sandboxInfo.ide.${ide}`) }}
-              </component>
-            </div>
+            <SandboxIdeMenu :sandbox-id="sandboxId" :info="ssh" :blocked="ideBlocked" @launch="onIDELaunch" />
             <p v-if="ideWakes && !ideBlocked" class="sandbox-info-note mt-2">{{ t('pages.solo.sandboxInfo.ide.pausedHint') }}</p>
-            <template v-if="!ideBlocked">
-            <div class="sandbox-info-code" :title="t('pages.solo.sandboxInfo.ide.commandHint')">
-              <code data-testid="sandbox-info-command">{{ command }}</code>
-              <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" data-testid="sandbox-info-copy-command" @click="copy('command', command)">
-                <Icon :name="copied === 'command' ? 'check' : 'copy'" :size="13" aria-hidden="true" />
-              </button>
-            </div>
-            <details class="sandbox-info-details">
-              <summary>{{ t('pages.solo.sandboxInfo.ide.config') }}</summary>
-              <p class="sandbox-info-note">{{ t('pages.solo.sandboxInfo.ide.configHint') }}</p>
-              <div class="sandbox-info-code is-block">
-                <pre data-testid="sandbox-info-config">{{ configSnippet }}</pre>
-                <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" data-testid="sandbox-info-copy-config" @click="copy('config', configSnippet)">
-                  <Icon :name="copied === 'config' ? 'check' : 'copy'" :size="13" aria-hidden="true" />
-                </button>
-              </div>
-              <p class="sandbox-info-note">{{ t('pages.solo.sandboxInfo.ide.timeoutHint') }}</p>
-              <p v-if="ssh?.hostKeyFingerprint" class="sandbox-info-note break-all">
-                {{ t('pages.solo.sandboxInfo.ide.hostKey') }}: <span class="font-mono">{{ ssh.hostKeyFingerprint }}</span>
-              </p>
-            </details>
-            </template>
           </template>
         </section>
 
@@ -447,34 +405,6 @@ function ideLink(ide: RemoteIDE) {
 .sandbox-info-note { margin: 0 0 8px; font-size: 11.5px; line-height: 1.5; color: rgb(var(--c-txt3)); }
 .sandbox-info-link { font-size: 12px; color: rgb(var(--c-accent)); }
 .sandbox-info-link:hover { text-decoration: underline; }
-.sandbox-info-ide {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: rgb(var(--c-txt));
-  transition: background var(--dur-ui), border-color var(--dur-ui);
-}
-.sandbox-info-ide:hover { border-color: rgb(var(--c-accent) / .5); background: rgb(var(--c-accent) / .06); }
-.sandbox-info-ide.is-disabled { cursor: not-allowed; opacity: .5; }
-.sandbox-info-ide.is-disabled:hover { border-color: rgb(var(--c-line)); background: transparent; }
-.sandbox-info-code {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 6px 6px 6px 10px;
-  border-radius: 8px;
-  background: rgb(var(--c-base));
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
-}
-.sandbox-info-code code, .sandbox-info-code pre { min-width: 0; flex: 1; margin: 0; overflow-x: auto; white-space: pre; color: rgb(var(--c-txt)); }
-.sandbox-info-code.is-block { align-items: flex-start; }
 .sandbox-info-copy {
   display: inline-flex;
   width: 24px;
@@ -486,11 +416,8 @@ function ideLink(ide: RemoteIDE) {
   color: rgb(var(--c-txt3));
 }
 .sandbox-info-copy:hover { background: rgb(var(--c-txt) / .06); color: rgb(var(--c-txt)); }
-.sandbox-info-details { margin-top: 8px; }
-.sandbox-info-details summary { cursor: pointer; margin-bottom: 6px; font-size: 12px; color: rgb(var(--c-txt2)); }
 @keyframes sandbox-info-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) {
   .sandbox-info-dot[data-tone="pending"] { animation: none; }
-  .sandbox-info-ide { transition: none; }
 }
 </style>

@@ -13,17 +13,29 @@ for (const theme of ['dark', 'light']) {
     const panel = await openPanel(page, `theme=${theme}`)
     await expect(page.getByTestId('sandbox-info-state')).toHaveText('运行中')
     await expect(page.getByTestId('sandbox-info-reclaim')).toContainText('后保存并暂停')
-    await expect(page.getByTestId('sandbox-info-open-vscode')).toHaveAttribute('href', 'vscode://vscode-remote/ssh-remote+sbx-123@grasp/root/workspace')
-    await expect(page.getByTestId('sandbox-info-command')).toHaveText('ssh -p 2222 sbx-123@ssh.grasp.example.com')
+    await expect(page.getByTestId('sandbox-ide-primary')).toHaveAttribute('href', 'vscode://vscode-remote/ssh-remote+sbx-123@ssh.grasp.example.com:2222/root/workspace')
     const box = (await panel.boundingBox())!
     const trigger = (await page.getByTestId('sandbox-info-toggle').boundingBox())!
     const viewport = page.viewportSize()!
     expect(box.y).toBeGreaterThan(trigger.y + trigger.height)
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 7)
-    await page.locator('.sandbox-info-details summary').click()
-    await expect(page.getByTestId('sandbox-info-config')).toBeVisible()
     await page.screenshot({ path: test.info().outputPath(`sandbox-info-running-${theme}.png`) })
+    await page.getByTestId('sandbox-ide-caret').click()
+    const menu = page.getByTestId('sandbox-ide-list')
+    await expect(menu).toBeVisible()
+    for (const logo of await menu.locator('img[data-ide-logo]').all()) {
+      await expect.poll(() => logo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    }
+    // Single-color marks are painted in the text color, so they never vanish on the dark theme.
+    await expect.poll(() => menu.locator('[data-ide-logo="cursor"]').evaluate((el) => {
+      const style = getComputedStyle(el)
+      return style.backgroundColor === style.color
+    })).toBe(true)
+    await page.screenshot({ path: test.info().outputPath(`sandbox-info-menu-${theme}.png`) })
+    await page.getByTestId('sandbox-ide-info').click()
+    await expect(page.getByTestId('sandbox-info-command')).toHaveText('ssh -p 2222 sbx-123@ssh.grasp.example.com')
+    await page.screenshot({ path: test.info().outputPath(`sandbox-info-details-${theme}.png`) })
   })
 }
 
@@ -36,8 +48,8 @@ for (const state of ['busy', 'connected', 'paused', 'docker', 'stopped', 'error'
 
 test('paused sandbox wakes when an IDE link is used, and Escape closes the panel', async ({ page }) => {
   await openPanel(page, 'state=paused')
-  await page.getByTestId('sandbox-info-open-cursor').evaluate((el) => el.addEventListener('click', (e) => e.preventDefault()))
-  await page.getByTestId('sandbox-info-open-cursor').click()
+  await page.getByTestId('sandbox-ide-primary').evaluate((el) => el.addEventListener('click', (e) => e.preventDefault()))
+  await page.getByTestId('sandbox-ide-primary').click()
   await expect(page.getByTestId('events')).toContainText('action:wake')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('sandbox-info-panel')).toBeHidden()

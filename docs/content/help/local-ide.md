@@ -38,12 +38,17 @@ SSH 用户名决定连哪个沙箱：`sbx-<沙箱 ID>`。网关用你在 Grasp �
 
 1. 在本机生成密钥（已有可跳过）：`ssh-keygen -t ed25519`。
 2. 在左下角账号菜单打开 **「SSH 公钥」**，粘贴 `~/.ssh/id_ed25519.pub` 的内容。支持 ed25519、ECDSA 和至少 2048 位的 RSA。
-3. 打开一个 Solo 会话，点击顶部右侧的 **信息图标**。「本地 IDE」区域会给出：
-   - 一条 SSH 命令，例如 `ssh -p 2222 sbx-12@grasp.example.com`，无需任何配置即可在终端运行；
-   - 一段 `~/.ssh/config` 配置，定义名为 `grasp` 的主机别名；
-   - 「用 VS Code 打开」「用 Cursor 打开」按钮，依赖上面的 `grasp` 别名，会直接打开 `/root/workspace`。
+3. 打开一个 Solo 会话，点击顶部右侧的 **信息图标**，在「本地 IDE」里点 **「用 VS Code 打开」**。旁边的下拉菜单可以换成 Cursor、CodeBuddy、Trae（点 `CN` 打开国内版）或 JetBrains Gateway，上次的选择会被记住。
+4. 浏览器会询问是否打开对应应用，IDE 第一次还会确认是否打开这个远程文件夹，都选打开即可。IDE 连接 `sbx-12@grasp.example.com:2222`，直接打开 `/root/workspace`，不需要修改 `~/.ssh/config`。
 
-配置片段示例：
+| IDE | 打开方式 |
+| --- | --- |
+| VS Code | 需要安装 Remote - SSH 扩展 |
+| Cursor | 首次使用时按提示安装 Cursor 的 Remote SSH 扩展 |
+| CodeBuddy / Trae | 自带 Remote-SSH；国际版和国内版是两个应用，菜单里分别打开 |
+| JetBrains Gateway | 不能一键打开：Gateway 的链接只能连接主机上已安装的 IDE。点它会显示连接信息，在 Gateway 中选择 SSH → New Connection，填写用户名、主机、端口，项目目录填 `/root/workspace`，首次会把 IDE 后端下载到沙箱 |
+
+下拉菜单里的 **「SSH 连接信息」** 列出用户名、主机、端口和一条 SSH 命令（例如 `ssh -p 2222 sbx-12@grasp.example.com`），可直接在终端运行。想用 `ssh grasp` 这样的短名字时，可以把面板里的可选配置加入 `~/.ssh/config`：
 
 ```
 Host grasp
@@ -52,7 +57,7 @@ Host grasp
   ServerAliveInterval 30
 ```
 
-之后也可以在 VS Code 里执行 **Remote-SSH: Connect to Host**，输入 `sbx-12@grasp`。一台电脑可以同时连接多个沙箱，每个沙箱一个窗口。
+一台电脑可以同时连接多个沙箱，每个沙箱一个窗口。
 
 ## 连接与沙箱状态
 
