@@ -514,3 +514,27 @@ func containsString(all []string, want string) bool {
 	}
 	return false
 }
+
+func TestSandboxDialSSHUsesTokenCredentials(t *testing.T) {
+	const secret = "dial-ssh-sandbox-token"
+	srv := startAuthServer(t, secret, nil)
+	sb := &Sandbox{ID: "sb-dial", SSHHost: srv.host, SSHPort: srv.port, Password: secret}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cli, err := sb.DialSSH(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = cli.Close()
+	cli, err = sb.DialSSH(ctx) // the first login authorized the platform key
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = cli.Close()
+
+	fresh := startAuthServer(t, secret, nil)
+	sb = &Sandbox{ID: "sb-other", SSHHost: fresh.host, SSHPort: fresh.port, Password: "wrong-sandbox-token-xx"}
+	if _, err := sb.DialSSH(ctx); err == nil || strings.Contains(err.Error(), sb.Password) {
+		t.Fatalf("wrong token must fail without echoing it: %v", err)
+	}
+}

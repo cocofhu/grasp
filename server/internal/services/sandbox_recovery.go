@@ -68,6 +68,9 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 	if automatic && s.keepAlive(row) {
 		return errors.New("automatic reclaim is disabled for this sandbox")
 	}
+	if automatic && s.externalBusy(id) {
+		return errors.New("sandbox has an open external connection")
+	}
 	if automatic && !s.idleDue(row, time.Now()) {
 		return errors.New("sandbox has recent model activity")
 	}
@@ -446,6 +449,9 @@ func (s *SandboxService) recheckBeforeRelease(ctx context.Context, row *models.S
 	}
 	if automatic && s.keepAlive(fresh) {
 		return errors.New("automatic reclaim was disabled while saving")
+	}
+	if automatic && s.externalBusy(fresh.ID) {
+		return errors.New("an external connection opened while saving")
 	}
 	busy, err := sb.RuntimeActivity(ctx)
 	if err == nil && busy {

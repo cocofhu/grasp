@@ -23,6 +23,16 @@ def valid_port(port):
     return type(port) is int and 1 <= port <= 65535 and port not in DENIED_PORTS
 
 
+def unmask(data, mask):
+    # One big-integer XOR instead of a per-byte Python loop: large frames
+    # (file uploads, IDE extension sync) were bottlenecked on unmasking.
+    size = len(data)
+    if not size:
+        return b""
+    key = (mask * (size // 4 + 1))[:size]
+    return (int.from_bytes(data, "big") ^ int.from_bytes(key, "big")).to_bytes(size, "big")
+
+
 def exact(stream, length):
     chunks = []
     while length:
@@ -271,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError()
                 mask = exact(self.rfile, 4)
                 data = exact(self.rfile, length)
-                data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
+                data = unmask(data, mask)
                 if opcode == 8:
                     break
                 if opcode == 9:

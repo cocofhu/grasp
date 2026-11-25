@@ -14,6 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/ssh"
 )
 
 // acpHostPort resolves the live ACP host/port for a sandbox, preferring the
@@ -275,15 +276,50 @@ func (s *SandboxService) resumeForAccess(ctx context.Context, row *models.Sandbo
 	if s.mgr == nil || row.Name == "" {
 		return nil
 	}
-	if row.Purpose == SandboxPurposeSolo {
-		var session models.SoloSession
-		if s.db.Where("sandbox_id = ?", row.ID).First(&session).Error == nil &&
-			(session.Status == models.SoloStatusStopped || session.Status == models.SoloStatusStopping) {
-			return errors.New("会话已手动停止，请先恢复")
-		}
+	if err := s.soloStoppedByUser(row, false); err != nil {
+		return err
 	}
 	_, _, err := s.EnsureRunning(ctx, row.ID)
 	return err
+}
+
+// soloStoppedByUser rejects a Solo environment the user stopped (or, with
+// closed, also one whose session was closed).
+func (s *SandboxService) soloStoppedByUser(row *models.Sandbox, closed bool) error {
+	if row.Purpose != SandboxPurposeSolo {
+		return nil
+	}
+	var session models.SoloSession
+	if s.db.Where("sandbox_id = ?", row.ID).First(&session).Error != nil {
+		return nil
+	}
+	switch {
+	case session.Status == models.SoloStatusStopped || session.Status == models.SoloStatusStopping:
+		return errors.New("会话已手动停止，请先恢复")
+	case closed && session.Status == models.SoloStatusClosed:
+		return errors.New("会话已关闭")
+	}
+	return nil
+}
+
+// DialSSH opens a root SSH client to sandbox id for the SSH gateway. Like the
+// web terminal it wakes a paused environment, but never one the user stopped.
+func (s *SandboxService) DialSSH(ctx context.Context, id uint) (*ssh.Client, error) {
+	row, err := s.Get(id)
+	if err != nil {
+		return nil, fmt.Errorf("沙箱 %d 不存在", id)
+	}
+	if s.mgr == nil || row.Name == "" {
+		return nil, errors.New("沙箱尚未就绪")
+	}
+	if err := s.soloStoppedByUser(row, true); err != nil {
+		return nil, err
+	}
+	sb, _, err := s.EnsureRunning(ctx, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	return sb.DialSSH(ctx)
 }
 
 // EnsureRunningByName wakes an explicitly accessed environment, including a
@@ -458,7 +494,7 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		Password:        row.Token,
 	}
 	v.DestroyAt = nil
-	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) {
+	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) && !s.externalBusy(row.ID) {
 		deadline := s.modelIdleSince(row).Add(s.IdleTTL())
 		v.DestroyAt = &deadline
 	}

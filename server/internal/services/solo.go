@@ -86,6 +86,14 @@ type SoloSandboxInfo struct {
 	Paused    bool   `json:"paused,omitempty"`
 	Error     string `json:"error,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
+	// RecoveryKind is "snapshot" (E2B, idle-reclaimed) or "files" (Docker/K8s).
+	RecoveryKind string `json:"recoveryKind,omitempty"`
+	// ModelActiveAt starts the idle interval; IDE and terminal traffic do not move it.
+	ModelActiveAt *time.Time `json:"modelActiveAt,omitempty"`
+	// DestroyAt is when idle reclaim saves and pauses the sandbox (live views only).
+	DestroyAt *time.Time `json:"destroyAt,omitempty"`
+	// ExternalSessions counts open local IDE connections through the SSH gateway.
+	ExternalSessions int `json:"externalSessions,omitempty"`
 }
 
 // SoloSessionView is the API shape of a session.
@@ -398,6 +406,10 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 	info := &SoloSandboxInfo{
 		ID: sb.ID, Name: sb.Name, Status: sb.Status, Error: sb.Error,
 		HasCodeServer: sb.CodeServerPort > 0, CreatedAt: sb.CreatedAt.Format(time.RFC3339),
+		ModelActiveAt: sb.ModelActiveAt, ExternalSessions: s.sbx.ExternalSessions(sb.ID),
+	}
+	if kind, ok := s.sbx.cachedRecoveryKind(sb); ok {
+		info.RecoveryKind = kind
 	}
 	if live {
 		if gv, err := s.sbx.GetView(ctx, sb.ID); err == nil && gv != nil {
@@ -405,6 +417,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 			info.ContainerStatus = gv.ContainerStatus
 			info.Connected = gv.Connected
 			info.HasCodeServer = gv.HasCodeServer
+			info.DestroyAt = gv.DestroyAt
 			info.Paused = row.Status == models.SoloStatusRunning &&
 				(gv.ContainerStatus == "exited" || gv.ContainerStatus == "stopped")
 		}

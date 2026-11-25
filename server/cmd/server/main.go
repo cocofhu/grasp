@@ -574,6 +574,12 @@ func main() {
 	}
 	h.Team.Credentials = credentialSvc
 	h.Onboarding.Projects = projectSvc
+	h.SSHKeys = services.NewSSHKeyService(db, config.GetConfig)
+	sshGateway, sshGatewayInfo, err := startSSHGateway(cfg.SSHGateway, h.SSHKeys, sbxSvc)
+	if err != nil {
+		log.Fatal().Err(err).Msg("ssh gateway")
+	}
+	h.SSHGateway = sshGatewayInfo
 
 	r := router.New(h)
 	port := strconv.Itoa(cfg.Server.Port)
@@ -625,6 +631,10 @@ func main() {
 	stopSweeper()
 	codexLoginMgr.Stop()
 	browserSvc.Stop()
+	if sshGateway != nil {
+		// IDEs reconnect on their own once the next process is up.
+		_ = sshGateway.Close()
+	}
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownHTTPTimeout)
 	defer cancelShutdown()

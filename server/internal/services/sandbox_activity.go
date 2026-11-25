@@ -69,6 +69,9 @@ func (s *SandboxService) modelIdleSince(row *models.Sandbox) time.Time {
 	if t := s.modelActive[row.ID]; t.After(since) {
 		since = t
 	}
+	if t := s.externalEnded[row.ID]; t.After(since) {
+		since = t
+	}
 	s.mu.Unlock()
 	return since
 }
@@ -76,6 +79,7 @@ func (s *SandboxService) modelIdleSince(row *models.Sandbox) time.Time {
 func (s *SandboxService) forgetModelActivity(id uint) {
 	s.mu.Lock()
 	delete(s.modelActive, id)
+	delete(s.externalEnded, id)
 	delete(s.memoryTrims, id)
 	delete(s.recoveryKinds, id)
 	s.mu.Unlock()

@@ -13,6 +13,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -41,6 +42,36 @@ type Config struct {
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
 	// SoloBackup stores workspace archives and controls restore-point retention for all sandboxes.
 	SoloBackup SoloBackupConfig `yaml:"solo_backup"`
+	// SSHGateway lets local IDEs open sandboxes over Remote-SSH.
+	SSHGateway SSHGatewayConfig `yaml:"ssh_gateway"`
+}
+
+// SSHGatewayConfig is the built-in SSH gateway. The SSH user name selects the
+// sandbox ("sbx-<id>"); users authenticate with keys registered in Settings.
+type SSHGatewayConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Listen is the TCP address the gateway binds, e.g. ":2222".
+	Listen string `yaml:"listen"`
+	// PublicHost and PublicPort are what users put in ~/.ssh/config. An empty
+	// host means the host name the browser used; 0 port means the Listen port.
+	PublicHost string `yaml:"public_host"`
+	PublicPort int    `yaml:"public_port"`
+	// HostKeyPath must be persistent and shared by replicas; it is created on first start.
+	HostKeyPath        string `yaml:"host_key_path"`
+	MaxConns           int    `yaml:"max_conns"`
+	MaxConnsPerSandbox int    `yaml:"max_conns_per_sandbox"`
+	// AdminsOnly limits the gateway to admin accounts.
+	AdminsOnly bool `yaml:"admins_only"`
+}
+
+// ListenPort is the port part of Listen, or 0 when it has none.
+func (g SSHGatewayConfig) ListenPort() int {
+	_, port, err := net.SplitHostPort(g.Listen)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(port)
+	return n
 }
 
 // SoloBackupConfig selects where a reclaimed sandbox workspace is archived. S3 is
@@ -487,7 +518,26 @@ func parse(path string) (*Config, error) {
 	if err := validateSoloBackup(c.SoloBackup); err != nil {
 		return nil, err
 	}
+	if err := validateSSHGateway(c.SSHGateway); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+func validateSSHGateway(g SSHGatewayConfig) error {
+	if !g.Enabled {
+		return nil
+	}
+	if port := g.ListenPort(); port < 1 || port > 65535 {
+		return fmt.Errorf("ssh_gateway.listen must be host:port, got %q", g.Listen)
+	}
+	if g.PublicPort < 0 || g.PublicPort > 65535 {
+		return fmt.Errorf("ssh_gateway.public_port must be a TCP port")
+	}
+	if strings.ContainsAny(g.PublicHost, " /:@\r\n") {
+		return fmt.Errorf("ssh_gateway.public_host must be a host name")
+	}
+	return nil
 }
 
 // rejectSandboxSecretEnv keeps credentials out of platform-wide sandbox env:
@@ -627,6 +677,35 @@ func applyEnvOverrides(c *Config) {
 	if v := env("GRASP_CODEX_LOGIN_AUTH_BASE_URL"); v != "" {
 		c.CodexLogin.AuthBaseURL = v
 	}
+	applySSHGatewayEnv(c)
+}
+
+func applySSHGatewayEnv(c *Config) {
+	g := &c.SSHGateway
+	if v := env("GRASP_SSH_GATEWAY_ENABLED"); v != "" {
+		g.Enabled, _ = strconv.ParseBool(v)
+	}
+	if v := env("GRASP_SSH_GATEWAY_LISTEN"); v != "" {
+		g.Listen = v
+	}
+	if v := env("GRASP_SSH_GATEWAY_PUBLIC_HOST"); v != "" {
+		g.PublicHost = v
+	}
+	if v := envInt("GRASP_SSH_GATEWAY_PUBLIC_PORT"); v != 0 {
+		g.PublicPort = v
+	}
+	if v := env("GRASP_SSH_GATEWAY_HOST_KEY_PATH"); v != "" {
+		g.HostKeyPath = v
+	}
+	if v := envInt("GRASP_SSH_GATEWAY_MAX_CONNS"); v != 0 {
+		g.MaxConns = v
+	}
+	if v := envInt("GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX"); v != 0 {
+		g.MaxConnsPerSandbox = v
+	}
+	if v := env("GRASP_SSH_GATEWAY_ADMINS_ONLY"); v != "" {
+		g.AdminsOnly, _ = strconv.ParseBool(v)
+	}
 }
 
 // setDefaults fills any still-empty fields with the built-in defaults. Runs
@@ -670,6 +749,21 @@ func setDefaults(c *Config) {
 	}
 	if c.SoloBackup.Keep <= 0 {
 		c.SoloBackup.Keep = 1
+	}
+	if c.SSHGateway.Listen == "" {
+		c.SSHGateway.Listen = ":2222"
+	}
+	if c.SSHGateway.PublicPort == 0 {
+		c.SSHGateway.PublicPort = c.SSHGateway.ListenPort()
+	}
+	if c.SSHGateway.HostKeyPath == "" {
+		c.SSHGateway.HostKeyPath = "data/ssh-gateway/host_ed25519_key"
+	}
+	if c.SSHGateway.MaxConns <= 0 {
+		c.SSHGateway.MaxConns = 200
+	}
+	if c.SSHGateway.MaxConnsPerSandbox <= 0 {
+		c.SSHGateway.MaxConnsPerSandbox = 10
 	}
 	if c.Storage.MaxFileBytes <= 0 {
 		c.Storage.MaxFileBytes = 128 << 20

@@ -532,6 +532,12 @@ func (t *SSHTerminal) Close() error {
 	return nil
 }
 
+// DialSSH opens an authenticated root SSH client to this sandbox with the same
+// credentials as the platform's own terminal. Callers must Close it.
+func (s *Sandbox) DialSSH(ctx context.Context) (*ssh.Client, error) {
+	return s.creds().dial(ctx)
+}
+
 // openTerminal starts an interactive login shell with a PTY over SSH.
 // Non-empty argv is validated via newSafeCmd before Session.Start.
 func (c sshCreds) openTerminal(ctx context.Context, argv []string) (*SSHTerminal, error) {
