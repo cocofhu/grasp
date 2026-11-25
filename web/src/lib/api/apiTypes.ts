@@ -666,6 +666,8 @@ export interface SoloSession {
   error?: string
   /** The environment skips automatic idle reclaim. */
   keepAlive?: boolean
+  /** Docker/Kubernetes environments are never idle-reclaimed; keep-alive does not apply. */
+  idleReclaimExempt?: boolean
   restarts: number
   /** Newest successful recovery point (archive bytes when available). */
   backupSize?: number

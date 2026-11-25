@@ -105,6 +105,9 @@ type SoloSessionView struct {
 	DefaultReasoningEffort string   `json:"defaultReasoningEffort,omitempty"`
 	ServiceTiers           []string `json:"serviceTiers"`
 	Steerable              bool     `json:"steerable,omitempty"`
+	// IdleReclaimExempt marks Docker/Kubernetes environments, which idle time
+	// never releases; keep-alive does not apply to them.
+	IdleReclaimExempt bool `json:"idleReclaimExempt,omitempty"`
 	// Backend and Model describe the Agent CLI for display.
 	Backend string   `json:"backend,omitempty"`
 	Model   string   `json:"model,omitempty"`
@@ -391,6 +394,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 		return v
 	}
 	v.ArtifactRunID = sb.RunID
+	v.IdleReclaimExempt = s.sbx.knownIdleReclaimExempt(sb)
 	info := &SoloSandboxInfo{
 		ID: sb.ID, Name: sb.Name, Status: sb.Status, Error: sb.Error,
 		HasCodeServer: sb.CodeServerPort > 0, CreatedAt: sb.CreatedAt.Format(time.RFC3339),

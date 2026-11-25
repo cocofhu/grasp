@@ -1,14 +1,16 @@
 # Sandbox save, release and restore
 
-Every sandbox purpose and Docker, Kubernetes and E2B share one idle timeout and
-one capacity limit in Settings. Defaults are **6 hours (360 minutes)** after the
-last model turn and **15 sandboxes**.
-Workflow concurrency remains a separate task scheduling limit.
+Settings has one idle timeout and one capacity limit. The idle timeout applies
+to E2B only and defaults to **6 hours (360 minutes)** after the last model turn.
+Docker and Kubernetes sandboxes are never saved or released for idleness; their
+processes keep running until Stop, closing the session or cancelling the run.
+The capacity limit covers every backend and purpose and defaults to
+**15 sandboxes**. Workflow concurrency remains a separate task scheduling limit.
 
 | Behavior | Docker | Kubernetes | E2B |
 | --- | --- | --- | --- |
-| Idle | The model turn ended and no request is queued; terminals, background processes, pages and the IDE do not count | Same | Same |
-| Idle timeout or Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Native pause, or independent checkpoint then release for multiple points; no file archive |
+| Idle timeout | Not reclaimed; the environment and its processes keep running | Same | Counts once the model turn ended and no request is queued; terminals, background processes, pages and the IDE do not count. Native pause when it expires |
+| Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Native pause, or independent checkpoint then release for multiple points; no file archive |
 | Next use | Recreate, restore the newest successful archive, reconnect | Same | Restore the newest successful snapshot and reconnect |
 | Periodic running backup | None | None | None |
 | Cancel run or close session | Delete its environment and every recovery point | Same | Delete its guest and recovery points; provider reclaims physical storage |
@@ -20,7 +22,8 @@ workspace. E2B preserves memory, but TCP connections and external requests must
 reconnect. Docker shared bind mounts are not removed. Kubernetes storage-class
 and CSI reclaim policies determine physical volume deletion.
 
-The idle interval starts when a complete model turn ends with no queued request,
+The idle interval and Never auto-reclaim below apply to E2B only. The idle
+interval starts when a complete model turn ends with no queued request,
 or when a new environment becomes ready. Generating, thinking, running tools or
 waiting for tool results never counts as idle, and every new turn restarts the
 interval. The interval is persisted across platform restarts. Page polling,
@@ -32,10 +35,12 @@ To keep an environment, right-click the session or run under Running in the
 sidebar and check **Never auto-reclaim**. The choice is stored on the session or
 run and survives restarts, recovery and rebuilds; unchecking it grants a full
 interval again. It still counts toward the running limit and does not affect
-manual Stop, Cancel or Close.
+manual Stop, Cancel or Close. Docker/Kubernetes environments are never
+auto-reclaimed, so the menu does not show it for them.
 
-A workflow waiting for human input can release its idle environment once its
-turn has ended, while remaining in the waiting state. A reply restores it before
+A workflow waiting for human input can release its idle E2B environment once its
+turn has ended, while remaining in the waiting state; Docker/Kubernetes
+environments stay up while it waits. A reply restores it before
 continuing. Any active node protects a shared sandbox. Manual Stop uses the same
 save path and refuses while a turn or queued request remains. Cancel is a separate
 terminal operation: conversation/workflow history stays, recovery points do not.

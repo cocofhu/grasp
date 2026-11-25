@@ -343,8 +343,9 @@ type SandboxConfig struct {
 	// + boot). Must stay >= the gateway's FinalizeTimeout, else approving gives
 	// up before provisioning finishes. 0 = default 1200 (20 min).
 	CreateTimeoutSeconds int `yaml:"sandbox_create_timeout_seconds"`
-	// IdleTTLMinutes is how long after the last model turn ended a sandbox is
-	// saved and released. Running turns and queued requests protect it. 0 = 360.
+	// IdleTTLMinutes is how long after the last model turn ended an E2B sandbox
+	// is saved and released; Docker/Kubernetes sandboxes are never released for
+	// idleness. Running turns and queued requests protect it. 0 = 360.
 	IdleTTLMinutes int `yaml:"idle_ttl_minutes"`
 	// MemoryTrimIdleMinutes is how long after the last model turn ended an E2B
 	// guest's page cache is first dropped and its free memory compacted, so the

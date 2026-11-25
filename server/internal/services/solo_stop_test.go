@@ -335,13 +335,45 @@ func TestUnifiedIdleReclaimCoversEveryPurpose(t *testing.T) {
 	for _, purpose := range []string{"test", "solo", "run"} {
 		t.Run(purpose, func(t *testing.T) {
 			f := newStopFixture(t)
+			f.fg.Driver = "e2b"
 			row := f.recovery(t)
 			f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("purpose", purpose)
 			expireModelIdle(t, f.sbx, row.ID)
 			f.sbx.sweepOnce(context.Background())
-			if got, _ := f.sbx.Get(row.ID); got.Status != "stopped" || len(got.RecoveryPoints) != 1 {
+			if got, _ := f.sbx.Get(row.ID); got.Status != "stopped" || got.RecoveryKind != "snapshot" {
 				t.Fatalf("idle %s not saved: %+v", purpose, got)
 			}
 		})
+	}
+}
+
+func TestContainerSandboxesAreNeverIdleReclaimed(t *testing.T) {
+	for _, driver := range []string{"docker", "kubernetes"} {
+		for _, purpose := range []string{"test", "solo", "run"} {
+			t.Run(driver+"/"+purpose, func(t *testing.T) {
+				f := newStopFixture(t)
+				f.fg.Driver = driver
+				row := f.recovery(t)
+				f.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("purpose", purpose)
+				expireModelIdle(t, f.sbx, row.ID)
+				f.sbx.sweepOnce(context.Background())
+				got := f.recovery(t)
+				if got.Status != "running" || len(got.RecoveryPoints) != 0 || len(f.exec.restoredArchives()) != 0 {
+					t.Fatalf("idle %s %s was reclaimed: %+v", driver, purpose, got)
+				}
+				if f.sbx.view(context.Background(), got).DestroyAt != nil {
+					t.Fatal("container sandbox must not show a reclaim deadline")
+				}
+				if err := f.sbx.reclaimLocked(context.Background(), row.ID, true); err == nil {
+					t.Fatal("automatic reclaim released a container sandbox")
+				}
+				if err := f.sbx.Reclaim(context.Background(), row.ID); err != nil {
+					t.Fatal(err)
+				}
+				if got := f.recovery(t); got.Status != "stopped" || len(got.RecoveryPoints) != 1 {
+					t.Fatalf("manual stop must still save and release: %+v", got)
+				}
+			})
+		}
 	}
 }

@@ -238,7 +238,7 @@ docker compose --env-file /absolute/private/grasp-e2b.env -f compose.e2b.yaml up
 
 gateway 恢复 guest、连接凭据和本地端口，Grasp 保留原沙箱记录。等待人工的 workflow 可以释放空闲环境，回复时先恢复最新成功状态再继续；不会因为空闲策略改变工作流的 `waiting_human` 状态。内存快照不等于网络连接快照，终端、模型请求和 Agent 控制连接仍需重建，不承诺正在进行的网络请求无缝继续。
 
-Grasp 的空闲回收与手动「停止环境」使用同一条保存流程，E2B 不另做文件备份。`sandbox.idle_ttl_minutes`（默认 360，从模型回合结束开始计时）、`sandbox.max_sandboxes`（默认 15）和 `solo_backup.keep`（默认 1）继续作用于所有用途/后端，不增加 E2B 专用回收策略。唯一的 E2B 专用项是 `sandbox.memory_trim_*`：模型回合结束 10 分钟后，Grasp 在 guest 内清理页面缓存并整理内存碎片，让 balloon 的空闲页上报把整块内存还给主机大页池；它不停止 guest，也不影响进程内存。详见 [生命周期说明](../../../docs/content/help/sandbox-lifecycle.md)。
+Grasp 的空闲回收与手动「停止环境」使用同一条保存流程，E2B 不另做文件备份。`sandbox.idle_ttl_minutes`（默认 360，从模型回合结束开始计时）只对 E2B 生效，Docker/K8s 不因空闲回收；`sandbox.max_sandboxes`（默认 15）和 `solo_backup.keep`（默认 1）继续作用于所有用途/后端。唯一的 E2B 专用项是 `sandbox.memory_trim_*`：模型回合结束 10 分钟后，Grasp 在 guest 内清理页面缓存并整理内存碎片，让 balloon 的空闲页上报把整块内存还给主机大页池；它不停止 guest，也不影响进程内存。详见 [生命周期说明](../../../docs/content/help/sandbox-lifecycle.md)。
 
 ### 标准 E2B 接口
 

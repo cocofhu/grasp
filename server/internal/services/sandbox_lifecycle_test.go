@@ -22,6 +22,7 @@ func (w *workspaceExec) setGuestBusy(busy bool) {
 
 func TestAccessDoesNotExtendModelIdleInterval(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	expireModelIdle(t, f.sbx, row.ID)
 	f.sbx.TouchActivity(row.ID) // IDE, preview or page traffic
@@ -33,6 +34,7 @@ func TestAccessDoesNotExtendModelIdleInterval(t *testing.T) {
 
 func TestGuestTurnBlocksReclaimAndRestartsInterval(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	old := expireModelIdle(t, f.sbx, row.ID)
 	f.exec.setGuestBusy(true)
@@ -45,6 +47,7 @@ func TestGuestTurnBlocksReclaimAndRestartsInterval(t *testing.T) {
 
 func TestControlPlaneTurnRefreshesPersistedInterval(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	old := expireModelIdle(t, f.sbx, row.ID)
 	f.sbx.soloBusy = func(uint) bool { return true }
@@ -57,6 +60,7 @@ func TestControlPlaneTurnRefreshesPersistedInterval(t *testing.T) {
 
 func TestSoloKeepAliveSkipsAutomaticReclaimOnly(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	if _, err := f.solo.SetKeepAlive(context.Background(), f.id, "bob", true); err == nil {
 		t.Fatal("another user changed the reclaim policy")
@@ -104,31 +108,9 @@ func TestManualStopIgnoresKeepAlive(t *testing.T) {
 	}
 }
 
-func TestKeepAliveDuringSaveWins(t *testing.T) {
-	f := newStopFixture(t)
-	store := &blockingRecoveryStore{Store: f.store, started: make(chan struct{}), release: make(chan struct{})}
-	f.solo.SetBackupStore(store)
-	row := f.recovery(t)
-	expireModelIdle(t, f.sbx, row.ID)
-	done := make(chan struct{})
-	go func() { f.sbx.sweepOnce(context.Background()); close(done) }()
-	select {
-	case <-store.started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("save did not start")
-	}
-	if _, err := f.solo.SetKeepAlive(context.Background(), f.id, "alice", true); err != nil {
-		t.Fatal(err)
-	}
-	close(store.release)
-	<-done
-	if got := f.recovery(t); got.Status != "running" {
-		t.Fatalf("keep-alive chosen during save was ignored: %s", got.Status)
-	}
-}
-
 func TestRunKeepAlive(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	if err := f.db.Create(&models.Run{ID: "run-keep", Status: "waiting_human"}).Error; err != nil {
 		t.Fatal(err)

@@ -458,7 +458,7 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 		Password:        row.Token,
 	}
 	v.DestroyAt = nil
-	if row.Status == "running" && !busy && !s.keepAlive(row) {
+	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) {
 		deadline := s.modelIdleSince(row).Add(s.IdleTTL())
 		v.DestroyAt = &deadline
 	}

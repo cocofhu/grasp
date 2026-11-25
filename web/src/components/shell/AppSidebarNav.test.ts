@@ -493,6 +493,29 @@ describe('AppSidebarNav', () => {
     wrapper.unmount()
   })
 
+  it('hides Never auto-reclaim for Docker/Kubernetes sessions and runs', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [{
+      id: 'box', title: 'box', agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, idleReclaimExempt: true,
+      createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
+    }], maxSandboxes: 5 })
+    apiMocks.listRuns.mockResolvedValue({ items: [
+      { id: 'R', workflowId: 'wf', workflowName: 'w', title: '工作流 R', status: 'waiting_human', startedAt: 'T0', idleReclaimExempt: true },
+    ], total: 1 })
+    const wrapper = mountNav()
+    await flushPromises()
+    const section = wrapper.get('[data-testid="nav-pending-approvals"]')
+    const item = () => document.querySelector<HTMLElement>('[data-testid="nav-pending-menu-keep-alive"]')
+
+    await section.get('[data-key="box"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(document.querySelector('[data-testid="nav-pending-menu-solo-power"]')).not.toBeNull()
+    expect(item()).toBeNull()
+    document.body.click()
+    await section.get('[data-key="R"]').trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).not.toBeNull()
+    expect(item()).toBeNull()
+    wrapper.unmount()
+  })
+
   it('orders Solo rows by start time, not by last activity', async () => {
     const solo = (id: string, createdAt: string, lastActiveAt: string) => ({
       id, title: id, agentName: 'a', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt, updatedAt: lastActiveAt, lastActiveAt,

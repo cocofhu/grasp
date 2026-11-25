@@ -2,12 +2,10 @@ package services
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/solobackup"
 )
 
 // expireModelIdle moves the sandbox's model idle interval past the TTL.
@@ -35,26 +33,11 @@ func TestIdleSweepReadsLatestActivityNotStaleCandidate(t *testing.T) {
 	}
 }
 
-type blockingRecoveryStore struct {
-	solobackup.Store
-	started chan struct{}
-	release chan struct{}
-}
-
-func (s *blockingRecoveryStore) Put(ctx context.Context, key string, r io.Reader) (solobackup.Object, error) {
-	close(s.started)
-	select {
-	case <-ctx.Done():
-		return solobackup.Object{}, ctx.Err()
-	case <-s.release:
-	}
-	return s.Store.Put(ctx, key, r)
-}
-
 func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 	f := newStopFixture(t)
-	store := &blockingRecoveryStore{Store: f.store, started: make(chan struct{}), release: make(chan struct{})}
-	f.solo.SetBackupStore(store)
+	f.fg.Driver = "e2b"
+	started, release := make(chan struct{}), make(chan struct{})
+	f.fg.OnStop = func() { close(started); <-release }
 	chat := newRestoreChat(false)
 	f.solo.SetChatterForTest(chat)
 	row := f.recovery(t)
@@ -62,7 +45,7 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 	saved := make(chan struct{})
 	go func() { f.sbx.sweepOnce(context.Background()); close(saved) }()
 	select {
-	case <-store.started:
+	case <-started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("save did not start")
 	}
@@ -76,7 +59,7 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 		t.Fatalf("message bypassed recovery lock: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
-	close(store.release)
+	close(release)
 	select {
 	case <-saved:
 	case <-time.After(3 * time.Second):
@@ -90,14 +73,15 @@ func TestNewSoloTurnWaitsForSaveThenRestoresLatest(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("queued work did not wake saved environment")
 	}
-	if len(f.exec.restoredArchives()) != 1 {
-		t.Fatal("turn ran before restoring workspace")
+	if got := f.recovery(t); got.Status != "running" || got.RecoveryKind != "snapshot" {
+		t.Fatalf("turn ran before resuming the saved snapshot: %+v", got)
 	}
 	waitFor(t, "turn complete", func() bool { c := f.solo.lookup(f.id); return c != nil && !c.sess.Snapshot().Busy })
 }
 
 func TestIdleSavedSoloDoesNotWakeInBackground(t *testing.T) {
 	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
 	row := f.recovery(t)
 	expireModelIdle(t, f.sbx, row.ID)
 	f.sbx.sweepOnce(context.Background())

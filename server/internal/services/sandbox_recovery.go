@@ -90,6 +90,9 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 	if err != nil {
 		return err
 	}
+	if automatic && kind != "snapshot" {
+		return errors.New("automatic reclaim only releases snapshot environments")
+	}
 	if kind == "files" && s.backups == nil {
 		return errors.New("workspace backup storage is unavailable")
 	}
