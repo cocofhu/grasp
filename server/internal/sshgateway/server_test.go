@@ -631,3 +631,20 @@ func TestHostKeyFallsBackWhenHardLinksFail(t *testing.T) {
 		t.Fatalf("temporary key files left behind: %d entries", len(entries))
 	}
 }
+
+func TestCloseDoesNotWaitForRefusedClients(t *testing.T) {
+	h := newHarness(t, Options{}) // default 30s linger
+	h.sbx.deny(1, true)
+	cli := h.mustDial(t, "sbx-1")
+	if _, err := cli.NewSession(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // the connection is now lingering in refuse
+	started := time.Now()
+	if err := h.srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("Close waited %s for a refused client", elapsed)
+	}
+}
