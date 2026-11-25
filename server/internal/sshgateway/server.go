@@ -35,19 +35,27 @@ type Authorizer interface {
 
 // Sandboxes is the sandbox side the gateway relays to.
 type Sandboxes interface {
-	// DialSSH returns a root SSH client to sandbox id, waking it if needed.
-	DialSSH(ctx context.Context, id uint) (*ssh.Client, error)
-	// AcquireExternalSession keeps id from idle reclaim until release is called.
-	AcquireExternalSession(id uint) (release func())
+	// AuthorizeSSH reports whether username may enter sandbox id. The error
+	// text is shown to the client, so it must not reveal whether id exists.
+	AuthorizeSSH(username string, id uint) error
+	// DialSSH returns a root SSH client to sandbox id, waking it if needed,
+	// and a release that ends its hold on idle reclaim. The hold is taken
+	// before idle reclaim can run again, so a fresh connection is never paused.
+	DialSSH(ctx context.Context, id uint) (*ssh.Client, func(), error)
 	// TouchActivity records access for display.
 	TouchActivity(id uint)
 }
 
 // Options configures a Server. Zero values take the defaults below.
 type Options struct {
-	HostKeyPath        string
-	MaxConns           int
-	MaxConnsPerSandbox int
+	HostKeyPath string
+	// MaxConns caps authenticated connections; MaxPendingHandshakes and
+	// MaxPendingPerSource cap connections still in the SSH handshake, so
+	// unauthenticated clients cannot take the authenticated slots.
+	MaxConns             int
+	MaxConnsPerSandbox   int
+	MaxPendingHandshakes int
+	MaxPendingPerSource  int
 	// AuthFailLimit failed handshakes per source address within
 	// AuthFailWindow block that address until the window passes.
 	AuthFailLimit  int
@@ -57,6 +65,8 @@ type Options struct {
 	HandshakeTimeout   time.Duration
 	RevalidateInterval time.Duration
 	TouchInterval      time.Duration
+	// RefuseLinger is how long a refused client may take to disconnect.
+	RefuseLinger time.Duration
 }
 
 func (o *Options) defaults() {
@@ -65,6 +75,12 @@ func (o *Options) defaults() {
 	}
 	if o.MaxConnsPerSandbox <= 0 {
 		o.MaxConnsPerSandbox = 10
+	}
+	if o.MaxPendingHandshakes <= 0 {
+		o.MaxPendingHandshakes = 64
+	}
+	if o.MaxPendingPerSource <= 0 {
+		o.MaxPendingPerSource = 8
 	}
 	if o.AuthFailLimit == 0 {
 		o.AuthFailLimit = 20
@@ -83,6 +99,9 @@ func (o *Options) defaults() {
 	}
 	if o.TouchInterval <= 0 {
 		o.TouchInterval = time.Minute
+	}
+	if o.RefuseLinger <= 0 {
+		o.RefuseLinger = 30 * time.Second
 	}
 }
 
@@ -111,6 +130,8 @@ type Server struct {
 	conns     map[*gatewayConn]struct{}
 	total     int
 	bySandbox map[uint]int
+	pending   int
+	bySource  map[string]int
 	closed    bool
 	wg        sync.WaitGroup
 	nextID    atomic.Uint64
@@ -124,6 +145,9 @@ type gatewayConn struct {
 	remote   string
 	conn     *ssh.ServerConn
 	reason   atomic.Value
+	// ready is set once access was granted; revalidation skips connections
+	// still being checked, which explain their own refusal.
+	ready atomic.Bool
 }
 
 func (c *gatewayConn) close(reason string) {
@@ -146,7 +170,7 @@ func New(opts Options, auth Authorizer, sbx Sandboxes) (*Server, error) {
 		opts: opts, auth: auth, sbx: sbx, hostKey: hostKey,
 		limiter: newFailLimiter(opts.AuthFailLimit, opts.AuthFailWindow),
 		ctx:     ctx, cancel: cancel,
-		conns: map[*gatewayConn]struct{}{}, bySandbox: map[uint]int{},
+		conns: map[*gatewayConn]struct{}{}, bySandbox: map[uint]int{}, bySource: map[string]int{},
 	}
 	s.config = &ssh.ServerConfig{
 		ServerVersion:     "SSH-2.0-GraspGateway",
@@ -296,20 +320,56 @@ func (s *Server) revalidateLoop() {
 	}
 }
 
-// revalidate drops connections whose key was removed or whose account no
-// longer exists, including changes made outside the API (config reload).
+// revalidate drops connections whose key, account or sandbox access went
+// away, including changes made outside the API (config reload, a deleted
+// or reassigned session).
 func (s *Server) revalidate() {
 	s.mu.Lock()
 	conns := make([]*gatewayConn, 0, len(s.conns))
 	for c := range s.conns {
-		conns = append(conns, c)
+		if c.ready.Load() {
+			conns = append(conns, c)
+		}
 	}
 	s.mu.Unlock()
 	for _, c := range conns {
-		who, err := s.auth.AuthorizeKey(c.key)
-		if err != nil || who.Username != c.identity.Username {
-			c.close("key no longer authorized")
+		if err := s.authorized(c); err != nil {
+			c.close(err.Error())
 		}
+	}
+}
+
+var errKeyRevoked = errors.New("key no longer authorized")
+
+// authorized re-checks the key and the account's access to the sandbox.
+func (s *Server) authorized(c *gatewayConn) error {
+	who, err := s.auth.AuthorizeKey(c.key)
+	if err != nil || who.Username != c.identity.Username {
+		return errKeyRevoked
+	}
+	return s.sbx.AuthorizeSSH(c.identity.Username, c.sandbox)
+}
+
+// reservePending admits one connection into the SSH handshake.
+func (s *Server) reservePending(source string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.pending >= s.opts.MaxPendingHandshakes || s.bySource[source] >= s.opts.MaxPendingPerSource {
+		return false
+	}
+	s.pending++
+	s.bySource[source]++
+	return true
+}
+
+func (s *Server) releasePending(source string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pending--
+	if s.bySource[source] <= 1 {
+		delete(s.bySource, source)
+	} else {
+		s.bySource[source]--
 	}
 }
 
@@ -367,18 +427,13 @@ func remoteHost(addr net.Addr) string {
 
 func (s *Server) handle(nc net.Conn) {
 	source := remoteHost(nc.RemoteAddr())
-	if s.limiter.blocked(source) {
+	if s.limiter.blocked(source) || !s.reservePending(source) {
 		_ = nc.Close()
 		return
 	}
-	if !s.reserveTotal() {
-		log.Warn().Str("remote", source).Msg("ssh gateway: connection limit reached")
-		_ = nc.Close()
-		return
-	}
-	defer s.releaseTotal()
 	_ = nc.SetDeadline(time.Now().Add(s.opts.HandshakeTimeout))
 	sconn, chans, reqs, err := ssh.NewServerConn(nc, s.config)
+	s.releasePending(source)
 	if err != nil {
 		s.limiter.fail(source)
 		_ = nc.Close()
@@ -401,23 +456,38 @@ func (s *Server) handle(nc net.Conn) {
 	}
 	logger := log.With().Uint64("conn", c.id).Str("user", c.identity.Username).
 		Str("fingerprint", c.identity.Fingerprint).Uint("sandbox", c.sandbox).Str("remote", source).Logger()
+	if !s.reserveTotal() {
+		logger.Warn().Msg("ssh gateway: connection limit reached")
+		s.refuse(sconn, chans, "Grasp SSH 网关连接数已达上限，请稍后重试")
+		return
+	}
+	defer s.releaseTotal()
 	if !s.register(c) {
-		refuse(sconn, chans, fmt.Sprintf("沙箱 %d 的连接数已达上限（%d）", c.sandbox, s.opts.MaxConnsPerSandbox))
+		s.refuse(sconn, chans, fmt.Sprintf("沙箱 %d 的连接数已达上限（%d）", c.sandbox, s.opts.MaxConnsPerSandbox))
 		return
 	}
 	defer s.unregister(c)
+	// Registered first, so a key deleted from here on also closes this
+	// connection; checked again here for one deleted during the handshake.
+	if err := s.authorized(c); err != nil {
+		logger.Warn().Err(err).Msg("ssh gateway: access denied")
+		// Unregistered so revalidation does not cut the explanation short.
+		s.unregister(c)
+		s.refuse(sconn, chans, err.Error())
+		return
+	}
+	c.ready.Store(true)
 
 	ctx, cancel := context.WithTimeout(s.ctx, s.opts.DialTimeout)
-	upstream, err := s.sbx.DialSSH(ctx, c.sandbox)
+	upstream, release, err := s.sbx.DialSSH(ctx, c.sandbox)
 	cancel()
 	if err != nil {
 		logger.Warn().Err(err).Msg("ssh gateway: sandbox unavailable")
-		refuse(sconn, chans, fmt.Sprintf("无法连接沙箱 %d：%v", c.sandbox, err))
+		s.refuse(sconn, chans, fmt.Sprintf("无法连接沙箱 %d：%v", c.sandbox, err))
 		return
 	}
-	defer func() { _ = upstream.Close() }()
-	release := s.sbx.AcquireExternalSession(c.sandbox)
 	defer release()
+	defer func() { _ = upstream.Close() }()
 	s.sbx.TouchActivity(c.sandbox)
 	started := time.Now()
 	logger.Info().Msg("ssh gateway: connected")
@@ -475,9 +545,11 @@ func replyGlobalRequests(reqs <-chan *ssh.Request) {
 }
 
 // refuse explains why the connection cannot proceed. Session channels get the
-// message on stderr and exit status 1 so OpenSSH and IDE logs show it.
-func refuse(conn *ssh.ServerConn, chans <-chan ssh.NewChannel, msg string) {
-	timer := time.AfterFunc(30*time.Second, func() { _ = conn.Close() })
+// message on stderr and exit status 1 so OpenSSH and IDE logs show it. The
+// client closes the connection itself; closing it here first makes OpenSSH
+// report a broken pipe and exit 255 instead of 1. The timer bounds the wait.
+func (s *Server) refuse(conn *ssh.ServerConn, chans <-chan ssh.NewChannel, msg string) {
+	timer := time.AfterFunc(s.opts.RefuseLinger, func() { _ = conn.Close() })
 	defer timer.Stop()
 	for nch := range chans {
 		if nch.ChannelType() != "session" {
@@ -488,8 +560,7 @@ func refuse(conn *ssh.ServerConn, chans <-chan ssh.NewChannel, msg string) {
 		if err != nil {
 			continue
 		}
-		explain(ch, reqs, msg)
-		return
+		go explain(ch, reqs, msg)
 	}
 }
 

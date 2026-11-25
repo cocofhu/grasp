@@ -72,7 +72,7 @@ func OptionDescriptors() []OptionDescriptor {
 		{Env: "GRASP_SSH_GATEWAY_HOST_KEY_PATH", YAML: "ssh_gateway.host_key_path", Type: "path", Default: "data/ssh-gateway/host_ed25519_key", Sensitive: true, ZH: "网关主机私钥路径，首次启动自动生成；必须放在持久卷上并由所有副本共享，否则客户端会提示主机密钥变更", EN: "Gateway host private key, generated on first start; keep it on a persistent volume shared by all replicas or clients will warn that the host key changed"},
 		{Env: "GRASP_SSH_GATEWAY_MAX_CONNS", YAML: "ssh_gateway.max_conns", Type: "integer", Default: "200", ZH: "网关同时连接数上限", EN: "Maximum concurrent gateway connections"},
 		{Env: "GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX", YAML: "ssh_gateway.max_conns_per_sandbox", Type: "integer", Default: "10", ZH: "单个沙箱同时连接数上限", EN: "Maximum concurrent connections per sandbox"},
-		{Env: "GRASP_SSH_GATEWAY_ADMINS_ONLY", YAML: "ssh_gateway.admins_only", Type: "boolean", Default: "false", ZH: "仅允许管理员账号通过 SSH 网关连接（网关以 root 进入沙箱，且暂未按用户隔离沙箱）", EN: "Allow only admin accounts through the SSH gateway (it enters sandboxes as root and sandboxes are not yet isolated per user)"},
+		{Env: "GRASP_SSH_GATEWAY_ADMINS_ONLY", YAML: "ssh_gateway.admins_only", Type: "boolean", Default: "false", ZH: "仅允许管理员账号通过 SSH 网关连接；关闭时 Solo 会话的所有者可以进入自己的沙箱，工作流等其他沙箱只对管理员开放", EN: "Allow only admin accounts through the SSH gateway; when off, Solo session owners may enter their own sandboxes and other sandboxes (workflows) stay admin-only"},
 		{Env: "GRASP_CODEX_LOGIN_AUTH_BASE_URL", YAML: "codex_login.auth_base_url", Type: "URL", Default: "https://auth.openai.com", ZH: "OpenAI 登录服务地址，用于 Codex 登录续期和设备码登录；请求遵循 HTTPS_PROXY", EN: "OpenAI auth server for Codex login renewal and device-code sign-in; requests honor HTTPS_PROXY"},
 	}
 }

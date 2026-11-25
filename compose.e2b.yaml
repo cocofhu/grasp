@@ -51,12 +51,18 @@ services:
       GRASP_SANDBOX_RUNTIME_BUNDLE: /app/sandbox-runtime/sandbox-runtime.tgz
       GRASP_SANDBOX_WORK_DIR: /data/sandbox-home
       GRASP_PROFILES_ROOT: /app/data/profiles
-      # Local IDEs (VS Code / Cursor Remote-SSH) reach sandboxes through this
-      # port; open it in the firewall when enabled. The host key must persist.
-      GRASP_SSH_GATEWAY_ENABLED: ${GRASP_SSH_GATEWAY_ENABLED:-false}
-      GRASP_SSH_GATEWAY_LISTEN: ":${GRASP_SSH_GATEWAY_PORT:-2222}"
+      # Local IDEs (VS Code / Cursor Remote-SSH) reach sandboxes through the
+      # SSH gateway; open its port (default 2222) in the firewall when enabled.
+      # Unset values stay empty so the Grasp YAML and built-in defaults apply.
+      GRASP_SSH_GATEWAY_ENABLED: ${GRASP_SSH_GATEWAY_ENABLED:-}
+      GRASP_SSH_GATEWAY_LISTEN: ${GRASP_SSH_GATEWAY_LISTEN:-}
       GRASP_SSH_GATEWAY_PUBLIC_HOST: ${GRASP_SSH_GATEWAY_PUBLIC_HOST:-}
-      GRASP_SSH_GATEWAY_HOST_KEY_PATH: /data/ssh-gateway/host_ed25519_key
+      GRASP_SSH_GATEWAY_PUBLIC_PORT: ${GRASP_SSH_GATEWAY_PUBLIC_PORT:-}
+      GRASP_SSH_GATEWAY_ADMINS_ONLY: ${GRASP_SSH_GATEWAY_ADMINS_ONLY:-}
+      GRASP_SSH_GATEWAY_MAX_CONNS: ${GRASP_SSH_GATEWAY_MAX_CONNS:-}
+      GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX: ${GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX:-}
+      # Kept on the persistent /data volume.
+      GRASP_SSH_GATEWAY_HOST_KEY_PATH: ${GRASP_SSH_GATEWAY_HOST_KEY_PATH:-/data/ssh-gateway/host_ed25519_key}
     volumes:
       - ${GRASP_CONFIG:?Set GRASP_CONFIG to your Grasp YAML}:/etc/grasp/grasp.yaml:ro
       - e2b-server-data:/data

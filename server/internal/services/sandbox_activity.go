@@ -69,6 +69,16 @@ func (s *SandboxService) modelIdleSince(row *models.Sandbox) time.Time {
 	if t := s.modelActive[row.ID]; t.After(since) {
 		since = t
 	}
+	s.mu.Unlock()
+	return since
+}
+
+// reclaimIdleSince starts the automatic reclaim countdown: the later of the
+// last model activity and the moment the last local IDE disconnected. Manual
+// stop compares model activity only, so closing an IDE never fails it.
+func (s *SandboxService) reclaimIdleSince(row *models.Sandbox) time.Time {
+	since := s.modelIdleSince(row)
+	s.mu.Lock()
 	if t := s.externalEnded[row.ID]; t.After(since) {
 		since = t
 	}

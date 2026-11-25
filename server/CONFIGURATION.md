@@ -67,5 +67,5 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_SSH_GATEWAY_HOST_KEY_PATH` | `ssh_gateway.host_key_path` | path | `data/ssh-gateway/host_ed25519_key` | Sensitive | Gateway host private key, generated on first start; keep it on a persistent volume shared by all replicas or clients will warn that the host key changed |
 | `GRASP_SSH_GATEWAY_MAX_CONNS` | `ssh_gateway.max_conns` | integer | `200` | Public | Maximum concurrent gateway connections |
 | `GRASP_SSH_GATEWAY_MAX_CONNS_PER_SANDBOX` | `ssh_gateway.max_conns_per_sandbox` | integer | `10` | Public | Maximum concurrent connections per sandbox |
-| `GRASP_SSH_GATEWAY_ADMINS_ONLY` | `ssh_gateway.admins_only` | boolean | `false` | Public | Allow only admin accounts through the SSH gateway (it enters sandboxes as root and sandboxes are not yet isolated per user) |
+| `GRASP_SSH_GATEWAY_ADMINS_ONLY` | `ssh_gateway.admins_only` | boolean | `false` | Public | Allow only admin accounts through the SSH gateway; when off, Solo session owners may enter their own sandboxes and other sandboxes (workflows) stay admin-only |
 | `GRASP_CODEX_LOGIN_AUTH_BASE_URL` | `codex_login.auth_base_url` | URL | `https://auth.openai.com` | Public | OpenAI auth server for Codex login renewal and device-code sign-in; requests honor HTTPS_PROXY |

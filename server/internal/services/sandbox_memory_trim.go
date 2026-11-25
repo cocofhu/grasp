@@ -29,7 +29,7 @@ const memoryTrimTimeout = 3 * time.Minute
 // model turn has been idle for IdleAfter, then again every Interval.
 func (s *SandboxService) maybeTrimMemory(ctx context.Context, row models.Sandbox, now time.Time) {
 	p := s.memoryTrim
-	if p.IdleAfter <= 0 || s.externalBusy(row.ID) || now.Sub(s.modelIdleSince(&row)) < p.IdleAfter {
+	if p.IdleAfter <= 0 || s.externalBusy(row.ID) || now.Sub(s.reclaimIdleSince(&row)) < p.IdleAfter {
 		return
 	}
 	kind, _ := s.cachedRecoveryKind(&row)

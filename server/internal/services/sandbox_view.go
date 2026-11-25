@@ -302,24 +302,70 @@ func (s *SandboxService) soloStoppedByUser(row *models.Sandbox, closed bool) err
 	return nil
 }
 
-// DialSSH opens a root SSH client to sandbox id for the SSH gateway. Like the
-// web terminal it wakes a paused environment, but never one the user stopped.
-func (s *SandboxService) DialSSH(ctx context.Context, id uint) (*ssh.Client, error) {
+// DialSSH opens a root SSH client to sandbox id for the SSH gateway and holds
+// it against idle reclaim until release is called. Like the web terminal it
+// wakes a paused environment, but never one the user stopped. Waking, dialing
+// and taking the hold share the recovery lock, so an idle save either finishes
+// before the wake or sees the hold.
+func (s *SandboxService) DialSSH(ctx context.Context, id uint) (*ssh.Client, func(), error) {
 	row, err := s.Get(id)
 	if err != nil {
-		return nil, fmt.Errorf("沙箱 %d 不存在", id)
+		return nil, nil, errSSHNoAccess(id)
 	}
 	if s.mgr == nil || row.Name == "" {
-		return nil, errors.New("沙箱尚未就绪")
+		return nil, nil, errors.New("沙箱尚未就绪")
 	}
 	if err := s.soloStoppedByUser(row, true); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	sb, _, err := s.EnsureRunning(ctx, row.ID)
+	unlock, err := s.lockSoloRecovery(ctx, row.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return sb.DialSSH(ctx)
+	defer unlock()
+	sb, _, err := s.ensureRunningLocked(ctx, row.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	cli, err := sb.DialSSH(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cli, s.AcquireExternalSession(row.ID), nil
+}
+
+func errSSHNoAccess(id uint) error {
+	return fmt.Errorf("沙箱 %d 不存在或无权访问", id)
+}
+
+// SetSSHAdminLookup reports admin accounts for SSH gateway authorization.
+func (s *SandboxService) SetSSHAdminLookup(isAdmin func(username string) bool) {
+	s.mu.Lock()
+	s.sshAdmin = isAdmin
+	s.mu.Unlock()
+}
+
+// AuthorizeSSH lets the owner of a Solo session into its sandbox and admins
+// into any sandbox. Workflow and test sandboxes have no owner, so only admins
+// may enter them. Missing and forbidden sandboxes give the same error.
+func (s *SandboxService) AuthorizeSSH(username string, id uint) error {
+	row, err := s.Get(id)
+	if err != nil || strings.TrimSpace(username) == "" {
+		return errSSHNoAccess(id)
+	}
+	s.mu.Lock()
+	isAdmin := s.sshAdmin
+	s.mu.Unlock()
+	if isAdmin != nil && isAdmin(username) {
+		return nil
+	}
+	if row.Purpose == SandboxPurposeSolo {
+		var n int64
+		if s.db.Model(&models.SoloSession{}).Where("sandbox_id = ? AND user_id = ?", row.ID, username).Count(&n).Error == nil && n > 0 {
+			return nil
+		}
+	}
+	return errSSHNoAccess(id)
 }
 
 // EnsureRunningByName wakes an explicitly accessed environment, including a
@@ -495,7 +541,7 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 	}
 	v.DestroyAt = nil
 	if kind, ok := s.cachedRecoveryKind(row); ok && kind == "snapshot" && row.Status == "running" && !busy && !s.keepAlive(row) && !s.externalBusy(row.ID) {
-		deadline := s.modelIdleSince(row).Add(s.IdleTTL())
+		deadline := s.reclaimIdleSince(row).Add(s.IdleTTL())
 		v.DestroyAt = &deadline
 	}
 	s.applyGatewayLifecycle(ctx, row, &v)

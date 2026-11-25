@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -72,8 +73,11 @@ func TestExternalSessionBlocksIdleReclaimAndTrim(t *testing.T) {
 	}
 
 	release()
-	if since := f.sbx.modelIdleSince(f.recovery(t)); !since.After(old) {
-		t.Fatal("closing the last connection must restart the idle interval")
+	if since := f.sbx.reclaimIdleSince(f.recovery(t)); !since.After(old) {
+		t.Fatal("closing the last connection must restart the reclaim countdown")
+	}
+	if since := f.sbx.modelIdleSince(f.recovery(t)); !since.Equal(old) {
+		t.Fatal("an IDE disconnect is not model activity")
 	}
 	view, err = f.sbx.GetView(context.Background(), row.ID)
 	if err != nil {
@@ -119,7 +123,7 @@ func TestSoloViewReportsLifecycleAndConnections(t *testing.T) {
 
 func TestDialSSHRefusesMissingAndUserStoppedSandboxes(t *testing.T) {
 	f := newStopFixture(t)
-	if _, err := f.sbx.DialSSH(context.Background(), 99999); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, _, err := f.sbx.DialSSH(context.Background(), 99999); err == nil || !strings.Contains(err.Error(), "不存在") {
 		t.Fatalf("missing sandbox = %v", err)
 	}
 	row := f.recovery(t)
@@ -130,7 +134,7 @@ func TestDialSSHRefusesMissingAndUserStoppedSandboxes(t *testing.T) {
 		if err := f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("status", status).Error; err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f.sbx.DialSSH(context.Background(), row.ID); err == nil || !strings.Contains(err.Error(), want) {
+		if _, _, err := f.sbx.DialSSH(context.Background(), row.ID); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s session = %v", status, err)
 		}
 	}
@@ -139,7 +143,7 @@ func TestDialSSHRefusesMissingAndUserStoppedSandboxes(t *testing.T) {
 		t.Fatal("the web IDE path must keep its previous closed-session behavior")
 	}
 	noMgr := &SandboxService{db: f.db}
-	if _, err := noMgr.DialSSH(context.Background(), row.ID); err == nil {
+	if _, _, err := noMgr.DialSSH(context.Background(), row.ID); err == nil {
 		t.Fatal("a service without a manager cannot dial")
 	}
 }
@@ -164,4 +168,83 @@ func TestExternalSessionOpenedDuringSaveAbortsAutomaticRelease(t *testing.T) {
 	if err := f.sbx.recheckBeforeRelease(context.Background(), row, sb, idleSince, false); err != nil {
 		t.Fatalf("manual stop must not be blocked by a connection: %v", err)
 	}
+}
+
+func TestManualStopSucceedsWhenTheLastIDEDisconnectsDuringSave(t *testing.T) {
+	f := newStopFixture(t)
+	f.fg.Driver = "e2b"
+	row := f.recovery(t)
+	release := f.sbx.AcquireExternalSession(row.ID)
+	idleSince := f.sbx.modelIdleSince(row)
+	sb, err := f.sbx.soloHandle(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	release() // the user closes the IDE while the archive is written
+	if err := f.sbx.recheckBeforeRelease(context.Background(), row, sb, idleSince, false); err != nil {
+		t.Fatalf("closing an IDE failed the manual stop: %v", err)
+	}
+}
+
+func TestAuthorizeSSHByOwnerAndAdmin(t *testing.T) {
+	f := newStopFixture(t)
+	row := f.recovery(t)
+	if err := f.sbx.AuthorizeSSH("alice", row.ID); err != nil {
+		t.Fatalf("the session owner was refused: %v", err)
+	}
+	denied := f.sbx.AuthorizeSSH("bob", row.ID)
+	missing := f.sbx.AuthorizeSSH("bob", 99999)
+	if denied == nil || missing == nil {
+		t.Fatal("another user entered a Solo sandbox")
+	}
+	if denied.Error() != fmt.Sprintf("沙箱 %d 不存在或无权访问", row.ID) || !strings.Contains(missing.Error(), "不存在或无权访问") {
+		t.Fatalf("forbidden and missing sandboxes must look the same: %q / %q", denied, missing)
+	}
+	if f.sbx.AuthorizeSSH("", row.ID) == nil {
+		t.Fatal("an empty user name was authorized")
+	}
+
+	run := models.Sandbox{Name: "wf-run-box", Status: "running", Purpose: "run", RunID: "run-1"}
+	if err := f.db.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	if f.sbx.AuthorizeSSH("alice", run.ID) == nil {
+		t.Fatal("workflow sandboxes have no owner and must be admin-only")
+	}
+	f.sbx.SetSSHAdminLookup(func(u string) bool { return u == "root-admin" })
+	if err := f.sbx.AuthorizeSSH("root-admin", run.ID); err != nil {
+		t.Fatalf("admin refused: %v", err)
+	}
+	if err := f.sbx.AuthorizeSSH("root-admin", row.ID); err != nil {
+		t.Fatalf("admin refused a Solo sandbox: %v", err)
+	}
+	if f.sbx.AuthorizeSSH("bob", row.ID) == nil {
+		t.Fatal("the admin lookup let a regular user in")
+	}
+
+	if err := f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("user_id", "carol").Error; err != nil {
+		t.Fatal(err)
+	}
+	if f.sbx.AuthorizeSSH("alice", row.ID) == nil {
+		t.Fatal("a reassigned session kept the previous owner's access")
+	}
+}
+
+func TestDialSSHWaitsForAnIdleSaveHoldingTheRecoveryLock(t *testing.T) {
+	f := newStopFixture(t)
+	row := f.recovery(t)
+	unlock, err := f.sbx.lockSoloRecovery(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, err := f.sbx.DialSSH(ctx, row.ID); err == nil {
+		t.Fatal("dialing went ahead while a save held the recovery lock")
+	}
+	if f.sbx.ExternalSessions(row.ID) != 0 {
+		t.Fatal("a hold was taken without a connection")
+	}
+	unlock()
 }

@@ -431,7 +431,7 @@ func (s *SandboxService) restoreWorkspace(ctx context.Context, sb *sandbox.Sandb
 }
 
 func (s *SandboxService) idleDue(row *models.Sandbox, now time.Time) bool {
-	return !s.modelIdleSince(row).Add(s.IdleTTL()).After(now)
+	return !s.reclaimIdleSince(row).Add(s.IdleTTL()).After(now)
 }
 
 // modelBusy reports control-plane turns and queued requests.

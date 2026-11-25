@@ -31,28 +31,58 @@ func loadOrCreateHostKey(path string) (ssh.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("ssh gateway: host key dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		// Another replica created it first; serve under that key.
-		return readHostKey(path)
-	}
+	tmp, err := writeTempKey(dir, pem.EncodeToMemory(block))
 	if err != nil {
-		return nil, fmt.Errorf("ssh gateway: create host key: %w", err)
+		return nil, err
 	}
-	if err := pem.Encode(f, block); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return nil, fmt.Errorf("ssh gateway: write host key: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(path)
-		return nil, fmt.Errorf("ssh gateway: write host key: %w", err)
+	defer func() { _ = os.Remove(tmp) }()
+	// Link publishes the complete file atomically and fails if another
+	// replica published first, in which case that key wins.
+	if err := linkFile(tmp, path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return readHostKey(path)
+		}
+		// Some shared volumes have no hard links. Rename still publishes a
+		// complete file; only the first-writer-wins guarantee is weaker.
+		if _, statErr := os.Stat(path); statErr == nil {
+			return readHostKey(path)
+		}
+		if rerr := os.Rename(tmp, path); rerr != nil {
+			return nil, fmt.Errorf("ssh gateway: publish host key: %w", errors.Join(err, rerr))
+		}
+		return readHostKey(path)
 	}
 	return ssh.NewSignerFromKey(priv)
 }
+
+// writeTempKey writes data to a synced 0600 file in dir and returns its path.
+func writeTempKey(dir string, data []byte) (string, error) {
+	f, err := os.CreateTemp(dir, ".host_key-*")
+	if err != nil {
+		return "", fmt.Errorf("ssh gateway: create host key: %w", err)
+	}
+	name := f.Name()
+	if err = f.Chmod(0o600); err == nil {
+		if _, err = f.Write(data); err == nil {
+			err = f.Sync()
+		}
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(name)
+		return "", fmt.Errorf("ssh gateway: write host key: %w", err)
+	}
+	return name, nil
+}
+
+// linkFile is os.Link; tests replace it to simulate volumes without hard links.
+var linkFile = os.Link
 
 func readHostKey(path string) (ssh.Signer, error) {
 	data, err := os.ReadFile(path)

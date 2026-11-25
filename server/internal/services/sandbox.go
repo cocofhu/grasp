@@ -60,8 +60,10 @@ type SandboxService struct {
 	// externalEnded is when the last one closed and restarts the idle interval.
 	externalSessions map[uint]int
 	externalEnded    map[uint]time.Time
-	memoryTrims      map[uint]*memoryTrimState
-	memoryTrim       MemoryTrimPolicy
+	// sshAdmin reports accounts the SSH gateway lets into any sandbox.
+	sshAdmin    func(string) bool
+	memoryTrims map[uint]*memoryTrimState
+	memoryTrim  MemoryTrimPolicy
 	// recoveryKinds caches each sandbox's gateway recovery kind for the sweeper.
 	recoveryKinds map[uint]string
 	live          map[uint]*liveSandbox

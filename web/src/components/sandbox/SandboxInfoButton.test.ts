@@ -78,6 +78,25 @@ afterEach(() => {
 })
 
 describe('SandboxInfoButton', () => {
+  it('re-reads the session while the panel stays open', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await render()
+      await openPanel(wrapper)
+      expect(wrapper.emitted('refresh')).toHaveLength(1)
+      vi.advanceTimersByTime(10_000)
+      expect(wrapper.emitted('refresh')).toHaveLength(2)
+      vi.advanceTimersByTime(20_000)
+      expect(wrapper.emitted('refresh')).toHaveLength(4)
+      await wrapper.get('[data-testid="sandbox-info-toggle"]').trigger('click')
+      await flushPromises()
+      vi.advanceTimersByTime(30_000)
+      expect(wrapper.emitted('refresh')).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows the state dot, opens the panel and asks for a fresh view', async () => {
     const wrapper = await render()
     expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('ok')

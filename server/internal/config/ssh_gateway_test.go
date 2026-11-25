@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -65,5 +66,22 @@ func TestValidateSSHGateway(t *testing.T) {
 		if err := validateSSHGateway(tc.cfg); (err == nil) != tc.ok {
 			t.Errorf("%s: err = %v", tc.name, err)
 		}
+	}
+}
+
+func TestSSHGatewayEmptyEnvKeepsYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grasp.yaml")
+	if err := os.WriteFile(path, []byte("ssh_gateway:\n  enabled: true\n  admins_only: true\n  listen: \":2200\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"GRASP_SSH_GATEWAY_ENABLED", "GRASP_SSH_GATEWAY_ADMINS_ONLY", "GRASP_SSH_GATEWAY_LISTEN", "GRASP_SSH_GATEWAY_PUBLIC_PORT", "GRASP_SSH_GATEWAY_MAX_CONNS"} {
+		t.Setenv(key, "") // what Compose passes for an unset ${VAR:-}
+	}
+	c, err := parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.SSHGateway.Enabled || !c.SSHGateway.AdminsOnly || c.SSHGateway.Listen != ":2200" || c.SSHGateway.PublicPort != 2200 {
+		t.Fatalf("empty env overrode YAML: %+v", c.SSHGateway)
 	}
 }

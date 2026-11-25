@@ -538,3 +538,54 @@ func TestSandboxDialSSHUsesTokenCredentials(t *testing.T) {
 		t.Fatalf("wrong token must fail without echoing it: %v", err)
 	}
 }
+
+func TestSSHHandshakeHonorsDialContext(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var held []net.Conn
+	var mu sync.Mutex
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c) // accept TCP, never speak SSH
+			mu.Unlock()
+		}
+	}()
+	defer func() {
+		mu.Lock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+		mu.Unlock()
+	}()
+	host, portStr, _ := net.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	creds := sshCreds{host: host, port: port, user: "root", hostKeys: newHostKeyCache()}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if _, err := creds.dialOnce(ctx); err == nil {
+		t.Fatal("a stalled handshake succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("handshake ignored the dial deadline: %s", elapsed)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel2)
+	started = time.Now()
+	if _, err := creds.dialOnce(ctx2); err == nil {
+		t.Fatal("a cancelled handshake succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("handshake ignored cancellation: %s", elapsed)
+	}
+}

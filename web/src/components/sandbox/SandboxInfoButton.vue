@@ -47,6 +47,9 @@ const sheet = ref(false)
 const now = ref(Date.now())
 const copied = ref('')
 let tick: ReturnType<typeof setInterval> | undefined
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+/** IDE connections change outside this page, so an open panel re-reads the session. */
+const REFRESH_MS = 10_000
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
 const sandboxId = computed(() => props.session.sandbox?.id || props.session.sandboxId || 0)
@@ -142,6 +145,7 @@ async function show() {
   emit('refresh')
   void gateway.load(true)
   tick = setInterval(() => { now.value = Date.now() }, 1000)
+  refreshTimer = setInterval(() => emit('refresh'), REFRESH_MS)
   await nextTick()
   place()
   panel.value?.focus()
@@ -151,7 +155,9 @@ function hide(returnFocus = false) {
   if (!open.value) return
   open.value = false
   if (tick) clearInterval(tick)
+  if (refreshTimer) clearInterval(refreshTimer)
   tick = undefined
+  refreshTimer = undefined
   if (returnFocus) trigger.value?.focus()
 }
 

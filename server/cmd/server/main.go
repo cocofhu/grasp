@@ -575,6 +575,7 @@ func main() {
 	h.Team.Credentials = credentialSvc
 	h.Onboarding.Projects = projectSvc
 	h.SSHKeys = services.NewSSHKeyService(db, config.GetConfig)
+	sbxSvc.SetSSHAdminLookup(authSvc.IsAdmin)
 	sshGateway, sshGatewayInfo, err := startSSHGateway(cfg.SSHGateway, h.SSHKeys, sbxSvc)
 	if err != nil {
 		log.Fatal().Err(err).Msg("ssh gateway")

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,10 +205,7 @@ func TestAuthenticationFailuresAndRateLimit(t *testing.T) {
 	if _, err := h.dial(t, "sbx-1", h.userKey); err == nil {
 		t.Fatal("source address was not blocked after repeated failures")
 	}
-	h.sbx.mu.Lock()
-	dials := h.sbx.dials
-	h.sbx.mu.Unlock()
-	if dials != 0 {
+	if h.sbx.dialCount() != 0 {
 		t.Fatal("failed authentication must never reach the sandbox")
 	}
 }
@@ -265,15 +263,129 @@ func TestGlobalConnectionLimit(t *testing.T) {
 	h := newHarness(t, Options{MaxConns: 1})
 	h.mustDial(t, "sbx-1")
 	waitUntil(t, "first connection", func() bool { return h.srv.Connections(1) == 1 })
+	second := h.mustDial(t, "sbx-2")
+	sess, err := second.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	sess.Stderr = &stderr
+	if err := sess.Run("true"); err == nil || !strings.Contains(stderr.String(), "网关连接数已达上限") {
+		t.Fatalf("global limit not enforced: %v %q", err, stderr.String())
+	}
+	if h.sbx.dialCount() != 1 {
+		t.Fatal("a connection over the global limit reached the sandbox")
+	}
+}
+
+func TestUnauthenticatedHandshakesCannotTakeAuthenticatedSlots(t *testing.T) {
+	h := newHarness(t, Options{MaxConns: 1, MaxPendingPerSource: 3, MaxPendingHandshakes: 3})
+	var idle []net.Conn
+	for i := 0; i < 2; i++ {
+		c, err := net.Dial("tcp", h.addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		idle = append(idle, c)
+	}
+	waitUntil(t, "pending handshakes", func() bool {
+		h.srv.mu.Lock()
+		defer h.srv.mu.Unlock()
+		return h.srv.pending == 2
+	})
+	// Two stalled handshakes do not use the single authenticated slot.
+	h.mustDial(t, "sbx-1")
+	waitUntil(t, "authenticated", func() bool { return h.srv.Connections(1) == 1 })
+
+	third, err := net.Dial("tcp", h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idle = append(idle, third)
+	waitUntil(t, "pending full", func() bool {
+		h.srv.mu.Lock()
+		defer h.srv.mu.Unlock()
+		return h.srv.pending == 3
+	})
 	if _, err := h.dial(t, "sbx-2", h.userKey); err == nil {
-		t.Fatal("global limit not enforced")
+		t.Fatal("a source over its pending handshake limit was admitted")
+	}
+	for _, c := range idle {
+		_ = c.Close()
+	}
+	waitUntil(t, "pending released", func() bool {
+		h.srv.mu.Lock()
+		defer h.srv.mu.Unlock()
+		return h.srv.pending == 0 && len(h.srv.bySource) == 0
+	})
+}
+
+func TestSandboxAccessIsCheckedBeforeDialAndOnRevalidate(t *testing.T) {
+	h := newHarness(t, Options{RevalidateInterval: 20 * time.Millisecond})
+	h.sbx.deny(2, true)
+	cli := h.mustDial(t, "sbx-2")
+	sess, err := cli.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	sess.Stderr = &stderr
+	if err := sess.Run("id"); err == nil || !strings.Contains(stderr.String(), "沙箱 2 不存在或无权访问") {
+		t.Fatalf("forbidden sandbox = %v %q", err, stderr.String())
+	}
+	if h.sbx.dialCount() != 0 {
+		t.Fatal("a forbidden sandbox was dialed")
+	}
+
+	allowed := h.mustDial(t, "sbx-1")
+	waitUntil(t, "connected", func() bool { return h.sbx.activeFor(1) == 1 })
+	h.sbx.deny(1, true)
+	done := make(chan error, 1)
+	go func() { done <- allowed.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("losing sandbox access kept the connection")
+	}
+}
+
+func TestKeyRevokedDuringHandshakeNeverReachesSandbox(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.auth.mu.Lock()
+	h.auth.allowCalls = 1 // the handshake lookup succeeds, the post-register check does not
+	h.auth.mu.Unlock()
+	cli := h.mustDial(t, "sbx-1")
+	sess, err := cli.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	sess.Stderr = &stderr
+	if err := sess.Run("id"); err == nil || !strings.Contains(stderr.String(), "key no longer authorized") {
+		t.Fatalf("revoked key = %v %q", err, stderr.String())
+	}
+	if h.sbx.dialCount() != 0 {
+		t.Fatal("a key revoked during the handshake reached the sandbox")
+	}
+}
+
+func TestRefusedClientMayCloseFirst(t *testing.T) {
+	h := newHarness(t, Options{RefuseLinger: 50 * time.Millisecond})
+	h.sbx.deny(1, true)
+	cli := h.mustDial(t, "sbx-1")
+	done := make(chan error, 1)
+	go func() { done <- cli.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("an idle refused client was not dropped after the linger")
 	}
 }
 
 func TestRevokedKeyIsDisconnected(t *testing.T) {
 	h := newHarness(t, Options{RevalidateInterval: 20 * time.Millisecond})
 	cli := h.mustDial(t, "sbx-1")
-	waitUntil(t, "connected", func() bool { return h.srv.Connections(1) == 1 })
+	waitUntil(t, "connected", func() bool { return h.sbx.activeFor(1) == 1 })
 	h.auth.remove(h.userKey.PublicKey())
 	done := make(chan error, 1)
 	go func() { done <- cli.Wait() }()
@@ -289,7 +401,7 @@ func TestDisconnectByFingerprintAndUser(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.mustDial(t, "sbx-1")
 	h.mustDial(t, "sbx-2")
-	waitUntil(t, "connected", func() bool { return h.srv.Connections(1) == 1 && h.srv.Connections(2) == 1 })
+	waitUntil(t, "connected", func() bool { return h.sbx.activeFor(1) == 1 && h.sbx.activeFor(2) == 1 })
 	if n := h.srv.DisconnectUser("bob"); n != 0 {
 		t.Fatalf("disconnected %d connections of another user", n)
 	}
@@ -298,7 +410,7 @@ func TestDisconnectByFingerprintAndUser(t *testing.T) {
 	}
 	waitUntil(t, "closed", func() bool { return h.srv.Connections(1) == 0 && h.srv.Connections(2) == 0 })
 	h.mustDial(t, "sbx-1")
-	waitUntil(t, "reconnected", func() bool { return h.srv.Connections(1) == 1 })
+	waitUntil(t, "reconnected", func() bool { return h.sbx.activeFor(1) == 1 })
 	if n := h.srv.DisconnectUser("alice"); n != 1 {
 		t.Fatalf("user disconnect = %d", n)
 	}
@@ -416,6 +528,45 @@ func TestHostKeyPersistence(t *testing.T) {
 	}
 }
 
+func TestHostKeyConcurrentFirstStart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "host_key")
+	const replicas = 8
+	keys := make(chan []byte, replicas)
+	errs := make(chan error, replicas)
+	var start sync.WaitGroup
+	start.Add(1)
+	for i := 0; i < replicas; i++ {
+		go func() {
+			start.Wait()
+			signer, err := loadOrCreateHostKey(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			keys <- signer.PublicKey().Marshal()
+		}()
+	}
+	start.Done()
+	var first []byte
+	for i := 0; i < replicas; i++ {
+		select {
+		case err := <-errs:
+			t.Fatalf("replica failed to start: %v", err)
+		case k := <-keys:
+			if first == nil {
+				first = k
+			} else if !bytes.Equal(first, k) {
+				t.Fatal("replicas serve different host keys")
+			}
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("temporary key files left behind: %d entries", len(entries))
+	}
+}
+
 func TestFailLimiterWindow(t *testing.T) {
 	now := time.Unix(1000, 0)
 	l := newFailLimiter(2, time.Minute)
@@ -459,5 +610,24 @@ func TestRemoteHost(t *testing.T) {
 	}
 	if got := remoteHost(&net.UnixAddr{Name: "sock", Net: "unix"}); got != "sock" {
 		t.Fatal(got)
+	}
+}
+
+func TestHostKeyFallsBackWhenHardLinksFail(t *testing.T) {
+	prev := linkFile
+	linkFile = func(string, string) error { return &os.LinkError{Op: "link", Err: errors.ErrUnsupported} }
+	defer func() { linkFile = prev }()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "host_key")
+	signer, err := loadOrCreateHostKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := loadOrCreateHostKey(path)
+	if err != nil || !bytes.Equal(signer.PublicKey().Marshal(), again.PublicKey().Marshal()) {
+		t.Fatalf("fallback key not reused: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("temporary key files left behind: %d entries", len(entries))
 	}
 }

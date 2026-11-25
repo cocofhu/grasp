@@ -28,9 +28,9 @@ When deploying:
 
 ## Security notes
 
-- Sandboxes are not yet isolated per user: any account with a registered key can enter any sandbox as root, the same rule as the web terminal. Turn on `admins_only` to restrict it.
+- Access is authorized per account: the owner of a Solo session may enter that session's sandbox, and admins may enter any sandbox; sandboxes without an owner (workflows, tests) are admin-only. Missing and forbidden sandboxes give the same message. Open connections close within a minute when the session is deleted or reassigned, the key is deleted (immediately) or the account is removed. With `admins_only` only admins may connect.
 - The gateway terminates and re-opens the SSH connection, so it can see session contents. The platform already holds root on every sandbox, so the trust boundary does not change.
-- Only public-key authentication is accepted. A source address is refused for a while after 20 failed attempts within 5 minutes.
+- Only public-key authentication is accepted. A source address is refused for a while after 20 failed attempts within 5 minutes; connections still authenticating are capped separately (64 in total, 8 per source) and never use the authenticated slots.
 - Remote forwarding (`-R`), agent forwarding and X11 are not supported. Local forwarding (`-L`), SFTP and the channels VS Code and Cursor need all work.
 - Restarting the server drops open connections; IDEs reconnect on their own.
 

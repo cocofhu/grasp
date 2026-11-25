@@ -198,6 +198,7 @@ type fakeSandboxes struct {
 
 	mu       sync.Mutex
 	dialErr  error
+	denied   map[uint]bool // sandboxes the user may not enter
 	active   map[uint]int
 	acquired int
 	touches  int
@@ -205,7 +206,25 @@ type fakeSandboxes struct {
 	dialGate chan struct{}
 }
 
-func (s *fakeSandboxes) DialSSH(ctx context.Context, id uint) (*ssh.Client, error) {
+func (s *fakeSandboxes) AuthorizeSSH(_ string, id uint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.denied[id] {
+		return fmt.Errorf("沙箱 %d 不存在或无权访问", id)
+	}
+	return nil
+}
+
+func (s *fakeSandboxes) deny(id uint, denied bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.denied == nil {
+		s.denied = map[uint]bool{}
+	}
+	s.denied[id] = denied
+}
+
+func (s *fakeSandboxes) DialSSH(ctx context.Context, id uint) (*ssh.Client, func(), error) {
 	s.mu.Lock()
 	s.dials++
 	err, gate := s.dialErr, s.dialGate
@@ -214,21 +233,21 @@ func (s *fakeSandboxes) DialSSH(ctx context.Context, id uint) (*ssh.Client, erro
 		select {
 		case <-gate:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if id != 1 && id != 2 {
-		return nil, errors.New("not found")
+		return nil, nil, errors.New("not found")
 	}
-	return ssh.Dial("tcp", s.upstream.addr, &ssh.ClientConfig{
+	cli, err := ssh.Dial("tcp", s.upstream.addr, &ssh.ClientConfig{
 		User: "root", HostKeyCallback: ssh.InsecureIgnoreHostKey(), Timeout: 5 * time.Second,
 	})
-}
-
-func (s *fakeSandboxes) AcquireExternalSession(id uint) func() {
+	if err != nil {
+		return nil, nil, err
+	}
 	s.mu.Lock()
 	if s.active == nil {
 		s.active = map[uint]int{}
@@ -236,11 +255,17 @@ func (s *fakeSandboxes) AcquireExternalSession(id uint) func() {
 	s.active[id]++
 	s.acquired++
 	s.mu.Unlock()
-	return func() {
+	return cli, func() {
 		s.mu.Lock()
 		s.active[id]--
 		s.mu.Unlock()
-	}
+	}, nil
+}
+
+func (s *fakeSandboxes) dialCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dials
 }
 
 func (s *fakeSandboxes) TouchActivity(uint) {
@@ -255,10 +280,13 @@ func (s *fakeSandboxes) activeFor(id uint) int {
 	return s.active[id]
 }
 
-// fakeAuth authorizes registered fingerprints.
+// fakeAuth authorizes registered fingerprints. allowCalls > 0 makes every
+// lookup after that many fail, as if the key were deleted mid-connection.
 type fakeAuth struct {
-	mu   sync.Mutex
-	keys map[string]string // fingerprint -> username
+	mu         sync.Mutex
+	keys       map[string]string // fingerprint -> username
+	calls      int
+	allowCalls int
 }
 
 func (a *fakeAuth) add(key ssh.PublicKey, user string) {
@@ -279,9 +307,10 @@ func (a *fakeAuth) remove(key ssh.PublicKey) {
 func (a *fakeAuth) AuthorizeKey(key ssh.PublicKey) (Identity, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.calls++
 	fp := ssh.FingerprintSHA256(key)
 	user, ok := a.keys[fp]
-	if !ok {
+	if !ok || (a.allowCalls > 0 && a.calls > a.allowCalls) {
 		return Identity{}, errors.New("unknown key")
 	}
 	return Identity{Username: user, Fingerprint: fp}, nil

@@ -44,10 +44,14 @@ func proxyChannel(nc ssh.NewChannel, upstream ssh.Conn) {
 	pipeChannels(down, downReqs, up, upReqs)
 }
 
-// pipeChannels relays data, stderr and requests both ways. The client channel
-// is closed only after upstream output and its final requests (exit-status)
+// pipeChannels relays data, stderr and requests both ways. Requests in both
+// directions pass through one lock, so their order is preserved: upstream
+// answers exec before it sends exit-status, and the client must see that
+// answer first. The client channel is closed under the same lock, only after
+// upstream output, its final requests (exit-status) and every pending reply
 // were delivered.
 func pipeChannels(down ssh.Channel, downReqs <-chan *ssh.Request, up ssh.Channel, upReqs <-chan *ssh.Request) {
+	var order sync.Mutex
 	var output sync.WaitGroup
 	output.Add(2)
 	go func() {
@@ -65,27 +69,32 @@ func pipeChannels(down ssh.Channel, downReqs <-chan *ssh.Request, up ssh.Channel
 	upDone := make(chan struct{})
 	go func() {
 		defer close(upDone)
-		forwardRequests(upReqs, down, nil)
+		forwardRequests(upReqs, down, nil, &order)
 		output.Wait()
+		order.Lock()
 		_ = down.CloseWrite()
 		_ = down.Close()
+		order.Unlock()
 	}()
-	forwardRequests(downReqs, up, blockedRequests)
+	forwardRequests(downReqs, up, blockedRequests, &order)
 	_ = up.Close()
 	<-upDone
 }
 
-func forwardRequests(reqs <-chan *ssh.Request, target ssh.Channel, blocked map[string]bool) {
+func forwardRequests(reqs <-chan *ssh.Request, target ssh.Channel, blocked map[string]bool, order *sync.Mutex) {
 	for req := range reqs {
+		order.Lock()
 		if blocked[req.Type] {
 			if req.WantReply {
 				_ = req.Reply(false, nil)
 			}
+			order.Unlock()
 			continue
 		}
 		ok, err := target.SendRequest(req.Type, req.WantReply, req.Payload)
 		if req.WantReply {
 			_ = req.Reply(ok && err == nil, nil)
 		}
+		order.Unlock()
 	}
 }
