@@ -2,3 +2,6 @@
 684d5428c38607c2b4b2e637da755123a2541947:server/internal/handlers/vnc_production_router_test.go:generic-api-key:21
 # E2E localStorage prefs key (approving.notifications.prefs.e2e) — not a secret.
 e35960d3362f881f45758972b8b1f18e7b4fa181:web/e2e/notifications-center-main.ts:generic-api-key:376
+# Synthetic 128-bit hex preview subdomain ticket in tests — a route label, not a credential.
+b248fdf985a3690e3e1d09e7a7b54eb407e4d400:server/internal/previewexpose/previewexpose_test.go:generic-api-key:46
+b248fdf985a3690e3e1d09e7a7b54eb407e4d400:server/internal/handlers/preview_expose_test.go:generic-api-key:58
