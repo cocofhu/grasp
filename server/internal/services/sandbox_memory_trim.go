@@ -32,10 +32,11 @@ func (s *SandboxService) maybeTrimMemory(ctx context.Context, row models.Sandbox
 	if p.IdleAfter <= 0 || now.Sub(s.modelIdleSince(&row)) < p.IdleAfter {
 		return
 	}
+	kind, _ := s.cachedRecoveryKind(&row)
 	s.mu.Lock()
 	st := s.memoryTrims[row.ID]
 	if st == nil {
-		st = &memoryTrimState{kind: row.RecoveryKind}
+		st = &memoryTrimState{kind: kind}
 		s.memoryTrims[row.ID] = st
 	}
 	if st.running || !st.last.IsZero() && now.Sub(st.last) < p.Interval || st.kind != "" && st.kind != "snapshot" {

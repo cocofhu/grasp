@@ -58,7 +58,9 @@ type SandboxService struct {
 	modelActive map[uint]time.Time
 	memoryTrims map[uint]*memoryTrimState
 	memoryTrim  MemoryTrimPolicy
-	live        map[uint]*liveSandbox
+	// recoveryKinds caches each sandbox's gateway recovery kind for the sweeper.
+	recoveryKinds map[uint]string
+	live          map[uint]*liveSandbox
 	// runActive marks per-run node sandboxes (by container name) that are
 	// currently executing. These are owned by the runtime provider, not by
 	// this service's ACP pool; the flag protects them from being stopped or
@@ -162,6 +164,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		modelActive:          map[uint]time.Time{},
 		memoryTrims:          map[uint]*memoryTrimState{},
 		memoryTrim:           opts.MemoryTrim,
+		recoveryKinds:        map[uint]string{},
 	}
 	s.idleTTL.Store(int64(opts.IdleTTL))
 	s.max.Store(int64(opts.Max))

@@ -218,6 +218,11 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		return
 	}
 	current := h.runCurrentNodes(runs)
+	ids := make([]string, 0, len(runs))
+	for _, r := range runs {
+		ids = append(ids, r.ID)
+	}
+	exempt := h.Sbx.RunsIdleReclaimExempt(ids)
 	items := make([]gin.H, 0, len(runs))
 	for _, r := range runs {
 		cn, ok := current[r.ID]
@@ -225,6 +230,9 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		item["lastActivityAt"] = services.RunLastActivity(r)
 		if ok {
 			item["currentNode"] = cn
+		}
+		if exempt[r.ID] {
+			item["idleReclaimExempt"] = true
 		}
 		items = append(items, item)
 	}

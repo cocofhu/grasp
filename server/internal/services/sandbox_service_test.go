@@ -168,11 +168,18 @@ func TestRunSandboxLifecycle(t *testing.T) {
 		t.Fatal("isBusyRow should be true")
 	}
 
-	// Retire clears active flag and sets a destroy deadline.
+	// Retire clears active flag; the deadline shows once the sweeper knows the
+	// environment is idle-reclaimable (E2B).
 	s.RetireRunSandbox(name)
 	db.Where("name = ?", name).First(&row)
-	if row.LastActiveAt == nil || s.view(ctx, &row).DestroyAt == nil {
-		t.Fatal("retire should start the common idle deadline")
+	if row.LastActiveAt == nil || s.view(ctx, &row).DestroyAt != nil {
+		t.Fatal("retire should start the idle interval without guessing a deadline")
+	}
+	ds.fg.Driver = "e2b"
+	s.sweepOnce(ctx)
+	db.Where("name = ?", name).First(&row)
+	if row.Status != "running" || s.view(ctx, &row).DestroyAt == nil {
+		t.Fatal("retired E2B sandbox should show the common idle deadline")
 	}
 	if s.isBusyRow(&row) {
 		t.Fatal("retired sandbox no longer active")
@@ -605,10 +612,10 @@ func TestSandboxSweeper(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("sweeper removed durable recovery row: %d", n)
 	}
-	var saved models.Sandbox
-	db.Where("name = ?", "grasp-sb-old").First(&saved)
-	if saved.Status != "stopped" || len(saved.RecoveryPoints) != 1 {
-		t.Fatalf("saved row=%+v", saved)
+	var kept models.Sandbox
+	db.Where("name = ?", "grasp-sb-old").First(&kept)
+	if kept.Status != "running" || len(kept.RecoveryPoints) != 0 {
+		t.Fatalf("idle Docker sandbox was reclaimed: %+v", kept)
 	}
 
 	// RunSweeper respects context cancellation.
@@ -646,6 +653,10 @@ func TestSandboxReconcileOnStartup(t *testing.T) {
 		t.Fatal("live row should survive")
 	}
 	var runLive, adopted models.Sandbox
+	ds.fg.Driver = "e2b"
+	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err == nil {
+		s.idleReclaimExempt(ctx, &runLive)
+	}
 	if err := db.Where("name = ?", "grasp-sb-run-live").First(&runLive).Error; err != nil || runLive.ModelActiveAt != nil || s.view(ctx, &runLive).DestroyAt == nil {
 		t.Fatalf("live run row should keep its idle interval and deadline: err=%v row=%+v", err, runLive)
 	}

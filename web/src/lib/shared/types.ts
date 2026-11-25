@@ -1031,6 +1031,8 @@ export interface Run {
   tags?: string[]
   /** Sandboxes of this run skip automatic idle reclaim. */
   keepAlive?: boolean
+  /** Docker/Kubernetes sandboxes are never idle-reclaimed; keep-alive does not apply. */
+  idleReclaimExempt?: boolean
   /** Immutable StartRun sandbox env snapshot (secrets masked as ****). */
   sandboxEnv?: SandboxEnvEntry[]
   /** Detail only: repositories frozen at start. */

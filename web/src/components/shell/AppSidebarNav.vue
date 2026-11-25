@@ -411,6 +411,9 @@ const menuRun = computed(() => {
   return id ? runningRuns.value.find((r) => r.id === id) ?? null : null
 })
 const menuKeepAlive = computed(() => !!(menuSolo.value ? menuSolo.value.keepAlive : menuRun.value?.keepAlive))
+const menuKeepAliveVisible = computed(() =>
+  menuSolo.value ? !menuSolo.value.idleReclaimExempt : !!menuRun.value && !menuRun.value.idleReclaimExempt,
+)
 const menuPinned = computed(() => {
   if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
   return menuItem.value ? isRowPinned(menuItem.value) : false
@@ -1621,7 +1624,7 @@ const primaryItems = computed(() => props.rail
         <span>{{ menuShareLabel }}</span>
       </button>
       <button
-        v-if="menuSolo || menuRun"
+        v-if="menuKeepAliveVisible"
         type="button"
         role="menuitemcheckbox"
         class="pending-row-menu__item"

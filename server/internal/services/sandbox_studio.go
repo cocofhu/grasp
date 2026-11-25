@@ -719,6 +719,7 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 			return
 		}
 		now := time.Now()
+		exempt := s.idleReclaimExempt(ctx, &row)
 		if s.modelBusy(&row) {
 			// Long turns keep the persisted interval fresh across restarts.
 			if now.Sub(s.modelIdleSince(&row)) >= time.Minute {
@@ -726,7 +727,7 @@ func (s *SandboxService) sweepRows(ctx context.Context, rows []models.Sandbox) {
 			}
 			continue
 		}
-		if !s.idleDue(&row, now) || s.keepAlive(&row) {
+		if exempt || !s.idleDue(&row, now) || s.keepAlive(&row) {
 			s.maybeTrimMemory(ctx, row, now)
 			continue
 		}

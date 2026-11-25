@@ -51,7 +51,7 @@ engine → ProviderRegistry → baseACPProvider → sandbox-gateway REST(创建�
 - **产物契约 + 完成标记**:节点完成时引擎要求已调用 `node_complete`,并校验 Agent 在 `capabilities.writes` 中声明为必填的结构化产物已经由对应的 `set_*` 工具写入平台 store,缺失即失败。推分支、开 MR 由实现模板的 git-mr skill 负责,平台不代验。
 - **上游产物读取**:run 内已有产物名会在 prompt 中列出,Agent 用 MCP `read_artifact` / `list_artifacts` 按名读取(按 run token 隔离)。产物**不**落盘到工作区,以免污染节点的代码变更报告。
 - **隔离**:每个 run 一枚 token,grasp-tool 按 run 命名空间读写、token 绑定校验,run 间互不可见;容器 ACP 端口只绑定 `127.0.0.1` 临时端口。
-- **token 生命周期 = 沙箱生命周期**:token 无单独的过期时间。内存注册命中即放行;run 结束或服务重启后,只要该 run 仍有存活的沙箱(回合执行中或回合结束后的 `sandbox.idle_ttl_minutes` 空闲窗口内),持久化 token 依旧可鉴权,让仍存活的沙箱 agent 继续写产物而非 401;最后一个沙箱销毁后 token 自然失效。
+- **token 生命周期 = 沙箱生命周期**:token 无单独的过期时间。内存注册命中即放行;run 结束或服务重启后,只要该 run 仍有存活的沙箱(回合执行中、E2B 回合结束后的 `sandbox.idle_ttl_minutes` 空闲窗口内，或 Docker/K8s 沙箱被停止/销毁之前),持久化 token 依旧可鉴权,让仍存活的沙箱 agent 继续写产物而非 401;最后一个沙箱销毁后 token 自然失效。
 
 ## ACP 后端怎么用
 

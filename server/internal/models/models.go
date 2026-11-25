@@ -920,8 +920,8 @@ type Sandbox struct {
 
 	// Error carries the startup failure reason when Status == "error".
 	Error string `json:"error,omitempty"`
-	// LastActiveAt advances on real work, not list/health polling. Every sandbox
-	// uses the same idle policy regardless of its purpose or provider.
+	// LastActiveAt advances on real work, not list/health polling. The idle
+	// policy is the same for every purpose; only E2B sandboxes are idle-reclaimed.
 	LastActiveAt *time.Time `gorm:"index" json:"lastActiveAt,omitempty"`
 	// ModelActiveAt is when a model turn last ran or ended here, or when the
 	// environment became ready. Idle reclaim and memory trim count from it;

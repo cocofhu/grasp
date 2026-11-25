@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -76,7 +77,72 @@ func (s *SandboxService) forgetModelActivity(id uint) {
 	s.mu.Lock()
 	delete(s.modelActive, id)
 	delete(s.memoryTrims, id)
+	delete(s.recoveryKinds, id)
 	s.mu.Unlock()
+}
+
+// idleReclaimExempt reports Docker/Kubernetes environments. Releasing them
+// removes the container and stops every process, so idle time never does;
+// only manual Stop, Cancel or Close release them. An unresolved kind keeps
+// the environment until the gateway answers.
+func (s *SandboxService) idleReclaimExempt(ctx context.Context, row *models.Sandbox) bool {
+	kind, ok := s.cachedRecoveryKind(row)
+	if !ok {
+		k, err := s.mgr.RecoveryKind(ctx, row.Name)
+		if err != nil {
+			return true
+		}
+		kind = k
+		s.mu.Lock()
+		if s.recoveryKinds == nil {
+			s.recoveryKinds = map[uint]string{}
+		}
+		s.recoveryKinds[row.ID] = kind
+		s.mu.Unlock()
+	}
+	return kind != "snapshot"
+}
+
+// knownIdleReclaimExempt is idleReclaimExempt without a gateway call; an
+// unresolved kind reads as reclaimable.
+func (s *SandboxService) knownIdleReclaimExempt(row *models.Sandbox) bool {
+	kind, ok := s.cachedRecoveryKind(row)
+	return ok && kind != "snapshot"
+}
+
+// RunsIdleReclaimExempt reports runs whose every sandbox is known to be
+// exempt from idle reclaim, so keep-alive has nothing to change.
+func (s *SandboxService) RunsIdleReclaimExempt(runIDs []string) map[string]bool {
+	out := map[string]bool{}
+	if s == nil || len(runIDs) == 0 {
+		return out
+	}
+	var rows []models.Sandbox
+	if s.db.Where("run_id IN ? AND purpose = ?", runIDs, "run").Find(&rows).Error != nil {
+		return out
+	}
+	reclaimable := map[string]bool{}
+	for i := range rows {
+		if s.knownIdleReclaimExempt(&rows[i]) {
+			out[rows[i].RunID] = true
+		} else {
+			reclaimable[rows[i].RunID] = true
+		}
+	}
+	for id := range reclaimable {
+		delete(out, id)
+	}
+	return out
+}
+
+func (s *SandboxService) cachedRecoveryKind(row *models.Sandbox) (string, bool) {
+	if row.RecoveryKind != "" {
+		return row.RecoveryKind, true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kind, ok := s.recoveryKinds[row.ID]
+	return kind, ok
 }
 
 // keepAlive reports whether the owning Solo session or run disabled automatic
