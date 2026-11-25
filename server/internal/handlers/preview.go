@@ -83,7 +83,7 @@ func (h *Handlers) PreviewProxy(c *gin.Context) {
 	}
 
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
-	private := h.privateEndpoints()
+	private := h.previewProxyHardening()
 	host, ok := h.livePreviewUpstream(c, reg, private)
 	if !ok {
 		return

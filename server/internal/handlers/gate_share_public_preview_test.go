@@ -30,7 +30,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	preview := services.NewPreviewService(hn.db, nil)
+	preview := services.NewPreviewService(hn.db, hn.mgr)
 	hn.h.Preview = preview
 	hn.host.SetPreviewStore(preview)
 	hn.host.SetPreviewSandboxOps(preview)
@@ -44,8 +44,14 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	if err := hn.db.Save(&run).Error; err != nil {
 		t.Fatal(err)
 	}
+	sb := models.Sandbox{Name: "sb-run-ap-api", RunID: "run-ap-api", NodeID: "preview_api", Purpose: "run", Status: "running"}
+	if err := hn.db.Create(&sb).Error; err != nil {
+		t.Fatal(err)
+	}
+	hn.fg.Seed(sb.Name)
+	hn.fg.SetEndpoints(sb.Name, map[string]string{"8080": strings.TrimPrefix(up.URL, "http://")})
 	_ = preview.ReplacePreview(mcp.PreviewPort{
-		RunID: "run-ap-api", NodeID: "preview_api", Port: 8080, Label: "API · 8080",
+		RunID: "run-ap-api", NodeID: "preview_api", Port: 8080, Label: "API · 8080", SandboxName: "sb-run-ap-api",
 		Host: up.URL, Healthy: true, RegisteredAt: time.Now(),
 		Mode: "direct", DirectURL: "http://127.0.0.1:8080/",
 	})

@@ -177,9 +177,6 @@ func NewSubdomain(base Base) *SubdomainExposer {
 	return &SubdomainExposer{base: base}
 }
 
-// Base returns the exposer's normalized base origin.
-func (s *SubdomainExposer) Base() Base { return s.base }
-
 func (s *SubdomainExposer) Name() string { return StrategySubdomain }
 
 func (s *SubdomainExposer) Bind(ctx context.Context, _ Target) (Binding, error) {

@@ -43,7 +43,13 @@ type Config struct {
 	CodexLogin CodexLoginConfig `yaml:"codex_login"`
 	// SoloBackup stores workspace archives and controls restore-point retention for all sandboxes.
 	SoloBackup SoloBackupConfig `yaml:"solo_backup"`
+
+	previewExpose *previewexpose.Policy
 }
+
+// PreviewExposePolicy is the per-connection preview exposure policy resolved
+// and validated when the config was parsed.
+func (c *Config) PreviewExposePolicy() *previewexpose.Policy { return c.previewExpose }
 
 // SoloBackupConfig selects where a reclaimed sandbox workspace is archived. S3 is
 // used when a bucket is configured; otherwise archives stay under LocalDir.
@@ -509,18 +515,19 @@ func parse(path string) (*Config, error) {
 	if err := validateSoloBackup(c.SoloBackup); err != nil {
 		return nil, err
 	}
-	if _, warnings, err := c.BuildPreviewExposePolicy(); err != nil {
+	policy, warnings, err := c.buildPreviewExposePolicy()
+	if err != nil {
 		return nil, err
-	} else {
-		for _, w := range warnings {
-			log.Warn().Msg(w)
-		}
 	}
+	for _, w := range warnings {
+		log.Warn().Msg(w)
+	}
+	c.previewExpose = policy
 	return c, nil
 }
 
-// BuildPreviewExposePolicy validates and resolves per-connection preview exposure strategies.
-func (c *Config) BuildPreviewExposePolicy() (*previewexpose.Policy, []string, error) {
+// buildPreviewExposePolicy validates and resolves per-connection preview exposure strategies.
+func (c *Config) buildPreviewExposePolicy() (*previewexpose.Policy, []string, error) {
 	legacyStrategy, legacyBase := "", ""
 	if c.Sandbox.PreviewExpose != nil {
 		legacyStrategy = c.Sandbox.PreviewExpose.Strategy
@@ -589,9 +596,6 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := env("GRASP_PREVIEW_EXPOSE_STRATEGY"); v != "" {
 		c.Preview.Expose.Strategy = v
-	}
-	if v := env("GRASP_PREVIEW_ADVERTISE"); v != "" {
-		c.Preview.Expose.Subdomain.BaseURL = v
 	}
 	if v := env("GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL"); v != "" {
 		c.Preview.Expose.Subdomain.BaseURL = v

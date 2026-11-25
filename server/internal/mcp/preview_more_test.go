@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cocofhu/grasp/internal/previewexpose"
 )
 
 type memPreviewStore struct {
@@ -210,7 +212,20 @@ func (f *fakePreviewOps) PreviewUpstream(context.Context, string, int) (string, 
 func (f *fakePreviewOps) ShowPreviewOnDesktop(sandboxName string, port int) {
 	f.shown = append(f.shown, fmt.Sprintf("%s:%d", sandboxName, port))
 }
-func (f *fakePreviewOps) DirectPreview(string, string) bool { return f.direct }
+func (f *fakePreviewOps) DirectPreview(string, string) bool       { return f.direct }
+func (f *fakePreviewOps) PreviewConnection(string) (string, bool) { return "", true }
+
+// useDirectExposure gives h the policy of a single direct gateway connection.
+func useDirectExposure(t *testing.T, h *Host) {
+	t.Helper()
+	pol, _, err := previewexpose.NewPolicy(previewexpose.PolicyOptions{
+		Connections: []previewexpose.ConnSpec{{Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.SetPreviewExposePolicy(pol)
+}
 
 func TestParsePreviewPortTypes(t *testing.T) {
 	cases := []struct {
@@ -287,6 +302,7 @@ func TestPreviewKeepalivePID(t *testing.T) {
 func TestSetPreviewDirectStillShowsDesktopAndSetsDirectURL(t *testing.T) {
 	h := NewHost(&memStore{})
 	h.SetPreviewSandboxOps(&fakePreviewOps{name: "sb", ok: true, healthy: true, up: "http://10.0.0.8:18081", direct: true})
+	useDirectExposure(t, h)
 	if _, err := h.setPreviewPort("r", "n", 18081, "web"); err != nil {
 		t.Fatal(err)
 	}

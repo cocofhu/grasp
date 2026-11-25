@@ -17,12 +17,7 @@ const (
 
 // Target describes a registered preview's upstream sandbox endpoint.
 type Target struct {
-	RunID        string
-	NodeID       string
-	SandboxName  string
-	Port         int
-	InjectorPort int
-	Upstream     string // Persisted RunPreviewPort.Host
+	Upstream string // Persisted RunPreviewPort.Host
 }
 
 // Binding is the persisted exposure state stored on a preview registration.
@@ -39,11 +34,6 @@ type Exposer interface {
 	// URL computes the browser-facing DirectURL on read; must be cheap and side-effect free.
 	// Returns "" when no standalone origin is exposed.
 	URL(t Target, b Binding) string
-}
-
-// Releaser is optionally implemented by exposers that allocate external resources (e.g. tunnels).
-type Releaser interface {
-	Release(ctx context.Context, b Binding) error
 }
 
 // Inbound is optionally implemented by exposers that claim inbound HTTP traffic by Host.

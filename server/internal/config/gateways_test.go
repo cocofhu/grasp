@@ -91,7 +91,7 @@ func TestGatewayTransportPreviewProxyHardeningAndExpose(t *testing.T) {
 }
 
 func TestPreviewExposeConfigAndEnv(t *testing.T) {
-	t.Run("compat alias GRASP_PREVIEW_ADVERTISE and override", func(t *testing.T) {
+	t.Run("subdomain base url from env; retired alias ignored", func(t *testing.T) {
 		t.Setenv("GRASP_SANDBOX_GATEWAY_TRANSPORT", "gateway")
 		t.Setenv("GRASP_SANDBOX_GATEWAY_API_KEY", "synthetic-key")
 		t.Setenv("GRASP_PUBLIC_ADVERTISE", "http://grasp.example.com")
@@ -101,16 +101,16 @@ func TestPreviewExposeConfigAndEnv(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		if cfg.Preview.Expose.Subdomain.BaseURL != "http://alias.other-site.com" {
-			t.Fatalf("alias base = %q", cfg.Preview.Expose.Subdomain.BaseURL)
+		if cfg.Preview.Expose.Subdomain.BaseURL != "" || cfg.PreviewExposePolicy().For("", true).Name() != "none" {
+			t.Fatalf("retired alias applied: base=%q strategy=%s", cfg.Preview.Expose.Subdomain.BaseURL, cfg.PreviewExposePolicy().For("", true).Name())
 		}
 		t.Setenv("GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL", "http://primary.other-site.com")
 		cfg, err = parse(path)
 		if err != nil {
 			t.Fatalf("parse override: %v", err)
 		}
-		if cfg.Preview.Expose.Subdomain.BaseURL != "http://primary.other-site.com" {
-			t.Fatalf("override base = %q", cfg.Preview.Expose.Subdomain.BaseURL)
+		if cfg.Preview.Expose.Subdomain.BaseURL != "http://primary.other-site.com" || cfg.PreviewExposePolicy().For("", true).Name() != "subdomain" {
+			t.Fatalf("env base = %q strategy=%s", cfg.Preview.Expose.Subdomain.BaseURL, cfg.PreviewExposePolicy().For("", true).Name())
 		}
 	})
 
@@ -145,10 +145,7 @@ sandbox:
 		if err != nil {
 			t.Fatalf("parse valid multi-gateway: %v", err)
 		}
-		pol, _, err := cfg.BuildPreviewExposePolicy()
-		if err != nil {
-			t.Fatalf("BuildPreviewExposePolicy: %v", err)
-		}
+		pol := cfg.PreviewExposePolicy()
 		if pol.For("", true).Name() != "direct" {
 			t.Fatalf("legacy = %s, want direct", pol.For("", true).Name())
 		}

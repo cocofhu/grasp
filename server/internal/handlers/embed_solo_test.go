@@ -18,7 +18,7 @@ import (
 func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 	hn := newHarness(t)
 	hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
-	hn.h.Preview = services.NewPreviewService(hn.db, nil)
+	hn.h.Preview = services.NewPreviewService(hn.db, hn.mgr)
 	hn.h.Preview.SetAgents(hn.h.Agents)
 	hn.host.SetPreviewStore(hn.h.Preview)
 	hn.host.SetPreviewSandboxOps(hn.h.Preview)
@@ -50,7 +50,7 @@ func TestSoloEmbedBindsToCurrentOwnedSandbox(t *testing.T) {
 		}
 	}
 	if err := hn.h.Preview.ReplacePreview(mcp.PreviewPort{
-		RunID: runID, NodeID: "solo", Port: 8899, Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true,
+		RunID: runID, NodeID: "solo", Port: 8899, SandboxName: sb.Name, Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true,
 	}); err != nil {
 		t.Fatal(err)
 	}

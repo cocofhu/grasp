@@ -461,10 +461,7 @@ func main() {
 	wireArtifactMCPPersistence(host, db, runSvc, previewSvc)
 	host.SetSoloArtifactPreviewHook(previewSvc.PinSoloArtifact)
 	previewSvc.SetBrowser(browserSvc)
-	previewExposePolicy, _, err := cfg.BuildPreviewExposePolicy()
-	if err != nil {
-		log.Fatal().Err(err).Msg("invalid preview expose configuration")
-	}
+	previewExposePolicy := cfg.PreviewExposePolicy()
 	for _, s := range previewExposePolicy.Summaries() {
 		conn := s.ConnID
 		if conn == "" {

@@ -84,6 +84,10 @@ func TestSubdomainInboundProxySecurityAndBehavior(t *testing.T) {
 		w.Header().Set("Proxy-Authorization", "Basic leak")
 		w.Header().Add("Set-Cookie", auth.CookieName+"=evil; Path=/")
 		w.Header().Add("Set-Cookie", "app_sid=abc123; Domain=.preview-a.other.test; Path=/; HttpOnly")
+		w.Header().Add("Set-Cookie", `prefs={"theme":"dark"}; Path=/`)
+		w.Header().Add("Set-Cookie", "pri=1; path=/; DOMAIN=preview-a.other.test; Priority=High")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Referrer-Policy", "unsafe-url")
 		if r.URL.Path == "/redirect" {
 			w.Header().Set("Location", "http://"+r.Host+"/after-login")
 			w.WriteHeader(http.StatusFound)
@@ -150,15 +154,19 @@ func TestSubdomainInboundProxySecurityAndBehavior(t *testing.T) {
 	if w.Header().Get("E2b-Traffic-Access-Token") != "" || w.Header().Get("Proxy-Authorization") != "" {
 		t.Fatalf("reserved response headers leaked: %v", w.Header())
 	}
-	if w.Header().Get("Referrer-Policy") != "no-referrer" || w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("missing security headers: %v", w.Header())
+	for name, want := range map[string]string{"Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"} {
+		if got := w.Header().Values(name); len(got) != 1 || got[0] != want {
+			t.Fatalf("security header %s = %q, want exactly [%q]", name, got, want)
+		}
 	}
 	setCookies := w.Header().Values("Set-Cookie")
-	if len(setCookies) != 1 {
-		t.Fatalf("expected 1 sanitized Set-Cookie (cf_session dropped), got %v", setCookies)
+	wantCookies := []string{
+		"app_sid=abc123; Path=/; HttpOnly",
+		`prefs={"theme":"dark"}; Path=/`,
+		"pri=1; path=/; Priority=High",
 	}
-	if strings.Contains(strings.ToLower(setCookies[0]), "domain=") || !strings.Contains(setCookies[0], "app_sid=abc123") {
-		t.Fatalf("Set-Cookie Domain was not stripped: %q", setCookies[0])
+	if strings.Join(setCookies, "\n") != strings.Join(wantCookies, "\n") {
+		t.Fatalf("Set-Cookie = %q, want %q (cf_session dropped, only Domain removed)", setCookies, wantCookies)
 	}
 
 	// 4. Foreign Origin must NOT be rewritten to upstream Origin.

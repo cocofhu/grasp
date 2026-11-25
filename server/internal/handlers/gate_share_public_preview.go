@@ -230,7 +230,7 @@ func (h *Handlers) PublicPreviewAPIProxy(c *gin.Context) {
 	defer cancel()
 	reg := h.lookupPreviewRegistration(runID, nodeID, port)
 	host, sandboxName := reg.Host, reg.SandboxName
-	private := h.privateEndpoints()
+	private := h.previewProxyHardening()
 	if private && !h.privatePreviewBound(reg) {
 		c.String(http.StatusGone, "preview expired")
 		return

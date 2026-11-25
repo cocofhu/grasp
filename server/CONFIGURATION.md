@@ -18,7 +18,6 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_FRAME_ANCESTORS` | `server.frame_ancestors` | origin list | `Not set` | Public | Origins allowed to embed workspace pages in an iframe (space or comma separated, e.g. https://portal.example.com); empty forbids embedding |
 | `GRASP_PREVIEW_EXPOSE_STRATEGY` | `preview.expose.strategy` | enum | `auto` | Public | Global default preview exposure strategy: auto, subdomain, or none (direct is connection-level only in YAML) |
 | `GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL` | `preview.expose.subdomain.base_url` | URL | `Not set` | Public | Wildcard subdomain preview base origin (HTTP(S) DNS hostname, no IP literals; production requires https and a separate registrable site) |
-| `GRASP_PREVIEW_ADVERTISE` | `preview.expose.subdomain.base_url` | URL | `Not set` | Public | Compatibility alias for GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL |
 | `GRASP_DB` | `database.path` | path | `grasp.db` | Public | SQLite database file |
 | `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite or mysql |
 | `GRASP_DB_DSN` | `database.dsn` | string | `Not set` | Sensitive | MySQL DSN |

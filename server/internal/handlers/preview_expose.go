@@ -34,10 +34,18 @@ func (h *Handlers) PreviewExposeMiddleware() gin.HandlerFunc {
 	}
 }
 
+// exposedSecurityHeaders are set once on every claimed-host response and
+// always win over the upstream app's values.
+var exposedSecurityHeaders = [...][2]string{
+	{"Cache-Control", "no-store"},
+	{"Referrer-Policy", "no-referrer"},
+	{"X-Content-Type-Options", "nosniff"},
+}
+
 func (h *Handlers) serveExposedPreview(c *gin.Context, inb previewexpose.Inbound, key string) {
-	c.Header("Cache-Control", "no-store")
-	c.Header("Referrer-Policy", "no-referrer")
-	c.Header("X-Content-Type-Options", "nosniff")
+	for _, kv := range exposedSecurityHeaders {
+		c.Header(kv[0], kv[1])
+	}
 
 	if key == "" || h.MCP == nil || h.Preview == nil || h.PreviewExpose == nil {
 		c.String(http.StatusNotFound, "preview not found")
@@ -60,10 +68,7 @@ func (h *Handlers) serveExposedPreview(c *gin.Context, inb previewexpose.Inbound
 	}
 
 	publicOrigin := strings.TrimRight(exp.URL(
-		previewexpose.Target{
-			RunID: reg.RunID, NodeID: reg.NodeID, SandboxName: reg.SandboxName,
-			Port: reg.Port, InjectorPort: reg.InjectorPort, Upstream: reg.Host,
-		},
+		previewexpose.Target{Upstream: reg.Host},
 		previewexpose.Binding{Strategy: reg.ExposeStrategy, Key: reg.ExposeKey},
 	), "/")
 	if publicOrigin == "" {
@@ -107,9 +112,9 @@ func (h *Handlers) serveExposedPreview(c *gin.Context, inb previewexpose.Inbound
 			}
 			stripPrivateReservedHeaders(resp.Header)
 			sanitizeExposedSetCookies(resp.Header)
-			resp.Header.Set("Cache-Control", "no-store")
-			resp.Header.Set("Referrer-Policy", "no-referrer")
-			resp.Header.Set("X-Content-Type-Options", "nosniff")
+			for _, kv := range exposedSecurityHeaders {
+				resp.Header.Del(kv[0])
+			}
 			if loc := resp.Header.Get("Location"); loc != "" {
 				if parsed, err := url.Parse(loc); err == nil && strings.EqualFold(parsed.Host, target.Host) {
 					parsed.Scheme = publicScheme
@@ -138,6 +143,8 @@ func stripExposedRequestHeaders(req *http.Request) {
 // sanitizeExposedSetCookies drops the platform session cookie and strips any
 // Domain attribute from app cookies (forcing host-only cookies) so sibling
 // preview tickets under the same base domain cannot toss cookies at each other.
+// Cookies are edited as text: re-serializing through net/http would drop
+// values and attributes that browsers accept.
 func sanitizeExposedSetCookies(header http.Header) {
 	values := header.Values("Set-Cookie")
 	if len(values) == 0 {
@@ -145,14 +152,18 @@ func sanitizeExposedSetCookies(header http.Header) {
 	}
 	header.Del("Set-Cookie")
 	for _, raw := range values {
-		cookie, err := http.ParseSetCookie(raw)
-		if err != nil {
+		parts := strings.Split(raw, ";")
+		name, _, _ := strings.Cut(parts[0], "=")
+		if strings.TrimSpace(name) == auth.CookieName {
 			continue
 		}
-		if strings.TrimSpace(cookie.Name) == auth.CookieName {
-			continue
+		kept := append(make([]string, 0, len(parts)), parts[0])
+		for _, attr := range parts[1:] {
+			attrName, _, _ := strings.Cut(attr, "=")
+			if !strings.EqualFold(strings.TrimSpace(attrName), "domain") {
+				kept = append(kept, attr)
+			}
 		}
-		cookie.Domain = ""
-		header.Add("Set-Cookie", cookie.String())
+		header.Add("Set-Cookie", strings.Join(kept, ";"))
 	}
 }

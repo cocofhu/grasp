@@ -9,9 +9,9 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 )
 
-// privateEndpoints reports whether path preview proxy hardening is enabled
+// previewProxyHardening reports whether path preview proxy hardening is enabled
 // (gateway transport or explicit sandbox.private_endpoints).
-func (h *Handlers) privateEndpoints() bool {
+func (h *Handlers) previewProxyHardening() bool {
 	return h.MCP != nil && h.MCP.PreviewProxyHardening()
 }
 

@@ -72,6 +72,7 @@ func TestSetPreviewSwitchesInjectorToAppPort(t *testing.T) {
 	h.SetPreviewStore(store)
 	ops := newSwitchOps(InjectSwitch{Result: InjectSwitched, PreviewPort: 18081})
 	h.SetPreviewSandboxOps(ops)
+	useDirectExposure(t, h)
 
 	reg, err := h.setPreviewPort("r", "n", 5173, "web")
 	if err != nil {
@@ -260,6 +261,7 @@ func TestSetPreviewResetUsesNormalPath(t *testing.T) {
 	h := NewHost(&memStore{})
 	ops := newSwitchOps(InjectSwitch{Result: InjectReset, PreviewPort: 18081})
 	h.SetPreviewSandboxOps(ops)
+	useDirectExposure(t, h)
 
 	reg, err := h.setPreviewPort("r", "n", 18081, "")
 	if err != nil {
@@ -298,6 +300,7 @@ func TestSetPreviewSwitchErrorFallsBackWithNote(t *testing.T) {
 	ops.err = errors.New("ssh down")
 	ops.upFor[5173] = "http://10.0.0.8:49160"
 	h.SetPreviewSandboxOps(ops)
+	useDirectExposure(t, h)
 
 	reg, err := h.setPreviewPort("r", "n", 5173, "")
 	if err != nil {

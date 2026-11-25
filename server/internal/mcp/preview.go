@@ -279,13 +279,6 @@ func (h *Host) SetPreviewExposePolicy(p *previewexpose.Policy) {
 	h.mu.Unlock()
 }
 
-// PreviewExposePolicy returns the configured preview exposure policy (nil when unset).
-func (h *Host) PreviewExposePolicy() *previewexpose.Policy {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.previewExpose
-}
-
 // SetPreviewStore wires DB persistence for preview ports.
 func (h *Host) SetPreviewStore(s PreviewStore) { h.previewStore = s }
 
@@ -639,10 +632,7 @@ func (h *Host) savePreviewPort(ctx context.Context, ops PreviewSandboxOps, runID
 
 	displaced := h.displacedPreviews(runID, nodeID, sandboxName)
 	exp := h.previewExposer(sandboxName)
-	target := previewexpose.Target{
-		RunID: runID, NodeID: nodeID, SandboxName: sandboxName,
-		Port: port, InjectorPort: injectorPort, Upstream: host,
-	}
+	target := previewexpose.Target{Upstream: host}
 
 	var binding previewexpose.Binding
 	reused := false
@@ -683,18 +673,6 @@ func (h *Host) savePreviewPort(ctx context.Context, ops PreviewSandboxOps, runID
 	h.mu.Lock()
 	h.replacePreviewMem(rec)
 	h.mu.Unlock()
-
-	if rel, ok := exp.(previewexpose.Releaser); ok {
-		for _, old := range displaced {
-			if old.ExposeStrategy == exp.Name() &&
-				(old.ExposeStrategy != binding.Strategy || old.ExposeKey != binding.Key) {
-				if err := rel.Release(ctx, previewexpose.Binding{Strategy: old.ExposeStrategy, Key: old.ExposeKey}); err != nil {
-					log.Warn().Err(err).Str("sandbox", old.SandboxName).Str("strategy", old.ExposeStrategy).
-						Msg("preview expose release failed")
-				}
-			}
-		}
-	}
 
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
@@ -814,23 +792,14 @@ func (h *Host) previewDirect(runID, nodeID string) bool {
 func (h *Host) previewExposer(sandboxName string) previewexpose.Exposer {
 	h.mu.RLock()
 	policy := h.previewExpose
-	hardening := h.previewProxyHardening
 	ops := h.previewOps
 	h.mu.RUnlock()
-	if policy == nil {
-		if hardening {
-			return previewexpose.None()
-		}
-		return previewexpose.Direct()
+	res, ok := ops.(previewConnectionResolver)
+	if !ok || strings.TrimSpace(sandboxName) == "" {
+		return previewexpose.None()
 	}
-	if res, ok := ops.(previewConnectionResolver); ok {
-		if strings.TrimSpace(sandboxName) == "" {
-			return previewexpose.None()
-		}
-		connID, known := res.PreviewConnection(sandboxName)
-		return policy.For(connID, known)
-	}
-	return policy.For("", true)
+	connID, known := res.PreviewConnection(sandboxName)
+	return policy.For(connID, known)
 }
 
 func (h *Host) annotatePreviewTransport(p PreviewPort) PreviewPort {
@@ -843,10 +812,6 @@ func (h *Host) annotatePreviewTransport(p PreviewPort) PreviewPort {
 	if p.ExposeStrategy == exp.Name() {
 		binding = previewexpose.Binding{Strategy: p.ExposeStrategy, Key: p.ExposeKey}
 	}
-	target := previewexpose.Target{
-		RunID: p.RunID, NodeID: p.NodeID, SandboxName: p.SandboxName,
-		Port: p.Port, InjectorPort: p.InjectorPort, Upstream: p.Host,
-	}
-	p.DirectURL = exp.URL(target, binding)
+	p.DirectURL = exp.URL(previewexpose.Target{Upstream: p.Host}, binding)
 	return p
 }

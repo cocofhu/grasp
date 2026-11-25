@@ -144,14 +144,6 @@ func NewPolicy(opts PolicyOptions) (*Policy, []string, error) {
 	return p, warnings, nil
 }
 
-// DefaultPolicy returns a single-connection direct policy (used as a fallback in tests).
-func DefaultPolicy() *Policy {
-	return &Policy{
-		byConn:    map[string]Exposer{"": Direct()},
-		summaries: []ConnSummary{{ConnID: "", Strategy: StrategyDirect}},
-	}
-}
-
 // For returns the Exposer bound to connID. Unknown connections fail closed to None().
 func (p *Policy) For(connID string, known bool) Exposer {
 	if p == nil || !known {

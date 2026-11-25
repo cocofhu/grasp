@@ -240,7 +240,7 @@ func TestPolicyEffectiveRulesAndValidation(t *testing.T) {
 func TestSubdomainBindAndDirectExposer(t *testing.T) {
 	base, _ := ParseBase("http://preview.other.test")
 	sub := NewSubdomain(base)
-	b, err := sub.Bind(context.Background(), Target{RunID: "r1", NodeID: "n1", Port: 5173})
+	b, err := sub.Bind(context.Background(), Target{})
 	if err != nil {
 		t.Fatalf("Bind: %v", err)
 	}
