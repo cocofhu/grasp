@@ -177,6 +177,17 @@ onBeforeUnmount(() => {
             <Icon name="settings" :size="16" aria-hidden="true" />
             <span>{{ t('nav.settings') }}</span>
           </RouterLink>
+          <RouterLink
+            to="/settings/ssh-keys"
+            class="sidebar-account-action"
+            data-testid="sidebar-account-ssh-keys"
+            role="menuitem"
+            tabindex="-1"
+            @click="closeMenu()"
+          >
+            <Icon name="key" :size="16" aria-hidden="true" />
+            <span>{{ t('nav.sshKeys') }}</span>
+          </RouterLink>
           <button
             type="button"
             class="sidebar-account-action sidebar-account-logout"

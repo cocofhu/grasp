@@ -28,6 +28,8 @@ import PendingSendQueuePanel, { type PendingQueueRow } from '@/components/run/Pe
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import SoloModelSelect from './SoloModelSelect.vue'
+import SandboxInfoButton from '@/components/sandbox/SandboxInfoButton.vue'
+import type { SandboxAction } from '@/lib/sandbox/sandboxDisplayState'
 import ReferenceChip from './ReferenceChip.vue'
 import { api } from '@/lib/api/api'
 import { githubRepoOf } from '@/lib/solo/referenceDisplay'
@@ -417,6 +419,34 @@ async function doWake() {
     } else actionError.value = soloErrorText(e, t, te, locale.value)
   }
 }
+const keepAliveSaving = ref(false)
+const pendingSandboxAction = computed<SandboxAction>(() => {
+  if (stopping.value) return 'stop'
+  if (resuming.value) return 'resume'
+  if (restarting.value) return 'restart'
+  return sandboxWaking.value ? 'wake' : null
+})
+
+function onSandboxAction(action: Exclude<SandboxAction, null>) {
+  if (action === 'stop') confirmStop.value = true
+  else if (action === 'wake') void doWake()
+  else if (action === 'resume') void doResume()
+  else void doRestart()
+}
+
+async function setKeepAlive(value: boolean) {
+  keepAliveSaving.value = true
+  actionError.value = ''
+  try {
+    store.upsert(await api.setSoloKeepAlive(props.sessionId, value))
+    await chat.refreshSession()
+  } catch (e) {
+    actionError.value = soloErrorText(e, t, te, locale.value)
+  } finally {
+    keepAliveSaving.value = false
+  }
+}
+
 function onLimitFreed() {
   limitOpen.value = false
   if (stopped.value) void doResume()
@@ -485,6 +515,21 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       :panel-memory-key="`solo:${props.sessionId}`"
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
+      <template #actions>
+        <SandboxInfoButton
+          :session="session"
+          :busy="busy"
+          :queued="queued.length"
+          :paused="sandboxPaused"
+          :waking="sandboxWaking"
+          :readonly="!!embedded"
+          :pending="pendingSandboxAction"
+          :keep-alive-saving="keepAliveSaving"
+          @action="onSandboxAction"
+          @keep-alive="setKeepAlive"
+          @refresh="chat.refreshSession()"
+        />
+      </template>
       <template #stage>
         <ReactArtifactStage
           :artifacts="resources?.artifacts || []"

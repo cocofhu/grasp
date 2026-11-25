@@ -55,6 +55,8 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     loadError: ref(''),
     actionError: ref(''),
     status: ref('running'),
+    sandboxPaused: ref(false),
+    sandboxWaking: ref(false),
     closed: computed(() => false),
     canSend: computed(() => true),
     currentModelId: ref(''),

@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; onboarding/ first-install and onboarding wizard state; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils; icons/ trusted SVG catalog and native runtime shared with Icon.vue",
+  "principle": "Align with components/{run,agent,inbox,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; onboarding/ first-install and onboarding wizard state; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils; sandbox/ sandbox display state and SSH gateway connection helpers; icons/ trusted SVG catalog and native runtime shared with Icon.vue",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -208,6 +208,11 @@
       "wsHeartbeat.ts",
       "wsReconnect.ts"
     ],
+    "sandbox": [
+      "sandboxDisplayState.ts",
+      "sshConnect.ts",
+      "useSSHGateway.ts"
+    ],
     "shared": [
       "artifactBadge.ts",
       "attachments.ts",
@@ -294,6 +299,7 @@
     "inbox": 47,
     "onboarding": 2,
     "run": 76,
+    "sandbox": 3,
     "shared": 42,
     "solo": 16,
     "workflow": 3,

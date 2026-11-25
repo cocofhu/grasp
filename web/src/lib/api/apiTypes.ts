@@ -618,6 +618,35 @@ export interface SoloSandboxInfo {
   paused?: boolean
   error?: string
   createdAt?: string
+  /** "snapshot" (E2B, idle-reclaimed) or "files" (Docker/Kubernetes). */
+  recoveryKind?: string
+  /** Start of the idle interval; IDE and terminal traffic do not move it. */
+  modelActiveAt?: string
+  /** When idle reclaim saves and pauses the sandbox (live views only). */
+  destroyAt?: string
+  /** Open local IDE connections through the SSH gateway. */
+  externalSessions?: number
+}
+
+/** GET /api/ssh-gateway. Host empty means the host name the page was opened with. */
+export interface SSHGatewayInfo {
+  enabled: boolean
+  host?: string
+  port?: number
+  hostKeyFingerprint?: string
+  adminsOnly?: boolean
+  /** False when the gateway is limited to admins and the user is not one. */
+  allowed?: boolean
+  hasKey?: boolean
+}
+
+export interface UserSSHKey {
+  id: number
+  name: string
+  publicKey: string
+  fingerprint: string
+  createdAt: string
+  lastUsedAt?: string
 }
 
 /** One repository frozen into a Solo session at launch. */
