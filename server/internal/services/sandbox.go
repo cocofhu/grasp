@@ -56,6 +56,12 @@ type SandboxService struct {
 	soloRecoveryLocks sync.Map
 	// modelActive tracks model turns concurrent with an idle-reclamation probe.
 	modelActive map[uint]time.Time
+	// externalSessions counts open user connections (SSH gateway) per sandbox;
+	// externalEnded is when the last one closed and restarts the idle interval.
+	externalSessions map[uint]int
+	externalEnded    map[uint]time.Time
+	// sshAdmin reports accounts the SSH gateway lets into any sandbox.
+	sshAdmin    func(string) bool
 	memoryTrims map[uint]*memoryTrimState
 	memoryTrim  MemoryTrimPolicy
 	// recoveryKinds caches each sandbox's gateway recovery kind for the sweeper.

@@ -135,6 +135,14 @@ data:
       gateway_url: http://sandbox-gateway.grasp-system.svc.cluster.local:8080
       gateway_transport: gateway
       sandbox_memory_mb: 0  # use the gateway's resource defaults
+    # Local IDEs (VS Code / Cursor Remote-SSH) open sandboxes over SSH. An
+    # Ingress only carries HTTP: enabling this also needs the grasp-ssh
+    # Service at the end of this file.
+    ssh_gateway:
+      enabled: false
+      listen: ":2222"
+      public_host: ssh.grasp.example.com
+      host_key_path: /data/ssh-gateway/host_ed25519_key  # on the PVC
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -194,6 +202,8 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: ssh
+              containerPort: 2222
           startupProbe:
             httpGet: {path: /api/health, port: http}
             periodSeconds: 5
@@ -234,3 +244,19 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+# Uncomment with ssh_gateway.enabled. Point public_host's DNS at this load
+# balancer; set ssh_gateway.public_port if the external port differs.
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: grasp-ssh
+#   namespace: grasp-system
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: grasp
+#   ports:
+#     - name: ssh
+#       port: 2222
+#       targetPort: ssh

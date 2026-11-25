@@ -3520,6 +3520,92 @@
         "stopping": "正在保存环境并释放运行资源…",
         "backup": "保存于 {time} · {size}",
         "resume": "恢复"
+      },
+      "sandboxInfo": {
+        "button": "沙箱信息",
+        "title": "沙箱",
+        "state": {
+          "preparing": "准备中",
+          "running": "运行中",
+          "busy": "运行中 · Agent 执行中",
+          "paused": "已暂停",
+          "waking": "唤醒中…",
+          "stopping": "停止中…",
+          "stopped": "已停止",
+          "closed": "已关闭",
+          "error": "异常"
+        },
+        "step": {
+          "pulling": "正在拉取镜像",
+          "creating": "正在创建环境"
+        },
+        "action": {
+          "stop": "停止环境",
+          "wake": "唤醒",
+          "resume": "恢复",
+          "restart": "重新开始",
+          "stopBusy": "Agent 执行中或有排队消息，暂时不能停止"
+        },
+        "lifecycle": {
+          "title": "生命周期",
+          "kind": "环境类型",
+          "kindSnapshot": "E2B（空闲时自动保存并暂停）",
+          "kindFiles": "Docker / Kubernetes（不会因空闲回收）",
+          "reclaim": "自动回收",
+          "countdown": "{time} 后保存并暂停",
+          "soon": "即将保存并暂停",
+          "exempt": "不会自动回收，手动停止才释放",
+          "keptAlive": "已保持运行，不会自动回收",
+          "connected": "本地 IDE 连接中，暂停计时",
+          "keepAlive": "保持运行",
+          "lastModel": "最近模型活动",
+          "lastModelHint": "只有 Agent 回合会重置空闲计时，打开 IDE 或终端不算",
+          "backup": "最近备份"
+        },
+        "ide": {
+          "title": "本地 IDE",
+          "connections": "{n} 个连接进行中",
+          "pausedHint": "沙箱已暂停，连接时会自动唤醒；唤醒可能需要几十秒。",
+          "command": "SSH 命令",
+          "commandHint": "不需要任何配置，可直接在终端运行",
+          "config": "可选：SSH 主机别名",
+          "configHint": "想用 ssh grasp 这样的短名字时，把下面几行加入本机 ~/.ssh/config。IDE 按钮不依赖这段配置。",
+          "timeoutHint": "如果 IDE 连接超时，把 remote.SSH.connectTimeout 调到 60 秒。",
+          "hostKey": "网关主机指纹",
+          "noKey": "先登记 SSH 公钥，才能从本地连接",
+          "addKey": "登记公钥",
+          "adminsOnly": "SSH 连接只对管理员开放",
+          "unavailable": {
+            "preparing": "环境准备好后才能连接",
+            "stopping": "环境停止中，暂时不能连接",
+            "stopped": "环境已停止，恢复后才能连接",
+            "closed": "会话已关闭，不能再连接",
+            "error": "环境异常，暂时不能连接"
+          },
+          "openIn": "用 {ide} 打开",
+          "connectWith": "用 {ide} 连接",
+          "choose": "选择 IDE",
+          "menuTitle": "本地 IDE（Remote-SSH）",
+          "cnEdition": "中国版",
+          "info": "SSH 连接信息",
+          "user": "用户名",
+          "host": "主机",
+          "port": "端口",
+          "path": "项目目录",
+          "jetbrainsHint": "在 JetBrains Gateway 中选择 SSH → New Connection，填写下面的用户名、主机和端口，项目目录填 /root/workspace。"
+        },
+        "details": {
+          "title": "基本信息",
+          "sandbox": "沙箱",
+          "agent": "Agent",
+          "repo": "仓库",
+          "workdir": "工作目录",
+          "created": "创建时间",
+          "emptyRepo": "空工作区"
+        },
+        "copy": "复制",
+        "copied": "已复制",
+        "webIde": "浏览器 IDE"
       }
     },
     "projects": {
@@ -3778,6 +3864,29 @@
         "verified": "已核验",
         "work_kind": "工作类型"
       }
+    },
+    "sshKeys": {
+      "title": "SSH 公钥",
+      "subtitle": "登记公钥后，可以用本地 VS Code、Cursor 或终端通过 SSH 连接沙箱。公钥只保存在 Grasp，不会写入沙箱。",
+      "add": "添加公钥",
+      "name": "名称",
+      "namePlaceholder": "留空则使用公钥末尾的注释",
+      "key": "公钥",
+      "keyPlaceholder": "粘贴 ~/.ssh/id_ed25519.pub 的完整内容",
+      "empty": "还没有登记公钥",
+      "emptyHint": "在本机运行 ssh-keygen -t ed25519 生成密钥，再把 .pub 文件的内容粘贴进来。",
+      "fingerprint": "指纹",
+      "addedAt": "添加于 {time}",
+      "lastUsed": "最近使用 {time}",
+      "neverUsed": "尚未使用",
+      "delete": "删除",
+      "deleteTitle": "删除公钥",
+      "deleteBody": "删除后，使用「{name}」的 SSH 连接会立即断开。",
+      "gatewayOff": "管理员尚未开启 SSH 网关，登记的公钥暂时无法使用。",
+      "adminsOnly": "SSH 网关只对管理员开放。",
+      "howTo": "在 Solo 会话顶部点击信息图标，可以复制 SSH 命令，或一键用 VS Code / Cursor 打开沙箱。",
+      "saved": "公钥已添加",
+      "deleted": "公钥已删除"
     }
   }
 }

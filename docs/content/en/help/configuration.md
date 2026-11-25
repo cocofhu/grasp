@@ -79,6 +79,7 @@ Every sandbox shares one idle timeout and one capacity limit in Settings, defaul
 - A compressed file archive defaults to a 4 GiB limit (`GRASP_SOLO_BACKUP_MAX_BYTES`). Exceeding it or failing verification preserves the original environment.
 - `solo_backup.keep` (`GRASP_SOLO_BACKUP_KEEP`) controls both file and snapshot recovery points, default **1**. Pruning follows a successful new save. Restore always uses the newest successful point. Cancelling a run or closing a session removes all its recovery points, with persistent retries on failure.
 - See [Sandbox lifecycle](sandbox-lifecycle.md) for waiting workflows, manual stop, restoration and failed cleanup.
+- See [Open sandboxes from a local IDE](local-ide.md) to enable, deploy and use the built-in SSH gateway.
 
 ## Database and attachment lifecycle
 

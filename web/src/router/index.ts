@@ -63,6 +63,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/settings/credentials', name: 'credentials', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.credentials', workspaceTool: 'credentials', workspaceTitle: 'nav.credentials' } },
   { path: '/settings/audit', name: 'audit', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.audit', workspaceTool: 'audit', workspaceTitle: 'nav.audit' } },
   { path: '/settings/workspace', redirect: () => ({ path: '/settings', query: {} }) },
+  { path: '/settings/ssh-keys', name: 'sshKeys', component: () => import('@/views/SSHKeysView.vue'), meta: { titleKey: 'route.sshKeys' } },
   { path: '/workflows/:id/edit', name: 'workflow-editor', component: () => import('@/views/WorkflowEditorView.vue'), meta: { titleKey: 'route.workflowEditor', full: true } },
   { path: '/runs', name: 'runs', component: () => import('@/views/RunListView.vue'), meta: { titleKey: 'route.runs' } },
   { path: '/runs/:id/live', name: 'run-live', component: () => import('@/views/RunLiveView.vue'), meta: { titleKey: 'route.runLive' } },

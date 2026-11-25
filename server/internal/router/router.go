@@ -70,6 +70,11 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/notifications/read", h.MarkNotificationRead)
 		api.POST("/notifications/read-all", h.MarkAllNotificationsRead)
 
+		api.GET("/ssh-gateway", h.GetSSHGateway)
+		api.GET("/me/ssh-keys", h.ListSSHKeys)
+		api.POST("/me/ssh-keys", h.AddSSHKey)
+		api.DELETE("/me/ssh-keys/:id", h.DeleteSSHKey)
+
 		api.GET("/opencode/providers", h.ListOpenCodeProviders)
 		api.GET("/opencode/providers/:provider/models", h.ListOpenCodeProviderModels)
 		api.GET("/acp-backends/:backend/models", h.ListCliBackendModels)

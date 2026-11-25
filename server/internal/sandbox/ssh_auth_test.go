@@ -514,3 +514,78 @@ func containsString(all []string, want string) bool {
 	}
 	return false
 }
+
+func TestSandboxDialSSHUsesTokenCredentials(t *testing.T) {
+	const secret = "dial-ssh-sandbox-token"
+	srv := startAuthServer(t, secret, nil)
+	sb := &Sandbox{ID: "sb-dial", SSHHost: srv.host, SSHPort: srv.port, Password: secret}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cli, err := sb.DialSSH(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = cli.Close()
+	cli, err = sb.DialSSH(ctx) // the first login authorized the platform key
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = cli.Close()
+
+	fresh := startAuthServer(t, secret, nil)
+	sb = &Sandbox{ID: "sb-other", SSHHost: fresh.host, SSHPort: fresh.port, Password: "wrong-sandbox-token-xx"}
+	if _, err := sb.DialSSH(ctx); err == nil || strings.Contains(err.Error(), sb.Password) {
+		t.Fatalf("wrong token must fail without echoing it: %v", err)
+	}
+}
+
+func TestSSHHandshakeHonorsDialContext(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var held []net.Conn
+	var mu sync.Mutex
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c) // accept TCP, never speak SSH
+			mu.Unlock()
+		}
+	}()
+	defer func() {
+		mu.Lock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+		mu.Unlock()
+	}()
+	host, portStr, _ := net.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	creds := sshCreds{host: host, port: port, user: "root", hostKeys: newHostKeyCache()}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if _, err := creds.dialOnce(ctx); err == nil {
+		t.Fatal("a stalled handshake succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("handshake ignored the dial deadline: %s", elapsed)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel2)
+	started = time.Now()
+	if _, err := creds.dialOnce(ctx2); err == nil {
+		t.Fatal("a cancelled handshake succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("handshake ignored cancellation: %s", elapsed)
+	}
+}

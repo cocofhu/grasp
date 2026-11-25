@@ -14,6 +14,7 @@ import { settingsClient } from './clients/settingsClient'
 import { statsClient } from './clients/statsClient'
 import { notificationsClient } from './clients/notificationsClient'
 import { soloClient } from './clients/soloClient'
+import { sshClient } from './clients/sshClient'
 
 export const api = {
   ...workspaceClient,
@@ -26,6 +27,7 @@ export const api = {
   ...statsClient,
   ...notificationsClient,
   ...soloClient,
+  ...sshClient,
 }
 
 export const authApi = {

@@ -48,6 +48,7 @@
     "credentials": "Credentials",
     "searchWorkflows": "Search workflows",
     "noMatchingWorkflows": "No matching workflows",
-    "projects": "Repositories"
+    "projects": "Repositories",
+    "sshKeys": "SSH keys"
   }
 }
