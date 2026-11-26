@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
-	"gorm.io/gorm"
 )
 
 const (
@@ -243,7 +242,7 @@ func (s *WorkspaceService) GlobalTokenStats(ctx context.Context, q GlobalTokenSt
 		return GlobalTokenStatsResult{}, err
 	}
 
-	unknownAlias := unknownModelAlias(s.db)
+	unknownAlias := s.unknownModelAlias()
 
 	modelSeen := map[string]string{}
 	wfSeen := map[string]string{}
@@ -1266,8 +1265,8 @@ func sortOptions(list []GlobalTokenStatsFilterOption) []GlobalTokenStatsFilterOp
 }
 
 // unknownModelAlias is the workspace's configured display model for unknown usage.
-func unknownModelAlias(db *gorm.DB) string {
-	ws, err := loadWorkspace(db)
+func (s *WorkspaceService) unknownModelAlias() string {
+	ws, err := loadWorkspace(s.db)
 	if err != nil {
 		return ResolveUnknownModelDisplayName("")
 	}

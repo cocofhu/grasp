@@ -13,8 +13,11 @@ const gateway = params.get('gateway') === 'off'
   : { enabled: true, host: 'ssh.grasp.example.com', port: 2222, allowed: true, hasKey: params.get('key') !== 'none', hostKeyFingerprint: 'SHA256:3B+YKnDLjNEQamN/JIa9z2c3crfl7CbnImMw5flKR5k' }
 const realFetch = window.fetch.bind(window)
 const taskInfo: SoloTaskInfo = {
-  usage: { total: 1_268_330, estimatedCost: 3.48, currency: 'CNY', unpricedTotal: 0, reported: true, incomplete: false },
-  workflowRuns: [{ id: 'verify-sandbox', title: '修复 SSH 连接', workflowName: '发布检查', status: 'completed' }],
+  usage: {
+    total: 1_268_330, inputTokens: 750_000, outputTokens: 125_000, cacheReadTokens: 350_000, cacheWriteTokens: 43_330,
+    reported: true, incomplete: false,
+  },
+  workflowRuns: [{ id: 'verify-sandbox', workflowName: '发布检查' }],
 }
 window.fetch = async (input, init) => {
   if (String(input).endsWith('/api/ssh-gateway')) {
@@ -67,7 +70,6 @@ async function bootstrap() {
           h('div', { class: 'ml-auto flex items-center gap-0.5' }, [
             h(SandboxInfoButton, {
               session: { ...variant.session, keepAlive: keepAlive.value },
-              references: [{ kind: 'github_issue', target: 'cocofhu/grasp#1367', title: '连接到沙箱', url: 'https://github.com/cocofhu/grasp/issues/1367' }],
               busy: !!variant.busy, paused: !!variant.paused, waking: !!variant.waking,
               onAction: (a: string) => events.value.push(`action:${a}`),
               onKeepAlive: (v: boolean) => { keepAlive.value = v; events.value.push(`keepAlive:${v}`) },

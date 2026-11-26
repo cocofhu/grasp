@@ -72,7 +72,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   resetSSHGatewayForTest()
   gatewayInfo.value = { enabled: false }
-  taskInfo.value = { usage: { total: 0, currency: 'USD', unpricedTotal: 0, reported: false, incomplete: false }, workflowRuns: [] }
+  taskInfo.value = {
+    usage: { total: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reported: false, incomplete: false },
+    workflowRuns: [],
+  }
   copied.length = 0
   localStorage.clear()
 })
@@ -140,14 +143,15 @@ describe('SandboxInfoButton', () => {
     expect(wrapper.emitted('keepAlive')).toEqual([[true]])
   })
 
-  it('loads task usage only in expanded details and shows linked runs and references', async () => {
+  it('loads task usage only in expanded details and shows linked workflow names and Token breakdowns', async () => {
     taskInfo.value = {
-      usage: { total: 1_637_345, estimatedCost: 5.125, currency: 'CNY', unpricedTotal: 12_345, reported: true, incomplete: true },
-      workflowRuns: [{ id: 'linked-run', title: '沙箱验收', workflowName: '发布检查', status: 'completed' }],
+      usage: {
+        total: 1_637_345, inputTokens: 1_012_345, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000,
+        reported: true, incomplete: true,
+      },
+      workflowRuns: [{ id: 'linked-run', workflowName: '发布检查' }],
     }
-    const wrapper = await render({
-      references: [{ kind: 'github_issue', target: 'cocofhu/grasp#42', title: '连接问题', url: 'https://github.com/cocofhu/grasp/issues/42' }],
-    })
+    const wrapper = await render()
     await openPanel(wrapper)
     expect(api.getSoloTaskInfo).not.toHaveBeenCalled()
     q('sandbox-info-details-toggle')!.click()
@@ -155,11 +159,16 @@ describe('SandboxInfoButton', () => {
     expect(api.getSoloTaskInfo).toHaveBeenCalledWith('s1', expect.any(AbortSignal))
     expect(q('sandbox-info-task-tokens')!.textContent).toContain('1,637,345')
     expect(q('sandbox-info-task-tokens')!.textContent).toContain('用量可能不完整')
-    expect(q('sandbox-info-task-value')!.textContent).toContain('¥5.13')
-    expect(q('sandbox-info-task-value')!.textContent).toContain('部分未计价')
+    expect(q('sandbox-info-task-value')).toBeNull()
+    expect(q('sandbox-info-task-references')).toBeNull()
     expect(q('sandbox-info-workflow-runs')!.querySelector('a')!.getAttribute('href')).toBe('/runs/linked-run')
-    expect(q('sandbox-info-workflow-runs')!.textContent).toContain('已完成')
-    expect(q('sandbox-info-task-references')!.querySelector('a')!.textContent).toContain('#42')
+    expect(q('sandbox-info-workflow-runs')!.textContent!.trim()).toBe('发布检查')
+    expect(q('sandbox-info-token-breakdown')).toBeNull()
+    q('sandbox-info-token-trigger')!.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+    expect(Array.from(q('sandbox-info-token-breakdown')!.querySelectorAll('dd'), dd => dd.textContent)).toEqual([
+      '1,012,345', '250,000', '125,000', '250,000',
+    ])
     const signal = vi.mocked(api.getSoloTaskInfo).mock.calls[0]![1]!
     q('sandbox-info-details-toggle')!.click()
     await flushPromises()

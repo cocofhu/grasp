@@ -12,7 +12,7 @@ All notable public-release changes are documented here.
 
 - Solo 沙箱的自动暂停倒计时只显示剩余时间。
 
-- 从 Solo 沙箱的「基本信息」查看会话累计 Token、按模型单价估算的任务价值、参考和关联的工作流运行。
+- 从 Solo 沙箱的「基本信息」查看会话累计 Token 和关联的工作流名称。悬浮在 Token 总数上可查看输入、输出、缓存读和缓存写明细。
 
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 

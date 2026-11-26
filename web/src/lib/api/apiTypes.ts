@@ -725,15 +725,12 @@ export interface SoloResources {
 }
 
 export interface SoloTaskInfo {
-  usage: {
+  usage: TokenUsage & {
     total: number
-    estimatedCost?: number
-    currency: string
-    unpricedTotal: number
     reported: boolean
     incomplete: boolean
   }
-  workflowRuns: Array<{ id: string; title: string; workflowName: string; status: string }>
+  workflowRuns: Array<{ id: string; workflowName: string }>
 }
 
 export interface SoloSessionList {

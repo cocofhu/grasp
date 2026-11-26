@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId, useSlots } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -8,6 +8,7 @@ const props = withDefaults(
   { focusable: true, focusParent: false, measureChild: false },
 )
 const attrs = useAttrs()
+const slots = useSlots()
 const trigger = ref<HTMLElement | null>(null)
 const tooltip = ref<HTMLElement | null>(null)
 const truncated = ref(false)
@@ -22,11 +23,12 @@ let resizeObserver: ResizeObserver | undefined
 let closeTimer: number | undefined
 let parentFocusTarget: HTMLElement | null = null
 
+const hasTooltip = computed(() => Boolean(slots.tooltip) || truncated.value)
 const triggerAttrs = computed(() => ({
   ...attrs,
-  tabindex: truncated.value && props.focusable ? 0 : undefined,
-  role: truncated.value && props.focusable ? 'button' : undefined,
-  'aria-expanded': truncated.value && props.focusable ? open.value : undefined,
+  tabindex: hasTooltip.value && props.focusable ? 0 : undefined,
+  role: hasTooltip.value && props.focusable ? 'button' : undefined,
+  'aria-expanded': hasTooltip.value && props.focusable ? open.value : undefined,
   'aria-describedby': open.value ? tooltipId : undefined,
 }))
 
@@ -39,6 +41,7 @@ function syncParentDescription() {
 }
 
 function measureOverflow() {
+  if (slots.tooltip) return
   const elements = props.measureChild
     ? Array.from(trigger.value?.querySelectorAll<HTMLElement>('*') ?? [])
     : trigger.value
@@ -76,7 +79,7 @@ async function placeTooltip() {
 
 function show() {
   measureOverflow()
-  if (!truncated.value) return
+  if (!hasTooltip.value) return
   open.value = true
   syncParentDescription()
   void placeTooltip()
@@ -102,7 +105,7 @@ function onClick(event: MouseEvent) {
   if (!touchPointer.value) return
   event.stopPropagation()
   measureOverflow()
-  if (truncated.value) {
+  if (hasTooltip.value) {
     open.value = !open.value
     if (open.value) void placeTooltip()
   }
@@ -139,7 +142,7 @@ function onKeydown(event: KeyboardEvent) {
     event.preventDefault()
     event.stopPropagation()
     measureOverflow()
-    if (truncated.value) {
+    if (hasTooltip.value) {
       open.value = !open.value
       if (open.value) void placeTooltip()
     }
@@ -224,7 +227,7 @@ onBeforeUnmount(() => {
         @mouseenter="tooltipHovered = true"
         @mouseleave="tooltipHovered = false; scheduleHide()"
       >
-        {{ text }}
+        <slot name="tooltip">{{ text }}</slot>
       </div>
     </Transition>
   </Teleport>

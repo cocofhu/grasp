@@ -15,18 +15,14 @@ type SoloTaskInfo struct {
 
 type SoloTaskRun struct {
 	ID           string `json:"id"`
-	Title        string `json:"title"`
 	WorkflowName string `json:"workflowName"`
-	Status       string `json:"status"`
 }
 
 type SoloTaskUsage struct {
-	Total         int64    `json:"total"`
-	EstimatedCost *float64 `json:"estimatedCost,omitempty"`
-	Currency      string   `json:"currency"`
-	UnpricedTotal int64    `json:"unpricedTotal"`
-	Reported      bool     `json:"reported"`
-	Incomplete    bool     `json:"incomplete"`
+	models.TokenUsage
+	Total      int64 `json:"total"`
+	Reported   bool  `json:"reported"`
+	Incomplete bool  `json:"incomplete"`
 }
 
 // TaskInfo summarizes the entire owned Solo session, including previous sandboxes.
@@ -46,26 +42,30 @@ func (s *SoloService) TaskInfo(ctx context.Context, id, user string) (SoloTaskIn
 		// A workflow turn can pin an explicit @ reference to this Solo session.
 		runs := tx.Model(&models.RunReference{}).Select("run_id").
 			Where("kind = ? AND target = ? AND user_id = ?", models.ReferenceKindSolo, session.ID, session.UserID)
-		return tx.Model(&models.Run{}).Select("id", "title", "workflow_name", "status").
-			Where("workflow_id <> '' AND id IN (?)", runs).
-			Order("started_at DESC, id DESC").
+		const workflowName = "COALESCE(NULLIF(runs.workflow_name, ''), workflow_defs.name, '')"
+		return tx.Model(&models.Run{}).Select("runs.id, "+workflowName+" AS workflow_name").
+			Joins("LEFT JOIN workflow_defs ON workflow_defs.id = runs.workflow_id").
+			Where("runs.workflow_id <> '' AND runs.id IN (?)", runs).
+			Where(workflowName + " <> ''").
+			Order("runs.started_at DESC, runs.id DESC").
 			Find(&out.WorkflowRuns).Error
 	}, &sql.TxOptions{ReadOnly: true})
 	return out, err
 }
 
 func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
-	var buckets []struct {
+	var totals struct {
 		models.TokenUsage
-		ModelKey string
-		Legacy   int64
+		Legacy int64
 	}
 	scope := db.Where("source = ? AND thread_id = ?", models.TokenLedgerSourceSolo, id)
 	if err := scope.Session(&gorm.Session{}).Model(&models.TokenUsageEvent{}).
-		Select(`model_key, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
-		        SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens,
-		        MAX(CASE WHEN report_id IS NULL OR report_id = '' THEN 1 ELSE 0 END) AS legacy`).
-		Group("model_key").Scan(&buckets).Error; err != nil {
+		Select(`COALESCE(SUM(input_tokens), 0) AS input_tokens,
+		        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+		        COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+		        COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+		        COALESCE(MAX(CASE WHEN report_id IS NULL OR report_id = '' THEN 1 ELSE 0 END), 0) AS legacy`).
+		Scan(&totals).Error; err != nil {
 		return SoloTaskUsage{}, err
 	}
 	var reports struct {
@@ -79,28 +79,11 @@ func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
 		return SoloTaskUsage{}, err
 	}
 
-	pricing := LoadTokenPricing(db)
-	alias := unknownModelAlias(db)
-	usage := SoloTaskUsage{Currency: pricing.Currency, Reported: reports.Reported > 0, Incomplete: reports.Incomplete > 0}
-	var cost float64
-	for _, bucket := range buckets {
-		total := bucket.Total()
-		if total <= 0 {
-			continue
-		}
-		usage.Total += total
-		usage.Reported = true
-		usage.Incomplete = usage.Incomplete || bucket.Legacy > 0
-		key := rebucketGlobalModelKey(orDefault(bucket.ModelKey, models.TokenUsageModelUnknown), alias)
-		value, ok := pricing.Cost(key, bucket.TokenUsage)
-		if !ok {
-			usage.UnpricedTotal += total
-			continue
-		}
-		cost += value
-	}
-	if usage.Total > usage.UnpricedTotal || (usage.Reported && !usage.Incomplete && usage.Total == 0) {
-		usage.EstimatedCost = &cost
-	}
-	return usage, nil
+	total := totals.Total()
+	return SoloTaskUsage{
+		TokenUsage: totals.TokenUsage,
+		Total:      total,
+		Reported:   reports.Reported > 0 || total > 0,
+		Incomplete: reports.Incomplete > 0 || totals.Legacy > 0,
+	}, nil
 }
