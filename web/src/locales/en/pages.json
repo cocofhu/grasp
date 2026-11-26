@@ -3595,6 +3595,13 @@
         },
         "details": {
           "title": "Details",
+          "totalTokens": "Total tokens",
+          "taskValue": "Task value (est.)",
+          "incompleteUsage": "Usage may be incomplete",
+          "noModelPrice": "Model pricing unavailable",
+          "partialPrice": "Some usage is unpriced",
+          "workflowRuns": "Workflow runs",
+          "references": "References",
           "sandbox": "Sandbox",
           "agent": "Agent",
           "repo": "Repository",

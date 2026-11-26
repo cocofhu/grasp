@@ -3595,6 +3595,13 @@
         },
         "details": {
           "title": "基本信息",
+          "totalTokens": "累计 Token",
+          "taskValue": "任务价值（估算）",
+          "incompleteUsage": "用量可能不完整",
+          "noModelPrice": "未配置模型单价",
+          "partialPrice": "部分未计价",
+          "workflowRuns": "工作流运行",
+          "references": "参考",
           "sandbox": "沙箱",
           "agent": "Agent",
           "repo": "仓库",

@@ -113,6 +113,16 @@ async function chooseSessionServiceTier(value: string) {
 }
 const repos = computed(() => sessionRepos(session.value))
 const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
+const taskReferences = computed(() => {
+  const refs = new Map<string, MessageReference>()
+  for (const turn of turns.value) {
+    if (turn.role !== 'user') continue
+    for (const reference of turn.references || []) {
+      refs.set(`${reference.kind}:${reference.target}`, reference)
+    }
+  }
+  return [...refs.values()]
+})
 const draft = useChatComposerDraft(defaultRepo)
 const { input, attach, mention, textareaComponent } = draft
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
@@ -518,6 +528,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <template #actions>
         <SandboxInfoButton
           :session="session"
+          :references="taskReferences"
           :busy="busy"
           :queued="queued.length"
           :paused="sandboxPaused"

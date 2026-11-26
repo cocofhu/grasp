@@ -724,6 +724,18 @@ export interface SoloResources {
   preview: PreviewPort | null
 }
 
+export interface SoloTaskInfo {
+  usage: {
+    total: number
+    estimatedCost?: number
+    currency: string
+    unpricedTotal: number
+    reported: boolean
+    incomplete: boolean
+  }
+  workflowRuns: Array<{ id: string; title: string; workflowName: string; status: string }>
+}
+
 export interface SoloSessionList {
   sessions: SoloSession[]
   maxSandboxes: number

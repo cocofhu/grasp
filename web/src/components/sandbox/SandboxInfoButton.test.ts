@@ -5,15 +5,18 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
-import type { SoloSession, SSHGatewayInfo } from '@/lib/api/apiTypes'
+import type { SoloSession, SoloTaskInfo, SSHGatewayInfo } from '@/lib/api/apiTypes'
+import { api } from '@/lib/api/api'
 import { resetSSHGatewayForTest } from '@/lib/sandbox/useSSHGateway'
 import SandboxInfoButton from './SandboxInfoButton.vue'
 
 const gatewayInfo = vi.hoisted(() => ({ value: { enabled: false } as SSHGatewayInfo }))
+const taskInfo = vi.hoisted(() => ({ value: undefined as SoloTaskInfo | undefined }))
 vi.mock('@/lib/api/api', () => ({
   api: {
     sshGateway: vi.fn(async () => gatewayInfo.value),
     sandboxIdeUrl: (id: number) => `/sandbox/${id}/?folder=/root/workspace`,
+    getSoloTaskInfo: vi.fn(async () => taskInfo.value),
   },
 }))
 const copied = vi.hoisted(() => [] as string[])
@@ -66,8 +69,10 @@ function q(testId: string) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   resetSSHGatewayForTest()
   gatewayInfo.value = { enabled: false }
+  taskInfo.value = { usage: { total: 0, currency: 'USD', unpricedTotal: 0, reported: false, incomplete: false }, workflowRuns: [] }
   copied.length = 0
   localStorage.clear()
 })
@@ -133,6 +138,32 @@ describe('SandboxInfoButton', () => {
     expect(wrapper.emitted('action')).toEqual([['stop']])
     q('sandbox-info-keep-alive')!.click()
     expect(wrapper.emitted('keepAlive')).toEqual([[true]])
+  })
+
+  it('loads task usage only in expanded details and shows linked runs and references', async () => {
+    taskInfo.value = {
+      usage: { total: 1_637_345, estimatedCost: 5.125, currency: 'CNY', unpricedTotal: 12_345, reported: true, incomplete: true },
+      workflowRuns: [{ id: 'linked-run', title: '沙箱验收', workflowName: '发布检查', status: 'completed' }],
+    }
+    const wrapper = await render({
+      references: [{ kind: 'github_issue', target: 'cocofhu/grasp#42', title: '连接问题', url: 'https://github.com/cocofhu/grasp/issues/42' }],
+    })
+    await openPanel(wrapper)
+    expect(api.getSoloTaskInfo).not.toHaveBeenCalled()
+    q('sandbox-info-details-toggle')!.click()
+    await flushPromises()
+    expect(api.getSoloTaskInfo).toHaveBeenCalledWith('s1', expect.any(AbortSignal))
+    expect(q('sandbox-info-task-tokens')!.textContent).toContain('1,637,345')
+    expect(q('sandbox-info-task-tokens')!.textContent).toContain('用量可能不完整')
+    expect(q('sandbox-info-task-value')!.textContent).toContain('¥5.13')
+    expect(q('sandbox-info-task-value')!.textContent).toContain('部分未计价')
+    expect(q('sandbox-info-workflow-runs')!.querySelector('a')!.getAttribute('href')).toBe('/runs/linked-run')
+    expect(q('sandbox-info-workflow-runs')!.textContent).toContain('已完成')
+    expect(q('sandbox-info-task-references')!.querySelector('a')!.textContent).toContain('#42')
+    const signal = vi.mocked(api.getSoloTaskInfo).mock.calls[0]![1]!
+    q('sandbox-info-details-toggle')!.click()
+    await flushPromises()
+    expect(signal.aborted).toBe(true)
   })
 
   it('disables stop while the agent is busy and hides actions when read-only', async () => {

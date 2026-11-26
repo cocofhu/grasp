@@ -5,10 +5,14 @@ import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import ReferenceChip from '@/components/solo/ReferenceChip.vue'
+import { fmtCost } from '@/components/token-analytics/tokenAnalyticsShared'
 import { api } from '@/lib/api/api'
-import type { SoloSession } from '@/lib/api/apiTypes'
+import type { MessageReference, SoloSession, SoloTaskInfo } from '@/lib/api/apiTypes'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { formatBytes, relTime } from '@/lib/shared/format'
+import { fmtTokenCount } from '@/lib/run/tokenUsage'
+import { githubRepoOf } from '@/lib/solo/referenceDisplay'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { sandboxDisplayState, sandboxLifecycle, type SandboxAction } from '@/lib/sandbox/sandboxDisplayState'
 import { SANDBOX_WORKSPACE } from '@/lib/sandbox/sshConnect'
@@ -18,6 +22,7 @@ import SandboxIdeMenu from './SandboxIdeMenu.vue'
 
 const props = withDefaults(defineProps<{
   session: SoloSession
+  references?: MessageReference[]
   busy: boolean
   queued?: number
   paused: boolean
@@ -48,6 +53,8 @@ const panelStyle = ref<Record<string, string>>({})
 const sheet = ref(false)
 const now = ref(Date.now())
 const copied = ref('')
+const taskInfo = ref<SoloTaskInfo>()
+const taskInfoFailed = ref(false)
 let tick: ReturnType<typeof setInterval> | undefined
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 /** IDE connections change outside this page, so an open panel re-reads the session. */
@@ -108,6 +115,7 @@ const backupText = computed(() => {
 })
 
 const repos = computed(() => sessionRepos(props.session))
+const referenceRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
 const repoText = computed(() => {
   if (!repos.value.length) return t('pages.solo.sandboxInfo.details.emptyRepo')
   const names = repos.value.map((r) => r.name).join(', ')
@@ -137,6 +145,47 @@ const actionIcon = computed(() => ({ stop: 'stop', wake: 'play', resume: 'play',
 const webIdeUrl = computed(() => environmentRunning.value && props.session.sandbox?.hasCodeServer && sandboxId.value
   ? api.sandboxIdeUrl(sandboxId.value)
   : '')
+
+const taskTokenTotal = computed(() => {
+  const usage = taskInfo.value?.usage
+  if (!usage) return t(taskInfoFailed.value ? 'common.loading.failed' : 'common.loading.inProgress')
+  return usage.reported ? fmtTokenCount(usage.total) : t('pages.chatMessageInfo.notReported')
+})
+const taskValue = computed(() => {
+  const usage = taskInfo.value?.usage
+  if (usage?.estimatedCost != null) return fmtCost(usage.estimatedCost, usage.currency)
+  return usage?.unpricedTotal ? t('pages.solo.sandboxInfo.details.noModelPrice') : '—'
+})
+
+watch(
+  [() => open.value && detailsOpen.value && !props.readonly, () => props.session.id],
+  ([visible, sessionId], _, onCleanup) => {
+    taskInfo.value = undefined
+    taskInfoFailed.value = false
+    if (!visible) return
+
+    const controller = new AbortController()
+    let loading = false
+    async function refreshTaskInfo() {
+      if (loading) return
+      loading = true
+      try {
+        const next = await api.getSoloTaskInfo(sessionId, controller.signal)
+        if (!controller.signal.aborted) taskInfo.value = next
+      } catch {
+        if (!controller.signal.aborted) taskInfoFailed.value = true
+      } finally {
+        loading = false
+      }
+    }
+    void refreshTaskInfo()
+    const interval = window.setInterval(refreshTaskInfo, REFRESH_MS)
+    onCleanup(() => {
+      controller.abort()
+      window.clearInterval(interval)
+    })
+  },
+)
 
 function place() {
   const el = trigger.value
@@ -366,6 +415,48 @@ function onIDELaunch() {
           >{{ actionLabel }}</AppButton>
         </footer>
         <dl v-show="detailsOpen" :id="detailsId" class="sandbox-info-rows" data-testid="sandbox-info-details">
+          <template v-if="!readonly">
+            <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
+            <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
+              {{ taskTokenTotal }}
+              <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note"> · {{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
+            </dd>
+            <dt>{{ t('pages.solo.sandboxInfo.details.taskValue') }}</dt>
+            <dd class="tabular-nums" data-testid="sandbox-info-task-value">
+              {{ taskValue }}
+              <span v-if="taskInfo?.usage.estimatedCost != null && taskInfo.usage.unpricedTotal > 0" class="sandbox-info-note">
+                · {{ t('pages.solo.sandboxInfo.details.partialPrice') }}
+              </span>
+            </dd>
+            <template v-if="taskInfo?.workflowRuns.length">
+              <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>
+              <dd>
+                <ul class="space-y-1.5" data-testid="sandbox-info-workflow-runs">
+                  <li v-for="run in taskInfo.workflowRuns" :key="run.id">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <RouterLink class="sandbox-info-link truncate" :to="`/runs/${encodeURIComponent(run.id)}`" :title="run.title || run.workflowName || run.id" @click="hide()">
+                        {{ run.title || run.workflowName || run.id }}
+                      </RouterLink>
+                      <span v-if="run.status" class="shrink-0 sandbox-info-note">{{ t(`common.status.${run.status}`, run.status) }}</span>
+                    </div>
+                    <p v-if="run.title && run.workflowName && run.title !== run.workflowName" class="sandbox-info-note truncate" :title="run.workflowName">{{ run.workflowName }}</p>
+                  </li>
+                </ul>
+              </dd>
+            </template>
+          </template>
+          <template v-if="references?.length">
+            <dt>{{ t('pages.solo.sandboxInfo.details.references') }}</dt>
+            <dd class="flex flex-wrap gap-1" data-testid="sandbox-info-task-references">
+              <ReferenceChip
+                v-for="reference in references"
+                :key="`${reference.kind}:${reference.target}`"
+                :reference="reference"
+                :default-repo="referenceRepo"
+                link
+              />
+            </dd>
+          </template>
           <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
           <dd>{{ session.agentName }}</dd>
           <dt>{{ t('pages.solo.sandboxInfo.details.repo') }}</dt>
@@ -477,12 +568,13 @@ function onIDELaunch() {
   color: color-mix(in srgb, rgb(var(--c-err)) 76%, rgb(var(--c-txt)));
 }
 .sandbox-info-rows {
-  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 14px;
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: 6px 14px;
   margin: 0; padding: 0 15px 14px; font-size: 12px;
 }
 .sandbox-info-rows .sandbox-info-copy { width: 20px; height: 20px; }
 .sandbox-info-rows dt { color: rgb(var(--c-txt3)); }
 .sandbox-info-rows dd { min-width: 0; margin: 0; color: rgb(var(--c-txt)); }
+.sandbox-info-rows dd :deep(.ref-chip) { max-width: 100%; }
 .sandbox-info-note {
   font-size: 11.5px; line-height: 1.5;
   color: color-mix(in srgb, rgb(var(--c-txt3)), rgb(var(--c-txt2)) 45%);
