@@ -222,14 +222,20 @@ func (s *SubdomainExposer) MatchHost(authority string) (key string, claimed bool
 	return label, true
 }
 
-// asciiHost lowercases host and converts internationalized names to their
-// Punycode form, so a Unicode and an ASCII spelling of the same name compare
-// equal. Pure-ASCII names the IDNA profile rejects (e.g. underscores in
-// container service names) are kept as-is: they have no other spelling.
+// asciiHost converts internationalized names to their Punycode form and then
+// lowercases, so a Unicode and an ASCII spelling of the same name compare
+// equal. IDNA mapping runs on the original spelling: lowercasing first would
+// apply Go's case mapping instead of UTS #46 (e.g. U+0130 "İ" would become a
+// plain "i" and name a different site). Pure-ASCII names the IDNA profile
+// rejects (e.g. underscores in container service names) are only lowercased:
+// they have no other spelling.
 func asciiHost(host string) (string, error) {
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	if host == "" || net.ParseIP(host) != nil {
-		return host, nil
+	host = strings.TrimSuffix(strings.TrimSpace(host), ".")
+	if host == "" {
+		return "", nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return strings.ToLower(host), nil
 	}
 	ascii, err := idna.Lookup.ToASCII(host)
 	if err == nil {
@@ -240,7 +246,7 @@ func asciiHost(host string) (string, error) {
 			return "", err
 		}
 	}
-	return host, nil
+	return strings.ToLower(host), nil
 }
 
 // platformHostOf returns the normalized hostname of the platform origin, or

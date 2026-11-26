@@ -142,6 +142,22 @@ func TestValidatePlatformOrigin(t *testing.T) {
 	if _, err := idnNested.ValidatePlatformOrigin("https://例子.com", false); err == nil {
 		t.Fatal("expected preview base nested under Unicode platform host to fail")
 	}
+	// IDNA mapping must run before lowercasing: Go maps U+0130 "İ" to a plain
+	// "i", while UTS #46 keeps the dot (xn--istanbul-o0e), a different site.
+	dottedBase, err := ParseBase("https://preview.xn--istanbul-o0e.com")
+	if err != nil {
+		t.Fatalf("ParseBase dotted-I punycode: %v", err)
+	}
+	if _, err := dottedBase.ValidatePlatformOrigin("https://grasp.İstanbul.com", true); err == nil {
+		t.Fatal("expected production same-site error for İstanbul.com vs xn--istanbul-o0e.com")
+	}
+	plainBase, _ := ParseBase("https://preview.istanbul.com")
+	if _, err := plainBase.ValidatePlatformOrigin("https://grasp.İstanbul.com", true); err != nil {
+		t.Fatalf("istanbul.com and İstanbul.com are different sites, got %v", err)
+	}
+	if got, err := asciiHost("GRASP.Example.COM."); err != nil || got != "grasp.example.com" {
+		t.Fatalf("asciiHost ASCII = %q, %v", got, err)
+	}
 	// Pure-ASCII hosts the IDNA profile rejects (container names) still work.
 	if _, err := base.ValidatePlatformOrigin("http://grasp_server:8080", false); err != nil {
 		t.Fatalf("underscore platform host rejected: %v", err)
