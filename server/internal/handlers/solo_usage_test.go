@@ -74,9 +74,10 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 		},
 		{
 			ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task",
-			SandboxID: 2, ModelKey: "second-model", InputTokens: 500_000,
+			SandboxID: 2, ModelKey: "second-model", ModelFilled: true, InputTokens: 500_000,
 		},
-		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", ModelKey: "second-model", InputTokens: 12_345},
+		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", InputTokens: 2_345},
+		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", ModelKey: "default", InputTokens: 10_000},
 		{Source: models.TokenLedgerSourceSolo, ThreadID: "other-task", ModelKey: "first-model", InputTokens: 999_999},
 		{Source: models.TokenLedgerSourceStudio, ThreadID: "task", ModelKey: "first-model", InputTokens: 777_777},
 	}
@@ -119,6 +120,11 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 	if usage.Total != 1_637_345 || usage.InputTokens != 1_012_345 || usage.OutputTokens != 250_000 ||
 		usage.CacheReadTokens != 125_000 || usage.CacheWriteTokens != 250_000 || !usage.Reported || !usage.Incomplete {
 		t.Fatalf("usage = %+v", usage)
+	}
+	if len(usage.ByModel) != 3 || usage.ByModel["first-model"].Total() != 1_125_000 ||
+		usage.ByModel["second-model"].Total() != 500_000 || !usage.ByModel["second-model"].Filled ||
+		usage.ByModel[models.TokenUsageModelUnknown].InputTokens != 12_345 {
+		t.Fatalf("usage by model = %+v", usage.ByModel)
 	}
 	if len(info.WorkflowRuns) != 2 || info.WorkflowRuns[0] != (services.SoloTaskRun{ID: "linked-run", WorkflowName: "Release checks"}) ||
 		info.WorkflowRuns[1] != (services.SoloTaskRun{ID: "legacy-run", WorkflowName: "Legacy checks"}) {

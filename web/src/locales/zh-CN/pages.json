@@ -3596,6 +3596,7 @@
         "details": {
           "title": "基本信息",
           "totalTokens": "累计 Token",
+          "modelBackfill": "含配置补全",
           "incompleteUsage": "用量可能不完整",
           "workflowRuns": "工作流运行",
           "sandbox": "沙箱",

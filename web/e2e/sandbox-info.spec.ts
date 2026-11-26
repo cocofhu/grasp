@@ -43,7 +43,15 @@ for (const theme of ['dark', 'light']) {
     const token = page.getByTestId('sandbox-info-token-trigger')
     const breakdown = page.getByTestId('sandbox-info-token-breakdown')
     await token.hover()
-    await expect(breakdown.getByRole('definition')).toHaveText(['750,000', '125,000', '350,000', '43,330'])
+    await expect(page.getByTestId('sandbox-info-token-sum').getByRole('definition')).toHaveText(['750,000', '125,000', '350,000', '43,330'])
+    const models = breakdown.getByTestId('sandbox-info-token-model')
+    await expect(models).toHaveCount(3)
+    await expect(models.nth(0)).toContainText('claude-sonnet-4-6')
+    await expect(models.nth(0)).toContainText('953,330')
+    await expect(models.nth(0).getByRole('definition')).toHaveText(['550,000', '100,000', '270,000', '33,330'])
+    await expect(models.nth(1)).toContainText('gpt-5.2')
+    await expect(models.nth(2)).toContainText('未知模型')
+    await expect(models.nth(2)).toBeInViewport({ ratio: 1 })
     await page.getByRole('tooltip').filter({ has: breakdown }).screenshot({
       path: test.info().outputPath(`sandbox-info-token-breakdown-${theme}.png`),
       animations: 'disabled',

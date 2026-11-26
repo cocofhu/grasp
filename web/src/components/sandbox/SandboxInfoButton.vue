@@ -5,18 +5,17 @@ import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
-import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import { api } from '@/lib/api/api'
 import type { SoloSession, SoloTaskInfo } from '@/lib/api/apiTypes'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { formatBytes, relTime } from '@/lib/shared/format'
-import { fmtTokenCount } from '@/lib/run/tokenUsage'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
 import { sandboxDisplayState, sandboxLifecycle, type SandboxAction } from '@/lib/sandbox/sandboxDisplayState'
 import { SANDBOX_WORKSPACE } from '@/lib/sandbox/sshConnect'
 import { useSSHGateway } from '@/lib/sandbox/useSSHGateway'
 import { formatRemaining } from './idleCountdown'
 import SandboxIdeMenu from './SandboxIdeMenu.vue'
+import SandboxTokenTooltip from './SandboxTokenTooltip.vue'
 
 const props = withDefaults(defineProps<{
   session: SoloSession
@@ -141,22 +140,6 @@ const actionIcon = computed(() => ({ stop: 'stop', wake: 'play', resume: 'play',
 const webIdeUrl = computed(() => environmentRunning.value && props.session.sandbox?.hasCodeServer && sandboxId.value
   ? api.sandboxIdeUrl(sandboxId.value)
   : '')
-
-const taskTokenTotal = computed(() => {
-  const usage = taskInfo.value?.usage
-  if (!usage) return t(taskInfoFailed.value ? 'common.loading.failed' : 'common.loading.inProgress')
-  return usage.reported ? fmtTokenCount(usage.total) : t('pages.chatMessageInfo.notReported')
-})
-const taskTokenRows = computed(() => {
-  const usage = taskInfo.value?.usage
-  if (!usage?.reported) return []
-  return [
-    { label: t('pages.executionTimeline.partInput'), value: usage.inputTokens },
-    { label: t('pages.executionTimeline.partOutput'), value: usage.outputTokens },
-    { label: t('pages.executionTimeline.partCacheRead'), value: usage.cacheReadTokens },
-    { label: t('pages.executionTimeline.partCacheWrite'), value: usage.cacheWriteTokens },
-  ]
-})
 
 watch(
   [() => open.value && detailsOpen.value && !props.readonly, () => props.session.id],
@@ -419,22 +402,9 @@ function onIDELaunch() {
           <template v-if="!readonly">
             <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
             <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
-              <TruncatedTextTooltip
-                v-if="taskTokenRows.length"
-                :text="taskTokenTotal"
-                class="cursor-help rounded-sm underline decoration-dotted underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
-                data-testid="sandbox-info-token-trigger"
-              >
-                <template #tooltip>
-                  <dl class="grid grid-cols-[max-content_auto] gap-x-5 gap-y-1 py-0.5 tabular-nums" data-testid="sandbox-info-token-breakdown">
-                    <template v-for="row in taskTokenRows" :key="row.label">
-                      <dt class="text-txt2">{{ row.label }}</dt>
-                      <dd class="text-right">{{ fmtTokenCount(row.value) }}</dd>
-                    </template>
-                  </dl>
-                </template>
-              </TruncatedTextTooltip>
-              <span v-else>{{ taskTokenTotal }}</span>
+              <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
+              <span v-else-if="taskInfo">{{ t('pages.chatMessageInfo.notReported') }}</span>
+              <span v-else>{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
               <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note"> · {{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
             </dd>
             <template v-if="taskInfo?.workflowRuns.length">

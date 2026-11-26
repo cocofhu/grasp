@@ -729,6 +729,7 @@ export interface SoloTaskInfo {
     total: number
     reported: boolean
     incomplete: boolean
+    byModel?: TokenUsageByModel
   }
   workflowRuns: Array<{ id: string; workflowName: string }>
 }

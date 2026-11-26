@@ -148,6 +148,11 @@ describe('SandboxInfoButton', () => {
       usage: {
         total: 1_637_345, inputTokens: 1_012_345, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000,
         reported: true, incomplete: true,
+        byModel: {
+          'first-model': { inputTokens: 500_000, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000 },
+          'second-model': { inputTokens: 500_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, filled: true },
+          '未知/未分桶': { inputTokens: 12_345, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        },
       },
       workflowRuns: [{ id: 'linked-run', workflowName: '发布检查' }],
     }
@@ -166,9 +171,16 @@ describe('SandboxInfoButton', () => {
     expect(q('sandbox-info-token-breakdown')).toBeNull()
     q('sandbox-info-token-trigger')!.dispatchEvent(new MouseEvent('mouseenter'))
     await flushPromises()
-    expect(Array.from(q('sandbox-info-token-breakdown')!.querySelectorAll('dd'), dd => dd.textContent)).toEqual([
+    expect(Array.from(q('sandbox-info-token-sum')!.querySelectorAll('dd'), dd => dd.textContent)).toEqual([
       '1,012,345', '250,000', '125,000', '250,000',
     ])
+    const modelRows = q('sandbox-info-token-breakdown')!.querySelectorAll('[data-testid="sandbox-info-token-model"]')
+    expect(modelRows).toHaveLength(3)
+    expect(modelRows[0]!.textContent).toContain('first-model')
+    expect(modelRows[0]!.textContent).toContain('1,125,000')
+    expect(modelRows[1]!.textContent).toContain('含配置补全')
+    expect(modelRows[2]!.textContent).toContain('未知模型')
+    expect(modelRows[2]!.textContent).toContain('12,345')
     const signal = vi.mocked(api.getSoloTaskInfo).mock.calls[0]![1]!
     q('sandbox-info-details-toggle')!.click()
     await flushPromises()

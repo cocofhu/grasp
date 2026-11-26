@@ -3596,6 +3596,7 @@
         "details": {
           "title": "Details",
           "totalTokens": "Total tokens",
+          "modelBackfill": "Includes attribution from configuration",
           "incompleteUsage": "Usage may be incomplete",
           "workflowRuns": "Workflow runs",
           "sandbox": "Sandbox",
