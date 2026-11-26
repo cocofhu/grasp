@@ -3569,8 +3569,6 @@
           "command": "SSH 命令",
           "commandHint": "不需要任何配置，可直接在终端运行",
           "config": "可选：SSH 主机别名",
-          "configHint": "想用 ssh grasp 这样的短名字时，把下面几行加入本机 ~/.ssh/config。IDE 按钮不依赖这段配置。",
-          "timeoutHint": "如果 IDE 连接超时，把 remote.SSH.connectTimeout 调到 60 秒。",
           "hostKey": "网关主机指纹",
           "noKey": "先登记 SSH 公钥，才能从本地连接",
           "addKey": "登记公钥",
@@ -3582,17 +3580,13 @@
             "closed": "会话已关闭，不能再连接",
             "error": "环境异常，暂时不能连接"
           },
-          "openIn": "用 {ide} 打开",
-          "connectWith": "用 {ide} 连接",
-          "choose": "选择 IDE",
-          "menuTitle": "本地 IDE（Remote-SSH）",
+          "sshConnect": "SSH 连接",
           "cnEdition": "中国版",
           "info": "SSH 连接信息",
           "user": "用户名",
           "host": "主机",
           "port": "端口",
-          "path": "项目目录",
-          "jetbrainsHint": "在 JetBrains Gateway 中选择 SSH → New Connection，填写下面的用户名、主机和端口，项目目录填 /root/workspace。"
+          "path": "项目目录"
         },
         "details": {
           "title": "基本信息",

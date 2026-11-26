@@ -169,6 +169,9 @@ function toggle() {
 function onDocPointer(e: Event) {
   const target = e.target as Node | null
   if (!target || trigger.value?.contains(target) || panel.value?.contains(target)) return
+  // The IDE picker is teleported to body, so a choice inside it is outside this panel.
+  const el = target instanceof Element ? target : target.parentElement
+  if (el?.closest('[data-testid="sandbox-ide-picker-panel"], [data-testid="sandbox-ide-details"]')) return
   hide()
 }
 

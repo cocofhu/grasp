@@ -13,7 +13,7 @@ for (const theme of ['dark', 'light']) {
     const panel = await openPanel(page, `theme=${theme}`)
     await expect(page.getByTestId('sandbox-info-state')).toHaveText('运行中')
     await expect(page.getByTestId('sandbox-info-reclaim')).toContainText('后保存并暂停')
-    await expect(page.getByTestId('sandbox-ide-primary')).toHaveAttribute('href', 'vscode://vscode-remote/ssh-remote+sbx-123@ssh.grasp.example.com:2222/root/workspace')
+    await expect(page.getByTestId('sandbox-ide-picker-trigger')).toContainText('SSH 连接')
     const box = (await panel.boundingBox())!
     const trigger = (await page.getByTestId('sandbox-info-toggle').boundingBox())!
     const viewport = page.viewportSize()!
@@ -21,8 +21,9 @@ for (const theme of ['dark', 'light']) {
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 7)
     await page.screenshot({ path: test.info().outputPath(`sandbox-info-running-${theme}.png`) })
-    await page.getByTestId('sandbox-ide-caret').click()
-    const menu = page.getByTestId('sandbox-ide-list')
+    await page.getByTestId('sandbox-ide-picker-trigger').click()
+    const menu = page.getByTestId('sandbox-ide-picker-panel')
+    await expect(page.getByTestId('sandbox-ide-vscode')).toHaveAttribute('href', 'vscode://vscode-remote/ssh-remote+sbx-123@ssh.grasp.example.com:2222/root/workspace')
     await expect(menu).toBeVisible()
     for (const logo of await menu.locator('img[data-ide-logo]').all()) {
       await expect.poll(() => logo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
@@ -48,8 +49,9 @@ for (const state of ['busy', 'connected', 'paused', 'docker', 'stopped', 'error'
 
 test('paused sandbox wakes when an IDE link is used, and Escape closes the panel', async ({ page }) => {
   await openPanel(page, 'state=paused')
-  await page.getByTestId('sandbox-ide-primary').evaluate((el) => el.addEventListener('click', (e) => e.preventDefault()))
-  await page.getByTestId('sandbox-ide-primary').click()
+  await page.getByTestId('sandbox-ide-picker-trigger').click()
+  await page.getByTestId('sandbox-ide-vscode').evaluate((el) => el.addEventListener('click', (e) => e.preventDefault()))
+  await page.getByTestId('sandbox-ide-vscode').click()
   await expect(page.getByTestId('events')).toContainText('action:wake')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('sandbox-info-panel')).toBeHidden()

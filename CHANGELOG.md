@@ -6,7 +6,7 @@ All notable public-release changes are documented here.
 
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 
-- Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」菜单（带品牌图标）一键用 VS Code、Cursor、CodeBuddy、Trae（含国内版）打开沙箱，不需要配置 `~/.ssh/config`，JetBrains Gateway 则给出连接信息。
+- Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」选择 VS Code、Cursor、CodeBuddy、Trae（国际版与国内版各一行）、Antigravity 或 Codex 打开沙箱，不需要配置 `~/.ssh/config`。未选择时显示「SSH 连接」；「SSH 连接信息」在弹窗中给出用户名、主机、端口和命令。
 
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 

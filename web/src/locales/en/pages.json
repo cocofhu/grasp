@@ -3569,8 +3569,6 @@
           "command": "SSH command",
           "commandHint": "Runs in any terminal without configuration",
           "config": "Optional: SSH host alias",
-          "configHint": "To use a short name such as ssh grasp, add these lines to ~/.ssh/config on your machine. The IDE buttons do not need it.",
-          "timeoutHint": "If the IDE times out, raise remote.SSH.connectTimeout to 60 seconds.",
           "hostKey": "Gateway host fingerprint",
           "noKey": "Register an SSH public key to connect from your machine",
           "addKey": "Add key",
@@ -3582,17 +3580,13 @@
             "closed": "The session is closed",
             "error": "The environment has an error"
           },
-          "openIn": "Open in {ide}",
-          "connectWith": "Connect with {ide}",
-          "choose": "Choose IDE",
-          "menuTitle": "Local IDE (Remote-SSH)",
+          "sshConnect": "SSH connection",
           "cnEdition": "China edition",
           "info": "SSH connection details",
           "user": "User",
           "host": "Host",
           "port": "Port",
-          "path": "Project folder",
-          "jetbrainsHint": "In JetBrains Gateway choose SSH → New Connection, enter the user, host and port below, and use /root/workspace as the project folder."
+          "path": "Project folder"
         },
         "details": {
           "title": "Details",
