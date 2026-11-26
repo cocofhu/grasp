@@ -3540,31 +3540,38 @@
           "creating": "Creating the environment"
         },
         "action": {
-          "stop": "Stop environment",
+          "stop": "Save and stop…",
           "wake": "Wake",
           "resume": "Resume",
           "restart": "Start again",
           "stopBusy": "The Agent is working or messages are queued; stop is unavailable for now"
         },
         "lifecycle": {
-          "title": "Lifecycle",
-          "kind": "Environment",
-          "kindSnapshot": "E2B (saved and paused when idle)",
-          "kindFiles": "Docker / Kubernetes (never reclaimed for idling)",
-          "reclaim": "Idle reclaim",
-          "countdown": "Saved and paused in {time}",
+          "kindSnapshot": "E2B",
+          "kindFiles": "Docker / Kubernetes",
+          "autoPause": "Auto-pause",
+          "idlePolicy": "Idle policy",
+          "countdown": "In {time}",
+          "duration": {
+            "hours": "{hours}h {minutes}m",
+            "minutes": "{minutes}m {seconds}s",
+            "seconds": "{seconds}s"
+          },
           "soon": "Saving and pausing soon",
-          "exempt": "Never reclaimed; only a manual stop releases it",
-          "keptAlive": "Kept running; never reclaimed",
-          "connected": "Local IDE connected; countdown paused",
+          "exempt": "Stays running",
+          "keptAlive": "Off",
+          "connected": "Timer paused",
+          "savesBeforePause": "Saves the environment first",
+          "connectPausesTimer": "Local IDE connections pause the timer",
+          "afterDisconnect": "Timer restarts after all disconnect",
+          "afterTurn": "Starts when work finishes",
           "keepAlive": "Keep running",
           "lastModel": "Last model activity",
-          "lastModelHint": "Only Agent turns reset the idle countdown; opening the IDE or terminal does not",
-          "backup": "Last backup"
+          "lastModelHint": "Idle time starts when the model turn ends and the queue is empty",
+          "backup": "Last saved"
         },
         "ide": {
-          "title": "Local IDE",
-          "connections": "{n} open connections",
+          "connections": "{n} local IDE connection | {n} local IDE connections",
           "pausedHint": "The sandbox is paused and wakes when you connect; this can take tens of seconds.",
           "command": "SSH command",
           "commandHint": "Runs in any terminal without configuration",

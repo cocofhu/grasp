@@ -8,6 +8,8 @@ All notable public-release changes are documented here.
 
 - Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」选择 VS Code、Cursor、CodeBuddy、Trae（国际版与国内版各一行）、Antigravity 或 Codex 打开沙箱，不需要配置 `~/.ssh/config`。未选择时显示「SSH 连接」；「SSH 连接信息」在弹窗中给出用户名、主机、端口和命令。
 
+- 精简 Solo 沙箱信息面板，将紧凑的 SSH 选择器和浏览器 IDE 放在同一行。自动暂停、保持运行和最近保存按行对齐，仓库、工作目录和最近模型活动可以从「基本信息」展开。
+
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 
 - Docker/K8s 沙箱不再在模型回合结束 6 小时后自动保存并释放，开发服务器和后台进程会一直运行，直到手动停止、关闭会话或取消运行；空闲回收和倒计时只用于 E2B。这类会话和运行的侧栏菜单不再显示「永不自动回收」。注意空闲的 Docker/K8s 环境会一直占用 `sandbox.max_sandboxes` 名额。

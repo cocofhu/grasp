@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import SoloPickerShell from '@/components/solo/SoloPickerShell.vue'
@@ -27,8 +27,6 @@ const { t } = useI18n()
 const preferred = ref<PreferredIDE | null>(loadPreferredIDE())
 const showInfo = ref(false)
 const dialog = ref<HTMLElement | null>(null)
-const panelWidth = ref(320)
-const root = ref<HTMLElement | null>(null)
 const copied = ref('')
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -74,14 +72,6 @@ watch(showInfo, async (open) => {
   dialog.value?.focus()
 })
 
-function syncWidth() {
-  const trigger = root.value?.querySelector('.solo-picker__trigger')
-  const width = trigger?.getBoundingClientRect().width
-  if (width && width > 0) panelWidth.value = Math.round(width)
-}
-
-onMounted(syncWidth)
-
 async function copy(key: string, text: string) {
   if (!(await copyToClipboard(text))) return
   copied.value = key
@@ -102,17 +92,16 @@ const infoRows = computed(() => [
 </script>
 
 <template>
-  <div ref="root" class="ide-menu-root" data-testid="sandbox-ide-menu">
+  <div class="ide-menu-root" data-testid="sandbox-ide-menu">
     <SoloPickerShell
       class="ide-picker"
       :label="triggerLabel"
       test-id="sandbox-ide-picker"
-      :panel-width="panelWidth"
-      @open="syncWidth"
+      :panel-width="224"
     >
       <template #trigger>
-        <IdeLogo v-if="preferred" :ide="preferred.id" :size="16" />
-        <Icon v-else name="terminal" :size="16" :interactive="false" class="shrink-0 text-txt2" />
+        <IdeLogo v-if="preferred" :ide="preferred.id" :size="14" />
+        <Icon v-else name="terminal" :size="14" :interactive="false" class="shrink-0" />
       </template>
       <template #default="{ close }">
         <component
@@ -198,13 +187,20 @@ const infoRows = computed(() => [
 </template>
 
 <style scoped>
-.ide-menu-root { display: flex; flex-direction: column; gap: 8px; }
-.ide-picker.solo-picker { max-width: none; width: 100%; }
+.ide-menu-root { display: flex; max-width: 100%; }
+.ide-picker.solo-picker { max-width: 100%; }
 .ide-picker :deep(.solo-picker__trigger) {
-  height: 34px;
-  border-radius: 8px;
-  background: rgb(var(--c-surface));
-  font-size: 13px;
+  height: 28px;
+  padding-inline: 7px;
+  border-color: rgb(var(--c-line));
+  border-radius: 7px;
+  background: rgb(var(--c-base));
+  color: rgb(var(--c-txt));
+}
+.ide-picker :deep(.solo-picker__trigger:hover),
+.ide-picker :deep(.solo-picker__trigger[aria-expanded="true"]) {
+  border-color: rgb(var(--c-line-strong));
+  background: rgb(var(--c-elevated));
 }
 .ide-dialog-layer { position: fixed; z-index: 80; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .ide-dialog-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .55); backdrop-filter: blur(6px); }

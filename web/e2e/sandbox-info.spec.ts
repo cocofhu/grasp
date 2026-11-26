@@ -11,20 +11,35 @@ async function openPanel(page: import('@playwright/test').Page, query: string) {
 for (const theme of ['dark', 'light']) {
   test(`running sandbox panel stays inside the viewport under its trigger (${theme})`, async ({ page }) => {
     const panel = await openPanel(page, `theme=${theme}`)
+    await expect(panel.getByRole('heading', { name: 'grasp-solo-7f3a' })).toHaveCSS('color', await panel.evaluate(el => getComputedStyle(el).color))
     await expect(page.getByTestId('sandbox-info-state')).toHaveText('运行中')
-    await expect(page.getByTestId('sandbox-info-reclaim')).toContainText('后保存并暂停')
-    await expect(page.getByTestId('sandbox-ide-picker-trigger')).toContainText('SSH 连接')
+    await expect(page.getByTestId('sandbox-info-reclaim')).toHaveText(/\d+ 小时 \d+ 分钟后/)
+    await expect(page.getByTestId('sandbox-info-lifecycle')).toContainText('到期先保存环境')
+    const picker = page.getByTestId('sandbox-ide-picker-trigger')
+    await expect(picker).toContainText('SSH 连接')
+    const pickerBox = (await picker.boundingBox())!
+    const browserIde = (await page.getByTestId('sandbox-info-web-ide').boundingBox())!
+    expect(pickerBox.height).toBe(28)
+    expect(browserIde.x).toBeGreaterThan(pickerBox.x + pickerBox.width)
+    expect(browserIde.y).toBeCloseTo(pickerBox.y, 1)
     const box = (await panel.boundingBox())!
     const trigger = (await page.getByTestId('sandbox-info-toggle').boundingBox())!
     const viewport = page.viewportSize()!
     expect(box.y).toBeGreaterThan(trigger.y + trigger.height)
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 7)
-    await page.screenshot({ path: test.info().outputPath(`sandbox-info-running-${theme}.png`) })
-    await page.getByTestId('sandbox-ide-picker-trigger').click()
+    const details = page.getByTestId('sandbox-info-details')
+    await expect(details).toBeHidden()
+    await panel.screenshot({ path: test.info().outputPath(`sandbox-info-running-${theme}.png`) })
+    await page.getByTestId('sandbox-info-details-toggle').click()
+    await expect(details).toBeVisible()
+    await expect(details).toContainText('/root/workspace')
+    await page.getByTestId('sandbox-info-details-toggle').click()
+    await picker.click()
     const menu = page.getByTestId('sandbox-ide-picker-panel')
     await expect(page.getByTestId('sandbox-ide-vscode')).toHaveAttribute('href', 'vscode://vscode-remote/ssh-remote+sbx-123@ssh.grasp.example.com:2222/root/workspace')
     await expect(menu).toBeVisible()
+    expect((await menu.boundingBox())!.width).toBeGreaterThan(pickerBox.width)
     for (const logo of await menu.locator('img[data-ide-logo]').all()) {
       await expect.poll(() => logo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
     }
