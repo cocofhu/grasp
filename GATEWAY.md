@@ -102,9 +102,11 @@ Grasp's loopback only; these local endpoint addresses are for the server. The
 browser continues using Grasp's existing links and session authorization.
 
 For a single existing gateway, set `GRASP_SANDBOX_GATEWAY_TRANSPORT=gateway`
-and `GRASP_SANDBOX_GATEWAY_API_KEY`. Gateway transport automatically marks
-endpoints private for every driver: previews are served through the Grasp
-`/preview/...` path proxy and no extra preview domain is needed.
+and `GRASP_SANDBOX_GATEWAY_API_KEY`. Gateway transport keeps path-proxy
+hardening enabled automatically; browser new-tab exposure is controlled per
+connection by `preview.expose` / `preview_expose` (`auto` falls back to `none`
+when no `subdomain.base_url` is configured, so no extra preview domain is
+required unless you opt in to wildcard-subdomain previews).
 `server.mcp_advertise` must remain reachable **from inside the sandbox** for
 runtime/config bundles, artifacts, MCP and callbacks; the data tunnel does not
 replace that route.

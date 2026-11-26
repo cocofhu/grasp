@@ -44,6 +44,8 @@ services:
       GRASP_PUBLIC_ADVERTISE: ${GRASP_PUBLIC_ADVERTISE:?Set the browser-facing HTTPS origin}
       GRASP_MCP_ADVERTISE: ${GRASP_MCP_ADVERTISE:?Set the sandbox-reachable callback origin}
       GRASP_SANDBOX_PRIVATE_ENDPOINTS: "true"
+      # Optional: enable wildcard-subdomain new-tab previews (requires wildcard DNS + TLS cert on a separate root domain in production).
+      # GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL: ${GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL:-}
       GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY}
       # Optional override; empty means use the gateway/template default.

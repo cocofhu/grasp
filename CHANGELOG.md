@@ -20,6 +20,8 @@ All notable public-release changes are documented here.
 
 - E2B 沙箱启动失败时，错误信息现在附带启动日志的最后 20 行（敏感值已脱敏），例如仓库 clone 的权限错误，不再只显示「E2B bootstrap exited with code 1」。沙箱日志里 `1`、`0` 等短值不再被误替换成 `[redacted]`。需要更新 sandbox-gateway 镜像。
 
+- E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
+
 ## 4.0.4 — 2026-11-24
 
 - 对话回复、产物预览和节点输出里的 ` ```mermaid ` 代码块现在绘制成图，跟随深色/浅色主题切换重绘；流式输出时代码块闭合后才出图，语法错误时保留源码。过宽的图不再缩到看不清，改为在卡片内横向滚动；同时加深了图中连线与节点边框颜色，方案页的图也随之更清晰。

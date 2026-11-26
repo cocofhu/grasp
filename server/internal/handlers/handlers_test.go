@@ -25,6 +25,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp/mcptest"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -50,13 +51,14 @@ func (fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history
 }
 
 type harness struct {
-	r      *gin.Engine
+	r      http.Handler
 	h      *handlers.Handlers
 	db     *gorm.DB
 	host   *mcp.Host
 	auth   *auth.Service
 	cookie string
 	fg     *sandboxtest.FakeGateway
+	mgr    *sandbox.Manager
 }
 
 // runToken persists a fresh MCP token on an existing workflow run, the token
@@ -80,6 +82,13 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 	}
 	arts := services.NewArtifactService(db)
 	host := mcp.NewHost(arts)
+	exposePolicy, _, err := previewexpose.NewPolicy(previewexpose.PolicyOptions{
+		Connections: []previewexpose.ConnSpec{{Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatalf("preview expose policy: %v", err)
+	}
+	host.SetPreviewExposePolicy(exposePolicy)
 	profilesRoot := t.TempDir()
 	skills := services.NewAgentService(profilesRoot)
 	fg := sandboxtest.New(t)
@@ -166,10 +175,11 @@ func newHarness(t *testing.T, providers ...runtime.ExecProvider) *harness {
 		GateShareSessions: gateShareSessions,
 		GateShareLimiter:  gateshare.NewIPLimiter(),
 		Embed:             embedStore,
+		PreviewExpose:     exposePolicy,
 	}
 	h.Onboarding.Projects = services.NewProjectService(db)
 	h.Onboarding.Projects.SetGitCredentialResolver(h.Onboarding.Credentials.ResolveGitValue)
-	hn := &harness{r: router.New(h), h: h, db: db, host: host, auth: authSvc, fg: fg}
+	hn := &harness{r: router.New(h), h: h, db: db, host: host, auth: authSvc, fg: fg, mgr: mgr}
 	hn.cookie = hn.login(t)
 	return hn
 }

@@ -30,6 +30,17 @@ server:
   # DinD/本地请留空以使用 host.docker.internal。
   mcp_advertise: ""
 
+# 浏览器预览暴露策略（全局默认，可在各网关连接上单独覆盖）。
+# strategy: auto（默认）| subdomain | none（direct 仅限直连网关在连接级配置）。
+# 私有网关（gateway 通道或 private_endpoints: true）配置了 subdomain.base_url 后
+# 会签发随机子域名作为 DirectURL（支持新标签打开、取点、浮动对话与分享）；未配置时
+# 保持仅 noVNC。production 模式要求 https 且与 public_advertise 分属不同根域。
+preview:
+  expose:
+    strategy: auto
+    subdomain:
+      base_url: ""
+
 database:
   # SQLite 路径(":memory:" 用于测试)。容器内通常用 /data/grasp.db(挂持久卷)。
   path: "grasp.db"
@@ -44,11 +55,16 @@ sandbox:
   gateway_url: http://127.0.0.1:8899
   # 通过 GRASP_SANDBOX_GATEWAY_API_KEY 注入与网关 auth.apiKeys 匹配的 key。
   gateway_api_key: ""
-  # 默认 direct。gateway 通道要求网关 API key；预览走 Grasp /preview/...
-  # 路径代理，无需独立预览域名。沙箱仍须能访问 mcp_advertise。
+  # 默认 direct。gateway 通道要求网关 API key；预览暴露由 preview.expose / 连接级
+  # preview_expose 决定（未配子域名基址时保持仅 noVNC）。沙箱仍须能访问 mcp_advertise。
   gateway_transport: direct
-  # gateway 通道自动启用；同机 E2B direct 部署也应显式启用。
+  # 仅表示用户显式意图，不再因 gateway 通道自动覆盖；只影响 auto 策略展开。
   private_endpoints: false
+  # 传统主连接的可选预览暴露覆盖（省略则继承全局 preview.expose）。
+  # preview_expose:
+  #   strategy: subdomain
+  #   subdomain:
+  #     base_url: https://preview.other-site.example.com
   # 命名网关用于新增后端；默认网关只影响新沙箱，已有沙箱保留原绑定。
   # 网关连接/默认值修改后重启 Grasp。完整示例见根目录 GATEWAY.md。
   gateways: []

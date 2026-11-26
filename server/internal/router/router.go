@@ -15,13 +15,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// New builds the gin engine with all routes registered.
-func New(h *handlers.Handlers) *gin.Engine {
+// New builds the platform gin engine with all routes registered, behind the
+// preview host split: preview hosts are a separate trust boundary.
+func New(h *handlers.Handlers) http.Handler {
+	return h.PreviewExposeRouter(newPlatform(h))
+}
+
+func newPlatform(h *handlers.Handlers) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(errorLogger())
-	// Private preview hosts are a separate trust boundary. Intercept them
-	// before CORS, static files and API routes, including unknown tickets.
 	r.Use(cors())
 	// Trust common private-network proxies so ClientIP reads X-Forwarded-For
 	// correctly behind K8s Ingress.

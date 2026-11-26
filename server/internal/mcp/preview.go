@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/rs/zerolog/log"
 )
 
@@ -34,6 +35,10 @@ type PreviewPort struct {
 	Host string `json:"-"`
 	// InjectorPort is the published upstream when it differs from the app port.
 	InjectorPort int `json:"-"`
+	// ExposeStrategy is the persisted resolved preview exposure strategy (never "auto").
+	ExposeStrategy string `json:"-"`
+	// ExposeKey is the persisted opaque route key for inbound exposure strategies.
+	ExposeKey string `json:"-"`
 	// Mode is "direct" for an IP-direct preview; empty/vnc otherwise.
 	Mode string `json:"mode,omitempty"`
 	// DirectURL is the browser-facing http://IP:port/ when Mode=direct.
@@ -73,6 +78,18 @@ type PreviewSandboxOps interface {
 // previewDirectChecker is optionally implemented by PreviewSandboxOps.
 type previewDirectChecker interface {
 	DirectPreview(runID, nodeID string) bool
+}
+
+// previewConnectionResolver is optionally implemented by PreviewSandboxOps to
+// identify the owning gateway connection for a sandbox.
+type previewConnectionResolver interface {
+	PreviewConnection(sandboxName string) (connID string, ok bool)
+}
+
+// previewExposeKeyStore is optionally implemented by PreviewStore to look up a
+// registration by its opaque inbound expose key.
+type previewExposeKeyStore interface {
+	PreviewByExposeKey(key string) (*PreviewPort, error)
 }
 
 // previewListenInspector is optionally implemented to report which local
@@ -240,19 +257,26 @@ func (h *Host) SetPreviewBaseURL(base string) {
 	h.mu.Unlock()
 }
 
-// SetPrivateEndpoints marks gateway endpoints as server-only. Previews are
-// then served through the path proxy and never expose a direct link.
-func (h *Host) SetPrivateEndpoints(private bool) {
+// SetPreviewProxyHardening enables generation, upstream-port, and reserved-header
+// checks on the path preview proxy and public preview-api proxy.
+func (h *Host) SetPreviewProxyHardening(enabled bool) {
 	h.mu.Lock()
-	h.privateEndpoints = private
+	h.previewProxyHardening = enabled
 	h.mu.Unlock()
 }
 
-// PrivateEndpoints reports whether gateway endpoints are server-only.
-func (h *Host) PrivateEndpoints() bool {
+// PreviewProxyHardening reports whether path preview proxy hardening is enabled.
+func (h *Host) PreviewProxyHardening() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.privateEndpoints
+	return h.previewProxyHardening
+}
+
+// SetPreviewExposePolicy wires the per-connection preview exposure policy.
+func (h *Host) SetPreviewExposePolicy(p *previewexpose.Policy) {
+	h.mu.Lock()
+	h.previewExpose = p
+	h.mu.Unlock()
 }
 
 // SetPreviewStore wires DB persistence for preview ports.
@@ -284,12 +308,20 @@ func (h *Host) PreviewKeepalivePID(runID, nodeID string) int {
 
 // ActivePreview returns the active preview for a run/node.
 func (h *Host) ActivePreview(runID, nodeID string) (PreviewPort, bool) {
+	raw, ok := h.activePreviewRaw(runID, nodeID)
+	if !ok {
+		return PreviewPort{}, false
+	}
+	return h.annotatePreviewTransport(raw), true
+}
+
+func (h *Host) activePreviewRaw(runID, nodeID string) (PreviewPort, bool) {
 	h.mu.RLock()
 	mem, hasMem := h.previewMem[previewKey(runID, nodeID)]
 	store := h.previewStore
 	h.mu.RUnlock()
 	if hasMem {
-		return h.annotatePreviewTransport(mem), true
+		return mem, true
 	}
 	if store == nil {
 		return PreviewPort{}, false
@@ -298,6 +330,36 @@ func (h *Host) ActivePreview(runID, nodeID string) (PreviewPort, bool) {
 	if err != nil {
 		log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 			Msg("load active preview from store failed")
+		return PreviewPort{}, false
+	}
+	if stored == nil {
+		return PreviewPort{}, false
+	}
+	return *stored, true
+}
+
+// PreviewByExposeKey looks up the active preview registration bound to key.
+func (h *Host) PreviewByExposeKey(key string) (PreviewPort, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return PreviewPort{}, false
+	}
+	h.mu.RLock()
+	store := h.previewStore
+	for _, candidate := range h.previewMem {
+		if candidate.ExposeKey == key {
+			h.mu.RUnlock()
+			return h.annotatePreviewTransport(candidate), true
+		}
+	}
+	h.mu.RUnlock()
+	keyStore, ok := store.(previewExposeKeyStore)
+	if !ok || keyStore == nil {
+		return PreviewPort{}, false
+	}
+	stored, err := keyStore.PreviewByExposeKey(key)
+	if err != nil {
+		log.Warn().Err(err).Msg("load preview by expose key failed")
 		return PreviewPort{}, false
 	}
 	if stored == nil {
@@ -464,7 +526,7 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, port); ok && base != "" {
 		host = base
 	}
-	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, 0, label, host, keepalivePID)
+	reg, err := h.savePreviewPort(ctx, ops, runID, nodeID, sandboxName, port, 0, label, host, keepalivePID)
 	if err != nil {
 		if sw.Result == InjectReset {
 			h.restorePreviousInjectUpstream(ctx, switcher, sandboxName, sw.PreviewPort, previous)
@@ -473,11 +535,19 @@ func (h *Host) setPreviewPort(runID, nodeID string, port int, label string) (Pre
 	}
 	if direct {
 		reg.Picked = sw.Result == InjectReset
+		var injectNote string
 		switch sw.Result {
 		case InjectBusy:
-			reg.Note = fmt.Sprintf("$PREVIEW_PORT(=%d) 当前无法切换，端口 %d 的活动预览不会注入取点脚本；需要取点时请把服务开在 $PREVIEW_PORT", sw.PreviewPort, port)
+			injectNote = fmt.Sprintf("$PREVIEW_PORT(=%d) 当前无法切换，端口 %d 的活动预览不会注入取点脚本；需要取点时请把服务开在 $PREVIEW_PORT", sw.PreviewPort, port)
 		case InjectUnsupported:
-			reg.Note = fmt.Sprintf("沙箱的预览注入代理不支持切换端口（运行时较旧），端口 %d 的活动预览可能没有取点；需要取点请把服务开在 $PREVIEW_PORT", port)
+			injectNote = fmt.Sprintf("沙箱的预览注入代理不支持切换端口（运行时较旧），端口 %d 的活动预览可能没有取点；需要取点请把服务开在 $PREVIEW_PORT", port)
+		}
+		if injectNote != "" {
+			if reg.Note != "" {
+				reg.Note = injectNote + "；" + reg.Note
+			} else {
+				reg.Note = injectNote
+			}
 		}
 	}
 	return reg, nil
@@ -508,7 +578,7 @@ func (h *Host) registerSwitchedPreview(ctx context.Context, ops PreviewSandboxOp
 	if base, ok := ops.PreviewUpstream(ctx, sandboxName, previewPort); ok && base != "" {
 		host = base
 	}
-	reg, err := h.savePreviewPort(ops, runID, nodeID, sandboxName, port, previewPort, label, host, keepalivePID)
+	reg, err := h.savePreviewPort(ctx, ops, runID, nodeID, sandboxName, port, previewPort, label, host, keepalivePID)
 	if err != nil {
 		h.restorePreviousInjectUpstream(ctx, sw, sandboxName, previewPort, previous)
 		return PreviewRegistration{}, err
@@ -555,16 +625,44 @@ func (h *Host) keepalivePreview(ctx context.Context, ops PreviewSandboxOps, runI
 	return keepalivePID, nil
 }
 
-func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, label, host string, keepalivePID int) (PreviewRegistration, error) {
+func (h *Host) savePreviewPort(ctx context.Context, ops PreviewSandboxOps, runID, nodeID, sandboxName string, port, injectorPort int, label, host string, keepalivePID int) (PreviewRegistration, error) {
 	h.mu.RLock()
 	store := h.previewStore
-	private := h.privateEndpoints
 	h.mu.RUnlock()
+
+	displaced := h.displacedPreviews(runID, nodeID, sandboxName)
+	exp := h.previewExposer(sandboxName)
+	target := previewexpose.Target{Upstream: host}
+
+	var binding previewexpose.Binding
+	reused := false
+	for _, old := range displaced {
+		if old.SandboxName == sandboxName && old.Port == port &&
+			old.ExposeStrategy == exp.Name() && old.ExposeKey != "" {
+			binding = previewexpose.Binding{Strategy: old.ExposeStrategy, Key: old.ExposeKey}
+			reused = true
+			break
+		}
+	}
+	var bindNote string
+	if !reused {
+		var err error
+		binding, err = exp.Bind(ctx, target)
+		if err != nil {
+			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
+				Str("sandbox", sandboxName).Str("strategy", exp.Name()).
+				Msg("preview expose bind failed; degrading to none")
+			binding = previewexpose.Binding{Strategy: previewexpose.StrategyNone}
+			bindNote = "预览独立入口绑定失败，已降级为仅远程桌面预览"
+		}
+	}
+
 	proxyURL := h.previewProxyURL(runID, nodeID, port)
 	rec := PreviewPort{
 		RunID: runID, NodeID: nodeID, Kind: PreviewKindPort,
 		Port: port, Label: strings.TrimSpace(label),
-		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort, Healthy: true,
+		ProxyURL: proxyURL, SandboxName: sandboxName, Host: host, InjectorPort: injectorPort,
+		ExposeStrategy: binding.Strategy, ExposeKey: binding.Key, Healthy: true,
 		KeepalivePID: keepalivePID, RegisteredAt: time.Now(),
 	}
 	if store != nil {
@@ -575,15 +673,36 @@ func (h *Host) savePreviewPort(ops PreviewSandboxOps, runID, nodeID, sandboxName
 	h.mu.Lock()
 	h.replacePreviewMem(rec)
 	h.mu.Unlock()
+
 	// IP-direct only adds a new-tab link; the VNC desktop shows the app either way.
 	if desk, ok := ops.(PreviewDesktop); ok {
 		desk.ShowPreviewOnDesktop(sandboxName, port)
 	}
-	reg := PreviewRegistration{ProxyURL: proxyURL}
-	if h.previewDirect(runID, nodeID) && host != "" && !private {
-		reg.PublicURL = strings.TrimRight(host, "/") + "/"
+	reg := PreviewRegistration{ProxyURL: proxyURL, Note: bindNote}
+	if h.previewDirect(runID, nodeID) {
+		reg.PublicURL = exp.URL(target, binding)
 	}
 	return reg, nil
+}
+
+func (h *Host) displacedPreviews(runID, nodeID, sandboxName string) []PreviewPort {
+	var out []PreviewPort
+	if sb := h.sandboxPreview(sandboxName); sb != nil {
+		out = append(out, *sb)
+	}
+	if nodePrev, ok := h.activePreviewRaw(runID, nodeID); ok {
+		dup := false
+		for _, existing := range out {
+			if existing.RunID == nodePrev.RunID && existing.NodeID == nodePrev.NodeID && existing.SandboxName == nodePrev.SandboxName {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, nodePrev)
+		}
+	}
+	return out
 }
 
 func (h *Host) setPreviewURL(runID, nodeID, rawURL, label string) (string, error) {
@@ -670,16 +789,32 @@ func (h *Host) previewDirect(runID, nodeID string) bool {
 	return ok && c.DirectPreview(runID, nodeID)
 }
 
+func (h *Host) previewExposer(sandboxName string) previewexpose.Exposer {
+	h.mu.RLock()
+	policy := h.previewExpose
+	ops := h.previewOps
+	h.mu.RUnlock()
+	res, ok := ops.(previewConnectionResolver)
+	if !ok || strings.TrimSpace(sandboxName) == "" {
+		return previewexpose.None()
+	}
+	connID, known := res.PreviewConnection(sandboxName)
+	return policy.For(connID, known)
+}
+
 func (h *Host) annotatePreviewTransport(p PreviewPort) PreviewPort {
 	if !h.previewDirect(p.RunID, p.NodeID) {
 		return p
 	}
-	h.mu.RLock()
-	private := h.privateEndpoints
-	h.mu.RUnlock()
 	p.Mode = "direct"
-	if p.Host != "" && !private {
-		p.DirectURL = strings.TrimRight(p.Host, "/") + "/"
+	exp := h.previewExposer(p.SandboxName)
+	// A registration bound under another strategy waits for the next
+	// set_preview. Rows from before #1368 carry no strategy; only the
+	// stateless direct exposer can serve them, from Host alone.
+	if p.ExposeStrategy != "" && p.ExposeStrategy != exp.Name() {
+		return p
 	}
+	binding := previewexpose.Binding{Strategy: p.ExposeStrategy, Key: p.ExposeKey}
+	p.DirectURL = exp.URL(previewexpose.Target{Upstream: p.Host}, binding)
 	return p
 }

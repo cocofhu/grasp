@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/rs/zerolog/log"
 )
 
@@ -126,11 +127,12 @@ type Host struct {
 	// Nil ⇒ no fallback. See ActiveCaps.
 	activeSrc ActiveNodeSource
 	// The active preview registration for each run/node, keyed runID|nodeID.
-	previewMem       map[string]PreviewPort
-	previewBase      string
-	privateEndpoints bool
-	previewStore     PreviewStore
-	previewOps       PreviewSandboxOps
+	previewMem            map[string]PreviewPort
+	previewBase           string
+	previewProxyHardening bool
+	previewExpose         *previewexpose.Policy
+	previewStore          PreviewStore
+	previewOps            PreviewSandboxOps
 	// previewLocks serializes preview replacement per node and sandbox. Switching
 	// the injector and writing the single active registration must not interleave.
 	previewLocks map[string]*sync.Mutex

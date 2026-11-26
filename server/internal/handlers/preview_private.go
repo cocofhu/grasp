@@ -9,11 +9,10 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 )
 
-// privateEndpoints reports whether sandbox endpoints are reachable only from
-// this server (gateway transport or private E2B). The path proxies then add
-// the checks a published loopback port needs.
-func (h *Handlers) privateEndpoints() bool {
-	return h.MCP != nil && h.MCP.PrivateEndpoints()
+// previewProxyHardening reports whether path preview proxy hardening is enabled
+// (gateway transport or explicit sandbox.private_endpoints).
+func (h *Handlers) previewProxyHardening() bool {
+	return h.MCP != nil && h.MCP.PreviewProxyHardening()
 }
 
 // privatePreviewBound rejects registrations from an older sandbox generation:

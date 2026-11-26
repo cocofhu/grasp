@@ -41,7 +41,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 			provider := &heldPreviewProvider{started: make(chan string, 2), release: make(chan struct{})}
 			defer close(provider.release)
 			hn := newHarness(t, provider)
-			hn.h.Preview = services.NewPreviewService(hn.db, nil)
+			hn.h.Preview = services.NewPreviewService(hn.db, hn.mgr)
 			hn.h.Preview.SetAgents(hn.h.Agents)
 			hn.host.SetPreviewStore(hn.h.Preview)
 			hn.host.SetPreviewSandboxOps(hn.h.Preview)
@@ -161,7 +161,7 @@ func TestAppPreviewShareModesAndProxyScope(t *testing.T) {
 					t.Fatalf("owner drawer token reached another node: %d", w.Code)
 				}
 			}
-			if err := hn.h.Preview.ReplacePreview(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, Host: app.URL, Healthy: true}); err != nil {
+			if err := hn.h.Preview.ReplacePreview(mcp.PreviewPort{RunID: runID, NodeID: nodeID, Port: 8080, SandboxName: sb.Name, Host: app.URL, Healthy: true}); err != nil {
 				t.Fatal(err)
 			}
 			if w := hn.do(http.MethodPost, manage, map[string]any{"port": 9999, "chatMode": "isolated"}); w.Code != http.StatusNotFound {

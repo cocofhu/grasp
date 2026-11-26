@@ -20,7 +20,7 @@ const embedDirectURL = "http://127.0.0.1:18080/"
 
 func seedDirectPreview(t *testing.T, hn *harness, runID, nodeID string) {
 	t.Helper()
-	preview := services.NewPreviewService(hn.db, nil)
+	preview := services.NewPreviewService(hn.db, hn.mgr)
 	hn.h.Preview = preview
 	hn.host.SetPreviewStore(preview)
 	hn.host.SetPreviewSandboxOps(preview)
@@ -36,7 +36,7 @@ func seedDirectPreview(t *testing.T, hn *harness, runID, nodeID string) {
 		t.Fatal(err)
 	}
 	if err := preview.ReplacePreview(mcp.PreviewPort{
-		RunID: runID, NodeID: nodeID, Port: 18080, Label: "Direct",
+		RunID: runID, NodeID: nodeID, Port: 18080, Label: "Direct", SandboxName: "sb-" + runID + "-" + nodeID,
 		Host: strings.TrimRight(embedDirectURL, "/"), Healthy: true, RegisteredAt: time.Now(),
 		Mode: "direct", DirectURL: embedDirectURL,
 	}); err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/previewexpose"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/sandbox/sandboxtest"
 )
@@ -188,6 +189,13 @@ func TestPreviewServiceSoloSetPreview(t *testing.T) {
 	host := mcp.NewHost(NewArtifactService(db))
 	host.SetPreviewStore(svc)
 	host.SetPreviewSandboxOps(svc)
+	exposePolicy, _, err := previewexpose.NewPolicy(previewexpose.PolicyOptions{
+		Connections: []previewexpose.ConnSpec{{Transport: "direct"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.SetPreviewExposePolicy(exposePolicy)
 	host.AddScopeSource(SandboxScopes(db, agents))
 	const runID = "solo-current-generation"
 	token := mcp.NewToken()
