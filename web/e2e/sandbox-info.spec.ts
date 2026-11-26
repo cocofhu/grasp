@@ -14,7 +14,7 @@ for (const theme of ['dark', 'light']) {
     await expect(panel.getByRole('heading', { name: 'grasp-solo-7f3a' })).toHaveCSS('color', await panel.evaluate(el => getComputedStyle(el).color))
     await expect(page.getByTestId('sandbox-info-state')).toHaveText('运行中')
     await expect(page.getByTestId('sandbox-info-reclaim')).toHaveText(/\d+ 小时 \d+ 分钟后/)
-    await expect(page.getByTestId('sandbox-info-lifecycle')).toContainText('到期先保存环境')
+    await expect(page.getByTestId('sandbox-info-lifecycle')).not.toContainText(/到期先保存环境|本地 IDE 连接期间暂停计时/)
     const picker = page.getByTestId('sandbox-ide-picker-trigger')
     await expect(picker).toContainText('SSH 连接')
     const pickerBox = (await picker.boundingBox())!

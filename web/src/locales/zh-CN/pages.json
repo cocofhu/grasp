@@ -3561,8 +3561,6 @@
           "exempt": "持续运行",
           "keptAlive": "已关闭",
           "connected": "计时已暂停",
-          "savesBeforePause": "到期先保存环境",
-          "connectPausesTimer": "本地 IDE 连接期间暂停计时",
           "afterDisconnect": "全部断开后重新计时",
           "afterTurn": "任务结束后计时",
           "keepAlive": "保持运行",

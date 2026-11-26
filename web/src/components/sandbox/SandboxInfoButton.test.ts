@@ -105,7 +105,7 @@ describe('SandboxInfoButton', () => {
     expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(q('sandbox-info-state')!.textContent).toBe('运行中')
     expect(q('sandbox-info-reclaim')!.textContent).toMatch(/^\d+ 小时 \d+ 分钟后$/)
-    expect(q('sandbox-info-lifecycle')!.textContent).toContain('到期先保存环境')
+    expect(q('sandbox-info-lifecycle')!.textContent).not.toContain('到期先保存环境')
     expect(panel.querySelector('h2')!.textContent).toBe('grasp-solo-7f3a')
     expect(panel.textContent).toContain('#12')
     expect(q('sandbox-info-web-ide')!.getAttribute('href')).toBe('/sandbox/12/?folder=/root/workspace')

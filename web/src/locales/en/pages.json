@@ -3561,8 +3561,6 @@
           "exempt": "Stays running",
           "keptAlive": "Off",
           "connected": "Timer paused",
-          "savesBeforePause": "Saves the environment first",
-          "connectPausesTimer": "Local IDE connections pause the timer",
           "afterDisconnect": "Timer restarts after all disconnect",
           "afterTurn": "Starts when work finishes",
           "keepAlive": "Keep running",

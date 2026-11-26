@@ -322,10 +322,6 @@ function onIDELaunch() {
                 <span data-testid="sandbox-info-connections">{{ t('pages.solo.sandboxInfo.ide.connections', lifecycle.connections) }}</span>
                 <template v-if="lifecycle.reclaim === 'connected' && environmentRunning"> · {{ t('pages.solo.sandboxInfo.lifecycle.afterDisconnect') }}</template>
               </p>
-              <p v-else-if="duration" class="sandbox-info-note">
-                {{ t('pages.solo.sandboxInfo.lifecycle.savesBeforePause') }}
-                <template v-if="canUseSSH"> · {{ t('pages.solo.sandboxInfo.lifecycle.connectPausesTimer') }}</template>
-              </p>
             </div>
             <label v-if="keepAliveVisible" class="sandbox-info-runtime-row">
               <span class="sandbox-info-row-label">{{ t('pages.solo.sandboxInfo.lifecycle.keepAlive') }}</span>
