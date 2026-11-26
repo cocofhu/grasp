@@ -315,14 +315,16 @@ func (s *SandboxService) DialSSH(ctx context.Context, id uint) (*ssh.Client, fun
 	if s.mgr == nil || row.Name == "" {
 		return nil, nil, errors.New("沙箱尚未就绪")
 	}
-	if err := s.soloStoppedByUser(row, true); err != nil {
-		return nil, nil, err
-	}
 	unlock, err := s.lockSoloRecovery(ctx, row.ID)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer unlock()
+	// Checked under the lock: a manual stop that just finished must not be
+	// undone by this wake.
+	if err := s.soloStoppedByUser(row, true); err != nil {
+		return nil, nil, err
+	}
 	sb, _, err := s.ensureRunningLocked(ctx, row.ID)
 	if err != nil {
 		return nil, nil, err

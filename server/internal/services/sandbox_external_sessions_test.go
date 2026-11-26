@@ -248,3 +248,34 @@ func TestDialSSHWaitsForAnIdleSaveHoldingTheRecoveryLock(t *testing.T) {
 	}
 	unlock()
 }
+
+func TestDialSSHRechecksManualStopAfterTakingTheLock(t *testing.T) {
+	f := newStopFixture(t)
+	row := f.recovery(t)
+	unlock, err := f.sbx.lockSoloRecovery(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := f.sbx.DialSSH(context.Background(), row.ID)
+		result <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // DialSSH is now waiting for the lock
+	// A manual stop finishes while the dial waits.
+	if err := f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("status", models.SoloStatusStopped).Error; err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	select {
+	case err := <-result:
+		if err == nil || !strings.Contains(err.Error(), "手动停止") {
+			t.Fatalf("a dial waiting on the lock woke a manually stopped sandbox: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dial did not finish")
+	}
+	if f.sbx.ExternalSessions(row.ID) != 0 {
+		t.Fatal("a refused dial took a hold")
+	}
+}

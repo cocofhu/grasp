@@ -551,6 +551,9 @@ func replyGlobalRequests(reqs <-chan *ssh.Request) {
 func (s *Server) refuse(conn *ssh.ServerConn, chans <-chan ssh.NewChannel, msg string) {
 	timer := time.AfterFunc(s.opts.RefuseLinger, func() { _ = conn.Close() })
 	defer timer.Stop()
+	// Refused connections are not registered, so Close reaches them here.
+	stop := context.AfterFunc(s.ctx, func() { _ = conn.Close() })
+	defer stop()
 	for nch := range chans {
 		if nch.ChannelType() != "session" {
 			_ = nch.Reject(ssh.ConnectionFailed, msg)
