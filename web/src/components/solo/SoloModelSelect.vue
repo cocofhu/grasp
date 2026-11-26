@@ -196,7 +196,9 @@ watch([efforts, fastModeSupported], ([values, supportsFast]) => {
               <path :d="boltPath" class="solo-effort-bolt-charge" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
             </svg>
           </button>
-          <span v-else class="solo-effort-glyph"><Icon name="priority-bolt" :size="28" :interactive="false" /></span>
+          <span v-else class="solo-effort-glyph">
+            <Icon v-if="current?.bindingKind !== 'connection'" name="priority-bolt" :size="28" :interactive="false" />
+          </span>
           <strong class="solo-effort-current" data-testid="solo-effort-current">{{ shownLabel }}</strong>
           <button type="button" class="solo-effort-reset" :disabled="effortBlocked || resolvedEffort === defaultEffort" :aria-label="t('pages.solo.modelSelect.effortReset')" :title="t('pages.solo.modelSelect.effortReset')" data-testid="solo-effort-reset" @click="restoreEffort">
             <Icon name="refresh" :size="14" :interactive="false" class="solo-effort-reset-icon" :style="{ '--restore-count': restoreCount }" />

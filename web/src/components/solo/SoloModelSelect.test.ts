@@ -72,10 +72,14 @@ describe('SoloModelSelect', () => {
   })
 
   it('does not infer Fast support from a GPT name and clears the tooltip when closed', async () => {
-    const wrapper = mountSelect({ models: [{ ...base, id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'high'] }] })
+    const model = { ...base, id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', efforts: ['low', 'high'] }
+    const wrapper = mountSelect({ models: [{ ...model, bindingKind: 'connection' }] })
     await openEffort(wrapper)
     expect(element('solo-fast-toggle')).toBeNull()
-    await wrapper.setProps({ models: [{ ...base, serviceTiers: ['fast'], efforts: ['low', 'high'] }] })
+    expect(element('solo-effort-panel')?.querySelector('.solo-effort-glyph')?.firstElementChild).toBeNull()
+    await wrapper.setProps({ models: [{ ...model, bindingKind: 'platform' }] })
+    expect(element('solo-effort-panel')?.querySelector('.solo-effort-glyph icon-stub[name="priority-bolt"]')).not.toBeNull()
+    await wrapper.setProps({ models: [{ ...model, bindingKind: 'platform', serviceTiers: ['fast'] }] })
     element('solo-fast-toggle')!.focus()
     await flushPromises()
     expect(document.querySelector('[role="tooltip"]')).not.toBeNull()

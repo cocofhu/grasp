@@ -33,7 +33,7 @@ func (s *ModelConnectionService) List() ([]modelrouting.Connection, error) {
 	}
 	connections := make([]modelrouting.Connection, 0, len(rows))
 	for _, row := range rows {
-		connections = append(connections, modelrouting.Connection(row))
+		connections = append(connections, withModelServiceTiers(modelrouting.Connection(row)))
 	}
 	return connections, nil
 }
@@ -46,7 +46,12 @@ func (s *ModelConnectionService) Get(id string) (modelrouting.Connection, error)
 		}
 		return modelrouting.Connection{}, err
 	}
-	return modelrouting.Connection(row), nil
+	return withModelServiceTiers(modelrouting.Connection(row)), nil
+}
+
+func withModelServiceTiers(connection modelrouting.Connection) modelrouting.Connection {
+	connection.ModelServiceTiers = modelrouting.ConnectionModelServiceTiers(connection)
+	return connection
 }
 
 func (s *ModelConnectionService) Create(connection modelrouting.Connection) (modelrouting.Connection, error) {
@@ -60,7 +65,7 @@ func (s *ModelConnectionService) Create(connection modelrouting.Connection) (mod
 	if err := s.db.Create(&row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
-	return connection, nil
+	return withModelServiceTiers(connection), nil
 }
 
 func (s *ModelConnectionService) Update(id string, connection modelrouting.Connection) (modelrouting.Connection, error) {
@@ -77,7 +82,7 @@ func (s *ModelConnectionService) Update(id string, connection modelrouting.Conne
 	if err := s.db.Save(&row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
-	return connection, nil
+	return withModelServiceTiers(connection), nil
 }
 
 func (s *ModelConnectionService) Delete(id string) error {

@@ -32,6 +32,7 @@ export interface ConfiguredModelChoice {
   /** Speed tiers beyond standard that this exact model accepts. */
   serviceTiers?: string[]
   configurationId?: string
+  bindingKind?: ConcreteModelBinding['kind']
   modelId?: string
   configurationName?: string
   tool?: string
@@ -60,12 +61,14 @@ export function boundModelChoices(input: {
     return configuredModelChoices({
       binding, configurationName: configuration.name, backend: configuration.backend,
       cliModels: input.cliModels[configuration.backend] || [], connectionModels: connection?.models,
+      connectionModelServiceTiers: connection?.modelServiceTiers,
       providerId: connection?.providerId, baseUrl: connection?.baseUrl,
       catalogReady: binding.kind === 'connection' ? !!connection && input.connectionReady !== false : input.cliReady,
     }).map(choice => ({
       ...choice,
       id: grouped ? modelRouteValue(id, choice.id) : choice.id,
       configurationId: id, modelId: choice.id, configurationName: configuration.name,
+      bindingKind: binding.kind,
       tool: configuration.backend, source: connection?.name,
       unavailable: choice.unavailable || credentialUnavailable || (binding.kind === 'connection' && input.connectionReady !== false && !connection),
     }))
@@ -83,6 +86,7 @@ export function configuredModelChoices(input: {
   backend: string
   cliModels?: CliCatalogModel[]
   connectionModels?: { id: string; name?: string; reasoningEfforts?: string[]; capabilities?: { reasoning?: boolean } }[]
+  connectionModelServiceTiers?: ModelConnection['modelServiceTiers']
   providerId?: string
   baseUrl?: string
   catalogReady: boolean
@@ -114,6 +118,9 @@ export function configuredModelChoices(input: {
     const catalogEfforts = input.backend === 'opencode' ? effortChoices(input.backend, binding.kind, input.providerId, input.baseUrl, id) : []
     const savedEffort = binding.toolSettings?.modelEfforts?.[id]?.trim() || ''
     const efforts = input.backend === 'opencode' && validEffortToken(savedEffort) && !catalogEfforts.includes(savedEffort) ? [] : input.backend === 'opencode' ? catalogEfforts : adapterEfforts
+    const apiTiers = binding.kind === 'connection' && input.backend === 'codex' && connection ? input.connectionModelServiceTiers?.[id] : undefined
+    const platformTiers = binding.kind === 'platform' && (input.backend === 'codex' || input.backend === 'cursor') && cli?.id === id ? cli.serviceTiers : undefined
+    const serviceTiers = Array.isArray(apiTiers) ? apiTiers : platformTiers
     choices.push({
       id,
       name,
@@ -123,7 +130,7 @@ export function configuredModelChoices(input: {
       unavailable: input.catalogReady && !known,
       efforts,
       ...(cli?.defaultEffort && efforts.includes(cli.defaultEffort) ? { defaultEffort: cli.defaultEffort } : {}),
-      ...(binding.kind === 'platform' && (input.backend === 'codex' || input.backend === 'cursor') && cli?.id === id && cli.serviceTiers?.length ? { serviceTiers: [...cli.serviceTiers] } : {}),
+      ...(serviceTiers?.length ? { serviceTiers: [...serviceTiers] } : {}),
     })
   }
   return choices

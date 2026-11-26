@@ -29,3 +29,41 @@ func TestServiceTiersUseExactOfficialModelCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceTiersForOpenAIResponses(t *testing.T) {
+	official := Connection{
+		BaseURL: "https://api.openai.com/v1", State: "active", Protocol: ProtocolResponses, Auth: Auth{Scheme: "bearer"},
+		Models: []Model{{ID: "gpt-6.2-sol"}, {ID: "gpt-6.2-astra"}, {ID: "custom"}},
+	}
+	for _, tc := range []struct {
+		name, backend, model string
+		change               func(*Connection)
+		wantFast             bool
+	}{
+		{name: "official", backend: "codex", model: "gpt-6.2-sol", wantFast: true},
+		{name: "standard HTTPS port", backend: "codex", model: "gpt-6.2-astra", wantFast: true, change: func(c *Connection) { c.BaseURL = "https://API.OPENAI.COM:443/v1/" }},
+		{name: "compatible gateway", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "https://api.openai.com.example.test/v1" }},
+		{name: "alternate port", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "https://api.openai.com:8443/v1" }},
+		{name: "alternate route", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "https://api.openai.com/other/v1" }},
+		{name: "non-HTTPS", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "http://api.openai.com/v1" }},
+		{name: "chat completions", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.Protocol = ProtocolChat }},
+		{name: "disabled connection", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.State = "disabled" }},
+		{name: "other tool", backend: "opencode", model: "gpt-6.2-sol"},
+		{name: "uncatalogued", backend: "codex", model: "gpt-6.1-sol"},
+		{name: "unsupported", backend: "codex", model: "custom"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			connection := official
+			if tc.change != nil {
+				tc.change(&connection)
+			}
+			want := []string(nil)
+			if tc.wantFast {
+				want = []string{"fast"}
+			}
+			if got := ServiceTiers(tc.backend, tc.model, &connection); !slices.Equal(got, want) {
+				t.Fatalf("service tiers = %v, want %v", got, want)
+			}
+		})
+	}
+}

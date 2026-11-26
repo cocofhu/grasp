@@ -57,10 +57,23 @@ func TestAlignServiceTierIndependentlyAndResetAtDefaultRoute(t *testing.T) {
 	}
 }
 
-func TestConfiguredServiceTiersDoNotLeakToCompatibleConnections(t *testing.T) {
-	for _, connection := range []*modelrouting.Connection{nil, {ProviderID: "openai"}} {
+func TestConfiguredServiceTiersFollowTheModelRoute(t *testing.T) {
+	official := modelrouting.Connection{
+		BaseURL: "https://api.openai.com/v1", State: "active", Protocol: modelrouting.ProtocolResponses, Auth: modelrouting.Auth{Scheme: "bearer"},
+		Models: []modelrouting.Model{{ID: "gpt-6.2-sol"}, {ID: "gpt-6.2-astra"}, {ID: "unknown"}},
+	}
+	gateway := official
+	gateway.BaseURL = "https://compatible.example.test/v1"
+	for _, tc := range []struct {
+		connection *modelrouting.Connection
+		want       []string
+	}{
+		{nil, []string{"fast"}},
+		{&official, []string{"fast"}},
+		{&gateway, nil},
+	} {
 		raw, err := configuredModelsJSON(modelrouting.Resolved{
-			Backend: "codex", Connection: connection,
+			Backend: "codex", Connection: tc.connection,
 			Binding: modelrouting.Binding{ModelID: "gpt-6.2-sol", AuxiliaryModelIDs: []string{"gpt-6.2-astra", "unknown"}},
 		})
 		if err != nil {
@@ -72,11 +85,7 @@ func TestConfiguredServiceTiersDoNotLeakToCompatibleConnections(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 			t.Fatal(err)
 		}
-		var want []string
-		if connection == nil {
-			want = []string{"fast"}
-		}
-		if len(rows) != 3 || !slices.Equal(rows[0].ServiceTiers, want) || !slices.Equal(rows[1].ServiceTiers, want) || rows[2].ServiceTiers != nil {
+		if len(rows) != 3 || !slices.Equal(rows[0].ServiceTiers, tc.want) || !slices.Equal(rows[1].ServiceTiers, tc.want) || rows[2].ServiceTiers != nil {
 			t.Fatalf("service tiers crossed their declared source/model boundary: %s", raw)
 		}
 	}
