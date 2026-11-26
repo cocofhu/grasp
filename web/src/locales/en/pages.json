@@ -3540,7 +3540,7 @@
           "creating": "Creating the environment"
         },
         "action": {
-          "stop": "Save and stop…",
+          "stop": "Save and stop",
           "wake": "Wake",
           "resume": "Resume",
           "restart": "Start again",

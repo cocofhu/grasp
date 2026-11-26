@@ -3540,7 +3540,7 @@
           "creating": "正在创建环境"
         },
         "action": {
-          "stop": "保存并停止…",
+          "stop": "保存并停止",
           "wake": "唤醒",
           "resume": "恢复",
           "restart": "重新开始",

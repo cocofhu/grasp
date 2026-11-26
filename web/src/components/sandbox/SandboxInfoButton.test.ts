@@ -136,7 +136,7 @@ describe('SandboxInfoButton', () => {
   it('emits the primary action and keep-alive changes', async () => {
     const wrapper = await render()
     await openPanel(wrapper)
-    expect(q('sandbox-info-action')!.textContent).toContain('保存并停止')
+    expect(q('sandbox-info-action')!.textContent?.trim()).toBe('保存并停止')
     q('sandbox-info-action')!.click()
     expect(wrapper.emitted('action')).toEqual([['stop']])
     q('sandbox-info-keep-alive')!.click()
