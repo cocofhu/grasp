@@ -114,6 +114,7 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 		err = s.saveWorkspace(ctx, row, sb)
 	}
 	if err == nil {
+		s.archiveWorkspaceChanges(ctx, row, sb)
 		// Archiving can take minutes. A turn or keep-alive choice made during
 		// the save wins over releasing the workload.
 		err = s.recheckBeforeRelease(ctx, row, sb, idleSince, automatic)

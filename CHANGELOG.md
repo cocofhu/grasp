@@ -4,8 +4,13 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- 重做中英文官网和帮助中心。首页可切换 E2B、Kubernetes、Docker 和通过兼容网关接入的公有云沙箱，展开对应配置，随滚动查看 Solo、应用预览和本地 IDE。列出 8 种编程工具及独立运行时的其他适配。
-- 帮助中心可直接打开快速开始、配置项索引和故障排查。目录悬停和键盘聚焦时保持原排版。按配置名搜索可直达字段，手机上可纵向阅读每项的默认值和用途。
+- Solo 对话和工作流运行详情新增「更改」卡片，按仓库查看分支和累计增删行，点击条目打开带语法高亮的逐文件 diff、源码与 Markdown 预览。多个工作区可在文件统计旁切换。输入框上方提供本轮改动入口，沙箱释放后仍可查看最近归档的版本。
+
+- 修复工作区快照偶尔漏掉短时间内发生的等长文件修改。
+
+- Solo 和工作流的工作区快照会记录被 Git 标记为 `assume-unchanged` 的文件改动。
+
+- 工作流的独立沙箱可以继续按运行最初的基线查看累计改动。工作区快照会跳过尚未提交的嵌套仓库，并回收淘汰归档占用的空间。
 
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 
@@ -42,6 +47,9 @@ All notable public-release changes are documented here.
 - E2B 沙箱启动失败时，错误信息现在附带启动日志的最后 20 行（敏感值已脱敏），例如仓库 clone 的权限错误，不再只显示「E2B bootstrap exited with code 1」。沙箱日志里 `1`、`0` 等短值不再被误替换成 `[redacted]`。需要更新 sandbox-gateway 镜像。
 
 - E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
+
+- 重做中英文官网和帮助中心。首页可切换 E2B、Kubernetes、Docker 和通过兼容网关接入的公有云沙箱，展开对应配置，随滚动查看 Solo、应用预览和本地 IDE。列出 8 种编程工具及独立运行时的其他适配。
+- 帮助中心可直接打开快速开始、配置项索引和故障排查。目录悬停和键盘聚焦时保持原排版。按配置名搜索可直达字段，手机上可纵向阅读每项的默认值和用途。
 
 - Grasp 和沙箱网关支持 PostgreSQL，可分别通过 `GRASP_DB_DRIVER=postgres` 和 `SBGW_DB_DRIVER=postgres` 启用。SQLite 仍是默认数据库。配置见 [PostgreSQL 部署](CONFIGURATION.md#使用-postgresql)。
 

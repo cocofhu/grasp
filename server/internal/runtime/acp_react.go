@@ -126,6 +126,8 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	req.UsagePhase = models.TokenLedgerPhaseInteractive
 	started := time.Now()
 	var chatOp string
+	finishChanges := c.trackWorkspaceTurn(ctx, &req)
+	defer func() { finishChanges(out.Err != nil || ctx.Err() != nil) }()
 	defer func() {
 		if out.OpID == "" && chatOp != "" {
 			out.OpID = chatOp
@@ -150,6 +152,7 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 		}
 	}
 
+	req.workspaceTurn.capture(ctx, sess.sb)
 	notice, aligned, lost, aerr := c.alignParkedRoute(ctx, req)
 	if lost {
 		sess = c.rebuildReactSession(ctx, req, sess, history)
@@ -328,6 +331,8 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 	history = dialogue.Messages
 	started := time.Now()
 	var chatOp string
+	finishChanges := c.trackWorkspaceTurn(ctx, &req)
+	defer func() { finishChanges(out.Err != nil || ctx.Err() != nil) }()
 	defer func() {
 		if out.OpID == "" && chatOp != "" {
 			out.OpID = chatOp
@@ -356,6 +361,7 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		}
 		rehydrated = true
 	}
+	req.workspaceTurn.capture(ctx, sess.sb)
 	notice, aligned, lost, aerr := c.alignParkedRoute(ctx, req)
 	if lost {
 		sess = c.rebuildReactSession(ctx, req, sess, history)

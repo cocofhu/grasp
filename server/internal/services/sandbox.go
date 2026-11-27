@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/solobackup"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -42,6 +43,7 @@ type SandboxService struct {
 	max        atomic.Int64
 	capacityMu sync.Mutex
 	backups    solobackup.Store
+	changes    *workspacechanges.Service
 	backupKeep atomic.Int64
 	soloBusy   func(uint) bool
 	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.

@@ -227,7 +227,11 @@ func (p payloadSerializer) Value(ctx context.Context, field *schema.Field, dst r
 		}
 		kind := recordKind(dst)
 		allowRef, _ := ctx.Value(referenceContextKey{}).(bool)
-		if IsRef(raw) && allowRef {
+		if archive, _, _, refErr := parseRef(raw); refErr == nil && allowRef {
+			current, _ := ctx.Value(workspaceArchiveKey{}).(string)
+			if archive != "" && archive != current {
+				return nil, errors.New("file reference belongs to another workspace archive")
+			}
 			s, err := fromContext(ctx)
 			if err != nil {
 				return nil, err
