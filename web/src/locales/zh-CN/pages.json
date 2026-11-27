@@ -3897,6 +3897,7 @@
       "fileCount": "{n} 个文件",
       "archivedAt": "归档于 {time}",
       "workspace": "工作区",
+      "chooseWorkspace": "选择…",
       "workspaceNumber": "工作区 {n}",
       "openDiff": "查看差异",
       "detached": "分离状态的工作树",

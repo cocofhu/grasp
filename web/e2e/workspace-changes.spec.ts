@@ -48,7 +48,7 @@ const saved: WorkspaceChangeSnapshot = {
   ],
 }
 
-async function mockChanges(page: Page, { snapshot = saved, canRefresh = true } = {}) {
+async function mockChanges(page: Page, { snapshot = saved, canRefresh = true, multipleWorkspaces = true } = {}) {
   const seen: string[] = []
   let refreshed = false
   await page.route('**/api/**/changes**', async route => {
@@ -84,8 +84,8 @@ async function mockChanges(page: Page, { snapshot = saved, canRefresh = true } =
     }
     const workspaces = [
       { id: 'workspace-a', nodeId: 'implement', capturedAt: saved.capturedAt },
-      { id: 'workspace-b', nodeId: 'verify', capturedAt: saved.capturedAt },
     ]
+    if (multipleWorkspaces) workspaces.push({ id: 'workspace-b', nodeId: 'verify', capturedAt: saved.capturedAt })
     const selected = url.searchParams.get('workspace') === 'workspace-b'
       ? { ...saved, id: 'other', workspace: 'workspace-b', nodeId: 'verify', repos: [saved.repos[1]] }
       : refreshed ? { ...snapshot, id: 'refreshed' } : snapshot
@@ -156,7 +156,27 @@ test('workspace snapshots keep diff, preview and source on the same version', as
   await dialog.getByTestId('workspace-change-file-row').filter({ hasText: 'mark.png' }).click()
   await expect(dialog.getByText('二进制文件已更改。')).toBeVisible()
   expect(seen.some(path => path.endsWith('/files/binary'))).toBe(false)
-  await dialog.getByTestId('workspace-change-workspaces').selectOption('workspace-b')
+  const workspace = dialog.getByRole('combobox', { name: '工作区', exact: true })
+  const options = page.getByRole('listbox', { name: '工作区', exact: true })
+  await expect(workspace).toContainText('实现')
+  await workspace.press('Enter')
+  await expect(options.getByRole('option', { name: '实现', selected: true })).toBeVisible()
+  await workspace.press('Escape')
+  await expect(options).toBeHidden()
+  await expect(workspace).toBeFocused()
+  await expect(dialog).toBeVisible()
+
+  await page.route(url => url.pathname === '/api/runs/run-review/changes' && url.searchParams.get('workspace') === 'workspace-b',
+    route => route.fulfill({ status: 500, json: { error: 'test failure' } }), { times: 1 })
+  await workspace.press('Enter')
+  await workspace.press('ArrowDown')
+  await workspace.press('Enter')
+  await expect(dialog.getByRole('alert')).toContainText('无法读取变更')
+  await expect(workspace).toContainText('实现')
+  await expect(workspace).toBeFocused()
+  await dialog.getByRole('button', { name: '重试' }).click()
+  await expect(workspace).toContainText('验证')
+  await expect(dialog.getByTestId('workspace-change-summary')).toContainText('0 个文件')
   await expect(dialog.getByText('暂无改动')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -164,6 +184,7 @@ test('workspace snapshots keep diff, preview and source on the same version', as
   await page.getByTestId('workspace-turn-changes').click()
   const turn = page.getByRole('dialog', { name: '本轮改动' })
   await expect(turn.getByTestId('workspace-change-summary')).toContainText('1 个文件')
+  await expect(turn.getByRole('combobox', { name: '工作区' })).toHaveCount(0)
   await expect(turn.getByTestId('workspace-change-diff')).toContainText('端口 8090')
   expect(seen).toContain('/api/solo/sessions/solo-review/changes/turn-snapshot/files/docs')
 })
@@ -189,6 +210,15 @@ test('workspace changes stays within the dark narrow viewport', async ({ page },
   expect(bounds?.width).toBeLessThan(390)
   expect((bounds?.x ?? -2) + (bounds?.width ?? 400)).toBeLessThanOrEqual(390)
   await dialog.screenshot({ animations: 'disabled', path: testInfo.outputPath('mobile-dark-diff.png') })
+  const workspace = dialog.getByRole('combobox', { name: '工作区', exact: true })
+  await workspace.click()
+  const options = page.getByRole('listbox', { name: '工作区', exact: true })
+  await expect(options.getByRole('option', { name: '验证' })).toBeVisible()
+  const optionsBounds = await options.boundingBox()
+  expect(optionsBounds?.x).toBeGreaterThanOrEqual(8)
+  expect((optionsBounds?.x ?? 390) + (optionsBounds?.width ?? 390)).toBeLessThanOrEqual(382)
+  await dialog.screenshot({ animations: 'disabled', path: testInfo.outputPath('mobile-dark-workspaces.png') })
+  await workspace.press('Escape')
   await dialog.getByRole('button', { name: '预览', exact: true }).click()
   await expect(dialog.getByTestId('workspace-change-markdown')).toBeVisible()
   await dialog.getByRole('button', { name: '文件', exact: true }).click()
@@ -202,6 +232,7 @@ test('change card opens the selected repository from an archived snapshot', asyn
   }
   await mockChanges(page, {
     canRefresh: false,
+    multipleWorkspaces: false,
     snapshot: { ...saved, repos: [
       saved.repos[0],
       { ...saved.repos[1], branch: '', fileCount: 1, added: 1, files: [opsFile] },
@@ -218,6 +249,7 @@ test('change card opens the selected repository from an archived snapshot', asyn
   await card.screenshot({ animations: 'disabled', path: testInfo.outputPath('desktop-card.png') })
   await operation.click()
   const dialog = page.getByRole('dialog', { name: '本次运行改动' })
+  await expect(dialog.getByRole('combobox', { name: '工作区' })).toHaveCount(0)
   await expect(dialog.getByTestId('workspace-change-file-row').filter({ hasText: 'service.yaml' })).toHaveAttribute('aria-current', 'true')
   await expect(dialog.getByTestId('workspace-change-diff')).toContainText('timeout: 30')
   await expect(dialog.getByTestId('workspace-change-summary')).toContainText('归档于')
@@ -250,5 +282,10 @@ test('code diffs preserve line markers and syntax colors in both themes', async 
     await expect(diff.locator('.changes-line-remove .changes-line-mark')).toHaveText(['−', '−'])
     await page.evaluate(() => document.fonts.ready.then(() => undefined))
     await dialog.screenshot({ animations: 'disabled', path: testInfo.outputPath(`go-diff-${theme}.png`) })
+    const workspace = dialog.getByRole('combobox', { name: '工作区', exact: true })
+    await workspace.click()
+    const options = page.getByRole('listbox', { name: '工作区', exact: true })
+    await expect(options.getByRole('option', { name: '实现', selected: true })).toBeVisible()
+    await dialog.screenshot({ animations: 'disabled', path: testInfo.outputPath(`go-workspaces-${theme}.png`) })
   }
 })

@@ -26,6 +26,9 @@ const dialogTarget = shallowRef<WorkspaceChangesTarget>()
 const initialRepository = ref<string>()
 const loading = ref(false)
 const dialogError = ref(false)
+const requestedWorkspace = ref<string>()
+const switchingWorkspace = computed(() => loading.value && !!requestedWorkspace.value &&
+  requestedWorkspace.value !== dialogView.value?.snapshot?.workspace)
 let summaryController: AbortController | undefined
 let dialogController: AbortController | undefined
 const turn = computed(() => !!props.target.turnId)
@@ -147,6 +150,7 @@ function openDialog(repository?: string) {
   dialogView.value = view.value
   dialogTarget.value = { ...props.target }
   initialRepository.value = repository
+  requestedWorkspace.value = undefined
   dialogError.value = false
   open.value = true
   // A card row refers to the saved snapshot it is displaying.
@@ -166,6 +170,7 @@ async function loadDialog(workspace?: string, refresh = false) {
   const controller = new AbortController()
   dialogController = controller
   dialogError.value = false
+  requestedWorkspace.value = workspace
   loading.value = true
   try {
     const call = refresh ? workspaceChangesClient.refresh : workspaceChangesClient.list
@@ -294,13 +299,14 @@ onBeforeUnmount(() => {
     :target="dialogTarget"
     :view="dialogView"
     :loading="loading"
+    :workspace-loading="switchingWorkspace"
     :error="dialogError"
     :initial-repository="initialRepository"
     :workspace-labels="workspaceLabels"
     @close="closeDialog"
     @select-workspace="loadDialog($event)"
     @refresh="loadDialog(dialogView?.snapshot?.workspace, true)"
-    @retry="loadDialog(dialogView?.snapshot?.workspace)"
+    @retry="loadDialog(requestedWorkspace)"
   />
 </template>
 

@@ -3897,6 +3897,7 @@
       "fileCount": "{n} files",
       "archivedAt": "Archived {time}",
       "workspace": "Workspace",
+      "chooseWorkspace": "Select…",
       "workspaceNumber": "Workspace {n}",
       "openDiff": "View diff",
       "detached": "Detached worktree",

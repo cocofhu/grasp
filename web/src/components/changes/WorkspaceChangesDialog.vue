@@ -3,6 +3,8 @@ import { computed, defineAsyncComponent, nextTick, ref, shallowRef, watch } from
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import AppSpinner from '@/components/ui/AppSpinner.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import {
@@ -16,6 +18,7 @@ const props = defineProps<{
   target: WorkspaceChangesTarget
   view?: WorkspaceChangesView
   loading: boolean
+  workspaceLoading: boolean
   error: boolean
   initialRepository?: string
   workspaceLabels?: Record<string, string>
@@ -70,14 +73,29 @@ const language = computed(() => {
   }
   return modes[ext] || 'plaintext'
 })
-const timestamp = computed(() => {
-  const raw = snapshot.value?.capturedAt
+const dateFormat = computed(() => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }))
+function formatTimestamp(raw?: string) {
   if (!raw) return ''
   const date = new Date(raw)
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-    : ''
+  return Number.isFinite(date.getTime()) ? dateFormat.value.format(date) : ''
+}
+const timestamp = computed(() => formatTimestamp(snapshot.value?.capturedAt))
+const workspaceOptions = computed(() => {
+  const choices = turn.value ? [] : props.view?.workspaces ?? []
+  const names = choices.map(({ nodeId }, index) =>
+    (nodeId && (props.workspaceLabels?.[nodeId] || nodeId)) || t('pages.workspaceChanges.workspaceNumber', { n: index + 1 }))
+  return choices.map(({ id, capturedAt }, index) => ({
+    value: id,
+    label: names[index],
+    hint: names.indexOf(names[index]) !== names.lastIndexOf(names[index]) ? formatTimestamp(capturedAt) : undefined,
+  }))
 })
+const currentWorkspace = computed(() => snapshot.value?.workspace || '')
+const currentWorkspaceName = computed(() => workspaceOptions.value.find(option => option.value === currentWorkspace.value)?.label)
+
+function selectWorkspace(id: string) {
+  if (id !== currentWorkspace.value || props.workspaceLoading || props.error) emit('select-workspace', id)
+}
 
 watch(snapshot, () => {
   if (!files.value.some(row => row.key === chosen.value)) {
@@ -122,9 +140,6 @@ const statuses: Record<string, string> = { A: 'added', M: 'modified', D: 'delete
 function fileStatus(status: string) {
   return word(statuses[status] ?? 'modified')
 }
-function workspaceLabel(nodeId: string | undefined, position: number) {
-  return (nodeId && (props.workspaceLabels?.[nodeId] || nodeId)) || t('pages.workspaceChanges.workspaceNumber', { n: position + 1 })
-}
 </script>
 
 <template>
@@ -146,32 +161,53 @@ function workspaceLabel(nodeId: string | undefined, position: number) {
     </template>
 
     <div class="changes-dialog" data-testid="workspace-changes-dialog">
-      <div v-if="snapshot || view?.canRefresh" class="changes-overview">
-        <div v-if="snapshot" class="changes-summary" data-testid="workspace-change-summary">
-          <span v-if="available" class="font-semibold text-txt">{{ t('pages.workspaceChanges.fileCount', { n: totals.count }) }}</span>
-          <span v-if="totals.count" class="text-ok">+{{ numerals.format(totals.added) }}</span>
-          <span v-if="totals.count" class="text-err">−{{ numerals.format(totals.deleted) }}</span>
-          <span v-if="timestamp" class="changes-time" :title="timestamp">{{ view?.canRefresh ? timestamp : t('pages.workspaceChanges.archivedAt', { time: timestamp }) }}</span>
+      <div v-if="snapshot || view?.canRefresh || workspaceOptions.length > 1" class="changes-overview">
+        <div class="changes-context">
+          <AppSelect
+            v-if="workspaceOptions.length > 1"
+            :model-value="currentWorkspace"
+            :options="workspaceOptions"
+            :aria-label="word('workspace')"
+            :placeholder="word('chooseWorkspace')"
+            :title="currentWorkspaceName"
+            :menu-min-width="220"
+            variant="ghost"
+            size="sm"
+            class="changes-workspace"
+            @update:model-value="selectWorkspace"
+          >
+            <template #leading>
+              <span class="changes-workspace-label" aria-hidden="true">
+                <Icon name="layers" :size="14" :interactive="false" />
+                {{ word('workspace') }}
+              </span>
+            </template>
+            <template #trailing>
+              <span v-if="workspaceLoading" role="status" class="inline-flex shrink-0 text-txt3">
+                <AppSpinner :size="13" />
+                <span class="sr-only">{{ t('common.loading') }}</span>
+              </span>
+            </template>
+          </AppSelect>
+          <div v-if="snapshot" class="changes-summary" data-testid="workspace-change-summary">
+            <span v-if="available" class="changes-totals">
+              <span class="font-semibold text-txt">{{ t('pages.workspaceChanges.fileCount', { n: totals.count }) }}</span>
+              <span v-if="totals.count" class="text-ok">+{{ numerals.format(totals.added) }}</span>
+              <span v-if="totals.count" class="text-err">−{{ numerals.format(totals.deleted) }}</span>
+            </span>
+            <span v-if="timestamp" class="changes-time" :title="timestamp">{{ view?.canRefresh ? timestamp : t('pages.workspaceChanges.archivedAt', { time: timestamp }) }}</span>
+          </div>
         </div>
-        <div class="changes-overview-actions">
-          <label v-if="!turn && (view?.workspaces?.length ?? 0) > 1" class="min-w-0">
-            <span class="sr-only">{{ word('workspace') }}</span>
-            <select
-              class="changes-workspace"
-              :value="snapshot?.workspace"
-              :disabled="loading"
-              data-testid="workspace-change-workspaces"
-              @change="emit('select-workspace', ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="(item, index) in view?.workspaces" :key="item.id" :value="item.id">
-                {{ workspaceLabel(item.nodeId, index) }}
-              </option>
-            </select>
-          </label>
-          <AppButton v-if="!turn && view?.canRefresh" variant="ghost" size="sm" icon="refresh" :loading="loading" @click="emit('refresh')">
-            {{ t('common.buttons.refresh') }}
-          </AppButton>
-        </div>
+        <AppButton
+          v-if="!turn && view?.canRefresh"
+          variant="ghost"
+          size="sm"
+          icon="refresh"
+          class="changes-refresh"
+          :disabled="workspaceLoading"
+          :loading="loading && !workspaceLoading"
+          @click="emit('refresh')"
+        >{{ t('common.buttons.refresh') }}</AppButton>
       </div>
 
       <div v-if="error" class="changes-banner" role="alert">
@@ -285,11 +321,16 @@ function workspaceLabel(nodeId: string | undefined, position: number) {
 <style scoped>
 .changes-heading { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .changes-dialog { display: flex; flex-direction: column; height: min(67dvh, 680px); min-height: 0; }
-.changes-overview { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.45rem 0.75rem; margin-bottom: 0.7rem; }
-.changes-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; font-size: 12px; font-variant-numeric: tabular-nums; }
+.changes-overview { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.7rem; }
+.changes-context { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.85rem; min-width: 0; }
+.changes-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.65rem; min-width: 0; min-height: 30px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.changes-totals { display: inline-flex; flex-wrap: wrap; gap: 0.45rem; }
 .changes-time { color: rgb(var(--c-txt3)); font-size: 11px; }
-.changes-overview-actions { display: flex; align-items: center; gap: 0.4rem; min-width: 0; margin-left: auto; }
-.changes-workspace { max-width: 185px; padding: 0.25rem 0.4rem; background: rgb(var(--c-surface)); border: 1px solid rgb(var(--c-line)); border-radius: 6px; color: rgb(var(--c-txt)); font-size: 12px; }
+.changes-refresh { min-height: 30px; flex: none; }
+.changes-workspace { max-width: min(17rem, 100%); }
+.changes-workspace :deep(.app-select-trigger) { border-radius: 8px; color: rgb(var(--c-txt)); font-weight: 600; }
+.changes-workspace :deep(.app-select-trigger:not(:hover, :focus-visible, [aria-expanded="true"])) { background: rgb(var(--c-base)); border-color: rgb(var(--c-line)); }
+.changes-workspace-label { display: inline-flex; flex: none; align-items: center; gap: 0.3rem; padding-inline-end: 0.45rem; border-inline-end: 1px solid rgb(var(--c-line)); color: rgb(var(--c-txt2)); font-weight: 400; white-space: nowrap; }
 .changes-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.45rem 0.65rem; margin-bottom: 0.55rem; border-radius: 7px; background: rgb(var(--c-warn) / 0.09); color: rgb(var(--c-txt2)); font-size: 12px; }
 .changes-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(165px, 245px) minmax(0, 1fr); border: 1px solid rgb(var(--c-line)); border-radius: 10px; overflow: hidden; }
 .changes-files { overflow: auto; background: rgb(var(--c-base)); border-inline-end: 1px solid rgb(var(--c-line)); }
@@ -335,6 +376,7 @@ function workspaceLabel(nodeId: string | undefined, position: number) {
 
 @media (max-width: 700px) {
   .changes-dialog { height: min(69dvh, 590px); }
+  .changes-workspace :deep(.app-select-trigger), .changes-refresh { min-height: 36px; }
   .changes-layout { grid-template-columns: minmax(0, 1fr); }
   .changes-files { border-inline-end: 0; }
   .changes-file-pane { display: none; }
