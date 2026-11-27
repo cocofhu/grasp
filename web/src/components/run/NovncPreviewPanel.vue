@@ -338,12 +338,10 @@ function onScreenPasteKey(ev: KeyboardEvent) {
   pasteIfBrowserSkippedEvent()
   const isLocalPaste = isApplePlatform ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey
   if (letter !== 'v' || !isLocalPaste || ev.isComposing || ev.altKey) {
+    // Remote keys can copy directly or through an application menu. Check
+    // for an actual clipboard change when the viewer next pastes.
+    watchSandboxCopy()
     restoreScreenModifiers(ev)
-    // A copy chord can also be Ctrl+C interrupting a terminal. Observe the
-    // clipboard before forwarding it, and check for an actual update on paste.
-    if ((letter === 'c' || letter === 'x') && ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.isComposing) {
-      watchSandboxCopy()
-    }
     return
   }
   // noVNC cancels keydown on the canvas. Keep the browser's default paste
