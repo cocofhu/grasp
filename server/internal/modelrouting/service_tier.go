@@ -50,7 +50,11 @@ func ConnectionModelServiceTiers(connection Connection) map[string][]string {
 		// https://openai.com/api-fast-mode/
 		switch model.ID {
 		case "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
-			"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5":
+			"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini",
+			"gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-5.1-codex", "gpt-5-codex",
+			"gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+			"gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o-2024-05-13", "gpt-4o-mini",
+			"o3", "o4-mini":
 			tiers[model.ID] = []string{"fast"}
 		}
 	}

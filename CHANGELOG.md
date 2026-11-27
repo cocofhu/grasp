@@ -8,6 +8,8 @@ All notable public-release changes are documented here.
 
 - Solo 的 OpenAI 官方 Responses API 连接支持为 GPT-5.6 Terra、GPT-5.6 Luna 和 GPT-5.5 启用 Fast。
 
+- Solo 的 OpenAI 官方 Responses API 连接可为 GPT-5.4、GPT-5.4 mini 等官方支持的模型启用 Fast。关闭 Fast 后，请求会显式选择标准档位，避免沿用项目默认的 Fast 档位。需要更新沙箱运行时。
+
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 
 - Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」菜单（带品牌图标）一键用 VS Code、Cursor、CodeBuddy、Trae（含国内版）打开沙箱，不需要配置 `~/.ssh/config`，JetBrains Gateway 则给出连接信息。

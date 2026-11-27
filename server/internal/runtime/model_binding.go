@@ -66,16 +66,25 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 			return fmt.Errorf("selected model connection is unavailable")
 		}
 		c := resolved.Connection
+		var modelServiceTiers map[string][]string
+		if strings.TrimSpace(backend) == string(BackendCodex) {
+			modelServiceTiers = modelrouting.ConnectionModelServiceTiers(*c)
+		}
 		config := struct {
-			ConnectionID    string                    `json:"connectionId"`
-			ProviderID      string                    `json:"providerId"`
-			Protocol        string                    `json:"protocol"`
-			BaseURL         string                    `json:"baseUrl"`
-			Auth            modelrouting.Auth         `json:"auth"`
-			Models          []modelrouting.Model      `json:"models"`
-			SelectedModelID string                    `json:"selectedModelId"`
-			ToolSettings    modelrouting.ToolSettings `json:"toolSettings,omitempty"`
-		}{c.ID, c.ProviderID, c.Protocol, c.BaseURL, c.Auth, c.Models, resolved.Binding.ModelID, resolved.Binding.ToolSettings}
+			ConnectionID      string                    `json:"connectionId"`
+			ProviderID        string                    `json:"providerId"`
+			Protocol          string                    `json:"protocol"`
+			BaseURL           string                    `json:"baseUrl"`
+			Auth              modelrouting.Auth         `json:"auth"`
+			Models            []modelrouting.Model      `json:"models"`
+			SelectedModelID   string                    `json:"selectedModelId"`
+			ToolSettings      modelrouting.ToolSettings `json:"toolSettings,omitempty"`
+			ModelServiceTiers map[string][]string       `json:"modelServiceTiers,omitempty"`
+		}{
+			ConnectionID: c.ID, ProviderID: c.ProviderID, Protocol: c.Protocol, BaseURL: c.BaseURL, Auth: c.Auth,
+			Models: c.Models, SelectedModelID: resolved.Binding.ModelID, ToolSettings: resolved.Binding.ToolSettings,
+			ModelServiceTiers: modelServiceTiers,
+		}
 		data, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("encode model connection: %w", err)

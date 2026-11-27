@@ -103,3 +103,41 @@ func TestServiceTierEnvRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestModelBindingPassesOfficialResponseTiersToTheSandbox(t *testing.T) {
+	for _, endpoint := range []struct {
+		url      string
+		wantFast bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://compatible.example.test/v1", false},
+	} {
+		t.Run(endpoint.url, func(t *testing.T) {
+			env := map[string]string{}
+			binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "fixture"}
+			err := ApplyModelBinding(env, "codex", binding, func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+				return modelrouting.Resolved{
+					Backend: "codex", Secret: "fixture",
+					Binding: modelrouting.Binding{Kind: "connection", ModelID: "gpt-5.4-mini"},
+					Connection: &modelrouting.Connection{
+						ID: "fixture", ProviderID: "openai", State: "active",
+						Protocol: modelrouting.ProtocolResponses, BaseURL: endpoint.url, Auth: modelrouting.Auth{Scheme: "bearer"},
+						Models: []modelrouting.Model{{ID: "gpt-5.4-mini"}, {ID: "gpt-5.4-nano"}},
+					},
+				}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Tiers map[string][]string `json:"modelServiceTiers"`
+			}
+			if err := json.Unmarshal([]byte(env[EnvModelConnection]), &config); err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(config.Tiers["gpt-5.4-mini"], "fast") != endpoint.wantFast || len(config.Tiers["gpt-5.4-nano"]) != 0 {
+				t.Fatalf("unexpected sandbox model tiers: %v", config.Tiers)
+			}
+		})
+	}
+}
