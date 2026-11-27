@@ -74,3 +74,63 @@ func TestResponsesProxyKeepsLoopbackOutOfTheChildProxy(t *testing.T) {
 		t.Fatalf("expected a loopback exclusion, got %q", got)
 	}
 }
+
+func TestResponsesTierUsesAllProxy(t *testing.T) {
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy"} {
+		t.Setenv(key, "")
+	}
+	type proxiedRequest struct {
+		method, host, tier string
+	}
+	seen := make(chan proxiedRequest, 1)
+	egress := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+		}
+		seen <- proxiedRequest{r.Method, r.Host, body["service_tier"]}
+		if r.Method == http.MethodConnect {
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	}))
+	defer egress.Close()
+	t.Setenv("ALL_PROXY", egress.URL)
+	client := egress.Client()
+	for _, tc := range []struct {
+		scheme, tier, method, host string
+		status                     int
+	}{
+		{"http", "default", http.MethodPost, "api.openai.invalid", http.StatusOK},
+		{"http", "priority", http.MethodPost, "api.openai.invalid", http.StatusOK},
+		{"https", "default", http.MethodConnect, "api.openai.invalid:443", http.StatusBadGateway},
+	} {
+		base, stop, err := startResponsesTierProxy(tc.scheme+"://api.openai.invalid/v1", "primary", tc.tier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stop()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/responses", strings.NewReader(`{"model":"primary"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != tc.status {
+			t.Fatalf("got HTTP %d, want %d", resp.StatusCode, tc.status)
+		}
+		select {
+		case request := <-seen:
+			if request.method != tc.method || request.host != tc.host ||
+				(tc.method == http.MethodPost && request.tier != tc.tier) {
+				t.Fatalf("proxy received %+v", request)
+			}
+		default:
+			t.Fatal("request bypassed ALL_PROXY")
+		}
+	}
+}

@@ -67,17 +67,23 @@ func ReprimeEnvKeys(spec Spec) []string {
 // credentials are applied, and the backend is restarted. The workspace and
 // cloned repos are kept. Callers reconnect ACP afterwards.
 func (m *Manager) Reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string) error {
-	return m.reprime(ctx, sb, spec, prevKeys, false)
+	return m.reprime(ctx, sb, spec, prevKeys, "")
 }
 
 // SwitchTool updates the running tool's configuration and backend process in
 // place. Unlike a shared workflow node handoff, a user's tool switch must not
 // initialize repositories or change the sandbox's Git/SSH configuration.
 func (m *Manager) SwitchTool(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string) error {
-	return m.reprime(ctx, sb, spec, prevKeys, true)
+	return m.reprime(ctx, sb, spec, prevKeys, "--tool-only")
 }
 
-func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string, toolOnly bool) error {
+// RefreshModelCapabilities updates derived model settings and restarts the
+// backend with the sandbox's existing environment, config home and workspace.
+func (m *Manager) RefreshModelCapabilities(ctx context.Context, sb *Sandbox, env map[string]string) error {
+	return m.reprime(ctx, sb, Spec{Env: env}, nil, "--model-capabilities")
+}
+
+func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys []string, mode string) error {
 	if sb == nil {
 		return fmt.Errorf("reprime: no sandbox")
 	}
@@ -86,8 +92,8 @@ func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 		return fmt.Errorf("reprime: %w", err)
 	}
 	args := []string{"bash", runtimeReprime}
-	if toolOnly {
-		args = append(args, "--tool-only")
+	if mode != "" {
+		args = append(args, mode)
 	}
 	cmd, err := newSafeCmd(args...)
 	if err != nil {
@@ -100,7 +106,7 @@ func (m *Manager) reprime(ctx context.Context, sb *Sandbox, spec Spec, prevKeys 
 	if spec.ConfigRoot != "" {
 		sb.ConfigRoot = spec.ConfigRoot
 	}
-	log.Info().Str("sandbox", sb.ID).Str("provider", spec.Env["AGENT_PROVIDER"]).Bool("tool_only", toolOnly).
+	log.Info().Str("sandbox", sb.ID).Str("provider", spec.Env["AGENT_PROVIDER"]).Str("mode", mode).
 		Msg("sandbox re-primed for next node")
 	return nil
 }

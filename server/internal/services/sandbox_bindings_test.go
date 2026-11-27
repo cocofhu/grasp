@@ -3,12 +3,15 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxService, *models.Sandbox, *ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
@@ -142,6 +145,96 @@ func TestTestSandboxDoesNotReusePreviouslyBoundCredentials(t *testing.T) {
 			ds.setStatus(row.Name, "running")
 			if got, err := s.Open(context.Background(), "agentA", nil); err == nil && got.ID == row.ID {
 				t.Fatal("cleared binding reused a sandbox with previous authorization")
+			}
+		})
+	}
+}
+
+func TestExistingOpenAIStudioSandboxRefreshesDerivedCapabilities(t *testing.T) {
+	for _, entry := range []string{"reopen", "chat", "retry after busy", "rotated key"} {
+		t.Run(entry, func(t *testing.T) {
+			db := newTestDB(t)
+			bridge, port := fakeACPServer(t)
+			t.Cleanup(bridge.Close)
+			ds := &dockerState{acpPort: port}
+			s := newSandboxService(t, db, ds)
+			agent := Agent{Name: "agentA", AcpBackend: "codex", ModelBinding: sandboxTestModelBinding()}
+			if err := s.skills.Save(agent); err != nil {
+				t.Fatal(err)
+			}
+			agent, _ = s.skills.Get(agent.Name)
+			connection := modelrouting.Connection{
+				ID: "official", ProviderID: "openai", Protocol: modelrouting.ProtocolResponses,
+				BaseURL: "https://api.openai.com/v1", Auth: modelrouting.Auth{Scheme: "bearer"},
+				Models: []modelrouting.Model{{ID: "gpt-5.4-mini"}},
+			}
+			secret := "fixture"
+			s.modelBinding = func(backend string, _ *modelrouting.Binding) (modelrouting.Resolved, error) {
+				return modelrouting.Resolved{
+					Backend: backend, Connection: &connection, CredentialID: "api-key", Secret: secret,
+					Binding: modelrouting.Binding{Kind: "connection", ModelID: "gpt-5.4-mini"},
+				}, nil
+			}
+			// Without an active connection, the runtime builder serializes the
+			// same two env values as before service tiers were introduced.
+			legacy, git, err := s.currentBindingFingerprints(agent, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			row := models.Sandbox{
+				Name: "existing-studio", Profile: agent.Name, Purpose: "test", Status: "running",
+				Token: "test-password", ModelBindingFingerprint: legacy, GitBindingsFingerprint: git,
+			}
+			if err := db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			ds.setStatus(row.Name, "running")
+			connection.State = "active"
+			refreshed := 0
+			t.Cleanup(sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, body io.Reader) ([]byte, error) {
+				if strings.Contains(command, "--model-capabilities") {
+					refreshed++
+					if body == nil {
+						t.Error("refresh omitted model environment")
+					}
+					if entry == "retry after busy" && refreshed == 1 {
+						return nil, fmt.Errorf("backend busy")
+					}
+				}
+				return nil, nil
+			}))
+			if entry == "rotated key" {
+				secret = "rotated-fixture"
+				if _, err := s.Open(t.Context(), agent.Name, nil); err == nil || refreshed != 0 {
+					t.Fatalf("rotated credentials reused the legacy sandbox: %v, refreshes %d", err, refreshed)
+				}
+				return
+			}
+			wantRefreshes := 1
+			if entry == "retry after busy" {
+				_, err := s.Open(t.Context(), agent.Name, nil)
+				stored, loadErr := s.Get(row.ID)
+				if err == nil || loadErr != nil || stored.ModelBindingFingerprint != legacy {
+					t.Fatalf("failed refresh changed the stored binding: %v, %v", err, loadErr)
+				}
+				wantRefreshes++
+			}
+			if entry != "chat" {
+				got, err := s.Open(t.Context(), agent.Name, nil)
+				if err != nil || got.ID != row.ID {
+					t.Fatalf("did not reuse existing sandbox: %+v, %v", got, err)
+				}
+			} else if _, _, err := s.ChatWithTimeout(t.Context(), row.ID, "continue", nil, 0, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { s.teardownLive(row.ID) })
+			current, _, err := s.currentBindingFingerprints(agent, nil)
+			stored, loadErr := s.Get(row.ID)
+			if _, openErr := s.Open(t.Context(), agent.Name, nil); openErr != nil {
+				t.Fatal(openErr)
+			}
+			if err != nil || loadErr != nil || legacy == current || stored.ModelBindingFingerprint != current || stored.Name != row.Name || refreshed != wantRefreshes {
+				t.Fatalf("capabilities were not refreshed in place: refreshes %d, %v, %v", refreshed, err, loadErr)
 			}
 		})
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"backend/internal/envutil"
+	"golang.org/x/net/http/httpproxy"
 )
 
 // Codex omits the default tier on the wire. Apply the chat's tier at the
@@ -26,9 +27,25 @@ func startResponsesTierProxy(baseURL, modelID, tier string) (string, func(), err
 	if err != nil {
 		return "", nil, err
 	}
-	proxy := &httputil.ReverseProxy{Rewrite: func(request *httputil.ProxyRequest) {
-		request.SetURL(upstream)
-	}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	config := httpproxy.FromEnvironment()
+	allProxy := envutil.FirstNonEmpty("ALL_PROXY", "all_proxy")
+	if config.HTTPProxy == "" {
+		config.HTTPProxy = allProxy
+	}
+	if config.HTTPSProxy == "" {
+		config.HTTPSProxy = allProxy
+	}
+	proxyForURL := config.ProxyFunc()
+	transport.Proxy = func(request *http.Request) (*url.URL, error) {
+		return proxyForURL(request.URL)
+	}
+	proxy := &httputil.ReverseProxy{
+		Transport: transport,
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(upstream)
+		},
+	}
 	tierValue, _ := json.Marshal(tier)
 	server := &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
@@ -64,7 +81,10 @@ func startResponsesTierProxy(baseURL, modelID, tier string) (string, func(), err
 			log.Printf("codex: Responses tier proxy stopped: %v", err)
 		}
 	}()
-	return "http://" + listener.Addr().String(), func() { _ = server.Close() }, nil
+	return "http://" + listener.Addr().String(), func() {
+		_ = server.Close()
+		transport.CloseIdleConnections()
+	}, nil
 }
 
 func withLoopbackNoProxy(env []string) []string {

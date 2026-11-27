@@ -67,7 +67,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 	}
 	// Shared workspace files and ordinary defaults remain independent of authorization.
 	agent = s.effectiveAgent(agent)
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent, repos)
+	bindings, err := s.currentSandboxBindings(agent, repos)
 	if err != nil {
 		return nil, err
 	}
@@ -81,14 +81,24 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 	if len(repos) == 0 {
 		if row := s.findReusable(ctx, profile); row != nil {
 			s.mu.Lock()
-			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, row, s.live[row.ID])
+			refresh, bindingErr := checkAppliedBindings(bindings, row, s.live[row.ID])
 			s.mu.Unlock()
 			if bindingErr != nil && !(row.RecoveryKind == "files" && row.Status == "stopped") {
 				return nil, bindingErr
 			}
 			if row.Status != "creating" && row.Status != "pulling" {
-				if _, _, err := s.EnsureRunning(ctx, row.ID); err != nil {
+				unlock, err := s.lockSoloRecovery(ctx, row.ID)
+				if err != nil {
 					return nil, err
+				}
+				defer unlock()
+				if _, _, err := s.ensureRunningLocked(ctx, row.ID); err != nil {
+					return nil, err
+				}
+				if refresh {
+					if _, _, err := s.ensureConnected(ctx, row.ID); err != nil {
+						return nil, err
+					}
 				}
 				return s.Get(row.ID)
 			}
@@ -106,7 +116,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []model
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
-		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
+		ModelBindingFingerprint: bindings.model, GitBindingsFingerprint: bindings.git,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstRepoURL(repos), Repos: repos, RunID: runID, Token: token,
 	}
@@ -505,27 +515,39 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		}
 		effective = selected
 	}
-	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective, row.Repos)
+	bindings, err := s.currentSandboxBindings(effective, row.Repos)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := checkAppliedBindings(modelFingerprint, gitFingerprint, &row, ls); err != nil {
+	s.mu.Lock()
+	refresh, err := checkAppliedBindings(bindings, &row, ls)
+	s.mu.Unlock()
+	if err != nil {
 		return nil, nil, err
 	}
 	agent = effective
-	if ls != nil && ls.acp != nil && ls.acp.IsConnected() {
+	if !refresh && ls != nil && ls.acp != nil && ls.acp.IsConnected() {
 		return ls, &row, nil
 	}
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		return nil, nil, fmt.Errorf("sandbox container 不在运行(状态:%s)", row.Status)
 	}
-	sb, err := s.mgr.Attach(ctx, row.Name)
+	attach := s.mgr.Attach
+	if refresh {
+		attach = s.mgr.AttachNoEnsure
+	}
+	sb, err := attach(ctx, row.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("attach: %w", err)
 	}
 	// Attach rebuilds the handle from the gateway record, which carries no env;
 	// restore the acp-bridge secret so ACP() can log in before dialing /ws.
 	sb.Password = row.Token
+	if refresh {
+		if err := s.refreshSandboxModelCapabilities(ctx, &row, sb, ls, bindings); err != nil {
+			return nil, nil, err
+		}
+	}
 	// The gateway retains the original workspace even if the Agent's current
 	// default layout changed while it was asleep.
 	if agent.Layout.ConfigRoot != "" {
@@ -586,8 +608,8 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	ls = &liveSandbox{
 		sb: sb, acp: acp, prepared: prepared, home: home,
 		soloRouteAgent:          &agent,
-		modelBindingFingerprint: modelFingerprint,
-		gitBindingsFingerprint:  gitFingerprint,
+		modelBindingFingerprint: bindings.model,
+		gitBindingsFingerprint:  bindings.git,
 	}
 	s.mu.Lock()
 	s.live[id] = ls

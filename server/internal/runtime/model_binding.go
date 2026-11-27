@@ -3,11 +3,32 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 )
+
+type sandboxModelConnection struct {
+	ConnectionID      string                    `json:"connectionId"`
+	ProviderID        string                    `json:"providerId"`
+	Protocol          string                    `json:"protocol"`
+	BaseURL           string                    `json:"baseUrl"`
+	Auth              modelrouting.Auth         `json:"auth"`
+	Models            []modelrouting.Model      `json:"models"`
+	SelectedModelID   string                    `json:"selectedModelId"`
+	ToolSettings      modelrouting.ToolSettings `json:"toolSettings,omitempty"`
+	ModelServiceTiers map[string][]string       `json:"modelServiceTiers,omitempty"`
+}
+
+type sandboxConfiguredModel struct {
+	ID                string   `json:"id"`
+	Vendor            string   `json:"vendor,omitempty"`
+	ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
+	ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
+	ServiceTiers      []string `json:"serviceTiers,omitempty"`
+}
 
 const (
 	EnvACPBridgeModel    = "ACP_BRIDGE_MODEL"
@@ -70,17 +91,7 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 		if strings.TrimSpace(backend) == string(BackendCodex) {
 			modelServiceTiers = modelrouting.ConnectionModelServiceTiers(*c)
 		}
-		config := struct {
-			ConnectionID      string                    `json:"connectionId"`
-			ProviderID        string                    `json:"providerId"`
-			Protocol          string                    `json:"protocol"`
-			BaseURL           string                    `json:"baseUrl"`
-			Auth              modelrouting.Auth         `json:"auth"`
-			Models            []modelrouting.Model      `json:"models"`
-			SelectedModelID   string                    `json:"selectedModelId"`
-			ToolSettings      modelrouting.ToolSettings `json:"toolSettings,omitempty"`
-			ModelServiceTiers map[string][]string       `json:"modelServiceTiers,omitempty"`
-		}{
+		config := sandboxModelConnection{
 			ConnectionID: c.ID, ProviderID: c.ProviderID, Protocol: c.Protocol, BaseURL: c.BaseURL, Auth: c.Auth,
 			Models: c.Models, SelectedModelID: resolved.Binding.ModelID, ToolSettings: resolved.Binding.ToolSettings,
 			ModelServiceTiers: modelServiceTiers,
@@ -126,20 +137,13 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 	if resolved.Connection != nil && strings.TrimSpace(resolved.Connection.ProviderID) != "" {
 		vendor = resolved.Connection.ProviderID
 	}
-	type item struct {
-		ID                string   `json:"id"`
-		Vendor            string   `json:"vendor,omitempty"`
-		ReasoningEfforts  []string `json:"reasoningEfforts,omitempty"`
-		ReasoningDisabled bool     `json:"reasoningDisabled,omitempty"`
-		ServiceTiers      []string `json:"serviceTiers,omitempty"`
-	}
-	modelItem := func(id string) item {
+	modelItem := func(id string) sandboxConfiguredModel {
 		id = strings.TrimSpace(id)
 		efforts := modelrouting.ReasoningEfforts(resolved.Backend, id, resolved.Connection)
 		if resolved.Backend == "opencode" {
 			efforts = modelrouting.SessionEffortChoices(efforts, resolved.Binding.ToolSettings.ModelEfforts[id])
 		}
-		value := item{ID: id, Vendor: vendor, ReasoningEfforts: efforts, ServiceTiers: modelrouting.ServiceTiers(resolved.Backend, id, resolved.Connection)}
+		value := sandboxConfiguredModel{ID: id, Vendor: vendor, ReasoningEfforts: efforts, ServiceTiers: modelrouting.ServiceTiers(resolved.Backend, id, resolved.Connection)}
 		if resolved.Connection != nil && !modelrouting.FixedEffortBinding(resolved.Backend, resolved.Connection) {
 			for _, model := range resolved.Connection.Models {
 				if model.ID == id && model.Capabilities.Reasoning != nil && !*model.Capabilities.Reasoning {
@@ -149,7 +153,7 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		}
 		return value
 	}
-	items := []item{modelItem(resolved.Binding.ModelID)}
+	items := []sandboxConfiguredModel{modelItem(resolved.Binding.ModelID)}
 	for _, id := range resolved.Binding.AuxiliaryModelIDs {
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -162,6 +166,30 @@ func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
 		return "", fmt.Errorf("encode configured models: %w", err)
 	}
 	return string(data), nil
+}
+
+// LegacyOpenAIModelBindingEnv reconstructs the environment used for a binding
+// fingerprint before official Responses connections advertised speed tiers.
+// Return nil when this connection has no derived capabilities to migrate.
+func LegacyOpenAIModelBindingEnv(env map[string]string) map[string]string {
+	var conn sandboxModelConnection
+	if json.Unmarshal([]byte(env[EnvModelConnection]), &conn) != nil || len(conn.ModelServiceTiers) == 0 {
+		return nil
+	}
+	var catalog []sandboxConfiguredModel
+	if json.Unmarshal([]byte(env[EnvConfiguredModels]), &catalog) != nil {
+		return nil
+	}
+	conn.ModelServiceTiers = nil
+	for i := range catalog {
+		catalog[i].ServiceTiers = nil
+	}
+	// These concrete structs have no custom marshalers or unsupported fields.
+	rawConnection, _ := json.Marshal(conn)
+	rawCatalog, _ := json.Marshal(catalog)
+	legacy := maps.Clone(env)
+	legacy[EnvModelConnection], legacy[EnvConfiguredModels] = string(rawConnection), string(rawCatalog)
+	return legacy
 }
 
 // ClearModelRoutingEnv removes only coding authentication and derived model

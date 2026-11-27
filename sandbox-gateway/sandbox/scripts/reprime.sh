@@ -6,9 +6,10 @@
 # Grasp calls it over SSH with a tar.gz on stdin for shared workflow node
 # handoffs or, with --tool-only, user tool switches. startup.sh is not run.
 #
-# Usage: reprime.sh [--tool-only] < bundle.tgz
+# Usage: reprime.sh [--tool-only | --model-capabilities] < bundle.tgz
 # --tool-only updates a user's tool without reinitializing Git/SSH credentials
 # or preparing repositories. Shared workflow node handoffs omit the flag.
+# --model-capabilities only overlays the model connection and model catalog.
 # Bundle:
 #   env      required. NAME=base64(value) lines: the Grasp spec env of the next node.
 #   unset    optional. One env name per line: Grasp spec env of the previous node.
@@ -17,7 +18,7 @@
 #            The same layout startup.sh reads from /tmp/grasp-ssh-inject.
 #            Leftover ssh/repos grants are ignored; repository auth comes from
 #            the Agent catalog only.
-# Exit: 0 ok · 1 failed · 2 usage / bad bundle
+# Exit: 0 ok · 1 failed · 2 usage / bad bundle · 3 backend busy during capability refresh
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,12 +30,13 @@ SERVICES="${GRASP_REPRIME_SERVICES:-$SCRIPT_DIR/services.sh}"
 HOME_DIR="${GRASP_REPRIME_HOME:-/root}"
 
 reprime_tool_only=0
-if [ "${1:-}" = "--tool-only" ]; then
-  reprime_tool_only=1
-  shift
-fi
-readonly reprime_tool_only
-[ $# -eq 0 ] || { echo "usage: reprime.sh [--tool-only] < bundle.tgz" >&2; exit 2; }
+reprime_model_capabilities=0
+case "${1:-}" in
+  --tool-only) reprime_tool_only=1; shift ;;
+  --model-capabilities) reprime_model_capabilities=1; shift ;;
+esac
+readonly reprime_tool_only reprime_model_capabilities
+[ $# -eq 0 ] || { echo "usage: reprime.sh [--tool-only | --model-capabilities] < bundle.tgz" >&2; exit 2; }
 
 umask 077
 STAGE="$(mktemp -d)"
@@ -54,6 +56,24 @@ valid_name() {
   esac
   return 0
 }
+
+if [ "$reprime_model_capabilities" = 1 ]; then
+  # Keep the installed tool, its session files and all existing grants.
+  for name in GRASP_MODEL_CONNECTION GRASP_CONFIGURED_MODELS; do
+    encoded="$(sed -n "s/^$name=//p" "$STAGE/env")"
+    if [ -z "$encoded" ] || ! value="$(printf '%s' "$encoded" | base64 -d 2>/dev/null)"; then
+      echo "reprime: missing or invalid value for $name" >&2
+      exit 2
+    fi
+    export "$name=$value"
+  done
+  {
+    sed -E '/^declare -x (GRASP_MODEL_CONNECTION|GRASP_CONFIGURED_MODELS)=/d' "$ENV_FILE" &&
+      declare -p GRASP_MODEL_CONNECTION GRASP_CONFIGURED_MODELS
+  } >"$ENV_FILE.tmp" && mv -f "$ENV_FILE.tmp" "$ENV_FILE" || exit 1
+  "$SERVICES" restart backend --if-idle || exit $?
+  exit 0
+fi
 
 # --- previous node -----------------------------------------------------------
 # Stop the previous node's backend before wiping its state: a turn it is still
