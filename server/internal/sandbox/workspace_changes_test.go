@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWorkspaceTreesPreserveIndexAndPreview(t *testing.T) {
@@ -38,15 +39,25 @@ func TestWorkspaceTreesPreserveIndexAndPreview(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	stamp := time.Unix(1_700_000_000, 0)
+	setMtime := func(path string) {
+		t.Helper()
+		if err := os.Chtimes(filepath.Join(repo, path), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
 	git("init", "-b", "main")
 	git("config", "user.email", "test@example.invalid")
 	git("config", "user.name", "Review Fixture")
+	git("config", "core.trustctime", "false")
 	write(".gitignore", "*.scratch\n")
 	write("README.md", "# Start\n")
 	write("old file.txt", "same content\n")
 	write("removed.md", "# Removed\n")
 	write("00-large.txt", strings.Repeat("a", 512*1024+1))
 	write("tab\tline\n.txt", "old\n")
+	setMtime("00-large.txt")
+	setMtime("tab\tline\n.txt")
 	git("add", ".")
 	git("commit", "-m", "base")
 	initial := git("rev-parse", "HEAD")
@@ -94,6 +105,11 @@ func TestWorkspaceTreesPreserveIndexAndPreview(t *testing.T) {
 	write("image.bin", "\x00\x01")
 	write("00-large.txt", strings.Repeat("b", 512*1024+1))
 	write("tab\tline\n.txt", "new\n")
+	// The unchanged size and mtime match the cached entries. Git relies on
+	// the index's own timestamp to recheck the file contents in this case.
+	setMtime("00-large.txt")
+	setMtime("tab\tline\n.txt")
+	setMtime(".git/index")
 	end := capture()
 	write("README.md", "# Later edit\n")
 	reports, err := sb.CompareWorkspaceTrees(ctx, []WorkspaceTreeQuery{

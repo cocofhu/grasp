@@ -63,8 +63,16 @@ def capture(repo, pin):
     index = git(repo, "rev-parse", "--path-format=absolute", "--git-path", "index").rstrip(b"\n")
     with tempfile.TemporaryDirectory(prefix="grasp-review-") as scratch:
         copy = os.path.join(scratch, "index")
-        if os.path.isfile(index):
-            shutil.copyfile(index, copy)
+        try:
+            with open(index, "rb") as source, open(copy, "wb") as destination:
+                stamp = os.fstat(source.fileno()).st_mtime_ns
+                shutil.copyfileobj(source, destination)
+        except FileNotFoundError:
+            pass  # A new repository may have no index yet.
+        else:
+            # Git rechecks contents when a file's mtime matches the index.
+            # Use the timestamp of the same index we read, even if Git replaced it.
+            os.utime(copy, ns=(stamp, stamp))
         env = dict(os.environ, GIT_INDEX_FILE=copy, GIT_TERMINAL_PROMPT="0")
         git(repo, "-c", "core.splitIndex=false", *clean_filters(repo), "add", "--all", "--", ".", env=env)
         tree = git(repo, "write-tree", env=env).rstrip(b"\n").decode()
