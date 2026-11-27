@@ -105,12 +105,14 @@ describe('SandboxInfoButton', () => {
     }
   })
 
-  it('shows the state dot, opens the panel and asks for a fresh view', async () => {
+  it('shows status in the panel and asks for a fresh view when opened', async () => {
     const wrapper = await render()
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('ok')
+    const trigger = wrapper.get('[data-testid="sandbox-info-toggle"]')
+    expect(trigger.find('[data-tone]').exists()).toBe(false)
     const panel = await openPanel(wrapper)
     expect(panel).not.toBeNull()
     expect(wrapper.emitted('refresh')).toHaveLength(1)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('ok')
     expect(q('sandbox-info-state')!.textContent).toBe('运行中')
     expect(q('sandbox-info-reclaim')!.textContent).toMatch(/^\d+ 小时 \d+ 分钟后$/)
     expect(q('sandbox-info-lifecycle')!.textContent).not.toContain('到期先保存环境')
@@ -201,8 +203,8 @@ describe('SandboxInfoButton', () => {
   it('offers wake for a paused sandbox and wakes it when an IDE link is used', async () => {
     gatewayInfo.value = { enabled: true, host: 'ssh.example.com', port: 2222, allowed: true, hasKey: true, hostKeyFingerprint: 'SHA256:abc' }
     const wrapper = await render({ paused: true })
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('idle')
     const panel = await openPanel(wrapper)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('idle')
     expect(q('sandbox-info-state')!.textContent).toBe('已暂停')
     const trigger = q('sandbox-ide-picker-trigger')!
     expect(trigger.textContent).toContain('SSH 连接')
@@ -356,8 +358,8 @@ describe('SandboxInfoButton', () => {
     mounted.pop()
 
     wrapper = await render({ session: session({ status: 'error', error: 'clone failed' }) })
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('err')
     await openPanel(wrapper)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('err')
     expect(q('sandbox-info-error')!.textContent).toContain('clone failed')
     wrapper.unmount()
     mounted.pop()

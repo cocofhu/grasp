@@ -283,7 +283,6 @@ function onIDELaunch() {
       @click="toggle"
     >
       <Icon name="info" :size="16" aria-hidden="true" />
-      <span class="sandbox-info-dot" :data-tone="display.tone" data-testid="sandbox-info-dot" aria-hidden="true" />
     </button>
 
     <Teleport to="body">
@@ -317,7 +316,7 @@ function onIDELaunch() {
               </p>
             </div>
             <span class="sandbox-info-status">
-              <span class="sandbox-info-dot is-inline" :data-tone="display.tone" aria-hidden="true" />
+              <span class="sandbox-info-dot" :data-tone="display.tone" data-testid="sandbox-info-dot" aria-hidden="true" />
               <span data-testid="sandbox-info-state">{{ stateLabel }}</span>
             </span>
           </header>
@@ -449,7 +448,6 @@ function onIDELaunch() {
 .sandbox-info { display: inline-flex; }
 /* Matches the conversation toolbar's mode toggles beside it. */
 .sandbox-info-trigger {
-  position: relative;
   display: inline-flex;
   width: 32px;
   height: 32px;
@@ -467,16 +465,12 @@ function onIDELaunch() {
 .sandbox-info-trigger[aria-pressed="true"] { border-color: rgb(var(--c-line)); background: rgb(var(--c-base)); color: rgb(var(--c-txt)); }
 .sandbox-info-trigger:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
 .sandbox-info-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
   width: 6px;
   height: 6px;
+  flex: none;
   border-radius: 999px;
-  box-shadow: 0 0 0 1.5px rgb(var(--c-surface));
   background: rgb(var(--c-txt3));
 }
-.sandbox-info-dot.is-inline { position: static; flex: none; box-shadow: none; }
 .sandbox-info-dot[data-tone="ok"] { background: rgb(var(--c-ok)); }
 .sandbox-info-dot[data-tone="err"] { background: rgb(var(--c-err)); }
 .sandbox-info-dot[data-tone="pending"] { background: rgb(var(--c-warn)); animation: sandbox-info-breathe 1.6s ease-in-out infinite; }
