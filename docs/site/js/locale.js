@@ -55,6 +55,12 @@
       el.addEventListener("click", () => {
         const loc = el.getAttribute("data-locale-set");
         if (loc === "zh-CN" || loc === "en") setSaved(loc);
+        if (document.documentElement.hasAttribute("data-home-entry")) {
+          const next = new URL(el.href);
+          next.search = location.search;
+          next.hash = location.hash;
+          el.href = next.href;
+        }
       });
     });
   }
@@ -74,16 +80,23 @@
     const page = pageLocale();
     const saved = getSaved();
 
+    function redirect(path) {
+      const next = new URL(path, location.href);
+      next.search = location.search;
+      next.hash = location.hash;
+      location.replace(next);
+    }
+
     if (saved === "en" && page === "zh-CN") {
-      location.replace(new URL("en/", location.href));
+      redirect("en/");
       return;
     }
     if (saved === "zh-CN" && page === "en") {
-      location.replace(new URL("../", location.href));
+      redirect("../");
       return;
     }
     if (!saved && page === "zh-CN" && fromNavigator() === "en") {
-      location.replace(new URL("en/", location.href));
+      redirect("en/");
     }
   }
 

@@ -1,5 +1,5 @@
 ---
-title: Grasp help center
-description: Run Grasp for the first time, learn Solo and workflows, and look up settings or deployment fixes.
+title: Grasp Help Center
+description: Run your first cloud agent, look up a setting, or troubleshoot a deployment.
 kind: hub
 ---

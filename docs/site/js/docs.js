@@ -101,7 +101,7 @@
       return item;
     }));
     input.setAttribute("aria-expanded", String(results.length > 0));
-    showStatus(!query ? dialog.dataset.tip : index && !results.length ? dialog.dataset.empty : "");
+    showStatus(query && index && !results.length ? dialog.dataset.empty : "");
     choose(0);
   }
 

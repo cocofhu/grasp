@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { decodeHTMLAttribute } from "entities";
 import yaml from "js-yaml";
 import MarkdownIt from "markdown-it";
-import { localized, localizedPair, renderDocumentation, strings } from "./layout.mjs";
-import { renderHome } from "./home.mjs";
+import { escape, localized, localizedPair, renderDocumentation, strings } from "./layout.mjs";
+import { codingTools, renderHome } from "./home.mjs";
 import { appendReference } from "./reference.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,6 +23,12 @@ const languages = ["zh-CN", "en"];
 md.renderer.rules.table_open = (tokens, i, options, env, renderer) =>
   '<div class="table-scroll" tabindex="0">' + renderer.renderToken(tokens, i, options);
 md.renderer.rules.table_close = () => "</table></div>\n";
+md.renderer.rules.td_open = (tokens, i, options, env, renderer) => {
+  const cell = renderer.renderToken(tokens, i, options);
+  return env.reference ? cell + `<span class="reference-label" aria-hidden="true">${escape(tokens[i].meta.columnLabel)}</span><span>` : cell;
+};
+md.renderer.rules.td_close = (tokens, i, options, env, renderer) =>
+  (env.reference ? "</span>" : "") + renderer.renderToken(tokens, i, options);
 
 async function walk(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -81,10 +87,12 @@ function rewriteLink(href, page, pagesByFile) {
 
 async function renderMarkdown(page, pagesByFile) {
   const body = page.body + "\n\n" + await appendReference(root, page);
-  const env = {};
+  const env = { reference: page.reference };
   const tokens = md.parse(body, env);
   const seen = new Set();
   const toc = [];
+  let columns = [];
+  let columnIndex = 0;
   let group = "";
   const search = [{ title: page.title, id: "", text: page.description }];
   for (let i = 0; i < tokens.length; i++) {
@@ -109,7 +117,17 @@ async function renderMarkdown(page, pagesByFile) {
       search.push({ title, id, text: "" });
       continue;
     }
+    if (page.reference && token.type === "table_open") {
+      token.attrSet("class", "reference-table");
+      token.attrSet("role", "table");
+      columns = [];
+    }
+    if (page.reference && token.type === "th_open") {
+      token.attrSet("scope", "col");
+      columns.push(textOf(inline));
+    }
     if (page.reference && token.type === "tr_open" && inline?.type === "td_open") {
+      columnIndex = 0;
       const first = textOf(tokens[i + 2]);
       const field = first === "—" ? textOf(tokens[i + 5]) : first;
       const backend = ["docker", "kubernetes", "e2b"].includes(group) ? group + "." : "";
@@ -122,6 +140,7 @@ async function renderMarkdown(page, pagesByFile) {
         search.push({ title, id, text: "" });
       }
     }
+    if (page.reference && token.type === "td_open") token.meta = { columnLabel: columns[columnIndex++] };
     if (token.type !== "inline") continue;
     for (const child of token.children || []) {
       if (child.type === "link_open") child.attrSet("href", rewriteLink(child.attrGet("href"), page, pagesByFile));
@@ -195,6 +214,22 @@ async function main() {
   }
   await fs.rm(out, { recursive: true, force: true });
   await fs.cp(path.join(root, "site"), out, { recursive: true });
+  const captures = [["solo", "home-solo"], ["visual-clarify", "home-preview"]];
+  await Promise.all(captures.map(([source, target]) => fs.copyFile(
+    path.join(root, "..", "media", "screenshots", source + ".webp"), path.join(out, "assets", target + ".webp"),
+  )));
+  const toolIcons = path.join(out, "assets", "coding-tools");
+  await fs.mkdir(toolIcons, { recursive: true });
+  await Promise.all(codingTools.map(([id]) => fs.copyFile(
+    path.join(root, "..", "web", "src", "assets", "provider-logos", id + ".svg"), path.join(toolIcons, id + ".svg"),
+  )));
+  const fonts = [
+    "inter-latin-400-normal.woff2", "inter-latin-500-normal.woff2", "inter-latin-600-normal.woff2",
+    "jetbrains-mono-latin-400-normal.woff2", "fredoka-latin-600-normal.woff2", "OFL.txt", "NOTICE.md",
+  ];
+  await Promise.all(fonts.map(name => fs.copyFile(
+    path.join(root, "..", "web", "public", "fonts", name), path.join(out, "assets", "fonts", name),
+  )));
   await Promise.all([
     ...pages.map(page => write(page.route, renderDocumentation(page, pages, siteUrl))),
     ...languages.flatMap(locale => [
