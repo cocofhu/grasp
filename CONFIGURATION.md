@@ -72,6 +72,23 @@ docker:
 
 完整部署步骤见 [Docker](sandbox-gateway/deploy/docker/README.md)、[Kubernetes](sandbox-gateway/deploy/k8s/README.md) 和 [E2B](sandbox-gateway/deploy/e2b/README.md) 指南。K8s 使用 [独立 K8s 文件](sandbox-gateway/gateway/config.kubernetes.example.yaml)，Grasp 仍只连接 gateway。
 
+## 使用 PostgreSQL
+
+SQLite 是默认数据库。Grasp 与 gateway 可分别选择 `postgres`。两端的 `sandboxes` 表结构不同，使用 PostgreSQL 时为它们各建一个数据库，两个库可以位于同一实例。分别给应用账号授予创建和更新本库表及索引所需的权限。
+
+使用支持 PostgreSQL 的 Grasp 和 gateway 构建，在 Compose 的 `.env` 或各自的进程环境中设置以下字段。将示例地址、账号和密码替换为实际值。生产部署使用 `sslmode=verify-full`，并按数据库服务提供的 CA 配置证书校验。
+
+```dotenv
+GRASP_DB_DRIVER=postgres
+GRASP_DB_DSN='postgresql://grasp:PASSWORD@db.example.com:5432/grasp?sslmode=verify-full&connect_timeout=10'
+SBGW_DB_DRIVER=postgres
+SBGW_DB_DSN='postgresql://gateway:PASSWORD@db.example.com:5432/grasp_gateway?sslmode=verify-full&connect_timeout=10'
+```
+
+YAML 中在各自的 `database` 段设置 `driver: postgres` 和 `dsn`。DSN 支持 URI 或 `host=… dbname=…` 形式。Grasp 使用 PostgreSQL 时通过 `GRASP_SECRETS_KEY` 或 `security.secrets_key` 提供稳定的凭据加密密钥。
+
+首次启动时，两个服务会在各自的数据库里自动建表。备份时同时保存两份数据库、应用数据（含附件）和 `GRASP_SECRETS_KEY`。[文件存储与恢复](server/FILE_STORAGE.md)
+
 ## Grasp 平台配置
 
 以下是常用部署项。全部已登记的环境变量、YAML 路径与类型见由代码生成的 [server/CONFIGURATION.md](server/CONFIGURATION.md)；配置示例见 [server/config.example.yaml](server/config.example.yaml)。
@@ -85,12 +102,12 @@ docker:
 | `server.public_advertise` | `GRASP_PUBLIC_ADVERTISE` | `http://localhost:<port>` | 用户浏览器可访问的平台来源 |
 | `server.mcp_advertise` | `GRASP_MCP_ADVERTISE` | `http://host.docker.internal:<port>` | 沙箱回连 MCP、下载运行时与配置包的 API 基址，必须从沙箱内可达 |
 | `server.frame_ancestors` | `GRASP_FRAME_ANCESTORS` | 空 | 允许嵌入平台页面的门户来源；空表示不允许嵌入 |
-| `database.driver` | `GRASP_DB_DRIVER` | `sqlite`；未指定 driver 但配置 DSN 时推导为 `mysql` | Grasp 数据库类型 |
+| `database.driver` | `GRASP_DB_DRIVER` | `sqlite` | 支持 `sqlite`、`mysql` 和 `postgres`。省略驱动时，PostgreSQL URI 推导为 `postgres`，其他非空 DSN 推导为 `mysql` |
 | `database.path` | `GRASP_DB` | `grasp.db` | SQLite 文件；容器部署通常覆盖为 `/data/grasp.db` |
-| `database.dsn` | `GRASP_DB_DSN` | 空 | MySQL 连接串 |
+| `database.dsn` | `GRASP_DB_DSN` | 空 | MySQL 或 PostgreSQL 连接串 |
 | `auth.users` | `GRASP_AUTH_USERS` | 空 | 平台登录账号与密码散列；生产部署显式提供 |
 | `auth.session_ttl` | `GRASP_AUTH_SESSION_TTL` | `168h` | 登录会话有效期 |
-| `security.secrets_key` | `GRASP_SECRETS_KEY` | 空 | 固定的凭据加密主密钥；非 production 可在数据库旁生成，production 显式提供并随数据库备份 |
+| `security.secrets_key` | `GRASP_SECRETS_KEY` | 空 | 固定的凭据加密主密钥。非 production 的 SQLite 文件部署可自动生成在库旁，其他部署显式提供并随数据库备份 |
 | `engine.profiles_root` | `GRASP_PROFILES_ROOT` | `data/profiles` | Agent 配置目录，与 gateway 的环境 `profiles` 是不同概念 |
 | `storage.driver` | `GRASP_STORAGE_DRIVER` | `local` | 附件存储类型 |
 | `storage.blobs_root` | `GRASP_BLOBS_ROOT` | `data/blobs` | 附件文件目录，与数据库一起备份 |
@@ -177,9 +194,9 @@ GitHub 设备码登录（`github.oauth_client_id`，默认空）、Codex 登录�
 | `driver` | `SBGW_DRIVER` | `docker` | `docker` / `kubernetes` / `e2b`；环境变量与文件不能冲突 |
 | `server.listen` | `SBGW_LISTEN` | `:8080` | 网关 API 监听 |
 | `server.finalizeTimeoutSeconds` | `SBGW_FINALIZE_TIMEOUT_SEC` | `1200` | 创建/重装就绪期限 |
-| `database.driver` | `SBGW_DB_DRIVER` | `sqlite` | `sqlite` 或 `mysql` |
+| `database.driver` | `SBGW_DB_DRIVER` | `sqlite` | `sqlite`、`mysql` 或 `postgres` |
 | `database.path` | `SBGW_DB_PATH` | `gateway.db` | SQLite 持久化文件 |
-| `database.dsn` | `SBGW_DB_DSN` | 空 | MySQL DSN；优先于分项 |
+| `database.dsn` | `SBGW_DB_DSN` | 空 | PostgreSQL 必填。MySQL 优先使用 DSN，也可使用下方分项 |
 | `database.host` / `database.port` | `SBGW_DB_HOST` / `SBGW_DB_PORT` | 空 / `0`（连接时用 `3306`） | MySQL 主机和端口 |
 | `database.user` / `database.password` / `database.name` | `SBGW_DB_USER` / `SBGW_DB_PASSWORD` / `SBGW_DB_NAME` | 空 | MySQL 账号及数据库 |
 | `database.params` | — | 空 | MySQL 默认补 `charset=utf8mb4&parseTime=True&loc=Local` |

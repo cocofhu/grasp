@@ -185,7 +185,7 @@ type SecurityConfig struct {
 
 // SecretsKeyFile is where a non-production server keeps an auto-generated
 // secrets key when none is configured: next to the SQLite database. Empty for
-// production, MySQL and in-memory databases, which must configure a key.
+// production, network databases and in-memory databases, which must configure a key.
 func (c *Config) SecretsKeyFile() string {
 	if strings.EqualFold(strings.TrimSpace(c.Server.DeploymentMode), "production") {
 		return ""
@@ -322,14 +322,12 @@ func (s ServerConfig) FrameAncestorOrigins() (origins, invalid []string) {
 }
 
 type DatabaseConfig struct {
-	// Driver selects the storage backend: "sqlite" (default) or "mysql".
-	// When empty it is inferred: a non-empty DSN implies mysql, else sqlite.
+	// Driver selects sqlite (default), mysql, or postgres. Without an explicit
+	// driver, a PostgreSQL URI selects postgres and any other DSN selects mysql.
 	Driver string `yaml:"driver"`
 	// Path is the SQLite file; ":memory:" is honored for tests.
 	Path string `yaml:"path"`
-	// DSN is the MySQL data source name, e.g.
-	// "user:pass@tcp(host:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local".
-	// Used only when Driver == "mysql".
+	// DSN is the connection string for a network database.
 	DSN string `yaml:"dsn"`
 }
 
@@ -796,14 +794,15 @@ func setDefaults(c *Config) {
 	if c.Server.DeploymentMode == "" {
 		c.Server.DeploymentMode = "development"
 	}
-	// Resolve the DB driver: an explicit driver wins; otherwise a non-empty
-	// DSN implies mysql, else sqlite. The sqlite file path only defaults when
-	// actually running sqlite so a mysql deployment isn't forced to set it.
 	c.Database.Driver = strings.ToLower(strings.TrimSpace(c.Database.Driver))
 	if c.Database.Driver == "" {
-		if strings.TrimSpace(c.Database.DSN) != "" {
+		dsn := strings.TrimSpace(c.Database.DSN)
+		switch {
+		case strings.HasPrefix(dsn, "postgres://"), strings.HasPrefix(dsn, "postgresql://"):
+			c.Database.Driver = "postgres"
+		case dsn != "":
 			c.Database.Driver = "mysql"
-		} else {
+		default:
 			c.Database.Driver = "sqlite"
 		}
 	}

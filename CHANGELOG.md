@@ -9,7 +9,25 @@ All notable public-release changes are documented here.
 
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 
-- Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」菜单（带品牌图标）一键用 VS Code、Cursor、CodeBuddy、Trae（含国内版）打开沙箱，不需要配置 `~/.ssh/config`，JetBrains Gateway 则给出连接信息。
+- Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」选择 VS Code、Cursor、CodeBuddy、Trae（国际版与国内版各一行）、Antigravity 或 Codex 打开沙箱，不需要配置 `~/.ssh/config`。未选择时显示「SSH 连接」；「SSH 连接信息」在弹窗中给出用户名、主机、端口和命令。
+
+- 精简 Solo 沙箱信息面板，将紧凑的 SSH 选择器和浏览器 IDE 放在同一行。自动暂停、保持运行和最近保存按行对齐，仓库、工作目录和最近模型活动可以从「基本信息」展开。
+
+- Solo 沙箱的自动暂停倒计时只显示剩余时间。
+
+- Solo 沙箱面板的停止按钮显示「保存并停止」。
+
+- 移除 Solo 顶栏沙箱信息按钮上的状态圆点。
+
+- 从 Solo 沙箱的「基本信息」查看会话累计 Token 和关联的工作流名称。悬浮在 Token 总数上可查看会话合计和各模型的输入、输出、缓存读和缓存写。
+
+- Solo 沙箱的「基本信息」顶部用紧凑的行展示累计 Token 和工作流，环境和时间信息分组显示。
+
+- Solo 沙箱的「基本信息」显示任务价值，按工作区配置的模型单价汇总会话用量。悬浮在金额上可查看已计价和未计价的 Token 数。
+
+- Solo 沙箱的「基本信息」展开和收起时使用短过渡，并尊重系统的减少动态效果设置。
+
+- SSH 连接信息弹窗支持用 Tab 和 Shift+Tab 在弹窗内循环，关闭后焦点回到本地 IDE 选择器。
 
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 
@@ -24,6 +42,8 @@ All notable public-release changes are documented here.
 - E2B 沙箱启动失败时，错误信息现在附带启动日志的最后 20 行（敏感值已脱敏），例如仓库 clone 的权限错误，不再只显示「E2B bootstrap exited with code 1」。沙箱日志里 `1`、`0` 等短值不再被误替换成 `[redacted]`。需要更新 sandbox-gateway 镜像。
 
 - E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
+
+- Grasp 和沙箱网关支持 PostgreSQL，可分别通过 `GRASP_DB_DRIVER=postgres` 和 `SBGW_DB_DRIVER=postgres` 启用。SQLite 仍是默认数据库。配置见 [PostgreSQL 部署](CONFIGURATION.md#使用-postgresql)。
 
 ## 4.0.4 — 2026-11-24
 

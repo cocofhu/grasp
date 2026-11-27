@@ -42,8 +42,10 @@ preview:
       base_url: ""
 
 database:
+  # driver: sqlite # 也可选 postgres 或 mysql
   # SQLite 路径(":memory:" 用于测试)。容器内通常用 /data/grasp.db(挂持久卷)。
   path: "grasp.db"
+  # 使用 PostgreSQL 或 MySQL 时通过 GRASP_DB_DSN 注入连接串。
 
 engine:
   profiles_root: "data/profiles"

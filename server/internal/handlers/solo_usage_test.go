@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"testing"
 
@@ -42,5 +43,126 @@ func TestListSoloSessionsReportsWorkspaceWideUsage(t *testing.T) {
 	}
 	if len(body.Sessions) != 1 || body.UsedSandboxes != 2 || body.MaxSandboxes <= 0 {
 		t.Fatalf("usage must count every owner while listing only the caller: %+v", body)
+	}
+}
+
+func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
+	hn := newHarness(t)
+	hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
+	for _, row := range []models.SoloSession{
+		{ID: "task", UserID: "admin", Status: models.SoloStatusRunning},
+		{ID: "empty-task", UserID: "admin", Status: models.SoloStatusStarting},
+		{ID: "zero-task", UserID: "admin", Status: models.SoloStatusRunning},
+		{ID: "other-task", UserID: "someone-else", Status: models.SoloStatusRunning},
+	} {
+		if err := hn.db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	reports := []models.TokenUsageReport{
+		{ID: "first", Source: models.TokenLedgerSourceSolo, ThreadID: "task", Reported: true},
+		{ID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", Reported: true, Partial: true},
+		{ID: "zero", Source: models.TokenLedgerSourceSolo, ThreadID: "zero-task", Reported: true},
+	}
+	if err := hn.db.Create(&reports).Error; err != nil {
+		t.Fatal(err)
+	}
+	events := []models.TokenUsageEvent{
+		{
+			ReportID: "first", Source: models.TokenLedgerSourceSolo, ThreadID: "task",
+			SandboxID: 1, ModelKey: "first-model", InputTokens: 500_000, OutputTokens: 250_000,
+			CacheReadTokens: 125_000, CacheWriteTokens: 250_000,
+		},
+		{
+			ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task",
+			SandboxID: 2, ModelKey: "First-model", ModelFilled: true, InputTokens: 500_000,
+		},
+		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", InputTokens: 2_345},
+		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", ModelKey: "default", InputTokens: 10_000},
+		{Source: models.TokenLedgerSourceSolo, ThreadID: "other-task", ModelKey: "first-model", InputTokens: 999_999},
+		{Source: models.TokenLedgerSourceStudio, ThreadID: "task", ModelKey: "first-model", InputTokens: 777_777},
+	}
+	if err := hn.db.Create(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	runs := []models.Run{
+		{ID: "linked-run", WorkflowID: "wf", WorkflowName: "Release checks", Title: "Verify sandbox", Status: "completed"},
+		{ID: "legacy-run", WorkflowID: "legacy-wf", Title: "Legacy sandbox run", Status: "completed"},
+		{ID: "unlinked-run", WorkflowID: "wf", WorkflowName: "Release checks", Title: "Another task", Status: "running"},
+	}
+	if err := hn.db.Create(&models.WorkflowDef{ID: "legacy-wf", Name: "Legacy checks"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := hn.db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+	refs := []models.RunReference{
+		{ID: "ref-1", RunID: "linked-run", UserID: "admin", Kind: models.ReferenceKindSolo, Target: "task"},
+		{ID: "ref-2", RunID: "linked-run", UserID: "admin", Kind: models.ReferenceKindSolo, Target: "task"},
+		{ID: "ref-3", RunID: "unlinked-run", UserID: "admin", Kind: models.ReferenceKindSolo, Target: "other-task"},
+		{ID: "ref-4", RunID: "unlinked-run", UserID: "someone-else", Kind: models.ReferenceKindSolo, Target: "task"},
+		{ID: "ref-5", RunID: "legacy-run", UserID: "admin", Kind: models.ReferenceKindSolo, Target: "task"},
+	}
+	if err := hn.db.Create(&refs).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	getInfo := func(id string) services.SoloTaskInfo {
+		t.Helper()
+		res := hn.do(http.MethodGet, "/api/solo/sessions/"+id+"/task-info", nil)
+		var info services.SoloTaskInfo
+		if err := json.Unmarshal(res.Body.Bytes(), &info); err != nil || res.Code != http.StatusOK {
+			t.Fatalf("task info: %d %s (%v)", res.Code, res.Body.String(), err)
+		}
+		return info
+	}
+	if unpriced := getInfo("task").Usage; unpriced.Cost != nil || unpriced.UnpricedTotal != 1_637_345 {
+		t.Fatalf("usage without model prices = %+v", unpriced)
+	}
+	if _, err := services.SaveTokenPricing(hn.db, services.TokenPricing{
+		Currency: services.TokenPricingCurrencyCNY,
+		Models: map[string]services.TokenModelPrice{
+			"first-model": {Input: 2, Output: 8, CacheRead: 4, CacheWrite: 6},
+			"First-model": {Input: 4},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info := getInfo("task")
+	usage := info.Usage
+	if usage.Total != 1_637_345 || usage.InputTokens != 1_012_345 || usage.OutputTokens != 250_000 ||
+		usage.CacheReadTokens != 125_000 || usage.CacheWriteTokens != 250_000 || !usage.Reported || !usage.Incomplete {
+		t.Fatalf("usage = %+v", usage)
+	}
+	if len(usage.ByModel) != 3 || usage.ByModel["first-model"].Total() != 1_125_000 ||
+		usage.ByModel["First-model"].Total() != 500_000 || !usage.ByModel["First-model"].Filled ||
+		usage.ByModel[models.TokenUsageModelUnknown].InputTokens != 12_345 {
+		t.Fatalf("usage by model = %+v", usage.ByModel)
+	}
+	if usage.Cost == nil || *usage.Cost != 7 || usage.Currency != services.TokenPricingCurrencyCNY || usage.UnpricedTotal != 12_345 {
+		t.Fatalf("priced usage = %+v", usage)
+	}
+	alias := "First-model"
+	if _, err := services.NewWorkspaceService(hn.db).Update(nil, nil, &alias); err != nil {
+		t.Fatal(err)
+	}
+	withAlias := getInfo("task").Usage
+	if withAlias.Cost == nil || math.Abs(*withAlias.Cost-7.04938) > 1e-9 || withAlias.UnpricedTotal != 0 ||
+		withAlias.ByModel[models.TokenUsageModelUnknown].Total() != 12_345 {
+		t.Fatalf("usage with a configured default model = %+v", withAlias)
+	}
+	if len(info.WorkflowRuns) != 2 || info.WorkflowRuns[0] != (services.SoloTaskRun{ID: "linked-run", WorkflowName: "Release checks"}) ||
+		info.WorkflowRuns[1] != (services.SoloTaskRun{ID: "legacy-run", WorkflowName: "Legacy checks"}) {
+		t.Fatalf("workflow runs = %+v", info.WorkflowRuns)
+	}
+	if empty := getInfo("empty-task"); empty.Usage.Reported || empty.Usage.Total != 0 || empty.Usage.Cost != nil || len(empty.WorkflowRuns) != 0 {
+		t.Fatalf("empty task = %+v", empty)
+	}
+	if zero := getInfo("zero-task").Usage; !zero.Reported || zero.Total != 0 || zero.Incomplete || zero.Cost == nil || *zero.Cost != 0 {
+		t.Fatalf("reported zero = %+v", zero)
+	}
+	res := hn.do(http.MethodGet, "/api/solo/sessions/other-task/task-info", nil)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("another user's details: %d %s", res.Code, res.Body.String())
 	}
 }

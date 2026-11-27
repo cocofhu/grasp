@@ -3,9 +3,13 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/databasetest"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
@@ -13,8 +17,12 @@ import (
 
 func newModelConfigurationFixture(t *testing.T) (*ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
 	t.Helper()
+	return modelConfigurationFixtureWithDB(t, newTestDB(t))
+}
+
+func modelConfigurationFixtureWithDB(t *testing.T, db *gorm.DB) (*ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
+	t.Helper()
 	setCredentialKey(t)
-	db := newTestDB(t)
 	connections, configurations := NewModelConnectionService(db), NewModelConfigurationService(db)
 	key := newModelKey(t, NewCredentialService(db), "Saved model key")
 	connection, err := connections.Create(connectionInput(key.ID))
@@ -29,13 +37,35 @@ func newModelConfigurationFixture(t *testing.T) (*ModelConnectionService, *Model
 }
 
 func TestModelConfigurationLifecycleAndMetadata(t *testing.T) {
-	connections, configurations, key, connection, configuration := newModelConfigurationFixture(t)
+	checkModelConfigurationLifecycleAndMetadata(t, newTestDB(t))
+}
+
+func TestPostgresModelConfigurationLifecycleAndMetadata(t *testing.T) {
+	cfg := config.DatabaseConfig{Driver: "postgres", DSN: databasetest.PostgresDSN(t)}
+	db, err := database.OpenWithFiles(cfg, filepath.Join(t.TempDir(), "payloads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close(db) })
+	checkModelConfigurationLifecycleAndMetadata(t, db)
+}
+
+func checkModelConfigurationLifecycleAndMetadata(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	connections, configurations, key, connection, configuration := modelConfigurationFixtureWithDB(t, db)
+	storedConnection, err := connections.Get(connection.ID)
+	if err != nil || !storedConnection.CreatedAt.Equal(connection.CreatedAt) || !storedConnection.UpdatedAt.Equal(connection.UpdatedAt) {
+		t.Fatalf("connection creation timestamps differ from the stored connection: %+v %v", storedConnection, err)
+	}
 	if configuration.Name != "OpenCode team" || configuration.State != "active" || configuration.Revision != 1 || configuration.CreatedAt.IsZero() {
 		t.Fatalf("invalid saved configuration: %+v", configuration)
 	}
 	items, err := configurations.List()
 	if err != nil || len(items) != 1 || items[0].Binding.ConnectionID != connection.ID {
 		t.Fatalf("list: %+v %v", items, err)
+	}
+	if !items[0].CreatedAt.Equal(configuration.CreatedAt) || !items[0].UpdatedAt.Equal(configuration.UpdatedAt) {
+		t.Fatalf("creation timestamps do not match the stored configuration: %+v", items[0])
 	}
 	encoded, err := json.Marshal(items)
 	if err != nil || strings.Contains(string(encoded), "private-model-key") || strings.Contains(string(encoded), "valueEnc") || strings.Contains(string(encoded), `"secret"`) {
@@ -44,6 +74,14 @@ func TestModelConfigurationLifecycleAndMetadata(t *testing.T) {
 	second, err := connections.Create(connectionInput(key.ID))
 	if err != nil {
 		t.Fatal(err)
+	}
+	updatedConnection, err := connections.Update(second.ID, second)
+	if err != nil || !updatedConnection.CreatedAt.Equal(second.CreatedAt) {
+		t.Fatalf("connection update changed creation time: %+v %v", updatedConnection, err)
+	}
+	storedConnection, err = connections.Get(second.ID)
+	if err != nil || !storedConnection.UpdatedAt.Equal(updatedConnection.UpdatedAt) {
+		t.Fatalf("connection update timestamp differs from the stored connection: %+v %v", storedConnection, err)
 	}
 	configuration.Name, configuration.Binding.ConnectionID = "Updated configuration", second.ID
 	configuration.Binding.ToolSettings.ModelRoles = map[string]string{"fast": second.Models[0].ID}
@@ -54,6 +92,9 @@ func TestModelConfigurationLifecycleAndMetadata(t *testing.T) {
 	stored, err := configurations.Get(configuration.ID)
 	if err != nil || stored.Binding.ToolSettings.ModelRoles["fast"] != second.Models[0].ID {
 		t.Fatalf("read persisted binding: %+v %v", stored, err)
+	}
+	if !stored.UpdatedAt.Equal(updated.UpdatedAt) {
+		t.Fatalf("updated timestamp = %v, stored timestamp = %v", updated.UpdatedAt, stored.UpdatedAt)
 	}
 	configuration.Backend = "codebuddy"
 	if _, err := configurations.Update(configuration.ID, configuration); !errors.Is(err, ErrModelConfigurationInvalid) {
