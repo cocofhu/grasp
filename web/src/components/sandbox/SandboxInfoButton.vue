@@ -6,8 +6,10 @@ import { fmtCost } from '@/components/token-analytics/tokenAnalyticsShared'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import { api } from '@/lib/api/api'
 import type { SoloSession, SoloTaskInfo } from '@/lib/api/apiTypes'
+import { fmtTokenCount } from '@/lib/run/tokenUsage'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { formatBytes, relTime } from '@/lib/shared/format'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
@@ -222,9 +224,12 @@ function toggle() {
 function onDocPointer(e: Event) {
   const target = e.target as Node | null
   if (!target || trigger.value?.contains(target) || panel.value?.contains(target)) return
-  // The picker, SSH dialog and Token tooltip are teleported outside this panel.
+  // IDE and usage popovers are teleported outside this panel.
   const el = target instanceof Element ? target : target.parentElement
-  if (el?.closest('[data-testid="sandbox-ide-picker-panel"], [data-testid="sandbox-ide-details"], [data-testid="sandbox-info-token-breakdown"]')) return
+  if (el?.closest(
+    '[data-testid="sandbox-ide-picker-panel"], [data-testid="sandbox-ide-details"], ' +
+    '[data-testid="sandbox-info-token-breakdown"], [data-testid="sandbox-info-task-value-breakdown"]',
+  )) return
   hide()
 }
 
@@ -418,10 +423,20 @@ function onIDELaunch() {
                   </dd>
                   <dt>{{ t('pages.solo.sandboxInfo.details.taskValue') }}</dt>
                   <dd class="tabular-nums" data-testid="sandbox-info-task-value">
-                    <template v-if="taskInfo?.usage.cost != null">
-                      <span class="font-medium">{{ fmtCost(taskInfo.usage.cost, taskInfo.usage.currency) }}</span>
-                      <span v-if="taskInfo.usage.unpricedTotal" class="sandbox-info-note"> · {{ t('pages.solo.sandboxInfo.details.partialPrice') }}</span>
-                    </template>
+                    <TruncatedTextTooltip
+                      v-if="taskInfo?.usage.cost != null"
+                      :text="fmtCost(taskInfo.usage.cost, taskInfo.usage.currency)"
+                      class="cursor-help rounded-sm font-medium underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+                    >
+                      <template #tooltip>
+                        <dl class="grid grid-cols-[max-content_auto] gap-x-5 gap-y-0.5 py-0.5 tabular-nums" data-testid="sandbox-info-task-value-breakdown">
+                          <dt class="text-txt2">{{ t('pages.solo.sandboxInfo.details.pricedTokens') }}</dt>
+                          <dd class="text-right">{{ fmtTokenCount(taskInfo.usage.total - (taskInfo.usage.unpricedTotal ?? 0)) }}</dd>
+                          <dt class="text-txt2">{{ t('pages.solo.sandboxInfo.details.unpricedTokens') }}</dt>
+                          <dd class="text-right">{{ fmtTokenCount(taskInfo.usage.unpricedTotal ?? 0) }}</dd>
+                        </dl>
+                      </template>
+                    </TruncatedTextTooltip>
                     <span v-else class="sandbox-info-note">{{ taskInfo?.usage.unpricedTotal ? t('pages.tokenAnalytics.kpiCostUnpriced') : '—' }}</span>
                   </dd>
                   <template v-if="taskInfo?.workflowRuns.length">

@@ -169,7 +169,16 @@ describe('SandboxInfoButton', () => {
     expect(q('sandbox-info-task-tokens')!.textContent).toContain('用量可能不完整')
     const value = q('sandbox-info-task-value')!
     expect(value.previousElementSibling?.textContent).toBe('任务价值')
-    expect(value.textContent?.trim()).toBe('¥7.00 · 部分未计价')
+    expect(value.textContent?.trim()).toBe('¥7.00')
+    expect(q('sandbox-info-task-value-breakdown')).toBeNull()
+    const valueTrigger = value.querySelector('[role="button"]')!
+    valueTrigger.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+    const valueBreakdown = q('sandbox-info-task-value-breakdown')!
+    expect(valueBreakdown.textContent).toContain('已计价 Token')
+    expect(valueBreakdown.textContent).toContain('未计价 Token')
+    expect(Array.from(valueBreakdown.querySelectorAll('dd'), dd => dd.textContent)).toEqual(['1,625,000', '12,345'])
+    valueTrigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(q('sandbox-info-task-references')).toBeNull()
     expect(q('sandbox-info-workflow-runs')!.querySelector('a')!.getAttribute('href')).toBe('/runs/linked-run')
     expect(q('sandbox-info-workflow-runs')!.textContent!.trim()).toBe('发布检查')
