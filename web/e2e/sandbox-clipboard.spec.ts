@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function mockClipboard(page: Page) {
+async function mockClipboard(page: Page, replyToCheck = true) {
   const clipboardMessages: Record<string, unknown>[] = []
   const remoteKeys: [number, number][] = []
   const resets: number[] = []
@@ -18,7 +18,7 @@ async function mockClipboard(page: Page) {
       if (msg.type === 'clipboard-check') {
         const before = watched.get(msg.id)
         const changed = before !== undefined && before !== remoteRevision
-        socket.send(JSON.stringify({ type: 'clipboard-check-result', id: msg.id, changed }))
+        if (replyToCheck) socket.send(JSON.stringify({ type: 'clipboard-check-result', id: msg.id, changed }))
       }
       if (msg.type !== 'clipboard') return
       clipboardMessages.push(msg)
@@ -142,6 +142,20 @@ test('interrupting a terminal without changing its clipboard keeps local paste a
   ])
   expect(watched.size).toBe(1)
   expect(remoteKeys).toHaveLength(0)
+})
+
+test('a delayed clipboard check does not overwrite a remote copy with local text', async ({ page }) => {
+  const { clipboardMessages, remoteKeys, watched, copyInSandbox } = await mockClipboard(page, false)
+  await page.goto('/console.html?tab=novnc')
+  await page.getByTestId('novnc-control-toggle').click()
+  await page.locator('.novnc-canvas-host canvas').focus()
+  await page.evaluate(() => navigator.clipboard.writeText('Local text that should stay on the device'))
+  await page.keyboard.press('Control+c')
+  await expect.poll(() => watched.size).toBe(1)
+  copyInSandbox()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => remoteKeys).toEqual(remotePaste)
+  expect(clipboardMessages).toHaveLength(0)
 })
 
 test('paste restores held modifiers before forwarding the next key to noVNC', async ({ page }) => {

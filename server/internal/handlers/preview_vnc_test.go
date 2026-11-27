@@ -99,7 +99,7 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 	}
 }
 
-func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
+func TestVncClipboardSourceWithBaseline(t *testing.T) {
 	baseline := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
 	for _, tc := range []struct {
 		name  string
@@ -109,7 +109,7 @@ func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
 		{"terminal interrupt", baseline, false},
 		{"copy in the same generation", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8, Owned: true}, true},
 		{"lost owner", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8}, false},
-		{"display restarted", sandbox.DesktopClipboardState{Generation: "new", Revision: 9, Owned: true}, false},
+		{"new display with an owner", sandbox.DesktopClipboardState{Generation: "new", Revision: 9, Owned: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			observations := 0
@@ -124,12 +124,13 @@ func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
 				return tc.after, nil
 			}
 			clipboard := newVncClipboardObservation(t.Context(), read)
+			<-clipboard.sample.ready
 			clipboard.watch(1)
 			clipboard.watch(1)
-			if clipboard.changed(2) || clipboard.changed(1) != tc.want || observations != 1 {
+			if clipboard.shouldPasteRemote(2) || clipboard.shouldPasteRemote(1) != tc.want || observations != 1 {
 				t.Fatalf("wrong resolution for %s", tc.name)
 			}
-			if clipboard.changed(1) {
+			if clipboard.shouldPasteRemote(1) {
 				t.Fatal("an old observation must not resolve another paste")
 			}
 		})
@@ -137,37 +138,82 @@ func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
 }
 
 func TestVncClipboardWatchDoesNotBlockDesktopInput(t *testing.T) {
-	baseline := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
-	started, allowReply := make(chan struct{}), make(chan struct{})
-	clipboard := newVncClipboardObservation(t.Context(), func(ctx context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
-		if after.Generation != "" {
-			state := baseline
-			state.Revision++
-			return state, nil
-		}
-		close(started)
-		select {
-		case <-allowReply:
-			return baseline, nil
-		case <-ctx.Done():
-			return sandbox.DesktopClipboardState{}, ctx.Err()
-		}
-	})
-	<-started
-	nextInput := make(chan struct{})
-	go func() {
-		clipboard.watch(1)
-		close(nextInput)
-	}()
-	select {
-	case <-nextInput:
-		close(allowReply)
-	case <-time.After(250 * time.Millisecond):
-		close(allowReply)
-		t.Fatal("watch held up the next RFB frame")
+	for _, copyOnInput := range []bool{true, false} {
+		t.Run(fmt.Sprintf("copy=%t", copyOnInput), func(t *testing.T) {
+			state := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+			sampling, allowSample := make(chan struct{}), make(chan struct{})
+			firstSample := true
+			clipboard := newVncClipboardObservation(t.Context(), func(ctx context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+				if after.Generation == "" {
+					if !firstSample {
+						close(sampling)
+						select {
+						case <-allowSample:
+						case <-ctx.Done():
+							return sandbox.DesktopClipboardState{}, ctx.Err()
+						}
+					}
+					firstSample = false
+				}
+				return state, nil
+			})
+			<-clipboard.sample.ready
+			clipboard.reset(0)
+			pending := clipboard.sample
+			<-sampling
+			nextInput := make(chan struct{})
+			go func() {
+				clipboard.watch(1)
+				// The remote app processes the input before the delayed probe samples.
+				if copyOnInput {
+					state.Revision++
+				}
+				close(nextInput)
+			}()
+			select {
+			case <-nextInput:
+				close(allowSample)
+			case <-time.After(250 * time.Millisecond):
+				close(allowSample)
+				t.Fatal("watch held up the next RFB frame")
+			}
+			<-pending.ready
+			if got := clipboard.shouldPasteRemote(1); got != copyOnInput {
+				t.Fatalf("use remote = %t after input copied = %t", got, copyOnInput)
+			}
+		})
 	}
-	if !clipboard.changed(1) {
-		t.Fatal("paste failed to use the queued clipboard snapshot")
+}
+
+func TestVncClipboardSourceWithoutBaseline(t *testing.T) {
+	unowned := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7}
+	owned := sandbox.DesktopClipboardState{Generation: "x11", Revision: 8, Owned: true}
+	for _, tc := range []struct {
+		name         string
+		first, later sandbox.DesktopClipboardState
+		err          error
+		useRemote    bool
+	}{
+		{"existing owner", owned, owned, nil, true},
+		{"copy still in flight", unowned, owned, nil, true},
+		{"clipboard stays empty", unowned, unowned, nil, false},
+		{"clipboard state timed out", sandbox.DesktopClipboardState{}, sandbox.DesktopClipboardState{}, context.DeadlineExceeded, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clipboard := &vncClipboardObservation{
+				ctx: t.Context(),
+				read: func(_ context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+					if after.Generation != "" {
+						return tc.later, tc.err
+					}
+					return tc.first, tc.err
+				},
+			}
+			clipboard.watch(1)
+			if got := clipboard.shouldPasteRemote(1); got != tc.useRemote {
+				t.Fatalf("use remote = %t, want %t", got, tc.useRemote)
+			}
+		})
 	}
 }
 
@@ -176,12 +222,13 @@ func TestVncClipboardRefreshesBaselineOnTakeover(t *testing.T) {
 	clipboard := newVncClipboardObservation(t.Context(), func(_ context.Context, _ sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
 		return state, nil
 	})
-	<-clipboard.latest.ready
+	<-clipboard.sample.ready
 	// Clipboard changes while the viewer is still watching belong to the new baseline.
 	state.Revision++
 	clipboard.reset(0)
+	<-clipboard.sample.ready
 	clipboard.watch(1)
-	if clipboard.changed(1) {
+	if clipboard.shouldPasteRemote(1) {
 		t.Fatal("clipboard change before takeover replaced the local paste source")
 	}
 }

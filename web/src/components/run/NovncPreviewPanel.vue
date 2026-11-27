@@ -268,20 +268,21 @@ function pasteBrowserText(text: string, shift: boolean, shortcut: boolean) {
     clipboardCheck = {
       id, text, shift,
       release: channel.holdOutgoing(),
-      timeout: setTimeout(() => finishClipboardCheck(id, false), 2_400),
+      // A missing result may hide a new remote copy. Keep it available for paste.
+      timeout: setTimeout(() => finishClipboardCheck(id, true), 2_400),
     }
   })
 }
 
-function finishClipboardCheck(id: number, changed: boolean) {
+function finishClipboardCheck(id: number, useRemote: boolean) {
   if (clipboardCheck?.id !== id) return
   const { text, shift, release, timeout } = clipboardCheck
   clipboardCheck = null
   clearTimeout(timeout)
   release(() => {
     if (!clipboardReady.value) return
-    useSandboxClipboard = changed
-    if (changed) pasteFromSandboxClipboard(shift)
+    useSandboxClipboard = useRemote
+    if (useRemote) pasteFromSandboxClipboard(shift)
     else sendClipboard(text, true, shift)
   })
 }

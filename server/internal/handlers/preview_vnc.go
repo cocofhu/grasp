@@ -218,8 +218,8 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 					case "clipboard-reset":
 						clipboard.reset(m.ID)
 					case "clipboard-check":
-						changed := clipboard.changed(m.ID)
-						pushJSON(gin.H{"type": "clipboard-check-result", "id": m.ID, "changed": changed})
+						// The client uses "changed" as the instruction to paste from the sandbox.
+						pushJSON(gin.H{"type": "clipboard-check-result", "id": m.ID, "changed": clipboard.shouldPasteRemote(m.ID)})
 					default:
 						h.applyVncMsg(sess.Page(), m, pushJSON)
 					}
@@ -244,20 +244,21 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	}
 }
 
-// Clipboard snapshots are sampled ahead of input. A watch pins the cached
-// sample immediately so forwarding a key or pointer never waits on the sandbox.
+// A watch freezes the latest completed snapshot before the reader forwards any
+// input that could copy. The reader never waits for a pending snapshot on input.
 type vncClipboardObservation struct {
 	ctx    context.Context
 	read   vncClipboardStateReader
-	latest *vncClipboardSnapshot
-	cancel context.CancelFunc
+	latest sandbox.DesktopClipboardState
+	sample *vncClipboardSnapshot
 	id     int
-	before *vncClipboardSnapshot
+	before sandbox.DesktopClipboardState
 }
 
 type vncClipboardSnapshot struct {
-	ready chan struct{}
-	state sandbox.DesktopClipboardState
+	ready  chan struct{}
+	cancel context.CancelFunc
+	state  sandbox.DesktopClipboardState
 }
 
 const vncClipboardStateTimeout = 900 * time.Millisecond
@@ -272,33 +273,42 @@ func (o *vncClipboardObservation) refresh() {
 	if o.read == nil {
 		return
 	}
-	if o.cancel != nil {
-		o.cancel()
+	o.acceptReadySnapshot()
+	if o.sample != nil {
+		o.sample.cancel()
 	}
-	o.id, o.before = 0, nil
-	latest := &vncClipboardSnapshot{ready: make(chan struct{})}
+	o.id, o.before = 0, sandbox.DesktopClipboardState{}
 	ctx, cancel := context.WithTimeout(o.ctx, vncClipboardStateTimeout)
-	o.latest, o.cancel = latest, cancel
+	sample := &vncClipboardSnapshot{ready: make(chan struct{}), cancel: cancel}
+	o.sample = sample
 	go func() {
-		defer close(latest.ready)
+		defer close(sample.ready)
 		defer cancel()
 		if state, err := o.read(ctx, sandbox.DesktopClipboardState{}); err == nil {
-			latest.state = state
+			sample.state = state
 		}
 	}()
 }
 
-func (o *vncClipboardObservation) watch(id int) {
-	if o.latest == nil || id < 1 || o.id == id {
+func (o *vncClipboardObservation) acceptReadySnapshot() {
+	if o.sample == nil {
 		return
 	}
 	select {
-	case <-o.latest.ready:
-		if o.latest.state.Generation == "" {
-			o.refresh()
+	case <-o.sample.ready:
+		if o.sample.state.Generation != "" {
+			o.latest = o.sample.state
 		}
+		o.sample = nil
 	default:
 	}
+}
+
+func (o *vncClipboardObservation) watch(id int) {
+	if o.read == nil || id < 1 || o.id == id {
+		return
+	}
+	o.acceptReadySnapshot()
 	o.id, o.before = id, o.latest
 }
 
@@ -310,31 +320,32 @@ func (o *vncClipboardObservation) reset(id int) {
 	}
 }
 
-func (o *vncClipboardObservation) changed(id int) bool {
-	if o.id != id || o.before == nil {
+func (o *vncClipboardObservation) shouldPasteRemote(id int) bool {
+	if id < 1 || o.id != id {
 		return false
 	}
-	snapshot := o.before
-	o.id, o.before = 0, nil
+	before := o.before
+	o.id, o.before = 0, sandbox.DesktopClipboardState{}
+	if o.sample != nil {
+		o.sample.cancel()
+		o.sample = nil
+	}
 	ctx, cancel := context.WithTimeout(o.ctx, vncClipboardStateTimeout)
 	defer cancel()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-snapshot.ready:
-	}
-	before := snapshot.state
-	if before.Generation == "" {
-		return false
-	}
 	after, err := o.read(ctx, before)
-	if err != nil {
-		o.refresh()
-		return false
+	if err == nil && after.Generation != "" && after.Generation != before.Generation && !after.Owned {
+		// The copy may still be reaching the application. With no baseline in
+		// this generation, give a new owner the same short wait as a normal check.
+		after, err = o.read(ctx, after)
 	}
-	o.latest = &vncClipboardSnapshot{ready: make(chan struct{}), state: after}
-	close(o.latest.ready)
-	return after.Owned && after.Generation == before.Generation && after.Revision > before.Revision
+	if err != nil || after.Generation == "" {
+		o.refresh()
+		return true
+	}
+	o.latest = after
+	// An occupied clipboard with no earlier snapshot may already contain the
+	// user's new copy. Pasting directly preserves it.
+	return after.Owned && (after.Generation != before.Generation || after.Revision > before.Revision)
 }
 
 func writeVncClipboard(ctx context.Context, upstream *websocket.Conn, setText func(context.Context, string) error, m vncClientMsg, reply func(any)) bool {
