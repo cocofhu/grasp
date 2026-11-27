@@ -71,6 +71,7 @@ const viewportEl = ref<HTMLDivElement | null>(null)
 const rootEl = ref<HTMLDivElement | null>(null)
 const isFullscreen = ref(false)
 const status = ref<'connecting' | 'live' | 'closed' | 'error'>('connecting')
+const rfbConnected = ref(false)
 const statusMsg = ref('')
 const previewStuck = ref(false)
 let previewWarnTimer: ReturnType<typeof setTimeout> | null = null
@@ -122,6 +123,140 @@ let disposed = false
 /** Console mode: fail fast instead of spinning until the 90s server timeout. */
 let connectTimer: ReturnType<typeof setTimeout> | null = null
 const CONSOLE_CONNECT_TIMEOUT_MS = 20_000
+
+const CLIPBOARD_MAX_BYTES = 128 * 1024
+const clipboardVisible = computed(() => !!props.sandboxId && !props.wsUrl?.trim())
+const clipboardReady = computed(() =>
+  clipboardVisible.value && rfbConnected.value && status.value === 'live' && control.value && !inspect.value,
+)
+const isApplePlatform = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+const pasteShortcut = isApplePlatform ? '⌘V' : 'Ctrl+V'
+const clipboardLabel = computed(() => t(clipboardReady.value
+  ? 'pages.appPreview.novnc.clipboard.shortcutHint'
+  : 'pages.appPreview.novnc.clipboard.takeOverHint', { shortcut: pasteShortcut }))
+const clipboardOpen = ref(false)
+const clipboardDraft = ref('')
+const clipboardError = ref('')
+const clipboardPending = ref<{ id: number; paste: boolean } | null>(null)
+let clipboardRequestId = 0
+let clipboardShortcutRequest: number | null = null
+let clipboardTimer: ReturnType<typeof setTimeout> | undefined
+let pasteWithShift = false
+let useSandboxClipboard = false
+
+function resetScreenPaste() {
+  pasteWithShift = false
+  useSandboxClipboard = false
+}
+
+function closeClipboard() {
+  clipboardOpen.value = false
+  clipboardDraft.value = ''
+  clipboardError.value = ''
+  clipboardPending.value = null
+  clipboardShortcutRequest = null
+  clearTimeout(clipboardTimer)
+  resetScreenPaste()
+}
+
+function openClipboard() {
+  clipboardShortcutRequest = null
+  clipboardError.value = ''
+  clipboardOpen.value = true
+}
+
+function sendClipboard(text: string, paste: boolean, shift = false) {
+  if (!clipboardReady.value || !sessionSocketAlive() || !text) return
+  const key = 'pages.appPreview.novnc.clipboard'
+  if (new TextEncoder().encode(text).length > CLIPBOARD_MAX_BYTES) {
+    clipboardError.value = t(`${key}.tooLarge`)
+    return
+  }
+  const id = ++clipboardRequestId
+  clipboardError.value = ''
+  if (clipboardOpen.value) {
+    clipboardPending.value = { id, paste }
+    clipboardTimer = setTimeout(() => onClipboardResult(id, false), 8_000)
+  } else {
+    clipboardShortcutRequest = id
+  }
+  sendCtrl({ type: 'clipboard', id, text, paste, shift })
+}
+
+function onClipboardResult(id: number, ok: boolean, code?: string) {
+  if (!clipboardReady.value) return
+  const pending = clipboardPending.value
+  if (pending && pending.id === id) {
+    clipboardPending.value = null
+    clearTimeout(clipboardTimer)
+    if (ok) {
+      closeClipboard()
+      void nextTick(() => {
+        if (!clipboardReady.value) return
+        focusRemoteScreen()
+        // A manual copy stays the paste source while the viewer keeps the screen focused.
+        useSandboxClipboard = !pending.paste
+      })
+      return
+    }
+  } else {
+    if (clipboardShortcutRequest === null || id !== clipboardShortcutRequest) return
+    clipboardShortcutRequest = null
+  }
+  if (!ok) clipboardError.value = t(code === 'runtime-outdated'
+    ? 'pages.appPreview.novnc.clipboard.runtimeOutdated'
+    : 'pages.appPreview.novnc.clipboard.failed')
+}
+
+function onScreenPasteKey(ev: KeyboardEvent) {
+  if (ev.key.toLowerCase() !== 'v') return
+  if (ev.type === 'keyup') {
+    pasteWithShift = false
+    return
+  }
+  if (!clipboardReady.value || ev.isComposing || ev.altKey) return
+  const isLocalPaste = isApplePlatform ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey
+  if (!isLocalPaste) return
+  // noVNC cancels keydown on the canvas. Keep the browser's default paste
+  // action when obtaining text from the local clipboard.
+  ev.stopPropagation()
+  pasteWithShift = ev.shiftKey
+  // noVNC has already forwarded the modifier keydowns. Release those before
+  // the proxy presses the Linux paste shortcut, including Cmd mapped to Alt.
+  for (const modifier of [ev.metaKey ? 'Meta' : 'Control', ...(ev.shiftKey ? ['Shift'] : [])]) {
+    for (const side of ['Left', 'Right']) {
+      ev.target?.dispatchEvent(new KeyboardEvent('keyup', { key: modifier, code: `${modifier}${side}` }))
+    }
+  }
+  if (useSandboxClipboard) {
+    ev.preventDefault()
+    pasteFromSandboxClipboard(ev.shiftKey)
+  }
+}
+
+function pasteFromSandboxClipboard(shift: boolean) {
+  const session = rfb
+  if (!session) return
+  session.sendKey(0xffe3, 'ControlLeft', true)
+  if (shift) session.sendKey(0xffe1, 'ShiftLeft', true)
+  session.sendKey(shift ? 0x56 : 0x76, 'KeyV')
+  if (shift) session.sendKey(0xffe1, 'ShiftLeft', false)
+  session.sendKey(0xffe3, 'ControlLeft', false)
+}
+
+function onScreenPaste(ev: ClipboardEvent) {
+  if (!clipboardReady.value) return
+  ev.preventDefault()
+  useSandboxClipboard = false
+  const text = ev.clipboardData?.getData('text/plain')
+  if (text) sendClipboard(text, true, pasteWithShift)
+  else clipboardError.value = t('pages.appPreview.novnc.clipboard.noText')
+  pasteWithShift = false
+}
+
+watch(clipboardReady, (ready) => {
+  if (!ready) closeClipboard()
+})
 
 /**
  * Tab hide (v-show → display:none) collapses the preview viewport to 0×0. With
@@ -349,6 +484,8 @@ function fail(m: string) {
 
 function teardown() {
   disposed = true
+  rfbConnected.value = false
+  closeClipboard()
   takeoverCheck = null
   takeoverPrompt.value = null
   endTakeoverGesture()
@@ -390,6 +527,9 @@ function handleCtrlText(data: string) {
       reconnecting.value = false
       if (typeof msg.url === 'string' && msg.url) address.value = msg.url
       flushOpenRequest()
+      break
+    case 'clipboard-result':
+      onClipboardResult(msg.id, msg.ok === true, msg.code)
       break
     case 'picked':
       inlineTip.value = null
@@ -570,6 +710,7 @@ function connect() {
     rfb.background = desktopShell.value ? 'transparent' : SCREEN_BACKGROUND
 
     rfb.addEventListener('connect', () => {
+      rfbConnected.value = true
       clearConnectTimer()
       if (status.value === 'connecting') status.value = 'live'
       fpsCounter.attach(rfb!)
@@ -577,6 +718,7 @@ function connect() {
       restoreViewport('connected')
     })
     rfb.addEventListener('disconnect', () => {
+      rfbConnected.value = false
       if (disposed || status.value === 'error' || status.value === 'closed') return
       if (status.value === 'live') onConnectionLost('disconnect')
       else status.value = 'closed'
@@ -878,7 +1020,7 @@ function onFsChange() {
 }
 
 function onKeydown(ev: KeyboardEvent) {
-  if (ev.key !== 'Escape') return
+  if (ev.key !== 'Escape' || clipboardOpen.value) return
   // Inspect Esc: exit mode only (keep staged). Non-inspect Esc clears staged pick.
   if (inspect.value) {
     ev.preventDefault()
@@ -920,6 +1062,7 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', onFsChange)
   document.addEventListener('visibilitychange', onDocumentVisibility)
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('blur', resetScreenPaste)
   heartbeatTimer = setInterval(heartbeat, VNC_HEARTBEAT_MS)
   connect()
   bindScreenTakeoverListeners()
@@ -931,6 +1074,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFsChange)
   document.removeEventListener('visibilitychange', onDocumentVisibility)
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('blur', resetScreenPaste)
   unbindScreenTakeoverListeners()
   teardownHostResizeObserver()
   if (heartbeatTimer != null) clearInterval(heartbeatTimer)
@@ -999,6 +1143,18 @@ onBeforeUnmount(() => {
         @click="toggleControl"
       >
         {{ controlToggleLabel }}
+      </button>
+      <button
+        v-if="clipboardVisible"
+        type="button"
+        class="rounded px-1.5 py-0.5 text-txt2 hover:bg-overlay disabled:opacity-40"
+        :title="clipboardLabel"
+        :aria-label="t('pages.appPreview.novnc.clipboard.title')"
+        :disabled="!clipboardReady"
+        data-testid="novnc-clipboard-toggle"
+        @click="openClipboard"
+      >
+        <Icon name="copy" :size="14" />
       </button>
       <button
         type="button"
@@ -1126,6 +1282,18 @@ onBeforeUnmount(() => {
         {{ controlToggleLabel }}
       </button>
       <button
+        v-if="clipboardVisible"
+        type="button"
+        class="shrink-0 rounded px-1.5 py-0.5 text-txt2 hover:bg-overlay disabled:opacity-40"
+        :title="clipboardLabel"
+        :aria-label="t('pages.appPreview.novnc.clipboard.title')"
+        :disabled="!clipboardReady"
+        data-testid="novnc-clipboard-toggle"
+        @click="openClipboard"
+      >
+        <Icon name="copy" :size="14" />
+      </button>
+      <button
         v-if="audio.available.value"
         type="button"
         class="shrink-0 rounded px-1.5 py-0.5 text-[11px] transition"
@@ -1233,7 +1401,16 @@ onBeforeUnmount(() => {
         ref="canvasHost"
         class="novnc-canvas-host absolute"
         :class="desktopShell ? 'inset-x-5 top-4 bottom-3 max-md:inset-x-2 max-md:top-2 max-md:bottom-2' : 'inset-0 h-full w-full'"
+        @keydown.capture="onScreenPasteKey"
+        @keyup.capture="onScreenPasteKey"
+        @paste.capture="onScreenPaste"
+        @focusout="resetScreenPaste"
       />
+      <p
+        v-if="clipboardError && !clipboardOpen"
+        class="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[calc(100%-1.5rem)] rounded-md border border-err/40 bg-elevated px-3 py-2 text-xs text-err shadow-card"
+        role="status"
+      >{{ clipboardError }}</p>
       <template v-if="status === 'live' && !desktopShell">
         <div
           v-if="control"
@@ -1353,6 +1530,18 @@ onBeforeUnmount(() => {
           </button>
           <slot name="toolbar-extra" />
           <button
+            v-if="clipboardVisible"
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-full text-txt3 transition hover:bg-overlay hover:text-txt disabled:opacity-40"
+            :title="clipboardLabel"
+            :aria-label="t('pages.appPreview.novnc.clipboard.title')"
+            :disabled="!clipboardReady"
+            data-testid="novnc-clipboard-toggle"
+            @click="openClipboard"
+          >
+            <Icon name="copy" :size="14" />
+          </button>
+          <button
             v-if="audio.available.value"
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-full transition"
@@ -1424,6 +1613,39 @@ onBeforeUnmount(() => {
         </span>
       </div>
     </div>
+    <AppModal
+      :open="clipboardOpen"
+      :inline="isFullscreen"
+      :title="t('pages.appPreview.novnc.clipboard.title')"
+      :width="480"
+      :close-label="t('common.buttons.close')"
+      close-on-esc
+      trap-focus
+      @close="closeClipboard"
+    >
+      <label class="block text-sm text-txt2">
+        {{ t('pages.appPreview.novnc.clipboard.inputLabel') }}
+        <textarea
+          v-model="clipboardDraft"
+          rows="5"
+          class="mt-2 block w-full rounded-lg border border-line bg-base px-3 py-2 font-mono text-sm text-txt outline-none focus:border-accent"
+          :readonly="!!clipboardPending"
+          spellcheck="false"
+          autocomplete="off"
+          autofocus
+          data-testid="novnc-clipboard-text"
+        />
+      </label>
+      <p v-if="clipboardError" class="mt-2 text-xs text-err" role="status">{{ clipboardError }}</p>
+      <template #footer>
+        <AppButton variant="ghost" :disabled="!clipboardDraft || !!clipboardPending" @click="sendClipboard(clipboardDraft, false)">
+          {{ t('pages.appPreview.novnc.clipboard.copyToSandbox') }}
+        </AppButton>
+        <AppButton variant="primary" :disabled="!clipboardDraft || !!clipboardPending" @click="sendClipboard(clipboardDraft, true)">
+          {{ t('pages.appPreview.novnc.clipboard.pasteNow') }}
+        </AppButton>
+      </template>
+    </AppModal>
     <AppModal
       :open="takeoverPrompt !== null"
       :inline="isFullscreen"

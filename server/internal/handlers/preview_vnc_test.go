@@ -1,15 +1,22 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/gateshare"
+	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 type vncRecPage struct {
@@ -68,6 +75,7 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		want bool
 	}{
 		{vncClientMsg{Type: "inspect", On: true}, true},
+		{vncClientMsg{Type: "clipboard", Text: "example", Paste: true}, false},
 		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://localhost/x"}, true},
@@ -85,6 +93,72 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		if got := publicVncMsgAllowed(c.m); got != c.want {
 			t.Errorf("publicVncMsgAllowed(%+v) = %v, want %v", c.m, got, c.want)
 		}
+	}
+}
+
+func TestVncClipboardPastesAfterTextIsSet(t *testing.T) {
+	type frame struct {
+		kind int
+		data []byte
+		err  error
+	}
+	frames := make(chan frame, 1)
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			frames <- frame{err: err}
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		kind, data, err := conn.ReadMessage()
+		frames <- frame{kind, data, err}
+	}))
+	defer peer.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(peer.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	msg := vncClientMsg{Type: "clipboard", ID: 2, Paste: true, Shift: true, Text: "多行🙂\n code"}
+	var clipboard string
+	var result gin.H
+	reply := func(msg any) { result = msg.(gin.H) }
+	if !writeVncClipboard(t.Context(), nil, func(context.Context, string) error {
+		return errors.New("desktop unavailable")
+	}, msg, reply) || result["ok"] != false {
+		t.Fatalf("failed write: %v", result)
+	}
+	if !writeVncClipboard(t.Context(), nil, func(context.Context, string) error {
+		return &sandbox.ChatHTTPError{StatusCode: http.StatusNotFound}
+	}, msg, reply) || result["ok"] != false || result["code"] != "runtime-outdated" {
+		t.Fatalf("old runtime: %v", result)
+	}
+	copyOnly := msg
+	copyOnly.Paste = false
+	if !writeVncClipboard(t.Context(), nil, func(_ context.Context, text string) error {
+		clipboard = text
+		return nil
+	}, copyOnly, reply) || result["ok"] != true || clipboard != msg.Text {
+		t.Fatalf("copy only: clipboard=%q result=%v", clipboard, result)
+	}
+	if !writeVncClipboard(t.Context(), conn, func(_ context.Context, text string) error {
+		clipboard = text
+		return nil
+	}, msg, reply) || result["ok"] != true || result["id"] != 2 || clipboard != msg.Text {
+		t.Fatalf("clipboard=%q result=%v", clipboard, result)
+	}
+	got := <-frames
+	want := []byte{
+		4, 1, 0, 0, 0, 0, 0xff, 0xe3, // Ctrl down
+		4, 1, 0, 0, 0, 0, 0xff, 0xe1, // Shift down
+		4, 1, 0, 0, 0, 0, 0, 'V',
+		4, 0, 0, 0, 0, 0, 0, 'V',
+		4, 0, 0, 0, 0, 0, 0xff, 0xe1,
+		4, 0, 0, 0, 0, 0, 0xff, 0xe3,
+	}
+	if got.err != nil || got.kind != websocket.BinaryMessage || !bytes.Equal(got.data, want) {
+		t.Fatalf("paste frame: %+v", got)
 	}
 }
 

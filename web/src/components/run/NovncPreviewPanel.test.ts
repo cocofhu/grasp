@@ -270,7 +270,59 @@ describe('NovncPreviewPanel', () => {
     try {
       await flushPromises()
       const icons = wrapper.findAll('button > svg[data-icon]').map(icon => icon.attributes('data-icon'))
-      expect(icons).toEqual(['arrow-left', 'arrow-right', 'refresh', 'volume-off'])
+      expect(icons).toEqual(['arrow-left', 'arrow-right', 'refresh', 'copy', 'volume-off'])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('holds clipboard text until the user submits and keeps the draft when the runtime is outdated', async () => {
+    const wrapper = mountNovnc()
+    try {
+      await flushPromises()
+      await controlButton(wrapper).trigger('click')
+      await flushPromises()
+      const toggle = wrapper.get('[data-testid="novnc-clipboard-toggle"]')
+      await toggle.trigger('click')
+      await flushPromises()
+      const modal = document.querySelector('[role="dialog"]')!
+      const input = modal.querySelector('textarea')!
+      const submit = [...modal.querySelectorAll('button')].find(el => el.textContent?.includes('粘贴到当前窗口'))!
+      const ws = MockWebSocket.instances[0]
+      const sent = () => ws.sent.map(frame => JSON.parse(frame)).filter(frame => frame.type === 'clipboard')
+      const text = '  多行 🙂\n  const x = 1;'
+      input.value = text
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await nextTick()
+      expect(sent()).toHaveLength(0)
+      submit.click()
+      expect(sent()).toEqual([{ type: 'clipboard', id: 1, text, paste: true, shift: false }])
+      ws.onmessage?.({ data: JSON.stringify({ type: 'clipboard-result', id: 1, ok: false, code: 'runtime-outdated' }) })
+      await nextTick()
+      expect(modal.textContent).toContain('请更新沙箱运行时后使用剪贴板')
+      expect(input.value).toBe(text)
+
+      submit.click()
+      modal.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click()
+      await flushPromises()
+      await toggle.trigger('click')
+      await flushPromises()
+      ws.onmessage?.({ data: JSON.stringify({ type: 'clipboard-result', id: 2, ok: false }) })
+      await nextTick()
+      const reopened = document.querySelector('[role="dialog"]')!
+      expect(reopened.querySelector('textarea')?.value).toBe('')
+      expect(reopened.textContent).not.toContain('无法写入沙箱剪贴板')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('does not expose the clipboard on public sharing tickets', async () => {
+    const wrapper = mountNovnc({ wsUrl: 'wss://example.test/vnc?ticket=public' })
+    try {
+      await flushPromises()
+      await controlButton(wrapper).trigger('click')
+      expect(wrapper.find('[data-testid="novnc-clipboard-toggle"]').exists()).toBe(false)
     } finally {
       wrapper.unmount()
     }

@@ -50,6 +50,20 @@ func SetDesktopControl(ctx context.Context, host string, port int, password, hol
 	return decodeDesktop(resp, "desktop control")
 }
 
+// SetDesktopClipboard replaces the sandbox desktop's text clipboard.
+func SetDesktopClipboard(ctx context.Context, host string, port int, password, text string) error {
+	body, _ := json.Marshal(map[string]string{"text": text})
+	resp, err := chatRequest(ctx, http.MethodPut, host, port, password, "/api/desktop/clipboard", body)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		return &ChatHTTPError{op: "desktop clipboard", StatusCode: resp.StatusCode}
+	}
+	return nil
+}
+
 func decodeDesktop(resp *http.Response, op string) (DesktopStatus, error) {
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {

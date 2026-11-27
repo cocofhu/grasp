@@ -69,6 +69,7 @@ func New(deps *Dependencies) *gin.Engine {
 	desktopControl := desktop.NewControlStore(desktopPaths, nil)
 	r.GET("/api/desktop/status", handler.DesktopStatus(deps.Chats, desktopPaths, desktopControl))
 	r.PUT("/api/desktop/control", handler.DesktopControl(deps.Chats, desktopPaths, desktopControl))
+	r.PUT("/api/desktop/clipboard", handler.DesktopClipboard(handler.WriteDesktopClipboard))
 
 	// SPA 回退：未知 GET 仍回 index
 	r.NoRoute(func(c *gin.Context) {

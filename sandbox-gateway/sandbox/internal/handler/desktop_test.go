@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestDesktopClipboard(t *testing.T) {
+	const path = "/api/desktop/clipboard"
+	const text = "  多行 🙂\nconst x = 1;\n"
+	var copied string
+	r := gin.New()
+	r.PUT(path, DesktopClipboard(func(_ context.Context, input string) error {
+		if input == "unavailable" {
+			return errors.New("clipboard unavailable")
+		}
+		copied = input
+		return nil
+	}))
+	body, _ := json.Marshal(map[string]string{"text": text})
+	if code, _ := doJSON(r, http.MethodPut, path, string(body)); code != http.StatusNoContent || copied != text {
+		t.Fatalf("status=%d clipboard=%q", code, copied)
+	}
+	for _, body := range []string{`{"text":""}`, `{`, `{"text":"` + strings.Repeat("x", desktopClipboardMaxBytes+1) + `"}`} {
+		if code, _ := doJSON(r, http.MethodPut, path, body); code != http.StatusBadRequest || copied != text {
+			t.Fatalf("invalid request: status=%d clipboard=%q", code, copied)
+		}
+	}
+	if code, _ := doJSON(r, http.MethodPut, path, `{"text":"unavailable"}`); code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable: status=%d", code)
+	}
+}
 
 func desktopRouter(t *testing.T, marker bool) (*gin.Engine, desktop.Paths) {
 	t.Helper()

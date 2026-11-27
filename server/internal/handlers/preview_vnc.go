@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -21,6 +23,7 @@ import (
 // Binary frames carry RFB (proxied to websockify); text JSON handles Pick/navigate.
 // vncTouchEvery throttles viewer activity marks; well under browser.TabIdleTTL.
 const vncTouchEvery = 15 * time.Second
+const vncClipboardMaxBytes = 128 << 10
 
 // vncToucher marks a viewer active on any client traffic so a watched but
 // untouched preview is not swept as idle. Used from one reader goroutine.
@@ -44,10 +47,14 @@ func (t *vncToucher) mark() {
 }
 
 type vncClientMsg struct {
-	Type   string `json:"type"`   // "inspect" | "navigate" | "ping"
+	Type   string `json:"type"`   // "inspect" | "navigate" | "ping" | "clipboard"
 	On     bool   `json:"on"`     // inspect
 	Action string `json:"action"` // navigate: "reload"|"back"|"forward"|"goto"|"open" (new tab)
 	URL    string `json:"url"`    // navigate goto/open target (about:blank / http…)
+	ID     int    `json:"id"`     // clipboard request ID
+	Text   string `json:"text"`   // clipboard text
+	Paste  bool   `json:"paste"`  // apply Ctrl+V after replacing the clipboard
+	Shift  bool   `json:"shift"`  // apply Ctrl+Shift+V
 }
 
 // desktopVNCOptions adapts the one sandbox desktop proxy to a caller.
@@ -57,6 +64,8 @@ type desktopVNCOptions struct {
 	onConnected func(conn *websocket.Conn, writeJSON func(any) error) func()
 	// allowMsg drops control messages the viewer may not send.
 	allowMsg func(vncClientMsg) bool
+	// setClipboard is only available through the signed-in sandbox route.
+	setClipboard func(context.Context, string) error
 }
 
 // resolveDesktopSandbox returns the container IP of a running sandbox, or an
@@ -93,6 +102,10 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	if opts.setClipboard != nil {
+		conn.SetReadLimit(6*vncClipboardMaxBytes + 1024)
+	}
+	ctx := c.Request.Context()
 
 	// gorilla/websocket does not support concurrent writes; the RFB passthrough
 	// loop, pushJSON, and OnPick may all write to conn.
@@ -117,7 +130,7 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	}
 
 	const navigateURL = "about:blank"
-	openCtx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
+	openCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	sess, err := h.Browser.OpenInSandbox(openCtx, sandboxName, sandboxIP, navigateURL)
 	if err != nil {
@@ -157,7 +170,7 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
 
-	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(c.Request.Context(), sess.Page(), navigateURL)})
+	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(ctx, sess.Page(), navigateURL)})
 
 	go func() {
 		select {
@@ -169,22 +182,29 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		}
 	}()
 
-	// Client → upstream: binary RFB passthrough; text JSON → CDP control.
+	// Client → upstream: keep clipboard writes and keyboard events in order.
 	go func() {
+		defer func() { _ = upstream.Close() }()
 		activity := newVncToucher(sess.Touch)
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
-				_ = upstream.Close()
 				return
 			}
 			activity.mark()
 			if msgType == websocket.TextMessage {
 				var m vncClientMsg
 				if json.Unmarshal(data, &m) == nil {
-					if opts.allowMsg == nil || opts.allowMsg(m) {
-						h.applyVncMsg(sess.Page(), m, pushJSON)
+					if opts.allowMsg != nil && !opts.allowMsg(m) {
+						continue
 					}
+					if m.Type == "clipboard" {
+						if opts.setClipboard != nil && !writeVncClipboard(ctx, upstream, opts.setClipboard, m, pushJSON) {
+							return
+						}
+						continue
+					}
+					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
 			}
@@ -204,6 +224,52 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 			return
 		}
 	}
+}
+
+func writeVncClipboard(ctx context.Context, upstream *websocket.Conn, setText func(context.Context, string) error, m vncClientMsg, reply func(any)) bool {
+	result := gin.H{"type": "clipboard-result", "id": m.ID, "ok": false}
+	defer func() { reply(result) }()
+	if m.Text == "" || len(m.Text) > vncClipboardMaxBytes {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := setText(ctx, m.Text); err != nil {
+		var status *sandbox.ChatHTTPError
+		if errors.As(err, &status) && status.StatusCode == http.StatusNotFound {
+			result["code"] = "runtime-outdated"
+		}
+		return true
+	}
+	if m.Paste {
+		if err := upstream.WriteMessage(websocket.BinaryMessage, rfbPasteKeys(m.Shift)); err != nil {
+			return false
+		}
+	}
+	result["ok"] = true
+	return true
+}
+
+// rfbPasteKeys encodes the Linux paste shortcut using standard RFB KeyEvents.
+func rfbPasteKeys(shift bool) []byte {
+	const control, shiftKey = 0xffe3, 0xffe1
+	v := uint32('v')
+	var keys []byte
+	appendKey := func(key uint32, down byte) {
+		keys = binary.BigEndian.AppendUint32(append(keys, 4, down, 0, 0), key)
+	}
+	appendKey(control, 1)
+	if shift {
+		appendKey(shiftKey, 1)
+		v = 'V'
+	}
+	appendKey(v, 1)
+	appendKey(v, 0)
+	if shift {
+		appendKey(shiftKey, 0)
+	}
+	appendKey(control, 0)
+	return keys
 }
 
 func (h *Handlers) applyVncMsg(page browser.Page, m vncClientMsg, pushJSON func(any)) {

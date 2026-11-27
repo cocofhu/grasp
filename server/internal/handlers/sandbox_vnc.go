@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,11 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		return
 	}
 	h.Sbx.TouchActivity(id)
-	h.serveDesktopVNC(c, name, ip, desktopVNCOptions{})
+	h.serveDesktopVNC(c, name, ip, desktopVNCOptions{
+		setClipboard: func(ctx context.Context, text string) error {
+			return h.Sbx.SetDesktopClipboard(ctx, id, text)
+		},
+	})
 }
 
 // SandboxAudio streams the sound of the same desktop:

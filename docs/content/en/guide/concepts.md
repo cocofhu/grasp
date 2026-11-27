@@ -56,6 +56,8 @@ Each sandbox has one noVNC desktop address, and that desktop is the Agent's own 
 
 The preview is watch-only by default. Click the screen to take over; that first click does not affect the page. You can also select Take over in the toolbar, and Return control when you are done. Clicks during Pick annotation still select elements and do not take over. This only prevents stray clicks; it is not access control.
 
+After taking control of a sandbox Browser or Computer view, select a remote input and press `Ctrl+V` (`⌘V` on macOS) to paste up to 128 KiB of plain text from your device. You can also type or paste text into the toolbar's Clipboard dialog and select **Paste into focused window** or **Copy to sandbox clipboard**. After copying to the sandbox clipboard, the paste shortcut uses that content while the screen keeps focus. Moving focus away restores pasting from your device.
+
 When the Agent is granted `set_preview`, the noVNC toolbar adds an Open directly in new tab button for `http://IP:port/`, which carries the pick bar and the Chat drawer at the bottom right.
 
 ### Live variants
