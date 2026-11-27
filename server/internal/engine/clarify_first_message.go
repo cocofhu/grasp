@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
@@ -106,7 +105,8 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node, resume *
 	if firstMessageBlank(msg) {
 		return
 	}
-	now := time.Now()
+	// The delivery check compares this value with the persisted claim time.
+	now := e.db.NowFunc()
 	res := e.db.Model(&models.Run{}).
 		Where("id = ? AND first_message_delivered_at IS NULL", runID).
 		Update("first_message_delivered_at", now)

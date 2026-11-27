@@ -2,6 +2,7 @@ package database
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/config"
@@ -60,7 +61,7 @@ func TestOpenSQLiteTestClonesMigratedSchema(t *testing.T) {
 }
 
 func TestMigrateLegacyPreviewStorageKeepsNewestPerNodeAndSandbox(t *testing.T) {
-	db, err := openSQLiteConn(":memory:")
+	db, err := openSQLiteConn(":memory:", "")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestOpenMySQLEmptyDSN(t *testing.T) {
 	if _, err := Open(config.DatabaseConfig{Driver: "mysql", DSN: "   "}); err == nil {
 		t.Fatal("expected error for whitespace mysql DSN")
 	}
-	if _, err := openMySQL("user:pass@tcp(127.0.0.1:1)/db?timeout=1s"); err == nil {
+	if _, err := Open(config.DatabaseConfig{Driver: "mysql", DSN: "user:pass@tcp(127.0.0.1:1)/db?timeout=1s"}); err == nil {
 		t.Fatal("unreachable mysql should fail open")
 	}
 }
@@ -156,5 +157,21 @@ func TestOpenSQLiteDriver(t *testing.T) {
 	}
 	if !db.Migrator().HasTable(&models.WorkflowDef{}) {
 		t.Fatal("workflow table missing")
+	}
+}
+
+func TestOpenPostgresRejectsInvalidDSN(t *testing.T) {
+	for _, dsn := range []string{" ", "postgresql://user:test-password@db:invalid/grasp"} {
+		db, err := Open(config.DatabaseConfig{Driver: "postgres", DSN: dsn})
+		if db != nil || err == nil || !strings.Contains(err.Error(), "database.dsn") || strings.Contains(err.Error(), "test-password") {
+			t.Fatalf("invalid PostgreSQL connection: db=%v err=%v", db, err)
+		}
+	}
+}
+
+func TestOpenRejectsUnknownDriver(t *testing.T) {
+	db, err := Open(config.DatabaseConfig{Driver: "invalid", Path: ":memory:"})
+	if db != nil || err == nil || !strings.Contains(err.Error(), "unsupported database.driver") {
+		t.Fatalf("invalid driver: db=%v err=%v", db, err)
 	}
 }

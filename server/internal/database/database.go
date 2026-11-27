@@ -1,5 +1,5 @@
-// Package database opens the configured store (SQLite or MySQL), runs
-// migrations, and seeds the singleton workspace.
+// Package database opens the configured store, runs migrations, and seeds
+// the singleton workspace.
 package database
 
 import (
@@ -15,8 +15,11 @@ import (
 	"github.com/cocofhu/grasp/internal/filestore"
 	"github.com/cocofhu/grasp/internal/models"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/rs/zerolog/log"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,14 +27,29 @@ import (
 )
 
 // Open opens the database for the configured driver and migrates the schema.
-// SQLite is the zero-dependency default; MySQL is used when configured (driver
-// == "mysql" or a DSN is present, resolved in config.setDefaults).
 func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
+	return openDatabase(cfg, "")
+}
+
+// OpenWithFiles binds payload storage before any application writes. All
+// replicas must use the same persistent root as the database they share.
+func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf("file storage root is required")
+	}
+	return openDatabase(cfg, root)
+}
+
+func openDatabase(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
 	switch cfg.Driver {
+	case "", "sqlite":
+		return openSQLite(cfg.Path, root)
 	case "mysql":
-		return openMySQL(cfg.DSN)
+		return openMySQL(cfg.DSN, root)
+	case "postgres":
+		return openPostgres(cfg.DSN, root)
 	default:
-		return OpenSQLite(cfg.Path)
+		return nil, fmt.Errorf("unsupported database.driver %q (want sqlite, mysql, or postgres)", cfg.Driver)
 	}
 }
 
@@ -49,26 +67,15 @@ func Close(db *gorm.DB) error {
 	return conn.Close()
 }
 
-// OpenWithFiles binds payload storage before any application writes. All
-// replicas must use the same persistent root as the database they share.
-func OpenWithFiles(cfg config.DatabaseConfig, root string) (*gorm.DB, error) {
-	db, err := Open(cfg)
-	if err != nil {
-		return nil, err
-	}
-	// Rebind the initial SQLite default before querying payload-bearing rows.
-	if err = filestore.Rebind(db, root); err != nil {
-		_ = Close(db)
-		return nil, err
-	}
-	return db, nil
-}
-
 // OpenSQLite opens (or creates) the SQLite database at path. WAL + a busy
 // timeout plus a single writer connection keep the concurrent FSM goroutines
 // and API readers from tripping over SQLite write locks. Exported so tests can
 // spin up a file/memory DB without constructing a full DatabaseConfig.
 func OpenSQLite(path string) (*gorm.DB, error) {
+	return openSQLite(path, "")
+}
+
+func openSQLite(path, root string) (*gorm.DB, error) {
 	existing := false
 	if path != "" && path != ":memory:" && !strings.HasPrefix(path, "file:") {
 		display := path
@@ -83,14 +90,18 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 		}
 		log.Info().Str("path", display).Str("database", status).Msg("opening sqlite database")
 	}
-	db, err := openSQLiteConn(path)
+	db, err := openSQLiteConn(path, root)
 	if err != nil {
 		return nil, err
 	}
 	if existing {
 		backupSQLite(db, path, time.Now())
 	}
-	return finalize(db)
+	if err := finalize(db); err != nil {
+		_ = Close(db)
+		return nil, err
+	}
+	return db, nil
 }
 
 const sqliteBackupKeep = 3
@@ -150,7 +161,7 @@ func OpenSQLiteTest(path string) (*gorm.DB, error) {
 	if err := os.WriteFile(path, sqliteTemplate, 0o644); err != nil {
 		return nil, err
 	}
-	return openSQLiteConn(path)
+	return openSQLiteConn(path, "")
 }
 
 func ensureSQLiteTemplate() error {
@@ -164,12 +175,12 @@ func ensureSQLiteTemplate() error {
 		path := filepath.Join(dir, "template.db")
 		// Build the template with DELETE journal so the schema lives in a single
 		// file (no -wal/-shm) and a byte-for-byte copy is a complete DB.
-		db, err := openSQLiteConn(path + "?_journal_mode=DELETE&_busy_timeout=5000&_foreign_keys=on")
+		db, err := openSQLiteConn(path+"?_journal_mode=DELETE&_busy_timeout=5000&_foreign_keys=on", "")
 		if err != nil {
 			sqliteTemplateErr = err
 			return
 		}
-		if _, err := finalize(db); err != nil {
+		if err := finalize(db); err != nil {
 			sqliteTemplateErr = err
 			_ = closeGorm(db)
 			return
@@ -191,7 +202,7 @@ func closeGorm(db *gorm.DB) error {
 	return sqlDB.Close()
 }
 
-func openSQLiteConn(path string) (*gorm.DB, error) {
+func openSQLiteConn(path, root string) (*gorm.DB, error) {
 	dsn := path
 	if !strings.Contains(dsn, "?") {
 		dsn += "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
@@ -207,27 +218,50 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 	// Serialize writes: SQLite allows only one writer; a single connection
 	// avoids "database is locked" stalls under concurrent runs.
 	sqlDB.SetMaxOpenConns(1)
-	root := filepath.Join(filepath.Dir(strings.Split(path, "?")[0]), "payloads")
-	if path == ":memory:" || strings.HasPrefix(path, "file:") {
-		root, err = os.MkdirTemp("", "grasp-payloads-*")
-		if err != nil {
-			return nil, err
+	if root == "" {
+		root = filepath.Join(filepath.Dir(strings.Split(path, "?")[0]), "payloads")
+		if path == ":memory:" || strings.HasPrefix(path, "file:") {
+			root, err = os.MkdirTemp("", "grasp-payloads-*")
+			if err != nil {
+				_ = sqlDB.Close()
+				return nil, err
+			}
 		}
 	}
 	if err = filestore.Attach(db, root); err != nil {
+		_ = sqlDB.Close()
 		return nil, err
 	}
 	return db, nil
 }
 
-// openMySQL opens the MySQL database at dsn. Unlike SQLite it supports genuine
-// concurrent writers, so the FSM goroutines each get their own pooled
-// connection instead of being serialized behind a single one.
-func openMySQL(dsn string) (*gorm.DB, error) {
+func openMySQL(dsn, root string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("mysql driver selected but database.dsn is empty")
 	}
-	db, err := gorm.Open(mysql.Open(dsn), gormConfig())
+	return openNetworkDB(mysql.Open(dsn), root)
+}
+
+func openPostgres(dsn, root string) (*gorm.DB, error) {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" {
+		return nil, fmt.Errorf("postgres driver selected but database.dsn is empty")
+	}
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		// Malformed DSNs can contain credentials in the parse error.
+		return nil, fmt.Errorf("invalid PostgreSQL database.dsn")
+	}
+	return openNetworkDB(postgres.New(postgres.Config{Conn: stdlib.OpenDB(*cfg)}), root)
+}
+
+func openNetworkDB(dialector gorm.Dialector, root string) (*gorm.DB, error) {
+	options := gormConfig()
+	if dialector.Name() == "postgres" {
+		// Use the precision PostgreSQL can round-trip for persisted timestamps.
+		options.NowFunc = func() time.Time { return time.Now().Truncate(time.Microsecond) }
+	}
+	db, err := gorm.Open(dialector, options)
 	if err != nil {
 		return nil, err
 	}
@@ -238,10 +272,28 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
-	if err = filestore.Attach(db, "data/payloads"); err != nil {
+	if root == "" {
+		root = "data/payloads"
+	}
+	if err = filestore.Attach(db, root); err != nil {
+		_ = sqlDB.Close()
 		return nil, err
 	}
-	return finalize(db)
+	if db.Name() == "postgres" {
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if tx.Migrator().HasColumn("sandboxes", "workload_released") {
+				return fmt.Errorf("database contains sandbox-gateway records; configure a separate Grasp database")
+			}
+			return finalize(tx)
+		})
+	} else {
+		err = finalize(db)
+	}
+	if err != nil {
+		_ = Close(db)
+		return nil, err
+	}
+	return db, nil
 }
 
 func gormConfig() *gorm.Config {
@@ -249,26 +301,23 @@ func gormConfig() *gorm.Config {
 }
 
 // finalize runs the shared post-open steps (migrate + initial seed) for any driver.
-func finalize(db *gorm.DB) (*gorm.DB, error) {
+func finalize(db *gorm.DB) error {
 	if err := migrateLegacyPreviewStorage(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
-		return nil, err
+		return err
 	}
 	if err := stripProjectRuntimeConfig(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := deleteRetiredSSHKnownHosts(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := retireRemovedFeatures(db); err != nil {
-		return nil, err
+		return err
 	}
-	if err := ensureWorkspace(db); err != nil {
-		return nil, err
-	}
-	return db, nil
+	return ensureWorkspace(db)
 }
 
 // ensureWorkspace seeds the singleton workspace row.

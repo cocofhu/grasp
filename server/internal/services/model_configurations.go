@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -50,7 +49,8 @@ func (s *ModelConfigurationService) Get(id string) (modelrouting.Configuration, 
 func (s *ModelConfigurationService) Create(configuration modelrouting.Configuration) (modelrouting.Configuration, error) {
 	configuration.ID = "model-" + uuid.NewString()[:12]
 	configuration.Revision = 1
-	configuration.CreatedAt, configuration.UpdatedAt = time.Now(), time.Now()
+	now := s.db.NowFunc()
+	configuration.CreatedAt, configuration.UpdatedAt = now, now
 	if err := s.validate(&configuration); err != nil {
 		return modelrouting.Configuration{}, err
 	}
@@ -58,7 +58,7 @@ func (s *ModelConfigurationService) Create(configuration modelrouting.Configurat
 	if err := s.db.Create(&row).Error; err != nil {
 		return modelrouting.Configuration{}, err
 	}
-	return configuration, nil
+	return modelrouting.Configuration(row), nil
 }
 
 func (s *ModelConfigurationService) Update(id string, configuration modelrouting.Configuration) (modelrouting.Configuration, error) {
@@ -76,7 +76,7 @@ func (s *ModelConfigurationService) Update(id string, configuration modelrouting
 		configuration.State = current.State
 	}
 	configuration.ID, configuration.CreatedAt = current.ID, current.CreatedAt
-	configuration.Revision, configuration.UpdatedAt = current.Revision+1, time.Now()
+	configuration.Revision, configuration.UpdatedAt = current.Revision+1, s.db.NowFunc()
 	configuration.Name, configuration.Backend = strings.TrimSpace(configuration.Name), strings.TrimSpace(configuration.Backend)
 	// Turning off an unchanged configuration must remain possible after its
 	// referenced key/connection has been removed or revoked. Creation, enabling
@@ -91,7 +91,7 @@ func (s *ModelConfigurationService) Update(id string, configuration modelrouting
 	if err := s.db.Save(&row).Error; err != nil {
 		return modelrouting.Configuration{}, err
 	}
-	return configuration, nil
+	return modelrouting.Configuration(row), nil
 }
 
 func (s *ModelConfigurationService) Delete(id string) error {

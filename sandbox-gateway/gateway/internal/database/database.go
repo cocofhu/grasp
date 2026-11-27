@@ -8,13 +8,15 @@ import (
 	"sandbox-gateway/internal/models"
 
 	"github.com/glebarez/sqlite"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-// Open opens the configured database (sqlite for local testing, mysql for
-// production) and runs AutoMigrate.
+// Open opens the configured database and migrates the gateway schema.
 func Open(cfg config.DBConfig) (*gorm.DB, error) {
 	dialector, err := dialectorFor(cfg)
 	if err != nil {
@@ -24,12 +26,32 @@ func Open(cfg config.DBConfig) (*gorm.DB, error) {
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
+		closeDB(db)
 		return nil, fmt.Errorf("open %s: %w", cfg.Driver, err)
 	}
-	if err := db.AutoMigrate(&models.Sandbox{}); err != nil {
+	if db.Name() == "postgres" {
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if tx.Migrator().HasColumn("sandboxes", "purpose") {
+				return fmt.Errorf("database contains Grasp records; configure a separate sandbox-gateway database")
+			}
+			return tx.AutoMigrate(&models.Sandbox{})
+		})
+	} else {
+		err = db.AutoMigrate(&models.Sandbox{})
+	}
+	if err != nil {
+		closeDB(db)
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return db, nil
+}
+
+func closeDB(db *gorm.DB) {
+	if db != nil {
+		if pool, err := db.DB(); err == nil {
+			_ = pool.Close()
+		}
+	}
 }
 
 func dialectorFor(cfg config.DBConfig) (gorm.Dialector, error) {
@@ -50,8 +72,19 @@ func dialectorFor(cfg config.DBConfig) (gorm.Dialector, error) {
 			return nil, err
 		}
 		return mysql.Open(dsn), nil
+	case "postgres":
+		dsn := strings.TrimSpace(cfg.DSN)
+		if dsn == "" {
+			return nil, fmt.Errorf("postgres requires database.dsn")
+		}
+		conn, err := pgx.ParseConfig(dsn)
+		if err != nil {
+			// Malformed DSNs can contain credentials in the parse error.
+			return nil, fmt.Errorf("invalid PostgreSQL database.dsn")
+		}
+		return postgres.New(postgres.Config{Conn: stdlib.OpenDB(*conn)}), nil
 	default:
-		return nil, fmt.Errorf("unsupported database.driver %q (want sqlite|mysql)", cfg.Driver)
+		return nil, fmt.Errorf("unsupported database.driver %q (want sqlite, mysql, or postgres)", cfg.Driver)
 	}
 }
 

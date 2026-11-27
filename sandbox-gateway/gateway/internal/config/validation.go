@@ -25,9 +25,9 @@ func (c *Config) validate() error {
 		return fmt.Errorf("orphanGC requires a positive intervalSeconds and non-negative minAgeSeconds")
 	}
 	switch c.Database.Driver {
-	case "sqlite", "mysql":
+	case "sqlite", "mysql", "postgres":
 	default:
-		return fmt.Errorf("database.driver must be sqlite or mysql")
+		return fmt.Errorf("database.driver must be sqlite, mysql, or postgres")
 	}
 	if c.Database.Port < 0 || c.Database.Port > 65535 {
 		return fmt.Errorf("database.port must be between 0 and 65535")
