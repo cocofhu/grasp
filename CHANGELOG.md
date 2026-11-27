@@ -18,7 +18,7 @@ All notable public-release changes are documented here.
 
 - 从 Solo 沙箱的「基本信息」查看会话累计 Token 和关联的工作流名称。悬浮在 Token 总数上可查看会话合计和各模型的输入、输出、缓存读和缓存写。
 
-- Solo 沙箱的「基本信息」将累计 Token 和工作流放在顶部，环境和时间信息分组显示。
+- Solo 沙箱的「基本信息」顶部用紧凑的行展示累计 Token 和工作流，环境和时间信息分组显示。
 
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 

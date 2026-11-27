@@ -40,7 +40,9 @@ for (const theme of ['dark', 'light']) {
     await expect(workflows).toHaveText('发布检查')
     await expect(workflows.getByRole('link', { name: '发布检查' })).toHaveAttribute('href', '/runs/verify-sandbox')
     const tokenValue = (await page.getByTestId('sandbox-info-task-tokens').boundingBox())!
-    expect((await workflows.boundingBox())!.x).toBeGreaterThan(tokenValue.x + tokenValue.width)
+    const workflowValue = (await workflows.boundingBox())!
+    expect(workflowValue.y).toBeGreaterThan(tokenValue.y + tokenValue.height)
+    expect(workflowValue.x + workflowValue.width).toBeCloseTo(tokenValue.x + tokenValue.width)
     await panel.screenshot({ path: test.info().outputPath(`sandbox-info-expanded-${theme}.png`) })
     const token = page.getByTestId('sandbox-info-token-trigger')
     const breakdown = page.getByTestId('sandbox-info-token-breakdown')

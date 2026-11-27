@@ -398,20 +398,18 @@ function onIDELaunch() {
           >{{ actionLabel }}</AppButton>
         </footer>
         <div v-show="detailsOpen" :id="detailsId" class="sandbox-info-details" data-testid="sandbox-info-details">
-          <dl v-if="!readonly" class="sandbox-info-summary">
-            <div>
-              <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
-              <dd class="sandbox-info-token-count tabular-nums" data-testid="sandbox-info-task-tokens">
-                <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
-                <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
-                <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
-                <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
-              </dd>
-            </div>
-            <div v-if="taskInfo?.workflowRuns.length">
+          <dl v-if="!readonly" class="sandbox-info-rows">
+            <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
+            <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
+              <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
+              <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
+              <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
+              <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
+            </dd>
+            <template v-if="taskInfo?.workflowRuns.length">
               <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>
               <dd>
-                <ul class="sandbox-info-workflows" data-testid="sandbox-info-workflow-runs">
+                <ul class="space-y-0.5" data-testid="sandbox-info-workflow-runs">
                   <li v-for="run in taskInfo.workflowRuns" :key="run.id">
                     <RouterLink class="sandbox-info-link block truncate" :to="`/runs/${encodeURIComponent(run.id)}`" :title="run.workflowName" @click="hide()">
                       {{ run.workflowName }}
@@ -419,7 +417,7 @@ function onIDELaunch() {
                   </li>
                 </ul>
               </dd>
-            </div>
+            </template>
           </dl>
           <dl class="sandbox-info-rows">
             <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
@@ -532,30 +530,14 @@ function onIDELaunch() {
   color: color-mix(in srgb, rgb(var(--c-err)) 76%, rgb(var(--c-txt)));
 }
 .sandbox-info-details { padding: 0 15px 13px; }
-.sandbox-info-summary {
-  display: flex; gap: 12px;
-  margin: 0 0 10px; padding: 9px 11px;
-  border: 1px solid rgb(var(--c-line)); border-radius: 8px;
-  background: color-mix(in srgb, rgb(var(--c-surface)), rgb(var(--c-elevated)) 62%);
-}
-.sandbox-info-summary > div { flex: 1; min-width: 0; }
-.sandbox-info-summary > div + div { padding-inline-start: 12px; border-inline-start: 1px solid rgb(var(--c-line)); }
-.sandbox-info-summary dt { font-size: 11px; font-weight: 500; color: rgb(var(--c-txt2)); }
-.sandbox-info-summary dd { margin: 3px 0 0; }
-.sandbox-info-token-count { font-size: 17px; line-height: 22px; font-weight: 600; }
-.sandbox-info-token-count .sandbox-info-note { font-weight: 400; }
-.sandbox-info-workflows { display: grid; gap: 3px; line-height: 22px; }
 .sandbox-info-rows {
   display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 5px 12px;
   margin: 0; font-size: 12px; line-height: 18px;
 }
 .sandbox-info-rows dt { color: rgb(var(--c-txt2)); }
 .sandbox-info-rows dd { min-width: 0; margin: 0; text-align: right; overflow-wrap: anywhere; }
-.sandbox-info-times { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgb(var(--c-line)); color: rgb(var(--c-txt2)); }
-@media (max-width: 339px) {
-  .sandbox-info-summary { flex-direction: column; gap: 7px; }
-  .sandbox-info-summary > div + div { padding: 7px 0 0; border-inline-start: 0; border-top: 1px solid rgb(var(--c-line)); }
-}
+.sandbox-info-rows + .sandbox-info-rows { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgb(var(--c-line)); }
+.sandbox-info-times { color: rgb(var(--c-txt2)); }
 .sandbox-info-note {
   font-size: 11.5px; line-height: 1.5;
   color: color-mix(in srgb, rgb(var(--c-txt3)), rgb(var(--c-txt2)) 45%);

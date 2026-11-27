@@ -35,7 +35,7 @@ function scrollBreakdown(event: KeyboardEvent) {
   <TruncatedTextTooltip
     :text="total"
     :aria-label="`${t('pages.solo.sandboxInfo.details.totalTokens')} ${total}`"
-    class="inline-flex max-w-full cursor-help items-center gap-1.5 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+    class="inline-flex max-w-full cursor-help items-center gap-1.5 rounded-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
     data-testid="sandbox-info-token-trigger"
     @keydown="scrollBreakdown"
   >
