@@ -185,7 +185,7 @@ const plusButton = ref<HTMLElement | null>(null)
 const plusAnchor = ref({ top: 0, left: 0 })
 const mentionStyle = ref<Record<string, string> | null>(null)
 const mentionPlacement = ref<'up' | 'down'>('down')
-const MENTION_WIDTH = 360
+const MENTION_WIDTH = 530
 /** Picker height used to decide whether it fits below the caret line. */
 const MENTION_HEIGHT = 330
 let popAnchorObserver: ResizeObserver | null = null
@@ -212,7 +212,8 @@ function measureMentionAnchor() {
   const vv = window.visualViewport
   const viewTop = vv?.offsetTop ?? 0
   const viewBottom = viewTop + (vv?.height ?? window.innerHeight)
-  const up = viewBottom - lineBottom < MENTION_HEIGHT && lineTop - viewTop >= MENTION_HEIGHT
+  const below = viewBottom - lineBottom
+  const up = below < MENTION_HEIGHT && lineTop - viewTop > below
   mentionPlacement.value = up ? 'up' : 'down'
   mentionStyle.value = {
     left: `${left}px`,
@@ -803,6 +804,8 @@ onMounted(() => {
     bindWorkflowStripObserver()
   })
   window.addEventListener('resize', onHomeResize)
+  window.visualViewport?.addEventListener('resize', measureMentionAnchor)
+  window.visualViewport?.addEventListener('scroll', measureMentionAnchor)
   window.addEventListener('pointerdown', onWindowPointerDown)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('scroll', closeWorkflowMenu, true)
@@ -822,6 +825,8 @@ onBeforeUnmount(() => {
   workflowStripObserver?.disconnect()
   workflowStripObserver = null
   window.removeEventListener('resize', onHomeResize)
+  window.visualViewport?.removeEventListener('resize', measureMentionAnchor)
+  window.visualViewport?.removeEventListener('scroll', measureMentionAnchor)
   window.removeEventListener('pointerdown', onWindowPointerDown)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('scroll', closeWorkflowMenu, true)

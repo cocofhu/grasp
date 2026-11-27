@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import type { api } from '@/lib/api/api'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
-import type { GitHubReferenceCandidate, MessageReference, SoloReferenceCandidate } from '@/lib/api/apiTypes'
+import FileTypeIcon from '@/components/chat/FileTypeIcon.vue'
+import { fileBadge, type FileBadge } from '@/lib/shared/artifactBadge'
+import type { ArtifactReferenceCandidate, GitHubReferenceCandidate, MessageReference, ReferenceSearchLane, SoloReferenceCandidate } from '@/lib/api/apiTypes'
 import { useReferenceSearch, type GitHubStateFilter, type ReferenceScope, type ReferenceTab } from '@/lib/solo/useReferenceSearch'
 import { referenceIcon, referenceTone } from '@/lib/solo/referenceDisplay'
+import { referenceTargetKey } from '@/lib/solo/referenceTokens'
 
 const props = withDefaults(defineProps<{
   /** An open session, the launch composer's picks, a workflow, or a run node. */
   scope: ReferenceScope
   scopedSearch?: typeof api.searchSoloReferences
-  allowSolo?: boolean
+  allowWorkspace?: boolean
   query: string
   /** Targets already picked in this message; hidden from the list. */
   taken: string[]
@@ -19,7 +22,7 @@ const props = withDefaults(defineProps<{
   initialTab?: ReferenceTab
   /** Opens above the composer by default; the home composer opens below. */
   placement?: 'up' | 'down'
-}>(), { allowSolo: true })
+}>(), { allowWorkspace: true })
 const emit = defineEmits<{ (e: 'pick', ref: MessageReference): void }>()
 const { t } = useI18n()
 
@@ -29,9 +32,13 @@ const ghState = ref<GitHubStateFilter>('open')
 const sel = ref(-1)
 const list = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
+const anchor = ref<HTMLElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
 const tabbar = ref<HTMLElement | null>(null)
-const search = useReferenceSearch(computed(() => props.scope), props.scopedSearch, props.allowSolo !== false)
-const TABS: ReferenceTab[] = props.allowSolo === false ? ['all', 'issue', 'pr'] : ['all', 'solo', 'issue', 'pr']
+const compact = ref(false)
+const phone = ref(false)
+const search = useReferenceSearch(computed(() => props.scope), props.scopedSearch, props.allowWorkspace)
+const TABS: ReferenceTab[] = props.allowWorkspace ? ['all', 'solo', 'issue', 'pr', 'discussion', 'artifact'] : ['all', 'issue', 'pr']
 const ALL_LIMIT = 5
 /** Tallest the list grows before it scrolls. */
 const MAX_LIST = 270
@@ -43,12 +50,12 @@ const STAGGER_MAX = 7
 const still = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 type Option =
-  | { type: 'item'; key: string; ref: MessageReference; icon: string; tone: string; title: string; subtitle: string }
+  | { type: 'item'; key: string; ref: MessageReference; icon: string; tone: string; file?: FileBadge; title: string; subtitle: string }
   | { type: 'action'; key: string; label: string; run: () => void }
-type Section = { key: string; title: string; options: Option[]; loading: boolean; first: boolean; note: string; error: boolean }
+type Section = { key: Exclude<ReferenceTab, 'all'>; title: string; options: Option[]; loading: boolean; first: boolean; note: string; error: boolean }
 /** One keyed row of the list. Keys stay stable across replies so rows are reused, not rebuilt. */
 type Row =
-  | { type: 'heading'; key: string; title: string; loading: boolean }
+  | { type: 'heading'; key: string; kind: Exclude<ReferenceTab, 'all'>; title: string; loading: boolean }
   | { type: 'option'; key: string; option: Option; index: number }
   | { type: 'skeleton'; key: string }
   | { type: 'note'; key: string; text: string; error: boolean }
@@ -66,9 +73,21 @@ function soloOption(item: SoloReferenceCandidate): Option {
 function githubOption(item: GitHubReferenceCandidate): Option {
   const ref: MessageReference = { kind: item.kind, target: item.target, title: item.title, state: item.state, url: item.url }
   return {
-    type: 'item', key: `gh:${item.target}`, ref, icon: referenceIcon(ref), tone: referenceTone(ref),
+    type: 'item', key: `gh:${referenceTargetKey(item)}`, ref, icon: referenceIcon(ref), tone: referenceTone(ref),
     title: `#${item.number} ${item.title}`,
-    subtitle: t('pages.solo.reference.githubSubtitle', { repo: item.repo, state: item.state, n: item.comments }),
+    subtitle: t('pages.solo.reference.githubSubtitle', {
+      repo: item.repo, state: t(`pages.solo.reference.state.${item.state}`, item.state), n: item.comments,
+    }),
+  }
+}
+
+function artifactOption(item: ArtifactReferenceCandidate): Option {
+  const ref: MessageReference = { kind: item.kind, target: item.target, title: item.title }
+  const file = fileBadge({ name: item.title, kind: item.fileKind })
+  return {
+    type: 'item', key: `artifact:${item.target}`, ref, icon: referenceIcon(ref), tone: referenceTone(ref), file,
+    title: item.title,
+    subtitle: compact.value && item.source ? item.source : [item.source, file.label].filter(Boolean).join(' · '),
   }
 }
 
@@ -83,33 +102,42 @@ const sections = computed<Section[]>(() => {
   if (props.full) return []
   const taken = new Set(props.taken)
   const soloItems = search.solo.items.filter((item) => !taken.has(item.target)).map(soloOption)
-  const ghItems = search.github.items.filter((item) => !taken.has(item.target))
+  const ghItems = search.github.items.filter((item) => !taken.has(referenceTargetKey(item)))
   const issues = ghItems.filter((item) => item.kind === 'github_issue').map(githubOption)
   const prs = ghItems.filter((item) => item.kind === 'github_pr').map(githubOption)
+  const discussions = search.discussion.items.filter((item) => !taken.has(referenceTargetKey(item))).map(githubOption)
+  const artifacts = search.artifact.items.filter((item) => !taken.has(item.target)).map(artifactOption)
   const out: Section[] = []
-  const add = (key: ReferenceTab, title: string, options: Option[], lane: typeof search.solo | typeof search.github, more: boolean) => {
+  const add = (key: Exclude<ReferenceTab, 'all'>, name: ReferenceSearchLane, options: Option[], more: boolean) => {
+    if (tab.value !== 'all' && tab.value !== key) return
+    const lane = search[name]
     if (lane.skipped) return
+    const title = t(`pages.solo.reference.tabs.${key}`)
     const rows = tab.value === 'all' ? options.slice(0, ALL_LIMIT) : options.slice()
     if (tab.value === 'all' && (options.length > ALL_LIMIT || more)) {
       rows.push({ type: 'action', key: `more:${key}`, label: t('pages.solo.reference.more', { kind: title }), run: () => setTab(key) })
     } else if (tab.value !== 'all' && more) {
       rows.push({ type: 'action', key: `load:${key}`, label: lane.paging ? t('pages.solo.reference.loading') : t('pages.solo.reference.loadMore'),
-        run: () => search.loadMore(key === 'solo' ? 'solo' : 'github', props.query, tab.value, ghState.value) })
+        run: () => search.loadMore(name, props.query, tab.value, ghState.value) })
     }
     const first = lane.loading && !lane.settled
-    if (tab.value === 'all' && !rows.length && !first && !lane.error && !lane.hint) return
+    if (tab.value === 'all' && !rows.length && !first && !lane.error && (!lane.hint || key === 'discussion')) return
     out.push({ key, title, options: rows, loading: lane.loading, first, note: laneNote(lane, options.length), error: !!lane.error })
   }
-  if (tab.value === 'all' || tab.value === 'solo') add('solo', t('pages.solo.reference.tabs.solo'), soloItems, search.solo, !!search.solo.nextPage)
+  add('solo', 'solo', soloItems, !!search.solo.nextPage)
   const ghMore = !!search.github.nextPage
-  if (tab.value === 'all' || tab.value === 'issue') add('issue', t('pages.solo.reference.tabs.issue'), issues, search.github, tab.value === 'issue' && ghMore)
-  if (tab.value === 'all' || tab.value === 'pr') add('pr', t('pages.solo.reference.tabs.pr'), prs, search.github, tab.value === 'pr' && ghMore)
+  if (tab.value !== 'all' || search.github.errorCode !== 'not_found' || !search.discussion.items.length) {
+    add('issue', 'github', issues, tab.value === 'issue' && ghMore)
+    add('pr', 'github', prs, tab.value === 'pr' && ghMore)
+  }
   // In "all", one GitHub error or hint is enough; do not repeat it under PR.
   if (tab.value === 'all') {
     const issue = out.find((s) => s.key === 'issue')
     const pr = out.find((s) => s.key === 'pr')
     if (issue && pr && !pr.options.length && pr.note === issue.note) out.splice(out.indexOf(pr), 1)
   }
+  add('discussion', 'discussion', discussions, !!search.discussion.nextPage)
+  add('artifact', 'artifact', artifacts, !!search.artifact.nextPage)
   return out
 })
 
@@ -122,7 +150,9 @@ const rows = computed<Row[]>(() => {
   const out: Row[] = []
   let index = 0
   for (const section of sections.value) {
-    out.push({ type: 'heading', key: `h:${section.key}`, title: section.title, loading: section.loading })
+    if (!compact.value || tab.value === 'all') {
+      out.push({ type: 'heading', key: `h:${section.key}`, kind: section.key, title: section.title, loading: section.loading })
+    }
     for (const option of section.options) out.push({ type: 'option', key: `o:${option.key}`, option, index: index++ })
     if (section.first && !section.options.length) out.push({ type: 'skeleton', key: `s:${section.key}` })
     else if (section.note && !section.options.length) out.push({ type: 'note', key: `n:${section.key}`, text: section.note, error: section.error })
@@ -142,12 +172,24 @@ watch(options, (next, prev) => {
   const key = prev[sel.value]?.key
   sel.value = key ? next.findIndex((o) => o.key === key) : -1
 })
-watch(() => [props.query, JSON.stringify(props.scope)] as const, refresh, { immediate: true })
+watch([() => props.query, () => JSON.stringify(props.scope)], refresh, { immediate: true })
 watch([tab, ghState], refresh)
 
 function setTab(next: ReferenceTab) {
-  if (tab.value !== next) list.value?.scrollTo?.({ top: 0, behavior: still ? 'auto' : 'smooth' })
+  if (tab.value !== next) void nextTick(() => list.value?.scrollTo?.({ top: 0, behavior: still || compact.value ? 'auto' : 'smooth' }))
   tab.value = next
+}
+
+function revealTab() {
+  if (compact.value) return
+  const bar = tabbar.value
+  const active = bar?.querySelector<HTMLElement>('[data-tab-on="true"]')
+  if (!bar || !active) return
+  const left = active.offsetLeft
+  const right = left + active.offsetWidth
+  const behavior = still ? 'auto' : 'smooth'
+  if (left < bar.scrollLeft) bar.scrollTo?.({ left, behavior })
+  else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollTo?.({ left: right - bar.clientWidth, behavior })
 }
 
 function optionEl(index: number) {
@@ -214,7 +256,7 @@ function countText(n: number, more = false) {
 }
 
 /**
- * Every tab but "all" always shows a count slot: the number once known (an
+ * Each source has a count: the number once known (an
  * older number stays while a new one loads), a spinner until the first one
  * lands, and a dash when it cannot be known.
  */
@@ -230,6 +272,11 @@ function tabCount(key: ReferenceTab): TabCount | null {
     const taken = new Set(props.taken)
     return { state: 'value', text: countText(lane.items.filter((i) => !taken.has(i.target)).length, !!lane.nextPage) }
   }
+  if (key === 'discussion' || key === 'artifact') {
+    const lane = search[key]
+    if (!lane.error && typeof lane.total === 'number') return { state: 'value', text: countText(lane.total) }
+    return lane.loading ? loading : na
+  }
   // GitHub counts are the same on every tab; loaded rows are never a stand-in.
   const gh = search.github
   if (gh.error) return gh.loading ? loading : na
@@ -239,6 +286,17 @@ function tabCount(key: ReferenceTab): TabCount | null {
 }
 
 const tabCounts = computed(() => Object.fromEntries(TABS.map((key) => [key, tabCount(key)])) as Record<ReferenceTab, TabCount | null>)
+const showsGitHubState = computed(() => tab.value !== 'solo' && tab.value !== 'artifact')
+const summaryCount = computed(() => {
+  if (tab.value === 'all') {
+    const shown = options.value.filter(option => option.type === 'item').length
+    return shown ? t('pages.solo.reference.shownCount', { n: shown }) : ''
+  }
+  const count = tabCounts.value[tab.value]
+  return count?.state === 'value'
+    ? t('pages.solo.reference.resultCount', { n: count.text }, count.text === '1' ? 1 : 2)
+    : ''
+})
 
 function countLabel(count: TabCount) {
   if (count.state === 'loading') return t('pages.solo.reference.countLoading')
@@ -262,6 +320,7 @@ function placeHighlight() {
 }
 
 function placeInk() {
+  if (compact.value) return
   const el = tabbar.value?.querySelector<HTMLElement>('[data-tab-on="true"]')
   if (!el) return
   ink.value = { jump: !ink.value.w, x: el.offsetLeft, w: el.offsetWidth }
@@ -274,12 +333,45 @@ function measureList() {
 }
 
 watch([sel, rows], () => void nextTick(placeHighlight), { flush: 'post' })
-watch(tab, () => void nextTick(placeInk), { flush: 'post' })
+watch([tab, compact], () => void nextTick(() => {
+  placeInk()
+  revealTab()
+}), { flush: 'post' })
 
 let resize: ResizeObserver | null = null
 let tabResize: ResizeObserver | null = null
-onMounted(() => {
+// On a phone the picker spans the visible screen. Its anchor stays with the
+// composer, including the home composer's caret-relative placement.
+function placePhone() {
+  if (!phone.value || !anchor.value || !panel.value) return
+  const viewport = window.visualViewport
+  const top = viewport?.offsetTop ?? 0
+  const bottom = top + (viewport?.height ?? window.innerHeight)
+  const left = viewport?.offsetLeft ?? 0
+  const y = Math.max(top, Math.min(bottom, anchor.value.getBoundingClientRect().top))
+  const down = props.placement === 'down'
+  const style = panel.value.style
+  style.setProperty('--ref-anchor', `${down ? y : window.innerHeight - y}px`)
+  style.setProperty('--ref-space', `${Math.max(0, (down ? bottom - y : y - top) - 8)}px`)
+  style.setProperty('--ref-left', `${left}px`)
+  style.setProperty('--ref-right', `${window.innerWidth - left - (viewport?.width ?? window.innerWidth)}px`)
+}
+
+function measureTabs() {
+  const width = anchor.value?.clientWidth ?? 0
+  phone.value = props.allowWorkspace && width > 0 && window.innerWidth <= 600
+  compact.value = phone.value || (props.allowWorkspace && width > 0 && width <= 500)
+  placePhone()
   placeInk()
+}
+onUpdated(placePhone)
+onMounted(() => {
+  measureTabs()
+  window.addEventListener('resize', measureTabs)
+  window.addEventListener('scroll', placePhone, true)
+  window.visualViewport?.addEventListener('resize', placePhone)
+  window.visualViewport?.addEventListener('scroll', placePhone)
+  revealTab()
   measureList()
   if (typeof ResizeObserver === 'undefined') return
   if (content.value) {
@@ -291,12 +383,20 @@ onMounted(() => {
   }
   // A tab can change width while it stays selected (a font landing, the
   // locale changing); the ink follows it.
-  tabResize = new ResizeObserver(() => placeInk())
+  tabResize = new ResizeObserver(measureTabs)
+  if (anchor.value) {
+    tabResize.observe(anchor.value)
+    if (anchor.value.offsetParent) tabResize.observe(anchor.value.offsetParent)
+  }
   tabbar.value?.querySelectorAll('button').forEach((el) => tabResize!.observe(el))
 })
 onBeforeUnmount(() => {
   resize?.disconnect()
   tabResize?.disconnect()
+  window.removeEventListener('resize', measureTabs)
+  window.removeEventListener('scroll', placePhone, true)
+  window.visualViewport?.removeEventListener('resize', placePhone)
+  window.visualViewport?.removeEventListener('scroll', placePhone)
 })
 
 /** New rows fade in a beat after each other. */
@@ -316,123 +416,163 @@ defineExpose({ move, confirm, cycleTab, setTab })
 </script>
 
 <template>
-  <div
-    class="ref-picker"
-    :class="{ 'ref-picker--down': placement === 'down', 'ref-picker--still': still }"
-    role="listbox"
-    :aria-label="t('pages.solo.reference.pickerLabel')"
-    data-testid="solo-reference-picker"
-    @mousedown.prevent
-  >
-    <div class="ref-picker__tabs">
-      <div ref="tabbar" class="ref-picker__tabbar">
-        <span
-          class="ref-picker__ink"
-          :class="{ 'ref-picker__ink--jump': ink.jump }"
-          :style="{ width: `${ink.w}px`, transform: `translateX(${ink.x}px)` }"
-          aria-hidden="true"
-        />
-        <button
-          v-for="key in TABS"
-          :key="key"
-          type="button"
-          class="ref-picker__tab"
-          :class="{ 'ref-picker__tab--on': tab === key }"
-          :data-tab-on="tab === key"
-          :data-testid="`solo-reference-tab-${key}`"
-          @click="setTab(key)"
-        >
-          {{ t(`pages.solo.reference.tabs.${key}`) }}
-          <span
-            v-if="tabCounts[key]"
-            class="ref-picker__count"
-            :class="`ref-picker__count--${tabCounts[key]!.state}`"
-            :data-state="tabCounts[key]!.state"
-            :aria-label="countLabel(tabCounts[key]!)"
-            :title="countLabel(tabCounts[key]!)"
-          >
-            <Icon v-if="tabCounts[key]!.state === 'loading'" name="spinner" :size="9" />
-            <template v-else>{{ tabCounts[key]!.text }}</template>
-          </span>
-        </button>
-      </div>
-      <div v-if="tab !== 'solo'" class="ref-picker__seg" role="radiogroup" :aria-label="t('pages.solo.reference.stateLabel')">
-        <button
-          v-for="s in (['open', 'all'] as const)"
-          :key="s"
-          type="button"
-          role="radio"
-          :aria-checked="ghState === s"
-          :class="{ 'ref-picker__seg--on': ghState === s }"
-          @click="ghState = s"
-        >{{ t(`pages.solo.reference.state.${s}`) }}</button>
-      </div>
-    </div>
-    <div
-      ref="list"
-      class="ref-picker__list scroll-area"
-      :class="{ 'ref-picker__list--stale': refreshing, 'ref-picker__list--jump': listHeight?.jump }"
-      :style="listHeight ? { height: `${listHeight.px}px` } : undefined"
-      :aria-busy="sections.some((s) => s.loading)"
-    >
-      <div ref="content" class="ref-picker__content">
-        <div
-          class="ref-picker__hl"
-          :class="{ 'ref-picker__hl--on': highlight.on, 'ref-picker__hl--jump': highlight.jump }"
-          :style="{ height: `${highlight.h}px`, transform: `translateY(${highlight.y}px)` }"
-          aria-hidden="true"
-          data-testid="solo-reference-highlight"
-        />
-        <TransitionGroup name="ref-row" :css="!still" @before-enter="onBeforeEnter" @after-enter="onAfterEnter">
-          <div v-for="row in rows" :key="row.key" class="ref-picker__row" :data-row="row.key">
-            <h5 v-if="row.type === 'heading'" class="ref-picker__heading">
-              {{ row.title }}
-              <span class="ref-picker__spin" :class="{ 'ref-picker__spin--on': row.loading }"><Icon name="spinner" :size="11" /></span>
-            </h5>
-            <div
-              v-else-if="row.type === 'option' && row.option.type === 'item'"
-              class="ref-picker__opt"
-              role="option"
-              :aria-selected="row.index === sel"
-              :data-ref-index="row.index"
-              :data-testid="`solo-reference-option-${row.option.ref.target}`"
-              @mousemove="sel = row.index"
-              @click="choose(row.index)"
+  <div ref="anchor" class="ref-picker-anchor" :class="{ 'ref-picker-anchor--down': placement === 'down', 'ref-picker-anchor--phone': phone }">
+    <Teleport to="body" :disabled="!phone">
+      <div
+        ref="panel"
+        class="ref-picker"
+        :class="{ 'ref-picker--down': placement === 'down', 'ref-picker--still': still, 'ref-picker--compact': compact, 'ref-picker--phone': phone }"
+        data-testid="solo-reference-picker"
+        @mousedown.prevent
+      >
+        <div class="ref-picker__tabs" :class="{ 'ref-picker__tabs--workspace': allowWorkspace }">
+          <div ref="tabbar" class="ref-picker__tabbar" role="group" :aria-label="t('pages.solo.reference.typeLabel')">
+            <span
+              class="ref-picker__ink"
+              :class="{ 'ref-picker__ink--jump': ink.jump }"
+              :style="{ width: `${ink.w}px`, transform: `translateX(${ink.x}px)` }"
+              aria-hidden="true"
+            />
+            <button
+              v-for="key in TABS"
+              :key="key"
+              type="button"
+              class="ref-picker__tab"
+              :class="{ 'ref-picker__tab--on': tab === key }"
+              :aria-pressed="tab === key"
+              :data-tab-on="tab === key"
+              :data-testid="`solo-reference-tab-${key}`"
+              @click="setTab(key)"
             >
-              <span class="ref-picker__icon" :class="row.option.tone" :data-icon="row.option.icon"><Icon :name="row.option.icon" :size="15" /></span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-[12.5px] text-txt">{{ row.option.title }}</span>
-                <span class="block truncate text-[11px] text-txt3">{{ row.option.subtitle }}</span>
+              <span>{{ compact && key === 'solo' ? t('pages.solo.reference.chatTab') : t(`pages.solo.reference.tabs.${key}`) }}</span>
+              <span
+                v-if="!compact && tabCounts[key]"
+                class="ref-picker__count"
+                :class="`ref-picker__count--${tabCounts[key]!.state}`"
+                :data-state="tabCounts[key]!.state"
+                :aria-label="countLabel(tabCounts[key]!)"
+                :title="countLabel(tabCounts[key]!)"
+              >
+                <Icon v-if="tabCounts[key]!.state === 'loading'" name="spinner" :size="9" />
+                <template v-else>{{ tabCounts[key]!.text }}</template>
               </span>
-            </div>
-            <div
-              v-else-if="row.type === 'option' && row.option.type === 'action'"
-              class="ref-picker__opt ref-picker__opt--action"
-              role="option"
-              :aria-selected="row.index === sel"
-              :data-ref-index="row.index"
-              @mousemove="sel = row.index"
-              @click="choose(row.index)"
-            >
-              <span class="ref-picker__icon"><Icon :name="row.option.key.startsWith('load:') ? 'chevron-down' : 'arrow-right'" :size="14" /></span>
-              <span class="text-[12px] text-accent">{{ row.option.label }}</span>
-            </div>
-            <div v-else-if="row.type === 'skeleton'" class="ref-picker__skeleton" aria-hidden="true"><i /><i /></div>
-            <p v-else-if="row.type === 'note'" class="ref-picker__note" :class="{ 'text-err': row.error }">{{ row.text }}</p>
+            </button>
           </div>
-        </TransitionGroup>
+          <div v-if="!compact && showsGitHubState" class="ref-picker__seg" role="radiogroup" :aria-label="t('pages.solo.reference.stateLabel')">
+            <button
+              v-for="s in (['open', 'all'] as const)"
+              :key="s"
+              type="button"
+              role="radio"
+              :aria-checked="ghState === s"
+              :class="{ 'ref-picker__seg--on': ghState === s }"
+              @click="ghState = s"
+            >{{ t(`pages.solo.reference.state.${s}`) }}</button>
+          </div>
+        </div>
+        <div
+          ref="list"
+          class="ref-picker__list scroll-area"
+          role="listbox"
+          :aria-label="t('pages.solo.reference.pickerLabel')"
+          :class="{ 'ref-picker__list--stale': refreshing, 'ref-picker__list--jump': listHeight?.jump }"
+          :style="listHeight ? { height: `${listHeight.px}px` } : undefined"
+          :aria-busy="sections.some((s) => s.loading)"
+        >
+          <div ref="content" class="ref-picker__content">
+            <div
+              class="ref-picker__hl"
+              :class="{ 'ref-picker__hl--on': highlight.on, 'ref-picker__hl--jump': highlight.jump }"
+              :style="{ height: `${highlight.h}px`, transform: `translateY(${highlight.y}px)` }"
+              aria-hidden="true"
+              data-testid="solo-reference-highlight"
+            />
+            <TransitionGroup name="ref-row" :css="!still" @before-enter="onBeforeEnter" @after-enter="onAfterEnter">
+              <div v-for="row in rows" :key="row.key" class="ref-picker__row" :data-row="row.key">
+                <h5 v-if="row.type === 'heading'" class="ref-picker__heading">
+                  {{ row.title }}
+                  <span v-if="compact && tabCounts[row.kind]?.state === 'value'" class="ref-picker__heading-count">{{ tabCounts[row.kind]?.text }}</span>
+                  <span class="ref-picker__spin" :class="{ 'ref-picker__spin--on': row.loading }"><Icon name="spinner" :size="11" /></span>
+                </h5>
+                <div
+                  v-else-if="row.type === 'option' && row.option.type === 'item'"
+                  class="ref-picker__opt"
+                  role="option"
+                  :aria-selected="row.index === sel"
+                  :data-ref-index="row.index"
+                  :data-testid="`solo-reference-option-${row.option.ref.target}`"
+                  @mousemove="sel = row.index"
+                  @click="choose(row.index)"
+                >
+                  <span class="ref-picker__icon" :class="row.option.tone" :data-icon="row.option.icon">
+                    <FileTypeIcon v-if="compact && row.option.file" v-bind="row.option.file" />
+                    <Icon v-else :name="row.option.icon" :size="compact ? 18 : 15" />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="ref-picker__title block truncate text-[12.5px] text-txt">{{ row.option.title }}</span>
+                    <span class="ref-picker__subtitle block truncate text-[11px] text-txt3">{{ row.option.subtitle }}</span>
+                  </span>
+                </div>
+                <div
+                  v-else-if="row.type === 'option' && row.option.type === 'action'"
+                  class="ref-picker__opt ref-picker__opt--action"
+                  role="option"
+                  :aria-selected="row.index === sel"
+                  :data-ref-index="row.index"
+                  @mousemove="sel = row.index"
+                  @click="choose(row.index)"
+                >
+                  <span class="ref-picker__icon"><Icon :name="row.option.key.startsWith('load:') ? 'chevron-down' : 'arrow-right'" :size="14" /></span>
+                  <span class="text-[12px] text-accent">{{ row.option.label }}</span>
+                </div>
+                <div v-else-if="row.type === 'skeleton'" class="ref-picker__skeleton" aria-hidden="true"><i /><i /></div>
+                <p v-else-if="row.type === 'note'" class="ref-picker__note" :class="{ 'text-err': row.error }">{{ row.text }}</p>
+              </div>
+            </TransitionGroup>
+          </div>
+        </div>
+        <div v-if="compact && !full && (summaryCount || showsGitHubState)" class="ref-picker__meta">
+          <span>{{ summaryCount }}</span>
+          <button
+            v-if="showsGitHubState"
+            type="button"
+            role="checkbox"
+            :aria-checked="ghState === 'all'"
+            :aria-label="t('pages.solo.reference.includeClosedGitHub')"
+            class="ref-picker__closed"
+            @click="ghState = ghState === 'open' ? 'all' : 'open'"
+          >
+            <span class="ref-picker__check" aria-hidden="true"><Icon v-if="ghState === 'all'" name="check" :size="11" /></span>
+            {{ t(tab === 'all' ? 'pages.solo.reference.includeClosedGitHub' : 'pages.solo.reference.includeClosed') }}
+          </button>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
+.ref-picker-anchor {
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(100% + 8px);
+  height: 0;
+  z-index: 40;
+}
+.ref-picker-anchor--down {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+.ref-picker-anchor--phone.ref-pop-leave-active {
+  transition: none;
+}
 .ref-picker {
+  container-type: inline-size;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 8px);
+  bottom: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -446,7 +586,7 @@ defineExpose({ move, confirm, cycleTab, setTab })
   --ref-picker-from: 4px;
 }
 .ref-picker--down {
-  top: calc(100% + 8px);
+  top: 0;
   bottom: auto;
   transform-origin: top center;
   --ref-picker-from: -4px;
@@ -472,6 +612,15 @@ defineExpose({ move, confirm, cycleTab, setTab })
   gap: 8px;
   border-bottom: 1px solid rgb(var(--c-line));
   padding: 6px 8px;
+}
+.ref-picker__tabs--workspace {
+  flex-wrap: wrap;
+}
+.ref-picker__tabs--workspace .ref-picker__tabbar {
+  flex-basis: max-content;
+}
+.ref-picker__tabs--workspace .ref-picker__seg {
+  margin-inline-start: auto;
 }
 .ref-picker__tabbar {
   position: relative;
@@ -552,6 +701,136 @@ defineExpose({ move, confirm, cycleTab, setTab })
 .ref-picker__seg .ref-picker__seg--on {
   background: rgb(var(--c-overlay));
   color: rgb(var(--c-txt));
+}
+/* Phone suggestions share one surface with a tab for each reference type. */
+.ref-picker--compact {
+  border-color: rgb(var(--c-line));
+  border-radius: 14px;
+  background: rgb(var(--c-surface));
+  box-shadow: 0 6px 22px rgb(0 0 0 / .12), 0 1px 4px rgb(0 0 0 / .06);
+}
+.ref-picker--phone {
+  position: fixed;
+  z-index: 60;
+  left: calc(var(--ref-left, 0px) + max(8px, env(safe-area-inset-left)));
+  right: calc(var(--ref-right, 0px) + max(8px, env(safe-area-inset-right)));
+  bottom: var(--ref-anchor);
+  max-height: var(--ref-space);
+}
+.ref-picker--phone.ref-picker--down {
+  top: var(--ref-anchor);
+  bottom: auto;
+}
+.ref-picker--compact .ref-picker__tabs {
+  display: block;
+  flex: none;
+  padding: 0 6px;
+}
+.ref-picker--compact .ref-picker__tabbar {
+  flex-wrap: wrap;
+  gap: 0;
+  overflow: visible;
+}
+.ref-picker--compact .ref-picker__tab {
+  flex: 1 0 auto;
+  justify-content: center;
+  min-width: 42px;
+  height: 44px;
+  padding: 0 3px;
+  color: rgb(var(--c-txt2));
+  font-size: 13px;
+  border-radius: 0;
+}
+.ref-picker--compact .ref-picker__ink {
+  display: none;
+}
+.ref-picker--compact .ref-picker__tab--on {
+  color: rgb(var(--c-accent-2));
+}
+.ref-picker--compact .ref-picker__tab--on::after {
+  position: absolute;
+  inset-inline: 6px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  content: '';
+}
+.ref-picker--compact .ref-picker__opt {
+  min-height: 52px;
+  gap: 10px;
+  padding: 7px 10px;
+}
+.ref-picker--compact .ref-picker__icon {
+  width: 26px;
+  height: 30px;
+  background: transparent;
+}
+.ref-picker__icon :deep(.file-type-icon) {
+  width: 23px;
+  height: 28px;
+}
+.ref-picker--compact .ref-picker__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 19px;
+}
+.ref-picker--compact .ref-picker__subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.ref-picker--compact .ref-picker__heading {
+  padding-inline: 10px;
+  font-size: 12px;
+}
+.ref-picker__heading-count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.ref-picker__meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding-inline: 14px;
+  border-top: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-txt3));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ref-picker__closed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  color: rgb(var(--c-txt2));
+}
+.ref-picker__check {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid rgb(var(--c-txt3));
+  border-radius: 4px;
+}
+.ref-picker__closed[aria-checked="true"] .ref-picker__check {
+  border-color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent-2));
+  color: rgb(var(--c-surface));
+}
+.ref-picker--compact button:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: -3px;
+}
+@container (max-width: 320px) {
+  .ref-picker--compact .ref-picker__tabs { padding-inline: 3px; }
+  .ref-picker--compact .ref-picker__tab { min-width: 38px; padding-inline: 2px; font-size: 12px; }
 }
 .ref-picker__list {
   max-height: 278px;

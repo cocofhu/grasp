@@ -1651,6 +1651,22 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         @edit="editQueuedItem"
         @reorder="reorderQueuedItems"
       />
+      <div class="relative">
+        <Transition name="ref-pop">
+          <ReferencePicker
+            v-if="referencesOn && mention.trigger.value"
+            ref="mentionPicker"
+            placement="up"
+            :scope="mentionScope"
+            :scoped-search="referenceSearch"
+            :query="mention.trigger.value.query"
+            :taken="mention.targets.value"
+            :full="mention.full.value"
+            :initial-tab="mention.pickerTab.value"
+            @pick="mention.pick"
+          />
+        </Transition>
+      </div>
       <TransitionGroup
         v-if="mention.tokens.value.length"
         tag="div"
@@ -1716,20 +1732,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         :composing="composing"
         test-prefix="clarify"
       />
-      <Transition name="ref-pop">
-        <ReferencePicker
-          v-if="referencesOn && mention.trigger.value"
-          ref="mentionPicker"
-          placement="up"
-          :scope="mentionScope"
-          :scoped-search="referenceSearch"
-          :query="mention.trigger.value.query"
-          :taken="mention.targets.value"
-          :full="mention.full.value"
-          :initial-tab="mention.pickerTab.value"
-          @pick="mention.pick"
-        />
-      </Transition>
       <ComposerShell
         wrap-toolbar
         :show-footer="!hideFinish && reviewMode && !observeComposer"

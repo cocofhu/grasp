@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/sha256"
@@ -81,7 +82,7 @@ func isGitHubDenied(err error) bool {
 
 var (
 	githubName     = `[A-Za-z0-9_.-]+`
-	githubURLRe    = regexp.MustCompile(`^https?://github\.com/(` + githubName + `)/(` + githubName + `)/(issues|pull)/(\d+)`)
+	githubURLRe    = regexp.MustCompile(`(?i)^https?://github\.com/(` + githubName + `)/(` + githubName + `)/(issues|pull|discussions)/(\d+)(?:$|[/?#])`)
 	githubShortRe  = regexp.MustCompile(`^(?:(` + githubName + `)/(` + githubName + `))?#(\d+)$`)
 	githubRemoteRe = regexp.MustCompile(`(?i)^(?:https?://github\.com/|git@github\.com:|ssh://git@github\.com/)(` + githubName + `)/(` + githubName + `?)(?:\.git)?/?$`)
 )
@@ -99,10 +100,20 @@ func (t githubTarget) String() string { return fmt.Sprintf("%s/%s#%d", t.Owner, 
 
 func (t githubTarget) URL(kind string) string {
 	segment := "issues"
-	if kind == models.ReferenceKindGitHubPR {
+	switch kind {
+	case models.ReferenceKindGitHubPR:
 		segment = "pull"
+	case models.ReferenceKindGitHubDiscussion:
+		segment = "discussions"
 	}
 	return fmt.Sprintf("https://github.com/%s/%s/%s/%d", t.Owner, t.Repo, segment, t.Number)
+}
+
+func githubURLSegment(text string) string {
+	if m := githubURLRe.FindStringSubmatch(strings.TrimSpace(text)); m != nil {
+		return strings.ToLower(m[3])
+	}
+	return ""
 }
 
 // parseGitHubTarget accepts a URL, owner/repo#n, or #n when the session has
@@ -151,7 +162,7 @@ func sessionGitHubRepos(repos []models.SessionRepo) []githubRepo {
 	return out
 }
 
-// githubItem is one issue or pull request as the picker shows it.
+// githubItem is one GitHub item as the picker shows it.
 type githubItem struct {
 	Kind      string `json:"kind"`
 	Target    string `json:"target"`
@@ -295,24 +306,31 @@ func githubRateLimited(wait time.Duration) *githubError {
 // get fetches path with a fresh cache window, then revalidates with ETag so
 // a 304 costs no rate limit.
 func (c *githubRefClient) get(ctx context.Context, path, token string, out any) error {
-	key := githubTokenKey(token) + " " + path
+	return c.request(ctx, http.MethodGet, path, token, nil, out)
+}
+
+func (c *githubRefClient) request(ctx context.Context, method, path, token string, payload []byte, out any) error {
+	key := githubTokenKey(token) + " " + method + " " + path + " " + string(payload)
 	hit, ok := c.cached(key)
 	if ok && c.now().Sub(hit.at) < githubCacheTTL {
 		return json.Unmarshal(hit.body, out)
 	}
 	ctx, cancel := context.WithTimeout(ctx, githubRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+path, nil)
+	req, err := http.NewRequestWithContext(ctx, method, c.apiBase+path, bytes.NewReader(payload))
 	if err != nil {
 		return &githubError{Code: githubErrUpstream, Msg: "GitHub 请求无效"}
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "grasp-references")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	if ok && hit.etag != "" {
+	if method == http.MethodGet && ok && hit.etag != "" {
 		req.Header.Set("If-None-Match", hit.etag)
 	}
 	res, err := c.http.Do(req)
@@ -419,6 +437,9 @@ func (c *githubRefClient) Search(ctx context.Context, req githubSearchRequest) (
 		defaultRepo = &req.Repos[0]
 	}
 	query := strings.TrimSpace(req.Query)
+	if githubURLSegment(query) == "discussions" {
+		return githubSearchResult{Items: []githubItem{}, Source: "none"}, nil
+	}
 	if t, ok := parseGitHubTarget(query, defaultRepo); ok {
 		item, err := c.Exact(ctx, t, tokenOf(githubRepo{Owner: t.Owner, Repo: t.Repo}))
 		if err != nil {
@@ -738,6 +759,9 @@ func githubReferenceCommands(ref models.MessageReference) string {
 		return ""
 	}
 	repo := t.Owner + "/" + t.Repo
+	if ref.Kind == models.ReferenceKindGitHubDiscussion {
+		return githubDiscussionCommand(t, ref.Access == models.ReferenceAccessOK)
+	}
 	if ref.Kind == models.ReferenceKindGitHubPR {
 		return fmt.Sprintf("gh pr view %d -R %s；评论：加 --comments；改动：gh pr diff %d -R %s", t.Number, repo, t.Number, repo)
 	}
@@ -746,8 +770,11 @@ func githubReferenceCommands(ref models.MessageReference) string {
 
 func renderGitHubReference(ref models.MessageReference) string {
 	label := "issue"
-	if ref.Kind == models.ReferenceKindGitHubPR {
+	switch ref.Kind {
+	case models.ReferenceKindGitHubPR:
 		label = "PR"
+	case models.ReferenceKindGitHubDiscussion:
+		label = "Discussion"
 	}
 	if ref.Access == models.ReferenceAccessDenied {
 		return fmt.Sprintf("- GitHub %s %s  ⚠ 平台用你的凭据访问失败（%s），可能没有这个仓库的权限\n", label, ref.Target, ref.Error)
