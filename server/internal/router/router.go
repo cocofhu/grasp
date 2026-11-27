@@ -289,6 +289,7 @@ func newPlatform(h *handlers.Handlers) *gin.Engine {
 	r.GET("/mcp/runs/:runId", h.MCPRPC)
 	r.DELETE("/mcp/runs/:runId", h.MCPRPC)
 	r.GET("/mcp/runs/:runId/embed-origin", h.MCPEmbedOrigin)
+	r.GET("/mcp/runs/:runId/references/:refId", h.MCPReferenceArtifact)
 
 	// Preview-page chat drawer, artifact modal, and image preview frame (outside /api:
 	// no cf_session, which a cross-site iframe never carries). A ticket is redeemed for

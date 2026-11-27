@@ -101,6 +101,22 @@ func TestReadReferenceUsesPinnedSnapshotAndOwnCursor(t *testing.T) {
 	}
 }
 
+func TestPastedDiscussionReferenceWithoutRepositoryCredentials(t *testing.T) {
+	solo, _, _, _ := referenceFixture(t)
+	const link = "https://github.com/acme/web/discussions/42"
+	refs, err := solo.PrepareScopedReferences(context.Background(), ReferenceScope("alice", "", nil), []ReferenceInput{
+		{Kind: models.ReferenceKindGitHubDiscussion, Target: link + "#discussioncomment-7"},
+	})
+	if err != nil || len(refs) != 1 || refs[0].Kind != models.ReferenceKindGitHubDiscussion ||
+		refs[0].Target != "acme/web#42" || refs[0].URL != link || refs[0].Access != models.ReferenceAccessUnchecked {
+		t.Fatalf("prepared Discussion: %+v %v", refs, err)
+	}
+	block := solo.RenderReferenceBlock(refs)
+	if !strings.Contains(block, `read-github-discussion.py" `+link) || strings.Contains(block, "/issues/") {
+		t.Fatalf("Discussion reference block: %s", block)
+	}
+}
+
 func referenceFixture(t *testing.T) (*SoloService, *gorm.DB, *fakeGitHub, string) {
 	t.Helper()
 	acp, port := fakeACPServer(t)

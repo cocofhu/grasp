@@ -8,13 +8,13 @@ import { EMBED_PAGE_PICK_KEY } from '@/lib/inbox/embedChat'
 /** Composer attachments, references and the host preview's element picker. */
 withDefaults(defineProps<{
   open: boolean
-  allowSolo?: boolean
+  allowWorkspace?: boolean
   allowReferences?: boolean
   /** Opens above the button by default; the home composer opens below. */
   placement?: 'up' | 'down'
-  /** data-testid prefix: `<prefix>-menu`, `-pick`, `-upload`, `-session`, `-github`. */
+  /** Prefix for the menu and its items' test IDs. */
   testPrefix: string
-}>(), { placement: 'up', allowSolo: true, allowReferences: true })
+}>(), { placement: 'up', allowWorkspace: true, allowReferences: true })
 const emit = defineEmits<{ (e: 'upload'): void; (e: 'reference', tab: ReferenceTab): void; (e: 'pick'): void }>()
 const { t } = useI18n()
 const pickPageElement = inject(EMBED_PAGE_PICK_KEY, null)
@@ -40,11 +40,17 @@ function pick() {
       <button type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-upload`" @click="emit('upload')">
         <Icon name="paperclip" :size="14" />{{ t('pages.solo.reference.menu.upload') }}
       </button>
-      <button v-if="allowReferences && allowSolo" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-session`" @click="emit('reference', 'solo')">
+      <button v-if="allowReferences && allowWorkspace" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-session`" @click="emit('reference', 'solo')">
         <Icon name="chat" :size="14" />{{ t('pages.solo.reference.menu.session') }}
       </button>
       <button v-if="allowReferences" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-github`" @click="emit('reference', 'issue')">
         <Icon name="branch" :size="14" />{{ t('pages.solo.reference.menu.github') }}
+      </button>
+      <button v-if="allowReferences && allowWorkspace" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-discussion`" @click="emit('reference', 'discussion')">
+        <Icon name="pending-chat" :size="14" />{{ t('pages.solo.reference.menu.discussion') }}
+      </button>
+      <button v-if="allowReferences && allowWorkspace" type="button" role="menuitem" class="ref-menu__item" :data-testid="`${testPrefix}-artifact`" @click="emit('reference', 'artifact')">
+        <Icon name="artifact" :size="14" />{{ t('pages.solo.reference.menu.artifact') }}
       </button>
     </div>
   </Transition>

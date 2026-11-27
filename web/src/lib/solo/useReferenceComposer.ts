@@ -1,7 +1,7 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { MessageReference } from '@/lib/api/apiTypes'
 import { isComposingKey } from '@/lib/chat/composerKeys'
-import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReferences, referenceLabel, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
+import { MAX_REFERENCES, activeTrigger, applyEdit, insertToken, insideToken, parseGitHubReferences, referenceLabel, referenceTargetKey, removeToken, restoreTokens, type ReferenceToken } from './referenceTokens'
 import type { ReferenceTab } from './useReferenceSearch'
 
 /** What the composer needs from a mounted ReferencePicker. */
@@ -32,7 +32,7 @@ export function useReferenceComposer(opts: {
   let dismissedAt = -1
   let tracked = input.value
   const refs = computed(() => tokens.value.map((token) => token.ref))
-  const targets = computed(() => refs.value.map((ref) => ref.target))
+  const targets = computed(() => refs.value.map(referenceTargetKey))
   const full = computed(() => tokens.value.length >= MAX_REFERENCES)
   const enabled = () => opts.enabled?.value !== false
 
@@ -106,11 +106,12 @@ export function useReferenceComposer(opts: {
    * Call after attachment handling; pasted GitHub links become references.
    * Links already referenced are skipped; those past the limit stay as text.
    */
-  function onPaste(e: ClipboardEvent) {
+  function onPaste(e: ClipboardEvent, allowDiscussion = true) {
     if (e.defaultPrevented || !enabled()) return
     const parsed = parseGitHubReferences(e.clipboardData?.getData('text/plain') || '')
     const el = textarea.value
     if (!parsed || !el || full.value || insideToken(tokens.value, el.selectionStart)) return
+    if (!allowDiscussion && parsed.some(({ ref }) => ref.kind === 'github_discussion')) return
     e.preventDefault()
     const before = input.value
     let text = before.slice(0, el.selectionStart) + before.slice(el.selectionEnd)
@@ -118,7 +119,7 @@ export function useReferenceComposer(opts: {
     let caret = el.selectionStart
     const overflow: string[] = []
     for (const { ref: link, raw } of parsed) {
-      if (next.some((t) => t.ref.kind === link.kind && t.ref.target === link.target)) continue
+      if (next.some((t) => referenceTargetKey(t.ref) === referenceTargetKey(link))) continue
       if (next.length >= MAX_REFERENCES) {
         overflow.push(raw)
         continue

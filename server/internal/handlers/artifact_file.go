@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -35,7 +36,29 @@ func (h *Handlers) serveArtifactFile(c *gin.Context, download bool) {
 	if !ok {
 		return
 	}
-	file, err := h.Arts.OpenFile(c.Request.Context(), c.Param("id"), rev)
+	h.serveArtifactVersion(c, c.Param("id"), rev, download)
+}
+
+// MCPReferenceArtifact streams the same version exposed by read_reference.
+func (h *Handlers) MCPReferenceArtifact(c *gin.Context) {
+	if h.MCP == nil || h.Arts == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "artifact_file_unavailable"})
+		return
+	}
+	id, rev, err := h.MCP.ResolveArtifactReference(c.Param("runId"), bearer(c.GetHeader("Authorization")), c.Param("refId"))
+	if errors.Is(err, mcp.ErrUnauthorized) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "artifact_not_found"})
+		return
+	}
+	h.serveArtifactVersion(c, id, rev, true)
+}
+
+func (h *Handlers) serveArtifactVersion(c *gin.Context, id string, rev int, download bool) {
+	file, err := h.Arts.OpenFile(c.Request.Context(), id, rev)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "artifact_not_found"})

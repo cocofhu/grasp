@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -61,6 +62,60 @@ func errorCode(t *testing.T, body []byte) string {
 	_ = json.Unmarshal(body, &failure)
 	code, _ := failure["code"].(string)
 	return code
+}
+
+func TestArtifactReferenceReadsOnlyTheAttachedRevision(t *testing.T) {
+	hn, _ := referenceHarness(t)
+	for _, id := range []string{"source", "destination", "unrelated"} {
+		if err := hn.db.Create(&models.Run{ID: id, Status: "running", Title: id}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	file, err := hn.h.Arts.SaveFile(ctx, "source", "writer", "design.md", "", strings.NewReader("first version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := hn.do(http.MethodGet, "/api/solo/sessions/mine/references/search?lane=artifact&q=design", nil)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"target":"`+file.ID+`"`) ||
+		!strings.Contains(list.Body.String(), `"total":1`) || strings.Contains(list.Body.String(), "first version") {
+		t.Fatalf("artifact picker: %d %s", list.Code, list.Body)
+	}
+	refs, err := hn.h.Solo.PrepareScopedReferences(ctx, services.ReferenceScope("admin", "", nil), []services.ReferenceInput{
+		{Kind: models.ReferenceKindArtifact, Target: file.ID},
+	})
+	if err != nil || len(refs) != 1 || refs[0].Anchor != "1" {
+		t.Fatalf("prepared references: %+v %v", refs, err)
+	}
+	if _, err := hn.h.Arts.SaveFile(ctx, "source", "writer", "design.md", "", strings.NewReader("second version")); err != nil {
+		t.Fatal(err)
+	}
+	refs = hn.h.Solo.PinRunReferences("destination", "reader", "admin", refs)
+	hn.host.SetConversationHistoryProvider(services.NewConversationHistoryService(hn.db, nil))
+	auth := map[string]string{"Authorization": "Bearer " + runToken(t, hn, "destination")}
+	base := "/mcp/runs/destination"
+	read := hn.doPublic(http.MethodPost, base, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "read_reference", "arguments": map[string]any{"ref": refs[0].ID}},
+	}, auth)
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), "first version") || !strings.Contains(read.Body.String(), "/references/"+refs[0].ID) ||
+		strings.Contains(read.Body.String(), "second version") {
+		t.Fatalf("read_reference: %d %s", read.Code, read.Body)
+	}
+	download := hn.doPublic(http.MethodGet, base+"/references/"+refs[0].ID, nil, auth)
+	if download.Code != http.StatusOK || download.Body.String() != "first version" {
+		t.Fatalf("download: %d %s", download.Code, download.Body)
+	}
+	if res := hn.doPublic(http.MethodGet, base+"/references/"+file.ID, nil, auth); res.Code != http.StatusNotFound {
+		t.Fatalf("raw artifact ID accepted: %d", res.Code)
+	}
+	if res := hn.doPublic(http.MethodGet, base+"/references/"+refs[0].ID, nil, nil); res.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token accepted: %d", res.Code)
+	}
+	otherAuth := map[string]string{"Authorization": "Bearer " + runToken(t, hn, "unrelated")}
+	if res := hn.doPublic(http.MethodGet, "/mcp/runs/unrelated/references/"+refs[0].ID, nil, otherAuth); res.Code != http.StatusNotFound {
+		t.Fatalf("unrelated run resolved the reference: %d", res.Code)
+	}
 }
 
 func TestWorkflowReferenceSearchAndLaunch(t *testing.T) {

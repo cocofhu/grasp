@@ -366,4 +366,5 @@ echo "OK: git auth unit smoke passed"
 # Keep file-only catalog and shared-workflow isolation covered by the existing
 # CI Git-auth entry point. Remove this script's CLI mocks for offline CLI reads.
 PATH="${PATH#"$HOME/bin:"}" python3 "$ROOT/scripts/test_git_credentials.py"
+python3 "$ROOT/scripts/test_read_github_discussion.py"
 bash "$ROOT/scripts/test-reprime.sh"

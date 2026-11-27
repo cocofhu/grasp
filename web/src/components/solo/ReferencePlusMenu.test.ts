@@ -23,7 +23,10 @@ describe('ReferencePlusMenu preview picking', () => {
   it('offers picking only when the preview host supplies the capability', async () => {
     const normal = menu()
     expect(normal.find('[data-testid="plus-pick"]').exists()).toBe(false)
-    expect(normal.findAll('[role="menuitem"]')).toHaveLength(3)
+    expect(normal.findAll('[role="menuitem"]')).toHaveLength(5)
+    await normal.get('[data-testid="plus-artifact"]').trigger('click')
+    await normal.get('[data-testid="plus-discussion"]').trigger('click')
+    expect(normal.emitted('reference')).toEqual([['artifact'], ['discussion']])
     const pick = vi.fn()
     const preview = menu(pick)
     expect(preview.get('[data-testid="plus-pick"]').text()).toBe('取点')

@@ -31,11 +31,12 @@ const linkAttrs = computed(() => {
 const warn = computed(() => props.reference.access === 'denied' || !!props.reference.error)
 const tip = computed(() => {
   const r = props.reference
-  if (r.error === 'deleted') return t('pages.solo.reference.deleted')
+  if (r.error === 'deleted') return t(r.kind === 'artifact' ? 'pages.solo.reference.artifactDeleted' : 'pages.solo.reference.deleted')
   if (r.access === 'denied') return t('pages.solo.reference.denied', { reason: r.error || '' })
   if (r.access === 'unchecked') return t('pages.solo.reference.unchecked')
   const parts = [r.title || label.value]
   if (r.kind === 'solo' && typeof r.messages === 'number') parts.push(t('pages.solo.reference.pinned', { n: r.messages }))
+  if (r.kind === 'artifact' && r.anchor) parts.push(t('pages.solo.reference.artifactRevision', { n: r.anchor }))
   return parts.join(' · ')
 })
 </script>

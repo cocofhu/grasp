@@ -11,8 +11,8 @@ import (
 
 const soloReferencePageSize = 20
 
-// ReferenceSearchQuery is one picker lane request. Lane is "solo" or
-// "github"; Kinds narrows GitHub to github_issue and/or github_pr.
+// ReferenceSearchQuery is one picker lane request. Kinds narrows the GitHub
+// issue and PR lane. Discussions and artifacts have independent lanes.
 type ReferenceSearchQuery struct {
 	Lane  string
 	Query string
@@ -83,10 +83,12 @@ func (s *SoloService) searchReferences(ctx context.Context, row *models.SoloSess
 	switch q.Lane {
 	case "solo":
 		return s.searchSoloReferences(row, q)
-	case "github":
+	case "github", "discussion":
 		return s.searchGitHubReferences(ctx, row, q), nil
+	case "artifact":
+		return (&ArtifactService{db: s.db}).searchArtifactReferences(ctx, q)
 	}
-	return ReferenceSearchResult{}, soloErr(http.StatusBadRequest, "reference_lane_invalid", "lane 必须是 solo 或 github")
+	return ReferenceSearchResult{}, soloErr(http.StatusBadRequest, "reference_lane_invalid", "不支持的引用搜索类型 %q", q.Lane)
 }
 
 func (s *SoloService) searchSoloReferences(row *models.SoloSession, q ReferenceSearchQuery) (ReferenceSearchResult, error) {
@@ -119,10 +121,6 @@ func (s *SoloService) searchSoloReferences(row *models.SoloSession, q ReferenceS
 }
 
 func (s *SoloService) searchGitHubReferences(ctx context.Context, row *models.SoloSession, q ReferenceSearchQuery) ReferenceSearchResult {
-	repos := row.Repos
-	if len(repos) == 0 {
-		repos = legacySessionRepos(row)
-	}
 	tokens := map[githubRepo]string{}
 	tokenOf := func(r githubRepo) string {
 		if t, ok := tokens[r]; ok {
@@ -132,11 +130,17 @@ func (s *SoloService) searchGitHubReferences(ctx context.Context, row *models.So
 		tokens[r] = t
 		return t
 	}
-	found, err := s.githubClient().Search(ctx, githubSearchRequest{
-		Query: q.Query, Kinds: q.Kinds, State: q.State, Page: q.Page, Repos: sessionGitHubRepos(repos), TokenOf: tokenOf,
-	})
+	req := githubSearchRequest{
+		Query: q.Query, Kinds: q.Kinds, State: q.State, Page: q.Page, Repos: sessionGitHubRepos(effectiveSessionRepos(row)), TokenOf: tokenOf,
+	}
+	client := s.githubClient()
+	search := client.Search
+	if q.Lane == "discussion" {
+		search = client.searchDiscussions
+	}
+	found, err := search(ctx, req)
 	if err != nil {
-		res := ReferenceSearchResult{Lane: "github", Items: []githubItem{}, Error: &ReferenceSearchError{Code: githubErrCode(err), Message: err.Error()}}
+		res := ReferenceSearchResult{Lane: q.Lane, Items: []githubItem{}, Error: &ReferenceSearchError{Code: githubErrCode(err), Message: err.Error()}}
 		if res.Error.Code == "" {
 			res.Error.Code = githubErrUpstream
 		}
@@ -145,6 +149,6 @@ func (s *SoloService) searchGitHubReferences(ctx context.Context, row *models.So
 		}
 		return res
 	}
-	return ReferenceSearchResult{Lane: "github", Items: found.Items, Total: found.Total, NextPage: found.NextPage, Incomplete: found.Incomplete,
+	return ReferenceSearchResult{Lane: q.Lane, Items: found.Items, Total: found.Total, NextPage: found.NextPage, Incomplete: found.Incomplete,
 		Source: found.Source, Hint: found.Hint, RateLimit: found.RateLimit, Counts: found.Counts}
 }
