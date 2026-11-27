@@ -8,6 +8,8 @@ All notable public-release changes are documented here.
 
 - 修复工作区快照偶尔漏掉短时间内发生的等长文件修改。
 
+- Solo 和工作流的工作区快照会记录被 Git 标记为 `assume-unchanged` 的文件改动。
+
 - 工作流的独立沙箱可以继续按运行最初的基线查看累计改动。工作区快照会跳过尚未提交的嵌套仓库，并回收淘汰归档占用的空间。
 
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。

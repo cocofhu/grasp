@@ -92,6 +92,7 @@ func TestWorkspaceTreesPreserveIndexAndPreview(t *testing.T) {
 	write("tracked.scratch", "forced tracked file\n")
 	git("add", "-f", "tracked.scratch")
 	turn := capture()
+	git("update-index", "--assume-unchanged", "--", "tab\tline\n.txt")
 	write("README.md", "# Review\n\nBefore this turn.\nOne new line.\n")
 	git("commit", "-m", "during turn", "--", "README.md")
 	if err := os.Rename(filepath.Join(repo, "old file.txt"), filepath.Join(repo, "新名字.txt")); err != nil {

@@ -59,6 +59,19 @@ def clean_filters(repo):
     return [arg for key in names.splitlines() for arg in ("-c", key + ("=false" if key.endswith(".required") else "="))]
 
 
+def clear_assume_unchanged(repo, env):
+    entries = git(repo, "ls-files", "-v", "-z", env=env)
+    # Git uses lowercase status letters for entries marked assume-unchanged.
+    paths = b"".join(entry[2:] + b"\0" for entry in entries.split(b"\0") if entry[:1].islower())
+    if not paths:
+        return
+    command = git_command(repo, "-c", "core.splitIndex=false", "update-index", "--no-assume-unchanged", "-z", "--stdin")
+    try:
+        subprocess.run(command, input=paths, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, check=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError("Git operation failed") from error
+
+
 def add_worktree(repo, scratch, env):
     args = ("-c", "core.splitIndex=false", *clean_filters(repo), "add", "--all")
     try:
@@ -107,6 +120,7 @@ def capture(repo, pin, tree_only):
             # Use the timestamp of the same index we read, even if Git replaced it.
             os.utime(copy, ns=(stamp, stamp))
         env = dict(os.environ, GIT_INDEX_FILE=copy, GIT_TERMINAL_PROMPT="0")
+        clear_assume_unchanged(repo, env)
         add_worktree(repo, scratch, env)
         tree = git(repo, "write-tree", env=env).rstrip(b"\n").decode()
     if not tree_only and head and tree == optional(repo, "rev-parse", "HEAD^{tree}"):
