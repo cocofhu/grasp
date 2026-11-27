@@ -217,10 +217,6 @@ func (c *githubRefClient) discussionSearchBatch(ctx context.Context, token strin
 	return items, data.Search.DiscussionCount, nil
 }
 
-func githubDiscussionCommand(t githubTarget, useRepoCredential bool) string {
-	api := fmt.Sprintf(`api --hostname github.com graphql --paginate -f owner=%s -f repo=%s -F number=%d -f query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $repo) { discussion(number: $number) { title body comments(first: 50, after: $endCursor) { nodes { author { login } body } pageInfo { hasNextPage endCursor } } } } }'`, t.Owner, t.Repo, t.Number)
-	if useRepoCredential {
-		return fmt.Sprintf(`(helper="$HOME/.grasp/git-credentials/helper.py"; if [ -r "$helper" ]; then set -- python3 "$helper" exec-cli gh https://github.com/%s/%s --; else set -- gh; fi; "$@" %s)`, t.Owner, t.Repo, api)
-	}
-	return "gh " + api
+func githubDiscussionCommand(t githubTarget) string {
+	return `python3 "${GRASP_RUNTIME_ROOT:-/opt/grasp-runtime}/current/scripts/read-github-discussion.py" ` + t.URL(models.ReferenceKindGitHubDiscussion)
 }

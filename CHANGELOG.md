@@ -4,7 +4,7 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- Solo 和工作流聊天的 `@` 与「+」菜单支持引用 GitHub Discussion 和工作区产物。Discussion 可按仓库搜索，也可直接粘贴链接。产物引用固定发送时的版本，历史消息和 Agent 可读取该版本。手机上输入 `@` 即可从同一行标签直接切换到「讨论」或「产物」，也可继续输入关键词跨类型搜索。
+- Solo 和工作流聊天的 `@` 与「+」菜单支持引用 GitHub Discussion 和工作区产物。Discussion 可按仓库搜索或粘贴链接引用，支持免登录读取公开讨论、查看采纳答案和楼中回复。产物引用固定发送时的版本，历史消息和 Agent 可读取该版本。手机上输入 `@` 即可从同一行标签直接切换到「讨论」或「产物」，也可继续输入关键词跨类型搜索。
 
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 

@@ -760,7 +760,7 @@ func githubReferenceCommands(ref models.MessageReference) string {
 	}
 	repo := t.Owner + "/" + t.Repo
 	if ref.Kind == models.ReferenceKindGitHubDiscussion {
-		return githubDiscussionCommand(t, ref.Access == models.ReferenceAccessOK)
+		return githubDiscussionCommand(t)
 	}
 	if ref.Kind == models.ReferenceKindGitHubPR {
 		return fmt.Sprintf("gh pr view %d -R %s；评论：加 --comments；改动：gh pr diff %d -R %s", t.Number, repo, t.Number, repo)
@@ -777,11 +777,18 @@ func renderGitHubReference(ref models.MessageReference) string {
 		label = "Discussion"
 	}
 	if ref.Access == models.ReferenceAccessDenied {
-		return fmt.Sprintf("- GitHub %s %s  ⚠ 平台用你的凭据访问失败（%s），可能没有这个仓库的权限\n", label, ref.Target, ref.Error)
+		warning := fmt.Sprintf("- GitHub %s %s  ⚠ 平台用你的凭据访问失败（%s），可能没有这个仓库的权限\n", label, ref.Target, ref.Error)
+		if ref.Kind == models.ReferenceKindGitHubDiscussion {
+			return warning + "  尝试读取公开讨论：" + githubReferenceCommands(ref) + "\n"
+		}
+		return warning
 	}
 	return fmt.Sprintf("- GitHub %s %s「%s」 %s\n  %s\n", label, ref.Target, ref.Title, ref.URL, githubReferenceCommands(ref))
 }
 
 func githubReferenceHint(ref models.MessageReference) string {
+	if ref.Kind == models.ReferenceKindGitHubDiscussion {
+		return "在沙箱中读取 GitHub Discussion、采纳答案和回复：\n" + githubReferenceCommands(ref)
+	}
 	return "GitHub 引用请直接用 gh 读取：" + githubReferenceCommands(ref)
 }

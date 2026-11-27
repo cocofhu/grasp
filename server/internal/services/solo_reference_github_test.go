@@ -574,6 +574,10 @@ func TestGitHubReferencePromptText(t *testing.T) {
 	if got := githubReferenceHint(issue); !strings.Contains(got, "gh issue view 3 -R acme/web") {
 		t.Fatalf("hint: %s", got)
 	}
+	discussion := models.MessageReference{Kind: models.ReferenceKindGitHubDiscussion, Target: "acme/web#3", Access: models.ReferenceAccessDenied}
+	if got := renderGitHubReference(discussion); !strings.Contains(got, "访问失败") || !strings.Contains(got, `read-github-discussion.py" https://github.com/acme/web/discussions/3`) {
+		t.Fatalf("discussion with insufficient API permissions: %s", got)
+	}
 	if githubReferenceCommands(models.MessageReference{Target: "junk"}) != "" {
 		t.Fatal("junk target")
 	}

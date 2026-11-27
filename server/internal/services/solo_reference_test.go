@@ -112,7 +112,7 @@ func TestPastedDiscussionReferenceWithoutRepositoryCredentials(t *testing.T) {
 		t.Fatalf("prepared Discussion: %+v %v", refs, err)
 	}
 	block := solo.RenderReferenceBlock(refs)
-	if !strings.Contains(block, link) || !strings.Contains(block, "discussion(number: $number)") || strings.Contains(block, "/issues/") {
+	if !strings.Contains(block, `read-github-discussion.py" `+link) || strings.Contains(block, "/issues/") {
 		t.Fatalf("Discussion reference block: %s", block)
 	}
 }

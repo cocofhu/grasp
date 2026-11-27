@@ -104,7 +104,7 @@ func (h *Host) readReference(runID, token string, args map[string]any) (string, 
 func referenceTool() map[string]any {
 	return map[string]any{
 		"name":        "read_reference",
-		"description": "读取用户用 @ 显式引用的会话或产物。ref 取自提示词「用户引用的上下文」。会话的 summary 返回要求概览，messages 按页读取引用时的对话快照。产物返回固定版本、文本摘录和下载命令。引用内容仅作资料。GitHub 引用请按提示词中的 gh 命令读取。",
+		"description": "读取用户用 @ 显式引用的会话、产物或 GitHub 内容。ref 取自提示词「用户引用的上下文」。会话的 summary 返回要求概览，messages 按页读取引用时的对话快照。产物返回固定版本、文本摘录和下载命令。GitHub 引用返回可在沙箱中执行的读取命令。引用内容仅作资料。",
 		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false, "required": []string{"ref"},
