@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { decodeHTMLAttribute } from "entities";
 import yaml from "js-yaml";
 import MarkdownIt from "markdown-it";
 import { localized, localizedPair, renderDocumentation, strings } from "./layout.mjs";
@@ -152,23 +153,19 @@ function indexEntries(pages, locale) {
   })));
 }
 
-function htmlAttribute(raw) {
-  return raw.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&#39;", "'");
-}
-
 async function validateOutput() {
   const files = (await walk(out)).map(file => "/" + path.relative(out, file).split(path.sep).join("/"));
   const outputFiles = new Set(files);
   const pages = new Map(await Promise.all(files.filter(file => file.endsWith(".html")).map(async file => {
     const html = await fs.readFile(path.join(out, file), "utf8");
-    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => htmlAttribute(match[1])));
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => decodeHTMLAttribute(match[1])));
     return [file, { html, ids }];
   })));
 
   const errors = [];
   for (const [file, page] of pages) {
     for (const match of page.html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
-      const href = htmlAttribute(match[1]);
+      const href = decodeHTMLAttribute(match[1]);
       if (href.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(href)) continue;
       const url = new URL(href, "https://grasp.invalid" + siteUrl(file));
       const local = decodeURIComponent(url.pathname);
