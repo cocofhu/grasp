@@ -199,6 +199,19 @@ func (h *Handlers) GetSoloSession(c *gin.Context) {
 	c.JSON(http.StatusOK, v)
 }
 
+func (h *Handlers) GetSoloTaskInfo(c *gin.Context) {
+	user, ok := h.soloReady(c)
+	if !ok {
+		return
+	}
+	info, err := h.Solo.TaskInfo(c.Request.Context(), c.Param("id"), user)
+	if err != nil {
+		writeSoloErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
 // GetSoloResources returns the artifacts and preview registrations for the
 // current sandbox of an owned Solo session.
 func (h *Handlers) GetSoloResources(c *gin.Context) {

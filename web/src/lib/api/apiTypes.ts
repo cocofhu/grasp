@@ -725,6 +725,19 @@ export interface SoloResources {
   preview: PreviewPort | null
 }
 
+export interface SoloTaskInfo {
+  usage: TokenUsage & {
+    total: number
+    reported: boolean
+    incomplete: boolean
+    byModel?: TokenUsageByModel
+    cost?: number
+    currency?: string
+    unpricedTotal?: number
+  }
+  workflowRuns: Array<{ id: string; workflowName: string }>
+}
+
 export interface SoloSessionList {
   sessions: SoloSession[]
   maxSandboxes: number

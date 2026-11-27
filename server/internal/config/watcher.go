@@ -212,4 +212,7 @@ func logReloadDiff(old, new_ *Config) {
 		log.Warn().Str("old", old.Database.Path).Str("new", new_.Database.Path).
 			Msg("config: database.path changed — requires restart to take effect")
 	}
+	if old.Database.Driver != new_.Database.Driver || old.Database.DSN != new_.Database.DSN {
+		log.Warn().Msg("config: database driver or connection settings changed — requires restart to take effect")
+	}
 }

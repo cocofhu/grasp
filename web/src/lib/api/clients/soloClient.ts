@@ -10,6 +10,7 @@ import type {
   SoloResources,
   SoloSession,
   SoloSessionList,
+  SoloTaskInfo,
   SteerOutcome,
 } from '../apiTypes'
 import type { EmbedTicket } from '../../inbox/embedChat'
@@ -76,6 +77,8 @@ export const soloClient = {
     req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
   getSoloResources: (id: string, signal?: AbortSignal) =>
     req<SoloResources>(`/solo/sessions/${enc(id)}/resources`, { signal }),
+  getSoloTaskInfo: (id: string, signal?: AbortSignal) =>
+    req<SoloTaskInfo>(`/solo/sessions/${enc(id)}/task-info`, { signal }),
   soloEmbedTicket: (id: string) =>
     req<EmbedTicket>(`/solo/sessions/${enc(id)}/embed-ticket`, { method: 'POST' }),
   renameSoloSession: (id: string, title: string) =>

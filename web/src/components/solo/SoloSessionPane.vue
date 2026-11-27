@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkspaceChangesEntry from '@/components/changes/WorkspaceChangesEntry.vue'
 import ArtifactFileAttachments from '@/components/chat/ArtifactFileAttachments.vue'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRef, watch } from 'vue'
@@ -112,6 +113,7 @@ async function chooseSessionServiceTier(value: string) {
   }
 }
 const repos = computed(() => sessionRepos(session.value))
+const latestChangeTurn = computed(() => turns.value.filter(turn => turn.role === 'agent' && !turn.streaming && !!turn.turnId).at(-1)?.turnId)
 const defaultRepo = computed(() => githubRepoOf(repos.value[0]?.repoUrl))
 const draft = useChatComposerDraft(defaultRepo)
 const { input, attach, mention, textareaComponent } = draft
@@ -516,6 +518,11 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
       <template #actions>
+        <WorkspaceChangesEntry
+          v-if="!embedded && repos.length"
+          :target="{ kind: 'solo', id: props.sessionId }"
+          :revision="status + ':' + sandboxId + ':' + (latestChangeTurn || '')"
+        />
         <SandboxInfoButton
           :session="session"
           :busy="busy"
@@ -718,6 +725,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
           <p v-if="selectionInvalid && canSend" class="mb-2 text-[12px] text-warn" role="status" data-testid="solo-model-invalid-notice">{{ t('pages.solo.modelSelect.unavailableSelection') }}</p>
           <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
+          <WorkspaceChangesEntry
+            v-if="!embedded && repos.length && latestChangeTurn"
+            :target="{ kind: 'solo', id: props.sessionId, turnId: latestChangeTurn }"
+          />
           <ChatComposer
             :draft="draft"
             :command-skills="session.skills || []"

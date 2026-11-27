@@ -142,6 +142,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :run-id="runId"
                   :node-id="nodeId"
                   :iteration="iteration"
+                  show-workspace-changes
                   v-model:draft="draft"
                   v-model:attachments="attachments"
                   v-model:annotations="annotations"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkspaceChangesEntry from '@/components/changes/WorkspaceChangesEntry.vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
@@ -247,6 +248,9 @@ onMounted(() => {
     })
     .catch(() => {})
 })
+const changeWorkspaceLabels = computed(() => Object.fromEntries(
+  (run.value?.nodes ?? []).map(node => [node.id, node.label || node.id]),
+))
 </script>
 
 <template>
@@ -319,6 +323,12 @@ onMounted(() => {
             />
           </div>
           <div data-testid="run-header-actions" class="flex flex-wrap items-center gap-2 pl-10 md:ml-auto md:justify-end md:pl-0">
+            <WorkspaceChangesEntry
+              v-if="run.repos?.length"
+              :target="{ kind: 'run', id: run.id, nodeId: ['running', 'waiting_human'].includes(run.status) ? selNode?.id : undefined }"
+              :revision="run.status + ':' + (selRunView?.status || '') + ':' + (run.lastActivityAt || '')"
+              :workspace-labels="changeWorkspaceLabels"
+            />
             <AppButton variant="ghost" size="sm" icon="edit" @click="router.push('/workflows/' + run.workflowId + '/edit')">{{ t('common.buttons.edit') }}</AppButton>
             <AppButton variant="ghost" size="sm" icon="doc" @click="showDetail = true">{{ t('common.buttons.details') }}</AppButton>
             <AppButton

@@ -98,26 +98,42 @@ func syncDir(path string) error {
 }
 
 func Parse(ref string) (encoding, digest string, err error) {
-	parts := strings.Split(strings.TrimPrefix(ref, Prefix), "/")
-	if !strings.HasPrefix(ref, Prefix) || len(parts) != 2 {
-		return "", "", errors.New("invalid file reference")
+	_, encoding, digest, err = parseRef(ref)
+	return
+}
+
+func parseRef(ref string) (archive, encoding, digest string, err error) {
+	rest, ok := strings.CutPrefix(ref, Prefix)
+	if !ok {
+		return "", "", "", errors.New("invalid file reference")
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 4 && parts[0] == workspaceArchiveNamespace && validArchiveID(parts[1]) {
+		archive, parts = parts[1], parts[2:]
+	}
+	if len(parts) != 2 {
+		return "", "", "", errors.New("invalid file reference")
 	}
 	switch parts[0] {
 	case Text, JSON, Image, Binary, Bytes:
 	default:
-		return "", "", errors.New("invalid file encoding")
+		return "", "", "", errors.New("invalid file encoding")
 	}
 	b, e := hex.DecodeString(parts[1])
 	if e != nil || len(b) != sha256.Size || parts[1] != strings.ToLower(parts[1]) {
-		return "", "", errors.New("invalid file digest")
+		return "", "", "", errors.New("invalid file digest")
 	}
-	return parts[0], parts[1], nil
+	return archive, parts[0], parts[1], nil
 }
 
 func IsRef(s string) bool { _, _, err := Parse(s); return err == nil }
 
-func (s *Store) path(digest string) string {
-	return filepath.Join(s.Root, "sha256", digest[:2], digest)
+func (s *Store) path(archive, digest string) string {
+	root := s.Root
+	if archive != "" {
+		root = s.workspaceArchive(archive)
+	}
+	return filepath.Join(root, "sha256", digest[:2], digest)
 }
 
 type contextReader struct {
@@ -172,7 +188,8 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 		return "", 0, err
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
-	dest := s.path(digest)
+	archive, _ := ctx.Value(workspaceArchiveKey{}).(string)
+	dest := s.path(archive, digest)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -202,18 +219,22 @@ func (s *Store) put(ctx context.Context, r io.Reader, encoding string, limit int
 	if closeErr != nil {
 		return "", 0, closeErr
 	}
-	return Prefix + encoding + "/" + digest, size, nil
+	prefix := Prefix
+	if archive != "" {
+		prefix += workspaceArchiveNamespace + "/" + archive + "/"
+	}
+	return prefix + encoding + "/" + digest, size, nil
 }
 
 func (s *Store) Open(ctx context.Context, ref string) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	_, digest, err := Parse(ref)
+	archive, _, digest, err := parseRef(ref)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(s.path(digest))
+	f, err := os.Open(s.path(archive, digest))
 	if err != nil {
 		return nil, fmt.Errorf("file unavailable (%s): %w", digest, err)
 	}

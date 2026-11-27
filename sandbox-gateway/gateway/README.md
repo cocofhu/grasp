@@ -64,7 +64,7 @@ gateway/
 ├── config.docker.example.yaml
 ├── internal/
 │   ├── config/                 # YAML + SBGW_* overrides
-│   ├── database/               # SQLite (glebarez) + AutoMigrate
+│   ├── database/               # SQLite, MySQL, PostgreSQL + AutoMigrate
 │   ├── models/                 # Sandbox model (endpoints/env/labels as JSON columns)
 │   ├── store/                  # GORM-backed metadata store
 │   ├── driver/                 # Driver interface (lifecycle + Endpoints)

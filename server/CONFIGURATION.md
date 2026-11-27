@@ -19,8 +19,8 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_PREVIEW_EXPOSE_STRATEGY` | `preview.expose.strategy` | enum | `auto` | Public | Global default preview exposure strategy: auto, subdomain, or none (direct is connection-level only in YAML) |
 | `GRASP_PREVIEW_EXPOSE_SUBDOMAIN_BASE_URL` | `preview.expose.subdomain.base_url` | URL | `Not set` | Public | Wildcard subdomain preview base origin (HTTP(S) DNS hostname, no IP literals; production requires https and a separate registrable site) |
 | `GRASP_DB` | `database.path` | path | `grasp.db` | Public | SQLite database file |
-| `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite or mysql |
-| `GRASP_DB_DSN` | `database.dsn` | string | `Not set` | Sensitive | MySQL DSN |
+| `GRASP_DB_DRIVER` | `database.driver` | enum | `sqlite` | Public | Database driver: sqlite, mysql, or postgres |
+| `GRASP_DB_DSN` | `database.dsn` | string | `Not set` | Sensitive | MySQL or PostgreSQL connection string |
 | `GRASP_PROFILES_ROOT` | `engine.profiles_root` | path | `data/profiles` | Public | Agent profile root |
 | `GRASP_NODE_AUTO_RETRY` | `engine.node_auto_retry_max` | integer | `3` | Public | Node automatic retry limit |
 | `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Deprecated and ignored (including sandbox.images.* and GRASP_SANDBOX_IMAGE_*): sandbox-gateway owns the image (docker/kubernetes image or profiles, E2B defaultTemplate or templates); Grasp reads it from GET /api/v1/capabilities |

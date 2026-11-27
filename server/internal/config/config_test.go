@@ -8,6 +8,30 @@ import (
 	"time"
 )
 
+func TestDatabaseDriverDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, driver, dsn, want string
+	}{
+		{"default", "", "", "sqlite"},
+		{"legacy MySQL inference", "", "user:pass@tcp(db:3306)/grasp", "mysql"},
+		{"Postgres URI", "", "postgres://user@db/grasp", "postgres"},
+		{"PostgreSQL URI", "", " postgresql://user@db/grasp ", "postgres"},
+		{"PostgreSQL keywords", " Postgres ", "host=db dbname=grasp", "postgres"},
+		{"explicit SQLite", "sqlite", "postgresql://user@db/grasp", "sqlite"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{Database: DatabaseConfig{Driver: tc.driver, DSN: tc.dsn}}
+			setDefaults(&cfg)
+			if cfg.Database.Driver != tc.want {
+				t.Fatalf("driver = %q, want %q", cfg.Database.Driver, tc.want)
+			}
+			if tc.want == "postgres" && cfg.SecretsKeyFile() != "" {
+				t.Fatal("PostgreSQL must use a configured credential encryption key")
+			}
+		})
+	}
+}
+
 func TestSetDefaults(t *testing.T) {
 	c := &Config{}
 	setDefaults(c)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/modelrouting"
@@ -57,12 +56,13 @@ func withModelServiceTiers(connection modelrouting.Connection) modelrouting.Conn
 func (s *ModelConnectionService) Create(connection modelrouting.Connection) (modelrouting.Connection, error) {
 	connection.ID = "conn-" + uuid.NewString()[:12]
 	connection.Revision = 1
-	connection.CreatedAt, connection.UpdatedAt = time.Now(), time.Now()
+	now := s.db.NowFunc()
+	connection.CreatedAt, connection.UpdatedAt = now, now
 	if err := s.validateConnection(&connection); err != nil {
 		return modelrouting.Connection{}, err
 	}
-	row := models.ModelConnection(connection)
-	if err := s.db.Create(&row).Error; err != nil {
+	row := (*models.ModelConnection)(&connection)
+	if err := s.db.Create(row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
 	return withModelServiceTiers(connection), nil
@@ -74,12 +74,12 @@ func (s *ModelConnectionService) Update(id string, connection modelrouting.Conne
 		return modelrouting.Connection{}, err
 	}
 	connection.ID, connection.CreatedAt = current.ID, current.CreatedAt
-	connection.Revision, connection.UpdatedAt = current.Revision+1, time.Now()
+	connection.Revision, connection.UpdatedAt = current.Revision+1, s.db.NowFunc()
 	if err := s.validateConnection(&connection); err != nil {
 		return modelrouting.Connection{}, err
 	}
-	row := models.ModelConnection(connection)
-	if err := s.db.Save(&row).Error; err != nil {
+	row := (*models.ModelConnection)(&connection)
+	if err := s.db.Save(row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
 	return withModelServiceTiers(connection), nil

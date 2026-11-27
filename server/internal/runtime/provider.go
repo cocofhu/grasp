@@ -15,10 +15,12 @@ import (
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 )
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	WorkspaceChanges *workspacechanges.Service
 	// RecordUsage receives each actual turn before result aggregation or retry.
 	// Implementations must use the operation id to make replay idempotent.
 	RecordUsage  func(NodeReq, *sandbox.ChatResult, error)
@@ -146,7 +148,10 @@ type NodeReq struct {
 	Config map[string]any
 	Vars   map[string]any
 	// Repos are the run's repositories frozen at start, in clone order.
-	Repos []models.SessionRepo
+	Repos                    []models.SessionRepo
+	WorkspaceChangeIteration int
+	WorkspaceChangeTurnID    string
+	workspaceTurn            *workspaceTurn
 	// PromptImages are vars-referenced image attachments collected by the engine
 	// for the node's first streamChat turn (react open / agent / rehydrate).
 	PromptImages []models.PromptImage

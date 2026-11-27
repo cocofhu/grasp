@@ -94,7 +94,11 @@ func (s *SoloService) searchSoloReferences(row *models.SoloSession, q ReferenceS
 	db := s.db.Model(&models.SoloSession{}).Select("id", "title", "status", "last_active_at").
 		Where("user_id = ? AND id <> ?", row.UserID, row.ID)
 	if term := strings.TrimSpace(q.Query); term != "" {
-		db = db.Where("title LIKE ? ESCAPE ?", "%"+escapeLikePattern(term)+"%", `\`)
+		match := "title LIKE ? ESCAPE ?"
+		if db.Name() == "postgres" {
+			match = `title COLLATE "C" ILIKE ? ESCAPE ?`
+		}
+		db = db.Where(match, "%"+escapeLikePattern(term)+"%", `\`)
 	}
 	var rows []models.SoloSession
 	if err := db.Order("COALESCE(last_active_at, updated_at) desc, id desc").

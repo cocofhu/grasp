@@ -1,10 +1,14 @@
 package engine
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/databasetest"
 	"github.com/cocofhu/grasp/internal/models"
 
 	"gorm.io/gorm"
@@ -41,6 +45,21 @@ func hasHumanTurn(msgs []models.ReactMessage) bool {
 // node parks — no client-side park polling / follow-up reply.
 func TestClarifyFirstMessageDeliveredOnPark(t *testing.T) {
 	eng, db, _ := setupEngineGraphP(t, clarifyOnlyGraph())
+	checkClarifyFirstMessageDeliveredOnPark(t, eng, db)
+}
+
+func TestPostgresClarifyFirstMessageDeliveredOnPark(t *testing.T) {
+	cfg := config.DatabaseConfig{Driver: "postgres", DSN: databasetest.PostgresDSN(t)}
+	db, err := database.OpenWithFiles(cfg, filepath.Join(t.TempDir(), "payloads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, _ := setupEngineGraphWithDB(t, db, clarifyOnlyGraph())
+	checkClarifyFirstMessageDeliveredOnPark(t, eng, db)
+}
+
+func checkClarifyFirstMessageDeliveredOnPark(t *testing.T, eng *Engine, db *gorm.DB) {
+	t.Helper()
 	msg := &models.CompositeText{
 		Text: "把登录做清楚",
 		Images: []models.PromptImage{

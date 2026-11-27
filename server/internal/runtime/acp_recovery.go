@@ -81,6 +81,7 @@ func (c *acpProvider) restoreReactEnvironment(ctx context.Context, req NodeReq, 
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		return nil, true, err
 	}
+	req.workspaceTurn.capture(ctx, sb)
 	routeEnv := readSandboxRouteEnv(ctx, sb)
 	acp := sb.ACP().WithSession(sb.WorkspaceDir, c.mcpServers(req)).WithIdleTimeoutFunc(c.agentIdle).
 		WithBridgeModel(routeEnv[EnvACPBridgeModel]).WithExecution(c.executionForEnvironment(req, routeEnv))

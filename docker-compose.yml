@@ -26,6 +26,8 @@ services:
     environment:
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
+      GRASP_DB_DRIVER: ${GRASP_DB_DRIVER:-}
+      GRASP_DB_DSN: ${GRASP_DB_DSN:-}
       GRASP_PROFILES_ROOT: /app/data/profiles
       # 沙箱镜像只由网关决定(下方 SBGW_DOCKER_IMAGE / config.local.yaml),团队内网镜像
       # 在 .env 里设 GRASP_GATEWAY_SANDBOX_IMAGE。
@@ -78,6 +80,8 @@ services:
     environment:
       SBGW_CONFIG: /etc/sandbox-gateway/config.yaml
       SBGW_DB_PATH: /data/gateway.db
+      SBGW_DB_DRIVER: ${SBGW_DB_DRIVER:-}
+      SBGW_DB_DSN: ${SBGW_DB_DSN:-}
       SBGW_DRIVER: docker
       # 监听端口与后端错开;config.local.yaml 默认 :8080,这里用 SBGW_LISTEN 覆盖。
       SBGW_LISTEN: ":${GRASP_GATEWAY_PORT:-8899}"

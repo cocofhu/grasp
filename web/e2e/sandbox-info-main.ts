@@ -5,17 +5,30 @@ import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import SandboxInfoButton from '../src/components/sandbox/SandboxInfoButton.vue'
-import type { SoloSession } from '../src/lib/api/apiTypes'
+import type { SoloSession, SoloTaskInfo } from '../src/lib/api/apiTypes'
 
 const params = new URLSearchParams(location.search)
 const gateway = params.get('gateway') === 'off'
   ? { enabled: false }
   : { enabled: true, host: 'ssh.grasp.example.com', port: 2222, allowed: true, hasKey: params.get('key') !== 'none', hostKeyFingerprint: 'SHA256:3B+YKnDLjNEQamN/JIa9z2c3crfl7CbnImMw5flKR5k' }
 const realFetch = window.fetch.bind(window)
+const taskInfo: SoloTaskInfo = {
+  usage: {
+    total: 1_268_330, inputTokens: 750_000, outputTokens: 125_000, cacheReadTokens: 350_000, cacheWriteTokens: 43_330,
+    reported: true, incomplete: false, cost: 7.24, currency: 'USD', unpricedTotal: 25_000,
+    byModel: {
+      'claude-sonnet-4-6': { inputTokens: 550_000, outputTokens: 100_000, cacheReadTokens: 270_000, cacheWriteTokens: 33_330 },
+      'gpt-5.2': { inputTokens: 175_000, outputTokens: 25_000, cacheReadTokens: 80_000, cacheWriteTokens: 10_000 },
+      '未知/未分桶': { inputTokens: 25_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+  },
+  workflowRuns: [{ id: 'verify-sandbox', workflowName: '发布检查' }],
+}
 window.fetch = async (input, init) => {
   if (String(input).endsWith('/api/ssh-gateway')) {
     return new Response(JSON.stringify(gateway), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
+  if (String(input).endsWith('/api/solo/sessions/s1/task-info')) return Response.json(taskInfo)
   return realFetch(input, init)
 }
 

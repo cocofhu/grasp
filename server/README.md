@@ -206,6 +206,8 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 |------|------|------|
 | `GRASP_PORT` | `8080` | HTTP 端口 |
 | `GRASP_DB` | `grasp.db` | SQLite 路径(`:memory:` 用于测试) |
+| `GRASP_DB_DRIVER` | `sqlite` | 数据库驱动，支持 `sqlite`、`mysql`、`postgres` |
+| `GRASP_DB_DSN` | — | MySQL 或 PostgreSQL 连接串 |
 | `GRASP_SANDBOX_GATEWAY_URL` | `http://127.0.0.1:8899` | sandbox-gateway 控制面地址(创建/销毁/管理沙箱) |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | — | 网关可选 Bearer 令牌(网关关鉴权时留空) |
 | `GRASP_SANDBOX_GATEWAY_TRANSPORT` | `direct` | 数据面直连；`gateway` 通过带鉴权的网关通道，预览使用 Grasp 路径代理 |
@@ -222,17 +224,17 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 > 绑定的仓库；凭据只在**工作区凭据** UI 中配置并由仓库选择，run 执行时
 > 注入对应沙箱用于 clone/push/MR。
 
-## 配置(YAML)+ 存储(SQLite)
+## 配置与存储
 
 产物与消息负载的正文位于持久文件目录，数据库保存引用。部署升级、迁移和备份要求见 [文件存储与历史迁移](FILE_STORAGE.md)。
 
-**单个 YAML 配置文件**,数据落 SQLite。**配置不打进镜像**——运行时由环境变量与挂载的
-`CONFIG_PATH` 提供。
+默认使用 SQLite，也可配置 [PostgreSQL](../CONFIGURATION.md#使用-postgresql) 或 MySQL。
+运行时通过环境变量和 `CONFIG_PATH` 指向的单个 YAML 文件提供配置。
 
 - 进程读 `CONFIG_PATH`(默认 `config.yaml`,也可作为首个命令行参数传入)指向的 YAML,
   解析为类型化结构(`internal/config/config.go`),并经 `internal/config/watcher.go` 监听
   文件目录,文件被替换后防抖 1s 重载(`atomic.Pointer` 原子替换;`server.port` /
-  `database.path` 这类需重启的项变更时打 WARN)。
+  数据库连接设置等需要重启的项变更时打 WARN)。
 - Kubernetes 部署时通常把 YAML 写入 ConfigMap,以只读卷挂到
   `/etc/config/config.yaml`;主容器读它。配置示例见 `config.example.yaml`。
 - 优先级 **显式环境变量 > 配置文件 > 代码默认值**。文件缺失时以 env/默认值启动,
@@ -244,7 +246,7 @@ Grasp、gateway 与箱内运行时的配置项、默认值和 E2B 最小清单�
 
 ```yaml
 server: { port, mcp_advertise }
-database: { path }
+database: { driver, path, dsn }
 engine: { profiles_root }
 sandbox: { gateway_url, env, chat_idle_timeout_seconds, ... }
 ```

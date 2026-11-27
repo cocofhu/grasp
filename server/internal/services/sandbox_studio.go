@@ -622,6 +622,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
+	s.archiveWorkspaceChanges(ctx, row, nil)
 	if err := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"cleanup_pending": true, "status": "deleting"}).Error; err != nil {
 		return err
 	}
