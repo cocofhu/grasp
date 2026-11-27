@@ -1,91 +1,63 @@
 ---
-title: Configuration
-description: Grasp, gateway and sandbox configuration sources, defaults and precedence.
+title: Deploy and configure Grasp
+navTitle: Deployment configuration
+description: Choose Docker, Kubernetes, or E2B and understand where settings live, which value wins, and when changes apply.
+section: deploy
+order: 10
+keywords: [configuration, YAML, env, .env, CONFIG_PATH, Compose, SBGW_CONFIG, production, Docker, Kubernetes, E2B]
 ---
 
-Grasp platform service configuration is primarily YAML / environment variables (local examples: `server/config.example.yaml` and the root `.env.example`). Runtime credentials such as ACP and Git credentials are managed only in Settings → Credentials.
+## Choose where to configure {#where-to-configure}
 
-## Full documentation
+| What you want to change | Where | When it applies |
+| --- | --- | --- |
+| API accounts and tool authorization | Settings → Credentials | Agents resolve bound credentials at runtime. Follow prompts to reopen affected sessions after updates. |
+| Models, coding tools, and reasoning | Settings → Credentials → Model groups, then bind the group to an agent | Session selections apply on the next turn. Automated runs use the default group. |
+| Git repository, clone access, and commit identity | Settings → Repositories | Credentials are resolved when a sandbox starts or restores. |
+| Capacity, idle reclaim, memory, and agent inactivity | Settings → General | Applies after saving. See [General settings](/en/help/settings/) for timing by field. |
+| Ports, database, users, and gateway connections | Grasp YAML or process environment | Restart the relevant service after deployment changes. |
+| Images, templates, CPU, memory, storage, and networking | Gateway YAML for the backend | Restart the gateway and verify with a new sandbox. |
+| Node instructions, total duration, and human gates | Workflow canvas | Save and publish for future runs. |
 
-Choose the reference for the component you are configuring:
+Grasp uses `CONFIG_PATH` to select its YAML, defaulting to `config.yaml`. The gateway uses `-config` or `SBGW_CONFIG`. A deployment uses one Grasp configuration and one gateway configuration for the selected backend.
 
-- [Grasp and sandbox configuration / defaults (Chinese)](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md): platform, gateway, E2B and sandbox runtime options, including defaults, Compose overrides, the minimum connection setup and troubleshooting.
-- [Grasp environment reference](https://github.com/cocofhu/grasp/blob/main/server/CONFIGURATION.md): environment variables and their YAML fields.
-- [E2B deployment (Chinese)](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md): template preparation, gateway configuration and startup.
+## Choose a sandbox backend {#backends}
 
-The environment reference is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-check`.
+| Backend | Use when | Gateway configuration |
+| --- | --- | --- |
+| Docker | You want a local demo or single-host service | Docker image, resource caps, and networking. Sandboxes share host CPU and memory by default. |
+| Kubernetes | You run sandboxes in an existing cluster | Cluster access, namespace, scheduling, storage class, and resources. Defaults per sandbox are 2 CPU, 4096 MiB, and 25 GiB. |
+| E2B | You use templates and snapshots | API address and built template IDs. The actual template determines its resources. |
 
-## Defaults and precedence
+Use the current deployment examples for your backend. [Docker](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md) · [Kubernetes](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md) · [E2B](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)
 
-Use two YAML files: Grasp platform configuration and the selected backend's gateway configuration. Grasp reads `CONFIG_PATH` (default `config.yaml`); select the gateway file explicitly with `SBGW_CONFIG` or `-config`. Docker, Kubernetes and E2B have separate examples. Mixed backend sections, unknown fields and inactive backend environment variables fail startup.
+The gateway owns image and template selection. Release Compose maps `SANDBOX_IMAGE` to the Docker gateway image setting. Grasp-level `sandbox.image` and `GRASP_SANDBOX_IMAGE` are retired. Docker and Kubernetes environments stay available until an explicit stop, close, or cancellation. E2B idle reclaim defaults to 360 minutes. See [Sandbox lifecycle](/en/help/sandbox-lifecycle/).
 
-Ordinary settings use environment > YAML > defaults. Settings-page controls use environment > saved database value > YAML > defaults. Environment values lock the corresponding UI field.
+## Determine the effective value {#precedence}
 
-Grasp defaults to `http://127.0.0.1:8899` with `direct` transport, an empty image and memory override `0`, following the gateway or selected template. Setting memory back to `0` clears the override for future sandboxes. Docker sandboxes default to no CPU or memory limit and share the host; Kubernetes defaults to `2 CPU / 4096 MiB / 25 GiB`. E2B has no built-in template or resource defaults: copy actual build results.
+- Ordinary server options use **process environment → YAML → built-in default**.
+- Fields available in General settings use **process environment → saved value → YAML → default**. Environment overrides lock the corresponding fields.
+- Compose reads `.env` as input. Set the container's `environment` or mount a configuration file to pass values to a service.
+- Grasp's memory override defaults to `0`, which follows the gateway or template. Reset a saved memory override to `0` for future sandboxes to follow the gateway.
 
-E2B uses an explicit `apiURL`, optional `sandboxURL` and named `templates`. Self-hosted deployments use their own API and private sandbox proxy origins, without an implicit cloud address. In `templates.standard`, `standard` is your local template name; `templateID` is returned by E2B. One template is selected automatically; several require `defaultTemplate`. A named Grasp connection can select a template with `profile`. Grasp need not repeat its name or memory. See the [build and paired configuration examples](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md).
+## Tell the time limits apart {#time-limits}
 
-## Local quick path
+| Setting | When it starts and what it controls |
+| --- | --- |
+| `sandbox.idle_ttl_minutes`, default 360 minutes | An E2B model turn has ended and the queue is empty. The environment can be saved and reclaimed when this interval elapses. |
+| `sandbox.chat_idle_timeout_seconds`, default 1200 seconds | A running turn is producing no output or activity. It detects an unresponsive turn. |
+| Canvas node duration, falling back to `sandbox.agent_node_hard_cap_hours`, default 24 hours | Caps total execution time for an agent node. |
+| `sandbox.sandbox_create_timeout_seconds`, default 1200 seconds | Waits for the gateway to report sandbox readiness, including cold-start work. Coordinate with the gateway finalize timeout. |
 
-```bash
-./start.sh -d          # published image stack
-./start.sh dev -d      # source + HMR
-```
+## Credentials, access, and backups {#secrets}
 
-Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in Settings → Credentials; putting them in the shared Agent config, Agent meta, or platform `sandbox.env` is rejected. Save a preset or custom API base and key in Credentials, then combine a coding tool, credential and selected model in the Models tab. Agents reference that named model configuration through `modelBinding.configurationId`. Model routing fields come from the selected configuration; Agent env cannot override them. Other non-secret options may go in Agent meta env (values may reference `${vars.<name>}`).
+Configure explicit users and `GRASP_SECRETS_KEY` for a production deployment. Keep the key with your deployment and database backups so existing credentials can be decrypted. When setting advertised URLs and proxies, check reachability separately from a browser and from a sandbox.
 
-Git authorization belongs to repositories. When registering a repository in Settings → Repositories, pick a saved GitHub or GitLab token or SSH key and optionally a commit name and email. The credential must match the repository URL's protocol and host and only applies to that URL; public repositories need no credential. Workflows bind the repositories to clone in their settings. A launch can drop some of them or change branches, and the picked repositories are fixed for that run. Every sandbox start applies each repository's current credential and commit author; a revoked or deleted credential fails the start instead of switching accounts. Agents no longer store Git authorization, and Agent env cannot set `GIT_REPOS`.
+To offer GitHub device login, set `GRASP_GITHUB_OAUTH_CLIENT_ID` and restart. Add model credentials and repository tokens in the application. For local IDE access, follow the [SSH gateway guide](/en/help/local-ide/).
 
-GitHub and GitLab credentials configure Host and Token together. Host defaults to the official service and supports self-hosted sites and ports; there is no separate GitLab URL credential. Agent defaults can select multiple model groups. Each Agent opts into model inheritance with a switch; turning it off uses its local selection, and unavailable defaults never fall back to another account or model.
+## Verify the deployment {#verify}
 
-### Sign in with GitHub (device code)
-
-When configured, adding a github.com GitHub credential offers "Sign in with GitHub": the page shows an 8-character code, the user enters it at `https://github.com/login/device` and authorizes, and the platform saves the token. No personal access token has to be created. The result is a regular GitHub credential (`GITHUB_TOKEN`, Host `https://github.com`) that binds and injects like a pasted token. The credential row shows the GitHub account and offers "Sign in again" to replace the token while keeping the credential ID, alias and existing bindings. Without configuration only token pasting is shown.
-
-To enable it:
-
-1. In GitHub, open **Settings → Developer settings → OAuth Apps** and create an OAuth App (personal or organization). Use the platform URL as Homepage URL; the device flow does not use the callback, so the Authorization callback URL can be the same address.
-2. Check **Enable Device Flow** in the App settings. Without it, sign-in reports that Device Flow is disabled.
-3. Give the App's **Client ID** to the server through the `GRASP_GITHUB_OAUTH_CLIENT_ID` environment variable or YAML `github.oauth_client_id` (the environment variable wins), then restart. No client secret is needed; do not configure one.
-
-Notes and limits:
-
-- The requested scopes are fixed to `repo read:org workflow`. The token has `repo` access to every repository the user can reach; for per-repository permissions, paste a fine-grained PAT instead. If the grant lacks `repo`, the credential is still saved with a warning that private repositories may not clone.
-- Organizations with OAuth App access restrictions must approve the OAuth App, otherwise the token cannot reach their repositories.
-- Only github.com is supported. GitHub Enterprise Server keeps using pasted tokens.
-- Sign-in sessions live in server memory for the lifetime GitHub returns (usually 15 minutes). A restart drops sessions in progress; get a new code. Multi-instance deployments need sticky sessions.
-- GitHub revokes OAuth App tokens unused for a year; use "Sign in again" on the credential row.
-
-### Multiple model groups and conversation continuity
-
-Bind several groups, including groups for different coding tools, and choose an explicit default. Home, new Solo sessions and active Solo conversations offer primary and auxiliary models from every bound group. Identical models from different groups retain their group and tool labels. An unspecified choice and automated workflow execution use the default group's primary model.
-
-A session choice selects the group's tool, account and reasoning settings together. An active turn finishes with its original settings; the new choice applies before the next turn. Tool changes retain the current workspace and uncommitted changes, and hand early requirements, recent dialogue, attachment references and tool results to the new tool. Agents can retrieve older original messages through grasp-tool `get_history`. Native sessions are not interchangeable between tools; continuity uses persisted task records and the current workspace.
-
-Successful group or binding saves refresh selectors in the current page and other tabs in the same browser. Other users see changes after refreshing. Valid selections stay selected; disabled, deleted or unbound choices require an explicit replacement. A temporary read failure is not treated as deletion. Different dedicated sandbox images or a changed repository credential require reopening the session.
-
-### Per-reply time and execution details
-
-Solo, workflows and Agent tests share the same chat presentation. Hover a message to see its time. The reply information icon supports hover, keyboard focus and touch, showing the turn's Agent, coding tool, model, reasoning, duration and token usage. Input, output, caches and individual models remain separate, with upstream or estimated attribution preserved.
-
-Each reply keeps its execution snapshot; later model changes do not relabel old replies. Missing historical fields remain unavailable rather than being inferred from the current selection. An unfinished reply shows only information already received.
-
-## Sandbox reclamation and backup storage
-
-Every sandbox shares one idle timeout and one capacity limit in Settings, defaulting to 60 minutes and 15 sandboxes. Idle environments are saved before releasing resources and resume from their newest successful recovery point. Docker/Kubernetes archive workspace files and remove the container/PVC; E2B uses a complete snapshot without a duplicate file archive. Running environments have no periodic backup schedule.
-
-- File archives default to `data/solo-backups`; set `GRASP_SOLO_BACKUP_DIR` to change it. Back up the directory together with the database.
-- Set `GRASP_SOLO_BACKUP_S3_BUCKET`, `GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` and `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` for S3. Self-hosted storage can use `GRASP_SOLO_BACKUP_S3_ENDPOINT` and `GRASP_SOLO_BACKUP_S3_PATH_STYLE`. Partial configuration fails startup.
-- A compressed file archive defaults to a 4 GiB limit (`GRASP_SOLO_BACKUP_MAX_BYTES`). Exceeding it or failing verification preserves the original environment.
-- `solo_backup.keep` (`GRASP_SOLO_BACKUP_KEEP`) controls both file and snapshot recovery points, default **1**. Pruning follows a successful new save. Restore always uses the newest successful point. Cancelling a run or closing a session removes all its recovery points, with persistent retries on failure.
-- See [Sandbox lifecycle](sandbox-lifecycle.md) for waiting workflows, manual stop, restoration and failed cleanup.
-- See [Open sandboxes from a local IDE](local-ide.md) to enable, deploy and use the built-in SSH gateway.
-
-## Database and attachment lifecycle
-
-In the release stack, SQLite (`./.localdata/db`) and app-data / default blobs (`./.localdata/app-data`, or a custom `GRASP_BLOBS_ROOT`) must be **backed up and cleaned as a pair**; do not migrate only the database. Otherwise composite images can keep orphan `blob:` refs (GET `/api/blobs/:id` → 404). Historical orphans only get a permanent UI placeholder; this delivery does not add an inspection console. See [Quick start](../guide/quick-start.md#database-and-attachments-share-one-lifecycle-backup--cleanup).
-
-## Related
-
-- [Gateway](../gateway/)
-- [Contributing](../contributing/)
+1. Check Grasp `/api/health` and gateway `/healthz`. Check the startup logs for the backend and configuration source.
+2. Open Settings → General and confirm the effective value, source, and lock state.
+3. Start a test environment with your agent and confirm its gateway, template, resources, and preview. Follow [First run](/en/guide/first-run/) for model and repository checks.
+4. Use the [Configuration index](/en/help/configuration-reference/) for YAML paths, environment variables, and defaults. Gateway and runtime fields are listed in the [deployment reference](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md).

@@ -66,9 +66,7 @@
    * - no saved: en* on / → /en/; zh* or other stay on /
    * - no saved on /en/: stay (do not bounce zh* away)
    *
-   * Use string-literal destinations only (not DOM-derived data-base).
-   * Avoids CodeQL "DOM text reinterpreted as HTML" on location.replace;
-   * custom-domain docs are served at site root (BASE=/).
+   * Resolve relative to the current home so project Pages prefixes also work.
    */
   function maybeRedirectHome() {
     if (document.documentElement.getAttribute("data-home-entry") !== "1") return;
@@ -77,15 +75,15 @@
     const saved = getSaved();
 
     if (saved === "en" && page === "zh-CN") {
-      location.replace("/en/");
+      location.replace(new URL("en/", location.href));
       return;
     }
     if (saved === "zh-CN" && page === "en") {
-      location.replace("/");
+      location.replace(new URL("../", location.href));
       return;
     }
     if (!saved && page === "zh-CN" && fromNavigator() === "en") {
-      location.replace("/en/");
+      location.replace(new URL("en/", location.href));
     }
   }
 
