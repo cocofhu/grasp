@@ -223,6 +223,10 @@ func TestDriverRestoreReservesEndpointsBeforeProviderRequests(t *testing.T) {
 			f := newLifecycleProvider(t)
 			opts := lifecycleOptions(t, f)
 			d := openLifecycleDriver(t, opts)
+			// Stop the setup driver's lease sweep before creating guests. A canceled
+			// HTTP request can still reach the provider after this driver closes.
+			d.cancel()
+			<-d.done
 			expected := make(map[string]map[int]string)
 			for _, id := range []string{"restore-one", "restore-two"} {
 				h, err := d.Create(t.Context(), lifecycleSpec(id))
@@ -242,13 +246,15 @@ func TestDriverRestoreReservesEndpointsBeforeProviderRequests(t *testing.T) {
 			// Simulate a provider HTTP connection taking any still-free local
 			// endpoint. Keep it occupied so the old restore order fails every time.
 			var stolen []net.Listener
-			t.Cleanup(func() {
+			defer func() {
 				f.mu.Lock()
 				defer f.mu.Unlock()
+				// Stop checking reservations before driver cleanup releases them.
+				f.beforeRequest = nil
 				for _, listener := range stolen {
 					_ = listener.Close()
 				}
-			})
+			}()
 			f.mu.Lock()
 			f.beforeRequest = func(*http.Request) {
 				for id, endpoints := range expected {
