@@ -7,6 +7,8 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "CONFIGURATION.md"
+      - "server/CONFIGURATION.md"
       - ".github/workflows/ci-docs.yml"
       - ".github/scripts/publish-pages.sh"
       - ".github/scripts/retry-network.sh"
@@ -14,6 +16,8 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "CONFIGURATION.md"
+      - "server/CONFIGURATION.md"
       - ".github/workflows/ci-docs.yml"
       - ".github/scripts/publish-pages.sh"
       - ".github/scripts/retry-network.sh"

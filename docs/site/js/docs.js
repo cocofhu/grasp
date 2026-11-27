@@ -97,7 +97,7 @@
       context.textContent = entry.page === entry.title ? snippet(entry, words) : entry.page + " · " + snippet(entry, words);
       item.append(context);
       item.addEventListener("pointermove", () => choose(i));
-      item.addEventListener("click", () => location.assign(entry.url));
+      item.addEventListener("click", () => openResult(entry.url));
       return item;
     }));
     input.setAttribute("aria-expanded", String(results.length > 0));
@@ -109,6 +109,11 @@
     dialog.close();
     const target = restoreFocus && restoreFocus !== document.body ? restoreFocus : triggers[0];
     target?.focus({ preventScroll: true });
+  }
+
+  function openResult(url) {
+    closeSearch();
+    location.assign(url);
   }
 
   function openSearch() {
@@ -148,7 +153,7 @@
         choose((active + (event.key === "ArrowDown" ? 1 : results.length - 1)) % results.length, true);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        location.assign(results[active].url);
+        openResult(results[active].url);
       }
     });
     document.addEventListener("keydown", event => {
