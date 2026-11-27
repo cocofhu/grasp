@@ -1017,8 +1017,13 @@ function swallowTakeoverGesture(pointer: 'mouse' | 'touch') {
 }
 
 function onScreenPointerDown(ev: Event) {
-  if (!canArmTakeoverFromScreen()) return
   if (ev.type !== 'mousedown' && ev.type !== 'touchstart') return
+  if (clipboardReady.value) {
+    // Observe before noVNC forwards a press that could select Copy from a remote menu.
+    watchSandboxCopy()
+    return
+  }
+  if (!canArmTakeoverFromScreen()) return
   blockGestureEvent(ev)
   swallowTakeoverGesture(ev.type === 'touchstart' ? 'touch' : 'mouse')
   void requestTakeover(true)

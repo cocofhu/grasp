@@ -93,6 +93,22 @@ test('sandbox copy and an empty local clipboard use the remote paste shortcut', 
   expect(clipboardMessages).toHaveLength(0)
 })
 
+test('pasting after copying from a remote context menu uses the remote clipboard', async ({ page }) => {
+  const { clipboardMessages, remoteKeys, watched, copyInSandbox } = await mockClipboard(page)
+  await page.goto('/console.html?tab=novnc')
+  await page.getByTestId('novnc-control-toggle').click()
+  await page.evaluate(() => navigator.clipboard.writeText('Local text that should stay on the device'))
+  const canvas = page.locator('.novnc-canvas-host canvas')
+  await canvas.click({ button: 'right' })
+  await expect.poll(() => watched.size).toBe(1)
+  await canvas.click()
+  copyInSandbox()
+  await canvas.focus()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => remoteKeys).toEqual(remotePaste)
+  expect(clipboardMessages).toHaveLength(0)
+})
+
 test('interrupting a terminal without changing its clipboard keeps local paste available', async ({ page }) => {
   const { clipboardMessages, remoteKeys, watched } = await mockClipboard(page)
   await page.goto('/console.html?tab=novnc')

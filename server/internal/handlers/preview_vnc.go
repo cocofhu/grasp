@@ -239,8 +239,8 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	}
 }
 
-// The client's watch message precedes the RFB copy key. Take the snapshot in
-// the same reader that forwards that key so the baseline predates the copy.
+// The client's watch message precedes RFB input that could copy. Take the
+// snapshot in the same reader that forwards the input to preserve that order.
 type vncClipboardObservation struct {
 	id     int
 	before sandbox.DesktopClipboardState
