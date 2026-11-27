@@ -5,15 +5,18 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
-import type { SoloSession, SSHGatewayInfo } from '@/lib/api/apiTypes'
+import type { SoloSession, SoloTaskInfo, SSHGatewayInfo } from '@/lib/api/apiTypes'
+import { api } from '@/lib/api/api'
 import { resetSSHGatewayForTest } from '@/lib/sandbox/useSSHGateway'
 import SandboxInfoButton from './SandboxInfoButton.vue'
 
 const gatewayInfo = vi.hoisted(() => ({ value: { enabled: false } as SSHGatewayInfo }))
+const taskInfo = vi.hoisted(() => ({ value: undefined as SoloTaskInfo | undefined }))
 vi.mock('@/lib/api/api', () => ({
   api: {
     sshGateway: vi.fn(async () => gatewayInfo.value),
     sandboxIdeUrl: (id: number) => `/sandbox/${id}/?folder=/root/workspace`,
+    getSoloTaskInfo: vi.fn(async () => taskInfo.value),
   },
 }))
 const copied = vi.hoisted(() => [] as string[])
@@ -66,8 +69,13 @@ function q(testId: string) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   resetSSHGatewayForTest()
   gatewayInfo.value = { enabled: false }
+  taskInfo.value = {
+    usage: { total: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reported: false, incomplete: false },
+    workflowRuns: [],
+  }
   copied.length = 0
   localStorage.clear()
 })
@@ -97,33 +105,107 @@ describe('SandboxInfoButton', () => {
     }
   })
 
-  it('shows the state dot, opens the panel and asks for a fresh view', async () => {
+  it('shows status in the panel and asks for a fresh view when opened', async () => {
     const wrapper = await render()
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('ok')
+    const trigger = wrapper.get('[data-testid="sandbox-info-toggle"]')
+    expect(trigger.find('[data-tone]').exists()).toBe(false)
     const panel = await openPanel(wrapper)
     expect(panel).not.toBeNull()
     expect(wrapper.emitted('refresh')).toHaveLength(1)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('ok')
     expect(q('sandbox-info-state')!.textContent).toBe('运行中')
-    expect(q('sandbox-info-reclaim')!.textContent).toMatch(/^1h 5\dm 后保存并暂停$/)
-    expect(panel.textContent).toContain('cocofhu/grasp · main')
-    expect(panel.textContent).toContain('#12 · grasp-solo-7f3a')
+    expect(q('sandbox-info-reclaim')!.textContent).toMatch(/^\d+ 小时 \d+ 分钟后$/)
+    expect(q('sandbox-info-lifecycle')!.textContent).not.toContain('到期先保存环境')
+    expect(panel.querySelector('h2')!.textContent).toBe('grasp-solo-7f3a')
+    expect(panel.textContent).toContain('#12')
     expect(q('sandbox-info-web-ide')!.getAttribute('href')).toBe('/sandbox/12/?folder=/root/workspace')
     expect(q('sandbox-info-ide')).toBeNull()
+    const toggle = q('sandbox-info-details-toggle')!
+    const details = q('sandbox-info-details')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(details.hasAttribute('inert')).toBe(true)
+    toggle.click()
+    await flushPromises()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(details.hasAttribute('inert')).toBe(false)
+    expect(details.textContent).toContain('cocofhu/grasp · main')
+    expect(details.textContent).toContain('最近模型活动')
+    expect(q('sandbox-info-task-value')?.textContent?.trim()).toBe('—')
+    details.querySelector('button')!.click()
+    await flushPromises()
+    expect(copied).toEqual(['/root/workspace'])
   })
 
   it('emits the primary action and keep-alive changes', async () => {
     const wrapper = await render()
     await openPanel(wrapper)
+    expect(q('sandbox-info-action')!.textContent?.trim()).toBe('保存并停止')
     q('sandbox-info-action')!.click()
     expect(wrapper.emitted('action')).toEqual([['stop']])
     q('sandbox-info-keep-alive')!.click()
     expect(wrapper.emitted('keepAlive')).toEqual([[true]])
   })
 
+  it('loads task usage only in expanded details and shows linked workflow names and Token breakdowns', async () => {
+    taskInfo.value = {
+      usage: {
+        total: 1_637_345, inputTokens: 1_012_345, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000,
+        reported: true, incomplete: true, cost: 7, currency: 'CNY', unpricedTotal: 12_345,
+        byModel: {
+          'first-model': { inputTokens: 500_000, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000 },
+          'second-model': { inputTokens: 500_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, filled: true },
+          '未知/未分桶': { inputTokens: 12_345, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        },
+      },
+      workflowRuns: [{ id: 'linked-run', workflowName: '发布检查' }],
+    }
+    const wrapper = await render()
+    await openPanel(wrapper)
+    expect(api.getSoloTaskInfo).not.toHaveBeenCalled()
+    q('sandbox-info-details-toggle')!.click()
+    await flushPromises()
+    expect(api.getSoloTaskInfo).toHaveBeenCalledWith('s1', expect.any(AbortSignal))
+    expect(q('sandbox-info-task-tokens')!.textContent).toContain('1,637,345')
+    expect(q('sandbox-info-task-tokens')!.textContent).toContain('用量可能不完整')
+    const value = q('sandbox-info-task-value')!
+    expect(value.previousElementSibling?.textContent).toBe('任务价值')
+    expect(value.textContent?.trim()).toBe('¥7.00')
+    expect(q('sandbox-info-task-value-breakdown')).toBeNull()
+    const valueTrigger = value.querySelector('[role="button"]')!
+    valueTrigger.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+    const valueBreakdown = q('sandbox-info-task-value-breakdown')!
+    expect(valueBreakdown.textContent).toContain('已计价 Token')
+    expect(valueBreakdown.textContent).toContain('未计价 Token')
+    expect(Array.from(valueBreakdown.querySelectorAll('dd'), dd => dd.textContent)).toEqual(['1,625,000', '12,345'])
+    valueTrigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(q('sandbox-info-task-references')).toBeNull()
+    expect(q('sandbox-info-workflow-runs')!.querySelector('a')!.getAttribute('href')).toBe('/runs/linked-run')
+    expect(q('sandbox-info-workflow-runs')!.textContent!.trim()).toBe('发布检查')
+    expect(q('sandbox-info-token-breakdown')).toBeNull()
+    q('sandbox-info-token-trigger')!.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+    expect(Array.from(q('sandbox-info-token-sum')!.querySelectorAll('dd'), dd => dd.textContent)).toEqual([
+      '1,012,345', '250,000', '125,000', '250,000',
+    ])
+    const modelRows = q('sandbox-info-token-breakdown')!.querySelectorAll('[data-testid="sandbox-info-token-model"]')
+    expect(modelRows).toHaveLength(3)
+    expect(modelRows[0]!.textContent).toContain('first-model')
+    expect(modelRows[0]!.textContent).toContain('1,125,000')
+    expect(modelRows[1]!.textContent).toContain('含配置补全')
+    expect(modelRows[2]!.textContent).toContain('未知模型')
+    expect(modelRows[2]!.textContent).toContain('12,345')
+    const signal = vi.mocked(api.getSoloTaskInfo).mock.calls[0]![1]!
+    q('sandbox-info-details-toggle')!.click()
+    await flushPromises()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('disables stop while the agent is busy and hides actions when read-only', async () => {
     const wrapper = await render({ busy: true })
     await openPanel(wrapper)
     expect(q('sandbox-info-state')!.textContent).toBe('运行中 · Agent 执行中')
+    expect(q('sandbox-info-reclaim')!.textContent).toBe('任务结束后计时')
     expect(q('sandbox-info-action')!.hasAttribute('disabled')).toBe(true)
     await wrapper.setProps({ readonly: true })
     expect(q('sandbox-info-action')).toBeNull()
@@ -133,35 +215,48 @@ describe('SandboxInfoButton', () => {
   it('offers wake for a paused sandbox and wakes it when an IDE link is used', async () => {
     gatewayInfo.value = { enabled: true, host: 'ssh.example.com', port: 2222, allowed: true, hasKey: true, hostKeyFingerprint: 'SHA256:abc' }
     const wrapper = await render({ paused: true })
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('idle')
     const panel = await openPanel(wrapper)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('idle')
     expect(q('sandbox-info-state')!.textContent).toBe('已暂停')
-    const primary = q('sandbox-ide-primary')!
-    expect(primary.getAttribute('href')).toBe('vscode://vscode-remote/ssh-remote+sbx-12@ssh.example.com:2222/root/workspace')
-    expect(primary.textContent).toContain('用 VS Code 打开')
-    primary.addEventListener('click', (e) => e.preventDefault())
-    primary.click()
+    const trigger = q('sandbox-ide-picker-trigger')!
+    expect(trigger.textContent).toContain('SSH 连接')
+    expect(trigger.querySelector('icon-stub')?.getAttribute('name')).toBe('terminal')
+    trigger.click()
+    await flushPromises()
+    const vscode = q('sandbox-ide-vscode')!
+    expect(vscode.getAttribute('href')).toBe('vscode://vscode-remote/ssh-remote+sbx-12@ssh.example.com:2222/root/workspace')
+    vscode.addEventListener('click', (e) => e.preventDefault())
+    vscode.click()
     expect(wrapper.emitted('action')).toEqual([['wake']])
     expect(panel.textContent).toContain('连接时会自动唤醒')
     expect(q('sandbox-info-command')).toBeNull()
 
-    q('sandbox-ide-caret')!.click()
+    q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()
-    expect(q('sandbox-ide-list')!.textContent).toContain('本地 IDE（Remote-SSH）')
+    expect(q('sandbox-ide-picker-search')).toBeNull()
     expect(q('sandbox-ide-cursor')!.getAttribute('href')).toBe('cursor://vscode-remote/ssh-remote+sbx-12@ssh.example.com:2222/root/workspace')
     expect(q('sandbox-ide-trae-cn')!.getAttribute('href')).toMatch(/^trae-cn:\/\/vscode-remote\/ssh-remote\+sbx-12@/)
+    expect(q('sandbox-ide-trae-cn')!.textContent).toContain('Trae 中国版')
     expect(q('sandbox-ide-codebuddy-cn')!.getAttribute('href')).toMatch(/^codebuddycn:\/\//)
-    expect(q('sandbox-ide-jetbrains')!.hasAttribute('href')).toBe(false)
-    expect(document.querySelectorAll('[data-ide-logo]').length).toBeGreaterThanOrEqual(6)
+    expect(q('sandbox-ide-codebuddy-cn')!.textContent).toContain('CodeBuddy 中国版')
+    expect(q('sandbox-ide-picker-panel')!.querySelector('.ide-menu-cn')).toBeNull()
+    expect(q('sandbox-ide-antigravity')!.getAttribute('href')).toBe('antigravity://vscode-remote/ssh-remote+sbx-12@ssh.example.com:2222/root/workspace')
+    expect(q('sandbox-ide-antigravity')!.textContent).toContain('Antigravity')
+    expect(q('sandbox-ide-codex')!.getAttribute('href')).toBe('codex://vscode-remote/ssh-remote+sbx-12@ssh.example.com:2222/root/workspace')
+    expect(q('sandbox-ide-codex')!.textContent).toContain('Codex')
+    expect(q('sandbox-ide-jetbrains')).toBeNull()
+    expect(document.querySelectorAll('[data-ide-logo]').length).toBeGreaterThanOrEqual(9)
     const trae = q('sandbox-ide-trae-cn')!
+    trae.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(q('sandbox-info-panel')).not.toBeNull()
     trae.addEventListener('click', (e) => e.preventDefault())
     trae.click()
     await flushPromises()
-    expect(q('sandbox-ide-list')).toBeNull()
-    expect(q('sandbox-ide-primary')!.textContent).toContain('用 Trae 中国版 打开')
+    expect(q('sandbox-ide-picker-panel')).toBeNull()
+    expect(q('sandbox-ide-picker-trigger')!.textContent).toContain('Trae 中国版')
     expect(JSON.parse(localStorage.getItem('grasp.sandbox.localIde')!)).toEqual({ id: 'trae', cn: true })
 
-    q('sandbox-ide-caret')!.click()
+    q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()
     q('sandbox-ide-info')!.click()
     await flushPromises()
@@ -171,42 +266,48 @@ describe('SandboxInfoButton', () => {
     q('sandbox-ide-copy-port')!.click()
     await flushPromises()
     expect(copied).toEqual(['ssh -p 2222 sbx-12@ssh.example.com', '2222'])
-    expect(panel.textContent).toContain('SHA256:abc')
+    expect(q('sandbox-ide-details')!.textContent).toContain('SHA256:abc')
   })
 
-  it('JetBrains Gateway shows connection details instead of a link', async () => {
+  it('SSH connection details open in a dialog', async () => {
     gatewayInfo.value = { enabled: true, host: 'ssh.example.com', port: 2222, allowed: true, hasKey: true }
     const wrapper = await render()
     await openPanel(wrapper)
-    q('sandbox-ide-caret')!.click()
+    q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()
-    q('sandbox-ide-jetbrains')!.click()
+    q('sandbox-ide-info')!.click()
     await flushPromises()
     expect(wrapper.emitted('action')).toBeUndefined()
-    expect(q('sandbox-ide-jetbrains-hint')!.textContent).toContain('New Connection')
-    expect(q('sandbox-ide-details')!.textContent).toContain('sbx-12')
-    const primary = q('sandbox-ide-primary')!
-    expect(primary.tagName).toBe('BUTTON')
-    expect(primary.textContent).toContain('用 JetBrains Gateway 连接')
-    primary.click()
+    expect(q('sandbox-ide-picker-panel')).toBeNull()
+    const details = q('sandbox-ide-details')!
+    expect(details.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(q('sandbox-info-panel')!.contains(details)).toBe(false)
+    expect(details.textContent).toContain('sbx-12')
+    const closeButton = details.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!
+    expect(document.activeElement).toBe(closeButton)
+    details.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(q('sandbox-info-panel')).not.toBeNull()
+    closeButton.click()
     await flushPromises()
     expect(q('sandbox-ide-details')).toBeNull()
-
-    q('sandbox-ide-caret')!.click()
-    await flushPromises()
-    q('sandbox-ide-list')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await flushPromises()
-    expect(q('sandbox-ide-list')).toBeNull()
     expect(q('sandbox-info-panel')).not.toBeNull()
-    q('sandbox-ide-primary')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).toBe(q('sandbox-ide-picker-trigger'))
+
+    q('sandbox-ide-picker-trigger')!.click()
+    await flushPromises()
+    q('sandbox-ide-picker-panel')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(q('sandbox-ide-picker-panel')).toBeNull()
+    expect(q('sandbox-info-panel')).not.toBeNull()
+    q('sandbox-ide-picker-trigger')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(q('sandbox-info-panel')).toBeNull()
     await openPanel(wrapper)
-    q('sandbox-ide-caret')!.click()
+    q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
-    expect(q('sandbox-ide-list')).toBeNull()
+    expect(q('sandbox-ide-picker-panel')).toBeNull()
   })
 
   it('shows open connections and why the countdown is paused', async () => {
@@ -215,9 +316,12 @@ describe('SandboxInfoButton', () => {
     s.sandbox = { ...s.sandbox!, externalSessions: 2, destroyAt: undefined }
     const wrapper = await render({ session: s })
     await openPanel(wrapper)
-    expect(q('sandbox-info-connections')!.textContent).toContain('2 个连接进行中')
-    expect(q('sandbox-info-reclaim')!.textContent).toBe('本地 IDE 连接中，暂停计时')
-    expect(q('sandbox-ide-primary')!.getAttribute('href')).toContain(`sbx-12@${window.location.hostname}:2222`)
+    expect(q('sandbox-info-connections')!.textContent).toBe('2 个本地 IDE 连接')
+    expect(q('sandbox-info-reclaim')!.textContent).toBe('计时已暂停')
+    expect(q('sandbox-info-lifecycle')!.textContent).toContain('全部断开后重新计时')
+    q('sandbox-ide-picker-trigger')!.click()
+    await flushPromises()
+    expect(q('sandbox-ide-vscode')!.getAttribute('href')).toContain(`sbx-12@${window.location.hostname}:2222`)
   })
 
   it('guides users without a key or permission, and blocks stopped sandboxes', async () => {
@@ -243,16 +347,18 @@ describe('SandboxInfoButton', () => {
     wrapper = await render({ session: session({ status: 'stopped', backupAt: new Date().toISOString(), backupSize: 2048 }) })
     panel = await openPanel(wrapper)
     expect(q('sandbox-info-ide-blocked')!.textContent).toBe('环境已停止，恢复后才能连接')
-    expect(q('sandbox-ide-primary')!.tagName).toBe('BUTTON')
-    expect(q('sandbox-ide-primary')!.hasAttribute('disabled')).toBe(true)
-    q('sandbox-ide-caret')!.click()
+    expect(q('sandbox-ide-picker-trigger')!.tagName).toBe('BUTTON')
+    q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()
     expect(q('sandbox-ide-vscode')!.getAttribute('aria-disabled')).toBe('true')
+    expect(q('sandbox-ide-vscode')!.hasAttribute('disabled')).toBe(true)
     expect(q('sandbox-ide-vscode')!.hasAttribute('href')).toBe(false)
-    expect(q('sandbox-ide-trae-cn')!.tagName).toBe('SPAN')
+    expect(q('sandbox-ide-trae-cn')!.tagName).toBe('BUTTON')
+    expect(q('sandbox-ide-trae-cn')!.getAttribute('aria-disabled')).toBe('true')
+    expect(q('sandbox-ide-trae-cn')!.hasAttribute('href')).toBe(false)
     expect(q('sandbox-info-action')!.textContent).toContain('恢复')
     expect(panel.textContent).toContain('2.0 KiB')
-    expect(q('sandbox-info-reclaim')!.textContent).toBe('—')
+    expect(q('sandbox-info-reclaim')).toBeNull()
     expect(q('sandbox-info-web-ide')).toBeNull()
   })
 
@@ -261,14 +367,14 @@ describe('SandboxInfoButton', () => {
     s.sandbox = { ...s.sandbox!, recoveryKind: 'files', destroyAt: undefined }
     let wrapper = await render({ session: s })
     await openPanel(wrapper)
-    expect(q('sandbox-info-reclaim')!.textContent).toBe('不会自动回收，手动停止才释放')
+    expect(q('sandbox-info-reclaim')!.textContent).toBe('持续运行')
     expect(q('sandbox-info-keep-alive')).toBeNull()
     wrapper.unmount()
     mounted.pop()
 
     wrapper = await render({ session: session({ status: 'error', error: 'clone failed' }) })
-    expect(wrapper.get('[data-testid="sandbox-info-dot"]').attributes('data-tone')).toBe('err')
     await openPanel(wrapper)
+    expect(q('sandbox-info-dot')?.dataset.tone).toBe('err')
     expect(q('sandbox-info-error')!.textContent).toContain('clone failed')
     wrapper.unmount()
     mounted.pop()
