@@ -163,7 +163,9 @@ function resetScreenPaste() {
   screenFocusGeneration++
   pendingBrowserPaste = null
   useSandboxClipboard = false
+  const watchId = clipboardWatchId
   clipboardWatchId = null
+  if (watchId !== null) sendCtrl({ type: 'clipboard-reset', id: watchId })
   screenModifiers.clear()
   if (clipboardCheck) {
     const { release, timeout } = clipboardCheck

@@ -166,7 +166,7 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 // reach sites with the owner's logins.
 func publicVncMsgAllowed(m vncClientMsg) bool {
 	switch m.Type {
-	case "clipboard", "clipboard-watch", "clipboard-check":
+	case "clipboard", "clipboard-watch", "clipboard-reset", "clipboard-check":
 		return false
 	}
 	if m.Type != "navigate" || (m.Action != "goto" && m.Action != "open" && m.URL == "") {

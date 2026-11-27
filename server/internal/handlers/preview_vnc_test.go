@@ -77,6 +77,7 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		{vncClientMsg{Type: "inspect", On: true}, true},
 		{vncClientMsg{Type: "clipboard", Text: "example", Paste: true}, false},
 		{vncClientMsg{Type: "clipboard-watch", ID: 1}, false},
+		{vncClientMsg{Type: "clipboard-reset", ID: 1}, false},
 		{vncClientMsg{Type: "clipboard-check", ID: 1}, false},
 		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
@@ -122,16 +123,51 @@ func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
 				}
 				return tc.after, nil
 			}
-			var clipboard vncClipboardObservation
-			clipboard.watch(t.Context(), read, 1)
-			clipboard.watch(t.Context(), read, 1)
-			if observations != 1 || clipboard.changed(t.Context(), read, 2) || clipboard.changed(t.Context(), read, 1) != tc.want {
+			clipboard := newVncClipboardObservation(t.Context(), read)
+			clipboard.watch(1)
+			clipboard.watch(1)
+			if clipboard.changed(2) || clipboard.changed(1) != tc.want || observations != 1 {
 				t.Fatalf("wrong resolution for %s", tc.name)
 			}
-			if clipboard.changed(t.Context(), read, 1) {
+			if clipboard.changed(1) {
 				t.Fatal("an old observation must not resolve another paste")
 			}
 		})
+	}
+}
+
+func TestVncClipboardWatchDoesNotBlockDesktopInput(t *testing.T) {
+	baseline := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+	started, allowReply := make(chan struct{}), make(chan struct{})
+	clipboard := newVncClipboardObservation(t.Context(), func(ctx context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+		if after.Generation != "" {
+			state := baseline
+			state.Revision++
+			return state, nil
+		}
+		close(started)
+		select {
+		case <-allowReply:
+			return baseline, nil
+		case <-ctx.Done():
+			return sandbox.DesktopClipboardState{}, ctx.Err()
+		}
+	})
+	<-started
+	nextInput := make(chan struct{})
+	go func() {
+		clipboard.watch(1)
+		close(nextInput)
+	}()
+	select {
+	case <-nextInput:
+		close(allowReply)
+	case <-time.After(250 * time.Millisecond):
+		close(allowReply)
+		t.Fatal("watch held up the next RFB frame")
+	}
+	if !clipboard.changed(1) {
+		t.Fatal("paste failed to use the queued clipboard snapshot")
 	}
 }
 

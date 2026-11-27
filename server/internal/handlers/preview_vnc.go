@@ -109,6 +109,7 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		conn.SetReadLimit(6*vncClipboardMaxBytes + 1024)
 	}
 	ctx := c.Request.Context()
+	clipboard := newVncClipboardObservation(ctx, opts.clipboardState)
 
 	// gorilla/websocket does not support concurrent writes; the RFB passthrough
 	// loop, pushJSON, and OnPick may all write to conn.
@@ -192,7 +193,6 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	go func() {
 		defer func() { _ = upstream.Close() }()
 		activity := newVncToucher(sess.Touch)
-		var clipboard vncClipboardObservation
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
@@ -207,13 +207,18 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 					}
 					switch m.Type {
 					case "clipboard":
-						if opts.setClipboard != nil && !writeVncClipboard(ctx, upstream, opts.setClipboard, m, pushJSON) {
-							return
+						if opts.setClipboard != nil {
+							if !writeVncClipboard(ctx, upstream, opts.setClipboard, m, pushJSON) {
+								return
+							}
+							clipboard.refresh()
 						}
 					case "clipboard-watch":
-						clipboard.watch(ctx, opts.clipboardState, m.ID)
+						clipboard.watch(m.ID)
+					case "clipboard-reset":
+						clipboard.reset(m.ID)
 					case "clipboard-check":
-						changed := clipboard.changed(ctx, opts.clipboardState, m.ID)
+						changed := clipboard.changed(m.ID)
 						pushJSON(gin.H{"type": "clipboard-check-result", "id": m.ID, "changed": changed})
 					default:
 						h.applyVncMsg(sess.Page(), m, pushJSON)
@@ -239,37 +244,95 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	}
 }
 
-// The client's watch message precedes RFB input that could copy. Take the
-// snapshot in the same reader that forwards the input to preserve that order.
+// Clipboard snapshots are sampled ahead of input. A watch pins the cached
+// sample immediately so forwarding a key or pointer never waits on the sandbox.
 type vncClipboardObservation struct {
+	ctx    context.Context
+	read   vncClipboardStateReader
+	latest *vncClipboardSnapshot
+	cancel context.CancelFunc
 	id     int
-	before sandbox.DesktopClipboardState
+	before *vncClipboardSnapshot
+}
+
+type vncClipboardSnapshot struct {
+	ready chan struct{}
+	state sandbox.DesktopClipboardState
 }
 
 const vncClipboardStateTimeout = 900 * time.Millisecond
 
-func (o *vncClipboardObservation) watch(ctx context.Context, state vncClipboardStateReader, id int) {
-	if state == nil || id < 1 || o.id == id {
+func newVncClipboardObservation(ctx context.Context, read vncClipboardStateReader) *vncClipboardObservation {
+	o := &vncClipboardObservation{ctx: ctx, read: read}
+	o.refresh()
+	return o
+}
+
+func (o *vncClipboardObservation) refresh() {
+	if o.read == nil {
 		return
 	}
-	*o = vncClipboardObservation{id: id}
-	ctx, cancel := context.WithTimeout(ctx, vncClipboardStateTimeout)
-	defer cancel()
-	if before, err := state(ctx, sandbox.DesktopClipboardState{}); err == nil {
-		o.before = before
+	if o.cancel != nil {
+		o.cancel()
+	}
+	o.id, o.before = 0, nil
+	latest := &vncClipboardSnapshot{ready: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(o.ctx, vncClipboardStateTimeout)
+	o.latest, o.cancel = latest, cancel
+	go func() {
+		defer close(latest.ready)
+		defer cancel()
+		if state, err := o.read(ctx, sandbox.DesktopClipboardState{}); err == nil {
+			latest.state = state
+		}
+	}()
+}
+
+func (o *vncClipboardObservation) watch(id int) {
+	if o.latest == nil || id < 1 || o.id == id {
+		return
+	}
+	select {
+	case <-o.latest.ready:
+		if o.latest.state.Generation == "" {
+			o.refresh()
+		}
+	default:
+	}
+	o.id, o.before = id, o.latest
+}
+
+func (o *vncClipboardObservation) reset(id int) {
+	if id > 0 && o.id == id {
+		o.refresh()
 	}
 }
 
-func (o *vncClipboardObservation) changed(ctx context.Context, state vncClipboardStateReader, id int) bool {
-	if state == nil || o.id != id || o.before.Generation == "" {
+func (o *vncClipboardObservation) changed(id int) bool {
+	if o.id != id || o.before == nil {
 		return false
 	}
-	before := o.before
-	*o = vncClipboardObservation{}
-	ctx, cancel := context.WithTimeout(ctx, vncClipboardStateTimeout)
+	snapshot := o.before
+	o.id, o.before = 0, nil
+	ctx, cancel := context.WithTimeout(o.ctx, vncClipboardStateTimeout)
 	defer cancel()
-	after, err := state(ctx, before)
-	return err == nil && after.Owned && after.Generation == before.Generation && after.Revision > before.Revision
+	select {
+	case <-ctx.Done():
+		return false
+	case <-snapshot.ready:
+	}
+	before := snapshot.state
+	if before.Generation == "" {
+		return false
+	}
+	after, err := o.read(ctx, before)
+	if err != nil {
+		o.refresh()
+		return false
+	}
+	o.latest = &vncClipboardSnapshot{ready: make(chan struct{}), state: after}
+	close(o.latest.ready)
+	return after.Owned && after.Generation == before.Generation && after.Revision > before.Revision
 }
 
 func writeVncClipboard(ctx context.Context, upstream *websocket.Conn, setText func(context.Context, string) error, m vncClientMsg, reply func(any)) bool {
