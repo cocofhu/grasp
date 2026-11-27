@@ -107,4 +107,22 @@ describe('PreviewVncChannel', () => {
     channel.close(1000, 'bye')
     expect(ws.close).toHaveBeenCalledWith(1000, 'bye')
   })
+
+  it('sends the chosen paste ahead of queued input and copies the reusable RFB buffer', () => {
+    const ws = mockWs()
+    const channel = new PreviewVncChannel(ws as unknown as WebSocket)
+    channel.send('clipboard probe')
+    const release = channel.holdOutgoing()
+    const frame = new Uint8Array([4, 1])
+    channel.send(frame)
+    frame[1] = 0
+    channel.send(frame)
+    channel.afterOutgoing(() => channel.send('next action'))
+    expect(ws.send.mock.calls).toEqual([['clipboard probe']])
+
+    release(() => channel.send('chosen paste'))
+    expect(ws.send.mock.calls).toEqual([
+      ['clipboard probe'], ['chosen paste'], [new Uint8Array([4, 1])], [new Uint8Array([4, 0])], ['next action'],
+    ])
+  })
 })

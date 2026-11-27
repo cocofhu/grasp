@@ -126,6 +126,7 @@ const CONSOLE_CONNECT_TIMEOUT_MS = 20_000
 
 const CLIPBOARD_MAX_BYTES = 128 * 1024
 const clipboardAllowed = ref(true)
+const clipboardStateAvailable = ref(false)
 const clipboardVisible = computed(() => !!props.sandboxId && !props.wsUrl?.trim() && clipboardAllowed.value)
 const clipboardReady = computed(() =>
   clipboardVisible.value && rfbConnected.value && status.value === 'live' && control.value && !inspect.value,
@@ -145,14 +146,31 @@ let clipboardShortcutRequest: number | null = null
 let clipboardTimer: ReturnType<typeof setTimeout> | undefined
 let pendingBrowserPaste: boolean | null = null
 let useSandboxClipboard = false
+let screenFocusGeneration = 0
+let clipboardWatchId: number | null = null
+let clipboardCheck: {
+  id: number
+  text: string
+  shift: boolean
+  release: ReturnType<PreviewVncChannel['holdOutgoing']>
+  timeout: ReturnType<typeof setTimeout>
+} | null = null
 type PasteModifier = 'Control' | 'Meta' | 'Shift'
 const screenModifiers = new Map<string, { key: PasteModifier; location: number; suspended: boolean }>()
 let forwardingScreenModifier = false
 
 function resetScreenPaste() {
+  screenFocusGeneration++
   pendingBrowserPaste = null
   useSandboxClipboard = false
+  clipboardWatchId = null
   screenModifiers.clear()
+  if (clipboardCheck) {
+    const { release, timeout } = clipboardCheck
+    clipboardCheck = null
+    clearTimeout(timeout)
+    release()
+  }
 }
 
 function closeClipboard() {
@@ -215,6 +233,57 @@ function onClipboardResult(id: number, ok: boolean, code?: string) {
     : 'pages.appPreview.novnc.clipboard.failed')
 }
 
+function inFocusedClipboard(send: () => void) {
+  const generation = screenFocusGeneration
+  channel?.afterOutgoing(() => {
+    if (generation === screenFocusGeneration && clipboardReady.value) send()
+  })
+}
+
+function watchSandboxCopy() {
+  if (!clipboardStateAvailable.value) return
+  inFocusedClipboard(() => {
+    if (useSandboxClipboard || clipboardWatchId !== null) return
+    clipboardWatchId = ++clipboardRequestId
+    sendCtrl({ type: 'clipboard-watch', id: clipboardWatchId })
+  })
+}
+
+function pasteBrowserText(text: string, shift: boolean, shortcut: boolean) {
+  inFocusedClipboard(() => {
+    if (shortcut && useSandboxClipboard) {
+      pasteFromSandboxClipboard(shift)
+      return
+    }
+    const id = clipboardWatchId
+    clipboardWatchId = null
+    useSandboxClipboard = false
+    if (!shortcut || id === null || !channel || !sessionSocketAlive()) {
+      sendClipboard(text, true, shift)
+      return
+    }
+    sendCtrl({ type: 'clipboard-check', id })
+    clipboardCheck = {
+      id, text, shift,
+      release: channel.holdOutgoing(),
+      timeout: setTimeout(() => finishClipboardCheck(id, false), 2_400),
+    }
+  })
+}
+
+function finishClipboardCheck(id: number, changed: boolean) {
+  if (clipboardCheck?.id !== id) return
+  const { text, shift, release, timeout } = clipboardCheck
+  clipboardCheck = null
+  clearTimeout(timeout)
+  release(() => {
+    if (!clipboardReady.value) return
+    useSandboxClipboard = changed
+    if (changed) pasteFromSandboxClipboard(shift)
+    else sendClipboard(text, true, shift)
+  })
+}
+
 function forwardScreenModifier(ev: KeyboardEvent, type: 'keydown' | 'keyup', key: PasteModifier, code: string, location: number) {
   forwardingScreenModifier = true
   try {
@@ -270,9 +339,10 @@ function onScreenPasteKey(ev: KeyboardEvent) {
   const isLocalPaste = isApplePlatform ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey
   if (letter !== 'v' || !isLocalPaste || ev.isComposing || ev.altKey) {
     restoreScreenModifiers(ev)
-    // Ctrl+C/Ctrl+X (including the terminal copy chord) act on the sandbox clipboard.
+    // A copy chord can also be Ctrl+C interrupting a terminal. Observe the
+    // clipboard before forwarding it, and check for an actual update on paste.
     if ((letter === 'c' || letter === 'x') && ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.isComposing) {
-      useSandboxClipboard = true
+      watchSandboxCopy()
     }
     return
   }
@@ -314,15 +384,11 @@ function pasteFromSandboxClipboard(shift: boolean) {
 function onScreenPaste(ev: ClipboardEvent) {
   if (!clipboardReady.value) return
   ev.preventDefault()
-  const shift = pendingBrowserPaste ?? false
+  const pending = pendingBrowserPaste
   pendingBrowserPaste = null
   const text = ev.clipboardData?.getData('text/plain')
-  if (text) {
-    useSandboxClipboard = false
-    sendClipboard(text, true, shift)
-  } else {
-    pasteFromSandboxClipboard(shift)
-  }
+  if (text) pasteBrowserText(text, pending ?? false, pending !== null)
+  else pasteFromSandboxClipboard(pending ?? false)
 }
 
 watch(clipboardReady, (ready) => {
@@ -557,6 +623,7 @@ function teardown() {
   disposed = true
   rfbConnected.value = false
   clipboardAllowed.value = true
+  clipboardStateAvailable.value = false
   closeClipboard()
   takeoverCheck = null
   takeoverPrompt.value = null
@@ -595,6 +662,7 @@ function handleCtrlText(data: string) {
       clearConnectTimer()
       clearPreviewWarnTimer()
       clipboardAllowed.value = msg.clipboard !== false
+      clipboardStateAvailable.value = msg.clipboardState === true
       status.value = 'live'
       reconnectAttempt.value = 0
       reconnecting.value = false
@@ -603,6 +671,9 @@ function handleCtrlText(data: string) {
       break
     case 'clipboard-result':
       onClipboardResult(msg.id, msg.ok === true, msg.code)
+      break
+    case 'clipboard-check-result':
+      finishClipboardCheck(msg.id, msg.changed === true)
       break
     case 'picked':
       inlineTip.value = null

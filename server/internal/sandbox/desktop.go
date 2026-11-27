@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 )
 
 // DesktopStatus is the sandbox GET /api/desktop/status body.
@@ -62,6 +64,32 @@ func SetDesktopClipboard(ctx context.Context, host string, port int, password, t
 		return &ChatHTTPError{op: "desktop clipboard", StatusCode: resp.StatusCode}
 	}
 	return nil
+}
+
+// DesktopClipboardState identifies a sandbox clipboard update without reading its contents.
+type DesktopClipboardState struct {
+	Generation string `json:"generation"`
+	Revision   uint64 `json:"revision"`
+	Owned      bool   `json:"owned"`
+}
+
+// GetDesktopClipboardState waits briefly for a change when after is supplied.
+func GetDesktopClipboardState(ctx context.Context, host string, port int, password string, after DesktopClipboardState) (DesktopClipboardState, error) {
+	path := "/api/desktop/clipboard"
+	if after.Generation != "" {
+		path += "?after=" + url.QueryEscape(after.Generation+":"+strconv.FormatUint(after.Revision, 10))
+	}
+	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, path, nil)
+	if err != nil {
+		return DesktopClipboardState{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return DesktopClipboardState{}, &ChatHTTPError{op: "desktop clipboard state", StatusCode: resp.StatusCode}
+	}
+	var state DesktopClipboardState
+	err = json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&state)
+	return state, err
 }
 
 func decodeDesktop(resp *http.Response, op string) (DesktopStatus, error) {

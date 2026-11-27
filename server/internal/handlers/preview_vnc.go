@@ -47,15 +47,17 @@ func (t *vncToucher) mark() {
 }
 
 type vncClientMsg struct {
-	Type   string `json:"type"`   // "inspect" | "navigate" | "ping" | "clipboard"
+	Type   string `json:"type"`   // "inspect" | "navigate" | "ping" | clipboard controls
 	On     bool   `json:"on"`     // inspect
 	Action string `json:"action"` // navigate: "reload"|"back"|"forward"|"goto"|"open" (new tab)
 	URL    string `json:"url"`    // navigate goto/open target (about:blank / http…)
-	ID     int    `json:"id"`     // clipboard request ID
+	ID     int    `json:"id"`     // clipboard write request or copy observation ID
 	Text   string `json:"text"`   // clipboard text
 	Paste  bool   `json:"paste"`  // apply Ctrl+V after replacing the clipboard
 	Shift  bool   `json:"shift"`  // apply Ctrl+Shift+V
 }
+
+type vncClipboardStateReader func(context.Context, sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error)
 
 // desktopVNCOptions adapts the one sandbox desktop proxy to a caller.
 type desktopVNCOptions struct {
@@ -65,7 +67,8 @@ type desktopVNCOptions struct {
 	// allowMsg drops control messages the viewer may not send.
 	allowMsg func(vncClientMsg) bool
 	// setClipboard is available to signed-in viewers with clipboard access.
-	setClipboard func(context.Context, string) error
+	setClipboard   func(context.Context, string) error
+	clipboardState vncClipboardStateReader
 }
 
 // resolveDesktopSandbox returns the container IP of a running sandbox, or an
@@ -170,7 +173,10 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
 
-	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(ctx, sess.Page(), navigateURL), "clipboard": opts.setClipboard != nil})
+	pushJSON(gin.H{
+		"type": "ready", "url": vncReadyURL(ctx, sess.Page(), navigateURL),
+		"clipboard": opts.setClipboard != nil, "clipboardState": opts.clipboardState != nil,
+	})
 
 	go func() {
 		select {
@@ -186,6 +192,7 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 	go func() {
 		defer func() { _ = upstream.Close() }()
 		activity := newVncToucher(sess.Touch)
+		var clipboard vncClipboardObservation
 		for {
 			msgType, data, err := conn.ReadMessage()
 			if err != nil {
@@ -198,13 +205,19 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 					if opts.allowMsg != nil && !opts.allowMsg(m) {
 						continue
 					}
-					if m.Type == "clipboard" {
+					switch m.Type {
+					case "clipboard":
 						if opts.setClipboard != nil && !writeVncClipboard(ctx, upstream, opts.setClipboard, m, pushJSON) {
 							return
 						}
-						continue
+					case "clipboard-watch":
+						clipboard.watch(ctx, opts.clipboardState, m.ID)
+					case "clipboard-check":
+						changed := clipboard.changed(ctx, opts.clipboardState, m.ID)
+						pushJSON(gin.H{"type": "clipboard-check-result", "id": m.ID, "changed": changed})
+					default:
+						h.applyVncMsg(sess.Page(), m, pushJSON)
 					}
-					h.applyVncMsg(sess.Page(), m, pushJSON)
 					continue
 				}
 			}
@@ -224,6 +237,39 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 			return
 		}
 	}
+}
+
+// The client's watch message precedes the RFB copy key. Take the snapshot in
+// the same reader that forwards that key so the baseline predates the copy.
+type vncClipboardObservation struct {
+	id     int
+	before sandbox.DesktopClipboardState
+}
+
+const vncClipboardStateTimeout = 900 * time.Millisecond
+
+func (o *vncClipboardObservation) watch(ctx context.Context, state vncClipboardStateReader, id int) {
+	if state == nil || id < 1 || o.id == id {
+		return
+	}
+	*o = vncClipboardObservation{id: id}
+	ctx, cancel := context.WithTimeout(ctx, vncClipboardStateTimeout)
+	defer cancel()
+	if before, err := state(ctx, sandbox.DesktopClipboardState{}); err == nil {
+		o.before = before
+	}
+}
+
+func (o *vncClipboardObservation) changed(ctx context.Context, state vncClipboardStateReader, id int) bool {
+	if state == nil || o.id != id || o.before.Generation == "" {
+		return false
+	}
+	before := o.before
+	*o = vncClipboardObservation{}
+	ctx, cancel := context.WithTimeout(ctx, vncClipboardStateTimeout)
+	defer cancel()
+	after, err := state(ctx, before)
+	return err == nil && after.Owned && after.Generation == before.Generation && after.Revision > before.Revision
 }
 
 func writeVncClipboard(ctx context.Context, upstream *websocket.Conn, setText func(context.Context, string) error, m vncClientMsg, reply func(any)) bool {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,9 +19,17 @@ func (h *Handlers) SandboxVNC(c *gin.Context) {
 		return
 	}
 	h.Sbx.TouchActivity(row.ID)
-	h.serveDesktopVNC(c, row.Name, ip, desktopVNCOptions{
-		setClipboard: h.desktopClipboardWriter(row, sessionUsername(c)),
-	})
+	username := sessionUsername(c)
+	opts := desktopVNCOptions{setClipboard: h.desktopClipboardWriter(row, username)}
+	if opts.setClipboard != nil {
+		opts.clipboardState = func(ctx context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+			if !h.canWriteSandboxClipboard(row, username) {
+				return sandbox.DesktopClipboardState{}, errors.New("sandbox clipboard access denied")
+			}
+			return h.Sbx.DesktopClipboardState(ctx, row.ID, after)
+		}
+	}
+	h.serveDesktopVNC(c, row.Name, ip, opts)
 }
 
 func (h *Handlers) desktopClipboardWriter(row *models.Sandbox, username string) func(context.Context, string) error {

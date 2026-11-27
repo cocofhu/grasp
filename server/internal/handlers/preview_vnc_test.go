@@ -76,6 +76,8 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 	}{
 		{vncClientMsg{Type: "inspect", On: true}, true},
 		{vncClientMsg{Type: "clipboard", Text: "example", Paste: true}, false},
+		{vncClientMsg{Type: "clipboard-watch", ID: 1}, false},
+		{vncClientMsg{Type: "clipboard-check", ID: 1}, false},
 		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://localhost/x"}, true},
@@ -93,6 +95,43 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		if got := publicVncMsgAllowed(c.m); got != c.want {
 			t.Errorf("publicVncMsgAllowed(%+v) = %v, want %v", c.m, got, c.want)
 		}
+	}
+}
+
+func TestVncClipboardCopyRequiresAnOwnershipUpdate(t *testing.T) {
+	baseline := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+	for _, tc := range []struct {
+		name  string
+		after sandbox.DesktopClipboardState
+		want  bool
+	}{
+		{"terminal interrupt", baseline, false},
+		{"copy in the same generation", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8, Owned: true}, true},
+		{"lost owner", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8}, false},
+		{"display restarted", sandbox.DesktopClipboardState{Generation: "new", Revision: 9, Owned: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observations := 0
+			read := func(_ context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+				if after == (sandbox.DesktopClipboardState{}) {
+					observations++
+					return baseline, nil
+				}
+				if after != baseline {
+					t.Fatalf("unexpected comparison baseline: %+v", after)
+				}
+				return tc.after, nil
+			}
+			var clipboard vncClipboardObservation
+			clipboard.watch(t.Context(), read, 1)
+			clipboard.watch(t.Context(), read, 1)
+			if observations != 1 || clipboard.changed(t.Context(), read, 2) || clipboard.changed(t.Context(), read, 1) != tc.want {
+				t.Fatalf("wrong resolution for %s", tc.name)
+			}
+			if clipboard.changed(t.Context(), read, 1) {
+				t.Fatal("an old observation must not resolve another paste")
+			}
+		})
 	}
 }
 
