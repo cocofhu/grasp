@@ -13,13 +13,15 @@ keywords: [安装, 自托管, start.sh, Docker, 登录, doctor]
 
 ## 启动发布镜像 {#start}
 
+发布栈使用宿主机网络。Grasp 和 Docker 网关默认在主机的所有网络接口上监听，端口分别为 8080 和 8899。启动演示前，请用防火墙或安全组限制这两个端口，只允许本机访问。网络上的其他设备如果能连到 8080，也能使用演示管理员账号登录。
+
 ```bash
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
 ./start.sh -d
 ```
 
-打开 [http://localhost:8080](http://localhost:8080)。本地演示登录为 `admin` / `demo1234`。该模式绑定在 loopback，适合在主机上试用。正式部署请配置独立用户和凭据加密密钥。
+在主机上打开 [http://localhost:8080](http://localhost:8080)。本地演示登录为 `admin` / `demo1234`。正式部署请配置独立用户和凭据加密密钥。
 
 在主机上检查两个服务。
 

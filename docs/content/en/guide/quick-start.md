@@ -13,13 +13,15 @@ Use a Linux host with Git, Docker, and Docker Compose. The startup script pulls 
 
 ## Start the published stack {#start}
 
+The published stack uses host networking. By default, Grasp and the Docker gateway listen on every host interface, on ports 8080 and 8899 respectively. Before starting the demo, use firewall or security group rules to restrict both ports to local access. Anyone who can reach port 8080 can sign in with the demo administrator account.
+
 ```bash
 git clone https://github.com/cocofhu/grasp.git
 cd grasp
 ./start.sh -d
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The local demo login is `admin` / `demo1234`. This mode binds to loopback for use on the host. Set up dedicated users and a credential encryption key for a production deployment.
+Open [http://localhost:8080](http://localhost:8080) on the host. The local demo login is `admin` / `demo1234`. Set up dedicated users and a credential encryption key for a production deployment.
 
 Check both services from the host.
 
