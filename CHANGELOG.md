@@ -20,6 +20,8 @@ All notable public-release changes are documented here.
 
 - Solo 沙箱的「基本信息」顶部用紧凑的行展示累计 Token 和工作流，环境和时间信息分组显示。
 
+- Solo 沙箱的「基本信息」显示任务价值，按工作区配置的模型单价汇总会话用量。
+
 - Solo 沙箱的「基本信息」展开和收起时使用短过渡，并尊重系统的减少动态效果设置。
 
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。

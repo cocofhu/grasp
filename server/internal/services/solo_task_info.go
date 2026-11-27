@@ -20,10 +20,13 @@ type SoloTaskRun struct {
 
 type SoloTaskUsage struct {
 	models.TokenUsage
-	Total      int64                    `json:"total"`
-	Reported   bool                     `json:"reported"`
-	Incomplete bool                     `json:"incomplete"`
-	ByModel    models.TokenUsageByModel `json:"byModel,omitempty"`
+	Total         int64                    `json:"total"`
+	Reported      bool                     `json:"reported"`
+	Incomplete    bool                     `json:"incomplete"`
+	ByModel       models.TokenUsageByModel `json:"byModel,omitempty"`
+	Cost          *float64                 `json:"cost,omitempty"`
+	Currency      string                   `json:"currency"`
+	UnpricedTotal int64                    `json:"unpricedTotal,omitempty"`
 }
 
 // TaskInfo summarizes the entire owned Solo session, including previous sandboxes.
@@ -85,12 +88,16 @@ func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
 		return SoloTaskUsage{}, err
 	}
 
-	usage := SoloTaskUsage{Incomplete: reports.Incomplete > 0}
+	pricing := LoadTokenPricing(db)
+	alias := unknownModelAlias(db)
+	usage := SoloTaskUsage{Currency: pricing.Currency, Incomplete: reports.Incomplete > 0}
+	var cost float64
 	for _, bucket := range buckets {
 		usage.Incomplete = usage.Incomplete || bucket.Legacy > 0
 		part := bucket.AsTokenUsage()
 		models.AddTokenUsage(&usage.TokenUsage, &part)
-		if part.Total() == 0 {
+		total := part.Total()
+		if total == 0 {
 			continue
 		}
 		key := bucket.ModelKey
@@ -102,8 +109,17 @@ func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
 			bucket.Source = models.TokenUsageSourceBridge
 		}
 		usage.ByModel = models.AddTokenUsageByModel(usage.ByModel, models.TokenUsageByModel{key: bucket.ModelTokenUsage})
+		amount, priced := pricing.Cost(rebucketGlobalModelKey(key, alias), part)
+		if !priced {
+			usage.UnpricedTotal += total
+			continue
+		}
+		cost += amount
 	}
 	usage.Total = usage.TokenUsage.Total()
 	usage.Reported = reports.Reported > 0 || usage.Total > 0
+	if usage.Total > usage.UnpricedTotal || (usage.Reported && !usage.Incomplete && usage.Total == 0) {
+		usage.Cost = &cost
+	}
 	return usage, nil
 }

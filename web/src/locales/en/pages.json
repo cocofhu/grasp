@@ -3596,6 +3596,8 @@
         "details": {
           "title": "Details",
           "totalTokens": "Total tokens",
+          "taskValue": "Task value",
+          "partialPrice": "Some usage is unpriced",
           "modelBackfill": "Includes attribution from configuration",
           "incompleteUsage": "Usage may be incomplete",
           "workflowRuns": "Workflow runs",

@@ -730,6 +730,9 @@ export interface SoloTaskInfo {
     reported: boolean
     incomplete: boolean
     byModel?: TokenUsageByModel
+    cost?: number
+    currency?: string
+    unpricedTotal?: number
   }
   workflowRuns: Array<{ id: string; workflowName: string }>
 }

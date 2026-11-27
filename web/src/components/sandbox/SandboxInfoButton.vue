@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
+import { fmtCost } from '@/components/token-analytics/tokenAnalyticsShared'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
@@ -414,6 +415,14 @@ function onIDELaunch() {
                     <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
                     <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
                     <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
+                  </dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.taskValue') }}</dt>
+                  <dd class="tabular-nums" data-testid="sandbox-info-task-value">
+                    <template v-if="taskInfo?.usage.cost != null">
+                      <span class="font-medium">{{ fmtCost(taskInfo.usage.cost, taskInfo.usage.currency) }}</span>
+                      <span v-if="taskInfo.usage.unpricedTotal" class="sandbox-info-note"> · {{ t('pages.solo.sandboxInfo.details.partialPrice') }}</span>
+                    </template>
+                    <span v-else class="sandbox-info-note">{{ taskInfo?.usage.unpricedTotal ? t('pages.tokenAnalytics.kpiCostUnpriced') : '—' }}</span>
                   </dd>
                   <template v-if="taskInfo?.workflowRuns.length">
                     <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>

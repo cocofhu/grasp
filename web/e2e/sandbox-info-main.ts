@@ -15,7 +15,7 @@ const realFetch = window.fetch.bind(window)
 const taskInfo: SoloTaskInfo = {
   usage: {
     total: 1_268_330, inputTokens: 750_000, outputTokens: 125_000, cacheReadTokens: 350_000, cacheWriteTokens: 43_330,
-    reported: true, incomplete: false,
+    reported: true, incomplete: false, cost: 7.24, currency: 'USD', unpricedTotal: 25_000,
     byModel: {
       'claude-sonnet-4-6': { inputTokens: 550_000, outputTokens: 100_000, cacheReadTokens: 270_000, cacheWriteTokens: 33_330 },
       'gpt-5.2': { inputTokens: 175_000, outputTokens: 25_000, cacheReadTokens: 80_000, cacheWriteTokens: 10_000 },

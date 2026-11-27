@@ -130,6 +130,7 @@ describe('SandboxInfoButton', () => {
     expect(details.hasAttribute('inert')).toBe(false)
     expect(details.textContent).toContain('cocofhu/grasp · main')
     expect(details.textContent).toContain('最近模型活动')
+    expect(q('sandbox-info-task-value')?.textContent?.trim()).toBe('—')
     details.querySelector('button')!.click()
     await flushPromises()
     expect(copied).toEqual(['/root/workspace'])
@@ -149,7 +150,7 @@ describe('SandboxInfoButton', () => {
     taskInfo.value = {
       usage: {
         total: 1_637_345, inputTokens: 1_012_345, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000,
-        reported: true, incomplete: true,
+        reported: true, incomplete: true, cost: 7, currency: 'CNY', unpricedTotal: 12_345,
         byModel: {
           'first-model': { inputTokens: 500_000, outputTokens: 250_000, cacheReadTokens: 125_000, cacheWriteTokens: 250_000 },
           'second-model': { inputTokens: 500_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, filled: true },
@@ -166,7 +167,9 @@ describe('SandboxInfoButton', () => {
     expect(api.getSoloTaskInfo).toHaveBeenCalledWith('s1', expect.any(AbortSignal))
     expect(q('sandbox-info-task-tokens')!.textContent).toContain('1,637,345')
     expect(q('sandbox-info-task-tokens')!.textContent).toContain('用量可能不完整')
-    expect(q('sandbox-info-task-value')).toBeNull()
+    const value = q('sandbox-info-task-value')!
+    expect(value.previousElementSibling?.textContent).toBe('任务价值')
+    expect(value.textContent?.trim()).toBe('¥7.00 · 部分未计价')
     expect(q('sandbox-info-task-references')).toBeNull()
     expect(q('sandbox-info-workflow-runs')!.querySelector('a')!.getAttribute('href')).toBe('/runs/linked-run')
     expect(q('sandbox-info-workflow-runs')!.textContent!.trim()).toBe('发布检查')

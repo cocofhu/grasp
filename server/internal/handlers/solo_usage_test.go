@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"testing"
 
@@ -115,6 +116,18 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 		}
 		return info
 	}
+	if unpriced := getInfo("task").Usage; unpriced.Cost != nil || unpriced.UnpricedTotal != 1_637_345 {
+		t.Fatalf("usage without model prices = %+v", unpriced)
+	}
+	if _, err := services.SaveTokenPricing(hn.db, services.TokenPricing{
+		Currency: services.TokenPricingCurrencyCNY,
+		Models: map[string]services.TokenModelPrice{
+			"first-model":  {Input: 2, Output: 8, CacheRead: 4, CacheWrite: 6},
+			"second-model": {Input: 4},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	info := getInfo("task")
 	usage := info.Usage
 	if usage.Total != 1_637_345 || usage.InputTokens != 1_012_345 || usage.OutputTokens != 250_000 ||
@@ -126,14 +139,26 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 		usage.ByModel[models.TokenUsageModelUnknown].InputTokens != 12_345 {
 		t.Fatalf("usage by model = %+v", usage.ByModel)
 	}
+	if usage.Cost == nil || *usage.Cost != 7 || usage.Currency != services.TokenPricingCurrencyCNY || usage.UnpricedTotal != 12_345 {
+		t.Fatalf("priced usage = %+v", usage)
+	}
+	alias := "second-model"
+	if _, err := services.NewWorkspaceService(hn.db).Update(nil, nil, &alias); err != nil {
+		t.Fatal(err)
+	}
+	withAlias := getInfo("task").Usage
+	if withAlias.Cost == nil || math.Abs(*withAlias.Cost-7.04938) > 1e-9 || withAlias.UnpricedTotal != 0 ||
+		withAlias.ByModel[models.TokenUsageModelUnknown].Total() != 12_345 {
+		t.Fatalf("usage with a configured default model = %+v", withAlias)
+	}
 	if len(info.WorkflowRuns) != 2 || info.WorkflowRuns[0] != (services.SoloTaskRun{ID: "linked-run", WorkflowName: "Release checks"}) ||
 		info.WorkflowRuns[1] != (services.SoloTaskRun{ID: "legacy-run", WorkflowName: "Legacy checks"}) {
 		t.Fatalf("workflow runs = %+v", info.WorkflowRuns)
 	}
-	if empty := getInfo("empty-task"); empty.Usage.Reported || empty.Usage.Total != 0 || len(empty.WorkflowRuns) != 0 {
+	if empty := getInfo("empty-task"); empty.Usage.Reported || empty.Usage.Total != 0 || empty.Usage.Cost != nil || len(empty.WorkflowRuns) != 0 {
 		t.Fatalf("empty task = %+v", empty)
 	}
-	if zero := getInfo("zero-task").Usage; !zero.Reported || zero.Total != 0 || zero.Incomplete {
+	if zero := getInfo("zero-task").Usage; !zero.Reported || zero.Total != 0 || zero.Incomplete || zero.Cost == nil || *zero.Cost != 0 {
 		t.Fatalf("reported zero = %+v", zero)
 	}
 	res := hn.do(http.MethodGet, "/api/solo/sessions/other-task/task-info", nil)
