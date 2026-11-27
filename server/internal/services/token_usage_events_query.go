@@ -84,7 +84,7 @@ func (s *WorkspaceService) TokenUsageEvents(ctx context.Context, q TokenUsageEve
 	}
 	rows = filterRowsByWindow(rows, plan.cur, loc)
 
-	unknownAlias := s.unknownModelAlias()
+	unknownAlias := unknownModelAlias(s.db)
 	source := strings.TrimSpace(q.Source)
 	if source == "" {
 		source = GlobalTokenStatsSourceAll

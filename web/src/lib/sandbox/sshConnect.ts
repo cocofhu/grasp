@@ -40,7 +40,7 @@ export function sshConfigSnippet(ep: SSHEndpoint): string {
   ].join('\n')
 }
 
-export type RemoteIDE = 'vscode' | 'cursor' | 'codebuddy' | 'trae' | 'jetbrains'
+export type RemoteIDE = 'vscode' | 'cursor' | 'codebuddy' | 'trae' | 'antigravity' | 'codex'
 
 export interface RemoteIDEOption {
   id: RemoteIDE
@@ -56,9 +56,8 @@ export const REMOTE_IDES: readonly RemoteIDEOption[] = [
   { id: 'cursor', label: 'Cursor', scheme: 'cursor' },
   { id: 'codebuddy', label: 'CodeBuddy', scheme: 'codebuddy', cnScheme: 'codebuddycn' },
   { id: 'trae', label: 'Trae', scheme: 'trae', cnScheme: 'trae-cn' },
-  // Gateway links only attach to an IDE already installed on the host, so
-  // users create the SSH connection in Gateway from the connection details.
-  { id: 'jetbrains', label: 'JetBrains Gateway' },
+  { id: 'antigravity', label: 'Antigravity', scheme: 'antigravity' },
+  { id: 'codex', label: 'Codex', scheme: 'codex' },
 ]
 
 export function remoteIDEOption(id: string): RemoteIDEOption | undefined {
@@ -83,15 +82,16 @@ export interface PreferredIDE {
   cn: boolean
 }
 
-export function loadPreferredIDE(): PreferredIDE {
+/** The last IDE the user opened, or null until they pick one. */
+export function loadPreferredIDE(): PreferredIDE | null {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFERRED_KEY) || 'null') as Partial<PreferredIDE> | null
     const option = raw && remoteIDEOption(String(raw.id))
     if (option) return { id: option.id, cn: !!raw?.cn && !!option.cnScheme }
   } catch {
-    // Unreadable storage falls back to the default.
+    // Unreadable storage leaves the control on its empty label.
   }
-  return { id: 'vscode', cn: false }
+  return null
 }
 
 export function savePreferredIDE(value: PreferredIDE) {

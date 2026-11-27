@@ -38,17 +38,17 @@ When deploying:
 
 1. Create a key if you do not have one: `ssh-keygen -t ed25519`.
 2. Open **SSH keys** from the account menu at the bottom left and paste the contents of `~/.ssh/id_ed25519.pub`. ed25519, ECDSA and RSA of at least 2048 bits are supported.
-3. In a Solo session, click the **info icon** at the top right and choose **Open in VS Code** under **Local IDE**. The drop-down switches to Cursor, CodeBuddy, Trae (`CN` opens the China edition) or JetBrains Gateway, and remembers your choice.
+3. In a Solo session, click the **info icon** at the top right, then open **SSH connection** to choose a local IDE. The menu lists VS Code, Cursor, CodeBuddy, CodeBuddy China, Trae, Trae China, Antigravity and Codex. The picker shows your last choice after you select one.
 4. The browser asks to open the app, and the IDE asks once whether to open the remote folder; accept both. The IDE connects to `sbx-12@grasp.example.com:2222` and opens `/root/workspace` directly, with no `~/.ssh/config` change.
 
 | IDE | How it opens |
 | --- | --- |
 | VS Code | Needs the Remote - SSH extension |
 | Cursor | Install Cursor's Remote SSH extension when prompted the first time |
-| CodeBuddy / Trae | Remote-SSH is built in; the international and China editions are separate apps with separate menu entries |
-| JetBrains Gateway | No one-click link: Gateway links only attach to an IDE already installed on the host. The entry shows the connection details; in Gateway choose SSH → New Connection, enter the user, host and port, and use `/root/workspace` as the project folder. The first connection downloads the IDE backend into the sandbox |
+| CodeBuddy / Trae | Remote-SSH is built in; the international and China editions are separate apps, each with its own row |
+| Antigravity / Codex | Open `/root/workspace` through each app's Remote-SSH link |
 
-**SSH connection details** in the drop-down lists the user, host, port and an SSH command such as `ssh -p 2222 sbx-12@grasp.example.com` that runs in any terminal. For a short name such as `ssh grasp`, add the optional snippet from the panel to `~/.ssh/config`:
+**SSH connection details** at the bottom of the menu opens a dialog with the user, host, port, project folder and an SSH command such as `ssh -p 2222 sbx-12@grasp.example.com` that runs in any terminal. For a short name such as `ssh grasp`, add the optional snippet from the dialog to `~/.ssh/config`:
 
 ```
 Host grasp
@@ -63,8 +63,8 @@ One machine can connect to several sandboxes at once, one window each.
 
 - **A paused E2B sandbox** wakes when you connect, which can take tens of seconds. VS Code times out after 15 seconds by default; if it fails, raise `remote.SSH.connectTimeout` to 60.
 - **A session you stopped or closed** is not woken by SSH. The terminal shows why, for example that the session was stopped manually. Resume it in Grasp first.
-- **Connected sandboxes are not reclaimed for idling.** While any IDE connection is open, an E2B sandbox is neither saved and paused nor memory-trimmed; the idle countdown restarts when the last connection closes. The info panel shows "Local IDE connected; countdown paused".
-- The info panel also shows the environment type, the idle reclaim countdown, the last model activity and the last backup, and offers stop, wake, resume and **Keep running**.
+- **A local IDE connection pauses the idle countdown.** An E2B sandbox keeps running with its memory cache while it has an open local IDE connection. The Auto-pause row shows "Timer paused", with the connection count below. The timer restarts after the last connection closes.
+- The info panel shows the environment type, the idle countdown and the latest save. It offers **Save and stop**, **Wake**, **Resume** and **Keep running**. Expand **Details** to see the last model activity and workspace.
 
 ## Resource use
 
