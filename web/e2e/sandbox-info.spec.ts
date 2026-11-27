@@ -39,6 +39,8 @@ for (const theme of ['dark', 'light']) {
     const workflows = page.getByTestId('sandbox-info-workflow-runs')
     await expect(workflows).toHaveText('发布检查')
     await expect(workflows.getByRole('link', { name: '发布检查' })).toHaveAttribute('href', '/runs/verify-sandbox')
+    const tokenValue = (await page.getByTestId('sandbox-info-task-tokens').boundingBox())!
+    expect((await workflows.boundingBox())!.x).toBeGreaterThan(tokenValue.x + tokenValue.width)
     await panel.screenshot({ path: test.info().outputPath(`sandbox-info-expanded-${theme}.png`) })
     const token = page.getByTestId('sandbox-info-token-trigger')
     const breakdown = page.getByTestId('sandbox-info-token-breakdown')
@@ -112,4 +114,15 @@ test('narrow screens get a bottom sheet', async ({ page }) => {
   expect(Math.round(box.x)).toBe(0)
   expect(Math.round(box.y + box.height)).toBe(844)
   await page.screenshot({ path: test.info().outputPath('sandbox-info-mobile.png') })
+
+  await page.setViewportSize({ width: 320, height: 720 })
+  await page.getByTestId('sandbox-info-details-toggle').click()
+  const tokens = page.getByTestId('sandbox-info-task-tokens')
+  const workflows = page.getByTestId('sandbox-info-workflow-runs')
+  await expect(tokens).toHaveText('1,268,330')
+  await expect(workflows).toHaveText('发布检查')
+  const tokenValue = (await tokens.boundingBox())!
+  expect((await workflows.boundingBox())!.y).toBeGreaterThan(tokenValue.y + tokenValue.height)
+  expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await panel.screenshot({ path: test.info().outputPath('sandbox-info-expanded-mobile.png') })
 })

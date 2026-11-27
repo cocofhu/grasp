@@ -18,6 +18,8 @@ All notable public-release changes are documented here.
 
 - 从 Solo 沙箱的「基本信息」查看会话累计 Token 和关联的工作流名称。悬浮在 Token 总数上可查看会话合计和各模型的输入、输出、缓存读和缓存写。
 
+- Solo 沙箱的「基本信息」将累计 Token 和工作流放在顶部，环境和时间信息分组显示。
+
 - E2B 沙箱上传方向（文件上传、IDE 同步）的转发速度提升：relay 的 WebSocket 解掩码不再逐字节处理。需要更新 sandbox-gateway 镜像。
 
 - Docker/K8s 沙箱不再在模型回合结束 6 小时后自动保存并释放，开发服务器和后台进程会一直运行，直到手动停止、关闭会话或取消运行；空闲回收和倒计时只用于 E2B。这类会话和运行的侧栏菜单不再显示「永不自动回收」。注意空闲的 Docker/K8s 环境会一直占用 `sandbox.max_sandboxes` 名额。

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/ui/Icon.vue'
 import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import type { SoloTaskInfo } from '@/lib/api/apiTypes'
 import { effectiveModelUsageRows, fmtTokenCount } from '@/lib/run/tokenUsage'
@@ -8,6 +9,7 @@ import { effectiveModelUsageRows, fmtTokenCount } from '@/lib/run/tokenUsage'
 const props = defineProps<{ usage: SoloTaskInfo['usage'] }>()
 const { t } = useI18n()
 const breakdown = ref<HTMLElement>()
+const total = computed(() => fmtTokenCount(props.usage.total))
 
 const parts = computed(() => [
   { key: 'inputTokens', label: t('pages.executionTimeline.partInput') },
@@ -31,11 +33,14 @@ function scrollBreakdown(event: KeyboardEvent) {
 
 <template>
   <TruncatedTextTooltip
-    :text="fmtTokenCount(usage.total)"
-    class="cursor-help rounded-sm underline decoration-dotted underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+    :text="total"
+    :aria-label="`${t('pages.solo.sandboxInfo.details.totalTokens')} ${total}`"
+    class="inline-flex max-w-full cursor-help items-center gap-1.5 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
     data-testid="sandbox-info-token-trigger"
     @keydown="scrollBreakdown"
   >
+    <span class="min-w-0 [overflow-wrap:anywhere]">{{ total }}</span>
+    <Icon name="info" :size="12" class="shrink-0 text-txt2" aria-hidden="true" />
     <template #tooltip>
       <div
         ref="breakdown"
