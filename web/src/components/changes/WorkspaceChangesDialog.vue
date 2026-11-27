@@ -9,6 +9,7 @@ import {
   workspaceChangesClient, type WorkspaceChangeFile, type WorkspaceChangesTarget, type WorkspaceChangesView,
 } from '@/lib/api/clients/workspaceChangesClient'
 import { workspaceDiffLines } from './workspaceDiffLines'
+import { highlightWorkspaceDiff, type HighlightedDiffLine } from './workspaceDiffHighlight'
 
 const CodeEditor = defineAsyncComponent(() => import('@/components/ui/CodeEditor.vue'))
 const props = defineProps<{
@@ -55,7 +56,11 @@ const markdown = computed(() => /\.(?:md|markdown)$/i.test(selected.value?.file.
 const markdownHTML = computed(() => mode.value === 'preview' && source.value !== undefined ? renderMarkdown(source.value) : '')
 const lines = computed(() => workspaceDiffLines(payload.value?.patch ?? ''))
 const lineLimit = 3500
-const visibleLines = computed(() => lines.value.slice(0, lineLimit))
+const visibleLines = computed<HighlightedDiffLine[]>(() => {
+  const visible = lines.value.slice(0, lineLimit)
+  const file = selected.value?.file
+  return file && payload.value ? highlightWorkspaceDiff(visible, file, payload.value) : visible
+})
 const language = computed(() => {
   const ext = (selected.value?.file.path || '').split('.').at(-1)?.toLowerCase() ?? ''
   const modes: Record<string, string> = {
@@ -251,12 +256,15 @@ function workspaceLabel(nodeId: string | undefined, position: number) {
             <CodeEditor :model-value="source" :language="language" readonly class="h-full" />
           </div>
           <div v-else-if="mode === 'diff' && visibleLines.length" class="changes-diff scroll-area" data-testid="workspace-change-diff" tabindex="0">
-            <div class="changes-diff-grid">
+            <div class="changes-diff-grid syntax-highlight">
               <div v-for="(line, index) in visibleLines" :key="index" class="changes-line" :class="'changes-line-' + line.kind">
                 <span class="changes-line-number" aria-hidden="true">{{ line.before }}</span>
                 <span class="changes-line-number" aria-hidden="true">{{ line.after }}</span>
                 <span class="changes-line-mark" aria-hidden="true">{{ line.kind === 'add' ? '+' : line.kind === 'remove' ? '−' : '' }}</span>
-                <span class="changes-line-text">{{ line.text }}</span>
+                <span v-if="line.tokens" class="changes-line-text">
+                  <span v-for="(token, tokenIndex) in line.tokens" :key="tokenIndex" :class="token.className">{{ token.text }}</span>
+                </span>
+                <span v-else class="changes-line-text">{{ line.text }}</span>
               </div>
               <p v-if="lines.length > lineLimit" class="changes-repo-note">{{ t('pages.workspaceChanges.linesLimited', { n: lineLimit }) }}</p>
             </div>

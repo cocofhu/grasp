@@ -111,7 +111,7 @@ Model configurations are shared references: changing a configuration's credentia
 
 Open **Changes** in the toolbar of a Solo session or workflow run to see the branch and line counts for each repository. Select a repository to open its file diffs. The cumulative view compares against the initial checkout and includes changes after the agent commits them. The last archived view remains available after the workflow releases its sandbox.
 
-Open **Turn changes** above the composer to see what changed between the start and end of the last turn. The viewer offers read-only source and rendered Markdown. For deleted files, it shows the version before deletion.
+Open **Turn changes** above the composer to see what changed between the start and end of the last turn. Diffs show syntax highlighting and line markers for recognized code files. The viewer offers read-only source and rendered Markdown. For deleted files, it shows the version before deletion.
 
 ## @ references in Solo
 

@@ -1,4 +1,4 @@
-type DiffLine = {
+export type DiffLine = {
   kind: 'hunk' | 'add' | 'remove' | 'context' | 'note'
   text: string
   before?: number

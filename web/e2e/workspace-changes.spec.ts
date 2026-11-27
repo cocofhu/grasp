@@ -7,6 +7,21 @@ const previous = '# 部署指南\n\n服务默认使用端口 8080。\n'
 const current = '# 部署指南\n\n服务默认使用端口 8090。\n\n## 验证\n\n使用健康检查确认服务就绪。\n'
 const patch = 'diff --git a/docs/deploy.md b/docs/deploy.md\n--- a/docs/deploy.md\n+++ b/docs/deploy.md\n' +
   '@@ -1,3 +1,7 @@\n # 部署指南\n \n-服务默认使用端口 8080。\n+服务默认使用端口 8090。\n+\n+## 验证\n+\n+使用健康检查确认服务就绪。\n'
+const goBefore = [
+  'package deploy', '', 'import "net/http"', '', 'func readiness(w http.ResponseWriter, r *http.Request) {',
+  '\t// Return a simple status.', '\tw.WriteHeader(http.StatusOK)', '\t_, _ = w.Write([]byte("ready"))', '}', '',
+].join('\n')
+const goAfter = [
+  'package deploy', '', 'import "net/http"', '', 'func readiness(w http.ResponseWriter, r *http.Request) {',
+  '\t// Write a machine-readable readiness response.', '\tw.Header().Set("Content-Type", "application/json")',
+  '\tw.WriteHeader(http.StatusOK)', '\t_, _ = w.Write([]byte(`{"status":"ready"}`))', '}', '',
+].join('\n')
+const goPatch = [
+  '@@ -3,7 +3,8 @@', ' import "net/http"', ' ', ' func readiness(w http.ResponseWriter, r *http.Request) {',
+  '-\t// Return a simple status.', '+\t// Write a machine-readable readiness response.',
+  '+\tw.Header().Set("Content-Type", "application/json")', ' \tw.WriteHeader(http.StatusOK)',
+  '-\t_, _ = w.Write([]byte("ready"))', '+\t_, _ = w.Write([]byte(`{"status":"ready"}`))', ' }', '',
+].join('\n')
 const markdown: WorkspaceChangedPath = {
   id: 'docs', path: 'docs/deploy.md', status: 'M', added: 5, deleted: 1,
   hasBefore: true, hasAfter: true, hasPatch: true,
@@ -53,6 +68,10 @@ async function mockChanges(page: Page, { snapshot = saved, canRefresh = true } =
     }
     if (url.pathname.endsWith('/files/ops')) {
       await route.fulfill({ json: { patch: '@@ -1 +1,2 @@\n port: 8090\n+timeout: 30\n', after: 'port: 8090\ntimeout: 30\n' } })
+      return
+    }
+    if (url.pathname.endsWith('/files/go')) {
+      await route.fulfill({ json: { patch: goPatch, before: goBefore, after: goAfter } })
       return
     }
     if (url.pathname.endsWith('/refresh')) refreshed = true
@@ -202,4 +221,34 @@ test('change card opens the selected repository from an archived snapshot', asyn
   await expect(dialog.getByTestId('workspace-change-file-row').filter({ hasText: 'service.yaml' })).toHaveAttribute('aria-current', 'true')
   await expect(dialog.getByTestId('workspace-change-diff')).toContainText('timeout: 30')
   await expect(dialog.getByTestId('workspace-change-summary')).toContainText('归档于')
+})
+
+test('code diffs preserve line markers and syntax colors in both themes', async ({ page }, testInfo) => {
+  const goFile: WorkspaceChangedPath = {
+    id: 'go', path: 'server/readiness.go', status: 'M', added: 3, deleted: 2,
+    hasPatch: true, hasBefore: true, hasAfter: true,
+  }
+  await mockChanges(page, {
+    canRefresh: false,
+    snapshot: { ...saved, repos: [{ ...saved.repos[0], fileCount: 1, added: 3, deleted: 2, files: [goFile] }] },
+  })
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  for (const theme of ['light', 'dark']) {
+    await page.goto('/workspace-changes.html?theme=' + theme)
+    await page.getByTestId('workspace-changes').click()
+    await page.getByTestId('workspace-changes-card-open').click()
+    const dialog = page.getByRole('dialog', { name: '本次运行改动' })
+    const diff = dialog.getByTestId('workspace-change-diff')
+    await expect(diff.locator('.changes-line-context .hljs-keyword').filter({ hasText: /^func$/ })).toBeVisible()
+    await expect(diff.locator('.changes-line-remove .hljs-string')).toHaveText('"ready"')
+    const addedString = diff.locator('.changes-line-add .hljs-string').filter({ hasText: '"application/json"' })
+    await expect(addedString).toBeVisible()
+    const plainColor = await diff.locator('.changes-line-add .changes-line-text').first().evaluate(el => getComputedStyle(el).color)
+    await expect(addedString).not.toHaveCSS('color', plainColor)
+    await expect(diff.locator('.changes-line-add .changes-line-mark')).toHaveText(['+', '+', '+'])
+    await expect(diff.locator('.changes-line-remove .changes-line-mark')).toHaveText(['−', '−'])
+    await page.evaluate(() => document.fonts.ready.then(() => undefined))
+    await dialog.screenshot({ animations: 'disabled', path: testInfo.outputPath(`go-diff-${theme}.png`) })
+  }
 })
