@@ -171,6 +171,21 @@ func TestVncClipboardWatchDoesNotBlockDesktopInput(t *testing.T) {
 	}
 }
 
+func TestVncClipboardRefreshesBaselineOnTakeover(t *testing.T) {
+	state := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+	clipboard := newVncClipboardObservation(t.Context(), func(_ context.Context, _ sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+		return state, nil
+	})
+	<-clipboard.latest.ready
+	// Clipboard changes while the viewer is still watching belong to the new baseline.
+	state.Revision++
+	clipboard.reset(0)
+	clipboard.watch(1)
+	if clipboard.changed(1) {
+		t.Fatal("clipboard change before takeover replaced the local paste source")
+	}
+}
+
 func TestVncClipboardPastesAfterTextIsSet(t *testing.T) {
 	type frame struct {
 		kind int

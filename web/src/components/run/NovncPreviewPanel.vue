@@ -391,8 +391,9 @@ function onScreenPaste(ev: ClipboardEvent) {
   else pasteFromSandboxClipboard(pending ?? false)
 }
 
-watch(clipboardReady, (ready) => {
+watch([clipboardReady, clipboardStateAvailable], ([ready, available]) => {
   if (!ready) closeClipboard()
+  else if (available) sendCtrl({ type: 'clipboard-reset', id: 0 })
 })
 
 /**

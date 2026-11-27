@@ -303,7 +303,9 @@ func (o *vncClipboardObservation) watch(id int) {
 }
 
 func (o *vncClipboardObservation) reset(id int) {
-	if id > 0 && o.id == id {
+	// A zero ID prepares a fresh baseline on takeover. It must leave a
+	// pending copy observation alone.
+	if o.id == id {
 		o.refresh()
 	}
 }

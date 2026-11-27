@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 async function mockClipboard(page: Page) {
   const clipboardMessages: Record<string, unknown>[] = []
   const remoteKeys: [number, number][] = []
+  const resets: number[] = []
   const watched = new Map<number, number>()
   let remoteRevision = 0
   await page.routeWebSocket('**/sandbox-vnc/42/ws', socket => {
@@ -12,6 +13,7 @@ async function mockClipboard(page: Page) {
         return
       }
       const msg = JSON.parse(data)
+      if (msg.type === 'clipboard-reset') resets.push(msg.id)
       if (msg.type === 'clipboard-watch') watched.set(msg.id, remoteRevision)
       if (msg.type === 'clipboard-check') {
         const before = watched.get(msg.id)
@@ -24,7 +26,7 @@ async function mockClipboard(page: Page) {
     })
     socket.send(JSON.stringify({ type: 'ready', url: 'about:blank', clipboard: true, clipboardState: true }))
   })
-  return { clipboardMessages, remoteKeys, watched, copyInSandbox: () => { remoteRevision++ } }
+  return { clipboardMessages, remoteKeys, resets, watched, copyInSandbox: () => { remoteRevision++ } }
 }
 
 const remotePaste = [[0xffe3, 1], [0x76, 1], [0x76, 0], [0xffe3, 0]]
@@ -34,7 +36,7 @@ test.beforeEach(({ context }) => context.grantPermissions(['clipboard-read', 'cl
 test('sandbox clipboard honors takeover, supports manual staging, and resets the paste source on blur', async ({ page }) => {
   const localText = '  中文和 Emoji 🙂\nconst answer = 42;'
   const stagedText = '  沙箱剪贴板 📝\n下一行'
-  const { clipboardMessages, remoteKeys } = await mockClipboard(page)
+  const { clipboardMessages, remoteKeys, resets } = await mockClipboard(page)
   await page.goto('/console.html?tab=novnc')
   await page.evaluate(value => navigator.clipboard.writeText(value), localText)
   const toggle = page.getByRole('button', { name: '剪贴板', exact: true })
@@ -43,9 +45,11 @@ test('sandbox clipboard honors takeover, supports manual staging, and resets the
   await canvas.focus()
   await page.keyboard.press('ControlOrMeta+V')
   expect(clipboardMessages).toHaveLength(0)
+  expect(resets).toHaveLength(0)
 
   await page.getByTestId('novnc-control-toggle').click()
   await expect(toggle).toBeEnabled()
+  await expect.poll(() => resets).toEqual([0])
   await canvas.focus()
   await page.keyboard.press('ControlOrMeta+V')
   const localPaste = { type: 'clipboard', id: 1, text: localText, paste: true, shift: false }
