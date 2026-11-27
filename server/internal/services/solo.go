@@ -18,6 +18,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/solobackup"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -689,6 +690,9 @@ func (s *SoloService) Delete(ctx context.Context, id, user string) error {
 	s.mu.Unlock()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&models.SoloMessage{}, "session_id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := workspacechanges.DeleteOwner(tx, models.WorkspaceChangesSolo, id); err != nil {
 			return err
 		}
 		return tx.Delete(&models.SoloSession{}, "id = ?", id).Error

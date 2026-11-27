@@ -149,6 +149,7 @@ defineExpose({
         :run-id="run.id"
         :node-id="clarify.nodeId"
         :iteration="clarify.iteration ?? 1"
+        :show-workspace-changes="!!run.repos?.length"
         :draft="draft"
         :attachments="attachments"
         :annotations="annotations"

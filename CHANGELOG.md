@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 对话和工作流运行详情新增「更改」卡片，按仓库查看分支和累计增删行，点击条目打开逐文件 diff、源码与 Markdown 预览。输入框上方提供本轮改动入口，沙箱释放后仍可查看最近归档的版本。
+
 - 新增内置 SSH 网关（`ssh_gateway.enabled`，默认关闭）：在账号菜单「SSH 公钥」登记公钥后，可以用本地 VS Code / Cursor 的 Remote-SSH 或终端连接任意沙箱（用户名 `sbx-<沙箱 ID>`），E2B、Docker、K8s 方式相同；Solo 会话的所有者只能进入自己的沙箱，其他沙箱只对管理员开放；已暂停的 E2B 沙箱在连接时自动唤醒，有 IDE 连接时不会被空闲回收。部署需要对外开放网关端口（默认 2222）并持久化主机密钥，详见帮助文档「用本地 IDE 连接沙箱」。
 
 - Solo 会话顶栏新增沙箱信息按钮，集中显示沙箱状态、环境类型、自动回收倒计时、最近模型活动和备份，提供停止 / 唤醒 / 恢复和「保持运行」；网关开启时可以从「本地 IDE」菜单（带品牌图标）一键用 VS Code、Cursor、CodeBuddy、Trae（含国内版）打开沙箱，不需要配置 `~/.ssh/config`，JetBrains Gateway 则给出连接信息。

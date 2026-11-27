@@ -18,14 +18,14 @@ func (s *SettingsService) migrateSandboxSettings() error {
 		keys := []string{"max_test_sandboxes", "max_solo_sandboxes", "run_sandbox_ttl_minutes",
 			"test_sandbox_ttl_minutes", "run_sandbox_max_retention_hours"}
 		var rows []models.Setting
-		if err := tx.Where("key IN ?", keys).Find(&rows).Error; err != nil {
+		if err := tx.Where(map[string]any{"key": keys}).Find(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
 			return nil
 		}
 		var existing int64
-		if err := tx.Model(&models.Setting{}).Where("key = ?", KeyMaxSandboxes).Count(&existing).Error; err != nil {
+		if err := tx.Model(&models.Setting{}).Where(map[string]any{"key": KeyMaxSandboxes}).Count(&existing).Error; err != nil {
 			return err
 		}
 		if existing == 0 {
@@ -44,6 +44,6 @@ func (s *SettingsService) migrateSandboxSettings() error {
 				}
 			}
 		}
-		return tx.Where("key IN ?", keys).Delete(&models.Setting{}).Error
+		return tx.Where(map[string]any{"key": keys}).Delete(&models.Setting{}).Error
 	})
 }

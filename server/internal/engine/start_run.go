@@ -196,11 +196,12 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		FirstMessage:   firstMessage,
 		LaunchModelSet: storedLaunch.Set, LaunchConfigurationID: storedLaunch.ConfigurationID,
 		LaunchModelID: storedLaunch.ModelID, LaunchReasoningEffort: storedLaunch.ReasoningEffort, LaunchServiceTier: storedLaunch.ServiceTier,
-		Tags:       append([]string{}, tags...),
-		Priority:   priority,
-		SandboxEnv: sandboxEnv,
-		Repos:      repos,
-		Trace:      []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
+		Tags:                    append([]string{}, tags...),
+		Priority:                priority,
+		SandboxEnv:              sandboxEnv,
+		Repos:                   repos,
+		WorkspaceChangesEnabled: len(repos) > 0,
+		Trace:                   []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
 	run.McpToken = mcp.NewToken()

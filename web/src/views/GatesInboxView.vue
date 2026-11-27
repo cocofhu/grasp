@@ -209,6 +209,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :run-id="active.runId"
                   :node-id="clarifyComposerNodeId"
                   :iteration="clarifyComposerIteration"
+                  show-workspace-changes
                   v-model:draft="clarifyDraft"
                   v-model:attachments="clarifyAttachments"
                   v-model:annotations="clarifyAnnotations"

@@ -168,7 +168,8 @@ type Run struct {
 	SandboxEnv []EnvEntry `gorm:"serializer:json" json:"sandboxEnv,omitempty"`
 	// Repos are the repositories this run clones, frozen at start from the
 	// workflow's bound repositories and the launcher's choice.
-	Repos []SessionRepo `gorm:"serializer:json" json:"repos,omitempty"`
+	Repos                   []SessionRepo `gorm:"serializer:json" json:"repos,omitempty"`
+	WorkspaceChangesEnabled bool          `json:"-"`
 	// FirstMessage is the launcher's opening message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once the node parks, so the caller does not have to poll for the
@@ -1022,7 +1023,7 @@ type RunPreviewPort struct {
 	// ExposeStrategy records the resolved preview exposure strategy (direct / subdomain / none).
 	ExposeStrategy string `json:"-"`
 	// ExposeKey is the unique opaque route key for inbound strategies (NULL when unused).
-	ExposeKey *string `gorm:"uniqueIndex:idx_preview_expose_key" json:"-"`
+	ExposeKey *string `gorm:"size:191;uniqueIndex:idx_preview_expose_key" json:"-"`
 	// KeepalivePID is the setsid-detached listener pid recorded by KeepalivePort
 	// so Cancel/Abort session cleanup can whitelist it (sandbox Destroy still
 	// reclaims the whole container with the Run/gate lifecycle).
@@ -1057,6 +1058,7 @@ func AllModels() []any {
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &ArtifactDelivery{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
+		&WorkspaceChangeBaseline{}, &WorkspaceChangeSnapshot{}, &WorkspaceChangeContent{},
 		&RunPreviewPort{}, &PreviewIssue{},
 		&AuditEvent{},
 		&Credential{},

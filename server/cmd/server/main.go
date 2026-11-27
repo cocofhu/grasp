@@ -42,6 +42,7 @@ import (
 	"github.com/cocofhu/grasp/internal/shutdown"
 	"github.com/cocofhu/grasp/internal/solobackup"
 	"github.com/cocofhu/grasp/internal/tokenledger"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -221,7 +222,9 @@ func main() {
 		}
 		return row.Token
 	}
+	changes := workspacechanges.New(db)
 	provider := runtime.NewProvider(host, runtime.Options{
+		WorkspaceChanges: changes,
 		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
 			phase := req.UsagePhase
 			if phase == "" {
@@ -410,6 +413,7 @@ func main() {
 		Project:              projectLookup,
 	})
 	sbxSvc.SetCodexLogins(codexLogins)
+	sbxSvc.SetWorkspaceChanges(changes)
 	// Register resident teardown before any startup reconciliation can report a
 	// missing sandbox. Older releases could leave active sessions dangling.
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, projectSvc)
@@ -528,6 +532,7 @@ func main() {
 		SharedAgent:         sharedAgentSvc,
 		Dash:                services.NewDashboardService(db, workspaceSvc),
 		Sbx:                 sbxSvc,
+		Changes:             changes,
 		SbxChats:            services.NewSandboxChats(sbxSvc),
 		Preview:             previewSvc,
 		Issues:              issueSvc,

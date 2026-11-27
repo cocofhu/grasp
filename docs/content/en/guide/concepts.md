@@ -107,6 +107,12 @@ The workspace lists and uses only credentials explicitly created with the curren
 
 Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and shows one compact inheritance card. Disabling it restores local selections. Git authorization is not configured on Agents: each repository picks its own credential and commit author in Settings → Repositories, and workflows bind repositories in their settings.
 
+## Review workspace changes
+
+Open **Changes** in the toolbar of a Solo session or workflow run to see the branch and line counts for each repository. Select a repository to open its file diffs. The cumulative view compares against the initial checkout and includes changes after the agent commits them. The last archived view remains available after the workflow releases its sandbox.
+
+Open **Turn changes** above the composer to see what changed between the start and end of the last turn. The viewer offers read-only source and rendered Markdown. For deleted files, it shows the version before deletion.
+
 ## @ references in Solo
 
 Type `@` in the Solo composer (including the home page composer that starts a new session), or choose **Reference a session** / **Reference an issue / PR** from the "+" menu, to hand one of these to the turn:
