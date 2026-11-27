@@ -47,9 +47,10 @@ func ConnectionModelServiceTiers(connection Connection) map[string][]string {
 	}
 	tiers := make(map[string][]string)
 	for _, model := range connection.Models {
-		// https://developers.openai.com/api/docs/guides/fast-mode
+		// https://openai.com/api-fast-mode/
 		switch model.ID {
-		case "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol":
+		case "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+			"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5":
 			tiers[model.ID] = []string{"fast"}
 		}
 	}

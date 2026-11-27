@@ -33,7 +33,10 @@ func TestServiceTiersUseExactOfficialModelCapabilities(t *testing.T) {
 func TestServiceTiersForOpenAIResponses(t *testing.T) {
 	official := Connection{
 		BaseURL: "https://api.openai.com/v1", State: "active", Protocol: ProtocolResponses, Auth: Auth{Scheme: "bearer"},
-		Models: []Model{{ID: "gpt-6.2-sol"}, {ID: "gpt-6.2-astra"}, {ID: "custom"}},
+		Models: []Model{
+			{ID: "gpt-6.2-sol"}, {ID: "gpt-6.2-astra"}, {ID: "gpt-5.6-terra"},
+			{ID: "gpt-5.6-luna"}, {ID: "gpt-5.5"}, {ID: "custom"},
+		},
 	}
 	for _, tc := range []struct {
 		name, backend, model string
@@ -41,6 +44,9 @@ func TestServiceTiersForOpenAIResponses(t *testing.T) {
 		wantFast             bool
 	}{
 		{name: "official", backend: "codex", model: "gpt-6.2-sol", wantFast: true},
+		{name: "GPT-5.6 Terra", backend: "codex", model: "gpt-5.6-terra", wantFast: true},
+		{name: "GPT-5.6 Luna", backend: "codex", model: "gpt-5.6-luna", wantFast: true},
+		{name: "GPT-5.5", backend: "codex", model: "gpt-5.5", wantFast: true},
 		{name: "standard HTTPS port", backend: "codex", model: "gpt-6.2-astra", wantFast: true, change: func(c *Connection) { c.BaseURL = "https://API.OPENAI.COM:443/v1/" }},
 		{name: "compatible gateway", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "https://api.openai.com.example.test/v1" }},
 		{name: "alternate port", backend: "codex", model: "gpt-6.2-sol", change: func(c *Connection) { c.BaseURL = "https://api.openai.com:8443/v1" }},
