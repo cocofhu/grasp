@@ -84,7 +84,7 @@ describe('ReferencePicker motion', () => {
   it('keeps the old rows and dims the list while a refresh is pending', async () => {
     let call = 0
     search.mockImplementation((_id: string, p: any) => {
-      if (p.lane === 'github') return Promise.resolve({ lane: 'github', items: [] })
+      if (p.lane !== 'solo') return Promise.resolve({ lane: p.lane, items: [] })
       return call++ === 0 ? Promise.resolve({ lane: 'solo', items: [session(0)] }) : new Promise(() => {})
     })
     const w = mountPicker()
@@ -99,7 +99,7 @@ describe('ReferencePicker motion', () => {
     search.mockImplementation(async (_id: string, p: any) =>
       p.lane === 'solo'
         ? { lane: 'solo', items: [session(0)] }
-        : { lane: 'github', items: [gh('github_issue', 1, 'open'), gh('github_issue', 2, 'closed'), gh('github_pr', 3, 'open'), gh('github_pr', 4, 'merged')] },
+        : { lane: p.lane, items: p.lane === 'github' ? [gh('github_issue', 1, 'open'), gh('github_issue', 2, 'closed'), gh('github_pr', 3, 'open'), gh('github_pr', 4, 'merged')] : [] },
     )
     const w = mountPicker()
     await settle()

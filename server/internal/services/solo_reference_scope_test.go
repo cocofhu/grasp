@@ -81,6 +81,7 @@ func TestRunReferencesPinAndRead(t *testing.T) {
 		{ID: "ref-a", Kind: models.ReferenceKindSolo, Target: "older"},
 		{ID: "ref-gh", Kind: models.ReferenceKindGitHubIssue, Target: "acme/web#3", Title: "acme/web#3"},
 		{ID: "ref-bob", Kind: models.ReferenceKindSolo, Target: "bobs"},
+		{ID: "ref-discussion", Kind: models.ReferenceKindGitHubDiscussion, Target: "acme/second#42", Access: models.ReferenceAccessOK},
 	})
 	if pinned[0].Anchor != "y2" || pinned[0].Title != "登录重构" || pinned[0].UserID != "alice" || pinned[2].Error != models.ReferenceErrorDeleted {
 		t.Fatalf("pinned: %+v", pinned)
@@ -100,6 +101,15 @@ func TestRunReferencesPinAndRead(t *testing.T) {
 	var hint *mcp.ReferenceHintError
 	if _, err := history.ReadReference("run-ref", "ref-gh", mcp.ConversationHistoryRequest{}); !errors.As(err, &hint) || !strings.Contains(hint.Hint, "gh issue view 3") {
 		t.Fatalf("github hint: %v", err)
+	}
+	// Existing RunReference rows have no Access field. First reads and re-reads
+	// must both let the sandbox select the credential for this exact repository.
+	cmd := githubReferenceCommands(pinned[3])
+	if !strings.Contains(block, cmd) || !strings.Contains(cmd, `read-github-discussion.py" https://github.com/acme/second/discussions/42`) {
+		t.Fatalf("initial discussion command: %s", block)
+	}
+	if _, err := history.ReadReference("run-ref", "ref-discussion", mcp.ConversationHistoryRequest{}); !errors.As(err, &hint) || !strings.Contains(hint.Hint, cmd) {
+		t.Fatalf("restored discussion command: %v", err)
 	}
 	for _, ref := range []string{"ref-bob", "ref-missing", " "} {
 		if _, err := history.ReadReference("run-ref", ref, mcp.ConversationHistoryRequest{}); err == nil {

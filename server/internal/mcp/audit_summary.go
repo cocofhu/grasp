@@ -76,7 +76,7 @@ func formatMCPAuditAction(tool string, args map[string]any) string {
 	case "get_history":
 		return "读取当前会话历史"
 	case "read_reference":
-		return joinAudit("读取引用的会话", whitelistArg(args, "ref"))
+		return joinAudit("读取引用内容", whitelistArg(args, "ref"))
 	case "get_history_detail":
 		return joinAudit("读取历史详情", whitelistArg(args, "node_id"))
 	case "set_preview":

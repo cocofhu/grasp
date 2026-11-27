@@ -5,19 +5,28 @@ export type ReferenceToken = { ref: MessageReference; start: number; end: number
 
 export const MAX_REFERENCES = 5
 
-const GITHUB_URL = /^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(issues|pull)\/(\d+)/i
+const GITHUB_URL = /^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(issues|pull|discussions)\/(\d+)(?:$|[/?#])/i
 const GITHUB_SHORT = /^([\w.-]+)\/([\w.-]+)#(\d+)$/
 
 /** A pasted GitHub URL or owner/repo#n, normalized to the server's target form. */
 export function parseGitHubReference(text: string): ReferenceInput | null {
   const t = text.trim()
-  let m = t.match(GITHUB_URL)
-  if (m) return { kind: m[3]!.toLowerCase() === 'pull' ? 'github_pr' : 'github_issue', target: `${m[1]}/${m[2]}#${Number(m[4])}` }
-  m = t.match(GITHUB_SHORT)
-  if (m) return { kind: 'github_issue', target: `${m[1]}/${m[2]}#${Number(m[3])}` }
-  return null
+  const url = t.match(GITHUB_URL)
+  const match = url || t.match(GITHUB_SHORT)
+  if (!match) return null
+  const number = Number(match[url ? 4 : 3])
+  if (!Number.isSafeInteger(number) || number < 1) return null
+  const segment = url?.[3]?.toLowerCase()
+  const kind = segment === 'discussions' ? 'github_discussion' : segment === 'pull' ? 'github_pr' : 'github_issue'
+  return { kind, target: `${match[1]}/${match[2]}#${number}` }
 }
 type ReferenceInput = Pick<MessageReference, 'kind' | 'target'>
+
+export function referenceTargetKey(ref: ReferenceInput): string {
+  if (ref.kind === 'github_discussion') return `discussion:${ref.target.toLowerCase()}`
+  if (ref.kind === 'github_issue' || ref.kind === 'github_pr') return ref.target.toLowerCase()
+  return ref.target
+}
 
 /**
  * Pasted text made only of GitHub links (one or more, whitespace separated),
@@ -30,14 +39,14 @@ export function parseGitHubReferences(text: string): { ref: ReferenceInput; raw:
   for (const raw of pieces) {
     const ref = parseGitHubReference(raw)
     if (!ref) return null
-    if (!out.some((o) => o.ref.kind === ref.kind && o.ref.target === ref.target)) out.push({ ref, raw })
+    if (!out.some((o) => referenceTargetKey(o.ref) === referenceTargetKey(ref))) out.push({ ref, raw })
   }
   return out
 }
 
-/** Text inserted after @: a session title, or #n for the session's own repo. */
+/** Text inserted after @: a title or a GitHub target. */
 export function referenceLabel(ref: Pick<MessageReference, 'kind' | 'target' | 'title'>, defaultRepo = ''): string {
-  if (ref.kind === 'solo') return ref.title.replace(/\s+/g, ' ').trim() || ref.target
+  if (ref.kind === 'solo' || ref.kind === 'artifact') return ref.title.replace(/\s+/g, ' ').trim() || ref.target
   const [repo, n] = ref.target.split('#')
   return defaultRepo && repo?.toLowerCase() === defaultRepo.toLowerCase() ? `#${n}` : ref.target
 }

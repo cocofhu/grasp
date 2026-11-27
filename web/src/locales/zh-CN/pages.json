@@ -3471,16 +3471,26 @@
         "sandbox_limit": "沙箱已达上限，请先停止一个空闲环境"
       },
       "reference": {
-        "pickerLabel": "引用会话或 GitHub Issue/PR",
+        "pickerLabel": "引用会话、GitHub 内容或产物",
+        "typeLabel": "引用类型",
+        "chatTab": "会话",
+        "shownCount": "已显示 {n} 项",
+        "resultCount": "{n} 个结果",
+        "includeClosed": "包含已关闭",
+        "includeClosedGitHub": "包含已关闭的 GitHub 内容",
         "tabs": {
           "all": "全部",
           "solo": "会话",
           "issue": "Issue",
-          "pr": "PR"
+          "pr": "PR",
+          "discussion": "讨论",
+          "artifact": "产物"
         },
-        "stateLabel": "状态筛选",
+        "stateLabel": "GitHub 状态筛选",
         "state": {
-          "open": "Open",
+          "open": "未关闭",
+          "closed": "已关闭",
+          "merged": "已合并",
           "all": "全部"
         },
         "more": "查看更多{kind}",
@@ -3491,6 +3501,7 @@
         "noMatch": "没有匹配的结果",
         "full": "每条消息最多引用 {n} 个",
         "githubSubtitle": "{repo} · {state} · {n} 条评论",
+        "artifactRevision": "版本 {n}",
         "sessionStatus": {
           "running": "运行中",
           "starting": "启动中",
@@ -3499,6 +3510,7 @@
         },
         "remove": "移除引用 {label}",
         "deleted": "引用的会话已被删除",
+        "artifactDeleted": "引用的产物已被删除",
         "denied": "无权访问：{reason}",
         "unchecked": "发送时未能确认访问权限，Agent 会自行读取",
         "pinned": "截至发送时 {n} 条消息",
@@ -3506,7 +3518,9 @@
           "pick": "取点",
           "upload": "上传文件",
           "session": "引用会话",
-          "github": "引用 Issue / PR"
+          "github": "引用 Issue / PR",
+          "discussion": "引用 GitHub 讨论",
+          "artifact": "引用产物"
         }
       },
       "stop": {

@@ -45,6 +45,7 @@ type ConversationHistoryPage struct {
 	Ref            string                       `json:"ref,omitempty"`
 	HistoryVersion string                       `json:"history_version"`
 	Summary        string                       `json:"summary,omitempty"`
+	Artifact       *ReferenceArtifact           `json:"artifact,omitempty"`
 	Messages       []ConversationHistoryMessage `json:"messages"`
 	NextCursor     string                       `json:"next_cursor,omitempty"`
 	HasMore        bool                         `json:"has_more"`

@@ -3471,16 +3471,26 @@
         "sandbox_limit": "Sandbox limit reached. Stop an idle environment first."
       },
       "reference": {
-        "pickerLabel": "Reference a session or GitHub issue/PR",
+        "pickerLabel": "Reference a session, GitHub item, or artifact",
+        "typeLabel": "Reference type",
+        "chatTab": "Chats",
+        "shownCount": "{n} shown",
+        "resultCount": "{n} result | {n} results",
+        "includeClosed": "Include closed",
+        "includeClosedGitHub": "Include closed GitHub items",
         "tabs": {
           "all": "All",
           "solo": "Sessions",
           "issue": "Issues",
-          "pr": "PRs"
+          "pr": "PRs",
+          "discussion": "Discussion",
+          "artifact": "Artifacts"
         },
-        "stateLabel": "State filter",
+        "stateLabel": "GitHub state filter",
         "state": {
           "open": "Open",
+          "closed": "Closed",
+          "merged": "Merged",
           "all": "All"
         },
         "more": "More {kind}",
@@ -3491,6 +3501,7 @@
         "noMatch": "No matches",
         "full": "Up to {n} references per message",
         "githubSubtitle": "{repo} · {state} · {n} comments",
+        "artifactRevision": "Version {n}",
         "sessionStatus": {
           "running": "Running",
           "starting": "Starting",
@@ -3499,6 +3510,7 @@
         },
         "remove": "Remove reference {label}",
         "deleted": "The referenced session was deleted",
+        "artifactDeleted": "The referenced artifact was deleted",
         "denied": "No access: {reason}",
         "unchecked": "Access could not be checked at send time; the agent will read it itself",
         "pinned": "{n} messages as of sending",
@@ -3506,7 +3518,9 @@
           "pick": "Pick an element",
           "upload": "Upload file",
           "session": "Reference a session",
-          "github": "Reference an issue / PR"
+          "github": "Reference an issue / PR",
+          "discussion": "Reference a discussion",
+          "artifact": "Reference an artifact"
         }
       },
       "stop": {

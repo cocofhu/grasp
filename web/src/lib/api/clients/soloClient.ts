@@ -4,6 +4,7 @@ import type {
   Project,
   ProjectInput,
   ReferenceInput,
+  ReferenceSearchLane,
   ReferenceSearchResult,
   SoloCreateBody,
   SoloMessage,
@@ -17,7 +18,7 @@ import type { EmbedTicket } from '../../inbox/embedChat'
 
 const enc = encodeURIComponent
 
-export type ReferenceSearchParams = { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number }
+export type ReferenceSearchParams = { lane: ReferenceSearchLane; q: string; kind?: string; state?: string; page?: number }
 
 export function referenceQuery(params: ReferenceSearchParams) {
   const qs = new URLSearchParams({ lane: params.lane, q: params.q })
@@ -108,7 +109,7 @@ export const soloClient = {
   searchRunNodeReferences: <T>(runId: string, nodeId: string, params: ReferenceSearchParams, signal?: AbortSignal) =>
     req<ReferenceSearchResult<T>>(`/runs/${enc(runId)}/nodes/${enc(nodeId)}/references/search?${referenceQuery(params)}`, { signal }),
   /** Before a session exists: agent and picked projects stand in for it. */
-  searchLaunchReferences: <T>(params: { lane: 'solo' | 'github'; q: string; kind?: string; state?: string; page?: number; agent: string; projects: string[] }, signal?: AbortSignal) => {
+  searchLaunchReferences: <T>(params: ReferenceSearchParams & { agent: string; projects: string[] }, signal?: AbortSignal) => {
     const qs = new URLSearchParams({ lane: params.lane, q: params.q, agent: params.agent })
     if (params.projects.length) qs.set('projects', params.projects.join(','))
     if (params.kind) qs.set('kind', params.kind)

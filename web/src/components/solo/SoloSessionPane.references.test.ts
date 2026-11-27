@@ -118,7 +118,7 @@ beforeEach(() => {
   box.search.mockImplementation(async (_id: string, p: { lane: string }) =>
     p.lane === 'solo'
       ? { lane: 'solo', items: [{ kind: 'solo', target: 's2', title: '登录重构', status: 'closed' }] }
-      : { lane: 'github', items: [{ kind: 'github_pr', target: 'acme/web#7', title: 'Fix', state: 'open', url: 'u', comments: 0, repo: 'acme/web', number: 7 }] })
+      : { lane: p.lane, items: p.lane === 'github' ? [{ kind: 'github_pr', target: 'acme/web#7', title: 'Fix', state: 'open', url: 'u', comments: 0, repo: 'acme/web', number: 7 }] : [] })
   Element.prototype.scrollIntoView = vi.fn()
   box.turns!.value = []
   box.queued!.value = []
@@ -193,6 +193,28 @@ describe('SoloSessionPane @ references', () => {
     expect(w.findAll('[data-testid="solo-reference-chip"]').map((c) => c.text())).toEqual(['#184', '#132', '#135', '#136', '#137'].map((n) => expect.stringContaining(n)))
   })
 
+  it('sends a pasted Discussion and a selected artifact together', async () => {
+    const defaultSearch = box.search.getMockImplementation()!
+    box.search.mockImplementation(async (id, params) => params.lane === 'artifact'
+      ? { lane: 'artifact', items: [{ kind: 'artifact', target: 'art-design', title: 'design.md', fileKind: 'markdown' }], total: 1 }
+      : defaultSearch(id, params))
+    const w = mountPane()
+    const el = w.get('textarea').element as HTMLTextAreaElement
+    const paste = new Event('paste', { cancelable: true }) as ClipboardEvent
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'https://github.com/acme/web/discussions/24#discussioncomment-7', items: [], files: [] } })
+    el.dispatchEvent(paste)
+    await flushPromises()
+    await w.get('[data-testid="solo-plus"]').trigger('click')
+    await w.get('[data-testid="solo-plus-artifact"]').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 160))
+    await w.get('[data-testid="solo-reference-option-art-design"]').trigger('click')
+    await key(w, 'Enter')
+    expect(box.send).toHaveBeenCalledWith('@#24 @design.md', [], [
+      { kind: 'github_discussion', target: 'acme/web#24', title: '' },
+      { kind: 'artifact', target: 'art-design', title: 'design.md' },
+    ], [])
+  })
+
   it('opens the picker from the + menu, and chips can be removed', async () => {
     const w = mountPane()
     await w.find('[data-testid="solo-plus"]').trigger('click')
@@ -213,8 +235,9 @@ describe('SoloSessionPane @ references', () => {
 
   it('renders reference chips on history turns and queued rows', async () => {
     box.turns!.value = [{
-      id: 'u1', role: 'user', text: '看看 @登录重构', streaming: false, steps: [], plan: [],
-      references: [{ id: 'ref-1', kind: 'solo', target: 's2', title: '登录重构', messages: 4 }, { id: 'ref-2', kind: 'github_pr', target: 'acme/web#9', title: 'Fix', state: 'open' }],
+      id: 'u1', role: 'user', text: '看看 @登录重构 和 @design.md', streaming: false, steps: [], plan: [],
+      references: [{ id: 'ref-1', kind: 'solo', target: 's2', title: '登录重构', messages: 4 }, { id: 'ref-2', kind: 'github_pr', target: 'acme/web#9', title: 'Fix', state: 'open' },
+        { id: 'ref-3', kind: 'artifact', target: 'art-design', title: 'design.md', anchor: '2' }],
     } as unknown as SoloTurn]
     box.queued!.value = [{ id: 'q1', text: '', images: [], references: [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', access: 'denied', error: 'forbidden' }] }]
     const w = mountPane()
@@ -222,7 +245,8 @@ describe('SoloSessionPane @ references', () => {
     const chip = w.find('.chat-user-message [data-testid="solo-reference-chip"]')
     expect(chip.attributes('href')).toBe('/solo/s2')
     expect(chip.attributes('title')).toContain('4 条消息')
-    expect(w.find('.chat-user-message').text()).toBe('看看 登录重构')
+    expect(w.find('.chat-user-message').text()).toBe('看看 登录重构 和 design.md')
+    expect(w.get('a.ref-chip--artifact').attributes('href')).toContain('/api/artifacts/art-design/raw?revision=2')
     const aside = w.findAll('[data-testid="solo-turn-references"] [data-testid="solo-reference-chip"]')
     expect(aside.map((c) => c.text())).toEqual(['#9'])
     const queued = w.find('[data-testid="solo-queue"] [data-testid="solo-reference-chip"]')
