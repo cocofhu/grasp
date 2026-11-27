@@ -23,8 +23,8 @@ func ReferenceScope(user, agentName string, repos []models.SessionRepo) *models.
 	return row
 }
 
-// SearchScopedReferences lists @ candidates inside scope: the sender's own
-// sessions, and issues / PRs of the scope repositories.
+// SearchScopedReferences lists @ candidates in the sender's workspace and
+// the scope's GitHub repositories.
 func (s *SoloService) SearchScopedReferences(ctx context.Context, scope *models.SoloSession, q ReferenceSearchQuery) (ReferenceSearchResult, error) {
 	return s.searchReferences(ctx, scope, q)
 }
@@ -64,7 +64,7 @@ func (s *SoloService) PinRunReferences(runID, nodeID, userID string, refs []mode
 	// A turn restored after a restart pins again; the latest anchor wins.
 	if err := s.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&rows).Error; err != nil {
 		for i := range out {
-			if out[i].Kind == models.ReferenceKindSolo && out[i].Error == "" {
+			if (out[i].Kind == models.ReferenceKindSolo || out[i].Kind == models.ReferenceKindArtifact) && out[i].Error == "" {
 				out[i].Error = "snapshot_unavailable"
 			}
 		}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -97,6 +98,7 @@ func TestParseGitHubTargets(t *testing.T) {
 	}{
 		{"https://github.com/acme/web/pull/12/files", nil, "acme/web#12", true},
 		{"http://github.com/a/b/issues/3", nil, "a/b#3", true},
+		{"https://github.com/a/b/discussions/42#discussioncomment-7", nil, "a/b#42", true},
 		{"acme/api#5", nil, "acme/api#5", true},
 		{"#5", def, "acme/web#5", true},
 		{"#5", nil, "", false},
@@ -122,6 +124,67 @@ func TestParseGitHubTargets(t *testing.T) {
 	}
 	if _, ok := targetFromRepositoryURL("https://api.github.com/repos/a/b", 1); !ok {
 		t.Fatal("repository url")
+	}
+}
+
+func TestGitHubDiscussionSearchUsesGraphQLAndRepositoryCredentials(t *testing.T) {
+	fake, upstream := newFakeGitHub(t)
+	fake.handler = func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/graphql" || r.Method != http.MethodPost {
+			t.Errorf("unexpected GitHub request: %s %s", r.Method, r.URL.Path)
+			return false
+		}
+		var body struct {
+			Query     string
+			Variables struct {
+				Query  string
+				First  int
+				Owner  string
+				Repo   string
+				Number int
+			}
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return false
+		}
+		v := body.Variables
+		if r.Header.Get("Authorization") != "Bearer repo-token" {
+			t.Error("missing repository credential")
+		}
+		if v.Number > 0 {
+			if v.Owner != "acme" || v.Repo != "web" || v.Number != 42 || !strings.Contains(body.Query, "discussion(number: $number)") {
+				t.Errorf("wrong lookup: %+v", body)
+			}
+			_, _ = fmt.Fprint(w, `{"data":{"repository":{"discussion":{"number":42,"title":"Release decision","closed":true,"comments":{"totalCount":2}}}}}`)
+			return true
+		}
+		if !strings.Contains(body.Query, "type: DISCUSSION") || !strings.Contains(v.Query, `repo:acme/web is:open "release decision"`) || v.First != githubPageSize {
+			t.Errorf("wrong scoped search: %+v", body)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"search":{"discussionCount":23,"nodes":[`+
+			`{"number":42,"title":"Release decision","closed":false,"comments":{"totalCount":2},"repository":{"nameWithOwner":"acme/web"}},`+
+			`{"number":99,"title":"Foreign discussion","repository":{"nameWithOwner":"acme/foreign"}}]}}}`)
+		return true
+	}
+	client := newGitHubRefClient(upstream.URL, upstream.Client())
+	ctx := context.Background()
+	req := githubSearchRequest{Repos: []githubRepo{{Owner: "acme", Repo: "web"}}, Query: "release decision", State: "open",
+		TokenOf: func(githubRepo) string { return "repo-token" }}
+	found, err := client.searchDiscussions(ctx, req)
+	if err != nil || len(found.Items) != 1 || found.Items[0].Kind != models.ReferenceKindGitHubDiscussion ||
+		found.Items[0].Comments != 2 || found.Total == nil || *found.Total != 23 || found.NextPage != 2 {
+		t.Fatalf("discussion search: %+v %v", found, err)
+	}
+	req.Query = "https://github.com/acme/web/discussions/42"
+	found, err = client.searchDiscussions(ctx, req)
+	if err != nil || found.Source != "exact" || len(found.Items) != 1 || found.Items[0].URL != req.Query || found.Items[0].State != "closed" {
+		t.Fatalf("discussion lookup: %+v %v", found, err)
+	}
+	req.TokenOf = func(githubRepo) string { return "" }
+	found, err = client.searchDiscussions(ctx, req)
+	if err != nil || len(found.Items) != 0 || found.Hint == "" || fake.count("/graphql") != 2 {
+		t.Fatalf("unbound credential: %+v %v", found, err)
 	}
 }
 
@@ -510,6 +573,10 @@ func TestGitHubReferencePromptText(t *testing.T) {
 	}
 	if got := githubReferenceHint(issue); !strings.Contains(got, "gh issue view 3 -R acme/web") {
 		t.Fatalf("hint: %s", got)
+	}
+	discussion := models.MessageReference{Kind: models.ReferenceKindGitHubDiscussion, Target: "acme/web#3", Access: models.ReferenceAccessDenied}
+	if got := renderGitHubReference(discussion); !strings.Contains(got, "访问失败") || !strings.Contains(got, `read-github-discussion.py" https://github.com/acme/web/discussions/3`) {
+		t.Fatalf("discussion with insufficient API permissions: %s", got)
 	}
 	if githubReferenceCommands(models.MessageReference{Target: "junk"}) != "" {
 		t.Fatal("junk target")

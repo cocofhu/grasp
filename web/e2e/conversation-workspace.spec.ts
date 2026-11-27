@@ -364,7 +364,11 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
   await page.route(modelPath + '/references/search?*', (route) => {
     expect(route.request().headers().authorization).toBe(`Bearer ${runId}`)
     const lane = new URL(route.request().url()).searchParams.get('lane')
-    return route.fulfill({ json: { lane, items: lane === 'github' ? [previewIssue] : [] } })
+    const items = lane === 'github' ? [previewIssue] : lane === 'discussion' ? [{
+      ...previewIssue, kind: 'github_discussion', target: 'acme/web#23', number: 23, title: 'Design discussion',
+      url: 'https://github.com/acme/web/discussions/23',
+    }] : lane === 'artifact' ? [{ kind: 'artifact', target: 'art-design', title: 'design.md', fileKind: 'markdown' }] : []
+    return route.fulfill({ json: { lane, items, total: items.length } })
   })
   let saved: unknown
   await page.route(new RegExp(modelPath + '/model(?:\\?.*)?$'), (route) => {
@@ -399,9 +403,19 @@ test('a signed-in workflow preview uses the regular chat model and reference pic
   const input = chat.getByTestId('clarify-input')
   await input.fill('Please check @')
   await chat.getByTestId('solo-reference-option-acme/web#12').click()
+  await input.fill((await input.inputValue()) + '@')
+  await chat.getByTestId('solo-reference-tab-discussion').click()
+  await chat.getByTestId('solo-reference-option-acme/web#23').click()
+  await input.fill((await input.inputValue()) + '@')
+  await chat.getByTestId('solo-reference-tab-artifact').click()
+  await chat.getByTestId('solo-reference-option-art-design').click()
   const sent = page.waitForRequest(request => request.url().endsWith('/public/approvals/reply'))
   await input.press('Enter')
-  expect((await sent).postDataJSON().references).toEqual([{ kind: 'github_issue', target: 'acme/web#12' }])
+  expect((await sent).postDataJSON().references).toEqual([
+    { kind: 'github_issue', target: 'acme/web#12' },
+    { kind: 'github_discussion', target: 'acme/web#23' },
+    { kind: 'artifact', target: 'art-design' },
+  ])
 })
 
 test('anonymous shares open the direct app and use its floating chat in both modes', async ({ browser, baseURL }) => {

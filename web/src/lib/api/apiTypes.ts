@@ -769,7 +769,7 @@ export interface SoloCreateBody {
   references?: ReferenceInput[]
 }
 
-export type ReferenceKind = 'solo' | 'github_issue' | 'github_pr'
+export type ReferenceKind = 'solo' | 'github_issue' | 'github_pr' | 'github_discussion' | 'artifact'
 
 /** What the composer submits; the server resolves everything else. */
 export interface ReferenceInput {
@@ -782,6 +782,7 @@ export interface MessageReference extends ReferenceInput {
   id?: string
   title: string
   url?: string
+  anchor?: string
   messages?: number
   state?: string
   access?: 'ok' | 'denied' | 'unchecked'
@@ -797,7 +798,7 @@ export interface SoloReferenceCandidate {
 }
 
 export interface GitHubReferenceCandidate {
-  kind: 'github_issue' | 'github_pr'
+  kind: 'github_issue' | 'github_pr' | 'github_discussion'
   target: string
   title: string
   state: string
@@ -808,8 +809,18 @@ export interface GitHubReferenceCandidate {
   number: number
 }
 
+export interface ArtifactReferenceCandidate {
+  kind: 'artifact'
+  target: string
+  title: string
+  fileKind: Artifact['kind']
+  source?: string
+}
+
+export type ReferenceSearchLane = 'solo' | 'github' | 'discussion' | 'artifact'
+
 export interface ReferenceSearchResult<T> {
-  lane: 'solo' | 'github'
+  lane: ReferenceSearchLane
   items: T[]
   total?: number
   nextPage?: number

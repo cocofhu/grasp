@@ -100,7 +100,7 @@ func TestReadReferenceAlwaysListedForSolo(t *testing.T) {
 			t.Fatal("read_reference advertised without an active node")
 		}
 	}
-	if got := FormatMCPAuditSummary("read_reference", map[string]any{"ref": "ref-1"}, "secret text", false); !strings.Contains(got, "读取引用的会话") || !strings.Contains(got, "ref-1") || strings.Contains(got, "secret") {
+	if got := FormatMCPAuditSummary("read_reference", map[string]any{"ref": "ref-1"}, "secret text", false); !strings.Contains(got, "读取引用内容") || !strings.Contains(got, "ref-1") || strings.Contains(got, "secret") {
 		t.Fatalf("audit summary: %q", got)
 	}
 }

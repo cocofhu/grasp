@@ -1,14 +1,16 @@
 import { onBeforeUnmount, reactive, type Ref } from 'vue'
 import { api } from '@/lib/api/api'
-import type { GitHubReferenceCandidate, ReferenceSearchResult, SoloReferenceCandidate } from '@/lib/api/apiTypes'
+import type { ArtifactReferenceCandidate, GitHubReferenceCandidate, ReferenceSearchLane, ReferenceSearchResult, SoloReferenceCandidate } from '@/lib/api/apiTypes'
+import type { ReferenceSearchParams } from '@/lib/api/clients/soloClient'
+import { parseGitHubReference } from './referenceTokens'
 
 export type ScopedReferenceSearch = typeof api.searchSoloReferences
 
-export type ReferenceTab = 'all' | 'solo' | 'issue' | 'pr'
+export type ReferenceTab = 'all' | 'solo' | 'issue' | 'pr' | 'discussion' | 'artifact'
 export type GitHubStateFilter = 'open' | 'all'
 
-type LaneName = 'solo' | 'github'
-type SearchParams = { lane: LaneName; q: string; kind?: string; state?: string; page?: number }
+type LaneName = ReferenceSearchLane
+type LaneParams = Omit<ReferenceSearchParams, 'lane' | 'page'>
 
 /**
  * Where candidates come from: an open session, the Solo launch composer's
@@ -27,7 +29,7 @@ function scopeKey(scope: ReferenceScope) {
   return `l:${scope.agent}:${scope.projects.join(',')}`
 }
 
-function fetchLane(scope: ReferenceScope, params: SearchParams, signal: AbortSignal, scopedSearch?: ScopedReferenceSearch) {
+function fetchLane(scope: ReferenceScope, params: ReferenceSearchParams, signal: AbortSignal, scopedSearch?: ScopedReferenceSearch) {
   if (scopedSearch) return scopedSearch<any>('sessionId' in scope ? scope.sessionId : '', params, signal)
   if ('sessionId' in scope) return api.searchSoloReferences<any>(scope.sessionId, params, signal)
   if ('workflowId' in scope) return api.searchWorkflowReferences<any>(scope.workflowId, params, signal)
@@ -47,12 +49,10 @@ type LaneState<T> = {
   total?: number
   nextPage?: number
   counts?: { issue?: number; pr?: number }
-  /** The kind the shown items were asked for; empty means every kind. */
-  kind?: string
 }
 
 const CACHE_TTL = 5 * 60_000
-const DEBOUNCE: Record<LaneName, number> = { solo: 120, github: 250 }
+const DEBOUNCE: Record<LaneName, number> = { solo: 120, artifact: 120, discussion: 250, github: 250 }
 const GITHUB_EXACT = /^(?:https?:\/\/github\.com\/|[\w.-]+\/[\w.-]+#\d+$|#\d+$)/i
 
 function emptyLane<T>(): LaneState<T> {
@@ -65,22 +65,25 @@ function emptyLane<T>(): LaneState<T> {
  * and cached per query for five minutes. The previous results, hint or error
  * stay on screen until the new reply lands, so typing does not flash.
  */
-export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: ScopedReferenceSearch, allowSolo = true) {
+export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: ScopedReferenceSearch, allowWorkspace = true) {
   const solo = reactive(emptyLane<SoloReferenceCandidate>()) as LaneState<SoloReferenceCandidate>
   const github = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
-  const lanes = { solo, github }
-  const control: Record<LaneName, { seq: number; timer?: ReturnType<typeof setTimeout>; abort?: AbortController; key: string }> = {
-    solo: { seq: 0, key: '' },
-    github: { seq: 0, key: '' },
+  const discussion = reactive(emptyLane<GitHubReferenceCandidate>()) as LaneState<GitHubReferenceCandidate>
+  const artifact = reactive(emptyLane<ArtifactReferenceCandidate>()) as LaneState<ArtifactReferenceCandidate>
+  const lanes = { solo, github, discussion, artifact }
+  const control: Record<LaneName, { seq: number; timer?: ReturnType<typeof setTimeout>; abort?: AbortController }> = {
+    solo: { seq: 0 },
+    github: { seq: 0 },
+    discussion: { seq: 0 },
+    artifact: { seq: 0 },
   }
   const cache = new Map<string, { at: number; data: ReferenceSearchResult<any> }>()
 
-  function apply<T>(lane: LaneState<T>, data: ReferenceSearchResult<T>, kind: string | undefined, append = false) {
+  function apply<T>(lane: LaneState<T>, data: ReferenceSearchResult<T>, append = false) {
     lane.items = append ? [...lane.items, ...data.items] : data.items
     lane.total = data.total
     lane.nextPage = data.nextPage
     lane.counts = data.counts ?? (append ? lane.counts : undefined)
-    lane.kind = kind
     lane.hint = data.hint || ''
     lane.error = data.error?.message || ''
     lane.errorCode = data.error?.code || ''
@@ -94,7 +97,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: Sc
     c.seq++
   }
 
-  function run(name: LaneName, params: { q: string; kind?: string; state?: string }, page = 1) {
+  function run(name: LaneName, params: LaneParams, page = 1) {
     const lane = lanes[name] as LaneState<any>
     const c = control[name]
     const key = `${scopeKey(scope.value)}|${name}|${params.kind || ''}|${params.state || ''}|${params.q.toLowerCase()}`
@@ -103,18 +106,17 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: Sc
     lane.skipped = false
     const hit = page === 1 ? cache.get(key) : undefined
     if (page === 1) {
-      c.key = key
+      lane.paging = false
       if (hit) {
-        apply(lane, hit.data, params.kind)
+        apply(lane, hit.data)
         lane.loading = false
         if (Date.now() - hit.at < CACHE_TTL) return
-      } else {
-        lane.loading = true
       }
+      lane.loading = true
     } else {
       lane.paging = true
     }
-    const delay = page > 1 || (name === 'github' && GITHUB_EXACT.test(params.q)) ? 0 : DEBOUNCE[name]
+    const delay = page > 1 || ((name === 'github' || name === 'discussion') && GITHUB_EXACT.test(params.q)) ? 0 : DEBOUNCE[name]
     c.timer = setTimeout(async () => {
       const abort = new AbortController()
       c.abort = abort
@@ -122,7 +124,7 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: Sc
         const data = await fetchLane(scope.value, { lane: name, ...params, page }, abort.signal, scopedSearch)
         if (my !== c.seq) return
         if (page === 1) cache.set(key, { at: Date.now(), data })
-        apply(lane, data, params.kind, page > 1)
+        apply(lane, data, page > 1)
       } catch (e: any) {
         if (abort.signal.aborted || my !== c.seq) return
         if (page === 1) {
@@ -146,33 +148,40 @@ export function useReferenceSearch(scope: Ref<ReferenceScope>, scopedSearch?: Sc
     Object.assign(lanes[name], emptyLane(), { skipped: true })
   }
 
-  /**
-   * Query both lanes on every tab so each tab can show its count; the list
-   * still shows only the tab's own lanes. The sessions tab asks GitHub the
-   * same way "all" does, so the two share a cache entry. A leading # searches
-   * GitHub only.
-   */
+  function laneParams(name: LaneName, q: string, tab: ReferenceTab, state: GitHubStateFilter): LaneParams {
+    if (name === 'github') return { q, state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined }
+    if (name === 'discussion') return { q, state }
+    return { q }
+  }
+
+  /** Each tab keeps a result count. An exact GitHub URL searches only its own kind. */
   function search(q: string, tab: ReferenceTab, state: GitHubStateFilter) {
     const query = q.trim()
-    if (!allowSolo || query.startsWith('#')) skip('solo')
-    else run('solo', { q: query })
-    run('github', { q: query, state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined })
+    const link = /^https?:\/\//i.test(query) ? parseGitHubReference(query) : null
+    const local = allowWorkspace && !link && !query.startsWith('#')
+    for (const name of ['solo', 'artifact'] as const) {
+      if (local) run(name, { q: query })
+      else skip(name)
+    }
+    if (allowWorkspace && (!link || link.kind === 'github_discussion')) run('discussion', laneParams('discussion', query, tab, state))
+    else skip('discussion')
+    if (link?.kind === 'github_discussion') skip('github')
+    else run('github', laneParams('github', query, tab, state))
   }
 
   function loadMore(name: LaneName, q: string, tab: ReferenceTab, state: GitHubStateFilter) {
     const lane = lanes[name]
-    if (!lane.nextPage || lane.paging) return
-    const params = name === 'solo' ? { q: q.trim() } : { q: q.trim(), state, kind: tab === 'issue' ? 'github_issue' : tab === 'pr' ? 'github_pr' : undefined }
-    run(name, params, lane.nextPage)
+    if (!lane.nextPage || lane.loading || lane.paging) return
+    run(name, laneParams(name, q.trim(), tab, state), lane.nextPage)
   }
 
   function reset() {
-    cancel('solo')
-    cancel('github')
-    Object.assign(solo, emptyLane())
-    Object.assign(github, emptyLane())
+    for (const name of ['solo', 'github', 'discussion', 'artifact'] as const) {
+      cancel(name)
+      Object.assign(lanes[name], emptyLane())
+    }
   }
 
   onBeforeUnmount(reset)
-  return { solo, github, search, loadMore, reset }
+  return { ...lanes, search, loadMore, reset }
 }
