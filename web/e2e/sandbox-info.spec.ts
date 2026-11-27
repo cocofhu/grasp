@@ -92,6 +92,44 @@ for (const state of ['busy', 'connected', 'paused', 'docker', 'stopped', 'error'
   })
 }
 
+test('basic details animate in both directions and respect reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const panel = await openPanel(page, 'theme=light')
+  const toggle = panel.getByTestId('sandbox-info-details-toggle')
+  const details = panel.getByTestId('sandbox-info-details')
+  await expect(details).toBeHidden()
+
+  for (const expanded of [true, false]) {
+    const heights = await toggle.evaluate(async (element) => {
+      const button = element as HTMLButtonElement
+      const content = document.getElementById(button.getAttribute('aria-controls')!)!
+      const from = content.getBoundingClientRect().height
+      button.click()
+      await Promise.resolve()
+      const motion = content.getAnimations().find(animation =>
+        animation instanceof CSSTransition && animation.transitionProperty === 'grid-template-rows')
+      if (!motion?.effect) return null
+
+      motion.currentTime = Number(motion.effect.getComputedTiming().duration) / 4
+      const during = content.getBoundingClientRect().height
+      motion.finish()
+      return { from, during, to: content.getBoundingClientRect().height }
+    })
+    expect(heights).not.toBeNull()
+    const { from, during, to } = heights!
+    expect(expanded ? from : to).toBe(0)
+    expect(during).toBeGreaterThan(0)
+    expect(during).toBeLessThan(expanded ? to : from)
+    await expect(toggle).toHaveAttribute('aria-expanded', String(expanded))
+  }
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await toggle.click()
+  await expect(details).toBeVisible()
+  await expect(details).toHaveCSS('transition-duration', '0s')
+  await expect(toggle.locator('svg')).toHaveCSS('rotate', '90deg')
+})
+
 test('paused sandbox wakes when an IDE link is used, and Escape closes the panel', async ({ page }) => {
   await openPanel(page, 'state=paused')
   await page.getByTestId('sandbox-ide-picker-trigger').click()

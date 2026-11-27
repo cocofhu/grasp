@@ -381,7 +381,7 @@ function onIDELaunch() {
             data-testid="sandbox-info-details-toggle"
             @click="detailsOpen = !detailsOpen"
           >
-            <Icon :name="detailsOpen ? 'chevron-down' : 'chevron-right'" :size="14" aria-hidden="true" />
+            <Icon name="chevron-right" :size="14" :interactive="false" class="ui-fold-chevron" aria-hidden="true" />
             {{ t('pages.solo.sandboxInfo.details.title') }}
           </button>
           <AppButton
@@ -397,51 +397,63 @@ function onIDELaunch() {
             @click="runAction"
           >{{ actionLabel }}</AppButton>
         </footer>
-        <div v-show="detailsOpen" :id="detailsId" class="sandbox-info-details" data-testid="sandbox-info-details">
-          <dl v-if="!readonly" class="sandbox-info-rows">
-            <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
-            <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
-              <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
-              <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
-              <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
-              <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
-            </dd>
-            <template v-if="taskInfo?.workflowRuns.length">
-              <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>
-              <dd>
-                <ul class="space-y-0.5" data-testid="sandbox-info-workflow-runs">
-                  <li v-for="run in taskInfo.workflowRuns" :key="run.id">
-                    <RouterLink class="sandbox-info-link block truncate" :to="`/runs/${encodeURIComponent(run.id)}`" :title="run.workflowName" @click="hide()">
-                      {{ run.workflowName }}
-                    </RouterLink>
-                  </li>
-                </ul>
-              </dd>
-            </template>
-          </dl>
-          <dl class="sandbox-info-rows">
-            <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
-            <dd>{{ session.agentName }}</dd>
-            <dt>{{ t('pages.solo.sandboxInfo.details.repo') }}</dt>
-            <dd class="truncate" :title="repoText">{{ repoText }}</dd>
-            <dt>{{ t('pages.solo.sandboxInfo.details.workdir') }}</dt>
-            <dd class="flex items-center justify-end gap-1">
-              <span class="min-w-0 break-all font-mono">{{ SANDBOX_WORKSPACE }}</span>
-              <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" @click="copy('workdir', SANDBOX_WORKSPACE)">
-                <Icon :name="copied === 'workdir' ? 'check' : 'copy'" :size="12" aria-hidden="true" />
-              </button>
-            </dd>
-          </dl>
-          <dl v-if="lifecycle.modelActiveAt || session.sandbox?.createdAt" class="sandbox-info-rows sandbox-info-times tabular-nums">
-            <template v-if="lifecycle.modelActiveAt">
-              <dt>{{ t('pages.solo.sandboxInfo.lifecycle.lastModel') }}</dt>
-              <dd :title="t('pages.solo.sandboxInfo.lifecycle.lastModelHint')">{{ relTime(lifecycle.modelActiveAt.toISOString()) }}</dd>
-            </template>
-            <template v-if="session.sandbox?.createdAt">
-              <dt>{{ t('pages.solo.sandboxInfo.details.created') }}</dt>
-              <dd>{{ new Date(session.sandbox.createdAt).toLocaleString() }}</dd>
-            </template>
-          </dl>
+        <div
+          :id="detailsId"
+          class="ui-fold shrink-0"
+          :class="{ 'is-open': detailsOpen }"
+          :inert="!detailsOpen"
+          data-testid="sandbox-info-details"
+        >
+          <Transition name="ui-tip-fade">
+            <div v-if="detailsOpen" class="ui-fold-inner">
+              <div class="sandbox-info-details">
+                <dl v-if="!readonly" class="sandbox-info-rows">
+                  <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
+                  <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
+                    <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
+                    <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
+                    <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
+                    <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
+                  </dd>
+                  <template v-if="taskInfo?.workflowRuns.length">
+                    <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>
+                    <dd>
+                      <ul class="space-y-0.5" data-testid="sandbox-info-workflow-runs">
+                        <li v-for="run in taskInfo.workflowRuns" :key="run.id">
+                          <RouterLink class="sandbox-info-link block truncate" :to="`/runs/${encodeURIComponent(run.id)}`" :title="run.workflowName" @click="hide()">
+                            {{ run.workflowName }}
+                          </RouterLink>
+                        </li>
+                      </ul>
+                    </dd>
+                  </template>
+                </dl>
+                <dl class="sandbox-info-rows">
+                  <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
+                  <dd>{{ session.agentName }}</dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.repo') }}</dt>
+                  <dd class="truncate" :title="repoText">{{ repoText }}</dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.workdir') }}</dt>
+                  <dd class="flex items-center justify-end gap-1">
+                    <span class="min-w-0 break-all font-mono">{{ SANDBOX_WORKSPACE }}</span>
+                    <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" @click="copy('workdir', SANDBOX_WORKSPACE)">
+                      <Icon :name="copied === 'workdir' ? 'check' : 'copy'" :size="12" aria-hidden="true" />
+                    </button>
+                  </dd>
+                </dl>
+                <dl v-if="lifecycle.modelActiveAt || session.sandbox?.createdAt" class="sandbox-info-rows sandbox-info-times tabular-nums">
+                  <template v-if="lifecycle.modelActiveAt">
+                    <dt>{{ t('pages.solo.sandboxInfo.lifecycle.lastModel') }}</dt>
+                    <dd :title="t('pages.solo.sandboxInfo.lifecycle.lastModelHint')">{{ relTime(lifecycle.modelActiveAt.toISOString()) }}</dd>
+                  </template>
+                  <template v-if="session.sandbox?.createdAt">
+                    <dt>{{ t('pages.solo.sandboxInfo.details.created') }}</dt>
+                    <dd>{{ new Date(session.sandbox.createdAt).toLocaleString() }}</dd>
+                  </template>
+                </dl>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
     </Teleport>
@@ -510,6 +522,8 @@ function onIDELaunch() {
 }
 .sandbox-info-web-ide:hover, .sandbox-info-details-toggle:hover, .sandbox-info-stop:hover:enabled { background: rgb(var(--c-elevated)); }
 .sandbox-info-details-toggle[aria-expanded="true"] { color: rgb(var(--c-txt)); }
+.sandbox-info-details-toggle .ui-fold-chevron { transition-property: rotate; }
+.sandbox-info-details-toggle[aria-expanded="true"] .ui-fold-chevron { rotate: 90deg; }
 .sandbox-info-web-ide:focus-visible, .sandbox-info-details-toggle:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px;
 }
@@ -558,5 +572,6 @@ function onIDELaunch() {
 @keyframes sandbox-info-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) {
   .sandbox-info-dot[data-tone="pending"] { animation: none; }
+  .ui-tip-fade-enter-from, .ui-tip-fade-leave-to { opacity: 1; }
 }
 </style>

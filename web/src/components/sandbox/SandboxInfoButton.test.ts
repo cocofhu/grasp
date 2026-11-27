@@ -123,11 +123,11 @@ describe('SandboxInfoButton', () => {
     const toggle = q('sandbox-info-details-toggle')!
     const details = q('sandbox-info-details')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(details.style.display).toBe('none')
+    expect(details.hasAttribute('inert')).toBe(true)
     toggle.click()
     await flushPromises()
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(details.style.display).not.toBe('none')
+    expect(details.hasAttribute('inert')).toBe(false)
     expect(details.textContent).toContain('cocofhu/grasp · main')
     expect(details.textContent).toContain('最近模型活动')
     details.querySelector('button')!.click()
