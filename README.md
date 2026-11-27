@@ -176,7 +176,7 @@ Edges are `success`, `failure` or `rollback`, optionally guarded by `when` expre
 | --- | --- |
 | **Visual clarification** | One question at a time as option cards with a recommended answer; a structured spec and plan; a clickable `page.html` mock for desktop and mobile, with element annotations sent back as feedback. |
 | **FSM canvas** | Input, output, set-variable, branch, agent and human-gate nodes; `success` / `failure` / `rollback` edges, `when` guards, checkpoints, version history and publishing. |
-| **Solo sessions** | A one-off agent chat with its own sandbox, IDE, terminal and browser, sharing the question cards and artifact panel with workflows. |
+| **Solo sessions** | A one-off agent chat with its own sandbox, IDE, terminal and browser, sharing the question cards and artifact panel with workflows. Type `@` to reference a session, GitHub issue, pull request, discussion, or a saved artifact. |
 | **Structured artifacts** | Specs, plans, test results, reviews and HTML previews submitted through Artifact MCP and versioned per run; required artifacts gate node completion. |
 | **Human gates** | Approve or rework from the run page; reviewers without an account can use a one-time share link. |
 | **Git delivery** | Agents push branches and open PRs / MRs via `gh`, `glab` or SSH, with a credential per repository. |

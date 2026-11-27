@@ -20,6 +20,7 @@ const issue = (n: number, kind = 'github_issue', state = 'open') => ({ kind, tar
 function respond(map: Record<string, (params: any) => object>) {
   search.mockImplementation(async (_id: string, params: any) => {
     const fn = map[params.lane]
+    if (!fn && (params.lane === 'discussion' || params.lane === 'artifact')) return { lane: params.lane, items: [] }
     if (!fn) throw new Error('boom')
     return fn(params)
   })
@@ -127,6 +128,50 @@ describe('ReferencePicker', () => {
     expect([badge(w, 'issue').text(), badge(w, 'pr').text()]).toEqual(['16', '15'])
   })
 
+  it('shows Discussion and artifact counts, filters Discussion state and picks artifacts', async () => {
+    const artifact = { kind: 'artifact', target: 'art-report', title: 'report.md', source: 'Release review', fileKind: 'markdown' }
+    const discussion = { ...issue(10, 'github_discussion'), url: 'https://github.com/acme/web/discussions/10' }
+    respond({
+      solo: () => sessions(0),
+      github: () => gh([]),
+      discussion: (p) => ({ lane: 'discussion', items: p.state === 'all' ? [discussion] : [], total: p.state === 'all' ? 1 : 0 }),
+      artifact: () => ({ lane: 'artifact', items: [artifact], total: 1 }),
+    })
+    const w = mountPicker()
+    await settle()
+    expect(badge(w, 'discussion').text()).toBe('0')
+    expect(badge(w, 'artifact').text()).toBe('1')
+    await w.get('[data-testid="solo-reference-tab-discussion"]').trigger('click')
+    await w.findAll('[role="radio"]')[1]!.trigger('click')
+    await settle()
+    await w.get('[data-testid="solo-reference-option-acme/web#10"]').trigger('click')
+    expect(w.emitted('pick')?.[0]?.[0]).toMatchObject({ kind: 'github_discussion', url: discussion.url })
+    await w.get('[data-testid="solo-reference-tab-artifact"]').trigger('click')
+    expect(w.find('[role="radiogroup"]').exists()).toBe(false)
+    const option = w.get('[data-testid="solo-reference-option-art-report"]')
+    expect(option.text()).toContain('Release review')
+    await option.trigger('click')
+    expect(w.emitted('pick')?.[1]?.[0]).toMatchObject({ kind: 'artifact', target: 'art-report' })
+  })
+
+  it('keeps the highlighted compact result when the same scope is rendered again', async () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320)
+    try {
+      respond({ solo: () => sessions(1), github: () => gh([]) })
+      const w = mountPicker({ initialTab: 'solo' })
+      await settle()
+      expect(w.get('.ref-picker__meta').text()).toContain('1 个结果')
+      w.vm.move(1)
+      await w.setProps({ scope: { sessionId: 'me' } })
+      expect(w.get('[aria-selected="true"]').text()).toContain('会话 0')
+      await w.setProps({ query: 'new' })
+      expect(w.find('[aria-selected="true"]').exists()).toBe(false)
+      w.unmount()
+    } finally {
+      width.mockRestore()
+    }
+  })
+
   it('keeps a count slot on every tab but "all"', async () => {
     respond({ solo: () => sessions(3), github: () => gh([], { counts: { issue: 4, pr: 2 } }) })
     const w = mountPicker()
@@ -169,6 +214,7 @@ describe('ReferencePicker', () => {
     const held: (() => void)[] = []
     const release = () => held.splice(0).forEach((r) => r())
     search.mockImplementation(async (_id: string, p: any) => {
+      if (p.lane !== 'solo' && p.lane !== 'github') return { lane: p.lane, items: [] }
       await new Promise<void>((r) => held.push(r))
       return p.lane === 'solo' ? sessions(2) : gh([], { counts: { issue: 7, pr: 8 } })
     })
@@ -250,7 +296,7 @@ describe('ReferencePicker', () => {
   it('serves a repeated query from cache and drops stale replies', async () => {
     let resolveSlow: (v: object) => void = () => {}
     search.mockImplementation((_id: string, p: any) => {
-      if (p.lane === 'github') return Promise.resolve(gh([]))
+      if (p.lane !== 'solo') return Promise.resolve({ lane: p.lane, items: [] })
       if (p.q === 'slow') return new Promise((r) => (resolveSlow = r))
       return Promise.resolve(sessions(1))
     })
@@ -266,7 +312,7 @@ describe('ReferencePicker', () => {
     await settle()
     await w.setProps({ query: 'fast' })
     await settle()
-    expect(search.mock.calls.length).toBe(calls + 2)
+    expect(search.mock.calls.length).toBe(calls + 4)
   })
 
   it('shows a skeleton only on the first load and keeps old rows while a new query loads', async () => {
@@ -279,7 +325,7 @@ describe('ReferencePicker', () => {
     await settle()
     expect(w.find('.ref-picker__skeleton').exists()).toBe(false)
 
-    search.mockImplementation((_id: string, p: any) => p.lane === 'github' ? Promise.resolve(gh([])) : new Promise((r) => { release = () => r(sessions(0)) }))
+    search.mockImplementation((_id: string, p: any) => p.lane !== 'solo' ? Promise.resolve({ lane: p.lane, items: [] }) : new Promise((r) => { release = () => r(sessions(0)) }))
     await w.setProps({ query: 'zz' })
     await vi.advanceTimersByTimeAsync(300)
     expect(w.find('.ref-picker__skeleton').exists()).toBe(false)

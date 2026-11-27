@@ -80,12 +80,12 @@ beforeEach(() => {
   mocks.searchWorkflowReferences.mockImplementation(async (_id: string, p: { lane: string }) =>
     p.lane === 'solo'
       ? { lane: 'solo', items: [{ kind: 'solo', target: 's2', title: '登录重构', status: 'closed' }] }
-      : { lane: 'github', items: [] })
+      : { lane: p.lane, items: [] })
   mocks.searchLaunchReferences.mockReset()
   mocks.searchLaunchReferences.mockImplementation(async (p: { lane: string }) =>
     p.lane === 'solo'
       ? { lane: 'solo', items: [{ kind: 'solo', target: 's2', title: '登录重构', status: 'closed' }] }
-      : { lane: 'github', items: [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', state: 'open', url: 'u', comments: 0, repo: 'acme/web', number: 3 }] })
+      : { lane: p.lane, items: p.lane === 'github' ? [{ kind: 'github_issue', target: 'acme/web#3', title: 'Bug', state: 'open', url: 'u', comments: 0, repo: 'acme/web', number: 3 }] : [] })
 })
 afterEach(() => {
   document.body.innerHTML = ''

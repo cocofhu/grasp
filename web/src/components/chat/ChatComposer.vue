@@ -24,11 +24,11 @@ const props = withDefaults(defineProps<{
   commandSkills?: readonly string[]
   allowContextCommands?: boolean
   scopedSearch?: ScopedReferenceSearch
-  allowSolo?: boolean
+  allowWorkspace?: boolean
   disabled?: boolean
   testPrefix: string
   pickTestId: string
-}>(), { allowSolo: true, allowContextCommands: true })
+}>(), { allowWorkspace: true, allowContextCommands: true })
 const emit = defineEmits<{ send: []; 'remove-pick': [index: number]; preview: [src: string, label: string] }>()
 const { t } = useI18n()
 const { attach, mention, input, composing, textareaComponent, defaultRepo } = props.draft
@@ -49,7 +49,7 @@ function onKeydown(event: KeyboardEvent) {
 
 function onPaste(event: ClipboardEvent) {
   attach.onPaste(event)
-  mention.onPaste(event)
+  mention.onPaste(event, props.allowWorkspace)
 }
 
 function pickFiles() {
@@ -72,6 +72,20 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 
 <template>
   <AttachmentDropZone :disabled="disabled" @files="attach.addFiles">
+    <Transition name="ref-pop">
+      <ReferencePicker
+        v-if="trigger && !disabled"
+        ref="picker"
+        :scope="scope"
+        :scoped-search="scopedSearch"
+        :allow-workspace="allowWorkspace"
+        :query="trigger.query"
+        :taken="mention.targets.value"
+        :full="mention.full.value"
+        :initial-tab="pickerTab"
+        @pick="mention.pick"
+      />
+    </Transition>
     <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'" role="status">
       {{ attach.notice.value.text }}
     </p>
@@ -103,20 +117,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       />
       <ComposerShell wrap-toolbar :show-footer="false">
         <template #input>
-          <Transition name="ref-pop">
-            <ReferencePicker
-              v-if="trigger && !disabled"
-              ref="picker"
-              :scope="scope"
-              :scoped-search="scopedSearch"
-              :allow-solo="allowSolo"
-              :query="trigger.query"
-              :taken="mention.targets.value"
-              :full="mention.full.value"
-              :initial-tab="pickerTab"
-              @pick="mention.pick"
-            />
-          </Transition>
           <input ref="fileInput" type="file" multiple class="hidden" @change="attach.onPickFiles" />
           <ChatComposerTextarea
             ref="textareaComponent"
@@ -151,7 +151,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
               >
                 <Icon name="plus" :size="18" />
               </button>
-              <ReferencePlusMenu :open="plusOpen" :allow-solo="allowSolo" :test-prefix="`${testPrefix}-plus`" @upload="pickFiles" @reference="openPicker" @pick="plusOpen = false" />
+              <ReferencePlusMenu :open="plusOpen" :allow-workspace="allowWorkspace" :test-prefix="`${testPrefix}-plus`" @upload="pickFiles" @reference="openPicker" @pick="plusOpen = false" />
             </div>
             <slot name="model" />
           </div>

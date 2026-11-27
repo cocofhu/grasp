@@ -121,6 +121,8 @@ func (h *Host) callTool(runID, token string, req rpcRequest) (int, []byte) {
 	loggedResult := text
 	if !isErr && p.Name == "read_artifact" {
 		loggedResult = fmt.Sprintf("[artifact body omitted: %d bytes]", len(text))
+	} else if !isErr && p.Name == "read_reference" {
+		loggedResult = fmt.Sprintf("[reference body omitted: %d bytes]", len(text))
 	}
 	if isErr {
 		// Tool failures are surfaced to the agent in the result text and recorded
