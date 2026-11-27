@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -71,6 +72,9 @@ func applyRunTagsFilter(q *gorm.DB, column string, tags []string) *gorm.DB {
 		case "mysql":
 			candidate, _ := json.Marshal(tag)
 			q = q.Where("JSON_CONTAINS(COALESCE("+column+", JSON_ARRAY()), ?, '$')", string(candidate))
+		case "postgres":
+			candidate, _ := json.Marshal([]string{tag})
+			q = q.Where("CAST(NULLIF("+column+", '') AS jsonb) @> CAST(? AS jsonb)", string(candidate))
 		default:
 			q = q.Where("EXISTS (SELECT 1 FROM json_each(COALESCE("+column+", '[]')) WHERE value = ?)", tag)
 		}
@@ -316,6 +320,9 @@ func (s *RunService) Delete(id string) error {
 			if err := tx.Where("run_id = ?", id).Delete(m).Error; err != nil {
 				return err
 			}
+		}
+		if err := workspacechanges.DeleteOwner(tx, models.WorkspaceChangesRun, id); err != nil {
+			return err
 		}
 		return tx.Delete(&models.Run{}, "id = ?", id).Error
 	})

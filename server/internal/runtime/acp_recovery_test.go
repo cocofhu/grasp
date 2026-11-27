@@ -5,12 +5,16 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/database"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 )
 
 func TestWorkflowRecoveryPreparationKeepsSelectedSettingsWithoutRecloning(t *testing.T) {
@@ -99,6 +103,72 @@ func TestReactRestoreErrorNeverFallsBackToEmptySandbox(t *testing.T) {
 	}
 	if h.mgr.createCount() != 0 || registry.unregistered != 0 {
 		t.Fatal("failed restore discarded the saved environment")
+	}
+}
+
+func TestReactReplyCapturesWorkspaceBeforeRecoveryReplay(t *testing.T) {
+	h := newSharedHarness(t, nil)
+	req := h.req("n1")
+	h.run(t, req)
+	saved := h.p.shared.get(h.runID).sb
+	h.p.registry = &recoveryRegistry{sb: saved}
+	ctx := t.Context()
+	parked, _, err := h.p.restoreReactEnvironment(ctx, req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.p.closeSession(reactKey(req))
+	if parked == nil || !parked.acp.IsConnected() {
+		t.Fatal("test requires a connected parked session")
+	}
+
+	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "changes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close(db) })
+	if err := db.Create(&models.Run{ID: req.RunID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	h.p.opts.WorkspaceChanges = workspacechanges.New(db, 0)
+	req.Repos = []models.SessionRepo{{RepoDirName: "project"}}
+	req.WorkspaceChangeTurnID = "reply"
+	req.WorkspaceChangeIteration = 1
+	bridge := h.mgr.bridge(0)
+	before := bridge.promptCount()
+	var captured []int
+	restore := sandbox.SetExecHook(func(_ context.Context, _ string, _ int, command string, stdin io.Reader) ([]byte, error) {
+		if stdin == nil || !strings.Contains(command, "python3") {
+			return nil, nil
+		}
+		script, err := io.ReadAll(stdin)
+		if err != nil || !strings.Contains(string(script), "Git tree capture and bounded review payloads") {
+			return nil, err
+		}
+		switch len(captured) {
+		case 0:
+			captured = append(captured, bridge.promptCount())
+			return []byte(`[{"ref":"before","head":"base","branch":"main"}]`), nil
+		case 1:
+			captured = append(captured, bridge.promptCount())
+			return []byte(`[{"ref":"after","head":"base","branch":"main"}]`), nil
+		default:
+			return []byte(`[{"added":1,"fileCount":1,"files":[{"path":"README.md","status":"M","added":1,"deleted":0}]}]`), nil
+		}
+	})
+	defer restore()
+	history := []models.ReactMessage{{Role: "human", Text: "edit the file"}}
+	result := h.p.ReactReply(ctx, req, history, history[0].Text, nil, false)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if len(captured) != 2 || captured[0] != before || captured[1] < before+2 {
+		t.Fatalf("snapshot prompt counts = %v, started at %d with recovery and reply outstanding", captured, before)
+	}
+	scope := workspaceChangeScope(req, saved.Name)
+	view, err := h.p.opts.WorkspaceChanges.List(ctx, scope, saved.Name, req.WorkspaceChangeTurnID, true)
+	if err != nil || view.Snapshot == nil || view.Snapshot.Repos[0].FileCount != 1 {
+		t.Fatalf("change after recovery was not archived: %+v (%v)", view, err)
 	}
 }
 

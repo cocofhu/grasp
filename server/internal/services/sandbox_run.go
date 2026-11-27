@@ -133,7 +133,14 @@ func (s *SandboxService) RetireRunSandbox(name string) {
 	if name == "" {
 		return
 	}
-	s.archiveLog(context.Background(), name)
+	ctx := context.Background()
+	if s.changes != nil {
+		var row models.Sandbox
+		if s.db.Where("name = ?", name).Take(&row).Error == nil {
+			s.archiveWorkspaceChanges(ctx, &row, nil)
+		}
+	}
+	s.archiveLog(ctx, name)
 	s.mu.Lock()
 	delete(s.runActive, name)
 	s.mu.Unlock()

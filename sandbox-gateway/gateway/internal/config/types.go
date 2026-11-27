@@ -35,12 +35,13 @@ type ProfileConfig struct {
 }
 
 type DBConfig struct {
-	// Driver is "sqlite" (local testing) or "mysql" (production). Default sqlite.
+	// Driver is sqlite (default), mysql, or postgres.
 	Driver string `yaml:"driver"`
 	// Path is the SQLite file path (driver=sqlite).
 	Path string `yaml:"path"`
-	// MySQL fields (driver=mysql). Prefer DSN when set; otherwise build from parts.
-	DSN      string `yaml:"dsn"`
+	// DSN is required for PostgreSQL and overrides the separate MySQL fields.
+	DSN string `yaml:"dsn"`
+	// MySQL connection settings used when DSN is empty.
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	User     string `yaml:"user"`

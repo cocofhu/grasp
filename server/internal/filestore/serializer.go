@@ -102,19 +102,6 @@ func Attach(db *gorm.DB, root string) error {
 	return db.Use(&plugin{store: s})
 }
 
-// Rebind is only valid during startup, before this DB is shared with workers.
-func Rebind(db *gorm.DB, root string) error {
-	if p, ok := db.Config.Plugins[pluginName].(*plugin); ok {
-		s, err := New(root)
-		if err != nil {
-			return err
-		}
-		p.store = s
-		return nil
-	}
-	return Attach(db, root)
-}
-
 func FromDB(db *gorm.DB) (*Store, error) {
 	p, ok := db.Config.Plugins[pluginName].(*plugin)
 	if !ok {
@@ -240,7 +227,11 @@ func (p payloadSerializer) Value(ctx context.Context, field *schema.Field, dst r
 		}
 		kind := recordKind(dst)
 		allowRef, _ := ctx.Value(referenceContextKey{}).(bool)
-		if IsRef(raw) && allowRef {
+		if archive, _, _, refErr := parseRef(raw); refErr == nil && allowRef {
+			current, _ := ctx.Value(workspaceArchiveKey{}).(string)
+			if archive != "" && archive != current {
+				return nil, errors.New("file reference belongs to another workspace archive")
+			}
 			s, err := fromContext(ctx)
 			if err != nil {
 				return nil, err

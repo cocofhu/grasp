@@ -5,6 +5,7 @@ import type { MessageReference, SoloMessage } from '@/lib/api/apiTypes'
 export type SoloTurn = ChatMessageMetadata & AcpReply & {
   files?: ArtifactAttachment[]
   id: string
+  turnId?: string
   role: 'user' | 'agent' | 'system'
   steps: ReplyStep[]
   streaming: boolean
@@ -25,7 +26,8 @@ export type SoloTurn = ChatMessageMetadata & AcpReply & {
 }
 
 export function emptyAgentTurn(id: string, streaming: boolean, startedAt?: string): SoloTurn {
-  return { id, role: 'agent', text: '', tools: [], steps: [], plan: [], streaming, startedAt }
+  const turnId = id.startsWith('live:') && id !== 'live:pending' ? id.slice(5) : undefined
+  return { id, turnId, role: 'agent', text: '', tools: [], steps: [], plan: [], streaming, startedAt }
 }
 
 function addMs(iso: string, ms?: number): string | undefined {
@@ -58,6 +60,7 @@ export function turnsFromMessages(messages: SoloMessage[], label: ToolLabeler, t
       out.push({ id: `s:${m.id}`, role: 'system', text: m.content, contextCommand, tools: [], steps: [], plan: [], streaming: false, createdAt: m.createdAt })
     } else {
       const turn = emptyAgentTurn(`a:${m.id}`, false, m.execution?.startedAt || addMs(m.createdAt, m.durationMs))
+      turn.turnId = m.turnId
       turn.endedAt = m.createdAt
       turn.createdAt = m.createdAt
       turn.files = m.files

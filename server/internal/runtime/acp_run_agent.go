@@ -160,6 +160,9 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		noPark = !reattach
 		return NodeResult{}, ErrNodeTakenOver
 	}
+	defer func() {
+		c.opts.WorkspaceChanges.Finish(ctx, sb, workspaceChangeScope(req, sb.Name), "", nil, err != nil)
+	}()
 	started := time.Now()
 	defer func() { res.Execution = stampedExecution(acp, started) }()
 

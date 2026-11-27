@@ -180,7 +180,9 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 		return stopped, err
 	}
 	in := c.svc.buildTurnInput(c.id, q, userMsg.References, prep)
+	finishChanges := c.svc.beginWorkspaceChanges(ctx, prep, q.ID)
 	out := c.runAgent(ctx, prep, in)
+	finishChanges(out.err != nil || ctx.Err() != nil)
 	c.saveTurnResult(q.ID, started, prep, in, out)
 	if out.err != nil {
 		return ctx.Err() != nil, out.err

@@ -31,7 +31,11 @@ func visibleArtifactName(name string) bool {
 }
 
 func excludeHiddenArtifacts(db *gorm.DB, column string) *gorm.DB {
-	return db.Where(column+" <> ? AND "+column+" NOT LIKE ?", mcp.FeedbackIndexArtifactName, mcp.FeedbackArtifactPrefix+"%")
+	match := " NOT LIKE ?"
+	if db.Name() == "postgres" {
+		match = ` COLLATE "C" NOT ILIKE ?`
+	}
+	return db.Where(column+" <> ? AND "+column+match, mcp.FeedbackIndexArtifactName, mcp.FeedbackArtifactPrefix+"%")
 }
 
 func escapeLikePattern(s string) string {
@@ -246,8 +250,15 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 	if q := strings.TrimSpace(f.Q); q != "" {
 		pattern := "%" + strings.ToLower(escapeLikePattern(q)) + "%"
 		like := " LIKE ? ESCAPE '\\'"
+		collation := ""
+		if s.db.Name() == "postgres" {
+			// Keep SQLite's ASCII-only SQL case folding with any database locale.
+			collation = ` COLLATE "C"`
+		}
 		query = query.Where(
-			"(LOWER(artifacts.name)"+like+" OR LOWER(artifacts.node_id)"+like+" OR LOWER(COALESCE(runs.title, ''))"+like+")",
+			"(LOWER(artifacts.name"+collation+")"+like+
+				" OR LOWER(artifacts.node_id"+collation+")"+like+
+				" OR LOWER(COALESCE(runs.title, '')"+collation+")"+like+")",
 			pattern, pattern, pattern,
 		)
 	}
@@ -336,12 +347,12 @@ type ArtifactTree struct {
 // Workflow-less artifacts are counted in SessionCount.
 func (s *ArtifactService) Tree() (ArtifactTree, error) {
 	var buckets []ArtifactTreeWorkflow
-	err := s.db.Table("artifacts").
+	query := s.db.Table("artifacts").
 		Select(`COALESCE(artifacts.workflow_id, '') AS workflow_id,
 			COALESCE(MAX(workflow_defs.name), MAX(artifacts.workflow_name), '') AS workflow_name,
 			COUNT(*) AS count`).
-		Joins("LEFT JOIN workflow_defs ON workflow_defs.id = artifacts.workflow_id").
-		Where("artifacts.name <> ? AND artifacts.name NOT LIKE ?", mcp.FeedbackIndexArtifactName, mcp.FeedbackArtifactPrefix+"%").
+		Joins("LEFT JOIN workflow_defs ON workflow_defs.id = artifacts.workflow_id")
+	err := excludeHiddenArtifacts(query, "artifacts.name").
 		Group("COALESCE(artifacts.workflow_id, '')").
 		Order("workflow_name").
 		Scan(&buckets).Error

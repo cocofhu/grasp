@@ -20,6 +20,7 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/cocofhu/grasp/internal/shutdown"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 )
 
 // Handlers bundles dependencies for route handlers.
@@ -34,6 +35,7 @@ type Handlers struct {
 	SharedAgent         *services.SharedAgentService
 	Dash                *services.DashboardService
 	Sbx                 *services.SandboxService
+	Changes             *workspacechanges.Service
 	SbxChats            *services.SandboxChats
 	Eng                 *engine.Engine
 	MCP                 *mcp.Host

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -81,9 +82,24 @@ func TestDialectorForMySQLParts(t *testing.T) {
 }
 
 func TestDialectorUnsupported(t *testing.T) {
-	_, err := dialectorFor(config.DBConfig{Driver: "postgres"})
+	_, err := dialectorFor(config.DBConfig{Driver: "invalid"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestPostgresConnectionConfig(t *testing.T) {
+	for _, dsn := range []string{" ", "postgresql://user:test-password@db:invalid/gateway"} {
+		db, err := Open(config.DBConfig{Driver: "postgres", DSN: dsn})
+		if db != nil || err == nil || !strings.Contains(err.Error(), "database.dsn") || strings.Contains(err.Error(), "test-password") {
+			t.Fatalf("invalid PostgreSQL connection: db=%v err=%v", db, err)
+		}
+	}
+	// An empty socket directory gives a valid DSN that cannot connect.
+	dsn := "postgresql:///gateway?" + (url.Values{"host": {t.TempDir()}, "sslmode": {"disable"}}).Encode()
+	db, err := Open(config.DBConfig{Driver: "postgres", DSN: dsn})
+	if db != nil || err == nil || !strings.Contains(err.Error(), "open postgres") {
+		t.Fatalf("unavailable PostgreSQL connection: db=%v err=%v", db, err)
 	}
 }
 
