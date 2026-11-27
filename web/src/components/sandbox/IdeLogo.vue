@@ -4,7 +4,8 @@ import vscodeLogo from '@/assets/ide-logos/vscode.svg'
 import cursorLogo from '@/assets/ide-logos/cursor.svg'
 import codebuddyLogo from '@/assets/ide-logos/codebuddy.svg'
 import traeLogo from '@/assets/ide-logos/trae.svg'
-import jetbrainsLogo from '@/assets/ide-logos/jetbrains.svg'
+import antigravityLogo from '@/assets/ide-logos/antigravity.svg'
+import codexLogo from '@/assets/ide-logos/codex.svg'
 import type { RemoteIDE } from '@/lib/sandbox/sshConnect'
 
 const props = withDefaults(defineProps<{ ide: RemoteIDE; size?: number }>(), { size: 16 })
@@ -14,7 +15,8 @@ const LOGOS: Record<RemoteIDE, { src: string; mono: boolean }> = {
   cursor: { src: cursorLogo, mono: true },
   codebuddy: { src: codebuddyLogo, mono: false },
   trae: { src: traeLogo, mono: false },
-  jetbrains: { src: jetbrainsLogo, mono: true },
+  antigravity: { src: antigravityLogo, mono: false },
+  codex: { src: codexLogo, mono: false },
 }
 
 const logo = computed(() => LOGOS[props.ide])

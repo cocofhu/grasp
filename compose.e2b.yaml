@@ -13,6 +13,8 @@ services:
       SBGW_DRIVER: e2b
       SBGW_LISTEN: "127.0.0.1:${GRASP_GATEWAY_PORT:-8899}"
       SBGW_DB_PATH: /data/gateway.db
+      SBGW_DB_DRIVER: ${SBGW_DB_DRIVER:-}
+      SBGW_DB_DSN: ${SBGW_DB_DSN:-}
       SBGW_E2B_STATE_DIR: /data/e2b
       SBGW_E2B_API_KEY: ${E2B_API_KEY:?Set E2B_API_KEY}
       SBGW_E2B_OWNER_ID: ${E2B_GATEWAY_OWNER_ID:?Set a stable unique E2B_GATEWAY_OWNER_ID}
@@ -38,6 +40,8 @@ services:
       CONFIG_PATH: /etc/grasp/grasp.yaml
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
+      GRASP_DB_DRIVER: ${GRASP_DB_DRIVER:-}
+      GRASP_DB_DSN: ${GRASP_DB_DSN:-}
       GRASP_DEPLOYMENT_MODE: production
       GRASP_AUTH_USERS: ${GRASP_AUTH_USERS:?Set GRASP_AUTH_USERS with password hashes}
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:?Set GRASP_SECRETS_KEY}

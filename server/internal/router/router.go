@@ -155,6 +155,7 @@ func newPlatform(h *handlers.Handlers) *gin.Engine {
 		api.GET("/solo/sessions/:id/changes", h.SoloWorkspaceChanges)
 		api.POST("/solo/sessions/:id/changes/refresh", h.SoloWorkspaceChanges)
 		api.GET("/solo/sessions/:id/changes/:snapshotId/files/:fileId", h.SoloWorkspaceChanges)
+		api.GET("/solo/sessions/:id/task-info", h.GetSoloTaskInfo)
 		api.POST("/solo/sessions/:id/embed-ticket", h.CreateSoloEmbedTicket)
 		api.POST("/solo/sessions/:id/preview-share", h.ManageAppPreviewShare)
 		api.DELETE("/solo/sessions/:id/preview-share", h.ManageAppPreviewShare)

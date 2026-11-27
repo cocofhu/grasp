@@ -8,25 +8,41 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/databasetest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/tokenledger"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestRecorderSurvivesFailureRestartAndUncertainCommit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "accounting.db")
-	db, err := database.OpenSQLiteTest(path)
+	checkRecorderRestart(t, dir, func() (*gorm.DB, error) { return database.OpenSQLite(path) })
+}
+
+func TestPostgresRecorderSurvivesFailureRestartAndUncertainCommit(t *testing.T) {
+	cfg := config.DatabaseConfig{Driver: "postgres", DSN: databasetest.PostgresDSN(t)}
+	dir := t.TempDir()
+	checkRecorderRestart(t, dir, func() (*gorm.DB, error) {
+		return database.OpenWithFiles(cfg, filepath.Join(dir, "payloads"))
+	})
+}
+
+func checkRecorderRestart(t *testing.T, dir string, open func() (*gorm.DB, error)) {
+	t.Helper()
+	db, err := open()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = database.Close(db) }()
 	journal := filepath.Join(dir, "journal")
 	r, err := tokenledger.Start(db, journal)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer r.Close()
 	var blocked atomic.Bool
 	blocked.Store(true)
 	if err := db.Callback().Create().Before("gorm:create").Register("accounting-outage", func(tx *gorm.DB) {
@@ -54,18 +70,15 @@ func TestRecorderSurvivesFailureRestartAndUncertainCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Close()
-	oldSQL, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := oldSQL.Close(); err != nil {
+	if err := database.Close(db); err != nil {
 		t.Fatal(err)
 	}
 	// A new process only has the database and durable journal, no old memory.
-	db2, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	db2, err := open()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = database.Close(db2) }()
 	r2, err := tokenledger.Start(db2, journal)
 	if err != nil {
 		t.Fatal(err)

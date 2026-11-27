@@ -220,7 +220,7 @@ func (s *AuditService) CountStats(f AuditListFilter) (AuditListStats, error) {
 	}
 	var mcp int64
 	if err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
-		Where("action = ? OR action LIKE ?", models.AuditActionMCPCall, "mcp.%").
+		Where("action = ? OR action"+auditLikeClause(s.db), models.AuditActionMCPCall, "mcp.%").
 		Count(&mcp).Error; err != nil {
 		return empty, err
 	}
@@ -360,7 +360,7 @@ func (s *AuditService) runFacetSub(base AuditListFilter, runID string) string {
 	f.RunID = runID
 	var mcp, fail int64
 	_ = s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
-		Where("action = ? OR action LIKE ?", models.AuditActionMCPCall, "mcp.%").
+		Where("action = ? OR action"+auditLikeClause(s.db), models.AuditActionMCPCall, "mcp.%").
 		Count(&mcp).Error
 	_ = s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("outcome = ?", models.AuditOutcomeFail).
@@ -431,7 +431,16 @@ func (s *AuditService) listFacetResources(f AuditListFilter) ([]AuditFacetResour
 	return resources, nil
 }
 
+func auditLikeClause(db *gorm.DB) string {
+	if db.Name() == "postgres" {
+		// Match SQLite's ASCII case folding and treat backslashes as text.
+		return ` COLLATE "C" ILIKE ? ESCAPE ''`
+	}
+	return " LIKE ?"
+}
+
 func (s *AuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
+	like := auditLikeClause(q)
 	if f.From != nil {
 		q = q.Where("occurred_at >= ?", *f.From)
 	}
@@ -448,7 +457,7 @@ func (s *AuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
 		if strings.Contains(act, ".") {
 			q = q.Where("action = ?", act)
 		} else {
-			q = q.Where("action = ? OR action LIKE ?", act, act+".%")
+			q = q.Where("action = ? OR action"+like, act, act+".%")
 		}
 	}
 	if runID := strings.TrimSpace(f.RunID); runID != "" {
@@ -457,28 +466,19 @@ func (s *AuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
 	if nodeID := strings.TrimSpace(f.NodeID); nodeID != "" {
 		q = q.Where("node_id = ?", nodeID)
 	}
+	resourceMatch := "resource_type" + like + " OR resource_id" + like + " OR summary" + like
 	if res := strings.TrimSpace(f.Resource); res != "" {
+		pattern := "%" + res + "%"
 		if i := strings.Index(res, "/"); i > 0 {
 			typ, id := res[:i], res[i+1:]
-			like := "%" + res + "%"
-			q = q.Where(
-				"(resource_type = ? AND resource_id = ?) OR resource_type LIKE ? OR resource_id LIKE ? OR summary LIKE ?",
-				typ, id, like, like, like,
-			)
+			q = q.Where("(resource_type = ? AND resource_id = ?) OR "+resourceMatch, typ, id, pattern, pattern, pattern)
 		} else {
-			like := "%" + res + "%"
-			q = q.Where(
-				"resource_type LIKE ? OR resource_id LIKE ? OR summary LIKE ?",
-				like, like, like,
-			)
+			q = q.Where(resourceMatch, pattern, pattern, pattern)
 		}
 	}
 	if search := strings.TrimSpace(f.Search); search != "" {
-		like := "%" + search + "%"
-		q = q.Where(
-			"summary LIKE ? OR resource_type LIKE ? OR resource_id LIKE ? OR action LIKE ?",
-			like, like, like, like,
-		)
+		pattern := "%" + search + "%"
+		q = q.Where(resourceMatch+" OR action"+like, pattern, pattern, pattern, pattern)
 	}
 	return q
 }

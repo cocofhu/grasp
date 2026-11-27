@@ -38,17 +38,17 @@ SSH 用户名决定连哪个沙箱：`sbx-<沙箱 ID>`。网关用你在 Grasp �
 
 1. 在本机生成密钥（已有可跳过）：`ssh-keygen -t ed25519`。
 2. 在左下角账号菜单打开 **「SSH 公钥」**，粘贴 `~/.ssh/id_ed25519.pub` 的内容。支持 ed25519、ECDSA 和至少 2048 位的 RSA。
-3. 打开一个 Solo 会话，点击顶部右侧的 **信息图标**，在「本地 IDE」里点 **「用 VS Code 打开」**。旁边的下拉菜单可以换成 Cursor、CodeBuddy、Trae（点 `CN` 打开国内版）或 JetBrains Gateway，上次的选择会被记住。
+3. 打开一个 Solo 会话，点击顶部右侧的 **信息图标**，再打开 **「SSH 连接」** 选择本地 IDE。菜单列出 VS Code、Cursor、CodeBuddy、CodeBuddy 中国版、Trae、Trae 中国版、Antigravity 和 Codex。选过之后，入口会显示上次选择的 IDE。
 4. 浏览器会询问是否打开对应应用，IDE 第一次还会确认是否打开这个远程文件夹，都选打开即可。IDE 连接 `sbx-12@grasp.example.com:2222`，直接打开 `/root/workspace`，不需要修改 `~/.ssh/config`。
 
 | IDE | 打开方式 |
 | --- | --- |
 | VS Code | 需要安装 Remote - SSH 扩展 |
 | Cursor | 首次使用时按提示安装 Cursor 的 Remote SSH 扩展 |
-| CodeBuddy / Trae | 自带 Remote-SSH；国际版和国内版是两个应用，菜单里分别打开 |
-| JetBrains Gateway | 不能一键打开：Gateway 的链接只能连接主机上已安装的 IDE。点它会显示连接信息，在 Gateway 中选择 SSH → New Connection，填写用户名、主机、端口，项目目录填 `/root/workspace`，首次会把 IDE 后端下载到沙箱 |
+| CodeBuddy / Trae | 自带 Remote-SSH；国际版和国内版是两个应用，菜单里各占一行 |
+| Antigravity / Codex | 用各自的 Remote-SSH 链接打开 `/root/workspace` |
 
-下拉菜单里的 **「SSH 连接信息」** 列出用户名、主机、端口和一条 SSH 命令（例如 `ssh -p 2222 sbx-12@grasp.example.com`），可直接在终端运行。想用 `ssh grasp` 这样的短名字时，可以把面板里的可选配置加入 `~/.ssh/config`：
+菜单底部的 **「SSH 连接信息」** 会弹出用户名、主机、端口、项目目录和一条 SSH 命令（例如 `ssh -p 2222 sbx-12@grasp.example.com`），可直接在终端运行。想用 `ssh grasp` 这样的短名字时，可以把弹窗里的可选配置加入 `~/.ssh/config`：
 
 ```
 Host grasp
@@ -63,8 +63,8 @@ Host grasp
 
 - **已暂停的 E2B 沙箱**会在连接时自动唤醒，可能需要几十秒。VS Code 默认 15 秒超时，如果连接失败，把设置 `remote.SSH.connectTimeout` 调到 60。
 - **手动停止或已关闭的会话**不会被 SSH 连接唤醒，终端会显示原因，例如「会话已手动停止，请先恢复」。先在 Grasp 中恢复会话再连接。
-- **连接期间不会被空闲回收。** 只要还有 IDE 连接，E2B 沙箱就不会被自动保存并暂停，也不会清理内存缓存；最后一个连接断开后重新开始计时。信息面板里会显示「本地 IDE 连接中，暂停计时」。
-- 信息面板还会显示环境类型、自动回收倒计时、最近模型活动和最近备份，并提供停止、唤醒、恢复和「保持运行」开关。
+- **连接期间会暂停空闲计时。** 只要还有本地 IDE 连接，E2B 沙箱就会保持运行并保留内存缓存。「自动暂停」一行会显示「计时已暂停」，下方显示连接数。最后一个连接断开后重新计时。
+- 信息面板显示环境类型、自动暂停倒计时和最近保存时间，并提供保存并停止、唤醒、恢复和「保持运行」开关。展开「基本信息」可查看最近模型活动和工作目录。
 
 ## 资源占用
 

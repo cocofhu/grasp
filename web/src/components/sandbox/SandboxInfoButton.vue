@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
+import { fmtCost } from '@/components/token-analytics/tokenAnalyticsShared'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import TruncatedTextTooltip from '@/components/ui/TruncatedTextTooltip.vue'
 import { api } from '@/lib/api/api'
-import type { SoloSession } from '@/lib/api/apiTypes'
+import type { SoloSession, SoloTaskInfo } from '@/lib/api/apiTypes'
+import { fmtTokenCount } from '@/lib/run/tokenUsage'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
 import { formatBytes, relTime } from '@/lib/shared/format'
 import { sessionRepos } from '@/lib/solo/sessionRepos'
@@ -15,6 +18,7 @@ import { SANDBOX_WORKSPACE } from '@/lib/sandbox/sshConnect'
 import { useSSHGateway } from '@/lib/sandbox/useSSHGateway'
 import { formatRemaining } from './idleCountdown'
 import SandboxIdeMenu from './SandboxIdeMenu.vue'
+import SandboxTokenTooltip from './SandboxTokenTooltip.vue'
 
 const props = withDefaults(defineProps<{
   session: SoloSession
@@ -40,12 +44,16 @@ const { t } = useI18n()
 const gateway = useSSHGateway()
 
 const open = ref(false)
+const detailsOpen = ref(false)
+const detailsId = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const panelStyle = ref<Record<string, string>>({})
 const sheet = ref(false)
 const now = ref(Date.now())
 const copied = ref('')
+const taskInfo = ref<SoloTaskInfo>()
+const taskInfoFailed = ref(false)
 let tick: ReturnType<typeof setInterval> | undefined
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 /** IDE connections change outside this page, so an open panel re-reads the session. */
@@ -63,32 +71,47 @@ const display = computed(() => sandboxDisplayState({
 }))
 const lifecycle = computed(() => sandboxLifecycle(props.session))
 const stateLabel = computed(() => t(`pages.solo.sandboxInfo.state.${display.value.kind}`))
+const environmentRunning = computed(() => display.value.kind === 'running' || display.value.kind === 'busy')
 
+const duration = computed(() => {
+  const { reclaim, destroyAt } = lifecycle.value
+  if (display.value.kind !== 'running' || reclaim !== 'countdown' || !destroyAt) return ''
+  return formatRemaining(destroyAt.getTime() - now.value, '', (hours, minutes, seconds) => {
+    const unit = hours ? 'hours' : minutes ? 'minutes' : 'seconds'
+    return t(`pages.solo.sandboxInfo.lifecycle.duration.${unit}`, { hours, minutes, seconds })
+  })
+})
 const reclaimText = computed(() => {
+  if (!environmentRunning.value) return ''
   const l = lifecycle.value
   switch (l.reclaim) {
     case 'exempt': return t('pages.solo.sandboxInfo.lifecycle.exempt')
     case 'keepAlive': return t('pages.solo.sandboxInfo.lifecycle.keptAlive')
     case 'connected': return t('pages.solo.sandboxInfo.lifecycle.connected')
-    case 'countdown': {
-      if (display.value.kind !== 'running' && display.value.kind !== 'busy') return '—'
-      const left = l.destroyAt!.getTime() - now.value
-      return left <= 0
-        ? t('pages.solo.sandboxInfo.lifecycle.soon')
-        : t('pages.solo.sandboxInfo.lifecycle.countdown', { time: formatRemaining(left, '') })
-    }
-    default: return '—'
+    case 'countdown':
+      if (display.value.kind === 'busy') return t('pages.solo.sandboxInfo.lifecycle.afterTurn')
+      return duration.value
+        ? t('pages.solo.sandboxInfo.lifecycle.countdown', { time: duration.value })
+        : t('pages.solo.sandboxInfo.lifecycle.soon')
+    default:
+      return display.value.kind === 'busy' && l.kind === 'snapshot'
+        ? t('pages.solo.sandboxInfo.lifecycle.afterTurn')
+        : ''
   }
 })
+const showRuntimeStatus = computed(() => !!(reclaimText.value || lifecycle.value.connections))
 const kindText = computed(() => {
   if (lifecycle.value.kind === 'snapshot') return t('pages.solo.sandboxInfo.lifecycle.kindSnapshot')
   if (lifecycle.value.kind === 'files') return t('pages.solo.sandboxInfo.lifecycle.kindFiles')
-  return '—'
+  return ''
 })
 const keepAliveVisible = computed(() => !props.readonly && lifecycle.value.kind === 'snapshot' && !props.session.idleReclaimExempt)
-const backupText = computed(() => props.session.backupAt
-  ? `${relTime(props.session.backupAt)} · ${formatBytes(props.session.backupSize || 0)}`
-  : '')
+const backupText = computed(() => {
+  const { backupAt, backupSize } = props.session
+  if (!backupAt) return ''
+  const age = relTime(backupAt)
+  return backupSize && backupSize > 0 ? `${age} · ${formatBytes(backupSize)}` : age
+})
 
 const repos = computed(() => sessionRepos(props.session))
 const repoText = computed(() => {
@@ -99,6 +122,7 @@ const repoText = computed(() => {
 
 const ssh = computed(() => gateway.info.value)
 const sshVisible = computed(() => !!ssh.value?.enabled && sandboxId.value > 0)
+const canUseSSH = computed(() => sshVisible.value && ssh.value?.allowed !== false && ssh.value?.hasKey === true)
 /** Why local IDE connections are unavailable right now, or '' when they work. */
 const ideBlocked = computed(() => {
   switch (display.value.kind) {
@@ -116,9 +140,39 @@ const ideWakes = computed(() => display.value.kind === 'paused' || display.value
 
 const actionLabel = computed(() => display.value.action ? t(`pages.solo.sandboxInfo.action.${display.value.action}`) : '')
 const actionIcon = computed(() => ({ stop: 'stop', wake: 'play', resume: 'play', restart: 'refresh' } as const)[display.value.action || 'stop'])
-const webIdeUrl = computed(() => display.value.kind === 'running' || display.value.kind === 'busy'
-  ? (props.session.sandbox?.hasCodeServer && sandboxId.value ? api.sandboxIdeUrl(sandboxId.value) : '')
+const webIdeUrl = computed(() => environmentRunning.value && props.session.sandbox?.hasCodeServer && sandboxId.value
+  ? api.sandboxIdeUrl(sandboxId.value)
   : '')
+
+watch(
+  [() => open.value && detailsOpen.value && !props.readonly, () => props.session.id],
+  ([visible, sessionId], _, onCleanup) => {
+    taskInfo.value = undefined
+    taskInfoFailed.value = false
+    if (!visible) return
+
+    const controller = new AbortController()
+    let loading = false
+    async function refreshTaskInfo() {
+      if (loading) return
+      loading = true
+      try {
+        const next = await api.getSoloTaskInfo(sessionId, controller.signal)
+        if (!controller.signal.aborted) taskInfo.value = next
+      } catch {
+        if (!controller.signal.aborted) taskInfoFailed.value = true
+      } finally {
+        loading = false
+      }
+    }
+    void refreshTaskInfo()
+    const interval = window.setInterval(refreshTaskInfo, REFRESH_MS)
+    onCleanup(() => {
+      controller.abort()
+      window.clearInterval(interval)
+    })
+  },
+)
 
 function place() {
   const el = trigger.value
@@ -129,7 +183,7 @@ function place() {
     return
   }
   const rect = el.getBoundingClientRect()
-  const width = Math.min(380, window.innerWidth - 16)
+  const width = Math.min(360, window.innerWidth - 16)
   const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))
   panelStyle.value = {
     top: `${Math.round(rect.bottom + 6)}px`,
@@ -140,6 +194,7 @@ function place() {
 }
 
 async function show() {
+  detailsOpen.value = false
   open.value = true
   now.value = Date.now()
   emit('refresh')
@@ -169,6 +224,12 @@ function toggle() {
 function onDocPointer(e: Event) {
   const target = e.target as Node | null
   if (!target || trigger.value?.contains(target) || panel.value?.contains(target)) return
+  // IDE and usage popovers are teleported outside this panel.
+  const el = target instanceof Element ? target : target.parentElement
+  if (el?.closest(
+    '[data-testid="sandbox-ide-picker-panel"], [data-testid="sandbox-ide-details"], ' +
+    '[data-testid="sandbox-info-token-breakdown"], [data-testid="sandbox-info-task-value-breakdown"]',
+  )) return
   hide()
 }
 
@@ -228,7 +289,6 @@ function onIDELaunch() {
       @click="toggle"
     >
       <Icon name="info" :size="16" aria-hidden="true" />
-      <span class="sandbox-info-dot" :data-tone="display.tone" data-testid="sandbox-info-dot" aria-hidden="true" />
     </button>
 
     <Teleport to="body">
@@ -245,25 +305,96 @@ function onIDELaunch() {
         data-testid="sandbox-info-panel"
         @keydown="onKeydown"
       >
-        <!-- state -->
-        <section class="sandbox-info-head">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <span class="sandbox-info-dot is-inline" :data-tone="display.tone" aria-hidden="true" />
-              <span class="text-[13px] font-semibold text-txt" data-testid="sandbox-info-state">{{ stateLabel }}</span>
+        <div class="sandbox-info-body">
+          <header class="sandbox-info-head">
+            <div class="min-w-0">
+              <h2
+                class="truncate text-[14px] font-semibold leading-tight text-txt"
+                :class="{ 'font-mono': session.sandbox?.name }"
+                :title="session.sandbox?.name"
+              >
+                {{ session.sandbox?.name || t('pages.solo.sandboxInfo.title') }}
+              </h2>
+              <p v-if="sandboxId || kindText" class="sandbox-info-meta">
+                <span v-if="sandboxId" class="font-mono">#{{ sandboxId }}</span>
+                <span v-if="sandboxId && kindText" aria-hidden="true">·</span>
+                <span v-if="kindText">{{ kindText }}</span>
+              </p>
             </div>
-            <p v-if="display.step" class="mt-0.5 text-[11.5px] text-txt3">{{ t(`pages.solo.sandboxInfo.step.${display.step}`) }}</p>
-            <p v-if="session.sandbox?.name" class="mt-0.5 truncate font-mono text-[11.5px] text-txt3" :title="session.sandbox.name">
-              #{{ sandboxId }} · {{ session.sandbox.name }}
-            </p>
-            <p v-if="display.kind === 'error' && (session.error || session.sandbox?.error)" class="mt-1 text-[12px] text-err" data-testid="sandbox-info-error">
-              {{ session.error || session.sandbox?.error }}
-            </p>
+            <span class="sandbox-info-status">
+              <span class="sandbox-info-dot" :data-tone="display.tone" data-testid="sandbox-info-dot" aria-hidden="true" />
+              <span data-testid="sandbox-info-state">{{ stateLabel }}</span>
+            </span>
+          </header>
+          <p v-if="display.step" class="sandbox-info-note mt-2">{{ t(`pages.solo.sandboxInfo.step.${display.step}`) }}</p>
+          <p v-if="display.kind === 'error' && (session.error || session.sandbox?.error)" class="mt-2 break-words text-xs text-err" data-testid="sandbox-info-error">
+            {{ session.error || session.sandbox?.error }}
+          </p>
+
+          <div v-if="sshVisible || webIdeUrl" class="sandbox-info-connect">
+            <div v-if="sshVisible && ssh" class="min-w-0" data-testid="sandbox-info-ide">
+              <p v-if="ssh.allowed === false" class="sandbox-info-note">{{ t('pages.solo.sandboxInfo.ide.adminsOnly') }}</p>
+              <div v-else-if="!ssh.hasKey" class="sandbox-info-note flex flex-wrap items-center gap-x-2" data-testid="sandbox-info-no-key">
+                <span>{{ t('pages.solo.sandboxInfo.ide.noKey') }}</span>
+                <RouterLink to="/settings/ssh-keys" class="sandbox-info-link" @click="hide()">{{ t('pages.solo.sandboxInfo.ide.addKey') }}</RouterLink>
+              </div>
+              <SandboxIdeMenu v-else :sandbox-id="sandboxId" :info="ssh" :blocked="ideBlocked" @launch="onIDELaunch" />
+            </div>
+            <a v-if="webIdeUrl" :href="webIdeUrl" target="_blank" rel="noopener" class="sandbox-info-web-ide" data-testid="sandbox-info-web-ide">
+              <Icon name="stage-ide" :size="14" aria-hidden="true" />{{ t('pages.solo.sandboxInfo.webIde') }}
+              <Icon name="arrow-right" :size="11" class="-rotate-45 text-txt3" aria-hidden="true" />
+            </a>
+            <p v-if="canUseSSH && ideBlocked" class="sandbox-info-note basis-full" data-testid="sandbox-info-ide-blocked">{{ ideBlocked }}</p>
+            <p v-else-if="canUseSSH && ideWakes" class="sandbox-info-note basis-full">{{ t('pages.solo.sandboxInfo.ide.pausedHint') }}</p>
           </div>
+
+          <section v-if="showRuntimeStatus || keepAliveVisible || backupText" class="sandbox-info-runtime" data-testid="sandbox-info-lifecycle">
+            <div v-if="showRuntimeStatus">
+              <div v-if="reclaimText" class="sandbox-info-runtime-row">
+                <span class="sandbox-info-row-label">
+                  {{ lifecycle.reclaim === 'exempt' ? t('pages.solo.sandboxInfo.lifecycle.idlePolicy') : t('pages.solo.sandboxInfo.lifecycle.autoPause') }}
+                </span>
+                <span class="text-right font-medium tabular-nums" data-testid="sandbox-info-reclaim">{{ reclaimText }}</span>
+              </div>
+              <p v-if="lifecycle.connections" class="sandbox-info-note">
+                <span data-testid="sandbox-info-connections">{{ t('pages.solo.sandboxInfo.ide.connections', lifecycle.connections) }}</span>
+                <template v-if="lifecycle.reclaim === 'connected' && environmentRunning"> · {{ t('pages.solo.sandboxInfo.lifecycle.afterDisconnect') }}</template>
+              </p>
+            </div>
+            <label v-if="keepAliveVisible" class="sandbox-info-runtime-row">
+              <span class="sandbox-info-row-label">{{ t('pages.solo.sandboxInfo.lifecycle.keepAlive') }}</span>
+              <AppSwitch
+                :model-value="!!session.keepAlive"
+                :disabled="keepAliveSaving"
+                :aria-label="t('pages.solo.sandboxInfo.lifecycle.keepAlive')"
+                data-testid="sandbox-info-keep-alive"
+                @update:model-value="emit('keepAlive', $event)"
+              />
+            </label>
+            <div v-if="backupText" class="sandbox-info-runtime-row">
+              <span class="sandbox-info-row-label">{{ t('pages.solo.sandboxInfo.lifecycle.backup') }}</span>
+              <span class="text-right tabular-nums text-txt2">{{ backupText }}</span>
+            </div>
+          </section>
+        </div>
+
+        <footer class="sandbox-info-footer">
+          <button
+            type="button"
+            class="sandbox-info-details-toggle"
+            :aria-expanded="detailsOpen"
+            :aria-controls="detailsId"
+            data-testid="sandbox-info-details-toggle"
+            @click="detailsOpen = !detailsOpen"
+          >
+            <Icon name="chevron-right" :size="14" :interactive="false" class="ui-fold-chevron" aria-hidden="true" />
+            {{ t('pages.solo.sandboxInfo.details.title') }}
+          </button>
           <AppButton
             v-if="!readonly && display.action"
             size="sm"
-            :variant="display.action === 'stop' ? 'outline' : 'primary'"
+            :variant="display.action === 'stop' ? 'ghost' : 'primary'"
+            :class="{ 'sandbox-info-stop': display.action === 'stop' }"
             :icon="actionIcon"
             :loading="pending === display.action"
             :disabled="display.actionDisabled"
@@ -271,81 +402,83 @@ function onIDELaunch() {
             data-testid="sandbox-info-action"
             @click="runAction"
           >{{ actionLabel }}</AppButton>
-        </section>
-
-        <!-- lifecycle -->
-        <section class="sandbox-info-section" data-testid="sandbox-info-lifecycle">
-          <h3 class="sandbox-info-title">{{ t('pages.solo.sandboxInfo.lifecycle.title') }}</h3>
-          <dl class="sandbox-info-rows">
-            <dt>{{ t('pages.solo.sandboxInfo.lifecycle.kind') }}</dt>
-            <dd>{{ kindText }}</dd>
-            <dt>{{ t('pages.solo.sandboxInfo.lifecycle.reclaim') }}</dt>
-            <dd data-testid="sandbox-info-reclaim">{{ reclaimText }}</dd>
-            <template v-if="lifecycle.modelActiveAt">
-              <dt>{{ t('pages.solo.sandboxInfo.lifecycle.lastModel') }}</dt>
-              <dd :title="t('pages.solo.sandboxInfo.lifecycle.lastModelHint')">{{ relTime(lifecycle.modelActiveAt.toISOString()) }}</dd>
-            </template>
-            <template v-if="backupText">
-              <dt>{{ t('pages.solo.sandboxInfo.lifecycle.backup') }}</dt>
-              <dd>{{ backupText }}</dd>
-            </template>
-          </dl>
-          <label v-if="keepAliveVisible" class="sandbox-info-switch">
-            <span>{{ t('pages.solo.sandboxInfo.lifecycle.keepAlive') }}</span>
-            <AppSwitch
-              :model-value="!!session.keepAlive"
-              :disabled="keepAliveSaving"
-              :aria-label="t('pages.solo.sandboxInfo.lifecycle.keepAlive')"
-              data-testid="sandbox-info-keep-alive"
-              @update:model-value="emit('keepAlive', $event)"
-            />
-          </label>
-        </section>
-
-        <!-- local IDE -->
-        <section v-if="sshVisible" class="sandbox-info-section" data-testid="sandbox-info-ide">
-          <div class="flex items-center justify-between gap-2">
-            <h3 class="sandbox-info-title">{{ t('pages.solo.sandboxInfo.ide.title') }}</h3>
-            <span v-if="lifecycle.connections" class="text-[11.5px] text-ok" data-testid="sandbox-info-connections">
-              {{ t('pages.solo.sandboxInfo.ide.connections', { n: lifecycle.connections }) }}
-            </span>
-          </div>
-          <p v-if="ssh && ssh.allowed === false" class="sandbox-info-note">{{ t('pages.solo.sandboxInfo.ide.adminsOnly') }}</p>
-          <div v-else-if="ssh && !ssh.hasKey" class="sandbox-info-note flex items-center justify-between gap-2" data-testid="sandbox-info-no-key">
-            <span>{{ t('pages.solo.sandboxInfo.ide.noKey') }}</span>
-            <RouterLink to="/settings/ssh-keys" class="sandbox-info-link" @click="hide()">{{ t('pages.solo.sandboxInfo.ide.addKey') }}</RouterLink>
-          </div>
-          <template v-else-if="ssh">
-            <p v-if="ideBlocked" class="sandbox-info-note" data-testid="sandbox-info-ide-blocked">{{ ideBlocked }}</p>
-            <SandboxIdeMenu :sandbox-id="sandboxId" :info="ssh" :blocked="ideBlocked" @launch="onIDELaunch" />
-            <p v-if="ideWakes && !ideBlocked" class="sandbox-info-note mt-2">{{ t('pages.solo.sandboxInfo.ide.pausedHint') }}</p>
-          </template>
-        </section>
-
-        <!-- details -->
-        <section class="sandbox-info-section" data-testid="sandbox-info-details">
-          <h3 class="sandbox-info-title">{{ t('pages.solo.sandboxInfo.details.title') }}</h3>
-          <dl class="sandbox-info-rows">
-            <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
-            <dd>{{ session.agentName }}</dd>
-            <dt>{{ t('pages.solo.sandboxInfo.details.repo') }}</dt>
-            <dd class="truncate" :title="repoText">{{ repoText }}</dd>
-            <dt>{{ t('pages.solo.sandboxInfo.details.workdir') }}</dt>
-            <dd class="flex items-center gap-1">
-              <span class="font-mono">{{ SANDBOX_WORKSPACE }}</span>
-              <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" @click="copy('workdir', SANDBOX_WORKSPACE)">
-                <Icon :name="copied === 'workdir' ? 'check' : 'copy'" :size="12" aria-hidden="true" />
-              </button>
-            </dd>
-            <template v-if="session.sandbox?.createdAt">
-              <dt>{{ t('pages.solo.sandboxInfo.details.created') }}</dt>
-              <dd>{{ new Date(session.sandbox.createdAt).toLocaleString() }}</dd>
-            </template>
-          </dl>
-          <a v-if="webIdeUrl" :href="webIdeUrl" target="_blank" rel="noopener" class="sandbox-info-link mt-2 inline-flex items-center gap-1" data-testid="sandbox-info-web-ide">
-            <Icon name="stage-ide" :size="13" aria-hidden="true" />{{ t('pages.solo.sandboxInfo.webIde') }}
-          </a>
-        </section>
+        </footer>
+        <div
+          :id="detailsId"
+          class="ui-fold shrink-0"
+          :class="{ 'is-open': detailsOpen }"
+          :inert="!detailsOpen"
+          data-testid="sandbox-info-details"
+        >
+          <Transition name="ui-tip-fade">
+            <div v-if="detailsOpen" class="ui-fold-inner">
+              <div class="sandbox-info-details">
+                <dl v-if="!readonly" class="sandbox-info-rows">
+                  <dt>{{ t('pages.solo.sandboxInfo.details.totalTokens') }}</dt>
+                  <dd class="tabular-nums" data-testid="sandbox-info-task-tokens">
+                    <SandboxTokenTooltip v-if="taskInfo?.usage.reported" :usage="taskInfo.usage" />
+                    <span v-else-if="taskInfo" class="sandbox-info-note">{{ t('pages.chatMessageInfo.notReported') }}</span>
+                    <span v-else class="sandbox-info-note">{{ t(taskInfoFailed ? 'common.loading.failed' : 'common.loading.inProgress') }}</span>
+                    <span v-if="taskInfo?.usage.incomplete" class="sandbox-info-note block">{{ t('pages.solo.sandboxInfo.details.incompleteUsage') }}</span>
+                  </dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.taskValue') }}</dt>
+                  <dd class="tabular-nums" data-testid="sandbox-info-task-value">
+                    <TruncatedTextTooltip
+                      v-if="taskInfo?.usage.cost != null"
+                      :text="fmtCost(taskInfo.usage.cost, taskInfo.usage.currency)"
+                      class="cursor-help rounded-sm font-medium underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+                    >
+                      <template #tooltip>
+                        <dl class="grid grid-cols-[max-content_auto] gap-x-5 gap-y-0.5 py-0.5 tabular-nums" data-testid="sandbox-info-task-value-breakdown">
+                          <dt class="text-txt2">{{ t('pages.solo.sandboxInfo.details.pricedTokens') }}</dt>
+                          <dd class="text-right">{{ fmtTokenCount(taskInfo.usage.total - (taskInfo.usage.unpricedTotal ?? 0)) }}</dd>
+                          <dt class="text-txt2">{{ t('pages.solo.sandboxInfo.details.unpricedTokens') }}</dt>
+                          <dd class="text-right">{{ fmtTokenCount(taskInfo.usage.unpricedTotal ?? 0) }}</dd>
+                        </dl>
+                      </template>
+                    </TruncatedTextTooltip>
+                    <span v-else class="sandbox-info-note">{{ taskInfo?.usage.unpricedTotal ? t('pages.tokenAnalytics.kpiCostUnpriced') : '—' }}</span>
+                  </dd>
+                  <template v-if="taskInfo?.workflowRuns.length">
+                    <dt>{{ t('pages.solo.sandboxInfo.details.workflowRuns') }}</dt>
+                    <dd>
+                      <ul class="space-y-0.5" data-testid="sandbox-info-workflow-runs">
+                        <li v-for="run in taskInfo.workflowRuns" :key="run.id">
+                          <RouterLink class="sandbox-info-link block truncate" :to="`/runs/${encodeURIComponent(run.id)}`" :title="run.workflowName" @click="hide()">
+                            {{ run.workflowName }}
+                          </RouterLink>
+                        </li>
+                      </ul>
+                    </dd>
+                  </template>
+                </dl>
+                <dl class="sandbox-info-rows">
+                  <dt>{{ t('pages.solo.sandboxInfo.details.agent') }}</dt>
+                  <dd>{{ session.agentName }}</dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.repo') }}</dt>
+                  <dd class="truncate" :title="repoText">{{ repoText }}</dd>
+                  <dt>{{ t('pages.solo.sandboxInfo.details.workdir') }}</dt>
+                  <dd class="flex items-center justify-end gap-1">
+                    <span class="min-w-0 break-all font-mono">{{ SANDBOX_WORKSPACE }}</span>
+                    <button type="button" class="sandbox-info-copy" :aria-label="t('pages.solo.sandboxInfo.copy')" @click="copy('workdir', SANDBOX_WORKSPACE)">
+                      <Icon :name="copied === 'workdir' ? 'check' : 'copy'" :size="12" aria-hidden="true" />
+                    </button>
+                  </dd>
+                </dl>
+                <dl v-if="lifecycle.modelActiveAt || session.sandbox?.createdAt" class="sandbox-info-rows sandbox-info-times tabular-nums">
+                  <template v-if="lifecycle.modelActiveAt">
+                    <dt>{{ t('pages.solo.sandboxInfo.lifecycle.lastModel') }}</dt>
+                    <dd :title="t('pages.solo.sandboxInfo.lifecycle.lastModelHint')">{{ relTime(lifecycle.modelActiveAt.toISOString()) }}</dd>
+                  </template>
+                  <template v-if="session.sandbox?.createdAt">
+                    <dt>{{ t('pages.solo.sandboxInfo.details.created') }}</dt>
+                    <dd>{{ new Date(session.sandbox.createdAt).toLocaleString() }}</dd>
+                  </template>
+                </dl>
+              </div>
+            </div>
+          </Transition>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -355,7 +488,6 @@ function onIDELaunch() {
 .sandbox-info { display: inline-flex; }
 /* Matches the conversation toolbar's mode toggles beside it. */
 .sandbox-info-trigger {
-  position: relative;
   display: inline-flex;
   width: 32px;
   height: 32px;
@@ -373,16 +505,12 @@ function onIDELaunch() {
 .sandbox-info-trigger[aria-pressed="true"] { border-color: rgb(var(--c-line)); background: rgb(var(--c-base)); color: rgb(var(--c-txt)); }
 .sandbox-info-trigger:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
 .sandbox-info-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
   width: 6px;
   height: 6px;
+  flex: none;
   border-radius: 999px;
-  box-shadow: 0 0 0 1.5px rgb(var(--c-surface));
   background: rgb(var(--c-txt3));
 }
-.sandbox-info-dot.is-inline { position: static; flex: none; box-shadow: none; width: 8px; height: 8px; }
 .sandbox-info-dot[data-tone="ok"] { background: rgb(var(--c-ok)); }
 .sandbox-info-dot[data-tone="err"] { background: rgb(var(--c-err)); }
 .sandbox-info-dot[data-tone="pending"] { background: rgb(var(--c-warn)); animation: sandbox-info-breathe 1.6s ease-in-out infinite; }
@@ -400,21 +528,64 @@ function onIDELaunch() {
 }
 .sandbox-info-panel.is-sheet { inset: auto 0 0 0; max-height: 85vh; border-radius: 14px 14px 0 0; }
 .sandbox-info-scrim { position: fixed; z-index: 59; inset: 0; background: rgb(0 0 0 / .28); }
-.sandbox-info-head { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px 12px; }
-.sandbox-info-section { padding: 12px 16px; border-top: 1px solid rgb(var(--c-line) / .7); }
-.sandbox-info-title { margin: 0 0 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: rgb(var(--c-txt3)); }
-.sandbox-info-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 14px; margin: 0; font-size: 12.5px; }
-.sandbox-info-rows .sandbox-info-copy { width: 20px; height: 20px; }
-.sandbox-info-rows dt { color: rgb(var(--c-txt3)); }
-.sandbox-info-rows dd { min-width: 0; margin: 0; color: rgb(var(--c-txt)); }
-.sandbox-info-switch { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 12.5px; color: rgb(var(--c-txt)); }
-.sandbox-info-note { margin: 0 0 8px; font-size: 11.5px; line-height: 1.5; color: rgb(var(--c-txt3)); }
-.sandbox-info-link { font-size: 12px; color: rgb(var(--c-accent)); }
+.sandbox-info-body { padding: 14px 15px 7px; }
+.sandbox-info-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sandbox-info-meta {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px;
+  font-size: 11.5px; color: rgb(var(--c-txt2));
+}
+.sandbox-info-status {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 52%;
+  font-size: 11.5px; font-weight: 500; color: rgb(var(--c-txt2));
+}
+.sandbox-info-connect { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 12px; }
+.sandbox-info-web-ide, .sandbox-info-details-toggle {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 28px;
+  padding: 0 6px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  color: rgb(var(--c-txt2));
+}
+.sandbox-info-web-ide:hover, .sandbox-info-details-toggle:hover, .sandbox-info-stop:hover:enabled { background: rgb(var(--c-elevated)); }
+.sandbox-info-details-toggle[aria-expanded="true"] { color: rgb(var(--c-txt)); }
+.sandbox-info-details-toggle .ui-fold-chevron { transition-property: rotate; }
+.sandbox-info-details-toggle[aria-expanded="true"] .ui-fold-chevron { rotate: 90deg; }
+.sandbox-info-web-ide:focus-visible, .sandbox-info-details-toggle:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px;
+}
+.sandbox-info-runtime {
+  margin-top: 11px; padding-top: 5px; border-top: 1px solid rgb(var(--c-line));
+}
+.sandbox-info-runtime-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 31px; font-size: 12.5px;
+}
+.sandbox-info-row-label { flex: none; color: rgb(var(--c-txt2)); }
+.sandbox-info-runtime .sandbox-info-note { margin: -1px 0 4px; }
+.sandbox-info-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 43px;
+  padding: 5px 10px 5px 9px; border-top: 1px solid rgb(var(--c-line));
+}
+.sandbox-info-stop:is(:hover, :focus-visible):enabled {
+  color: color-mix(in srgb, rgb(var(--c-err)) 76%, rgb(var(--c-txt)));
+}
+.sandbox-info-details { padding: 0 15px 13px; }
+.sandbox-info-rows {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 5px 12px;
+  margin: 0; font-size: 12px; line-height: 18px;
+}
+.sandbox-info-rows dt { color: rgb(var(--c-txt2)); }
+.sandbox-info-rows dd { min-width: 0; margin: 0; text-align: right; overflow-wrap: anywhere; }
+.sandbox-info-rows + .sandbox-info-rows { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgb(var(--c-line)); }
+.sandbox-info-times { color: rgb(var(--c-txt2)); }
+.sandbox-info-note {
+  font-size: 11.5px; line-height: 1.5;
+  color: color-mix(in srgb, rgb(var(--c-txt3)), rgb(var(--c-txt2)) 45%);
+}
+.sandbox-info-link { font-size: 12px; color: rgb(var(--c-accent-2)); }
 .sandbox-info-link:hover { text-decoration: underline; }
 .sandbox-info-copy {
   display: inline-flex;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -425,5 +596,6 @@ function onIDELaunch() {
 @keyframes sandbox-info-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) {
   .sandbox-info-dot[data-tone="pending"] { animation: none; }
+  .ui-tip-fade-enter-from, .ui-tip-fade-leave-to { opacity: 1; }
 }
 </style>

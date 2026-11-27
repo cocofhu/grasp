@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
+	"gorm.io/gorm"
 )
 
 type fakeSoloRouteRuntime struct {
@@ -264,7 +265,11 @@ func TestSoloRouteSwitchFailedRollbackForcesRecovery(t *testing.T) {
 
 func failSoloSessionSaves(t *testing.T, s *SandboxService) {
 	t.Helper()
-	if err := s.db.Exec("CREATE TRIGGER fail_solo_session_save BEFORE UPDATE ON solo_sessions BEGIN SELECT RAISE(ABORT, 'disk full'); END").Error; err != nil {
+	if err := s.db.Callback().Update().Before("gorm:update").Register("fail-solo-session-save", func(tx *gorm.DB) {
+		if tx.Statement.Table == "solo_sessions" {
+			tx.AddError(errors.New("disk full"))
+		}
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
