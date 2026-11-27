@@ -6,8 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 //go:embed workspace_changes.py
@@ -26,6 +30,7 @@ type WorkspaceTreeQuery struct {
 	Pin       string `json:"pin,omitempty"`
 	From      string `json:"from,omitempty"`
 	To        string `json:"to,omitempty"`
+	TreeOnly  bool   `json:"treeOnly,omitempty"`
 }
 
 type WorkspaceTreeChanges struct {
@@ -55,17 +60,62 @@ func (s *Sandbox) CompareWorkspaceTrees(ctx context.Context, queries []Workspace
 	return runWorkspaceGit[WorkspaceTreeChanges](ctx, s, "compare", queries)
 }
 
-func runWorkspaceGit[T any](ctx context.Context, s *Sandbox, operation string, queries []WorkspaceTreeQuery) ([]T, error) {
+// ExportWorkspaceTree streams a standalone pack of the tree and its file
+// objects. A new clone can load it without contacting the remote.
+func (s *Sandbox) ExportWorkspaceTree(ctx context.Context, query WorkspaceTreeQuery) (io.ReadCloser, error) {
+	script, err := s.workspaceGitScript("export-tree", []WorkspaceTreeQuery{query})
+	if err != nil {
+		return nil, err
+	}
+	cmd, err := newSafeCmd("python3", "-s")
+	if err != nil {
+		return nil, err
+	}
+	return s.creds().streamOutput(ctx, cmd, strings.NewReader(script))
+}
+
+// RestoreWorkspaceTree streams the pack to Git's object database. It does not
+// check out files or update the real index.
+func (s *Sandbox) RestoreWorkspaceTree(ctx context.Context, query WorkspaceTreeQuery, pack io.Reader) error {
+	script, err := s.workspaceGitScript("restore-tree", []WorkspaceTreeQuery{query})
+	if err != nil {
+		return err
+	}
+	file := "/tmp/grasp-review-" + uuid.NewString() + ".py"
+	cmd, err := newSafeCmd("python3", file)
+	if err != nil {
+		return err
+	}
+	err = s.WriteFileAtomic(ctx, file, []byte(script))
+	if err == nil {
+		_, err = s.creds().runInput(ctx, 25*time.Second, cmd, pack)
+	}
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_, _ = s.Exec(cleanup, 2*time.Second, "rm", "-f", "--", file)
+	}
+	return err
+}
+
+func (s *Sandbox) workspaceGitScript(operation string, queries []WorkspaceTreeQuery) (string, error) {
 	req, err := json.Marshal(struct {
 		Workspace    string               `json:"workspace"`
 		Operation    string               `json:"operation"`
 		Repositories []WorkspaceTreeQuery `json:"repositories"`
 	}{s.workspaceDir(), operation, queries})
 	if err != nil {
+		return "", err
+	}
+	return "import base64, json\nrequest = json.loads(base64.b64decode(" +
+		strconv.Quote(base64.StdEncoding.EncodeToString(req)) + "))\n" + workspaceChangesScript, nil
+}
+
+func runWorkspaceGit[T any](ctx context.Context, s *Sandbox, operation string, queries []WorkspaceTreeQuery) ([]T, error) {
+	script, err := s.workspaceGitScript(operation, queries)
+	if err != nil {
 		return nil, err
 	}
-	script := "import base64, json\nrequest = json.loads(base64.b64decode(" +
-		strconv.Quote(base64.StdEncoding.EncodeToString(req)) + "))\n" + workspaceChangesScript
 	result, err := s.ExecScript(ctx, 25*time.Second, "python3", script)
 	if err != nil {
 		return nil, fmt.Errorf("read workspace changes: %w", err)

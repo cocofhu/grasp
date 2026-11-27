@@ -1058,7 +1058,7 @@ func AllModels() []any {
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &ArtifactDelivery{}, &Gate{}, &ReactConversation{}, &RunReference{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
-		&WorkspaceChangeBaseline{}, &WorkspaceChangeSnapshot{}, &WorkspaceChangeContent{},
+		&WorkspaceChangeBaseline{}, &WorkspaceChangeSnapshot{}, &WorkspaceChangeContent{}, &WorkspaceChangeGarbage{},
 		&RunPreviewPort{}, &PreviewIssue{},
 		&AuditEvent{},
 		&Credential{},

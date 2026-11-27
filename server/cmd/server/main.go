@@ -222,7 +222,7 @@ func main() {
 		}
 		return row.Token
 	}
-	changes := workspacechanges.New(db)
+	changes := workspacechanges.New(db, cfg.Storage.MaxFileBytes)
 	provider := runtime.NewProvider(host, runtime.Options{
 		WorkspaceChanges: changes,
 		RecordUsage: func(req runtime.NodeReq, result *sandbox.ChatResult, err error) {
@@ -441,6 +441,7 @@ func main() {
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go migrateFilePayloads(sweeperCtx, db)
 	go sbxSvc.RunSweeper(sweeperCtx)
+	go changes.RunCleanup(sweeperCtx)
 	codexLoginMgr.Start(sweeperCtx)
 
 	// In-sandbox VNC preview: dials each preview-capable sandbox's CDP/websockify.

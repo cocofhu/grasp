@@ -6,24 +6,26 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 MAX_FILES = 2000
 MAX_FILE_BYTES = 512 * 1024
 MAX_CONTENT_BYTES = 6 * 1024 * 1024
 OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+PIN = re.compile(r"refs/grasp/changes/[0-9a-f]{64}\Z")
 DIFF_FLAGS = ("--no-color", "--no-ext-diff", "--no-textconv", "--find-renames")
 
 
-def git_command(repo, *args):
+def git_command(repo, *args, literal=True):
     return [
-        "git", "--literal-pathspecs", "-C", repo,
+        "git", *(["--literal-pathspecs"] if literal else []), "-C", repo,
         "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *args,
     ]
 
 
-def git(repo, *args, env=None, limit=None):
-    with subprocess.Popen(git_command(repo, *args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env) as proc:
+def git(repo, *args, env=None, limit=None, literal=True):
+    with subprocess.Popen(git_command(repo, *args, literal=literal), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env) as proc:
         out = proc.stdout.read() if limit is None else proc.stdout.read(limit + 1)
         if limit is not None and len(out) > limit:
             proc.kill()
@@ -57,7 +59,38 @@ def clean_filters(repo):
     return [arg for key in names.splitlines() for arg in ("-c", key + ("=false" if key.endswith(".required") else "="))]
 
 
-def capture(repo, pin):
+def add_worktree(repo, scratch, env):
+    args = ("-c", "core.splitIndex=false", *clean_filters(repo), "add", "--all")
+    try:
+        git(repo, *args, "--", ".", env=env)
+        return
+    except ValueError:
+        # Git lists untracked embedded repositories as single directory entries.
+        untracked = git(repo, "ls-files", "--others", "--exclude-standard", "-z", env=env)
+        exclude = []
+        for field in untracked.split(b"\0"):
+            if not field.endswith(b"/"):
+                continue
+            child = os.path.join(repo, os.fsdecode(field[:-1]))
+            if os.path.realpath(child) == child and optional(child, "rev-parse", "--show-toplevel") == child:
+                if not optional(child, "rev-parse", "--verify", "HEAD^{commit}"):
+                    exclude.append(b":(exclude,top,literal)" + field[:-1])
+        if not exclude:
+            raise
+    spec = os.path.join(scratch, "include")
+    with open(spec, "wb") as paths:
+        paths.write(b"\0".join([b".", *exclude, b""]))
+    git(repo, *args, "--pathspec-from-file=" + spec, "--pathspec-file-nul", literal=False,
+        env=dict(env, GIT_LITERAL_PATHSPECS="0"))
+
+
+def pin_tree(repo, pin, tree):
+    if not PIN.fullmatch(pin):
+        raise ValueError("invalid baseline ref")
+    git(repo, "update-ref", pin, tree)
+
+
+def capture(repo, pin, tree_only):
     head = optional(repo, "rev-parse", "--verify", "HEAD")
     branch = optional(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     index = git(repo, "rev-parse", "--path-format=absolute", "--git-path", "index").rstrip(b"\n")
@@ -74,14 +107,12 @@ def capture(repo, pin):
             # Use the timestamp of the same index we read, even if Git replaced it.
             os.utime(copy, ns=(stamp, stamp))
         env = dict(os.environ, GIT_INDEX_FILE=copy, GIT_TERMINAL_PROMPT="0")
-        git(repo, "-c", "core.splitIndex=false", *clean_filters(repo), "add", "--all", "--", ".", env=env)
+        add_worktree(repo, scratch, env)
         tree = git(repo, "write-tree", env=env).rstrip(b"\n").decode()
-    if head and tree == optional(repo, "rev-parse", "HEAD^{tree}"):
+    if not tree_only and head and tree == optional(repo, "rev-parse", "HEAD^{tree}"):
         tree = head
     elif pin:
-        if not re.fullmatch(r"refs/grasp/changes/[0-9a-f]{64}", pin):
-            raise ValueError("invalid baseline ref")
-        git(repo, "update-ref", pin, tree)
+        pin_tree(repo, pin, tree)
     return {"ref": tree, "head": head, "branch": branch}
 
 
@@ -182,6 +213,27 @@ def compare(repo, first, last):
     return result
 
 
+def transfer_tree(request):
+    restore = request["operation"] == "restore-tree"
+    if restore:
+        os.unlink(__file__)
+    query = request["repositories"][0]
+    repo = repository(os.path.realpath(request["workspace"]), query["directory"])
+    tree = query["from"]
+    if not OID.fullmatch(tree):
+        raise ValueError("invalid baseline tree")
+    if restore:
+        subprocess.run(git_command(repo, "index-pack", "--stdin", "--strict"),
+                       stdin=sys.stdin.buffer, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        if git(repo, "cat-file", "-t", tree) != b"tree\n":
+            raise ValueError("pack did not supply the baseline tree")
+        pin_tree(repo, query["pin"], tree)
+        return
+    subprocess.run(git_command(repo, "pack-objects", "--stdout", "--revs", "--quiet",
+                               "--threads=1", "--window=0", "--compression=1"),
+                   input=(tree + "\n").encode(), stderr=subprocess.DEVNULL, check=True)
+
+
 def main(request):
     root = os.path.realpath(request["workspace"])
     results = []
@@ -189,7 +241,7 @@ def main(request):
         try:
             repo = repository(root, query["directory"])
             if request["operation"] == "capture":
-                result = capture(repo, query.get("pin", ""))
+                result = capture(repo, query.get("pin", ""), query.get("treeOnly", False))
             else:
                 result = compare(repo, query["from"], query["to"])
         except (OSError, ValueError, StopIteration):
@@ -198,4 +250,7 @@ def main(request):
     return results
 
 
-print(json.dumps(main(request), ensure_ascii=True, separators=(",", ":")))
+if request["operation"] in ("export-tree", "restore-tree"):
+    transfer_tree(request)
+else:
+    print(json.dumps(main(request), ensure_ascii=True, separators=(",", ":")))

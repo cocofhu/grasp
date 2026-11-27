@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -24,14 +24,18 @@ type Scope struct {
 }
 
 type Service struct {
-	db    *gorm.DB
-	slots chan struct{}
-	locks [64]sync.Mutex
+	db           *gorm.DB
+	slots        chan struct{}
+	locks        [64]sync.Mutex
+	maxPackBytes int64
 }
 
 // New shares a small capture budget across interactive and automatic work.
-func New(db *gorm.DB) *Service {
-	return &Service{db: db, slots: make(chan struct{}, 4)}
+func New(db *gorm.DB, maxPackBytes int64) *Service {
+	if maxPackBytes <= 0 {
+		maxPackBytes = 128 << 20
+	}
+	return &Service{db: db, slots: make(chan struct{}, 4), maxPackBytes: maxPackBytes}
 }
 
 type Trees map[string]models.WorkspaceChangeTree
@@ -39,6 +43,8 @@ type Trees map[string]models.WorkspaceChangeTree
 type treeReader interface {
 	CaptureWorkspaceTrees(context.Context, []sandbox.WorkspaceTreeQuery) ([]sandbox.WorkspaceTree, error)
 	CompareWorkspaceTrees(context.Context, []sandbox.WorkspaceTreeQuery) ([]sandbox.WorkspaceTreeChanges, error)
+	ExportWorkspaceTree(context.Context, sandbox.WorkspaceTreeQuery) (io.ReadCloser, error)
+	RestoreWorkspaceTree(context.Context, sandbox.WorkspaceTreeQuery, io.Reader) error
 }
 
 func directory(repo models.SessionRepo) string {
@@ -61,12 +67,19 @@ func (s *Service) scoped(db *gorm.DB, scope Scope) *gorm.DB {
 	return db.Where("owner_kind = ? AND owner_id = ? AND generation = ?", scope.Kind, scope.OwnerID, scope.Generation)
 }
 
+func (s *Service) ownerMutex(scope Scope) *sync.Mutex {
+	return &s.locks[sha256.Sum256([]byte(scope.Kind + "/" + scope.OwnerID))[0]%uint8(len(s.locks))]
+}
+
 // Initialize reserves the baseline before reading Git. A failed first read
 // stays unavailable, since a later successful read can already include edits.
 func (s *Service) Initialize(ctx context.Context, sb *sandbox.Sandbox, scope Scope) {
 	if s == nil || sb == nil || len(scope.Repos) == 0 {
 		return
 	}
+	mu := s.ownerMutex(scope)
+	mu.Lock()
+	defer mu.Unlock()
 	if scope.Kind == models.WorkspaceChangesRun {
 		var count int64
 		err := s.db.WithContext(ctx).Model(&models.Run{}).
@@ -76,21 +89,35 @@ func (s *Service) Initialize(ctx context.Context, sb *sandbox.Sandbox, scope Sco
 		}
 	}
 	row := models.WorkspaceChangeBaseline{OwnerKind: scope.Kind, OwnerID: scope.OwnerID, Generation: scope.Generation}
-	res := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
-	if res.Error != nil || res.RowsAffected == 0 {
+	claimed := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockOwner(tx, scope.Kind, scope.OwnerID); err != nil {
+			return err
+		}
+		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+		claimed = res.RowsAffected > 0
+		return res.Error
+	})
+	if err != nil || !claimed {
+		s.report(scope, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 16*time.Second)
+	captureCtx, cancel := context.WithTimeout(ctx, 16*time.Second)
 	defer cancel()
-	trees, err := s.capture(ctx, sb, scope, true)
+	trees, err := s.capture(captureCtx, sb, scope, true)
 	if err == nil {
-		err = s.scoped(s.db.WithContext(ctx).Model(&row), scope).Select("Trees").
-			Updates(models.WorkspaceChangeBaseline{Trees: trees}).Error
+		row.Trees = trees
+		err = s.saveBaseline(captureCtx, scope, &row)
 	}
-	if err == nil && len(trees) > 0 {
-		_, err = s.compare(ctx, sb, scope, trees, trees, "", false, time.Now().UTC())
+	if err != nil || len(trees) == 0 {
+		s.report(scope, err)
+		return
 	}
+	_, err = s.compare(captureCtx, sb, scope, trees, trees, "", false, time.Now().UTC())
 	s.report(scope, err)
+	if scope.Kind == models.WorkspaceChangesRun {
+		s.report(scope, s.archiveBaseline(ctx, sb, scope, &row))
+	}
 }
 
 // Begin captures the real workspace before a turn, including existing local edits.
@@ -116,8 +143,8 @@ func (s *Service) capture(ctx context.Context, sb treeReader, scope Scope, basel
 		dir := directory(repo)
 		queries[i].Directory = dir
 		if baseline {
-			key := fmt.Sprintf("%s/%s/%d/%s", scope.Kind, scope.OwnerID, scope.Generation, dir)
-			queries[i].Pin = fmt.Sprintf("refs/grasp/changes/%x", sha256.Sum256([]byte(key)))
+			queries[i].Pin = baselinePin(scope, dir)
+			queries[i].TreeOnly = scope.Kind == models.WorkspaceChangesRun
 		}
 	}
 	trees, err := sb.CaptureWorkspaceTrees(ctx, queries)
@@ -157,7 +184,7 @@ func (s *Service) Refresh(ctx context.Context, sb *sandbox.Sandbox, scope Scope)
 }
 
 func (s *Service) record(ctx context.Context, sb treeReader, scope Scope, turnID string, before Trees, interrupted bool) (*models.WorkspaceChangeSnapshot, error) {
-	lock := &s.locks[sha256.Sum256([]byte(scope.Kind + "/" + scope.OwnerID))[0]%uint8(len(s.locks))]
+	lock := s.ownerMutex(scope)
 	lock.Lock()
 	defer lock.Unlock()
 	if ctx.Err() != nil {
@@ -223,6 +250,9 @@ func (s *Service) compare(ctx context.Context, sb treeReader, scope Scope, befor
 	if err != nil {
 		return nil, err
 	}
+	if turnID == "" {
+		s.recoverBaseline(ctx, sb, scope, before, queries, raw)
+	}
 	content := make([]models.WorkspaceChangeContent, 0)
 	available := false
 	for i, report := range raw {
@@ -244,18 +274,13 @@ func (s *Service) compare(ctx context.Context, sb treeReader, scope Scope, befor
 	if !available && turnID == "" {
 		return nil, ErrUnavailable
 	}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Re-evaluate owner existence inside the transaction before publishing.
-		var count int64
-		owner := any(&models.Run{})
-		if scope.Kind == models.WorkspaceChangesSolo {
-			owner = &models.SoloSession{}
-		}
-		if err := tx.Model(owner).Where("id = ?", scope.OwnerID).Count(&count).Error; err != nil {
+	archiveCtx, err := s.stageArchive(ctx, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.WithContext(archiveCtx).Transaction(func(tx *gorm.DB) error {
+		if err := lockOwner(tx, scope.Kind, scope.OwnerID); err != nil {
 			return err
-		}
-		if count == 0 {
-			return gorm.ErrRecordNotFound
 		}
 		if err := tx.Create(item).Error; err != nil {
 			return err
@@ -265,9 +290,13 @@ func (s *Service) compare(ctx context.Context, sb treeReader, scope Scope, befor
 				return err
 			}
 		}
+		if err := tx.Delete(&models.WorkspaceChangeGarbage{ID: item.ID}).Error; err != nil {
+			return err
+		}
 		return s.prune(tx, scope, turnID != "")
 	})
 	if err != nil {
+		s.abandonArchive(ctx, item.ID)
 		return nil, err
 	}
 	return item, nil

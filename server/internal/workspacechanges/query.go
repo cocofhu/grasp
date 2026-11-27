@@ -7,6 +7,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrUnavailable = errors.New("workspace changes unavailable")
@@ -172,19 +173,45 @@ func (s *Service) prune(tx *gorm.DB, scope Scope, turn bool) error {
 	if err := tx.Where("snapshot_id IN ?", ids).Delete(&models.WorkspaceChangeContent{}).Error; err != nil {
 		return err
 	}
-	return tx.Where("id IN ?", ids).Delete(&models.WorkspaceChangeSnapshot{}).Error
+	if err := tx.Where("id IN ?", ids).Delete(&models.WorkspaceChangeSnapshot{}).Error; err != nil {
+		return err
+	}
+	return retireArchives(tx, ids)
 }
 
 // DeleteOwner is called by the owner's delete transaction so no archive is
 // left independently addressable.
 func DeleteOwner(tx *gorm.DB, kind, id string) error {
-	snapshots := tx.Model(&models.WorkspaceChangeSnapshot{}).Select("id").
-		Where("owner_kind = ? AND owner_id = ?", kind, id)
-	if err := tx.Where("snapshot_id IN (?)", snapshots).Delete(&models.WorkspaceChangeContent{}).Error; err != nil {
+	if err := lockOwner(tx, kind, id); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if err := tx.Where("owner_kind = ? AND owner_id = ?", kind, id).Delete(&models.WorkspaceChangeSnapshot{}).Error; err != nil {
+	var snapshotIDs, baselineIDs []string
+	const owner = "owner_kind = ? AND owner_id = ?"
+	if err := tx.Model(&models.WorkspaceChangeSnapshot{}).Where(owner, kind, id).Pluck("id", &snapshotIDs).Error; err != nil {
 		return err
 	}
-	return tx.Where("owner_kind = ? AND owner_id = ?", kind, id).Delete(&models.WorkspaceChangeBaseline{}).Error
+	if err := tx.Model(&models.WorkspaceChangeBaseline{}).Where(owner, kind, id).Where("archive_id <> ''").Pluck("archive_id", &baselineIDs).Error; err != nil {
+		return err
+	}
+	subquery := tx.Model(&models.WorkspaceChangeSnapshot{}).Select("id").Where(owner, kind, id)
+	if err := tx.Where("snapshot_id IN (?)", subquery).Delete(&models.WorkspaceChangeContent{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where(owner, kind, id).Delete(&models.WorkspaceChangeSnapshot{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where(owner, kind, id).Delete(&models.WorkspaceChangeBaseline{}).Error; err != nil {
+		return err
+	}
+	return retireArchives(tx, append(snapshotIDs, baselineIDs...))
+}
+
+// Serialize publication and deletion of an owner's archive metadata.
+func lockOwner(tx *gorm.DB, kind, id string) error {
+	owner := any(&models.Run{})
+	if kind == models.WorkspaceChangesSolo {
+		owner = &models.SoloSession{}
+	}
+	return tx.Model(owner).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", id).
+		Take(&struct{ ID string }{}).Error
 }

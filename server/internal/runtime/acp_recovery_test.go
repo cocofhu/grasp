@@ -130,7 +130,7 @@ func TestReactReplyCapturesWorkspaceBeforeRecoveryReplay(t *testing.T) {
 	if err := db.Create(&models.Run{ID: req.RunID}).Error; err != nil {
 		t.Fatal(err)
 	}
-	h.p.opts.WorkspaceChanges = workspacechanges.New(db)
+	h.p.opts.WorkspaceChanges = workspacechanges.New(db, 0)
 	req.Repos = []models.SessionRepo{{RepoDirName: "project"}}
 	req.WorkspaceChangeTurnID = "reply"
 	req.WorkspaceChangeIteration = 1

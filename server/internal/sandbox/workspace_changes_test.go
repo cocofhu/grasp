@@ -105,6 +105,12 @@ func TestWorkspaceTreesPreserveIndexAndPreview(t *testing.T) {
 	write("image.bin", "\x00\x01")
 	write("00-large.txt", strings.Repeat("b", 512*1024+1))
 	write("tab\tline\n.txt", "new\n")
+	const nested = "drafts/experiment [v1]"
+	if err := os.MkdirAll(filepath.Join(repo, nested), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git("-C", nested, "init", "-b", "main")
+	write(nested+"/draft.txt", "Uncommitted nested project\n")
 	// The unchanged size and mtime match the cached entries. Git relies on
 	// the index's own timestamp to recheck the file contents in this case.
 	setMtime("00-large.txt")

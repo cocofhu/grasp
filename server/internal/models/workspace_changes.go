@@ -11,6 +11,7 @@ type WorkspaceChangeBaseline struct {
 	OwnerKind  string                         `gorm:"primaryKey;size:8"`
 	OwnerID    string                         `gorm:"primaryKey;size:128"`
 	Generation int                            `gorm:"primaryKey;autoIncrement:false"`
+	ArchiveID  string                         `gorm:"size:36"`
 	Trees      map[string]WorkspaceChangeTree `gorm:"serializer:json"`
 }
 
@@ -18,6 +19,7 @@ type WorkspaceChangeTree struct {
 	Ref    string
 	Head   string
 	Branch string
+	Pack   string `json:"pack,omitempty"`
 }
 
 // WorkspaceChangeSnapshot identifies an immutable comparison. Payload bytes
@@ -70,4 +72,10 @@ type WorkspaceChangeContent struct {
 	Patch      []byte `gorm:"serializer:filebytes"`
 	Before     []byte `gorm:"serializer:filebytes"`
 	After      []byte `gorm:"serializer:filebytes"`
+}
+
+// WorkspaceChangeGarbage tracks an unpublished or retired archive directory.
+type WorkspaceChangeGarbage struct {
+	ID      string    `gorm:"primaryKey;size:36"`
+	ReadyAt time.Time `gorm:"index"`
 }

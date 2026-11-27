@@ -3,6 +3,7 @@ package workspacechanges
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -41,6 +42,14 @@ func (f *reviewGitFixture) CompareWorkspaceTrees(_ context.Context, queries []sa
 	return result, nil
 }
 
+func (*reviewGitFixture) ExportWorkspaceTree(context.Context, sandbox.WorkspaceTreeQuery) (io.ReadCloser, error) {
+	return nil, errors.New("no baseline pack in fixture")
+}
+
+func (*reviewGitFixture) RestoreWorkspaceTree(context.Context, sandbox.WorkspaceTreeQuery, io.Reader) error {
+	return errors.New("no baseline pack in fixture")
+}
+
 func TestWorkspaceChangesArchiveUsesOwnerAndStableFileVersion(t *testing.T) {
 	ctx := t.Context()
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "test.db"))
@@ -57,7 +66,7 @@ func TestWorkspaceChangesArchiveUsesOwnerAndStableFileVersion(t *testing.T) {
 	if err := db.Create(&models.WorkspaceChangeBaseline{OwnerKind: scope.Kind, OwnerID: scope.OwnerID, Trees: initial}).Error; err != nil {
 		t.Fatal(err)
 	}
-	service := New(db)
+	service := New(db, 0)
 	git := &reviewGitFixture{after: sandbox.WorkspaceTree{Ref: "after", Head: "commit", Branch: "feature"}}
 	before := Trees{"project": {Ref: "dirty before", Head: "initial", Branch: "feature"}}
 	total, err := service.record(ctx, git, scope, "turn-a", before, true)
