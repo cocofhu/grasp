@@ -2270,7 +2270,7 @@
           "inputLabel": "Paste text from your device here",
           "copyToSandbox": "Copy to sandbox clipboard",
           "pasteNow": "Paste into focused window",
-          "noText": "Your clipboard has no text to paste.",
+          "terminalPaste": "Terminal paste (Ctrl+Shift+V)",
           "tooLarge": "You can paste up to 128 KiB of text at a time. Try a smaller selection.",
           "failed": "Could not write to the sandbox clipboard. Try again.",
           "runtimeOutdated": "Update the sandbox runtime to use the clipboard."

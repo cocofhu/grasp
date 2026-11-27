@@ -1,13 +1,19 @@
 package handlers_test
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/auth"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/router"
+	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gorilla/websocket"
 )
 
@@ -76,6 +82,63 @@ func TestProductionSandboxVNCValidSessionEntersHandler(t *testing.T) {
 		t.Fatalf("want 404/503 business response, got %d %s", w.Code, w.Body.String())
 	}
 	assertNoWSUpgrade(t, w)
+}
+
+func TestProductionSandboxACPClipboardRequiresSoloOwner(t *testing.T) {
+	hn := newHarness(t)
+	hn.h.Solo = services.NewSoloService(hn.db, nil, hn.h.Agents, nil)
+	platform := httptest.NewServer(hn.r)
+	defer platform.Close()
+	var writes atomic.Int32
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/desktop/clipboard" {
+			http.NotFound(w, r)
+			return
+		}
+		writes.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer bridge.Close()
+	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(bridge.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		owner  string
+		status int
+		writes int32
+	}{
+		{"other-user", http.StatusNotFound, 0},
+		{"admin", http.StatusNoContent, 1},
+	} {
+		session := models.SoloSession{ID: "solo-clipboard-" + tc.owner, UserID: tc.owner, AgentName: "a", Status: models.SoloStatusRunning}
+		if err := hn.db.Create(&session).Error; err != nil {
+			t.Fatal(err)
+		}
+		row := models.Sandbox{Name: session.ID, Host: host, ACPPort: port, Status: "running", Purpose: services.SandboxPurposeSolo, ThreadID: session.ID}
+		if err := hn.db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, platform.URL+"/sandbox-bridge/"+uintToStr(row.ID)+"/api/desktop/clipboard", strings.NewReader(`{"text":"clipboard test"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: hn.cookie})
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := platform.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != tc.status || writes.Load() != tc.writes {
+			t.Fatalf("sandbox owned by %s: status %d, writes %d: %s", tc.owner, resp.StatusCode, writes.Load(), body)
+		}
+	}
 }
 
 func TestProductionPreviewOriginCannotUseWorkspaceCookie(t *testing.T) {

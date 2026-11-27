@@ -125,7 +125,8 @@ let connectTimer: ReturnType<typeof setTimeout> | null = null
 const CONSOLE_CONNECT_TIMEOUT_MS = 20_000
 
 const CLIPBOARD_MAX_BYTES = 128 * 1024
-const clipboardVisible = computed(() => !!props.sandboxId && !props.wsUrl?.trim())
+const clipboardAllowed = ref(true)
+const clipboardVisible = computed(() => !!props.sandboxId && !props.wsUrl?.trim() && clipboardAllowed.value)
 const clipboardReady = computed(() =>
   clipboardVisible.value && rfbConnected.value && status.value === 'live' && control.value && !inspect.value,
 )
@@ -136,22 +137,28 @@ const clipboardLabel = computed(() => t(clipboardReady.value
   : 'pages.appPreview.novnc.clipboard.takeOverHint', { shortcut: pasteShortcut }))
 const clipboardOpen = ref(false)
 const clipboardDraft = ref('')
+const clipboardTerminalPaste = ref(false)
 const clipboardError = ref('')
 const clipboardPending = ref<{ id: number; paste: boolean } | null>(null)
 let clipboardRequestId = 0
 let clipboardShortcutRequest: number | null = null
 let clipboardTimer: ReturnType<typeof setTimeout> | undefined
-let pasteWithShift = false
+let pendingBrowserPaste: boolean | null = null
 let useSandboxClipboard = false
+type PasteModifier = 'Control' | 'Meta' | 'Shift'
+const screenModifiers = new Map<string, { key: PasteModifier; location: number; suspended: boolean }>()
+let forwardingScreenModifier = false
 
 function resetScreenPaste() {
-  pasteWithShift = false
+  pendingBrowserPaste = null
   useSandboxClipboard = false
+  screenModifiers.clear()
 }
 
 function closeClipboard() {
   clipboardOpen.value = false
   clipboardDraft.value = ''
+  clipboardTerminalPaste.value = false
   clipboardError.value = ''
   clipboardPending.value = null
   clipboardShortcutRequest = null
@@ -208,35 +215,95 @@ function onClipboardResult(id: number, ok: boolean, code?: string) {
     : 'pages.appPreview.novnc.clipboard.failed')
 }
 
+function forwardScreenModifier(ev: KeyboardEvent, type: 'keydown' | 'keyup', key: PasteModifier, code: string, location: number) {
+  forwardingScreenModifier = true
+  try {
+    ev.target?.dispatchEvent(new KeyboardEvent(type, {
+      key, code, location,
+      modifierCapsLock: ev.getModifierState('CapsLock'),
+      modifierNumLock: ev.getModifierState('NumLock'),
+    }))
+  } finally {
+    forwardingScreenModifier = false
+  }
+}
+
+function restoreScreenModifiers(ev: KeyboardEvent) {
+  for (const [code, modifier] of screenModifiers) {
+    if (!modifier.suspended) continue
+    if (!ev.getModifierState(modifier.key)) {
+      screenModifiers.delete(code)
+      continue
+    }
+    forwardScreenModifier(ev, 'keydown', modifier.key, code, modifier.location)
+    modifier.suspended = false
+  }
+}
+
+function pasteIfBrowserSkippedEvent() {
+  if (pendingBrowserPaste === null) return
+  const shift = pendingBrowserPaste
+  pendingBrowserPaste = null
+  // The browser can skip the paste event entirely when its clipboard is empty.
+  pasteFromSandboxClipboard(shift)
+}
+
 function onScreenPasteKey(ev: KeyboardEvent) {
-  if (ev.key.toLowerCase() !== 'v') return
+  if (forwardingScreenModifier || !clipboardReady.value) return
+  const { key, code } = ev
+  const letter = key.toLowerCase()
+  const modifier = key === 'Control' || key === 'Meta' || key === 'Shift' ? key : null
   if (ev.type === 'keyup') {
-    pasteWithShift = false
+    if (modifier) screenModifiers.delete(code)
+    if (letter === 'v' || modifier === 'Control' || modifier === 'Meta') pasteIfBrowserSkippedEvent()
     return
   }
-  if (!clipboardReady.value || ev.isComposing || ev.altKey) return
+  if (modifier) {
+    if (ev.repeat && screenModifiers.get(code)?.suspended) {
+      ev.stopPropagation()
+      return
+    }
+    if (code) screenModifiers.set(code, { key: modifier, location: ev.location, suspended: false })
+    return
+  }
+  pasteIfBrowserSkippedEvent()
   const isLocalPaste = isApplePlatform ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey
-  if (!isLocalPaste) return
+  if (letter !== 'v' || !isLocalPaste || ev.isComposing || ev.altKey) {
+    restoreScreenModifiers(ev)
+    // Ctrl+C/Ctrl+X (including the terminal copy chord) act on the sandbox clipboard.
+    if ((letter === 'c' || letter === 'x') && ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.isComposing) {
+      useSandboxClipboard = true
+    }
+    return
+  }
   // noVNC cancels keydown on the canvas. Keep the browser's default paste
   // action when obtaining text from the local clipboard.
   ev.stopPropagation()
-  pasteWithShift = ev.shiftKey
-  // noVNC has already forwarded the modifier keydowns. Release those before
-  // the proxy presses the Linux paste shortcut, including Cmd mapped to Alt.
-  for (const modifier of [ev.metaKey ? 'Meta' : 'Control', ...(ev.shiftKey ? ['Shift'] : [])]) {
-    for (const side of ['Left', 'Right']) {
-      ev.target?.dispatchEvent(new KeyboardEvent('keyup', { key: modifier, code: `${modifier}${side}` }))
+  // Release forwarded modifiers for the Linux paste chord, including Cmd
+  // mapped to Alt. Reapply keys that are still physically held before more input.
+  const primaryModifier = ev.metaKey ? 'Meta' : 'Control'
+  const pasteModifiers: PasteModifier[] = ev.shiftKey ? [primaryModifier, 'Shift'] : [primaryModifier]
+  for (const key of pasteModifiers) {
+    for (const [side, location] of [['Left', 1], ['Right', 2]] as const) {
+      const code = `${key}${side}`
+      const state = screenModifiers.get(code)
+      if (state?.suspended) continue
+      forwardScreenModifier(ev, 'keyup', key, code, location)
+      if (state) state.suspended = true
     }
   }
   if (useSandboxClipboard) {
     ev.preventDefault()
     pasteFromSandboxClipboard(ev.shiftKey)
+  } else {
+    pendingBrowserPaste = ev.shiftKey
   }
 }
 
 function pasteFromSandboxClipboard(shift: boolean) {
   const session = rfb
   if (!session) return
+  clipboardError.value = ''
   session.sendKey(0xffe3, 'ControlLeft', true)
   if (shift) session.sendKey(0xffe1, 'ShiftLeft', true)
   session.sendKey(shift ? 0x56 : 0x76, 'KeyV')
@@ -247,11 +314,15 @@ function pasteFromSandboxClipboard(shift: boolean) {
 function onScreenPaste(ev: ClipboardEvent) {
   if (!clipboardReady.value) return
   ev.preventDefault()
-  useSandboxClipboard = false
+  const shift = pendingBrowserPaste ?? false
+  pendingBrowserPaste = null
   const text = ev.clipboardData?.getData('text/plain')
-  if (text) sendClipboard(text, true, pasteWithShift)
-  else clipboardError.value = t('pages.appPreview.novnc.clipboard.noText')
-  pasteWithShift = false
+  if (text) {
+    useSandboxClipboard = false
+    sendClipboard(text, true, shift)
+  } else {
+    pasteFromSandboxClipboard(shift)
+  }
 }
 
 watch(clipboardReady, (ready) => {
@@ -485,6 +556,7 @@ function fail(m: string) {
 function teardown() {
   disposed = true
   rfbConnected.value = false
+  clipboardAllowed.value = true
   closeClipboard()
   takeoverCheck = null
   takeoverPrompt.value = null
@@ -522,6 +594,7 @@ function handleCtrlText(data: string) {
     case 'ready':
       clearConnectTimer()
       clearPreviewWarnTimer()
+      clipboardAllowed.value = msg.clipboard !== false
       status.value = 'live'
       reconnectAttempt.value = 0
       reconnecting.value = false
@@ -1636,12 +1709,16 @@ onBeforeUnmount(() => {
           data-testid="novnc-clipboard-text"
         />
       </label>
+      <label v-if="desktop.isDesktop.value" class="mt-3 flex items-center gap-2 text-sm text-txt2">
+        <input v-model="clipboardTerminalPaste" type="checkbox" :disabled="!!clipboardPending" />
+        {{ t('pages.appPreview.novnc.clipboard.terminalPaste') }}
+      </label>
       <p v-if="clipboardError" class="mt-2 text-xs text-err" role="status">{{ clipboardError }}</p>
       <template #footer>
         <AppButton variant="ghost" :disabled="!clipboardDraft || !!clipboardPending" @click="sendClipboard(clipboardDraft, false)">
           {{ t('pages.appPreview.novnc.clipboard.copyToSandbox') }}
         </AppButton>
-        <AppButton variant="primary" :disabled="!clipboardDraft || !!clipboardPending" @click="sendClipboard(clipboardDraft, true)">
+        <AppButton variant="primary" :disabled="!clipboardDraft || !!clipboardPending" @click="sendClipboard(clipboardDraft, true, clipboardTerminalPaste)">
           {{ t('pages.appPreview.novnc.clipboard.pasteNow') }}
         </AppButton>
       </template>

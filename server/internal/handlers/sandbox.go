@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -479,6 +480,17 @@ func (h *Handlers) SandboxACPProxy(c *gin.Context) {
 	if err != nil || row.ACPPort == 0 {
 		c.String(http.StatusNotFound, "no ACP bridge for this sandbox")
 		return
+	}
+	if path.Clean(c.Param("path")) == "/api/desktop/clipboard" {
+		if h.Auth != nil {
+			if _, ok := h.Auth.RequireSession(c); !ok {
+				return
+			}
+		}
+		if !h.canWriteSandboxClipboard(row, sessionUsername(c)) {
+			c.String(http.StatusNotFound, "sandbox not found")
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()

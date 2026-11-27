@@ -64,7 +64,7 @@ type desktopVNCOptions struct {
 	onConnected func(conn *websocket.Conn, writeJSON func(any) error) func()
 	// allowMsg drops control messages the viewer may not send.
 	allowMsg func(vncClientMsg) bool
-	// setClipboard is only available through the signed-in sandbox route.
+	// setClipboard is available to signed-in viewers with clipboard access.
 	setClipboard func(context.Context, string) error
 }
 
@@ -170,7 +170,7 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 		pushJSON(gin.H{"type": "describe-failed"})
 	})
 
-	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(ctx, sess.Page(), navigateURL)})
+	pushJSON(gin.H{"type": "ready", "url": vncReadyURL(ctx, sess.Page(), navigateURL), "clipboard": opts.setClipboard != nil})
 
 	go func() {
 		select {

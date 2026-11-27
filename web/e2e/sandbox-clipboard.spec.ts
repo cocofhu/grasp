@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-test('sandbox clipboard honors takeover, supports manual staging, and resets the paste source on blur', async ({ page, context }) => {
-  const localText = '  中文和 Emoji 🙂\nconst answer = 42;'
-  const stagedText = '  沙箱剪贴板 📝\n下一行'
+async function mockClipboard(page: Page) {
   const clipboardMessages: Record<string, unknown>[] = []
   const remoteKeys: [number, number][] = []
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.routeWebSocket('**/sandbox-vnc/42/ws', socket => {
     socket.onMessage(data => {
       if (typeof data !== 'string') {
@@ -17,8 +14,19 @@ test('sandbox clipboard honors takeover, supports manual staging, and resets the
       clipboardMessages.push(msg)
       socket.send(JSON.stringify({ type: 'clipboard-result', id: msg.id, ok: true }))
     })
-    socket.send(JSON.stringify({ type: 'ready', url: 'about:blank' }))
+    socket.send(JSON.stringify({ type: 'ready', url: 'about:blank', clipboard: true }))
   })
+  return { clipboardMessages, remoteKeys }
+}
+
+const remotePaste = [[0xffe3, 1], [0x76, 1], [0x76, 0], [0xffe3, 0]]
+
+test.beforeEach(({ context }) => context.grantPermissions(['clipboard-read', 'clipboard-write']))
+
+test('sandbox clipboard honors takeover, supports manual staging, and resets the paste source on blur', async ({ page }) => {
+  const localText = '  中文和 Emoji 🙂\nconst answer = 42;'
+  const stagedText = '  沙箱剪贴板 📝\n下一行'
+  const { clipboardMessages, remoteKeys } = await mockClipboard(page)
   await page.goto('/console.html?tab=novnc')
   await page.evaluate(value => navigator.clipboard.writeText(value), localText)
   const toggle = page.getByRole('button', { name: '剪贴板', exact: true })
@@ -46,11 +54,70 @@ test('sandbox clipboard honors takeover, supports manual staging, and resets the
   expect(clipboardMessages[1]).toEqual({ type: 'clipboard', id: 2, text: stagedText, paste: false, shift: false })
 
   await page.keyboard.press('ControlOrMeta+V')
-  await expect.poll(() => remoteKeys).toEqual([[0xffe3, 1], [0x76, 1], [0x76, 0], [0xffe3, 0]])
+  await expect.poll(() => remoteKeys).toEqual(remotePaste)
   expect(clipboardMessages).toHaveLength(2)
 
   await page.getByPlaceholder('about:blank').focus()
   await canvas.focus()
   await page.keyboard.press('ControlOrMeta+V')
   await expect.poll(() => clipboardMessages[2]).toEqual({ ...localPaste, id: 3 })
+})
+
+test('sandbox copy and an empty local clipboard use the remote paste shortcut', async ({ page }) => {
+  const { clipboardMessages, remoteKeys } = await mockClipboard(page)
+  await page.goto('/console.html?tab=novnc')
+  await page.getByTestId('novnc-control-toggle').click()
+  const canvas = page.locator('.novnc-canvas-host canvas')
+  await canvas.focus()
+  await page.evaluate(() => navigator.clipboard.writeText('Local text that should stay on the device'))
+  await page.keyboard.press('Control+c')
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => remoteKeys).toEqual(remotePaste)
+  expect(clipboardMessages).toHaveLength(0)
+
+  await page.getByPlaceholder('about:blank').focus()
+  await canvas.focus()
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => remoteKeys).toEqual([...remotePaste, ...remotePaste])
+  expect(clipboardMessages).toHaveLength(0)
+})
+
+test('paste restores held modifiers before forwarding the next key to noVNC', async ({ page }) => {
+  const { clipboardMessages } = await mockClipboard(page)
+  await page.goto('/console.html?tab=novnc')
+  await page.getByTestId('novnc-control-toggle').click()
+  const canvas = page.locator('.novnc-canvas-host canvas')
+  const forwarded = await canvas.evaluateHandle(el => {
+    const events: string[] = []
+    for (const type of ['keydown', 'keyup']) {
+      el.addEventListener(type, event => {
+        if (event instanceof KeyboardEvent) events.push(`${event.code} ${type} ${event.isTrusted ? 'physical' : 'synthetic'}`)
+      })
+    }
+    return events
+  })
+  await canvas.focus()
+  await page.evaluate(() => navigator.clipboard.writeText('Clipboard text'))
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.down(modifier)
+  await page.keyboard.down('Shift')
+  await page.keyboard.press('V')
+  await page.keyboard.press('A')
+  await page.keyboard.up('Shift')
+  await page.keyboard.up(modifier)
+  await expect.poll(() => clipboardMessages).toEqual([
+    { type: 'clipboard', id: 1, text: 'Clipboard text', paste: true, shift: true },
+  ])
+  const keys = await forwarded.jsonValue()
+  expect(keys).toContain(`${modifier}Left keyup synthetic`)
+  expect(keys).toContain('ShiftLeft keyup synthetic')
+  expect(keys.slice(-6)).toEqual([
+    `${modifier}Left keydown synthetic`,
+    'ShiftLeft keydown synthetic',
+    'KeyA keydown physical',
+    'KeyA keyup physical',
+    'ShiftLeft keyup physical',
+    `${modifier}Left keyup physical`,
+  ])
 })
