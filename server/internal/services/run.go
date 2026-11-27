@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/workspacechanges"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -319,6 +320,9 @@ func (s *RunService) Delete(id string) error {
 			if err := tx.Where("run_id = ?", id).Delete(m).Error; err != nil {
 				return err
 			}
+		}
+		if err := workspacechanges.DeleteOwner(tx, models.WorkspaceChangesRun, id); err != nil {
+			return err
 		}
 		return tx.Delete(&models.Run{}, "id = ?", id).Error
 	})

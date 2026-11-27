@@ -393,6 +393,7 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
 	if c.shared != nil {
 		if sb, acp, home, handled, err := c.openSharedSandbox(ctx, req); handled {
+			req.workspaceTurn.capture(ctx, sb)
 			return sb, acp, home, err
 		}
 	}
@@ -434,6 +435,8 @@ func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbo
 		removeHome(home)
 		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
+	c.opts.WorkspaceChanges.Initialize(ctx, sb, workspaceChangeScope(req, sb.Name))
+	req.workspaceTurn.capture(ctx, sb)
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
 		WithIdleTimeoutFunc(c.agentIdle).

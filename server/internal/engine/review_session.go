@@ -854,6 +854,8 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	req := e.nodeReq(c, node)
 	req.UserSkill = item.Command.Skill
+	req.WorkspaceChangeTurnID = item.ID
+	req.WorkspaceChangeIteration = conv.Iteration
 	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	force := item.Force
 	var t runtime.ReactTurn
@@ -1012,6 +1014,8 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 
 	req := e.nodeReq(c, producer)
 	req.UserSkill = item.Command.Skill
+	req.WorkspaceChangeTurnID = item.ID
+	req.WorkspaceChangeIteration = conv.Iteration
 	e.prepareVisitModel(ctx, &req, &conv, s.runID, s.producerID)
 	e.host.SetActiveReview(s.runID, true)
 

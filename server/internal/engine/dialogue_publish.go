@@ -73,7 +73,7 @@ type settingEpochStore struct{ db *gorm.DB }
 
 func (s settingEpochStore) LoadEpoch() (int64, bool) {
 	var row models.Setting
-	if err := s.db.First(&row, "key = ?", dialogueEpochSetting).Error; err != nil {
+	if err := s.db.First(&row, map[string]any{"key": dialogueEpochSetting}).Error; err != nil {
 		return 0, false
 	}
 	v, err := strconv.ParseInt(row.Value, 10, 64)

@@ -36,13 +36,16 @@ func (s *Sandbox) ArchiveWorkspace(ctx context.Context) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.creds().streamOutput(ctx, cmd, nil)
+}
+
+func (c sshCreds) streamOutput(ctx context.Context, cmd safeCmd, input io.Reader) (io.ReadCloser, error) {
 	command, err := cmd.render()
 	if err != nil {
 		return nil, err
 	}
-	c := s.creds()
 	if execHook != nil {
-		out, err := execHook(ctx, c.host, c.port, command, nil)
+		out, err := execHook(ctx, c.host, c.port, command, input)
 		if err != nil {
 			return nil, err
 		}
@@ -60,6 +63,7 @@ func (s *Sandbox) ArchiveWorkspace(ctx context.Context) (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
 	session.Stdout = writer
 	session.Stderr = io.Discard
+	session.Stdin = input
 	stop := context.AfterFunc(ctx, func() { _ = session.Close(); _ = client.Close() })
 	go func() {
 		err := session.Run(command)

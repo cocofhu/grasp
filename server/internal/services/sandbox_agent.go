@@ -130,6 +130,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 			return
 		}
 	}
+	if extra.Resident && extra.Restore == nil {
+		s.initializeSoloWorkspaceChanges(ctx, sb, threadID)
+	}
 	acp := sb.ACP().WithSession(sb.WorkspaceDir, runtime.MCPServersJSON(specs))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()

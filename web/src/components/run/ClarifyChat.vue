@@ -51,6 +51,7 @@ export type ClarifyFollowProcess = {
 
 <script setup lang="ts">
 import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
+import WorkspaceChangesEntry from '@/components/changes/WorkspaceChangesEntry.vue'
 import AttachmentDropZone from '@/components/chat/AttachmentDropZone.vue'
 import ChatFileAttachment from '@/components/chat/ChatFileAttachment.vue'
 import ChatAttachmentDetails from '@/components/chat/ChatAttachmentDetails.vue'
@@ -129,6 +130,7 @@ defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{
+    showWorkspaceChanges?: boolean
     runId: string
     nodeId: string
     iteration: number
@@ -555,6 +557,7 @@ watch(composerBlocksConfirm, (blocked) => {
  * follow lock (#850) disable the textarea / 「+」.
  */
 const confirmBusy = computed(() => validating.value || props.handoff?.phase === 'pending')
+const latestChangeTurn = computed(() => displayTurns.value.filter(turn => turn.role === 'agent' && !turn.streaming && !!turn.turnId).at(-1)?.turnId)
 /** Existing observe bar: run-live observe, or this chat following an auto node. */
 const observeComposer = computed(() => !!props.observe || props.followTail?.kind === 'auto')
 const showModelSelect = computed(() => visitModelSelectVisible({
@@ -1639,6 +1642,10 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     </div>
     <!-- Hot path: shrink-0 so confirm-flow stays inside fixed-height sidebar (plan g1.1). -->
     <AttachmentDropZone v-else class="shrink-0 border-t border-line p-3" data-testid="clarify-hot-actions" :disabled="composerInputLocked" @files="addFiles">
+      <WorkspaceChangesEntry
+        v-if="showWorkspaceChanges && latestChangeTurn && !observeComposer"
+        :target="{ kind: 'run', id: runId, nodeId, iteration: iteration || 1, turnId: latestChangeTurn }"
+      />
       <!-- pending-send queue panel (Demo / AgentChatTester): clarify + review -->
       <PendingSendQueuePanel
         :items="queued"
