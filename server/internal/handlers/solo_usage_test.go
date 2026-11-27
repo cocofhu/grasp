@@ -75,7 +75,7 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 		},
 		{
 			ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task",
-			SandboxID: 2, ModelKey: "second-model", ModelFilled: true, InputTokens: 500_000,
+			SandboxID: 2, ModelKey: "First-model", ModelFilled: true, InputTokens: 500_000,
 		},
 		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", InputTokens: 2_345},
 		{ReportID: "second", Source: models.TokenLedgerSourceSolo, ThreadID: "task", ModelKey: "default", InputTokens: 10_000},
@@ -122,8 +122,8 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 	if _, err := services.SaveTokenPricing(hn.db, services.TokenPricing{
 		Currency: services.TokenPricingCurrencyCNY,
 		Models: map[string]services.TokenModelPrice{
-			"first-model":  {Input: 2, Output: 8, CacheRead: 4, CacheWrite: 6},
-			"second-model": {Input: 4},
+			"first-model": {Input: 2, Output: 8, CacheRead: 4, CacheWrite: 6},
+			"First-model": {Input: 4},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -135,14 +135,14 @@ func TestSoloTaskInfoReportsOwnedUsageAndLinkedWorkflowRuns(t *testing.T) {
 		t.Fatalf("usage = %+v", usage)
 	}
 	if len(usage.ByModel) != 3 || usage.ByModel["first-model"].Total() != 1_125_000 ||
-		usage.ByModel["second-model"].Total() != 500_000 || !usage.ByModel["second-model"].Filled ||
+		usage.ByModel["First-model"].Total() != 500_000 || !usage.ByModel["First-model"].Filled ||
 		usage.ByModel[models.TokenUsageModelUnknown].InputTokens != 12_345 {
 		t.Fatalf("usage by model = %+v", usage.ByModel)
 	}
 	if usage.Cost == nil || *usage.Cost != 7 || usage.Currency != services.TokenPricingCurrencyCNY || usage.UnpricedTotal != 12_345 {
 		t.Fatalf("priced usage = %+v", usage)
 	}
-	alias := "second-model"
+	alias := "First-model"
 	if _, err := services.NewWorkspaceService(hn.db).Update(nil, nil, &alias); err != nil {
 		t.Fatal(err)
 	}

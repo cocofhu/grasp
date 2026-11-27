@@ -283,12 +283,15 @@ describe('SandboxInfoButton', () => {
     expect(details.querySelector('[role="dialog"]')).not.toBeNull()
     expect(q('sandbox-info-panel')!.contains(details)).toBe(false)
     expect(details.textContent).toContain('sbx-12')
+    const closeButton = details.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!
+    expect(document.activeElement).toBe(closeButton)
     details.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(q('sandbox-info-panel')).not.toBeNull()
-    q('sandbox-ide-details-close')!.click()
+    closeButton.click()
     await flushPromises()
     expect(q('sandbox-ide-details')).toBeNull()
     expect(q('sandbox-info-panel')).not.toBeNull()
+    expect(document.activeElement).toBe(q('sandbox-ide-picker-trigger'))
 
     q('sandbox-ide-picker-trigger')!.click()
     await flushPromises()

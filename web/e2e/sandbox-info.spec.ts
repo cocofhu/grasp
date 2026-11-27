@@ -95,6 +95,8 @@ for (const theme of ['dark', 'light']) {
     await page.screenshot({ path: test.info().outputPath(`sandbox-info-menu-${theme}.png`) })
     await page.getByTestId('sandbox-ide-info').click()
     await expect(page.getByTestId('sandbox-info-command')).toHaveText('ssh -p 2222 sbx-123@ssh.grasp.example.com')
+    const sshDialog = page.getByRole('dialog', { name: 'SSH 连接信息' })
+    await expect(sshDialog.locator('..')).toHaveCSS('opacity', '1')
     await page.screenshot({ path: test.info().outputPath(`sandbox-info-details-${theme}.png`) })
   })
 }
@@ -144,6 +146,34 @@ test('basic details animate in both directions and respect reduced motion', asyn
   await expect(toggle.locator('svg')).toHaveCSS('rotate', '90deg')
 })
 
+test('SSH details trap Tab and restore focus to the IDE picker', async ({ page }) => {
+  const panel = await openPanel(page, 'theme=light')
+  const picker = panel.getByTestId('sandbox-ide-picker-trigger')
+  await picker.click()
+  await page.getByTestId('sandbox-ide-info').click()
+  const dialog = page.getByRole('dialog', { name: 'SSH 连接信息' })
+  const close = dialog.getByRole('button', { name: '关闭' })
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(dialog.locator('summary')).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(dialog.getByTestId('sandbox-info-copy-command')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(panel).toBeVisible()
+  await expect(picker).toBeFocused()
+
+  await picker.click()
+  await page.getByTestId('sandbox-ide-info').click()
+  await expect(close).toBeFocused()
+  await page.mouse.click(4, 4)
+  await expect(dialog).toBeHidden()
+  await expect(panel).toBeVisible()
+  await expect(picker).toBeFocused()
+})
+
 test('paused sandbox wakes when an IDE link is used, and Escape closes the panel', async ({ page }) => {
   await openPanel(page, 'state=paused')
   await page.getByTestId('sandbox-ide-picker-trigger').click()
@@ -175,8 +205,15 @@ test('narrow screens get a bottom sheet', async ({ page }) => {
   const workflows = page.getByTestId('sandbox-info-workflow-runs')
   await expect(tokens).toHaveText('1,268,330')
   await expect(workflows).toHaveText('发布检查')
-  const tokenValue = (await tokens.boundingBox())!
-  expect((await workflows.boundingBox())!.y).toBeGreaterThan(tokenValue.y + tokenValue.height)
+  // The bottom sheet moves as its details expand. Sample both rows together.
+  const [tokenBottom, workflowTop] = await panel.evaluate(async (element) => {
+    const details = element.querySelector('[data-testid="sandbox-info-details"]')!
+    await Promise.allSettled(details.getAnimations({ subtree: true }).map(animation => animation.finished))
+    const tokens = details.querySelector('[data-testid="sandbox-info-task-tokens"]')!
+    const workflows = details.querySelector('[data-testid="sandbox-info-workflow-runs"]')!
+    return [tokens.getBoundingClientRect().bottom, workflows.getBoundingClientRect().top]
+  })
+  expect(workflowTop).toBeGreaterThan(tokenBottom)
   expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
   await panel.screenshot({ path: test.info().outputPath('sandbox-info-expanded-mobile.png') })
 })

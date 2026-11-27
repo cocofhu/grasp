@@ -65,6 +65,10 @@ func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
 	}
 	scope := db.Where("source = ? AND thread_id = ?", models.TokenLedgerSourceSolo, id)
 	// Group by the exact key even when the database uses a case-insensitive collation.
+	modelKeyGroup := "HEX(model_key)"
+	if db.Dialector.Name() == "postgres" {
+		modelKeyGroup = `model_key COLLATE "C"`
+	}
 	if err := scope.Session(&gorm.Session{}).Model(&models.TokenUsageEvent{}).
 		Select(`COALESCE(MIN(model_key), '') AS model_key,
 		        COALESCE(SUM(input_tokens), 0) AS input_tokens,
@@ -74,7 +78,7 @@ func soloTaskUsage(db *gorm.DB, id string) (SoloTaskUsage, error) {
 		        MAX(CASE WHEN model_filled = ? OR model_source = ? THEN 1 ELSE 0 END) AS filled,
 		        MAX(CASE WHEN report_id IS NULL OR report_id = '' THEN 1 ELSE 0 END) AS legacy`,
 			true, models.TokenUsageSourceBridge).
-		Group("HEX(model_key)").Scan(&buckets).Error; err != nil {
+		Group(modelKeyGroup).Scan(&buckets).Error; err != nil {
 		return SoloTaskUsage{}, err
 	}
 	var reports struct {

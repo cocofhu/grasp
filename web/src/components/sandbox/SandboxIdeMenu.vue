@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppModal from '@/components/ui/AppModal.vue'
 import Icon from '@/components/ui/Icon.vue'
 import SoloPickerShell from '@/components/solo/SoloPickerShell.vue'
 import type { SSHGatewayInfo } from '@/lib/api/apiTypes'
@@ -26,7 +27,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const preferred = ref<PreferredIDE | null>(loadPreferredIDE())
 const showInfo = ref(false)
-const dialog = ref<HTMLElement | null>(null)
 const copied = ref('')
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -62,15 +62,10 @@ function choose(option: RemoteIDEOption, cn: boolean, close: (refocus?: boolean)
 }
 
 function openInfo(close: (refocus?: boolean) => void) {
+  // The modal records the picker trigger as the return target.
+  close()
   showInfo.value = true
-  close(false)
 }
-
-watch(showInfo, async (open) => {
-  if (!open) return
-  await nextTick()
-  dialog.value?.focus()
-})
 
 async function copy(key: string, text: string) {
   if (!(await copyToClipboard(text))) return
@@ -132,15 +127,18 @@ const infoRows = computed(() => [
     </SoloPickerShell>
 
     <Teleport to="body">
-      <div v-if="showInfo" class="ide-dialog-layer" data-testid="sandbox-ide-details" @keydown.escape.stop="showInfo = false">
-        <div class="ide-dialog-scrim" @click="showInfo = false" />
-        <div ref="dialog" class="ide-dialog" role="dialog" aria-modal="true" tabindex="-1" :aria-label="t('pages.solo.sandboxInfo.ide.info')">
-          <header class="ide-dialog-head">
-            <h2>{{ t('pages.solo.sandboxInfo.ide.info') }}</h2>
-            <button type="button" class="ide-dialog-close" :aria-label="t('common.buttons.close')" data-testid="sandbox-ide-details-close" @click="showInfo = false">
-              <Icon name="close" :size="16" :interactive="false" aria-hidden="true" />
-            </button>
-          </header>
+      <!-- Keep the shared modal above the sandbox panel and its backdrop. -->
+      <div class="relative z-[80]" :data-testid="showInfo ? 'sandbox-ide-details' : undefined">
+        <AppModal
+          :open="showInfo"
+          inline
+          :title="t('pages.solo.sandboxInfo.ide.info')"
+          :width="600"
+          :close-label="t('common.buttons.close')"
+          close-on-esc
+          trap-focus
+          @close="showInfo = false"
+        >
           <div class="ide-dialog-body">
             <section class="ide-command">
               <div class="ide-command-label">{{ t('pages.solo.sandboxInfo.ide.command') }}</div>
@@ -180,7 +178,7 @@ const infoRows = computed(() => [
               </div>
             </details>
           </div>
-        </div>
+        </AppModal>
       </div>
     </Teleport>
   </div>
@@ -202,25 +200,7 @@ const infoRows = computed(() => [
   border-color: rgb(var(--c-line-strong));
   background: rgb(var(--c-elevated));
 }
-.ide-dialog-layer { position: fixed; z-index: 80; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.ide-dialog-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .55); backdrop-filter: blur(6px); }
-.ide-dialog {
-  position: relative; display: flex; width: min(600px, 100%); max-height: min(640px, 100%);
-  flex-direction: column; overflow: hidden;
-  border: 1px solid rgb(var(--c-line)); border-radius: 12px; background: rgb(var(--c-surface));
-  box-shadow: 0 24px 64px rgb(0 0 0 / .28); outline: none;
-}
-.ide-dialog-head {
-  display: flex; height: 56px; flex: none; align-items: center; gap: 8px;
-  padding: 0 12px 0 20px; border-bottom: 1px solid rgb(var(--c-line));
-}
-.ide-dialog-head h2 { margin: 0; flex: 1; font-size: 15px; font-weight: 600; color: rgb(var(--c-txt)); }
-.ide-dialog-close {
-  display: inline-flex; width: 32px; height: 32px; flex: none; align-items: center; justify-content: center;
-  border-radius: 8px; color: rgb(var(--c-txt3));
-}
-.ide-dialog-close:hover { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
-.ide-dialog-body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 16px; overflow: auto; padding: 16px 20px 18px; }
+.ide-dialog-body { display: flex; flex-direction: column; gap: 16px; }
 .ide-command { display: flex; flex-direction: column; gap: 8px; }
 .ide-command-label { font-size: 12px; font-weight: 600; color: rgb(var(--c-txt2)); }
 .ide-fields { overflow: hidden; border: 1px solid rgb(var(--c-line)); border-radius: 10px; }
