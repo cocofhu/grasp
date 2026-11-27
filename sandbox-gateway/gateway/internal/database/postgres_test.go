@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
 	"strings"
@@ -15,9 +16,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func TestPostgresSandboxPersistence(t *testing.T) {
+func postgresTestDatabase(t *testing.T) (config.DBConfig, *pgx.Conn) {
+	t.Helper()
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("set TEST_POSTGRES_DSN to a PostgreSQL test database URI")
@@ -43,6 +46,9 @@ func TestPostgresSandboxPersistence(t *testing.T) {
 	if _, err := conn.Exec(ctx, "CREATE SCHEMA "+schema.Sanitize()); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := conn.Exec(ctx, "SELECT set_config('search_path', $1, false)", schema[0]); err != nil {
+		t.Fatal(err)
+	}
 	query := uri.Query()
 	query.Set("search_path", schema[0])
 	uri.RawQuery = query.Encode()
@@ -52,9 +58,43 @@ func TestPostgresSandboxPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return cfg.Database, conn
+}
+
+func TestPostgresStartupWaitsForSchemaLock(t *testing.T) {
+	cfg, conn := postgresTestDatabase(t)
+	if _, err := conn.Exec(t.Context(), "SELECT pg_advisory_lock(hashtext('grasp.schema.startup'), hashtext(current_schema()::text))"); err != nil {
+		t.Fatal(err)
+	}
+	uri, err := url.Parse(cfg.DSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := uri.Query()
+	query.Set("lock_timeout", "300ms")
+	uri.RawQuery = query.Encode()
+	cfg.DSN = uri.String()
+	db, err := database.Open(cfg)
+	if db != nil {
+		pool, _ := db.DB()
+		_ = pool.Close()
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
+		t.Fatalf("startup should wait for the schema lock: %v", err)
+	}
+	var exists bool
+	if err := conn.QueryRow(t.Context(), "SELECT to_regclass('sandboxes') IS NOT NULL").Scan(&exists); err != nil || exists {
+		t.Fatalf("sandboxes table created while schema lock was held: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestPostgresSandboxPersistence(t *testing.T) {
+	cfg, conn := postgresTestDatabase(t)
+	ctx := t.Context()
 	open := func() (*store.Store, func() error) {
 		t.Helper()
-		db, err := database.Open(cfg.Database)
+		db, err := database.Open(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,11 +126,10 @@ func TestPostgresSandboxPersistence(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].ID != sb.ID || rows[0].Status != models.StatusRunning || rows[0].Endpoints()[22] != "127.0.0.1:2222" {
 		t.Fatalf("sandbox metadata after restart: rows=%+v err=%v", rows, err)
 	}
-	table := pgx.Identifier{schema[0], "sandboxes"}
-	if _, err := conn.Exec(ctx, "ALTER TABLE "+table.Sanitize()+" ADD COLUMN purpose text"); err != nil {
+	if _, err := conn.Exec(ctx, "ALTER TABLE sandboxes ADD COLUMN purpose text"); err != nil {
 		t.Fatal(err)
 	}
-	wrongDB, err := database.Open(cfg.Database)
+	wrongDB, err := database.Open(cfg)
 	if err == nil {
 		pool, _ := wrongDB.DB()
 		_ = pool.Close()

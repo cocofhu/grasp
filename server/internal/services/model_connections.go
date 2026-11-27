@@ -56,11 +56,11 @@ func (s *ModelConnectionService) Create(connection modelrouting.Connection) (mod
 	if err := s.validateConnection(&connection); err != nil {
 		return modelrouting.Connection{}, err
 	}
-	row := models.ModelConnection(connection)
-	if err := s.db.Create(&row).Error; err != nil {
+	row := (*models.ModelConnection)(&connection)
+	if err := s.db.Create(row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
-	return modelrouting.Connection(row), nil
+	return connection, nil
 }
 
 func (s *ModelConnectionService) Update(id string, connection modelrouting.Connection) (modelrouting.Connection, error) {
@@ -73,11 +73,11 @@ func (s *ModelConnectionService) Update(id string, connection modelrouting.Conne
 	if err := s.validateConnection(&connection); err != nil {
 		return modelrouting.Connection{}, err
 	}
-	row := models.ModelConnection(connection)
-	if err := s.db.Save(&row).Error; err != nil {
+	row := (*models.ModelConnection)(&connection)
+	if err := s.db.Save(row).Error; err != nil {
 		return modelrouting.Connection{}, err
 	}
-	return modelrouting.Connection(row), nil
+	return connection, nil
 }
 
 func (s *ModelConnectionService) Delete(id string) error {

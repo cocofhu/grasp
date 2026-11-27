@@ -1,6 +1,8 @@
 package database_test
 
 import (
+	"errors"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,8 +12,42 @@ import (
 	"github.com/cocofhu/grasp/internal/databasetest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
+
+func TestPostgresStartupWaitsForSchemaLock(t *testing.T) {
+	dsn := databasetest.PostgresDSN(t)
+	conn, err := pgx.Connect(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(t.Context()) }()
+	if _, err := conn.Exec(t.Context(), "SELECT pg_advisory_lock(hashtext('grasp.schema.startup'), hashtext(current_schema()::text))"); err != nil {
+		t.Fatal(err)
+	}
+	uri, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := uri.Query()
+	query.Set("lock_timeout", "300ms")
+	uri.RawQuery = query.Encode()
+	cfg := config.DatabaseConfig{Driver: "postgres", DSN: uri.String()}
+	db, err := database.OpenWithFiles(cfg, t.TempDir())
+	if db != nil {
+		_ = database.Close(db)
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
+		t.Fatalf("startup should wait for the schema lock: %v", err)
+	}
+	var exists bool
+	if err := conn.QueryRow(t.Context(), "SELECT to_regclass('sandboxes') IS NOT NULL").Scan(&exists); err != nil || exists {
+		t.Fatalf("sandboxes table created while schema lock was held: exists=%v err=%v", exists, err)
+	}
+}
 
 func TestPostgresPersistence(t *testing.T) {
 	cfg := config.DatabaseConfig{Driver: "postgres", DSN: databasetest.PostgresDSN(t)}

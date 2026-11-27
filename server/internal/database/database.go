@@ -3,6 +3,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -280,12 +281,17 @@ func openNetworkDB(dialector gorm.Dialector, root string) (*gorm.DB, error) {
 		return nil, err
 	}
 	if db.Name() == "postgres" {
+		// Read committed lets the ownership check see the previous lock holder's schema.
 		err = db.Transaction(func(tx *gorm.DB) error {
+			// The gateway uses the same database- and schema-scoped advisory lock.
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext('grasp.schema.startup'), hashtext(current_schema()::text))").Error; err != nil {
+				return fmt.Errorf("lock PostgreSQL schema: %w", err)
+			}
 			if tx.Migrator().HasColumn("sandboxes", "workload_released") {
 				return fmt.Errorf("database contains sandbox-gateway records; configure a separate Grasp database")
 			}
 			return finalize(tx)
-		})
+		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	} else {
 		err = finalize(db)
 	}

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -30,12 +31,17 @@ func Open(cfg config.DBConfig) (*gorm.DB, error) {
 		return nil, fmt.Errorf("open %s: %w", cfg.Driver, err)
 	}
 	if db.Name() == "postgres" {
+		// Read committed lets the ownership check see the previous lock holder's schema.
 		err = db.Transaction(func(tx *gorm.DB) error {
+			// Grasp uses the same database- and schema-scoped advisory lock.
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext('grasp.schema.startup'), hashtext(current_schema()::text))").Error; err != nil {
+				return fmt.Errorf("lock PostgreSQL schema: %w", err)
+			}
 			if tx.Migrator().HasColumn("sandboxes", "purpose") {
 				return fmt.Errorf("database contains Grasp records; configure a separate sandbox-gateway database")
 			}
 			return tx.AutoMigrate(&models.Sandbox{})
-		})
+		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	} else {
 		err = db.AutoMigrate(&models.Sandbox{})
 	}
