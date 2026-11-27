@@ -35,6 +35,7 @@ import { useRunLiveCardHost } from '@/lib/run/runLiveCards'
  */
 const props = withDefaults(
   defineProps<{
+    showWorkspaceChanges?: boolean
     mode: 'clarify' | 'review' | 'gate'
     sendRequest?: (text: string, images: ClarifyImage[], annotations: ReactAnnotation[], clientMessageId?: string, references?: ReferenceInput[]) => Promise<boolean>
     /** @ references in the composer; off on the anonymous share page. */
@@ -375,6 +376,7 @@ const showGateModel = computed(() => props.mode === 'gate' && visitModelSelectVi
       :run-id="runId || ''"
       :node-id="nodeId || ''"
       :iteration="iteration"
+      :show-workspace-changes="showWorkspaceChanges"
       v-model:draft="draft"
       v-model:attachments="attachments"
       v-model:annotations="annotations"

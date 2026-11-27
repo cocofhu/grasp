@@ -1134,25 +1134,25 @@ pre.md-code-block > code,
     height: 36px;
   }
 }
-.md-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-keyword, .hljs-selector-tag, .hljs-meta) {
   color: rgb(var(--c-hue-1));
 }
-.md-code-block :is(.hljs-title, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-attr, .hljs-attribute) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-title, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-attr, .hljs-attribute) {
   color: rgb(var(--c-hue-2));
 }
-.md-code-block :is(.hljs-type, .hljs-built_in, .hljs-symbol, .hljs-variable) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-type, .hljs-built_in, .hljs-symbol, .hljs-variable) {
   color: rgb(var(--c-hue-4));
 }
-.md-code-block :is(.hljs-string, .hljs-regexp, .hljs-addition) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-string, .hljs-regexp, .hljs-addition) {
   color: rgb(var(--c-hue-5));
 }
-.md-code-block :is(.hljs-number, .hljs-literal) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-number, .hljs-literal) {
   color: rgb(var(--c-hue-7));
 }
-.md-code-block .hljs-deletion {
+:is(.md-code-block, .syntax-highlight) .hljs-deletion {
   color: rgb(var(--c-hue-8));
 }
-.md-code-block :is(.hljs-comment, .hljs-quote) {
+:is(.md-code-block, .syntax-highlight) :is(.hljs-comment, .hljs-quote) {
   color: color-mix(in srgb, rgb(var(--c-txt2)) 72%, rgb(var(--c-base)));
 }
 /* Drawn ```mermaid fence (lib/shared/markdownMermaid). The card stays a <pre>

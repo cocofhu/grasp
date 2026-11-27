@@ -276,7 +276,7 @@ func (s *SettingsService) apply() {
 
 func (s *SettingsService) dbInt(key string) (int, bool) {
 	var row models.Setting
-	if err := s.db.First(&row, "key = ?", key).Error; err != nil {
+	if err := s.db.First(&row, map[string]any{"key": key}).Error; err != nil {
 		return 0, false
 	}
 	v, err := strconv.Atoi(strings.TrimSpace(row.Value))
@@ -288,7 +288,7 @@ func (s *SettingsService) dbInt(key string) (int, bool) {
 
 func (s *SettingsService) dbString(key string) string {
 	var row models.Setting
-	if err := s.db.First(&row, "key = ?", key).Error; err != nil {
+	if err := s.db.First(&row, map[string]any{"key": key}).Error; err != nil {
 		return ""
 	}
 	return strings.TrimSpace(row.Value)
