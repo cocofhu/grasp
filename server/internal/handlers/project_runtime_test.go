@@ -74,14 +74,14 @@ func TestProjectHTTPIgnoresLegacyRuntimeFields(t *testing.T) {
 	}
 	assertNoRuntimeFields(t, project)
 
-	var columns []string
-	if err := db.Raw("SELECT name FROM pragma_table_info('projects')").Scan(&columns).Error; err != nil {
+	columns, err := db.Migrator().ColumnTypes("projects")
+	if err != nil {
 		t.Fatal(err)
 	}
-	joined := strings.Join(columns, ",")
-	for _, column := range []string{"git_credential_type", "git_credential_id", "ssh_hosts_credential_id", "env", "credential_bindings"} {
-		if strings.Contains(joined, column) {
-			t.Fatalf("column %s survived: %s", column, joined)
+	for _, column := range columns {
+		switch column.Name() {
+		case "git_credential_type", "git_credential_id", "ssh_hosts_credential_id", "env", "credential_bindings":
+			t.Errorf("unexpected persisted column %s", column.Name())
 		}
 	}
 }

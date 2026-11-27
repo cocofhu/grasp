@@ -24,6 +24,12 @@ func setupEngineGraphP(t *testing.T, g models.Graph) (*Engine, *gorm.DB, *fakePr
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	eng, p := setupEngineGraphWithDB(t, db, g)
+	return eng, db, p
+}
+
+func setupEngineGraphWithDB(t *testing.T, db *gorm.DB, g models.Graph) (*Engine, *fakeProvider) {
+	t.Helper()
 	wf := models.WorkflowDef{ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
@@ -37,7 +43,7 @@ func setupEngineGraphP(t *testing.T, g models.Graph) (*Engine, *gorm.DB, *fakePr
 	eng := New(db, p, host, arts, 5)
 	eng.SetBlobStore(blob.NewMemory())
 	cleanupEngineDB(t, eng, db)
-	return eng, db, p
+	return eng, p
 }
 
 func TestBroker(t *testing.T) {

@@ -102,19 +102,6 @@ func Attach(db *gorm.DB, root string) error {
 	return db.Use(&plugin{store: s})
 }
 
-// Rebind is only valid during startup, before this DB is shared with workers.
-func Rebind(db *gorm.DB, root string) error {
-	if p, ok := db.Config.Plugins[pluginName].(*plugin); ok {
-		s, err := New(root)
-		if err != nil {
-			return err
-		}
-		p.store = s
-		return nil
-	}
-	return Attach(db, root)
-}
-
 func FromDB(db *gorm.DB) (*Store, error) {
 	p, ok := db.Config.Plugins[pluginName].(*plugin)
 	if !ok {

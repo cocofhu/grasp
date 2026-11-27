@@ -11,7 +11,7 @@ import (
 // expireModelIdle moves the sandbox's model idle interval past the TTL.
 func expireModelIdle(t *testing.T, s *SandboxService, id uint) time.Time {
 	t.Helper()
-	old := time.Now().Add(-s.IdleTTL() - time.Minute)
+	old := s.db.NowFunc().Add(-s.IdleTTL() - time.Minute)
 	s.mu.Lock()
 	delete(s.modelActive, id)
 	s.mu.Unlock()

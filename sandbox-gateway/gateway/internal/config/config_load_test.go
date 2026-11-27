@@ -89,6 +89,17 @@ func TestStrictConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadPostgresDatabase(t *testing.T) {
+	t.Setenv("SBGW_DB_DSN", "postgresql://user@db/gateway")
+	cfg, err := loadYAML(t, "database: {driver: postgres}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Database.Driver != "postgres" || cfg.Database.DSN != "postgresql://user@db/gateway" {
+		t.Fatalf("PostgreSQL database configuration was not loaded")
+	}
+}
+
 func TestRemovedEnvironmentNamesTheirReplacement(t *testing.T) {
 	t.Setenv("SBGW_IMAGE", "old")
 	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "SBGW_DOCKER_IMAGE") {

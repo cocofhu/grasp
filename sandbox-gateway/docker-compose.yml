@@ -22,6 +22,8 @@ services:
     environment:
       SBGW_CONFIG: /etc/sandbox-gateway/config.yaml
       SBGW_DB_PATH: /data/gateway.db
+      SBGW_DB_DRIVER: ${SBGW_DB_DRIVER:-}
+      SBGW_DB_DSN: ${SBGW_DB_DSN:-}
       # 覆盖镜像（可选）：SBGW_DOCKER_IMAGE=universal-sandbox:local docker compose up --build
       SBGW_DOCKER_IMAGE: ${SBGW_DOCKER_IMAGE:-}
 

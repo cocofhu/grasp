@@ -7,16 +7,34 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/database"
+	"github.com/cocofhu/grasp/internal/databasetest"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"gorm.io/gorm"
 )
 
 func TestSharedCapacityAcrossIndependentServiceConnections(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shared-capacity.db")
+	checkSharedCapacityAcrossIndependentServiceConnections(t, func() (*gorm.DB, error) {
+		return database.OpenSQLiteTest(path)
+	})
+}
+
+func TestPostgresSharedCapacityAcrossIndependentServiceConnections(t *testing.T) {
+	cfg := config.DatabaseConfig{Driver: "postgres", DSN: databasetest.PostgresDSN(t)}
+	root := filepath.Join(t.TempDir(), "payloads")
+	checkSharedCapacityAcrossIndependentServiceConnections(t, func() (*gorm.DB, error) {
+		return database.OpenWithFiles(cfg, root)
+	})
+}
+
+func checkSharedCapacityAcrossIndependentServiceConnections(t *testing.T, open func() (*gorm.DB, error)) {
+	t.Helper()
 	var services []*SandboxService
 	for range 2 {
-		db, err := database.OpenSQLiteTest(path)
+		db, err := open()
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,8 @@ services:
     environment:
       SBGW_LISTEN: ":${GRASP_GATEWAY_PORT:-8899}"
       SBGW_DB_PATH: /data/gateway.db
+      SBGW_DB_DRIVER: ${SBGW_DB_DRIVER:-}
+      SBGW_DB_DSN: ${SBGW_DB_DSN:-}
       SBGW_DRIVER: docker
       SBGW_DOCKER_IMAGE: ${SANDBOX_IMAGE:-ghcr.io/cocofhu/universal-sandbox:4.0.4}
       # Require Bearer auth on /api/v1/* (healthz stays open).
@@ -33,6 +35,8 @@ services:
     environment:
       GRASP_PORT: ${GRASP_PORT:-8080}
       GRASP_DB: /data/grasp.db
+      GRASP_DB_DRIVER: ${GRASP_DB_DRIVER:-}
+      GRASP_DB_DSN: ${GRASP_DB_DSN:-}
       GRASP_SANDBOX_GATEWAY_URL: http://127.0.0.1:${GRASP_GATEWAY_PORT:-8899}
       GRASP_SANDBOX_GATEWAY_API_KEY: ${SANDBOX_GATEWAY_API_KEY:-grasp-local-demo}
       GRASP_SECRETS_KEY: ${GRASP_SECRETS_KEY:-}

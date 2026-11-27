@@ -71,6 +71,9 @@ func applyRunTagsFilter(q *gorm.DB, column string, tags []string) *gorm.DB {
 		case "mysql":
 			candidate, _ := json.Marshal(tag)
 			q = q.Where("JSON_CONTAINS(COALESCE("+column+", JSON_ARRAY()), ?, '$')", string(candidate))
+		case "postgres":
+			candidate, _ := json.Marshal([]string{tag})
+			q = q.Where("CAST(NULLIF("+column+", '') AS jsonb) @> CAST(? AS jsonb)", string(candidate))
 		default:
 			q = q.Where("EXISTS (SELECT 1 FROM json_each(COALESCE("+column+", '[]')) WHERE value = ?)", tag)
 		}
