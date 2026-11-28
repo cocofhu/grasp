@@ -1,73 +1,56 @@
 ---
-title: Quick start
-description: Bring up Grasp on a Linux host with Docker Compose.
+title: Start Grasp
+navTitle: Quick start
+description: Launch the local demo with Docker Compose and verify that Grasp and the sandbox gateway are ready.
+section: start
+order: 10
+keywords: [install, self-host, start.sh, Docker, sign in, doctor]
 ---
 
-## Prerequisites
+## Prepare a host {#prerequisites}
 
-- A Linux host
-- Git, Docker, and Docker Compose installed
+Use a Linux host with Git, Docker, and Docker Compose. The startup script pulls published images and runs Grasp and its Docker gateway on the host. For a shared or production host, Kubernetes, or E2B, start with [Deployment and configuration](/en/help/configuration/).
 
-## Clone the repository
+## Start the published stack {#start}
 
-```bash
-git clone https://github.com/cocofhu/approving.git
-cd approving
-```
-
-## Start
-
-By default this pulls published images from GHCR (no local image build required):
+The published stack uses host networking. By default, Grasp and the Docker gateway listen on every host interface, on ports 8080 and 8899 respectively. Before starting the demo, use firewall or security group rules to restrict both ports to local access. Anyone who can reach port 8080 can sign in with the demo administrator account.
 
 ```bash
+git clone https://github.com/cocofhu/grasp.git
+cd grasp
 ./start.sh -d
 ```
 
-Then open:
+Open [http://localhost:8080](http://localhost:8080) on the host. The local demo login is `admin` / `demo1234`. Set up dedicated users and a credential encryption key for a production deployment.
 
-- UI / API: http://localhost:8080
-- API health: http://localhost:8080/api/health
-- Gateway health: http://localhost:8899/healthz
-- Default login: `admin` / `demo1234` (local-demo)
-
-Default `./start.sh` / `-d` / `restart` do **not** pre-pull the sandbox runtime. The first time you create a sandbox, the Gateway pulls that image on demand (often multi-GB); Inbox starting and the run page show a “pulling image” loading state. Use `./start.sh pull` to warm it up front.
-
-Agent / workspace application configuration and SQLite data live under `.localdata` at the repo root (bind mounts: `gateway` / `db` / `app-data`). Sandbox working files are separate and need their own exports or backups. `./start.sh restart` and `./start.sh down` keep that directory. To wipe application data: `./start.sh down && rm -rf .localdata`; this does not automatically remove all sandboxes.
-
-### Database and attachments share one lifecycle (backup / cleanup)
-
-In the release stack (`compose.release.yaml`), **SQLite** is mounted at `./.localdata/db` and **app data (including default attachment blobs under `data/blobs` relative to `WORKDIR`)** at `./.localdata/app-data`. Composite variable images keep only `blob:{id}` refs in the DB / Run outputs; bytes live under the blobs directory. Backing up or cleaning only one side creates orphan refs (“ref still present, GET `/api/blobs/:id` → 404”), and Run detail shows **Cannot display / Attachment unavailable**.
-
-Ops rules:
-
-- **Paired backup**: every backup set must include both `./.localdata/db` and `./.localdata/app-data` (or the whole `.localdata` tree).
-- **Gateway and keys**: also preserve `./.localdata/gateway`, the original `GRASP_SECRETS_KEY` from `.env`, and deployment configuration. Losing or regenerating that key makes stored encrypted credentials unreadable. Pause writes or use a consistent backup method; save sandbox working files separately.
-- **Paired cleanup / migration / upgrade**: never move only SQLite or delete only the blobs directory; if you override `GRASP_BLOBS_ROOT`, include that path in the same lifecycle as the database.
-- **Historical orphans**: broken refs are not guaranteed recoverable; the UI only shows a permanent-failure placeholder. This delivery does **not** add an orphan inspection console, bulk scan page, or startup/health-check alerts.
-
-## Chat attachments
-
-Drag one or more files from your file manager into the chat input and release when the drop hint appears. You can also use the attachment button or paste files. Pending attachments show their name, type and size, and can be removed individually. The per-file limit is **50 MiB**; folders are not supported. Send after the files finish loading. A failed read removes that file and displays a message, while other content can still be sent.
-
-Click an image thumbnail to enlarge it, or an audio/video attachment to open native browser playback controls. Previews include a download option. If the format is unsupported, preview fails, or the file is too large, download it to view locally. Preview and download use the current chat's existing access permissions.
-
-## Common commands
+Check both services from the host.
 
 ```bash
-./start.sh logs
-./start.sh down
-./start.sh pull          # refresh compose images and warm the sandbox runtime
-./start.sh restart       # down + up -d (keeps .localdata)
-./start.sh dev -d        # source stack: go run + Vite HMR
+curl -fsS http://localhost:8080/api/health
+curl -fsS http://localhost:8899/healthz
 ```
 
-Image tags / digests can be overridden in `.env` — see [`.env.example`](https://github.com/cocofhu/approving/blob/main/.env.example) at the repo root. The default is one `universal-sandbox` image (seven CLIs; Codex supports a ChatGPT login file or a Responses model connection; runtime switches by Agent backend). Publish and smoke checks are covered in [Contributing](https://github.com/cocofhu/approving/blob/main/CONTRIBUTING.md).
+The gateway pulls the sandbox image when you first create a sandbox. To warm the image beforehand, run `./start.sh pull`. Then follow [Your first run](/en/guide/first-run/) to set up a model and an agent.
 
-## Next steps
+## Everyday commands {#commands}
 
-- For shared or production deployments, use the [Docker guide](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md) or the [Kubernetes guide and manifests](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md).
-- After login, the existing setup window guides you through credentials, coding-tool configuration and Git. Save a coding-tool credential or API account, then name a configuration combining the coding tool, saved credential and upstream model. Empty steps open their forms directly. Saving credentials or a model advances to the next step without a completed-items list. Forms open within the current step, and existing credentials and models can be reused. The Git step lets you add credentials inline, then enter a repository URL with its credential and commit author, or skip it. A repository entered here is registered in Settings → Repositories and bound to the default workflow. The setup creates the default team, an empty **Solo** Agent for Solo conversations, and **Default Workflow**. Solo model selectors show the saved configuration name and offer reasoning levels when supported. The sidebar lists all workflows; shared configuration lives in Settings.
-- Coding-tool credential cards save the tool vendor's authorization: an OpenCode key for OpenCode CLI or a DeepSeek key for DeepSeek Harness. Configure general model API keys, endpoints and protocols in API accounts. Model configurations can use either the tool vendor's authorization or a compatible API account. After selecting an API account, search its model directory to choose primary and auxiliary models. Retry failed reads or enter an original model ID manually.
-- [Core concepts](../concepts/) — FSM, gates, sandbox, artifacts
-- [Configuration summary](../../help/configuration/) — points to full `CONFIGURATION.md`
-- [Gateway summary](../../help/gateway/) — points to `GATEWAY.md`
+| Command | Effect |
+| --- | --- |
+| `./start.sh logs` | Follow service logs. |
+| `./start.sh restart` | Recreate release-stack services and keep `.localdata`. |
+| `./start.sh down` | Stop release-stack services and keep `.localdata`. |
+| `./start.sh pull` | Refresh the release images and warm the default sandbox image. |
+| `./start.sh dev -d` | Run the source development stack with frontend hot reload. |
+
+## Back up app data and attachments {#backup}
+
+Keep the database, app data, gateway state, and original deployment key in one recovery set. This preserves attachment references, sandbox records, and saved credentials together.
+
+| Location | Content |
+| --- | --- |
+| `.localdata/db` | The SQLite database and its related files. |
+| `.localdata/app-data` | Agent configuration and default attachment storage. Include the custom path if you set `GRASP_BLOBS_ROOT`. |
+| `.localdata/gateway` | Gateway records. |
+| Deployment configuration and original `GRASP_SECRETS_KEY` | Restore deployment settings and decrypt existing credentials. |
+
+Sandbox working files follow their own [save and restore policy](/en/help/sandbox-lifecycle/). Pause writes or take a consistent snapshot when backing up application data. If migrated attachments show `blob:` errors or return 404, check that the database and attachment directory came from the same backup.

@@ -56,7 +56,22 @@ All notable public-release changes are documented here.
 
 - E2B 沙箱启动失败时，错误信息现在附带启动日志的最后 20 行（敏感值已脱敏），例如仓库 clone 的权限错误，不再只显示「E2B bootstrap exited with code 1」。沙箱日志里 `1`、`0` 等短值不再被误替换成 `[redacted]`。需要更新 sandbox-gateway 镜像。
 
+- 接管沙箱浏览器或电脑画面后，可以用 `Ctrl+V` / `⌘V` 粘贴本机文本，在画面里复制后也可继续粘贴沙箱内容。工具栏「剪贴板」支持粘贴到当前窗口、放入沙箱剪贴板，以及用 `Ctrl+Shift+V` 粘贴到电脑沙箱的终端。用 `Ctrl+C` 中断终端任务后仍可直接粘贴本机文本。支持中文、Emoji 和多行内容。需要更新沙箱运行时。
+
+- 从沙箱应用的菜单复制文本后，粘贴快捷键会优先使用远端剪贴板。
+
+- 用键盘打开沙箱应用的菜单并复制后，粘贴快捷键也会使用远端剪贴板。
+
+- 沙箱桌面的普通按键和点击可以在剪贴板状态查询期间继续转发。
+
+- 接管沙箱桌面后立即复制，随后粘贴仍会使用远端内容，即使剪贴板状态查询响应较慢。
+
+- 沙箱桌面的剪贴板探测失败或超时时，只有当次快捷键使用远端剪贴板。下一次快捷键恢复正常选择粘贴来源。
+
 - E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
+
+- 重做中英文官网和帮助中心。首页可切换 E2B、Kubernetes、Docker 和通过兼容网关接入的公有云沙箱，展开对应配置，随滚动查看 Solo、应用预览和本地 IDE。列出 8 种编程工具及独立运行时的其他适配。
+- 帮助中心可直接打开快速开始、配置项索引和故障排查。目录悬停和键盘聚焦时保持原排版。按配置名搜索可直达字段，手机上可纵向阅读每项的默认值和用途。
 
 - Grasp 和沙箱网关支持 PostgreSQL，可分别通过 `GRASP_DB_DRIVER=postgres` 和 `SBGW_DB_DRIVER=postgres` 启用。SQLite 仍是默认数据库。配置见 [PostgreSQL 部署](CONFIGURATION.md#使用-postgresql)。
 

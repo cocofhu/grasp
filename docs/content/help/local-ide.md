@@ -1,4 +1,11 @@
-# 用本地 IDE 连接沙箱
+---
+title: 用本地 IDE 连接沙箱
+navTitle: 本地 IDE
+description: 启用 SSH 网关，登记公钥并从桌面 IDE 或终端连接。
+section: use
+order: 60
+keywords: [SSH, Remote-SSH, IDE, 2222, 公钥]
+---
 
 开启内置 SSH 网关后，可以用本地的 VS Code、Cursor（Remote-SSH）或任意终端直接打开沙箱，E2B、Docker、Kubernetes 用同一种方式。本地只需要 IDE 和系统自带的 OpenSSH，不用安装其他程序。
 

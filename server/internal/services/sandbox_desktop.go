@@ -24,3 +24,21 @@ func (s *SandboxService) SetDesktopControl(ctx context.Context, id uint, holder,
 	}
 	return sandbox.SetDesktopControl(ctx, host, port, password, holder, client)
 }
+
+// SetDesktopClipboard sends text to the desktop on the sandbox session channel.
+func (s *SandboxService) SetDesktopClipboard(ctx context.Context, id uint, text string) error {
+	host, port, password, err := s.acpConnection(ctx, id)
+	if err != nil {
+		return err
+	}
+	return sandbox.SetDesktopClipboard(ctx, host, port, password, text)
+}
+
+// DesktopClipboardState reads ownership change metadata on the sandbox session channel.
+func (s *SandboxService) DesktopClipboardState(ctx context.Context, id uint, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+	host, port, password, err := s.acpConnection(ctx, id)
+	if err != nil {
+		return sandbox.DesktopClipboardState{}, err
+	}
+	return sandbox.GetDesktopClipboardState(ctx, host, port, password, after)
+}

@@ -55,6 +55,12 @@
       el.addEventListener("click", () => {
         const loc = el.getAttribute("data-locale-set");
         if (loc === "zh-CN" || loc === "en") setSaved(loc);
+        if (document.documentElement.hasAttribute("data-home-entry")) {
+          const next = new URL(el.href);
+          next.search = location.search;
+          next.hash = location.hash;
+          el.href = next.href;
+        }
       });
     });
   }
@@ -66,9 +72,7 @@
    * - no saved: en* on / → /en/; zh* or other stay on /
    * - no saved on /en/: stay (do not bounce zh* away)
    *
-   * Use string-literal destinations only (not DOM-derived data-base).
-   * Avoids CodeQL "DOM text reinterpreted as HTML" on location.replace;
-   * custom-domain docs are served at site root (BASE=/).
+   * Resolve relative to the current home so project Pages prefixes also work.
    */
   function maybeRedirectHome() {
     if (document.documentElement.getAttribute("data-home-entry") !== "1") return;
@@ -76,16 +80,23 @@
     const page = pageLocale();
     const saved = getSaved();
 
+    function redirect(path) {
+      const next = new URL(path, location.href);
+      next.search = location.search;
+      next.hash = location.hash;
+      location.replace(next);
+    }
+
     if (saved === "en" && page === "zh-CN") {
-      location.replace("/en/");
+      redirect("en/");
       return;
     }
     if (saved === "zh-CN" && page === "en") {
-      location.replace("/");
+      redirect("../");
       return;
     }
     if (!saved && page === "zh-CN" && fromNavigator() === "en") {
-      location.replace("/en/");
+      redirect("en/");
     }
   }
 

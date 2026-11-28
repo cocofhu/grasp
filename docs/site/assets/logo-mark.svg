@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Grasp mark">
+  <title>Grasp</title>
+  <!-- Ghost cat mark (same geometry as web/src/components/shell/BrandCharacterMark.vue) -->
+  <svg x="8" y="8" width="112" height="112" viewBox="50 51 120 119">
+    <path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/>
+    <path d="M139 150 C155 151 165 140 165 123 C165 115 162 109 158 106" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M58 160 C55 136 55 108 59 90 C60 80 62 69 64 61 Q66 55 70 59 L84 74 Q100 68 116 74 L130 59 Q134 55 136 61 C138 69 140 80 141 90 C145 108 145 136 142 160 C139.5 165.5 132.5 165.5 130 160 C127.5 155.5 120.5 155.5 118 160 C115.5 165.5 108.5 165.5 106 160 C103.5 155.5 96.5 155.5 94 160 C91.5 165.5 84.5 165.5 82 160 C79.5 155.5 72.5 155.5 70 160 C67.5 165.5 60.5 165.5 58 160Z" fill="#fff" stroke="#1a1a1a" stroke-width="5" stroke-linejoin="round"/>
+    <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+    <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a"/>
+    <path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="74" cy="126" r="6" fill="#c8c8c8"/>
+    <circle cx="126" cy="126" r="6" fill="#c8c8c8"/>
+  </svg>
+</svg>

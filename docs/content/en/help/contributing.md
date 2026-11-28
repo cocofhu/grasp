@@ -1,6 +1,8 @@
 ---
 title: Contributing
 description: How to contribute to Grasp; points to the repository contributing guide.
+section: support
+order: 20
 ---
 
 Contributions are welcome. Please read:

@@ -83,6 +83,7 @@ start_backend() {
   (
     service_log_redirect
     cd "${WORKSPACE_DIR:-/root/workspace}" || exit 1
+    export DISPLAY="${DISPLAY:-:99}"
     exec setsid "$BIN_DIR/backend" "${args[@]}" </dev/null
   ) &
   echo $! >"$pid_file"
