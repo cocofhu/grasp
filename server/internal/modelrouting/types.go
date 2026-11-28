@@ -92,6 +92,8 @@ type Connection struct {
 	Revision     uint64    `json:"revision"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// Read-only capabilities derived from the endpoint and saved model IDs.
+	ModelServiceTiers map[string][]string `gorm:"-" json:"modelServiceTiers,omitempty"`
 }
 
 // Resolved exists only while assembling a run. JSON never contains its secret.

@@ -1,15 +1,22 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/browser"
 	"github.com/cocofhu/grasp/internal/gateshare"
+	"github.com/cocofhu/grasp/internal/sandbox"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 type vncRecPage struct {
@@ -68,6 +75,10 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		want bool
 	}{
 		{vncClientMsg{Type: "inspect", On: true}, true},
+		{vncClientMsg{Type: "clipboard", Text: "example", Paste: true}, false},
+		{vncClientMsg{Type: "clipboard-watch", ID: 1}, false},
+		{vncClientMsg{Type: "clipboard-reset", ID: 1}, false},
+		{vncClientMsg{Type: "clipboard-check", ID: 1}, false},
 		{vncClientMsg{Type: "navigate", Action: "reload"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "http://127.0.0.1:3000/"}, true},
 		{vncClientMsg{Type: "navigate", Action: "goto", URL: "https://localhost/x"}, true},
@@ -85,6 +96,228 @@ func TestPublicVncMsgAllowed(t *testing.T) {
 		if got := publicVncMsgAllowed(c.m); got != c.want {
 			t.Errorf("publicVncMsgAllowed(%+v) = %v, want %v", c.m, got, c.want)
 		}
+	}
+}
+
+func TestVncClipboardSourceWithBaseline(t *testing.T) {
+	baseline := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+	for _, tc := range []struct {
+		name  string
+		after sandbox.DesktopClipboardState
+		want  vncClipboardPasteSource
+	}{
+		{"terminal interrupt", baseline, vncClipboardPasteLocal},
+		{"copy in the same generation", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8, Owned: true}, vncClipboardPasteRemote},
+		{"lost owner", sandbox.DesktopClipboardState{Generation: "x11", Revision: 8}, vncClipboardPasteLocal},
+		{"new display with an owner", sandbox.DesktopClipboardState{Generation: "new", Revision: 9, Owned: true}, vncClipboardPasteRemoteOnce},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observations := 0
+			read := func(_ context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+				if after == (sandbox.DesktopClipboardState{}) {
+					observations++
+					return baseline, nil
+				}
+				if after != baseline {
+					t.Fatalf("unexpected comparison baseline: %+v", after)
+				}
+				return tc.after, nil
+			}
+			clipboard := newVncClipboardObservation(t.Context(), read)
+			<-clipboard.sample.ready
+			clipboard.watch(1)
+			clipboard.watch(1)
+			if clipboard.pasteSource(2) != vncClipboardPasteLocal || clipboard.pasteSource(1) != tc.want || observations != 1 {
+				t.Fatalf("wrong resolution for %s", tc.name)
+			}
+			if clipboard.pasteSource(1) != vncClipboardPasteLocal {
+				t.Fatal("an old observation must not resolve another paste")
+			}
+		})
+	}
+}
+
+func TestVncClipboardWatchDoesNotBlockDesktopInput(t *testing.T) {
+	for _, copyOnInput := range []bool{true, false} {
+		t.Run(fmt.Sprintf("copy=%t", copyOnInput), func(t *testing.T) {
+			state := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+			sampling, allowSample := make(chan struct{}), make(chan struct{})
+			firstSample := true
+			clipboard := newVncClipboardObservation(t.Context(), func(ctx context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+				if after.Generation == "" {
+					if !firstSample {
+						close(sampling)
+						select {
+						case <-allowSample:
+						case <-ctx.Done():
+							return sandbox.DesktopClipboardState{}, ctx.Err()
+						}
+					}
+					firstSample = false
+				}
+				return state, nil
+			})
+			<-clipboard.sample.ready
+			clipboard.reset(0)
+			pending := clipboard.sample
+			<-sampling
+			nextInput := make(chan struct{})
+			go func() {
+				clipboard.watch(1)
+				// The remote app processes the input before the delayed probe samples.
+				if copyOnInput {
+					state.Revision++
+				}
+				close(nextInput)
+			}()
+			select {
+			case <-nextInput:
+				close(allowSample)
+			case <-time.After(250 * time.Millisecond):
+				close(allowSample)
+				t.Fatal("watch held up the next RFB frame")
+			}
+			<-pending.ready
+			want := vncClipboardPasteLocal
+			if copyOnInput {
+				want = vncClipboardPasteRemote
+			}
+			if got := clipboard.pasteSource(1); got != want {
+				t.Fatalf("paste source = %q after input copied = %t", got, copyOnInput)
+			}
+		})
+	}
+}
+
+func TestVncClipboardSourceWithoutBaseline(t *testing.T) {
+	unowned := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7}
+	owned := sandbox.DesktopClipboardState{Generation: "x11", Revision: 8, Owned: true}
+	for _, tc := range []struct {
+		name         string
+		first, later sandbox.DesktopClipboardState
+		err          error
+		want         vncClipboardPasteSource
+	}{
+		{"existing owner", owned, owned, nil, vncClipboardPasteRemoteOnce},
+		{"copy still in flight", unowned, owned, nil, vncClipboardPasteRemoteOnce},
+		{"clipboard stays empty", unowned, unowned, nil, vncClipboardPasteLocal},
+		{"clipboard state timed out", sandbox.DesktopClipboardState{}, sandbox.DesktopClipboardState{}, context.DeadlineExceeded, vncClipboardPasteRemoteOnce},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clipboard := &vncClipboardObservation{
+				ctx: t.Context(),
+				read: func(_ context.Context, after sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+					if after.Generation != "" {
+						return tc.later, tc.err
+					}
+					return tc.first, tc.err
+				},
+			}
+			clipboard.watch(1)
+			if got := clipboard.pasteSource(1); got != tc.want {
+				t.Fatalf("paste source = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVncClipboardProbeFailureDiscardsOldBaseline(t *testing.T) {
+	clipboard := &vncClipboardObservation{
+		ctx:    t.Context(),
+		latest: sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true},
+		read: func(context.Context, sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+			return sandbox.DesktopClipboardState{}, context.DeadlineExceeded
+		},
+	}
+	clipboard.watch(1)
+	if got := clipboard.pasteSource(1); got != vncClipboardPasteRemoteOnce {
+		t.Fatalf("paste source after failed probe = %q", got)
+	}
+	clipboard.watch(2)
+	if clipboard.before.Generation != "" {
+		t.Fatal("next watch used a baseline from before the failed clipboard check")
+	}
+}
+
+func TestVncClipboardRefreshesBaselineOnTakeover(t *testing.T) {
+	state := sandbox.DesktopClipboardState{Generation: "x11", Revision: 7, Owned: true}
+	clipboard := newVncClipboardObservation(t.Context(), func(_ context.Context, _ sandbox.DesktopClipboardState) (sandbox.DesktopClipboardState, error) {
+		return state, nil
+	})
+	<-clipboard.sample.ready
+	// Clipboard changes while the viewer is still watching belong to the new baseline.
+	state.Revision++
+	clipboard.reset(0)
+	<-clipboard.sample.ready
+	clipboard.watch(1)
+	if clipboard.pasteSource(1) != vncClipboardPasteLocal {
+		t.Fatal("clipboard change before takeover replaced the local paste source")
+	}
+}
+
+func TestVncClipboardPastesAfterTextIsSet(t *testing.T) {
+	type frame struct {
+		kind int
+		data []byte
+		err  error
+	}
+	frames := make(chan frame, 1)
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			frames <- frame{err: err}
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		kind, data, err := conn.ReadMessage()
+		frames <- frame{kind, data, err}
+	}))
+	defer peer.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(peer.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	msg := vncClientMsg{Type: "clipboard", ID: 2, Paste: true, Shift: true, Text: "多行🙂\n code"}
+	var clipboard string
+	var result gin.H
+	reply := func(msg any) { result = msg.(gin.H) }
+	if !writeVncClipboard(t.Context(), nil, func(context.Context, string) error {
+		return errors.New("desktop unavailable")
+	}, msg, reply) || result["ok"] != false {
+		t.Fatalf("failed write: %v", result)
+	}
+	if !writeVncClipboard(t.Context(), nil, func(context.Context, string) error {
+		return &sandbox.ChatHTTPError{StatusCode: http.StatusNotFound}
+	}, msg, reply) || result["ok"] != false || result["code"] != "runtime-outdated" {
+		t.Fatalf("old runtime: %v", result)
+	}
+	copyOnly := msg
+	copyOnly.Paste = false
+	if !writeVncClipboard(t.Context(), nil, func(_ context.Context, text string) error {
+		clipboard = text
+		return nil
+	}, copyOnly, reply) || result["ok"] != true || clipboard != msg.Text {
+		t.Fatalf("copy only: clipboard=%q result=%v", clipboard, result)
+	}
+	if !writeVncClipboard(t.Context(), conn, func(_ context.Context, text string) error {
+		clipboard = text
+		return nil
+	}, msg, reply) || result["ok"] != true || result["id"] != 2 || clipboard != msg.Text {
+		t.Fatalf("clipboard=%q result=%v", clipboard, result)
+	}
+	got := <-frames
+	want := []byte{
+		4, 1, 0, 0, 0, 0, 0xff, 0xe3, // Ctrl down
+		4, 1, 0, 0, 0, 0, 0xff, 0xe1, // Shift down
+		4, 1, 0, 0, 0, 0, 0, 'V',
+		4, 0, 0, 0, 0, 0, 0, 'V',
+		4, 0, 0, 0, 0, 0, 0xff, 0xe1,
+		4, 0, 0, 0, 0, 0, 0xff, 0xe3,
+	}
+	if got.err != nil || got.kind != websocket.BinaryMessage || !bytes.Equal(got.data, want) {
+		t.Fatalf("paste frame: %+v", got)
 	}
 }
 

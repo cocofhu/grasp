@@ -16,6 +16,17 @@ func (h *Handlers) ListMCPPresets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"presets": services.MCPPresets()})
 }
 
+func (h *Handlers) canWriteSandboxClipboard(row *models.Sandbox, username string) bool {
+	if row.Purpose != services.SandboxPurposeSolo {
+		return true
+	}
+	if h.Solo == nil || row.ThreadID == "" {
+		return false
+	}
+	_, err := h.Solo.Require(row.ThreadID, username)
+	return err == nil
+}
+
 // desktopSandbox resolves the sandbox for the desktop routes. Solo sandboxes
 // are visible to their owner only.
 func (h *Handlers) desktopSandbox(c *gin.Context) (*models.Sandbox, bool) {

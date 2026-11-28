@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"backend/internal/acp"
@@ -93,12 +94,33 @@ func (p codexProvider) Open(procCtx, handshakeCtx context.Context, opts provider
 			return nil, err
 		}
 	}
-	conn, err := acp.StartAgent(procCtx, appServerArgv(path, opts, prepared.Args), prepared.Env)
+	tier, tierSet := requestedServiceTier(opts)
+	argv := appServerArgv(path, opts, prepared.Args)
+	cleanup := prepared.Cleanup
+	if c := prepared.Connection; tierSet && c != nil && slices.Contains(c.ModelServiceTiers[prepared.ChatModelID()], "fast") {
+		wireTier := "default"
+		if tier == "fast" {
+			wireTier = "priority"
+		}
+		localURL, closeProxy, err := startResponsesTierProxy(c.BaseURL, prepared.ChatModelID(), wireTier)
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("start Codex Responses tier proxy: %w", err)
+		}
+		prefix := "model_providers." + prepared.RouteID + "."
+		argv = append(argv, "-c", prefix+"base_url="+quoteTOML(localURL), "-c", prefix+"supports_websockets=false")
+		prepared.Env = withLoopbackNoProxy(prepared.Env)
+		cleanup = func() {
+			closeProxy()
+			prepared.Cleanup()
+		}
+	}
+	conn, err := acp.StartAgent(procCtx, argv, prepared.Env)
 	if err != nil {
-		prepared.Cleanup()
+		cleanup()
 		return nil, fmt.Errorf("start codex app-server: %w", err)
 	}
-	s := newSession(conn, opts, prepared.Env, onEvent, prepared.Cleanup)
+	s := newSession(conn, opts, prepared.Env, onEvent, cleanup)
 	if prepared.Connection != nil {
 		s.model = prepared.ChatModelID()
 	}
@@ -124,12 +146,7 @@ func appServerArgv(path string, opts provider.OpenOptions, connectionArgs []stri
 	if effort != "" && effort != "auto" {
 		argv = append(argv, "-c", "model_reasoning_effort="+quoteTOML(effort))
 	}
-	tier, tierSet := strings.TrimSpace(opts.ServiceTier), opts.ServiceTierSet || strings.TrimSpace(opts.ServiceTier) != ""
-	if !tierSet {
-		if value := strings.TrimSpace(os.Getenv(envServiceTier)); value != "" {
-			tier, tierSet = value, true
-		}
-	}
+	tier, tierSet := requestedServiceTier(opts)
 	if tierSet {
 		settings, ok := serviceTierConfig[tier]
 		if !ok {
@@ -140,6 +157,15 @@ func appServerArgv(path string, opts provider.OpenOptions, connectionArgs []stri
 		}
 	}
 	return argv
+}
+
+func requestedServiceTier(opts provider.OpenOptions) (string, bool) {
+	tier := strings.TrimSpace(opts.ServiceTier)
+	if opts.ServiceTierSet || tier != "" {
+		return tier, true
+	}
+	tier = strings.TrimSpace(os.Getenv(envServiceTier))
+	return tier, tier != ""
 }
 
 func quoteTOML(value string) string {

@@ -1,51 +1,42 @@
 ---
-title: Gateway
-description: sandbox-gateway contract summary; full details in GATEWAY.md.
+title: Connect a sandbox gateway
+navTitle: Gateway and previews
+description: Set gateway transport, choose a backend, configure preview exposure, and diagnose sandbox startup.
+section: deploy
+order: 30
+keywords: [gateway, preview, direct, subdomain, private_endpoints, E2B, healthz, sandbox]
 ---
 
-Grasp schedules the generic sandbox image through the vendored **sandbox-gateway** control plane. The Web UI talks to the Grasp API; Agent nodes execute in containers via the gateway.
+## Connect Grasp and the gateway {#connect}
 
-## Direct endpoints vs platform proxy
+1. Configure the Docker, Kubernetes, or E2B gateway with its example. The gateway owns image, template, and resource selection.
+2. Set `sandbox.gateway_url` in Grasp and provide the matching gateway API key. Verify that gateway `/healthz` is ready.
+3. Select `sandbox.gateway_transport`. The default `direct` requires callers to reach the relevant endpoints. `gateway` sends traffic through the authenticated gateway and suits server-only endpoints. With multiple named connections, new sandboxes use the connection selected by `sandbox.default_gateway`. Existing sandboxes keep the connection they were created with.
 
-Legacy direct mode remains the default. With `sandbox.gateway_transport: gateway`, Docker, Kubernetes and E2B SSH, chat, IDE and browser connections can use the authenticated gateway, so Grasp can run outside the sandbox network. This requires a gateway API key. Browsers keep using Grasp, with previews under `/preview/...`; no separate preview domain is required. Sandboxes must still reach `server.mcp_advertise` for runtime/config downloads, MCP and other callbacks. The default named gateway affects new sandboxes only; existing sandboxes retain their connection.
+See the [deployment reference](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md) and [gateway contract](https://github.com/cocofhu/grasp/blob/main/GATEWAY.md) for connection and backend fields.
 
-## Docker and Kubernetes deployment
+## Connect a public-cloud sandbox {#cloud}
 
-- [Docker deployment guide](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md): production Compose override, accounts and keys, browser/callback URLs, private-network troubleshooting, backups and upgrades. `.env` does not forward every variable automatically; add settings to the service environment or a mounted configuration file.
-- [Kubernetes guide and manifests](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md): dedicated namespaces, complete RBAC, Secrets, PVCs, Deployments, Services and Ingress. Gateway transport works with ClusterIP sandboxes without a per-sandbox LoadBalancer. The older `pods/log` files are incremental patches only.
+Grasp registers execution environments as named gateways. The repository ships E2B, Kubernetes, and Docker drivers. Each gateway deployment runs one driver, and a single Grasp control plane can register multiple gateways.
 
-For Docker private-network access, check container DNS, host forwarding and firewall rules. For Kubernetes, check Pod DNS, CNI/NetworkPolicy and destination ACLs. Neither uses the E2B allowlist variable; verify connectivity inside the sandbox.
+- **E2B-compatible services.** Configure the provider’s `e2b.apiURL`, `e2b.sandboxURL`, credentials, and template in the E2B gateway. The template must include the Grasp bootstrap and reach the control plane to fetch its runtime bundle. See the [E2B template and deployment guide](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md).
+- **Other cloud sandbox APIs.** Implement a gateway adapter that maps create, inspect, delete, and endpoint discovery to the provider’s API. The environment must support the Grasp runtime bootstrap and session endpoint. Private networks can use authenticated v2 transport. Check the required capabilities, then validate an actual create, connection, and cleanup. See the [minimum gateway contract](https://github.com/cocofhu/grasp/blob/main/GATEWAY.md#minimum-compatible-api) and [data channel protocol](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/gateway/docs/API.md#authenticated-tcp-transport-v2).
 
-- **Direct (already authenticated)**: `session` (session password), `ide` (IDE password), `ssh` (`ROOT_PASSWORD` or `SSH_KEY`).
-- **Not direct**: CDP `:9222` and noVNC `:6080` have no app-layer auth, are not published to the host/LB, and are not shown or copied on the sandbox detail page.
-- **User path**: platform proxy only — `/sandbox-vnc/:sandboxId/ws`, one desktop per sandbox showing the browser the Agent drives (Session required when platform Auth is enabled; validity only, no sandbox/run ownership check). “Open preview” opens sandbox console noVNC; it does not dial websockify.
-- **Inventory window**: Docker already-running `-p` needs TTL/Reinstall. K8s inventory `*-lb` may still expose `:9222` / `:6080` until gateway startup reconcile / Start / Reinstall.
+## Configure app previews {#preview}
 
-## Kubernetes stop confirmation
+| Policy | Effect |
+| --- | --- |
+| `auto`, default | Public direct endpoints use direct access. Private endpoints or authenticated gateway transport use subdomains when a base URL is set. Without it, the corresponding exposure option is hidden. |
+| `subdomain` | Use `preview.expose.subdomain.base_url` and wildcard DNS to give each preview its own subdomain. |
+| `none` | Disable this form of preview exposure. |
+| `direct` | Available on named connections that use direct transport. |
 
-Kubernetes stop waits for the controller to observe scaling down and for live Pods to exit. The PVC is retained and services cold-start on resume; process memory is not saved. Stop is not reported as complete while it is waiting. Observation failures or a subsequent start superseding the stop return an error so operators can check the current state and retry.
+For production subdomains, use HTTPS and a root domain separate from the application. Treat a preview URL as an access credential. CDP and noVNC are proxied by the platform, with the raw ports kept on the service side. For desktop IDE access, see [Connect a local IDE](/en/help/local-ide/).
 
-## E2B private-network access
+## Check network reachability {#network}
 
-E2B sandboxes restrict private-network egress by default. A gateway or host that can reach an internal service does not grant its guests the same access. Supported self-hosted E2B/Embed versions use `ALLOW_SANDBOX_INTERNAL_CIDRS` on the **provider's orchestrator**. Preserve existing entries when adding destinations. This exception applies to every sandbox on the node; it is not a Grasp or gateway setting.
+Verify reachability from Grasp and from the sandbox. For Docker, check container DNS, host forwarding, and firewall rules. For Kubernetes, check pod DNS, network policies, and target ACLs. E2B applies its own private network access policy. Use the [deployment guide](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md) to configure the required destinations.
 
-See the [E2B deployment guide: private-network access](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md#内网访问) for locating the configuration, a Compose example, applying changes and verifying access from inside a guest.
+## Diagnose creation and restore {#diagnose}
 
-## Full documentation
-
-- [GATEWAY.md](https://github.com/cocofhu/grasp/blob/main/GATEWAY.md)
-
-## Health checks (default local stack)
-
-- Gateway: http://localhost:8899/healthz
-- Grasp API: http://localhost:8080/api/health
-
-## Source locations
-
-- Control plane: `sandbox-gateway/gateway/`
-- Sandbox image and scripts: `sandbox-gateway/sandbox/`, `sandbox-gateway/scripts/`
-
-## Related
-
-- [Configuration](../configuration/)
-- [Core concepts](../../guide/concepts/)
+Start with the sandbox status in Solo or in the run detail, then check gateway logs. Missing templates, resource mismatches, failed repository access, and capacity waits can prevent readiness. Verify current settings with a new test sandbox. See [Sandbox lifecycle](/en/help/sandbox-lifecycle/) for reclaim and restore and [Troubleshooting](/en/help/troubleshooting/) for common failures.

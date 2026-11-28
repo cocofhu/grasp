@@ -18,8 +18,14 @@ export default class MockRFB {
   private listeners = new Map<string, Set<Listener>>()
   private flipTimer: ReturnType<typeof setInterval> | null = null
   private disconnected = false
+  private canvas = document.createElement('canvas')
 
-  constructor(_host: HTMLElement, ws: WebSocket) {
+  constructor(host: HTMLElement, private readonly ws: WebSocket) {
+    this.canvas.tabIndex = -1
+    this.canvas.addEventListener('keydown', event => {
+      if (!this.viewOnly) event.preventDefault()
+    })
+    host.appendChild(this.canvas)
     const delayMs = Number(new URLSearchParams(window.location.search).get('connectDelay') || 0)
     const onConnect = () => {
       if (this.disconnected) return
@@ -45,8 +51,27 @@ export default class MockRFB {
     this.listeners.get(type)?.delete(fn)
   }
 
+  focus() {
+    this.canvas.focus()
+  }
+
+  sendKey(keysym: number, code: string, down?: boolean) {
+    if (this.viewOnly || this.disconnected) return
+    if (down === undefined) {
+      this.sendKey(keysym, code, true)
+      this.sendKey(keysym, code, false)
+      return
+    }
+    const event = new DataView(new ArrayBuffer(8))
+    event.setUint8(0, 4)
+    event.setUint8(1, Number(down))
+    event.setUint32(4, keysym)
+    this.ws.send(event.buffer)
+  }
+
   disconnect() {
     this.disconnected = true
+    this.canvas.remove()
     if (this.flipTimer) {
       clearInterval(this.flipTimer)
       this.flipTimer = null

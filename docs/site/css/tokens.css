@@ -1,38 +1,70 @@
+@font-face {
+  font-family: "Geist"; font-weight: 400 600; font-style: normal; font-display: swap;
+  src: url("../assets/fonts/geist-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Grasp Chinese Text"; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("../assets/fonts/grasp-hans-text.woff2") format("woff2");
+  unicode-range: U+3000-303F, U+3400-9FFF, U+FF00-FFEF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/fredoka-latin-600-normal.woff2") format("woff2");
+}
 :root {
-  /* Align with web UI light theme (html.light in global.css) */
-  --ink: #18181b;
-  --muted: #52525b;
-  --muted-2: #a1a1aa;
-  --surface: #fafafb;
-  --surface-2: #f4f4f5;
-  --panel: #ffffff;
-  --accent: #7b61ff;
-  --accent-strong: #4f46e5;
-  --accent-soft: #eef0ff;
-  --line: #e5e5e8;
-  --line-soft: #d4d4d8;
-  --white: #ffffff;
-  --shadow: 0 18px 50px rgba(16, 24, 40, 0.08);
-
-  --font-display: "Noto Serif SC", "Source Serif 4", Georgia, serif;
-  --font-body: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
-
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.5rem;
-  --space-6: 2rem;
-  --space-7: 3rem;
-  --space-8: 4.5rem;
-  --space-9: 6rem;
-
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-shell: 16px;
-  --radius-full: 9999px;
-  --radius: 12px;
-  --max: 1280px;
-  --header-h: 3.5rem;
+  color-scheme: light;
+  --text: #26334c;
+  --subtle: #56627a;
+  --accent: #5643b9;
+  --accent-hover: #453396;
+  --accent-soft: #f1effb;
+  --signal: #7862dd;
+  --bg: #fbfcff;
+  --paper: #fff;
+  --line: #e0e5ef;
+  --line-strong: #cbd2e0;
+  --ink: #141417;
+  --header-bg: rgb(251 252 255 / 94%);
+  --radius: .43rem;
+  --radius-lg: .8rem;
+  --max: 84rem;
+  --header: 3.8rem;
+  --gutter: clamp(1rem, 4.3vw, 3.7rem);
+  --system-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --cjk: "Grasp Chinese Text", var(--system-cjk);
+  --font: "Inter", var(--cjk);
+  --display: "Geist", var(--cjk);
+  --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", var(--cjk), monospace;
+  --ease: cubic-bezier(.2, .72, .2, 1);
 }

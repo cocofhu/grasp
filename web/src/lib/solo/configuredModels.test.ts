@@ -26,7 +26,7 @@ describe('configuredModelChoices', () => {
     ])
   })
 
-  it('offers Fast only for an explicitly declared official Codex model', () => {
+  it('uses Fast capabilities from the selected platform or API route', () => {
     const input = {
       backend: 'codex', catalogReady: true,
       cliModels: [{ id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', serviceTiers: ['fast'] }],
@@ -35,6 +35,12 @@ describe('configuredModelChoices', () => {
     expect(platform.map(model => model.serviceTiers)).toEqual([['fast'], undefined])
     const connection = configuredModelChoices({ ...input, binding: { kind: 'connection', connectionId: 'api', modelId: 'gpt-6.2-sol' } })
     expect(connection[0]?.serviceTiers).toBeUndefined()
+    const api = configuredModelChoices({
+      ...input, binding: { kind: 'connection', connectionId: 'api', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['custom', 'constructor'] },
+      connectionModels: [{ id: 'gpt-6.2-sol' }, { id: 'custom' }, { id: 'constructor' }],
+      connectionModelServiceTiers: { 'gpt-6.2-sol': ['fast'] },
+    })
+    expect(api.map(model => model.serviceTiers)).toEqual([['fast'], undefined, undefined])
     const otherTool = configuredModelChoices({ ...input, backend: 'claude_code', binding: { kind: 'platform', credentialId: 'claude-login', modelId: 'gpt-6.2-sol' } })
     expect(otherTool[0]?.serviceTiers).toBeUndefined()
   })

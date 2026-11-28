@@ -1,15 +1,22 @@
-# Sandbox save, release and restore
+---
+title: Save, reclaim, and restore sandboxes
+navTitle: Sandbox lifecycle
+description: Compare idle reclaim, stop, restore, capacity, and cleanup across the three backends.
+section: deploy
+order: 40
+keywords: [reclaim, restore, E2B, snapshot, Docker, Kubernetes, backup, solo_backup]
+---
 
 Settings has one idle timeout and one capacity limit. The idle timeout applies
 to E2B only and defaults to **6 hours (360 minutes)** after the last model turn.
 Docker and Kubernetes sandboxes are never saved or released for idleness; their
 processes keep running until Stop, closing the session or cancelling the run.
 The capacity limit covers every backend and purpose and defaults to
-**15 sandboxes**. Workflow concurrency remains a separate task scheduling limit.
+**15 sandboxes**. The same setting supplies the workflow concurrency limit.
 
 | Behavior | Docker | Kubernetes | E2B |
 | --- | --- | --- | --- |
-| Idle timeout | Not reclaimed; the environment and its processes keep running | Same | Counts once the model turn ended and no request is queued; terminals, background processes, pages and the IDE do not count. Native pause when it expires |
+| Idle timeout | Not reclaimed; the environment and its processes keep running | Same | Counts once the model turn ended and no request is queued; regular terminal use, background processes, and page access leave the timer alone. A local IDE via the Grasp SSH gateway defers reclaim. Native pause when it expires |
 | Stop environment | Verify a workspace archive, then remove the container | Verify a workspace archive, then remove Deployment, Pods, PVC and exclusive resources | Native pause, or independent checkpoint then release for multiple points; no file archive |
 | Next use | Recreate, restore the newest successful archive, reconnect | Same | Restore the newest successful snapshot and reconnect |
 | Periodic running backup | None | None | None |
@@ -21,6 +28,8 @@ restore does not preserve process memory or temporary files outside the
 workspace. E2B preserves memory, but TCP connections and external requests must
 reconnect. Docker shared bind mounts are not removed. Kubernetes storage-class
 and CSI reclaim policies determine physical volume deletion.
+
+## Waiting for humans and active work {#active-work}
 
 The idle interval and Never auto-reclaim below apply to E2B only. The idle
 interval starts when a complete model turn ends with no queued request,
@@ -47,7 +56,7 @@ continuing. Any active node protects a shared sandbox. Manual Stop uses the same
 save path and refuses while a turn or queued request remains. Cancel is a separate
 terminal operation: conversation/workflow history stays, recovery points do not.
 
-## E2B idle memory return
+## E2B idle memory return {#memory-trim}
 
 Files an E2B guest has read stay in its page cache, and its free memory
 fragments, so the host hugepage pool cannot take that memory back and new

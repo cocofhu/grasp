@@ -2263,6 +2263,18 @@
         "returnControl": "Return control",
         "controlBanner": "You are controlling this page. Select Return control when done.",
         "watchOnlyHint": "Watching only · Click the screen to take over. This click will not affect the page.",
+        "clipboard": {
+          "title": "Clipboard",
+          "takeOverHint": "Take over to use the clipboard",
+          "shortcutHint": "Clipboard · Press {shortcut} with the screen focused",
+          "inputLabel": "Paste text from your device here",
+          "copyToSandbox": "Copy to sandbox clipboard",
+          "pasteNow": "Paste into focused window",
+          "terminalPaste": "Terminal paste (Ctrl+Shift+V)",
+          "tooLarge": "You can paste up to 128 KiB of text at a time. Try a smaller selection.",
+          "failed": "Could not write to the sandbox clipboard. Try again.",
+          "runtimeOutdated": "Update the sandbox runtime to use the clipboard."
+        },
         "usePick": "Add to chat ⤴",
         "clearPick": "Clear",
         "pickedLabel": "Picked",

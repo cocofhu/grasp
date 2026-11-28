@@ -63,6 +63,8 @@ type Connection struct {
 	Models          []Model      `json:"models"`
 	SelectedModelID string       `json:"selectedModelId"`
 	ToolSettings    ToolSettings `json:"toolSettings,omitempty"`
+	// The platform declares these for official OpenAI Responses connections.
+	ModelServiceTiers map[string][]string `json:"modelServiceTiers,omitempty"`
 }
 
 // Prepared owns any temporary configuration for one provider session.

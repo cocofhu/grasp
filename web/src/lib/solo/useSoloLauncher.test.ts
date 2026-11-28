@@ -177,16 +177,27 @@ describe('useSoloLauncher', () => {
     expect(mocks.createSoloSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
   })
 
-  it('launches with Fast independently of effort and clears Fast for an unsupported model', async () => {
+  it.each(['platform', 'connection'] as const)('launches with Fast independently of effort on a %s route and clears it for an unsupported model', async (kind) => {
     mocks.listAgents.mockResolvedValueOnce([{ name: 'Solo', acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'codex-config' } }] as never)
     mocks.listModelConfigurations.mockResolvedValueOnce({ items: [{
       id: 'codex-config', name: 'Codex', backend: 'codex', state: 'active', revision: 1,
-      binding: { kind: 'platform', credentialId: 'codex-login', modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['custom-model'] },
+      binding: {
+        kind, ...(kind === 'platform' ? { credentialId: 'codex-login' } : { connectionId: 'openai-api' }),
+        modelId: 'gpt-6.2-sol', auxiliaryModelIds: ['custom-model'],
+      },
     }] } as never)
     mocks.cliModels.mockResolvedValueOnce({ models: [
       { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', vendor: 'openai', efforts: ['low', 'high', 'max', 'ultra'], serviceTiers: ['fast'] },
       { id: 'custom-model', name: 'Custom model', vendor: 'openai', efforts: ['low', 'high'] },
     ] } as never)
+    if (kind === 'connection') {
+      mocks.listModelConnections.mockResolvedValueOnce({ items: [{
+        id: 'openai-api', name: 'OpenAI API', providerId: 'openai', protocol: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1', state: 'active', revision: 1,
+        models: [{ id: 'gpt-6.2-sol' }, { id: 'custom-model' }],
+        modelServiceTiers: { 'gpt-6.2-sol': ['fast'] },
+      }] } as never)
+    }
     const launcher = mountLauncher()
     await launcher.load()
     await flushPromises()

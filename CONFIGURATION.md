@@ -152,9 +152,9 @@ YAML 中在各自的 `database` 段设置 `driver: postgres` 和 `dsn`。DSN 支
 | YAML 路径 | 环境变量 | 程序默认值 | 含义 / 设置页 |
 | --- | --- | --- | --- |
 | `sandbox.sandbox_memory_mb` | `GRASP_SANDBOX_MEMORY_MB` | `0` | 跟随网关/模板；非零覆盖至少 `1024 MiB`，环境变量会锁定设置页 |
-| `engine.node_auto_retry_max` | `GRASP_NODE_AUTO_RETRY` | `3` | 节点自动重试次数；设置页可改 |
+| `engine.node_auto_retry_max` | `GRASP_NODE_AUTO_RETRY` | `3` | 节点自动重试次数。通过部署配置或设置 API 调整 |
 | `sandbox.max_sandboxes` | — | `15` | 所有用途和后端共用的同时运行上限；创建和恢复都计入，同时也是 workflow 并发运行上限（超出排队），设置页可改 |
-| `sandbox.idle_ttl_minutes` | — | `360 分钟` | 仅 E2B：模型回合结束且无排队请求后开始计时，到期保存并释放运行资源；页面、IDE、预览和终端访问不续期。设置页可改，会话/运行可单独开启「永不自动回收」。Docker/K8s 不因空闲回收 |
+| `sandbox.idle_ttl_minutes` | — | `360 分钟` | 仅 E2B：模型回合结束且无排队请求后开始计时，到期保存并释放运行资源；页面、预览和普通终端访问不续期。Grasp SSH 网关上的 IDE 连接会延后回收，最后一个连接断开后重新计时。设置页可改，会话/运行可单独开启「永不自动回收」。Docker/K8s 不因空闲回收 |
 | `sandbox.memory_trim_idle_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_IDLE_MIN` | `10 分钟` | 仅 E2B：模型回合结束后多久首次清理沙箱页面缓存并整理内存，让空闲内存还给主机大页池；负数关闭 |
 | `sandbox.memory_trim_interval_minutes` | `GRASP_SANDBOX_MEMORY_TRIM_INTERVAL_MIN` | `30 分钟` | 沙箱持续空闲时再次清理的间隔 |
 | `sandbox.memory_trim_min_cache_mb` | `GRASP_SANDBOX_MEMORY_TRIM_MIN_CACHE_MB` | `1024` | 页面缓存低于该值（MiB）时跳过清理 |
@@ -167,7 +167,7 @@ YAML 中在各自的 `database` 段设置 `driver: postgres` 和 `dsn`。DSN 支
 
 Grasp 默认不覆盖 CPU、内存或磁盘。设置页将内存填回 `0` 会清除覆盖，后续创建跟随网关；已存在的沙箱不会调整规格。E2B 的非零内存必须等于选中模板的规格，Docker/K8s 则受各自的 `resources.max` 限制。
 
-空闲时长和容量在设置页统一配置，不再按测试、Solo 或 workflow 区分。已有数据库分类容量取较大值迁移一次，已配置的新值优先；旧的分类超时、硬保留上限和手动续期入口移除。工作流并发数仍控制任务调度，与实际沙箱数量独立。迁移不会主动中断当前工作；后台探测失败时保留资源。
+空闲时长和容量在设置页统一配置，不再按测试、Solo 或 workflow 区分。已有数据库分类容量取较大值迁移一次，已配置的新值优先；旧的分类超时、硬保留上限和手动续期入口移除。同一全局值也用于工作流并发限制，沙箱占用与工作流运行数各自计数。迁移不会主动中断当前工作；后台探测失败时保留资源。
 
 Docker/K8s 只在手动停止时保存并校验工作区归档，再删除运行资源（K8s 包括 PVC），空闲不回收；E2B 空闲到期或停止时等完整快照持久化后暂停，不重复打包文件。`solo_backup.keep` 默认 1；运行中无周期备份，恢复始终使用最新成功版本。完整失败、恢复和取消语义见 [沙箱生命周期](docs/content/help/sandbox-lifecycle.md)。
 
@@ -197,18 +197,20 @@ GitHub 设备码登录（`github.oauth_client_id`，默认空）、Codex 登录�
 | `database.driver` | `SBGW_DB_DRIVER` | `sqlite` | `sqlite`、`mysql` 或 `postgres` |
 | `database.path` | `SBGW_DB_PATH` | `gateway.db` | SQLite 持久化文件 |
 | `database.dsn` | `SBGW_DB_DSN` | 空 | PostgreSQL 必填。MySQL 优先使用 DSN，也可使用下方分项 |
-| `database.host` / `port` | `SBGW_DB_HOST` / `SBGW_DB_PORT` | 空 / `0`（连接时用 `3306`） | MySQL 主机和端口 |
-| `database.user` / `password` / `name` | `SBGW_DB_USER` / `SBGW_DB_PASSWORD` / `SBGW_DB_NAME` | 空 | MySQL 账号及数据库 |
+| `database.host` / `database.port` | `SBGW_DB_HOST` / `SBGW_DB_PORT` | 空 / `0`（连接时用 `3306`） | MySQL 主机和端口 |
+| `database.user` / `database.password` / `database.name` | `SBGW_DB_USER` / `SBGW_DB_PASSWORD` / `SBGW_DB_NAME` | 空 | MySQL 账号及数据库 |
 | `database.params` | — | 空 | MySQL 默认补 `charset=utf8mb4&parseTime=True&loc=Local` |
 | `auth.apiKeys` | `SBGW_API_KEYS` | `[]` | Bearer key，环境变量用逗号分隔；空禁用 v1 鉴权且不能使用 v2 transport |
 | `orphanGC.enabled` | `SBGW_ORPHAN_GC_ENABLED` | `false` | 清理无数据库记录的本部署工作负载 |
 | `orphanGC.intervalSeconds` | `SBGW_ORPHAN_GC_INTERVAL_SEC` | `300` | 扫描间隔 |
 | `orphanGC.minAgeSeconds` | `SBGW_ORPHAN_GC_MIN_AGE_SEC` | `600` | 最小清理年龄；`0` 无年龄限制 |
-| `ports.session` / `codeServer` / `ssh` | — | `8765` / `8744` / `22` | 会话、IDE、SSH 端口 |
-| `ports.cdp` / `novnc` | — | `9222` / `6080` | 内部端口，不发布到 Docker 主机 / K8s LB |
+| `ports.session` / `ports.codeServer` / `ports.ssh` | — | `8765` / `8744` / `22` | 会话、IDE、SSH 端口 |
+| `ports.cdp` / `ports.novnc` | — | `9222` / `6080` | 内部端口，不发布到 Docker 主机 / K8s LB |
 | `ports.app` | — | 见各后端示例 | 额外应用端口 |
+| — | `SBGW_LOG_LEVEL` | `info` | 网关日志级别，仅环境变量 |
+| — | `SBGW_LOG_PRETTY` | `false` | 网关日志人类可读格式，仅环境变量 |
 
-日志通过 `SBGW_LOG_LEVEL`（默认 `info`）和 `SBGW_LOG_PRETTY`（默认 `false`）设置，无 YAML 字段。时间单位为秒，内存 MiB，磁盘 GiB。
+时间单位为秒，内存 MiB，磁盘 GiB。
 
 ## Docker 配置
 

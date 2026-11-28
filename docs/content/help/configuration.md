@@ -1,91 +1,63 @@
 ---
-title: 配置
-description: Grasp、gateway 与沙箱配置入口、默认值和覆盖顺序。
+title: 部署与配置 Grasp
+navTitle: 部署配置
+description: 选择 Docker、Kubernetes 或 E2B 后端，掌握配置入口、覆盖顺序和生效时机。
+section: deploy
+order: 10
+keywords: [配置, YAML, env, .env, CONFIG_PATH, Compose, SBGW_CONFIG, 生产部署, Docker, Kubernetes, E2B]
 ---
 
-Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/config.example.yaml` 与根目录 `.env.example`）。ACP、Git 等运行时凭据只在「设置 → 凭据」 中管理。
+## 选择配置入口 {#where-to-configure}
 
-## 完整文档
+| 想改什么 | 去哪里改 | 如何生效 |
+| --- | --- | --- |
+| API 账号和工具平台授权 | 「设置 → 凭据」 | Agent 运行解析已绑定的凭据。更新后按提示重开受影响的会话。 |
+| 模型、编码工具和推理 | 「设置 → 凭据 → 模型组」，然后在智能体里绑定 | 会话内选择从下一轮生效。自动运行采用默认组。 |
+| Git 仓库、克隆授权、提交身份 | 「设置 → 仓库」 | 下次启动或恢复沙箱时解析。 |
+| 沙箱容量、空闲、内存和 Agent 无动作时限 | 「设置 → 常规」 | 保存后由运行时应用，具体时机见[常规设置](/help/settings/)。 |
+| 端口、数据库、用户、网关连接 | Grasp YAML 或服务进程环境变量 | 改完部署配置后重启相应服务。 |
+| 镜像、模板、CPU、内存、磁盘和网络 | 对应后端的 Gateway YAML | 重启网关并用新沙箱验证。 |
+| 节点目标、总时限和人工门禁 | 工作流画布 | 保存并发布，适用于后续启动的运行。 |
 
-按需要选择配置文档：
+Grasp 通过 `CONFIG_PATH` 指定 YAML，默认路径为 `config.yaml`。Gateway 使用 `-config` 或 `SBGW_CONFIG`。部署时准备一份平台配置和一份与后端匹配的网关配置。
 
-- [Grasp 与沙箱配置、默认值](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md)：按平台、gateway、E2B 和沙箱内部变量分组，包含每项用途、默认值、Compose 差异、最小接入清单和排错。
-- [Grasp 完整环境变量表](https://github.com/cocofhu/grasp/blob/main/server/CONFIGURATION.md)：环境变量与 YAML 字段的对应关系。
-- [E2B 部署](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)：模板构建、gateway 配置与启动步骤。
+## 选择沙箱后端 {#backends}
 
-环境变量表由 `go run ./cmd/gen-configdoc` 生成/校验，CI 会 `-check`。
+| 后端 | 适用场景 | 网关配置 |
+| --- | --- | --- |
+| Docker | 单机演示或自托管服务 | Docker 镜像、资源限制和网络。未指定资源时共享宿主机 CPU 与内存。 |
+| Kubernetes | 通过现有集群管理沙箱 | 集群访问、命名空间、调度、存储类和资源。默认每沙箱 2 CPU、4096 MiB、25 GiB。 |
+| E2B | 使用模板与快照的环境 | API 地址和已构建的模板 ID，规格由实际模板决定。 |
 
-## 默认值与覆盖顺序
+按你的后端使用最新版部署示例。[Docker](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/docker/README.md) · [Kubernetes](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/k8s/README.md) · [E2B](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)
 
-Grasp 读取 `CONFIG_PATH`（默认 `config.yaml`），gateway 通过 `SBGW_CONFIG` 或 `-config` 显式选择文件。一次部署使用两份 YAML：Grasp 平台配置，以及所选后端的 gateway 配置。Docker、Kubernetes、E2B 各有独立示例，不能混合后端段；未知字段或不属于当前后端的环境变量会导致启动失败。
+镜像和模板在 Gateway 配置。发布 Compose 的 `SANDBOX_IMAGE` 会映射到 Docker 网关镜像配置。Grasp 自身的 `sandbox.image` 和 `GRASP_SANDBOX_IMAGE` 已废弃。Docker 和 Kubernetes 的沙箱会保留到手动停止、关闭或取消。E2B 空闲回收默认 360 分钟，见[沙箱生命周期](/help/sandbox-lifecycle/)。
 
-普通配置是环境变量 > YAML > 程序默认值；设置页管理的参数是环境变量 > 设置页保存值 > YAML > 默认值。环境变量锁定相应设置页字段。
+## 判断哪个值生效 {#precedence}
 
-Grasp 默认连接 `http://127.0.0.1:8899`，使用 `direct` transport，镜像为空、内存覆盖为 `0`，跟随网关或所选模板。设置页把内存填回 `0` 可清除覆盖，对之后新建的沙箱生效。Docker 默认不限制 CPU 与内存，沙箱共享宿主资源；Kubernetes 默认 `2 CPU / 4096 MiB / 25 GiB`；E2B 没有内置模板和规格，必须填写实际构建结果。
+- 服务端普通项按**进程环境变量 → YAML → 内置默认值**取值。
+- 支持在「常规」中修改的字段按**进程环境变量 → 界面保存值 → YAML → 默认值**取值。环境变量可锁定对应的界面字段。
+- Compose 根目录的 `.env` 提供编排变量。服务通过 `environment` 或配置挂载获得对应值。新增键时核对实际注入位置。
+- Grasp 的内存覆盖默认 `0`，沿用网关或模板。旧安装曾在界面保存覆盖时，将其改回 `0` 后新沙箱会跟随网关。
 
-E2B 配置只包含明确的 `apiURL`、可选的 `sandboxURL` 和 `templates`。自建填写自己的 E2B API 与沙箱代理地址，没有隐式云服务地址。`templates.standard` 的 `standard` 是本地模板名，`templateID` 才是构建返回的实际标识；单模板自动选择，多模板指定 `defaultTemplate`，也可以在 Grasp 命名连接里用 `profile` 选择。Grasp 无需重复填写模板名和内存。见 [E2B 构建与两份配置示例](https://github.com/cocofhu/grasp/blob/main/sandbox-gateway/deploy/e2b/README.md)。
+## 区分四类时限 {#time-limits}
 
-## 本地快速路径
+| 参数 | 起算点与效果 |
+| --- | --- |
+| `sandbox.idle_ttl_minutes`，默认 360 分钟 | E2B 的模型回合结束且队列为空后，计时到期触发保存和回收。 |
+| `sandbox.chat_idle_timeout_seconds`，默认 1200 秒 | 对话中持续没有输出和活动时，用于检测本轮是否卡住。 |
+| 画布节点总时限，空值回退 `sandbox.agent_node_hard_cap_hours`，默认 24 小时 | 约束一个 Agent 节点的总执行时间。 |
+| `sandbox.sandbox_create_timeout_seconds`，默认 1200 秒 | 等待网关报告沙箱就绪，包含冷启动准备。与网关的 finalize 时限配合。 |
 
-```bash
-./start.sh -d          # 发布镜像栈
-./start.sh dev -d      # 源码 + HMR
-```
+## 凭据、入口和备份 {#secrets}
 
-镜像 tag / digest、网关与沙箱相关变量见 `.env.example`。Agent 侧 API key、GitHub / GitLab Token、SSH 等只能保存到工作区凭据设置；写进共享 Agent 配置、Agent meta 或平台 `sandbox.env` 会被拒绝。先在「凭据」标签保存预设或自定义服务的 API Base 和 Key，再在「模型」标签组合编码工具、凭据与所选模型，Agent 通过 `modelBinding.configurationId` 引用具名配置。模型路由字段由选定配置提供，Agent env 不能覆盖。其他非敏感项可放在 Agent meta env（值可引用 `${vars.<name>}`）。模型运行时参数只来自当前模型配置。
+生产部署时设置明确的用户和 `GRASP_SECRETS_KEY`。密钥用于解密已保存的凭据，与部署配置和数据库成套备份。配置平台代理与沙箱回连地址时，确认浏览器与沙箱分别可以访问对应端点。
 
-Git 授权属于仓库。在「设置 → 仓库」登记仓库时选择一个已保存的 GitHub、GitLab Token 或 SSH 密钥，并可填写提交用户名和邮箱。凭据必须与仓库地址的协议和主机一致，只对这个仓库地址生效；公开仓库可以不选凭据。工作流在设置里绑定要克隆的仓库，启动运行时可以取消部分仓库或修改分支，所选仓库在启动时固定到这次运行。沙箱每次启动都按仓库当前的凭据和提交身份配置，凭据被吊销或删除时启动失败，不会换用其他账号。Agent 不再保存 Git 授权，环境变量也不能设置 `GIT_REPOS`。
+如需 GitHub 设备登录，设置 `GRASP_GITHUB_OAUTH_CLIENT_ID` 并重启。模型凭据与仓库 Token 通过应用的凭据管理添加。启用本地 IDE 连接时，参阅[SSH 网关](/help/local-ide/)的配置和链路。
 
-GitHub / GitLab 凭据在同一表单配置 Host 与 Token，Host 默认是官方站点，也支持自建域名及端口；不再单独配置 GitLab URL。默认配置可保存多个模型组；每个 Agent 用开关选择是否继承默认模型，关闭时使用自己的选择，默认项失效时不会自动换用其他配置。
+## 检查是否生效 {#verify}
 
-### 用 GitHub 登录（设备码）
-
-配置后，新增 github.com 的 GitHub 凭据时可以选「用 GitHub 登录」：页面显示 8 位验证码，用户在 `https://github.com/login/device` 输入并授权后，平台自动保存 Token，不需要手动创建 PAT。结果是一条普通 GitHub 凭据（`GITHUB_TOKEN`，Host 为 `https://github.com`），绑定和注入方式与粘贴的 Token 相同；凭据行会显示 GitHub 账号，并可「重新登录」更换 Token，凭据 ID、别名和已有绑定不变。未配置时界面只有粘贴 Token。
-
-部署方需要：
-
-1. 在 GitHub 的 **Settings → Developer settings → OAuth Apps** 新建 OAuth App（个人或组织均可）。Homepage URL 填平台地址；设备码流程不用回调，Authorization callback URL 可填同一地址。
-2. 在 App 设置中勾选 **Enable Device Flow**。没勾选时登录会提示 Device Flow 未开启。
-3. 把 App 的 **Client ID** 配给服务端：环境变量 `GRASP_GITHUB_OAUTH_CLIENT_ID`，或 YAML `github.oauth_client_id`（环境变量优先），然后重启服务。不需要 client secret，也不要配置它。
-
-说明与限制：
-
-- 申请的 scope 固定为 `repo read:org workflow`。Token 对授权用户能访问的所有仓库都有 `repo` 权限；需要按仓库细分权限时，仍粘贴 fine-grained PAT。授权结果缺少 `repo` 时凭据照常保存，但会提示可能无法克隆私有仓库。
-- 组织开启了 OAuth App 访问限制时，需要组织管理员批准该 OAuth App，否则 Token 访问不到该组织的仓库。
-- 只支持 github.com。自建 GitHub Enterprise Server 继续粘贴 Token。
-- 授权会话保存在服务进程内存，有效期以 GitHub 返回为准（通常 15 分钟）。服务重启后进行中的登录失效，重新获取验证码即可；多实例部署需要粘性会话。
-- OAuth App 的 Token 一年未使用会被 GitHub 自动吊销，届时在凭据行「重新登录」。
-
-### 多模型组与上下文接续
-
-Agent 可绑定不同编码工具的多个模型组，并指定一个默认组。首页、Solo 新建会话及会话内的模型选择包含全部已绑定组的主模型和辅助模型；同名模型会标明所属模型组和工具。未主动选择时使用默认组的主模型，工作流自动执行也使用默认组。
-
-在会话内选择模型时，会同时选择该组的编码工具、账号和推理参数。正在生成的这一轮继续完成，新选择从下一轮生效。换工具会保留当前工作目录与未提交改动，并将早期要求、近期对话、附件引用和工具结果交给新工具；需要更早原文时，Agent 可通过 grasp-tool 的 `get_history` 分页回查。不同工具的原生会话状态不能完整互通，接续依据平台保存的任务记录和当前工作区。
-
-模型组或绑定保存成功后，本页和同一浏览器的其他标签页自动刷新可选项；其他用户刷新后看到最新配置。当前选择有效时保持不变，停用、删除或解除绑定后需要明确重新选择。暂时读取失败不会被当成模型已删除。使用不同专用沙箱镜像、或仓库凭据发生变化时，界面会提示需要重新打开会话。
-
-### 每条回复的时间与运行信息
-
-Solo、工作流和 Agent 测试使用同一套聊天展示。悬停消息可查看时间；回复旁的信息图标支持悬停、键盘聚焦和触屏点击，显示该轮实际 Agent、编码工具、模型、推理强度、耗时和 Token 用量。输入、输出、缓存及不同模型的统计会分别显示，并保留服务商上报或估算的来源说明。
-
-这些信息属于该条回复的执行快照，后续切换模型不会改写旧回复。历史消息没有记录的字段显示为未提供，不使用当前选择推测；尚未完成的回复只显示已收到的信息。
-
-## 沙箱回收与备份位置
-
-所有沙箱使用设置页同一空闲时长和容量上限，默认分别为 60 分钟、15 个。空闲时先保存环境再回收资源，使用时恢复最新成功版本。Docker/K8s 保存工作区归档并删除容器/PVC；E2B 使用完整快照，不重复文件备份。运行中的任务不做周期备份。
-
-- 文件备份默认位于 `data/solo-backups`，可用 `GRASP_SOLO_BACKUP_DIR` 修改；正式栈需与数据库一起备份。
-- 设置 `GRASP_SOLO_BACKUP_S3_BUCKET`、`GRASP_SOLO_BACKUP_S3_ACCESS_KEY_ID` 和 `GRASP_SOLO_BACKUP_S3_SECRET_ACCESS_KEY` 使用 S3。自托管存储可配置 `GRASP_SOLO_BACKUP_S3_ENDPOINT` 和 `GRASP_SOLO_BACKUP_S3_PATH_STYLE`；不完整配置会拒绝启动。
-- 单个文件归档默认上限 4 GiB（`GRASP_SOLO_BACKUP_MAX_BYTES`）；超限或校验失败时保留原环境。
-- `solo_backup.keep`（`GRASP_SOLO_BACKUP_KEEP`）统一控制文件和快照的恢复点数量，默认 **1**。新保存成功后才淘汰旧版本，恢复总用最新成功版本。取消运行/关闭会话删除其全部恢复点，失败会重试。
-- [沙箱生命周期](sandbox-lifecycle.md) 说明等待人工、手动停止、恢复和清理失败的行为。
-- [用本地 IDE 连接沙箱](local-ide.md) 说明内置 SSH 网关的开启、部署和使用。
-
-## 数据库与附件同生命周期
-
-正式栈中 SQLite（`./.localdata/db`）与应用数据/默认 blobs（`./.localdata/app-data`，或自定义 `GRASP_BLOBS_ROOT`）必须**成对备份与成对清理**；迁移/升级勿只搬库。否则复合变量附图会出现孤儿 `blob:` 引用（GET `/api/blobs/:id` → 404）。历史孤儿仅界面永久失败占位，本次不做巡检台。详见 [快速开始](../guide/quick-start.md#数据库与附件同生命周期备份--清理)。
-
-## 相关
-
-- [网关](../gateway/)
-- [贡献](../contributing/)
+1. 检查 Grasp `/api/health` 和 Gateway `/healthz`，然后核对启动日志中的后端和配置来源。
+2. 打开「设置 → 常规」，核对实际值、来源和锁定状态。
+3. 用同一个 Agent 启动测试环境，核对网关、模板、资源和预览入口。使用[首次运行指南](/guide/first-run/)检查模型和仓库。
+4. 查看[配置索引](/help/configuration-reference/)以按字段查找 YAML 路径、环境变量与缺省值。完整网关字段见[部署参数参考](https://github.com/cocofhu/grasp/blob/main/CONFIGURATION.md)。

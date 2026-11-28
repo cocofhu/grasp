@@ -1,6 +1,8 @@
 ---
 title: 贡献
 description: 如何为 Grasp 做贡献；指向仓库贡献指南。
+section: support
+order: 20
 ---
 
 欢迎贡献。请先阅读：

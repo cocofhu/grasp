@@ -88,7 +88,7 @@ func TestOfficialToolCredentialRotationInvalidatesExistingSandbox(t *testing.T) 
 		if previous == current {
 			t.Fatalf("%s credential rotation did not invalidate the live sandbox", tool)
 		}
-		if err := checkAppliedBindings(current, "", &models.Sandbox{ModelBindingFingerprint: previous}, nil); err == nil {
+		if _, err := checkAppliedBindings(sandboxBindings{model: current}, &models.Sandbox{ModelBindingFingerprint: previous}, nil); err == nil {
 			t.Fatalf("%s reused a sandbox carrying the previous authorization", tool)
 		}
 	}

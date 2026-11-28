@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -191,6 +192,53 @@ func TestReprimeReportsFailure(t *testing.T) {
 	err := (&Manager{}).Reprime(context.Background(), &Sandbox{ID: "sb"}, Spec{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "clone a failed") || strings.Contains(err.Error(), "cloning") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRefreshModelCapabilitiesPreservesTheRuntimeWorkspace(t *testing.T) {
+	runDir, home := t.TempDir(), t.TempDir()
+	write := func(path, value string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	envFile := filepath.Join(runDir, "env")
+	keysFile := filepath.Join(runDir, "reprime-keys")
+	configRoot := filepath.Join(home, ".codex")
+	nativeSession := filepath.Join(configRoot, "sessions", "native.jsonl")
+	workFile := filepath.Join(home, "workspace", "work.txt")
+	write(nativeSession, "retained conversation")
+	write(workFile, "retained work")
+	write(keysFile, "KEEP\nGRASP_MODEL_CONNECTION\nGRASP_CONFIGURED_MODELS\n")
+	oldEnv := "declare -x KEEP=\"retain\"\ndeclare -x CONFIG_ROOT=\"" + configRoot + "\"\n"
+	write(envFile, oldEnv+"declare -x GRASP_MODEL_CONNECTION=\"old\"\ndeclare -x GRASP_CONFIGURED_MODELS=\"old\"\n")
+	services := filepath.Join(runDir, "services")
+	write(services, "#!/bin/bash\n[[ \"$*\" == 'restart backend --if-idle' ]]\n")
+	spec := Spec{Env: map[string]string{"GRASP_MODEL_CONNECTION": "new-connection", "GRASP_CONFIGURED_MODELS": "new-models"}}
+	bundle, err := packReprimeBundle(spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "bash", "../../../sandbox-gateway/sandbox/scripts/reprime.sh", "--model-capabilities")
+	cmd.Stdin = bytes.NewReader(bundle)
+	cmd.Env = append(os.Environ(), "GRASP_RUNTIME_RUN_DIR="+runDir, "GRASP_REPRIME_HOME="+home, "GRASP_REPRIME_SERVICES="+services)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("refresh capabilities: %v: %s", err, out)
+	}
+	for path, want := range map[string]string{
+		envFile:       oldEnv + "declare -x GRASP_MODEL_CONNECTION=\"new-connection\"\ndeclare -x GRASP_CONFIGURED_MODELS=\"new-models\"\n",
+		keysFile:      "KEEP\nGRASP_MODEL_CONNECTION\nGRASP_CONFIGURED_MODELS\n",
+		nativeSession: "retained conversation",
+		workFile:      "retained work",
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: got %q, want %q, error %v", path, got, want, err)
+		}
 	}
 }
 

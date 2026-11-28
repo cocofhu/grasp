@@ -26,6 +26,7 @@ export class PreviewVncChannel {
   private rfbOnOpen: EvHandler = null
   private rfbOnClose: CloseHandler = null
   private rfbOnError: EvHandler = null
+  private heldOutgoing: Array<() => void> | null = null
 
   constructor(ws: WebSocket) {
     this.ws = ws
@@ -71,7 +72,33 @@ export class PreviewVncChannel {
   }
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
-    this.ws.send(data)
+    if (!this.heldOutgoing) {
+      this.ws.send(data)
+      return
+    }
+    // noVNC reuses its send buffer as soon as send returns.
+    const frame = ArrayBuffer.isView(data)
+      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice()
+      : typeof data === 'string' || data instanceof Blob ? data : data.slice(0)
+    this.heldOutgoing.push(() => this.ws.send(frame))
+  }
+
+  afterOutgoing(send: () => void) {
+    if (this.heldOutgoing) this.heldOutgoing.push(send)
+    else send()
+  }
+
+  /** Hold frames behind a clipboard probe until its paste can go out first. */
+  holdOutgoing(): (first?: () => void) => void {
+    const queue: Array<() => void> = []
+    this.heldOutgoing = queue
+    return (first) => {
+      if (this.heldOutgoing !== queue) return
+      this.heldOutgoing = null
+      if (this.ws.readyState !== WebSocket.OPEN) return
+      first?.()
+      for (const send of queue) this.afterOutgoing(send)
+    }
   }
 
   close(code?: number, reason?: string) {

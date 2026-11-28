@@ -70,6 +70,56 @@ func TestSoloServiceTierPreservesEffortAndAppliesOnlyAtNextTurn(t *testing.T) {
 	}
 }
 
+func TestSoloServiceTierFollowsTheResponsesConnection(t *testing.T) {
+	setCredentialKey(t)
+	solo := serviceTierFixture(t)
+	key := newModelKey(t, NewCredentialService(solo.db), "API key")
+	connections := NewModelConnectionService(solo.db)
+	connection, err := connections.Create(modelrouting.Connection{
+		Name: "OpenAI", ProviderID: "openai", Protocol: modelrouting.ProtocolResponses, BaseURL: "https://api.openai.com/v1", CredentialID: key.ID,
+		Models:            []modelrouting.Model{{ID: "gpt-6.2-sol"}, {ID: "custom"}},
+		ModelServiceTiers: map[string][]string{"custom": {"fast"}},
+	})
+	if err != nil || !slices.Equal(connection.ModelServiceTiers["gpt-6.2-sol"], []string{"fast"}) || len(connection.ModelServiceTiers) != 1 {
+		t.Fatalf("official API capability = %v, err = %v", connection.ModelServiceTiers, err)
+	}
+	catalog, err := connections.List()
+	if err != nil || len(catalog) != 1 || !slices.Equal(catalog[0].ModelServiceTiers["gpt-6.2-sol"], []string{"fast"}) {
+		t.Fatalf("connection list did not advertise Fast: %+v, %v", catalog, err)
+	}
+	var configuration models.ModelConfiguration
+	if err := solo.db.First(&configuration, "id = ?", "sandbox-fixture").Error; err != nil {
+		t.Fatal(err)
+	}
+	configuration.Binding = modelrouting.Binding{
+		Kind: "connection", ConnectionID: connection.ID, ModelID: "gpt-6.2-sol", AuxiliaryModelIDs: []string{"custom"},
+	}
+	if err := solo.db.Save(&configuration).Error; err != nil {
+		t.Fatal(err)
+	}
+	row := models.SoloSession{ID: "api-fast-settings", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning,
+		CurrentConfigurationID: configuration.ID, AppliedConfigurationID: configuration.ID, CurrentModelSet: true, AppliedModelSet: true,
+		CurrentReasoningEffort: "high", AppliedReasoningEffort: "high"}
+	if err := solo.db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	fast := "fast"
+	view, err := solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", nil, nil, &fast)
+	if err != nil || view.CurrentServiceTier != "fast" || !slices.Equal(view.ServiceTiers, []string{"fast"}) || view.AppliedServiceTier != "" || view.CurrentReasoningEffort != "high" {
+		t.Fatalf("API Fast selection changed another setting or was rejected: %+v, %v", view, err)
+	}
+	connection.BaseURL = "https://compatible.example.test/v1"
+	updated, err := connections.Update(connection.ID, connection)
+	if err != nil || len(updated.ModelServiceTiers) != 0 {
+		t.Fatalf("compatible route inherited Fast: %v, %v", updated.ModelServiceTiers, err)
+	}
+	_, err = solo.SetCurrentModelSettings(context.Background(), row.ID, "alice", nil, nil, &fast)
+	var inputErr *SoloError
+	if !errors.As(err, &inputErr) || inputErr.Code != "service_tier_unavailable" {
+		t.Fatalf("compatible route accepted Fast: %v", err)
+	}
+}
+
 type tierSettingsAligner struct {
 	before func()
 	err    error
