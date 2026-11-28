@@ -1,4 +1,11 @@
-# Open sandboxes from a local IDE
+---
+title: Open sandboxes from a local IDE
+navTitle: Local IDE
+description: Enable the SSH gateway, register a public key, and connect from a desktop IDE or terminal.
+section: use
+order: 60
+keywords: [SSH, Remote-SSH, IDE, 2222, public key]
+---
 
 With the built-in SSH gateway enabled, you can open any sandbox (E2B, Docker or Kubernetes) from VS Code, Cursor (Remote-SSH) or a terminal on your own machine. You only need the IDE and the OpenSSH client that ships with your OS.
 

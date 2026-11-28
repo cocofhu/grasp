@@ -1,319 +1,247 @@
 #!/usr/bin/env node
-/**
- * Build static site:
- * - copy site/ to public/
- * - convert content markdown files to public/<path>/index.html
- *
- * Locale: zh-CN at site root; English under en/ (content/en/** → public/en/**).
- * BASE_PATH defaults to / for the custom domain (www.approving-ai.com).
- * Legacy CI may set BASE_PATH=/approving-pages; that is remapped to / unless
- * FORCE_PROJECT_PAGES=1 (project Pages fallback).
- */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { decodeHTMLAttribute } from "entities";
 import yaml from "js-yaml";
 import MarkdownIt from "markdown-it";
+import { escape, localized, localizedPair, renderDocumentation, strings } from "./layout.mjs";
+import { codingTools, renderHome } from "./home.mjs";
+import { appendReference } from "./reference.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, "..");
-const siteDir = path.join(root, "site");
-const contentDir = path.join(root, "content");
-const outDir = path.join(root, "public");
-
-const SITE_CANONICAL = "https://www.approving-ai.com";
-
-// Custom domain is served from /. Legacy ci-docs set BASE_PATH=/approving-pages;
-// remap that so CI builds root-relative assets (workflow env update needs workflow scope).
-const envBase = process.env.BASE_PATH;
-const useLegacyProjectPages =
-  envBase === "/approving-pages" && process.env.FORCE_PROJECT_PAGES === "1";
-const basePath = normalizeBase(
-  useLegacyProjectPages ? envBase : (envBase === "/approving-pages" ? "/" : (envBase ?? "/")),
-);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const out = path.join(root, "public");
+const content = path.join(root, "content");
+const requestedBase = process.env.BASE_PATH || "/";
+const base = requestedBase === "/approving-pages" && process.env.FORCE_PROJECT_PAGES !== "1"
+  ? ""
+  : requestedBase.replace(/^\/?/, "/").replace(/\/+$/, "");
+if (base && !/^\/[\w/-]+$/.test(base)) throw new Error("Invalid BASE_PATH");
+const siteUrl = route => base + route;
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
-
-const SHELL = {
-  "zh-CN": {
-    htmlLang: "zh-CN",
-    navAria: "主导航",
-    docs: "文档",
-    concepts: "概念",
-    eyebrow: "文档",
-    footerAria: "页脚",
-    quickStart: "快速开始",
-    configuration: "配置",
-    gateway: "网关",
-    source: "源码",
-    langAria: "语言",
-  },
-  en: {
-    htmlLang: "en",
-    navAria: "Main navigation",
-    docs: "Docs",
-    concepts: "Concepts",
-    eyebrow: "Docs",
-    footerAria: "Footer",
-    quickStart: "Quick start",
-    configuration: "Configuration",
-    gateway: "Gateway",
-    source: "Source",
-    langAria: "Language",
-  },
+const languages = ["zh-CN", "en"];
+md.renderer.rules.table_open = (tokens, i, options, env, renderer) =>
+  '<div class="table-scroll" tabindex="0">' + renderer.renderToken(tokens, i, options);
+md.renderer.rules.table_close = () => "</table></div>\n";
+md.renderer.rules.td_open = (tokens, i, options, env, renderer) => {
+  const cell = renderer.renderToken(tokens, i, options);
+  return env.reference ? cell + `<span class="reference-label" aria-hidden="true">${escape(tokens[i].meta.columnLabel)}</span><span>` : cell;
 };
+md.renderer.rules.td_close = (tokens, i, options, env, renderer) =>
+  (env.reference ? "</span>" : "") + renderer.renderToken(tokens, i, options);
 
-function normalizeBase(raw) {
-  let b = String(raw || "/").trim();
-  if (!b.startsWith("/")) b = `/${b}`;
-  if (b !== "/" && b.endsWith("/")) b = b.slice(0, -1);
-  return b;
+async function walk(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const groups = await Promise.all(entries.map(entry => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? walk(full) : [full];
+  }));
+  return groups.flat().sort();
 }
 
-function withBase(p) {
-  if (!p) return basePath === "/" ? "/" : `${basePath}/`;
-  if (/^https?:\/\//i.test(p) || p.startsWith("mailto:")) return p;
-  const cleaned = p.startsWith("/") ? p : `/${p}`;
-  if (basePath === "/") return cleaned;
-  return `${basePath}${cleaned}`;
+async function loadPages() {
+  const files = (await walk(content)).filter(file => file.endsWith(".md"));
+  return Promise.all(files.map(async file => {
+    const text = (await fs.readFile(file, "utf8")).replace(/^\uFEFF/, "");
+    const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+    if (!match) throw new Error(`Missing front matter in ${file}`);
+    const meta = yaml.load(match[1]);
+    const slug = path.relative(content, file).split(path.sep).join("/").replace(/\.md$/, "");
+    const route = `/${slug}/`;
+    const locale = slug.startsWith("en/") ? "en" : "zh-CN";
+    if (!meta?.title || !meta.description || (meta.kind !== "hub" && !Object.hasOwn(strings[locale].docsNav, meta.section))) {
+      throw new Error(`Set title, description and a valid section in ${file}`);
+    }
+    return {
+      ...meta, file, route, locale, navTitle: meta.navTitle || meta.title,
+      order: meta.order ?? 0,
+      source: `docs/content/${slug}.md`,
+      body: text.slice(match[0].length),
+    };
+  }));
 }
 
-function localeFromSlug(slug) {
-  return slug === "en" || slug.startsWith("en/") ? "en" : "zh-CN";
+function textOf(token) {
+  return token.children?.map(child => {
+    if (child.type === "text" || child.type === "code_inline") return child.content;
+    if (child.type === "softbreak" || child.type === "hardbreak") return " ";
+    return "";
+  }).join("").trim() || "";
 }
 
-/** @returns {{ zh: string, en: string }} site-absolute paths ending with / */
-function dualPaths(slug) {
-  const isEn = slug === "en" || slug.startsWith("en/");
-  const bare = isEn ? (slug === "en" ? "" : slug.slice(3)) : slug;
-  const zh = bare ? `/${bare}/` : "/";
-  const en = bare ? `/en/${bare}/` : "/en/";
-  return { zh, en };
+function anchorFor(title) {
+  return title.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s-]/gu, "")
+    .trim().replace(/\s+/g, "-") || "section";
 }
 
-function canonicalHref(sitePath) {
-  return `${SITE_CANONICAL}${sitePath}`;
+function rewriteLink(href, page, pagesByFile) {
+  if (!href || href.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(href)) return href;
+  const [filename, fragment] = href.split("#", 2);
+  if (filename.endsWith(".md") && !filename.startsWith("/")) {
+    const other = pagesByFile.get(path.resolve(path.dirname(page.file), decodeURIComponent(filename)));
+    if (!other) throw new Error(`Unknown Markdown link ${href} in ${page.source}`);
+    return `${siteUrl(other.route)}${fragment ? "#" + fragment : ""}`;
+  }
+  return href.startsWith("/") ? siteUrl(href) : href;
 }
 
-function langSwitcherHtml(locale, dual) {
-  const zhCurrent = locale === "zh-CN" ? " is-current" : "";
-  const enCurrent = locale === "en" ? " is-current" : "";
-  const zhAria = locale === "zh-CN" ? ' aria-current="page"' : "";
-  const enAria = locale === "en" ? ' aria-current="page"' : "";
-  return `<nav class="lang-switch" aria-label="${escapeHtml(SHELL[locale].langAria)}">
-        <a class="lang-switch__link${zhCurrent}" href="${withBase(dual.zh)}" data-locale-set="zh-CN"${zhAria}>中文</a>
-        <span class="lang-switch__sep" aria-hidden="true">|</span>
-        <a class="lang-switch__link${enCurrent}" href="${withBase(dual.en)}" data-locale-set="en"${enAria}>English</a>
-      </nav>`;
-}
-
-function hreflangLinks(dual) {
-  return `  <link rel="alternate" hreflang="zh-CN" href="${canonicalHref(dual.zh)}">
-  <link rel="alternate" hreflang="en" href="${canonicalHref(dual.en)}">
-  <link rel="alternate" hreflang="x-default" href="${canonicalHref(dual.zh)}">`;
-}
-
-async function rmrf(dir) {
-  await fs.rm(dir, { recursive: true, force: true });
-}
-
-async function ensureDir(dir) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-async function copyDir(src, dest) {
-  await ensureDir(dest);
-  const entries = await fs.readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const from = path.join(src, entry.name);
-    const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      await copyDir(from, to);
-    } else {
-      await ensureDir(path.dirname(to));
-      let data = await fs.readFile(from);
-      if (/\.(html|css|js)$/i.test(entry.name)) {
-        data = Buffer.from(rewriteBasePlaceholders(data.toString("utf8")), "utf8");
+async function renderMarkdown(page, pagesByFile) {
+  const body = page.body + "\n\n" + await appendReference(root, page);
+  const env = { reference: page.reference };
+  const tokens = md.parse(body, env);
+  const seen = new Set();
+  const toc = [];
+  let columns = [];
+  let columnIndex = 0;
+  let group = "";
+  const search = [{ title: page.title, id: "", text: page.description }];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const inline = tokens[i + 1];
+    if (token.type === "heading_open" && inline?.type === "inline") {
+      const last = inline.children?.at(-1);
+      const marker = last?.type === "text" && last.content.match(/\s+\{#([a-z][\w-]*)\}$/);
+      if (marker) last.content = last.content.slice(0, marker.index);
+      const level = Number(token.tag.slice(1));
+      const title = textOf(inline);
+      const candidate = marker ? marker[1] : anchorFor(title);
+      let id = candidate;
+      for (let n = 2; seen.has(id); n++) {
+        if (marker) throw new Error(`Duplicate anchor #${id} in ${page.source}`);
+        id = `${candidate}-${n}`;
       }
-      await fs.writeFile(to, data);
+      seen.add(id);
+      group = id;
+      token.attrSet("id", id);
+      if (level === 2 || level === 3) toc.push({ level, title, id });
+      search.push({ title, id, text: "" });
+      continue;
+    }
+    if (page.reference && token.type === "table_open") {
+      token.attrSet("class", "reference-table");
+      token.attrSet("role", "table");
+      columns = [];
+    }
+    if (page.reference && token.type === "th_open") {
+      token.attrSet("scope", "col");
+      columns.push(textOf(inline));
+    }
+    if (page.reference && token.type === "tr_open" && inline?.type === "td_open") {
+      columnIndex = 0;
+      const first = textOf(tokens[i + 2]);
+      const field = first === "—" ? textOf(tokens[i + 5]) : first;
+      const backend = ["docker", "kubernetes", "e2b"].includes(group) ? group + "." : "";
+      const title = field.split(" / ").map(key => backend + key).join(" / ");
+      const slug = field.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const id = "option-" + (group ? group + "-" : "") + slug;
+      if (title && !seen.has(id)) {
+        token.attrSet("id", id);
+        seen.add(id);
+        search.push({ title, id, text: "" });
+      }
+    }
+    if (page.reference && token.type === "td_open") token.meta = { columnLabel: columns[columnIndex++] };
+    if (token.type !== "inline") continue;
+    for (const child of token.children || []) {
+      if (child.type === "link_open") child.attrSet("href", rewriteLink(child.attrGet("href"), page, pagesByFile));
+      if (child.type === "image") child.attrSet("src", rewriteLink(child.attrGet("src"), page, pagesByFile));
+    }
+    search.at(-1).text += " " + textOf(token);
+  }
+
+  return {
+    toc,
+    search,
+    html: md.renderer.render(tokens, md.options, env),
+  };
+}
+
+async function write(route, body) {
+  const filename = path.join(out, route.endsWith("/") ? route + "index.html" : route);
+  await fs.mkdir(path.dirname(filename), { recursive: true });
+  await fs.writeFile(filename, body);
+}
+
+function indexEntries(pages, locale) {
+  return pages.filter(page => page.locale === locale).flatMap(page => page.search.map(section => ({
+    title: section.title,
+    page: page.title,
+    url: siteUrl(page.route) + (section.id ? "#" + encodeURIComponent(section.id) : ""),
+    text: section.text.trim(),
+    keywords: page.keywords?.join(" ") ?? "",
+  })));
+}
+
+async function validateOutput() {
+  const files = (await walk(out)).map(file => "/" + path.relative(out, file).split(path.sep).join("/"));
+  const outputFiles = new Set(files);
+  const pages = new Map(await Promise.all(files.filter(file => file.endsWith(".html")).map(async file => {
+    const html = await fs.readFile(path.join(out, file), "utf8");
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => decodeHTMLAttribute(match[1])));
+    return [file, { html, ids }];
+  })));
+
+  const errors = [];
+  for (const [file, page] of pages) {
+    for (const match of page.html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+      const href = decodeHTMLAttribute(match[1]);
+      if (href.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(href)) continue;
+      const url = new URL(href, "https://grasp.invalid" + siteUrl(file));
+      const local = decodeURIComponent(url.pathname);
+      let target = local.slice(base.length);
+      if (target.endsWith("/")) target += "index.html";
+      else if (!outputFiles.has(target) && outputFiles.has(target + "/index.html")) target += "/index.html";
+      if ((base && !local.startsWith(base + "/")) || !outputFiles.has(target)) {
+        errors.push(`${file} → ${href} (missing file)`);
+      } else if (url.hash && pages.has(target) && !pages.get(target).ids.has(decodeURIComponent(url.hash.slice(1)))) {
+        errors.push(`${file} → ${href} (missing anchor)`);
+      }
     }
   }
-}
-
-function rewriteBasePlaceholders(text) {
-  return text
-    .replaceAll("{{BASE}}", basePath === "/" ? "" : basePath)
-    .replaceAll("{{BASE_SLASH}}", basePath === "/" ? "/" : `${basePath}/`);
-}
-
-function docTemplate({ title, description, bodyHtml, relPath }) {
-  const locale = localeFromSlug(relPath);
-  const t = SHELL[locale];
-  const dual = dualPaths(relPath);
-  const prefix = locale === "en" ? "/en" : "";
-  const homeHref = withBase(locale === "en" ? "/en/" : "/");
-  const docsHref = withBase(`${prefix}/guide/quick-start/`);
-  const conceptsHref = withBase(`${prefix}/guide/concepts/`);
-  const quickStartHref = withBase(`${prefix}/guide/quick-start/`);
-  const configHref = withBase(`${prefix}/help/configuration/`);
-  const gatewayHref = withBase(`${prefix}/help/gateway/`);
-  const dataBase = basePath === "/" ? "" : basePath;
-  const pageTitle = title ? `${title} · Grasp` : "Grasp";
-  const desc = description || (locale === "en" ? "Grasp help documentation" : "Grasp 帮助文档");
-
-  return `<!DOCTYPE html>
-<html lang="${t.htmlLang}" data-base="${escapeHtml(dataBase)}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(pageTitle)}</title>
-  <meta name="description" content="${escapeHtml(desc)}">
-${hreflangLinks(dual)}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="${withBase("/css/tokens.css")}">
-  <link rel="stylesheet" href="${withBase("/css/site.css")}">
-  <link rel="stylesheet" href="${withBase("/css/page.css")}">
-  <script src="${withBase("/js/locale.js")}"></script>
-</head>
-<body class="page-doc">
-  <header class="site-header">
-    <div class="site-header__inner">
-      <a class="site-header__brand" href="${homeHref}">Grasp</a>
-      <nav class="site-header__nav" aria-label="${escapeHtml(t.navAria)}">
-        <a class="site-header__link" href="${docsHref}">${escapeHtml(t.docs)}</a>
-        <a class="site-header__link" href="${conceptsHref}">${escapeHtml(t.concepts)}</a>
-        <a class="site-header__link" href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">GitHub</a>
-        ${langSwitcherHtml(locale, dual)}
-      </nav>
-    </div>
-  </header>
-  <main id="main">
-    <article class="doc">
-      <header class="doc__header">
-        <p class="doc__eyebrow">${escapeHtml(t.eyebrow)}</p>
-        <h1 class="doc__title">${escapeHtml(title || relPath)}</h1>
-        ${description ? `<p class="doc__lead">${escapeHtml(description)}</p>` : ""}
-      </header>
-      <div class="doc__body">
-        ${bodyHtml}
-      </div>
-    </article>
-  </main>
-  <footer class="site-footer">
-    <div class="site-footer__inner">
-      <p class="site-footer__brand">Grasp</p>
-      <nav class="site-footer__nav" aria-label="${escapeHtml(t.footerAria)}">
-        <a href="${quickStartHref}">${escapeHtml(t.quickStart)}</a>
-        <a href="${configHref}">${escapeHtml(t.configuration)}</a>
-        <a href="${gatewayHref}">${escapeHtml(t.gateway)}</a>
-        <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">${escapeHtml(t.source)}</a>
-      </nav>
-      <p class="site-footer__meta">MIT · <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">cocofhu/approving</a></p>
-    </div>
-  </footer>
-</body>
-</html>
-`;
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-/**
- * Split an optional leading YAML block wrapped in ---.
- * Later --- lines stay in the body. A leading UTF-8 BOM is removed.
- * Invalid YAML throws so the build exits non-zero.
- * @returns {{ data: Record<string, unknown>, content: string }}
- */
-function parseFrontMatter(raw) {
-  let text = raw;
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-  const open = "---";
-  if (!text.startsWith(open) || text.charAt(open.length) === "-") {
-    return { data: {}, content: text };
-  }
-
-  const rest = text.slice(open.length);
-  const close = "\n---";
-  const closeIndex = rest.indexOf(close);
-  if (closeIndex === -1) {
-    return { data: {}, content: text };
-  }
-
-  const matter = rest.slice(0, closeIndex);
-  let content = rest.slice(closeIndex + close.length);
-  if (content.startsWith("\r")) content = content.slice(1);
-  if (content.startsWith("\n")) content = content.slice(1);
-
-  const block = matter.replace(/^\s*#[^\n]+/gm, "").trim();
-  if (block === "") return { data: {}, content };
-
-  const parsed = yaml.load(matter);
-  const data =
-    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed
-      : {};
-  return { data, content };
-}
-
-async function walkMarkdown(dir) {
-  const out = [];
-  async function walk(current) {
-    const entries = await fs.readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.name.endsWith(".md")) out.push(full);
-    }
-  }
-  await walk(dir);
-  return out;
-}
-
-async function buildMarkdown() {
-  const files = await walkMarkdown(contentDir);
-  for (const file of files) {
-    const raw = await fs.readFile(file, "utf8");
-    const rel = path.relative(contentDir, file).replace(/\\/g, "/");
-    let data;
-    let content;
-    try {
-      ({ data, content } = parseFrontMatter(raw));
-    } catch (err) {
-      throw new Error(`failed to parse front matter in ${rel}: ${err.message}`);
-    }
-    const slug = rel.replace(/\.md$/i, "");
-    const outFile = path.join(outDir, slug, "index.html");
-    const bodyHtml = md.render(content);
-    const html = docTemplate({
-      title: data.title || slug,
-      description: data.description || "",
-      bodyHtml,
-      relPath: slug,
-    });
-    await ensureDir(path.dirname(outFile));
-    await fs.writeFile(outFile, html, "utf8");
-    console.log(`  md  ${slug}/`);
-  }
+  if (errors.length) throw new Error("Broken site links:\n" + errors.join("\n"));
+  return pages.size;
 }
 
 async function main() {
-  console.log(`Building Grasp site (BASE_PATH=${basePath || "/"})`);
-  await rmrf(outDir);
-  await ensureDir(outDir);
-  await copyDir(siteDir, outDir);
-  await buildMarkdown();
-  console.log(`Done → ${path.relative(root, outDir)}/`);
+  const pages = await loadPages();
+  const byRoute = new Map(pages.map(page => [page.route, page]));
+  const byFile = new Map(pages.map(page => [page.file, page]));
+  for (const page of pages) {
+    for (const route of Object.values(localizedPair(page.route, page.locale))) {
+      if (!byRoute.has(route)) throw new Error(`Missing translation for ${page.route}: ${route}`);
+    }
+    Object.assign(page, await renderMarkdown(page, byFile));
+  }
+  await fs.rm(out, { recursive: true, force: true });
+  await fs.cp(path.join(root, "site"), out, { recursive: true });
+  const captures = [["solo", "home-solo"], ["visual-clarify", "home-preview"]];
+  await Promise.all(captures.map(([source, target]) => fs.copyFile(
+    path.join(root, "..", "media", "screenshots", source + ".webp"), path.join(out, "assets", target + ".webp"),
+  )));
+  const toolIcons = path.join(out, "assets", "coding-tools");
+  await fs.mkdir(toolIcons, { recursive: true });
+  await Promise.all(codingTools.map(([id]) => fs.copyFile(
+    path.join(root, "..", "web", "src", "assets", "provider-logos", id + ".svg"), path.join(toolIcons, id + ".svg"),
+  )));
+  const fonts = [
+    "inter-latin-400-normal.woff2", "inter-latin-500-normal.woff2", "inter-latin-600-normal.woff2",
+    "jetbrains-mono-latin-400-normal.woff2", "fredoka-latin-600-normal.woff2", "OFL.txt", "NOTICE.md",
+  ];
+  await Promise.all(fonts.map(name => fs.copyFile(
+    path.join(root, "..", "web", "public", "fonts", name), path.join(out, "assets", "fonts", name),
+  )));
+  await Promise.all([
+    ...pages.map(page => write(page.route, renderDocumentation(page, pages, siteUrl))),
+    ...languages.flatMap(locale => [
+      write(localized(locale, "/"), renderHome(locale, siteUrl)),
+      write(localized(locale, "/help/search-index.json"), JSON.stringify(indexEntries(pages, locale))),
+    ]),
+  ]);
+  const count = await validateOutput();
+  console.log(`Built and checked ${count} pages in public/ (BASE_PATH=${base || "/"})`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+main().catch(error => {
+  console.error(error.message);
+  process.exitCode = 1;
 });

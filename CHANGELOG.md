@@ -62,6 +62,9 @@ All notable public-release changes are documented here.
 
 - E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
 
+- 重做中英文官网和帮助中心。首页可切换 E2B、Kubernetes、Docker 和通过兼容网关接入的公有云沙箱，展开对应配置，随滚动查看 Solo、应用预览和本地 IDE。列出 8 种编程工具及独立运行时的其他适配。
+- 帮助中心可直接打开快速开始、配置项索引和故障排查。目录悬停和键盘聚焦时保持原排版。按配置名搜索可直达字段，手机上可纵向阅读每项的默认值和用途。
+
 - Grasp 和沙箱网关支持 PostgreSQL，可分别通过 `GRASP_DB_DRIVER=postgres` 和 `SBGW_DB_DRIVER=postgres` 启用。SQLite 仍是默认数据库。配置见 [PostgreSQL 部署](CONFIGURATION.md#使用-postgresql)。
 
 ## 4.0.4 — 2026-11-24
