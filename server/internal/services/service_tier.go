@@ -14,30 +14,36 @@ func serviceTierUnavailable() error {
 	return soloErr(http.StatusBadRequest, "service_tier_unavailable", "所选模型不支持该速度档位")
 }
 
-func configurationServiceTiers(configuration modelrouting.Configuration, modelID string) []string {
-	if configuration.State != "active" || configuration.Binding.Kind != "platform" {
-		return nil
-	}
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		modelID = strings.TrimSpace(configuration.Binding.ModelID)
-	}
-	if !modelrouting.AcceptsConfiguredModel(configuration.Binding, modelID) {
-		return nil
-	}
-	return modelrouting.ServiceTiers(configuration.Backend, modelID, nil)
-}
-
 // configuredServiceTiers never returns nil so API views always carry a list.
 func configuredServiceTiers(db *gorm.DB, configurationID, modelID string) []string {
 	if db == nil || strings.TrimSpace(configurationID) == "" {
 		return []string{}
 	}
 	configuration, err := NewModelConfigurationService(db).Get(configurationID)
-	if err != nil {
+	if err != nil || configuration.State != "active" {
 		return []string{}
 	}
-	if tiers := configurationServiceTiers(configuration, modelID); tiers != nil {
+	binding := configuration.Binding
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		modelID = strings.TrimSpace(binding.ModelID)
+	}
+	if !modelrouting.AcceptsConfiguredModel(binding, modelID) {
+		return []string{}
+	}
+	var connection *modelrouting.Connection
+	switch binding.Kind {
+	case "connection":
+		loaded, err := NewModelConnectionService(db).Get(binding.ConnectionID)
+		if err != nil {
+			return []string{}
+		}
+		connection = &loaded
+	case "platform":
+	default:
+		return []string{}
+	}
+	if tiers := modelrouting.ServiceTiers(configuration.Backend, modelID, connection); tiers != nil {
 		return tiers
 	}
 	return []string{}

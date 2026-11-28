@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs inside the real-CLI E2E image against a local model endpoint. The
-// declared catalog makes the native CLI's tier filtering part of the check.
+// connection advertises API Fast support even when the CLI catalog does not.
 import {strict as assert} from 'node:assert'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
@@ -13,7 +13,7 @@ import {createMockAgentServer} from './mock-agent-model.mjs'
 
 const runtime = resolve(process.argv[2])
 const output = resolve(process.argv[3])
-const primary = 'gpt-6.2-sol'
+const primary = 'gpt-5.4-mini'
 const standard = 'standard-fixture-model'
 const labels = ['boot-standard', 'fast-high', 'fast-low', 'isolated-standard', 'standard-low', 'unsupported-target', 'restored-fast', 'restored-off']
 const run = 'codex-fast-probe'
@@ -26,16 +26,16 @@ const cwd = join(scratch, 'workspace')
 mkdirSync(home, {recursive: true})
 mkdirSync(cwd, {recursive: true})
 
-const catalogModel = (id, fast) => ({
+const catalogModel = id => ({
   slug: id, display_name: id, description: 'Local integration fixture',
   supported_reasoning_levels: ['low', 'high'].map(effort => ({effort, description: effort})),
   default_reasoning_level: 'high', shell_type: 'unified_exec', visibility: 'list', supported_in_api: true, priority: 1,
-  service_tiers: fast ? [{id: 'priority', name: 'Fast', description: 'Local Fast request fixture'}] : [],
+  service_tiers: [],
   model_messages: {instructions_template: 'Return the exact response supplied by the local fixture.'},
   support_verbosity: false, truncation_policy: {mode: 'tokens', limit: 10000}, experimental_supported_tools: [], context_window: 500000,
 })
 const catalogPath = join(home, 'catalog.json')
-writeFileSync(catalogPath, JSON.stringify({models: [catalogModel(primary, true), catalogModel(standard, false)]}))
+writeFileSync(catalogPath, JSON.stringify({models: [catalogModel(primary), catalogModel(standard)]}))
 // An inherited Fast default must not defeat an explicit session Standard choice.
 writeFileSync(join(home, 'config.toml'), `model_catalog_json = ${JSON.stringify(catalogPath)}\nservice_tier = "fast"\n[features]\nfast_mode = true\n`)
 const model = await createMockAgentServer({scenarios: [{id: run, turns: labels.map(id => ({id, reply: `FAST_PROBE_PASS_${id}`}))}]})
@@ -71,7 +71,12 @@ async function start(restoredFast) {
   Object.assign(env, {AGENT_PROVIDER: 'codex', CONFIG_ROOT: home, CODEX_HOME: home,
     GRASP_MODEL_API_KEY: 'synthetic-local-fast-key', ACP_BRIDGE_MODEL: primary, ACP_BRIDGE_REASONING_EFFORT: 'high', ACP_BRIDGE_SERVICE_TIER: restoredFast ? 'fast' : 'default',
     GRASP_CONFIGURED_MODELS: JSON.stringify([{id: primary, reasoningEfforts: ['low', 'high'], serviceTiers: ['fast']}, {id: standard, reasoningEfforts: ['low', 'high']}]),
-    GRASP_MODEL_CONNECTION: JSON.stringify({connectionId: 'fast-native-fixture', providerId: 'fixture', protocol: 'openai-responses', baseUrl: model.url + '/v1', auth: {scheme: 'bearer'}, selectedModelId: primary, models: [primary, standard].map(id => ({id, capabilities: {reasoning: true, toolCalls: true}}))}),
+    GRASP_MODEL_CONNECTION: JSON.stringify({
+      connectionId: 'fast-native-fixture', providerId: 'fixture', protocol: 'openai-responses',
+      baseUrl: model.url + '/v1', auth: {scheme: 'bearer'}, selectedModelId: primary,
+      models: [primary, standard].map(id => ({id, capabilities: {reasoning: true, toolCalls: true}})),
+      modelServiceTiers: {[primary]: ['fast']},
+    }),
   })
   backend = spawn(join(runtime, 'bin/backend'), ['-listen', `127.0.0.1:${port}`, '-gin-mode', 'release', '-web', join(runtime, 'share/backend/web')], {cwd, env, stdio: ['ignore', 'pipe', 'pipe']})
   for (const stream of [backend.stdout, backend.stderr]) stream.on('data', data => appendFileSync(join(output, 'codex-fast-runtime.log'), data))
@@ -115,12 +120,13 @@ async function turn(chat, label, fast, effort, expectedModel = primary) {
   await waitFor(async () => !(await request('/api/runtime/activity')).busy, 'turn settlement')
   const requests = model.report().requests.filter(request => request.run === run && request.turn === label && !request.auxiliary)
   assert.ok(requests.length > 0, `${label}: no actual model request`)
+  const wireTier = expectedModel === primary ? (fast ? 'priority' : 'default') : undefined
   for (const request of requests) {
     assert.equal(request.model, expectedModel)
-    assert.equal(request.serviceTier, fast ? 'priority' : undefined, `${label}: wrong service tier`)
+    assert.equal(request.serviceTier, wireTier, `${label}: wrong service tier`)
     assert.equal(request.reasoning.effort, effort, `${label}: speed changed reasoning`)
   }
-  cases.push({label, tier: tier(fast), reasoningEffort: effort, requestCount: requests.length, wireServiceTier: fast ? 'priority' : null})
+  cases.push({label, tier: tier(fast), reasoningEffort: effort, requestCount: requests.length, wireServiceTier: wireTier ?? null})
 }
 
 try {

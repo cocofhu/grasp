@@ -30,6 +30,14 @@ All notable public-release changes are documented here.
 
 - Solo 沙箱的「基本信息」顶部用紧凑的行展示累计 Token 和工作流，环境和时间信息分组显示。
 
+- Codex 通过 OpenAI 官方 Responses API 使用支持 Fast 的模型时，Solo 可以通过闪电按钮切换加速档位。API 连接仅在确认支持该档位时显示按钮。
+
+- Solo 的 OpenAI 官方 Responses API 连接支持为 GPT-5.6 Terra、GPT-5.6 Luna 和 GPT-5.5 启用 Fast。
+
+- Solo 的 OpenAI 官方 Responses API 连接可为 GPT-5.4、GPT-5.4 mini 等官方支持的模型启用 Fast。关闭 Fast 后，请求会显式选择标准档位，避免沿用项目默认的 Fast 档位。需要更新沙箱运行时。
+
+- 已有 Agent 测试沙箱可保留工作区和会话，原地更新官方 OpenAI Fast 能力。标准档位和 Fast 请求均支持通过沙箱的 `ALL_PROXY` 出网。
+
 - Solo 沙箱的「基本信息」显示任务价值，按工作区配置的模型单价汇总会话用量。悬浮在金额上可查看已计价和未计价的 Token 数。
 
 - Solo 沙箱的「基本信息」展开和收起时使用短过渡，并尊重系统的减少动态效果设置。

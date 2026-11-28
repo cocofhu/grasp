@@ -57,10 +57,23 @@ func TestAlignServiceTierIndependentlyAndResetAtDefaultRoute(t *testing.T) {
 	}
 }
 
-func TestConfiguredServiceTiersDoNotLeakToCompatibleConnections(t *testing.T) {
-	for _, connection := range []*modelrouting.Connection{nil, {ProviderID: "openai"}} {
+func TestConfiguredServiceTiersFollowTheModelRoute(t *testing.T) {
+	official := modelrouting.Connection{
+		BaseURL: "https://api.openai.com/v1", State: "active", Protocol: modelrouting.ProtocolResponses, Auth: modelrouting.Auth{Scheme: "bearer"},
+		Models: []modelrouting.Model{{ID: "gpt-6.2-sol"}, {ID: "gpt-6.2-astra"}, {ID: "unknown"}},
+	}
+	gateway := official
+	gateway.BaseURL = "https://compatible.example.test/v1"
+	for _, tc := range []struct {
+		connection *modelrouting.Connection
+		want       []string
+	}{
+		{nil, []string{"fast"}},
+		{&official, []string{"fast"}},
+		{&gateway, nil},
+	} {
 		raw, err := configuredModelsJSON(modelrouting.Resolved{
-			Backend: "codex", Connection: connection,
+			Backend: "codex", Connection: tc.connection,
 			Binding: modelrouting.Binding{ModelID: "gpt-6.2-sol", AuxiliaryModelIDs: []string{"gpt-6.2-astra", "unknown"}},
 		})
 		if err != nil {
@@ -72,11 +85,7 @@ func TestConfiguredServiceTiersDoNotLeakToCompatibleConnections(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 			t.Fatal(err)
 		}
-		var want []string
-		if connection == nil {
-			want = []string{"fast"}
-		}
-		if len(rows) != 3 || !slices.Equal(rows[0].ServiceTiers, want) || !slices.Equal(rows[1].ServiceTiers, want) || rows[2].ServiceTiers != nil {
+		if len(rows) != 3 || !slices.Equal(rows[0].ServiceTiers, tc.want) || !slices.Equal(rows[1].ServiceTiers, tc.want) || rows[2].ServiceTiers != nil {
 			t.Fatalf("service tiers crossed their declared source/model boundary: %s", raw)
 		}
 	}
@@ -92,5 +101,43 @@ func TestServiceTierEnvRoundTrip(t *testing.T) {
 		if got := ParseServiceTierEnv(env); got != tier {
 			t.Errorf("ParseServiceTierEnv(%q) = %q, want %q", env, got, tier)
 		}
+	}
+}
+
+func TestModelBindingPassesOfficialResponseTiersToTheSandbox(t *testing.T) {
+	for _, endpoint := range []struct {
+		url      string
+		wantFast bool
+	}{
+		{"https://api.openai.com/v1", true},
+		{"https://compatible.example.test/v1", false},
+	} {
+		t.Run(endpoint.url, func(t *testing.T) {
+			env := map[string]string{}
+			binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "fixture"}
+			err := ApplyModelBinding(env, "codex", binding, func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+				return modelrouting.Resolved{
+					Backend: "codex", Secret: "fixture",
+					Binding: modelrouting.Binding{Kind: "connection", ModelID: "gpt-5.4-mini"},
+					Connection: &modelrouting.Connection{
+						ID: "fixture", ProviderID: "openai", State: "active",
+						Protocol: modelrouting.ProtocolResponses, BaseURL: endpoint.url, Auth: modelrouting.Auth{Scheme: "bearer"},
+						Models: []modelrouting.Model{{ID: "gpt-5.4-mini"}, {ID: "gpt-5.4-nano"}},
+					},
+				}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Tiers map[string][]string `json:"modelServiceTiers"`
+			}
+			if err := json.Unmarshal([]byte(env[EnvModelConnection]), &config); err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(config.Tiers["gpt-5.4-mini"], "fast") != endpoint.wantFast || len(config.Tiers["gpt-5.4-nano"]) != 0 {
+				t.Fatalf("unexpected sandbox model tiers: %v", config.Tiers)
+			}
+		})
 	}
 }

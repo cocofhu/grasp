@@ -218,11 +218,12 @@ export interface ModelConnection {
   auth: { scheme: 'bearer' | 'x-api-key' | 'custom-header'; headerName?: string }
   service?: { region?: string; product?: string }
   models: { id: string; name?: string; source: 'manual' | 'discovered'; capabilities?: { toolCalls?: boolean; vision?: boolean; reasoning?: boolean }; input?: ('text' | 'image')[]; contextWindow?: number; maxTokens?: number; reasoningEfforts?: string[] }[]
+  modelServiceTiers?: Record<string, string[]>
   state: 'active' | 'disabled'
   revision: number
   discovery?: { checkedAt: string; status: 'ok' | 'unavailable' | 'failed' }
 }
-export type ModelConnectionBody = Omit<ModelConnection, 'id' | 'revision' | 'discovery'>
+export type ModelConnectionBody = Omit<ModelConnection, 'id' | 'revision' | 'discovery' | 'modelServiceTiers'>
 export interface ToolCapability {
   toolId: string
   versionConstraint?: string
