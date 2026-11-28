@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/chatcmd"
 	"github.com/cocofhu/grasp/internal/chatsession"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm/clause"
 )
@@ -107,11 +108,13 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 		if row.SandboxID != 0 {
 			if row.Status == models.SoloStatusRunning && s.modelAlign == nil {
 				if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
-					wakeFailures++
+					if !errors.Is(err, sandbox.ErrPausePending) {
+						wakeFailures++
+						log.Warn().Err(err).Str("session", c.id).Int("attempt", wakeFailures).Msg("solo sandbox wake failed; retrying")
+					}
 					if wakeFailures >= soloWakeAttempts || ctx.Err() != nil {
 						return 0, nil, err
 					}
-					log.Warn().Err(err).Str("session", c.id).Int("attempt", wakeFailures).Msg("solo sandbox wake failed; retrying")
 					select {
 					case <-ctx.Done():
 						return 0, nil, err

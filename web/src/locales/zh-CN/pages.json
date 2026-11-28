@@ -3461,6 +3461,7 @@
         "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
         "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
         "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
+        "pause_pending": "沙箱正在保存快照，请在保存完成后重试。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "reasoning_effort_unavailable": "当前模型不支持所选思考强度，请重新选择。",
         "service_tier_unavailable": "当前模型不支持所选速度档位，请重新选择。",
@@ -3554,6 +3555,7 @@
           "preparing": "准备中",
           "running": "运行中",
           "busy": "运行中 · Agent 执行中",
+          "pausePending": "正在保存快照",
           "paused": "已暂停",
           "waking": "唤醒中…",
           "stopping": "停止中…",
@@ -3567,7 +3569,8 @@
         },
         "action": {
           "stop": "保存并停止",
-          "wake": "唤醒",
+          "wake": "恢复环境",
+          "retryWake": "重试恢复",
           "resume": "恢复",
           "restart": "重新开始",
           "stopBusy": "Agent 执行中或有排队消息，暂时不能停止"
@@ -3606,6 +3609,7 @@
           "adminsOnly": "SSH 连接只对管理员开放",
           "unavailable": {
             "preparing": "环境准备好后才能连接",
+            "pausePending": "快照保存完成后才能连接",
             "stopping": "环境停止中，暂时不能连接",
             "stopped": "环境已停止，恢复后才能连接",
             "closed": "会话已关闭，不能再连接",

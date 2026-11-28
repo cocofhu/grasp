@@ -835,6 +835,8 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			continue
 		}
 		switch status {
+		case sandbox.StatusPausePending:
+			tracked[row.Name] = true
 		case "running":
 			tracked[row.Name] = true
 			if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
