@@ -134,8 +134,7 @@ func (s *SandboxService) reclaimLocked(ctx context.Context, id uint, automatic b
 		err = s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints())
 	}
 	if err != nil {
-		s.recordReclaimFailure(ctx, row, err)
-		return err
+		return s.recordReclaimFailure(ctx, row, err)
 	}
 	s.teardownLive(id)
 	now := time.Now()
@@ -266,8 +265,17 @@ func latestRecoveryPoint(row *models.Sandbox) (models.SandboxRecoveryPoint, bool
 	return models.SandboxRecoveryPoint{}, false
 }
 
-func (s *SandboxService) recordReclaimFailure(ctx context.Context, row *models.Sandbox, cause error) {
-	status, probeErr := s.mgr.ProbeStatus(ctx, row.Name)
+func (s *SandboxService) recordReclaimFailure(ctx context.Context, row *models.Sandbox, cause error) error {
+	observation, probeErr := s.mgr.ProbeStatusObservation(ctx, row.Name)
+	if probeErr == nil && row.RecoveryPhase == "releasing" {
+		if result := s.snapshotPauseResult(ctx, row, observation); result != nil {
+			return result
+		}
+	}
+	if errors.Is(cause, sandbox.ErrPausePending) {
+		return cause
+	}
+	status := observation.Status
 	next := "saving"
 	if probeErr == nil && status == "running" && row.RecoveryPhase != "releasing" {
 		next = "running"
@@ -282,6 +290,51 @@ func (s *SandboxService) recordReclaimFailure(ctx context.Context, row *models.S
 	_ = s.db.Model(&models.Sandbox{}).Where("id = ? AND recovery_phase = ? AND cleanup_pending = ?", row.ID, row.RecoveryPhase, false).Updates(map[string]any{
 		"status": next, "error": "保存或释放未完成，可重试：" + truncErr(cause),
 	}).Error
+	return cause
+}
+
+var errSnapshotPauseFailed = errors.New("沙箱保存失败")
+
+func (s *SandboxService) snapshotPauseResult(ctx context.Context, row *models.Sandbox, observation sandbox.SandboxObservation) error {
+	if observation.Status == sandbox.StatusPausePending {
+		return sandbox.ErrPausePending
+	}
+	if observation.PauseFailure == "" {
+		return nil
+	}
+	released := workloadReleasedStatus(observation.Status)
+	if row.RecoveryPhase == "releasing" || (released && row.Status != "stopped") {
+		status := "error"
+		if released {
+			status = "stopped"
+		} else if observation.Status == "running" {
+			status = "running"
+		}
+		changed := false
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			query := tx.Model(&models.Sandbox{}).
+				Where("id = ? AND recovery_phase = ? AND cleanup_pending = ?", row.ID, row.RecoveryPhase, false)
+			if row.RecoveryPhase != "releasing" {
+				query = query.Where("status = ?", row.Status)
+			}
+			update := query.Updates(map[string]any{"status": status, "recovery_kind": "snapshot", "recovery_phase": "", "error": ""})
+			changed = update.RowsAffected > 0
+			if update.Error != nil || !changed || row.Purpose != SandboxPurposeSolo {
+				return update.Error
+			}
+			return tx.Model(&models.SoloSession{}).Where("sandbox_id = ? AND status = ?", row.ID, models.SoloStatusStopping).
+				Update("status", models.SoloStatusRunning).Error
+		}); err != nil {
+			return err
+		}
+		if released && changed {
+			s.teardownLive(row.ID)
+			if row.Purpose == SandboxPurposeSolo {
+				s.invokeSoloPausedHook(row.ID)
+			}
+		}
+	}
+	return errSnapshotPauseFailed
 }
 
 // EnsureRunning restores the newest successful point before publishing a
@@ -309,12 +362,16 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 		}
 		row.Status, row.RecoveryPhase = "stopped", ""
 	}
-	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	observation, err := s.mgr.ProbeStatusObservation(ctx, row.Name)
 	if err != nil {
 		return nil, false, err
 	}
+	status := observation.Status
 	if status == sandbox.StatusPausePending {
 		return nil, false, sandbox.ErrPausePending
+	}
+	if observation.PauseFailure != "" && status != "running" {
+		return nil, false, s.snapshotPauseResult(ctx, row, observation)
 	}
 	if row.Status == "saving" && status == "running" {
 		// A failed/interrupted save never replaced this original workload. Its
@@ -636,9 +693,15 @@ func (s *SandboxService) finishSavedRelease(ctx context.Context, row *models.San
 	} else if row.RecoveryKind != "snapshot" {
 		return errors.New("release recovery kind is missing")
 	}
+	if row.RecoveryKind == "snapshot" {
+		if observation, err := s.mgr.ProbeStatusObservation(ctx, row.Name); err == nil {
+			if result := s.snapshotPauseResult(ctx, row, observation); result != nil {
+				return result
+			}
+		}
+	}
 	if err := s.mgr.Stop(ctx, row.Name, s.keepRecoveryPoints()); err != nil {
-		s.recordReclaimFailure(ctx, row, err)
-		return err
+		return s.recordReclaimFailure(ctx, row, err)
 	}
 	if err := s.db.Model(&models.Sandbox{}).Where("id = ? AND recovery_phase = ?", row.ID, "releasing").Updates(map[string]any{"status": "stopped", "recovery_phase": "", "error": ""}).Error; err != nil {
 		return err

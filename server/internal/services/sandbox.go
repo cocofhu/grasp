@@ -131,6 +131,7 @@ type SandboxOptions struct {
 type SandboxView struct {
 	models.Sandbox
 	ContainerStatus string `json:"containerStatus"`
+	PauseFailure    string `json:"pauseFailure,omitempty"`
 	Busy            bool   `json:"busy"`
 	Connected       bool   `json:"connected"`
 	HasCodeServer   bool   `json:"hasCodeServer"`

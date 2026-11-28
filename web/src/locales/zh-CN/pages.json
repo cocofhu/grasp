@@ -3556,6 +3556,7 @@
           "running": "运行中",
           "busy": "运行中 · Agent 执行中",
           "pausePending": "正在保存快照",
+          "pauseFailed": "保存失败",
           "paused": "已暂停",
           "waking": "唤醒中…",
           "stopping": "停止中…",
@@ -3571,6 +3572,7 @@
           "stop": "保存并停止",
           "wake": "恢复环境",
           "retryWake": "重试恢复",
+          "retrySave": "重试保存",
           "resume": "恢复",
           "restart": "重新开始",
           "stopBusy": "Agent 执行中或有排队消息，暂时不能停止"
@@ -3597,6 +3599,13 @@
           "lastModelHint": "模型回合结束且队列为空时，开始空闲计时",
           "backup": "最近保存"
         },
+        "pauseFailure": {
+          "refused": "节点拒绝了这次快照保存。",
+          "capture": "节点写入快照失败。",
+          "upload": "快照上传重试后仍失败。",
+          "unknown": "快照保存失败。",
+          "stillRunning": "{reason} 环境仍在运行。"
+        },
         "ide": {
           "connections": "{n} 个本地 IDE 连接",
           "pausedHint": "沙箱已暂停，连接时会自动唤醒；唤醒可能需要几十秒。",
@@ -3610,6 +3619,7 @@
           "unavailable": {
             "preparing": "环境准备好后才能连接",
             "pausePending": "快照保存完成后才能连接",
+            "pauseFailed": "快照保存失败",
             "stopping": "环境停止中，暂时不能连接",
             "stopped": "环境已停止，恢复后才能连接",
             "closed": "会话已关闭，不能再连接",

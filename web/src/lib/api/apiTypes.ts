@@ -613,6 +613,7 @@ export interface SoloSandboxInfo {
   /** pulling | creating | running | error | stopped */
   status: string
   containerStatus?: string
+  pauseFailure?: string
   connected: boolean
   hasCodeServer: boolean
   /** Live views only: a running session whose sandbox the platform paused. */

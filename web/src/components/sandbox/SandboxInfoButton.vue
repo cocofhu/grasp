@@ -64,6 +64,7 @@ const display = computed(() => sandboxDisplayState({
   status: props.session.status,
   sandboxStatus: props.session.sandbox?.status,
   containerStatus: props.session.sandbox?.containerStatus,
+  pauseFailure: props.session.sandbox?.pauseFailure,
   paused: props.paused,
   waking: props.waking,
   busy: props.busy,
@@ -72,6 +73,17 @@ const display = computed(() => sandboxDisplayState({
 const lifecycle = computed(() => sandboxLifecycle(props.session))
 const stateLabel = computed(() => t(`pages.solo.sandboxInfo.state.${display.value.kind}`))
 const environmentRunning = computed(() => display.value.kind === 'running' || display.value.kind === 'busy')
+const pauseFailureText = computed(() => {
+  const code = props.session.sandbox?.pauseFailure
+  if (!code || (props.session.status !== 'running' && props.session.status !== 'stopping') || display.value.kind === 'pausePending') return ''
+  const reasonKey = code === 'pause_refused' ? 'refused'
+    : code === 'pause_capture_failed' ? 'capture'
+    : code === 'pause_upload_failed' ? 'upload' : 'unknown'
+  const reason = t(`pages.solo.sandboxInfo.pauseFailure.${reasonKey}`)
+  return props.session.sandbox?.containerStatus === 'running'
+    ? t('pages.solo.sandboxInfo.pauseFailure.stillRunning', { reason })
+    : reason
+})
 
 const duration = computed(() => {
   const { reclaim, destroyAt } = lifecycle.value
@@ -128,6 +140,7 @@ const ideBlocked = computed(() => {
   switch (display.value.kind) {
     case 'preparing':
     case 'pausePending':
+    case 'pauseFailed':
     case 'stopping':
     case 'stopped':
     case 'closed':
@@ -142,6 +155,7 @@ const ideWakes = computed(() => display.value.kind === 'paused' || display.value
 const actionLabel = computed(() => {
   const { action, kind } = display.value
   if (action === 'wake' && kind === 'error') return t('pages.solo.sandboxInfo.action.retryWake')
+  if (action === 'stop' && pauseFailureText.value) return t('pages.solo.sandboxInfo.action.retrySave')
   return action ? t(`pages.solo.sandboxInfo.action.${action}`) : ''
 })
 const actionIcon = computed(() => ({ stop: 'stop', wake: 'play', resume: 'play', restart: 'refresh' } as const)[display.value.action || 'stop'])
@@ -335,7 +349,10 @@ function onIDELaunch() {
             </span>
           </header>
           <p v-if="display.step" class="sandbox-info-note mt-2">{{ t(`pages.solo.sandboxInfo.step.${display.step}`) }}</p>
-          <p v-if="display.kind === 'error' && (session.error || session.sandbox?.error)" class="mt-2 break-words text-xs text-err" data-testid="sandbox-info-error">
+          <p v-if="pauseFailureText" class="mt-2 break-words text-xs text-err" data-testid="sandbox-info-pause-failure">
+            {{ pauseFailureText }}
+          </p>
+          <p v-else-if="display.kind === 'error' && (session.error || session.sandbox?.error)" class="mt-2 break-words text-xs text-err" data-testid="sandbox-info-error">
             {{ session.error || session.sandbox?.error }}
           </p>
 

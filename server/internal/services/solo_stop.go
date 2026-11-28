@@ -69,6 +69,13 @@ func (s *SoloService) finishStop(row models.SoloSession) {
 	ctx, cancel := context.WithTimeout(context.Background(), soloStopTimeout)
 	defer cancel()
 	if err := s.sbx.Reclaim(ctx, row.SandboxID); err != nil {
+		if errors.Is(err, sandbox.ErrPausePending) {
+			return
+		}
+		if errors.Is(err, errSnapshotPauseFailed) {
+			s.publishStatus(row.ID)
+			return
+		}
 		status := models.SoloStatusStopping
 		if sb, getErr := s.sbx.Get(row.SandboxID); getErr == nil {
 			if sb.Status == "stopped" && sb.RecoveryPhase == "" {
@@ -142,6 +149,9 @@ func (s *SoloService) Wake(ctx context.Context, id, user string) (*SoloSessionVi
 	if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
 		if errors.Is(err, sandbox.ErrPausePending) {
 			return nil, soloErr(http.StatusConflict, sandbox.StatusPausePending, "沙箱正在保存快照，请稍后重试")
+		}
+		if errors.Is(err, errSnapshotPauseFailed) {
+			return nil, soloErr(http.StatusConflict, "pause_failed", "本次沙箱快照保存失败")
 		}
 		return nil, soloErr(http.StatusBadGateway, "wake_failed", "%s", truncErr(err))
 	}

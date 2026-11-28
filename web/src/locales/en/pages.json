@@ -3556,6 +3556,7 @@
           "running": "Running",
           "busy": "Running · Agent working",
           "pausePending": "Saving snapshot",
+          "pauseFailed": "Save failed",
           "paused": "Paused",
           "waking": "Waking…",
           "stopping": "Stopping…",
@@ -3571,6 +3572,7 @@
           "stop": "Save and stop",
           "wake": "Wake environment",
           "retryWake": "Retry recovery",
+          "retrySave": "Retry save",
           "resume": "Resume",
           "restart": "Start again",
           "stopBusy": "The Agent is working or messages are queued; stop is unavailable for now"
@@ -3597,6 +3599,13 @@
           "lastModelHint": "Idle time starts when the model turn ends and the queue is empty",
           "backup": "Last saved"
         },
+        "pauseFailure": {
+          "refused": "The node refused to save the snapshot.",
+          "capture": "The node failed to write the snapshot.",
+          "upload": "The snapshot upload failed after retries.",
+          "unknown": "The snapshot could not be saved.",
+          "stillRunning": "{reason} The environment is still running."
+        },
         "ide": {
           "connections": "{n} local IDE connection | {n} local IDE connections",
           "pausedHint": "The sandbox is paused and wakes when you connect; this can take tens of seconds.",
@@ -3610,6 +3619,7 @@
           "unavailable": {
             "preparing": "Available once the environment is ready",
             "pausePending": "Connect once the snapshot has been saved",
+            "pauseFailed": "The snapshot could not be saved",
             "stopping": "The environment is stopping",
             "stopped": "The environment is stopped; resume it to connect",
             "closed": "The session is closed",

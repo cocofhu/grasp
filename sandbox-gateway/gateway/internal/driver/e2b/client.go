@@ -20,11 +20,11 @@ import (
 // ErrNotFound identifies an absent provider sandbox without exposing its body.
 var ErrNotFound = errors.New("E2B sandbox not found")
 
-// APIError contains only an operation name and status, never a provider body,
-// URL, command, environment variable, or authentication header.
+// APIError carries the operation, status, and a recognized pause failure code.
 type APIError struct {
-	Operation  string
-	HTTPStatus int
+	Operation    string
+	HTTPStatus   int
+	PauseFailure string
 }
 
 func (e *APIError) Error() string {
@@ -66,6 +66,7 @@ type Sandbox struct {
 	EnvdAccessToken    string            `json:"-"`
 	TrafficAccessToken string            `json:"-"`
 	State              string            `json:"state,omitempty"`
+	PauseFailure       string            `json:"-"`
 	Metadata           map[string]string `json:"metadata,omitempty"`
 	CPUCount           int               `json:"cpuCount"`
 	MemoryMB           int64             `json:"memoryMB"`
@@ -86,6 +87,7 @@ type sandboxWire struct {
 	EnvdAccessToken    string            `json:"envdAccessToken"`
 	TrafficAccessToken string            `json:"trafficAccessToken"`
 	State              string            `json:"state"`
+	PauseFailure       string            `json:"pauseFailure"`
 	Metadata           map[string]string `json:"metadata"`
 	CPUCount           int               `json:"cpuCount"`
 	MemoryMB           int64             `json:"memoryMB"`
@@ -95,7 +97,17 @@ type sandboxWire struct {
 }
 
 func (s sandboxWire) sandbox() Sandbox {
+	s.PauseFailure = pauseFailureCode(s.PauseFailure)
 	return Sandbox(s)
+}
+
+func pauseFailureCode(code string) string {
+	switch code {
+	case "pause_refused", "pause_capture_failed", "pause_upload_failed":
+		return code
+	default:
+		return ""
+	}
 }
 
 type CreateOptions struct {
@@ -413,16 +425,22 @@ func (c *Client) control(ctx context.Context, operation, method, path string, qu
 		ok = ok || status == response.StatusCode
 	}
 	if !ok {
-		if response.StatusCode == http.StatusConflict {
+		apiErr := &APIError{Operation: operation, HTTPStatus: response.StatusCode}
+		if response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusNotFound {
 			var conflict struct {
 				Code string `json:"error_code"`
 			}
 			data, readErr := io.ReadAll(io.LimitReader(response.Body, 4097))
-			if readErr == nil && len(data) <= 4096 && json.Unmarshal(data, &conflict) == nil && conflict.Code == string(driver.StatusPausePending) {
-				return nil, driver.ErrPausePending
+			if readErr == nil && len(data) <= 4096 && json.Unmarshal(data, &conflict) == nil {
+				if response.StatusCode == http.StatusConflict && conflict.Code == string(driver.StatusPausePending) {
+					return nil, driver.ErrPausePending
+				}
+				if response.StatusCode == http.StatusNotFound {
+					apiErr.PauseFailure = pauseFailureCode(conflict.Code)
+				}
 			}
 		}
-		return nil, &APIError{Operation: operation, HTTPStatus: response.StatusCode}
+		return nil, apiErr
 	}
 	if output != nil {
 		data, readErr := io.ReadAll(io.LimitReader(response.Body, maxControlResponseBytes+1))
