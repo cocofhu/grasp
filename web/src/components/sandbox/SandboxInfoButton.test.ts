@@ -362,19 +362,6 @@ describe('SandboxInfoButton', () => {
     expect(q('sandbox-info-web-ide')).toBeNull()
   })
 
-  it('tracks a pending snapshot and offers a same-session recovery after it is ready', async () => {
-    const s = session()
-    s.sandbox = { ...s.sandbox!, containerStatus: 'pause_pending', status: 'error' }
-    const wrapper = await render({ session: s })
-    await openPanel(wrapper)
-    expect(q('sandbox-info-state')!.textContent).toBe('正在保存快照')
-    expect(q('sandbox-info-action')).toBeNull()
-    await wrapper.setProps({ session: { ...s, sandbox: { ...s.sandbox, containerStatus: 'exited' } }, paused: true })
-    expect(q('sandbox-info-action')!.textContent?.trim()).toBe('恢复环境')
-    q('sandbox-info-action')!.click()
-    expect(wrapper.emitted('action')).toEqual([['wake']])
-  })
-
   it('explains Docker environments, errors and preparing steps', async () => {
     const s = session({ idleReclaimExempt: true })
     s.sandbox = { ...s.sandbox!, recoveryKind: 'files', destroyAt: undefined }

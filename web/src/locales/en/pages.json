@@ -3461,7 +3461,6 @@
         "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
         "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
         "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
-        "pause_pending": "The sandbox is saving a snapshot. Try again once it is ready.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "reasoning_effort_unavailable": "The selected reasoning effort is unavailable for this model. Choose another level.",
         "service_tier_unavailable": "The selected speed tier is unavailable for this model. Choose another option.",
@@ -3555,7 +3554,6 @@
           "preparing": "Preparing",
           "running": "Running",
           "busy": "Running · Agent working",
-          "pausePending": "Saving snapshot",
           "paused": "Paused",
           "waking": "Waking…",
           "stopping": "Stopping…",
@@ -3569,8 +3567,7 @@
         },
         "action": {
           "stop": "Save and stop",
-          "wake": "Wake environment",
-          "retryWake": "Retry recovery",
+          "wake": "Wake",
           "resume": "Resume",
           "restart": "Start again",
           "stopBusy": "The Agent is working or messages are queued; stop is unavailable for now"
@@ -3609,7 +3606,6 @@
           "adminsOnly": "SSH access is limited to admins",
           "unavailable": {
             "preparing": "Available once the environment is ready",
-            "pausePending": "Connect once the snapshot has been saved",
             "stopping": "The environment is stopping",
             "stopped": "The environment is stopped; resume it to connect",
             "closed": "The session is closed",

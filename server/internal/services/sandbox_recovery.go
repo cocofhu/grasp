@@ -313,9 +313,6 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 	if err != nil {
 		return nil, false, err
 	}
-	if status == sandbox.StatusPausePending {
-		return nil, false, sandbox.ErrPausePending
-	}
 	if row.Status == "saving" && status == "running" {
 		// A failed/interrupted save never replaced this original workload. Its
 		// files may have changed since the archive; do not extract that archive
@@ -396,9 +393,6 @@ func (s *SandboxService) ensureRunningLocked(ctx context.Context, id uint) (*san
 	}
 	if err != nil {
 		observed, probeErr := s.mgr.ProbeStatus(ctx, row.Name)
-		if errors.Is(err, sandbox.ErrPausePending) || (probeErr == nil && observed == sandbox.StatusPausePending) {
-			return nil, false, sandbox.ErrPausePending
-		}
 		failedStatus := "error"
 		if probeErr == nil && (observed == "stopped" || observed == "exited") {
 			failedStatus = "stopped"
