@@ -506,8 +506,8 @@ func (s *SandboxService) view(ctx context.Context, row *models.Sandbox) SandboxV
 
 // viewWithStatus builds a SandboxView. When statusMap is non-nil (batch List path),
 // ContainerStatus is looked up from the map (missing → "not_found"). When
-// dockerFailed is true, every row gets "unknown". Otherwise (GetView path) a
-// single docker inspect is used via mgr.Status.
+// dockerFailed is true, every row gets "unknown". A detail view reads the live
+// gateway observation, including any confirmed pause failure.
 func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox, statusMap map[string]string, dockerFailed bool) SandboxView {
 	s.mu.Lock()
 	ls := s.live[row.ID]
@@ -518,23 +518,24 @@ func (s *SandboxService) viewWithStatus(ctx context.Context, row *models.Sandbox
 	connected := ls != nil && ls.acp != nil && ls.acp.IsConnected()
 	s.mu.Unlock()
 
-	var containerStatus string
+	var observation sandbox.SandboxObservation
 	switch {
 	case dockerFailed:
-		containerStatus = "unknown"
+		observation.Status = "unknown"
 	case statusMap != nil:
 		if st, ok := statusMap[row.Name]; ok {
-			containerStatus = st
+			observation.Status = st
 		} else {
-			containerStatus = "not_found"
+			observation.Status = "not_found"
 		}
 	default:
-		containerStatus = s.mgr.Status(ctx, row.Name)
+		observation = s.mgr.ObserveStatus(ctx, row.Name)
 	}
 
 	v := SandboxView{
 		Sandbox:         *row,
-		ContainerStatus: containerStatus,
+		ContainerStatus: observation.Status,
+		PauseFailure:    observation.PauseFailure,
 		Busy:            busy,
 		Connected:       connected,
 		HasCodeServer:   row.CodeServerPort > 0,

@@ -446,25 +446,46 @@ func (s *SandboxService) Reinstall(ctx context.Context, id string, preserveData 
 
 // Status returns the live driver status of a sandbox.
 func (s *SandboxService) Status(ctx context.Context, id string) (driver.Status, error) {
+	observation, err := s.ObserveStatus(ctx, id)
+	return observation.Status, err
+}
+
+func (s *SandboxService) ObserveStatus(ctx context.Context, id string) (driver.StatusObservation, error) {
 	sb, err := s.store.Get(context.Background(), id)
 	if err != nil {
-		return "", err
+		return driver.StatusObservation{}, err
 	}
 	if sb.Status == models.StatusDeleting && sb.WorkloadReleased {
-		return driver.StatusStopped, nil
+		return driver.StatusObservation{Status: driver.StatusStopped}, nil
 	}
-	if sb.Status == models.StatusStopping || sb.Status == models.StatusDeleting {
-		return driver.StatusPending, nil
+	if sb.Status == models.StatusDeleting {
+		return driver.StatusObservation{Status: driver.StatusPending}, nil
 	}
 	if sb.WorkloadReleased && sb.Status == models.StatusStopped {
-		return driver.StatusStopped, nil
+		return driver.StatusObservation{Status: driver.StatusStopped}, nil
 	}
-	st, err := s.drv.Status(ctx, id)
+	var observation driver.StatusObservation
+	if observer, ok := s.drv.(driver.StatusObserver); ok {
+		observation, err = observer.ObserveStatus(ctx, id)
+	}
+	if sb.Status == models.StatusStopping {
+		// Keep the gateway release intent while exposing the provider's
+		// uncertainty or a confirmed failure to the caller.
+		if err == nil && (observation.PauseFailure != "" || observation.Status == driver.StatusPausePending) {
+			return observation, nil
+		}
+		return driver.StatusObservation{Status: driver.StatusPending}, nil
+	}
+	if observation.Status == "" && err == nil {
+		observation.Status, err = s.drv.Status(ctx, id)
+	}
 	if err != nil {
-		return st, err
+		return observation, err
 	}
-	s.syncObservedStatus(sb, st)
-	return st, nil
+	if observation.PauseFailure == "" {
+		s.syncObservedStatus(sb, observation.Status)
+	}
+	return observation, nil
 }
 
 // syncObservedStatus records lifecycle changes the provider made on its own,

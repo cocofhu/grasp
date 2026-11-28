@@ -6,6 +6,7 @@ export type SandboxDisplayKind =
   | 'running'
   | 'busy'
   | 'pausePending'
+  | 'pauseFailed'
   | 'paused'
   | 'waking'
   | 'stopping'
@@ -33,6 +34,7 @@ export interface SandboxDisplayInput {
   status: SoloStatus | string | undefined
   sandboxStatus?: string
   containerStatus?: string
+  pauseFailure?: string
   paused: boolean
   waking: boolean
   busy: boolean
@@ -44,6 +46,7 @@ const TONES: Record<SandboxDisplayKind, SandboxTone> = {
   running: 'ok',
   busy: 'ok',
   pausePending: 'pending',
+  pauseFailed: 'err',
   paused: 'idle',
   waking: 'pending',
   stopping: 'pending',
@@ -58,6 +61,10 @@ function state(kind: SandboxDisplayKind, action: SandboxAction = null, actionDis
 
 export function sandboxDisplayState(input: SandboxDisplayInput): SandboxDisplayState {
   const sandboxStatus = (input.sandboxStatus || '').trim().toLowerCase()
+  if (input.status === 'running' || input.status === 'stopping') {
+    if (input.containerStatus === 'pause_pending') return state('pausePending')
+    if (input.pauseFailure && input.containerStatus !== 'running') return state('pauseFailed')
+  }
   switch (input.status) {
     case 'error':
       return state('error', 'restart')
@@ -68,10 +75,9 @@ export function sandboxDisplayState(input: SandboxDisplayInput): SandboxDisplayS
     case 'stopped':
       return state('stopped', 'resume')
     case 'running':
-      if (input.containerStatus === 'pause_pending') return state('pausePending')
       if (input.waking) return state('waking')
       if (input.paused) return state('paused', 'wake')
-      if (sandboxStatus === 'error') return state('error', 'wake')
+      if (sandboxStatus === 'error' && !input.pauseFailure) return state('error', 'wake')
       if (input.busy || input.queued > 0) return state('busy', 'stop', true)
       return state('running', 'stop')
     default:

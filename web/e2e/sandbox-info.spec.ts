@@ -108,6 +108,23 @@ for (const state of ['busy', 'connected', 'paused', 'docker', 'stopped', 'error'
   })
 }
 
+test('pending, refused, and failed snapshots have distinct actions and messages', async ({ page }) => {
+  let panel = await openPanel(page, 'state=pause-pending')
+  await expect(panel.getByTestId('sandbox-info-state')).toHaveText('正在保存快照')
+  await expect(panel.getByTestId('sandbox-info-action')).toHaveCount(0)
+
+  panel = await openPanel(page, 'state=pause-refused')
+  await expect(panel.getByTestId('sandbox-info-pause-failure')).toHaveText('节点拒绝了这次快照保存。 环境仍在运行。')
+  await expect(panel.getByTestId('sandbox-info-action')).toHaveText('重试保存')
+  await panel.getByTestId('sandbox-info-action').click()
+  await expect(page.getByTestId('events')).toHaveText('action:stop')
+
+  panel = await openPanel(page, 'state=pause-failed')
+  await expect(panel.getByTestId('sandbox-info-state')).toHaveText('保存失败')
+  await expect(panel.getByTestId('sandbox-info-pause-failure')).toHaveText('快照上传重试后仍失败。')
+  await expect(panel.getByTestId('sandbox-info-action')).toHaveCount(0)
+})
+
 test('basic details animate in both directions and respect reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   const panel = await openPanel(page, 'theme=light')

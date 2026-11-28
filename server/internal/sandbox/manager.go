@@ -771,33 +771,43 @@ func normalizeGWStatus(s string) string {
 // Status returns "running", "exited", "creating", "not_found", … for a sandbox.
 // A failed probe is "unknown"; only a gateway without the record is "not_found".
 func (m *Manager) Status(ctx context.Context, id string) string {
+	return m.ObserveStatus(ctx, id).Status
+}
+
+func (m *Manager) ObserveStatus(ctx context.Context, id string) SandboxObservation {
 	if m.gw == nil || strings.TrimSpace(id) == "" {
-		return "not_found"
+		return SandboxObservation{Status: "not_found"}
 	}
-	st, err := m.ProbeStatus(ctx, id)
+	observation, err := m.ProbeStatusObservation(ctx, id)
 	if err == nil {
-		return st
+		return observation
 	}
 	if GatewayRecordMissing(err) {
-		return "not_found"
+		return SandboxObservation{Status: "not_found"}
 	}
-	return "unknown"
+	return SandboxObservation{Status: "unknown"}
 }
 
 // ProbeStatus preserves observation errors. Lifecycle decisions must use this
 // instead of Status: an unavailable gateway is not proof that data is gone.
 func (m *Manager) ProbeStatus(ctx context.Context, id string) (string, error) {
+	observation, err := m.ProbeStatusObservation(ctx, id)
+	return observation.Status, err
+}
+
+func (m *Manager) ProbeStatusObservation(ctx context.Context, id string) (SandboxObservation, error) {
 	if m.gw == nil || strings.TrimSpace(id) == "" {
-		return "", fmt.Errorf("sandbox gateway or id is missing")
+		return SandboxObservation{}, fmt.Errorf("sandbox gateway or id is missing")
 	}
-	st, err := m.gw.LiveStatus(ctx, id)
+	observation, err := m.gw.LiveStatusObservation(ctx, id)
 	if err != nil {
-		return "", err
+		return SandboxObservation{}, err
 	}
-	if strings.TrimSpace(st) == "" {
-		return "", fmt.Errorf("gateway returned an empty sandbox status")
+	if strings.TrimSpace(observation.Status) == "" {
+		return SandboxObservation{}, fmt.Errorf("gateway returned an empty sandbox status")
 	}
-	return normalizeGWStatus(st), nil
+	observation.Status = normalizeGWStatus(observation.Status)
+	return observation, nil
 }
 
 // managedLabelFilter is the gateway ?label= filter for approving sandboxes.

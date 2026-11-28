@@ -133,6 +133,36 @@ func TestSoloUndetectedPauseStillPublishesOnWake(t *testing.T) {
 	}
 }
 
+func TestSoloRetainsConfirmedSnapshotFailureAcrossCleanupAndStartup(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		observe func(*SandboxService, context.Context)
+	}{
+		{"periodic cleanup", (*SandboxService).ReleaseVanishedSoloSandboxes},
+		{"startup", func(s *SandboxService, ctx context.Context) { s.ReconcileOnStartup(ctx, nil) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newPausedFixture(t, models.SoloStatusRunning)
+			f.ds.fg.Driver = "e2b"
+			f.ds.setStatus(f.row.Name, "not_found")
+			f.ds.fg.SetPauseFailure(f.row.Name, "pause_capture_failed")
+
+			tc.observe(f.svc, t.Context())
+			v, err := f.solo.Get(t.Context(), "session", "alice")
+			if err != nil || v.Status != models.SoloStatusRunning || v.Sandbox == nil ||
+				v.Sandbox.ID != f.row.ID || v.Sandbox.Paused || v.Sandbox.PauseFailure != "pause_capture_failed" {
+				t.Fatalf("confirmed failure lost the session or its explanation: view=%+v err=%v", v, err)
+			}
+			if !f.ds.fg.Has(f.row.Name) {
+				t.Fatal("confirmed pause failure destroyed the provider binding")
+			}
+			if capacity, err := f.svc.Capacity(); err != nil || capacity.Used != 0 {
+				t.Fatalf("confirmed released workload still occupies capacity: %+v %v", capacity, err)
+			}
+		})
+	}
+}
+
 func TestSoloTurnRetriesFailedWake(t *testing.T) {
 	prev := soloWakeRetryDelay
 	soloWakeRetryDelay = time.Millisecond
@@ -234,6 +264,22 @@ func TestSoloWake(t *testing.T) {
 		v, err = f.solo.Wake(t.Context(), "session", "alice")
 		if err != nil || v.Sandbox == nil || v.Sandbox.ID != f.row.ID || v.Sandbox.ContainerStatus != "running" {
 			t.Fatalf("wake after durable pause = %+v, %v", v, err)
+		}
+	})
+	t.Run("shows a confirmed pause failure without waking a prior snapshot", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.fg.Driver = "e2b"
+		f.ds.setStatus(f.row.Name, "stopped")
+		f.ds.fg.SetPauseFailure(f.row.Name, "pause_upload_failed")
+		v, err := f.solo.Get(t.Context(), "session", "alice")
+		if err != nil || v.Sandbox == nil || v.Sandbox.Paused || v.Sandbox.PauseFailure != "pause_upload_failed" {
+			t.Fatalf("pause failure view = %+v, %v", v, err)
+		}
+		f.ds.fg.OnStart = func(sandbox.GWStartOptions) { t.Error("wake silently used a previous snapshot") }
+		_, err = f.solo.Wake(t.Context(), "session", "alice")
+		var se *SoloError
+		if !errors.As(err, &se) || se.Status != http.StatusConflict || se.Code != "pause_failed" {
+			t.Fatalf("wake after the latest pause failed = %v", err)
 		}
 	})
 	t.Run("resumes the same sandbox", func(t *testing.T) {

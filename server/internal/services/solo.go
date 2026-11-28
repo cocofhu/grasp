@@ -80,6 +80,7 @@ type SoloSandboxInfo struct {
 	Name            string `json:"name"`
 	Status          string `json:"status"`
 	ContainerStatus string `json:"containerStatus,omitempty"`
+	PauseFailure    string `json:"pauseFailure,omitempty"`
 	Connected       bool   `json:"connected"`
 	HasCodeServer   bool   `json:"hasCodeServer"`
 	// Paused is set on live views of a running session whose provider
@@ -416,10 +417,11 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 		if gv, err := s.sbx.GetView(ctx, sb.ID); err == nil && gv != nil {
 			info.Status = gv.Status
 			info.ContainerStatus = gv.ContainerStatus
+			info.PauseFailure = gv.PauseFailure
 			info.Connected = gv.Connected
 			info.HasCodeServer = gv.HasCodeServer
 			info.DestroyAt = gv.DestroyAt
-			info.Paused = row.Status == models.SoloStatusRunning &&
+			info.Paused = row.Status == models.SoloStatusRunning && info.PauseFailure == "" &&
 				(gv.ContainerStatus == "exited" || gv.ContainerStatus == "stopped")
 		}
 	}

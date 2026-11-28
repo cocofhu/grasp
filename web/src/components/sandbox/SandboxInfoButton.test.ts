@@ -375,6 +375,20 @@ describe('SandboxInfoButton', () => {
     expect(wrapper.emitted('action')).toEqual([['wake']])
   })
 
+  it('shows a definitive pause failure and offers retry only for a running environment', async () => {
+    const s = session()
+    s.sandbox = { ...s.sandbox!, containerStatus: 'running', pauseFailure: 'pause_refused' }
+    const wrapper = await render({ session: s })
+    await openPanel(wrapper)
+    expect(q('sandbox-info-pause-failure')?.textContent).toContain('环境仍在运行')
+    expect(q('sandbox-info-action')?.textContent?.trim()).toBe('重试保存')
+
+    await wrapper.setProps({ session: { ...s, sandbox: { ...s.sandbox, containerStatus: 'exited', pauseFailure: 'pause_upload_failed' } }, paused: true })
+    expect(q('sandbox-info-state')?.textContent).toBe('保存失败')
+    expect(q('sandbox-info-pause-failure')?.textContent).toContain('上传重试后仍失败')
+    expect(q('sandbox-info-action')).toBeNull()
+  })
+
   it('explains Docker environments, errors and preparing steps', async () => {
     const s = session({ idleReclaimExempt: true })
     s.sandbox = { ...s.sandbox!, recoveryKind: 'files', destroyAt: undefined }

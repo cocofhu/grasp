@@ -319,12 +319,12 @@ func (h *Handler) Reinstall(c *gin.Context) {
 
 // Status handles GET /sandboxes/:id/status.
 func (h *Handler) Status(c *gin.Context) {
-	st, err := h.svc.Status(c.Request.Context(), c.Param("id"))
+	observation, err := h.svc.ObserveStatus(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		h.notFoundOr500(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": string(st)})
+	c.JSON(http.StatusOK, observation)
 }
 
 // Host handles GET /sandboxes/:id/hosts/:port.

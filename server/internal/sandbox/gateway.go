@@ -288,13 +288,21 @@ func (g *GatewayClient) StartPrepared(ctx context.Context, id string, opts GWSta
 // LiveStatus returns the gateway's live driver status ("running"/"stopped"/
 // "pending"/"not_found"/"error").
 func (g *GatewayClient) LiveStatus(ctx context.Context, id string) (string, error) {
-	var out struct {
-		Status string `json:"status"`
-	}
+	out, err := g.LiveStatusObservation(ctx, id)
+	return out.Status, err
+}
+
+type SandboxObservation struct {
+	Status       string `json:"status"`
+	PauseFailure string `json:"pauseFailure,omitempty"`
+}
+
+func (g *GatewayClient) LiveStatusObservation(ctx context.Context, id string) (SandboxObservation, error) {
+	var out SandboxObservation
 	if err := g.do(ctx, http.MethodGet, "/api/v1/sandboxes/"+id+"/status", nil, &out); err != nil {
-		return "", err
+		return SandboxObservation{}, err
 	}
-	return out.Status, nil
+	return out, nil
 }
 
 // Logs fetches PID1 combined stdout/stderr from the gateway control plane

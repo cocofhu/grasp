@@ -27,7 +27,7 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 	if s.soloSessionStopped(row) {
 		return // resumed only on request; a missing resource is restored from backup
 	}
-	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	observation, err := s.mgr.ProbeStatusObservation(ctx, row.Name)
 	if sandbox.GatewayRecordMissing(err) {
 		// A process can exit after Create but before adopting the gateway id.
 		// Find the correlated resident instead of treating it as an orphan.
@@ -38,12 +38,17 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 					if updateErr := s.db.Model(row).Update("name", candidate.ID).Error; updateErr == nil {
 						row.Name = candidate.ID
 						tracked[row.Name] = true
-						status, err = s.mgr.ProbeStatus(ctx, row.Name)
+						observation, err = s.mgr.ProbeStatusObservation(ctx, row.Name)
 					}
 					break
 				}
 			}
 		}
+	}
+	status := observation.Status
+	if err == nil && observation.PauseFailure != "" && workloadReleasedStatus(status) {
+		_ = s.snapshotPauseResult(ctx, row, observation)
+		return
 	}
 	if err == nil && status == "not_found" {
 		// This is a successful live-driver observation, not an HTTP 404 or a
@@ -134,6 +139,9 @@ func (s *SandboxService) EnsureSoloRunning(ctx context.Context, id uint) error {
 	}
 	sb, warm, err := s.ensureRunningLocked(ctx, id)
 	if err != nil {
+		if errors.Is(err, errSnapshotPauseFailed) {
+			return err
+		}
 		s.recordSoloRecoveryFailure(id, err)
 		return fmt.Errorf("沙箱恢复未完成，可重试：%w", err)
 	}
@@ -250,12 +258,17 @@ func (s *SandboxService) releaseIfVanished(ctx context.Context, row *models.Sand
 	if err != nil {
 		return
 	}
-	status, err := s.mgr.ProbeStatus(ctx, row.Name)
+	observation, err := s.mgr.ProbeStatusObservation(ctx, row.Name)
+	if err == nil && observation.PauseFailure != "" && workloadReleasedStatus(observation.Status) {
+		_ = s.snapshotPauseResult(ctx, row, observation)
+		unlock()
+		return
+	}
 	unlock()
 	if err != nil {
 		return
 	}
-	switch status {
+	switch observation.Status {
 	case "exited", "stopped":
 		s.invokeSoloPausedHook(row.ID)
 		return

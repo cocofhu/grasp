@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- Solo 会显示 E2B 已确认的快照保存失败及原因。原环境仍在运行时，可以直接重试保存。
+
 - E2B 快照仍在保存时，Solo 会显示进度状态并等待核验。原环境可用后，可从同一会话恢复或重试连接。
 
 - Solo 和工作流聊天的 `@` 与「+」菜单支持引用 GitHub Discussion 和工作区产物。Discussion 可按仓库搜索或粘贴链接引用，支持免登录读取公开讨论、查看采纳答案和楼中回复。产物引用固定发送时的版本，历史消息和 Agent 可读取该版本。手机上输入 `@` 即可从同一行标签直接切换到「讨论」或「产物」，也可继续输入关键词跨类型搜索。

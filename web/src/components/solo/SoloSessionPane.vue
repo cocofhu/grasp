@@ -60,7 +60,7 @@ const router = useRouter()
 const store = useSoloSessions()
 const toast = useToast()
 const chat = useSoloChat(toRef(props, 'sessionId'), props.embedded)
-const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentServiceTier, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentServiceTier } = chat
+const { session, turns, queued, displayQueued, busy, phase, link, loading, loadError, actionError, status, closed, stopped, canSend, sandboxUnavailable, sandboxPaused, sandboxWaking, currentModelId, currentReasoningEffort, currentServiceTier, modelChangePending, setCurrentModel, setCurrentReasoningEffort, setCurrentServiceTier } = chat
 const steerable = computed(() => busy.value && chat.steerable.value)
 /** The turn still waits for its sandbox; the server defers steering until it runs. */
 const steerPending = computed(() => busy.value && phase.value === 'preparing')
@@ -758,7 +758,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 @update:service-tier="chooseSessionServiceTier"
               />
               <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
-              <template v-if="!embedded && status === 'running'">
+              <template v-if="!embedded && status === 'running' && !sandboxUnavailable && session.sandbox?.containerStatus !== 'pause_pending'">
                 <button
                   v-if="sandboxPaused"
                   type="button"

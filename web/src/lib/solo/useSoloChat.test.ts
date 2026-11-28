@@ -418,6 +418,30 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('keeps the conversation open after a failed pause and only sends if the original sandbox is running', async () => {
+    const failed = { id: 9, name: 'sb', status: 'stopped', containerStatus: 'stopped', pauseFailure: 'pause_upload_failed', paused: true }
+    mocks.getSoloSession.mockResolvedValue(session({ sandbox: failed }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    FakeSocket.all[0]!.open()
+    await flushPromises()
+
+    expect(chat.session.value?.status).toBe('running')
+    expect(chat.sandboxPaused.value).toBe(false)
+    expect(chat.sandboxUnavailable.value).toBe(true)
+    expect(await chat.send('continue')).toBe(false)
+    expect(mocks.sendSoloTurn).not.toHaveBeenCalled()
+
+    mocks.getSoloSession.mockResolvedValue(session({ sandbox: {
+      ...failed, status: 'running', containerStatus: 'running', pauseFailure: 'pause_refused', paused: false,
+    } }))
+    await chat.refreshSession()
+    expect(chat.sandboxUnavailable.value).toBe(false)
+    expect(await chat.send('continue')).toBe(true)
+    expect(mocks.sendSoloTurn).toHaveBeenCalledTimes(1)
+    app.unmount()
+  })
+
   it('clears waking when the waking turn fails', async () => {
     const paused = session({ sandbox: { id: 9, name: 'sb', status: 'running', connected: false, hasCodeServer: true, paused: true } })
     mocks.getSoloSession.mockResolvedValue(paused)

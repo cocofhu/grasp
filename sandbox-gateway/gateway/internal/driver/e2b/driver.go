@@ -658,6 +658,12 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 	}
 	if errors.Is(err, ErrNotFound) {
 		_ = d.tunnels.Close(r.Provider.ID)
+		var providerErr *APIError
+		if errors.As(err, &providerErr) && providerErr.PauseFailure != "" {
+			h := handle(r, nil, driver.StatusNotFound)
+			h.PauseFailure = providerErr.PauseFailure
+			return h, nil
+		}
 		if (r.Phase == "paused" || r.Phase == "releasing") && latestRecoveryPoint(r) != nil {
 			return handle(r, nil, driver.StatusStopped), nil
 		}
@@ -669,12 +675,17 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 	if !d.owns(s, r.ID) {
 		return nil, errors.New("E2B provider ownership mismatch")
 	}
+	observed := func(endpoints map[int]string, status driver.Status) *driver.Handle {
+		h := handle(r, endpoints, status)
+		h.PauseFailure = s.PauseFailure
+		return h
+	}
 	if r.Phase == "deleting" || r.Phase == "releasing" {
 		status := driver.StatusRunning
 		if s.State == "paused" || s.State == "stopped" {
 			status = driver.StatusStopped
 		}
-		return handle(r, nil, status), nil
+		return observed(nil, status), nil
 	}
 	if s.State == "paused" || s.State == "stopped" {
 		if r.Phase != "paused" {
@@ -684,7 +695,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 			}
 		}
 		d.tunnels.Suspend(r.Provider.ID)
-		return handle(r, nil, driver.StatusStopped), nil
+		return observed(nil, driver.StatusStopped), nil
 	}
 	if r.Phase == "creating" {
 		return handle(r, nil, driver.StatusPending), nil
@@ -693,7 +704,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 		if err := d.observe(ctx, r); err != nil {
 			return nil, err
 		}
-		return handle(r, d.tunnels.List(r.Provider.ID), driver.StatusRunning), nil
+		return observed(d.tunnels.List(r.Provider.ID), driver.StatusRunning), nil
 	}
 	if err = d.convergeResumed(ctx, r); err != nil {
 		return nil, err
@@ -704,7 +715,7 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 			return nil, err
 		}
 	}
-	return handle(r, d.tunnels.List(r.Provider.ID), driver.StatusRunning), nil
+	return observed(d.tunnels.List(r.Provider.ID), driver.StatusRunning), nil
 }
 
 func (d *Driver) Get(ctx context.Context, id string) (*driver.Handle, error) {
@@ -716,25 +727,31 @@ func (d *Driver) Get(ctx context.Context, id string) (*driver.Handle, error) {
 	return d.refresh(ctx, &e.record)
 }
 func (d *Driver) Status(ctx context.Context, id string) (driver.Status, error) {
+	observation, err := d.ObserveStatus(ctx, id)
+	return observation.Status, err
+}
+
+func (d *Driver) ObserveStatus(ctx context.Context, id string) (driver.StatusObservation, error) {
 	e, err := d.lockEntry(id)
 	if errors.Is(err, ErrNotFound) {
-		return driver.StatusNotFound, nil
+		return driver.StatusObservation{Status: driver.StatusNotFound}, nil
 	}
 	if err != nil {
-		return driver.StatusError, err
+		return driver.StatusObservation{Status: driver.StatusError}, err
 	}
 	defer e.mu.Unlock()
 	// Every private preview asset checks sandbox liveness. Bound remote probes
 	// to once per two seconds while retaining immediate local lifecycle changes.
-	if e.record.Phase == "running" && e.status == driver.StatusRunning && time.Since(e.statusAt) < 2*time.Second {
-		return e.status, nil
+	if e.record.Phase == "running" && e.observation.Status == driver.StatusRunning && time.Since(e.statusAt) < 2*time.Second {
+		return e.observation, nil
 	}
 	h, err := d.refresh(ctx, &e.record)
 	if err != nil {
-		return driver.StatusError, err
+		return driver.StatusObservation{Status: driver.StatusError}, err
 	}
-	e.status, e.statusAt = h.Status, time.Now()
-	return h.Status, nil
+	e.observation = driver.StatusObservation{Status: h.Status, PauseFailure: h.PauseFailure}
+	e.statusAt = time.Now()
+	return e.observation, nil
 }
 
 func (d *Driver) Endpoints(ctx context.Context, id string) (map[int]string, error) {
@@ -836,6 +853,9 @@ func (d *Driver) PauseSnapshot(ctx context.Context, id string, keep int) error {
 		return errors.New("E2B provider ownership mismatch")
 	}
 	paused := current.State == "paused" || current.State == "stopped"
+	if paused && current.PauseFailure != "" {
+		return errors.New("latest E2B pause did not produce a recovery point")
+	}
 	if !paused && keep > 1 {
 		if r.CaptureName == "" {
 			var nonce [16]byte

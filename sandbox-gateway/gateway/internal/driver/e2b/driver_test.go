@@ -798,6 +798,35 @@ func TestDriverWaitsForNativePauseAndResumesTheSameGuest(t *testing.T) {
 	}
 }
 
+func TestDriverExposesConfirmedPauseFailureWithoutChangingLiveStatus(t *testing.T) {
+	f := newLifecycleProvider(t)
+	d := openLifecycleDriver(t, lifecycleOptions(t, f))
+	if _, err := d.Create(t.Context(), lifecycleSpec("pause-failure")); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.sandboxes["guest-1"].PauseFailure = "pause_refused"
+	f.mu.Unlock()
+	observation, err := d.ObserveStatus(t.Context(), "pause-failure")
+	if err != nil || observation.Status != driver.StatusRunning || observation.PauseFailure != "pause_refused" {
+		t.Fatalf("live failure = %+v, %v", observation, err)
+	}
+	e, err := d.lookup("pause-failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.mu.Lock()
+	e.statusAt = time.Time{}
+	e.mu.Unlock()
+	f.mu.Lock()
+	f.getStatus, f.getErrorCode = http.StatusNotFound, "pause_upload_failed"
+	f.mu.Unlock()
+	observation, err = d.ObserveStatus(t.Context(), "pause-failure")
+	if err != nil || observation.Status != driver.StatusNotFound || observation.PauseFailure != "pause_upload_failed" {
+		t.Fatalf("released failure = %+v, %v", observation, err)
+	}
+}
+
 func TestDriverOwnershipExpiryAndStoppedRestart(t *testing.T) {
 	f := newLifecycleProvider(t)
 	opts := lifecycleOptions(t, f)

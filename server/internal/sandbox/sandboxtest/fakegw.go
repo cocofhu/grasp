@@ -25,14 +25,15 @@ const DefaultImage = "fake-gateway-default:test"
 
 // record is one sandbox the fake gateway knows about.
 type record struct {
-	id        string
-	status    string // gateway vocab: "running"/"stopped"/"pending"/"error"
-	image     string
-	labels    map[string]string
-	env       map[string]string
-	endpoints map[string]string
-	logs      string // canned PID1 stdout/stderr for GET …/logs
-	workspace string
+	id           string
+	status       string // gateway vocab: "running"/"stopped"/"pending"/"error"
+	pauseFailure string
+	image        string
+	labels       map[string]string
+	env          map[string]string
+	endpoints    map[string]string
+	logs         string // canned PID1 stdout/stderr for GET …/logs
+	workspace    string
 }
 
 // FakeGateway is an httptest-backed stand-in for the sandbox-gateway. Zero
@@ -165,6 +166,14 @@ func (fg *FakeGateway) Has(id string) bool {
 
 // Seed registers a running sandbox by id (convenience for SetStatus(id,"running")).
 func (fg *FakeGateway) Seed(id string) { fg.SetStatus(id, "running") }
+
+func (fg *FakeGateway) SetPauseFailure(id, code string) {
+	fg.mu.Lock()
+	defer fg.mu.Unlock()
+	if rec := fg.recs[id]; rec != nil {
+		rec.pauseFailure = code
+	}
+}
 
 // SetLogs sets canned PID1 logs returned by GET /sandboxes/:id/logs.
 func (fg *FakeGateway) SetLogs(id, content string) {
@@ -317,16 +326,17 @@ func (fg *FakeGateway) status(w http.ResponseWriter, id string) {
 	}
 	fg.mu.Lock()
 	rec := fg.recs[id]
-	var st string
+	var observation sandbox.SandboxObservation
 	if rec != nil {
-		st = rec.status
+		observation.Status = rec.status
+		observation.PauseFailure = rec.pauseFailure
 	}
 	fg.mu.Unlock()
 	if rec == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]string{"status": st})
+	writeJSON(w, observation)
 }
 
 func (fg *FakeGateway) stopStart(w http.ResponseWriter, r *http.Request, id, action string) {

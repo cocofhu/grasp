@@ -99,6 +99,40 @@ func TestSnapshotReleaseRetryDoesNotAnnounceSuccessfulManualStopEarly(t *testing
 	}
 }
 
+func TestSnapshotReleasePendingToRefusedKeepsOriginalSessionRunning(t *testing.T) {
+	f := newStopFixture(t)
+	row := f.recovery(t)
+	f.fg.Driver, f.fg.FailStop = "e2b", true
+	var stops atomic.Int32
+	f.fg.OnStop = func() {
+		stops.Add(1)
+		f.fg.SetStatus(row.Name, sandbox.StatusPausePending)
+	}
+	if err := f.db.Model(&models.SoloSession{}).Where("id = ?", f.id).Update("status", models.SoloStatusStopping).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.solo.finishStop(f.row(t))
+	if fresh := f.recovery(t); fresh.RecoveryPhase != "releasing" {
+		t.Fatalf("pending pause lost release intent: phase=%s", fresh.RecoveryPhase)
+	}
+	if session := f.row(t); session.Status != models.SoloStatusStopping || session.Error != "" {
+		t.Fatalf("pending pause reported failure: status=%s error=%q", session.Status, session.Error)
+	}
+
+	f.fg.SetStatus(row.Name, "running")
+	f.fg.SetPauseFailure(row.Name, "pause_refused")
+	f.sbx.RetryRecoveryCleanup(t.Context())
+	if fresh := f.recovery(t); fresh.Status != "running" || fresh.RecoveryPhase != "" || fresh.Name != row.Name {
+		t.Fatalf("refused pause lost original sandbox: status=%s phase=%s name=%s", fresh.Status, fresh.RecoveryPhase, fresh.Name)
+	}
+	if session := f.row(t); session.Status != models.SoloStatusRunning || session.Error != "" {
+		t.Fatalf("refused pause did not restore running session: status=%s error=%q", session.Status, session.Error)
+	}
+	if stops.Load() != 1 {
+		t.Fatalf("pause was attempted %d times, want 1", stops.Load())
+	}
+}
+
 func TestStoppedReleaseIntentStillRetriesExplicitReclaim(t *testing.T) {
 	f := newStopFixture(t)
 	row := f.recovery(t)

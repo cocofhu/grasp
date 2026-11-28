@@ -108,6 +108,9 @@ func (c *soloChat) waitSandbox(ctx context.Context) (uint, *models.SoloSession, 
 		if row.SandboxID != 0 {
 			if row.Status == models.SoloStatusRunning && s.modelAlign == nil {
 				if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
+					if errors.Is(err, errSnapshotPauseFailed) {
+						return 0, nil, err
+					}
 					if !errors.Is(err, sandbox.ErrPausePending) {
 						wakeFailures++
 						log.Warn().Err(err).Str("session", c.id).Int("attempt", wakeFailures).Msg("solo sandbox wake failed; retrying")

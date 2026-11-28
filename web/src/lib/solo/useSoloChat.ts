@@ -140,12 +140,16 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
   const closed = computed(() => status.value === 'closed')
   const stopped = computed(() => status.value === 'stopping' || status.value === 'stopped')
   const sessionOpen = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
+  const sandboxUnavailable = computed(() => {
+    const sandbox = session.value?.sandbox
+    return !!sandbox?.pauseFailure && sandbox.containerStatus !== 'running'
+  })
   // Establish the old message identities before accepting a new send. An old
   // same-text row from a delayed initial read must never acknowledge it.
-  const canSend = computed(() => sessionOpen.value && historyReady.value)
+  const canSend = computed(() => sessionOpen.value && historyReady.value && !sandboxUnavailable.value)
   // The platform paused a running sandbox. Sending still works: the server
   // wakes the same sandbox before the turn starts.
-  const sandboxPaused = computed(() => status.value === 'running' && !!session.value?.sandbox?.paused)
+  const sandboxPaused = computed(() => status.value === 'running' && !!session.value?.sandbox?.paused && !sandboxUnavailable.value)
   const sandboxWaking = ref(false)
   let wakeRequests = 0
   watch(sandboxPaused, (paused) => { if (!paused) sandboxWaking.value = false })
@@ -1229,6 +1233,7 @@ export function useSoloChat(sessionId: Ref<string>, transport: SoloChatTransport
     closed,
     stopped,
     canSend,
+    sandboxUnavailable,
     sandboxPaused,
     sandboxWaking,
     wake,

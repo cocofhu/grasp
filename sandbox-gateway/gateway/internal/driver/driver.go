@@ -64,14 +64,26 @@ type Spec struct {
 
 // Handle is the driver's view of a live sandbox.
 type Handle struct {
-	ID        string         // gateway id
-	Name      string         // driver-native resource name
-	Namespace string         // k8s namespace (empty for docker)
-	Status    Status         // current lifecycle status
-	Endpoints map[int]string // container port -> client-reachable "host:port"
+	ID           string         // gateway id
+	Name         string         // driver-native resource name
+	Namespace    string         // k8s namespace (empty for docker)
+	Status       Status         // current lifecycle status
+	Endpoints    map[int]string // container port -> client-reachable "host:port"
+	PauseFailure string
 	// CreatedAt is when the underlying workload first appeared (zero if unknown).
 	// Used by orphan GC age filtering.
 	CreatedAt time.Time
+}
+
+// StatusObservation adds a provider's most recent confirmed pause failure
+// without altering the observed workload lifecycle.
+type StatusObservation struct {
+	Status       Status `json:"status"`
+	PauseFailure string `json:"pauseFailure,omitempty"`
+}
+
+type StatusObserver interface {
+	ObserveStatus(ctx context.Context, id string) (StatusObservation, error)
 }
 
 // ExitInfo is the most recent termination of a sandbox's main container.
