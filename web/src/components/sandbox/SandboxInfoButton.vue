@@ -55,6 +55,7 @@ const copied = ref('')
 const taskInfo = ref<SoloTaskInfo>()
 const taskInfoFailed = ref(false)
 let tick: ReturnType<typeof setInterval> | undefined
+let refreshTimer: ReturnType<typeof setInterval> | undefined
 /** IDE connections change outside this page, so an open panel re-reads the session. */
 const REFRESH_MS = 10_000
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
@@ -63,7 +64,6 @@ const sandboxId = computed(() => props.session.sandbox?.id || props.session.sand
 const display = computed(() => sandboxDisplayState({
   status: props.session.status,
   sandboxStatus: props.session.sandbox?.status,
-  containerStatus: props.session.sandbox?.containerStatus,
   paused: props.paused,
   waking: props.waking,
   busy: props.busy,
@@ -127,7 +127,6 @@ const canUseSSH = computed(() => sshVisible.value && ssh.value?.allowed !== fals
 const ideBlocked = computed(() => {
   switch (display.value.kind) {
     case 'preparing':
-    case 'pausePending':
     case 'stopping':
     case 'stopped':
     case 'closed':
@@ -139,11 +138,7 @@ const ideBlocked = computed(() => {
 })
 const ideWakes = computed(() => display.value.kind === 'paused' || display.value.kind === 'waking')
 
-const actionLabel = computed(() => {
-  const { action, kind } = display.value
-  if (action === 'wake' && kind === 'error') return t('pages.solo.sandboxInfo.action.retryWake')
-  return action ? t(`pages.solo.sandboxInfo.action.${action}`) : ''
-})
+const actionLabel = computed(() => display.value.action ? t(`pages.solo.sandboxInfo.action.${display.value.action}`) : '')
 const actionIcon = computed(() => ({ stop: 'stop', wake: 'play', resume: 'play', restart: 'refresh' } as const)[display.value.action || 'stop'])
 const webIdeUrl = computed(() => environmentRunning.value && props.session.sandbox?.hasCodeServer && sandboxId.value
   ? api.sandboxIdeUrl(sandboxId.value)
@@ -205,6 +200,7 @@ async function show() {
   emit('refresh')
   void gateway.load(true)
   tick = setInterval(() => { now.value = Date.now() }, 1000)
+  refreshTimer = setInterval(() => emit('refresh'), REFRESH_MS)
   await nextTick()
   place()
   panel.value?.focus()
@@ -214,7 +210,9 @@ function hide(returnFocus = false) {
   if (!open.value) return
   open.value = false
   if (tick) clearInterval(tick)
+  if (refreshTimer) clearInterval(refreshTimer)
   tick = undefined
+  refreshTimer = undefined
   if (returnFocus) trigger.value?.focus()
 }
 
@@ -251,12 +249,6 @@ watch(open, (value) => {
     window.removeEventListener('resize', place)
   }
 })
-
-watch(() => display.value.kind === 'pausePending' ? 5_000 : open.value ? REFRESH_MS : 0, (period, _, onCleanup) => {
-  if (!period) return
-  const timer = setInterval(() => emit('refresh'), period)
-  onCleanup(() => clearInterval(timer))
-}, { immediate: true })
 
 onBeforeUnmount(() => {
   hide()

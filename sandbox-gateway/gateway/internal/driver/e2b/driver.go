@@ -85,7 +85,7 @@ func (d *Driver) connectForResume(ctx context.Context, providerID string) (*Sand
 		}
 		var apiErr *APIError
 		retry := true
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, driver.ErrPausePending) {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			retry = false
 		} else if errors.As(err, &apiErr) {
 			retry = apiErr.HTTPStatus >= http.StatusInternalServerError && apiErr.HTTPStatus <= 599
@@ -653,9 +653,6 @@ func (d *Driver) refresh(ctx context.Context, r *record) (*driver.Handle, error)
 		return handle(r, nil, driver.StatusPending), nil
 	}
 	s, err := d.client.Get(ctx, r.Provider.ID)
-	if errors.Is(err, driver.ErrPausePending) {
-		return handle(r, nil, driver.StatusPausePending), nil
-	}
 	if errors.Is(err, ErrNotFound) {
 		_ = d.tunnels.Close(r.Provider.ID)
 		if (r.Phase == "paused" || r.Phase == "releasing") && latestRecoveryPoint(r) != nil {
@@ -923,9 +920,6 @@ func (d *Driver) Start(ctx context.Context, id string) error {
 		h, err := d.refresh(ctx, &e.record)
 		if err != nil {
 			return err
-		}
-		if h.Status == driver.StatusPausePending {
-			return driver.ErrPausePending
 		}
 		if h.Status != driver.StatusRunning {
 			return errors.New("E2B sandbox is not running")

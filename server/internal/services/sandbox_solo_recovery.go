@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -63,9 +62,6 @@ func (s *SandboxService) reconcileSoloSandbox(ctx context.Context, row *models.S
 			}
 		}
 	}
-	if err == nil && status == sandbox.StatusPausePending {
-		return
-	}
 	if err == nil {
 		err = fmt.Errorf("sandbox status=%s; waiting for recovery", status)
 	}
@@ -95,17 +91,14 @@ func (s *SandboxService) recordSoloRecovered(row *models.Sandbox, sb *sandbox.Sa
 }
 
 func (s *SandboxService) recordSoloRecoveryFailure(id uint, err error) {
-	if errors.Is(err, sandbox.ErrPausePending) {
-		return
-	}
 	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 		// A user-facing error must not erase a durable save/resume intent or
 		// reacquire quota for a workload whose release was already confirmed.
 		"status": gorm.Expr("CASE WHEN status IN ? OR cleanup_pending = ? THEN status ELSE ? END",
 			[]string{"saving", "resuming", "stopped", "deleting"}, true, "error"),
-		"error": "沙箱恢复暂未完成，可重试：" + truncErr(err),
+		"error": "沙箱恢复暂未完成，工作区已保留，可重试：" + truncErr(err),
 	})
-	log.Warn().Err(err).Uint("sandbox", id).Msg("solo recovery deferred")
+	log.Warn().Err(err).Uint("sandbox", id).Msg("solo recovery deferred; workspace retained")
 }
 
 // EnsureSoloRunning recovers the same sandbox, or leaves its data and binding

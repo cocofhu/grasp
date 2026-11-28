@@ -403,11 +403,6 @@ func (h *Handler) LastExit(c *gin.Context) {
 }
 
 func (h *Handler) notFoundOr500(c *gin.Context, err error) {
-	if errors.Is(err, driver.ErrPausePending) {
-		c.Header("Retry-After", "5")
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "error_code": driver.StatusPausePending})
-		return
-	}
 	if errors.Is(err, store.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "sandbox not found"})
 		return

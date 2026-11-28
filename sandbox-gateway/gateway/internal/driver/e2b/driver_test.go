@@ -47,7 +47,6 @@ type lifecycleProvider struct {
 	resourceMismatch                                                                                                            bool
 	partialCreate                                                                                                               bool
 	logs                                                                                                                        string
-	getErrorCode                                                                                                                string
 	beforeRequest                                                                                                               func(*http.Request)
 	// maxEndAt caps renewals like E2B's per-team maximum sandbox length.
 	maxEndAt                                                                    time.Time
@@ -221,9 +220,6 @@ func (f *lifecycleProvider) serve(w http.ResponseWriter, r *http.Request) {
 			f.getRequests++
 			if f.getStatus != 0 {
 				w.WriteHeader(f.getStatus)
-				if f.getErrorCode != "" {
-					_ = json.NewEncoder(w).Encode(map[string]string{"error_code": f.getErrorCode})
-				}
 				return
 			}
 		}
@@ -756,45 +752,6 @@ func TestDriverCancelCreateAndCleanupRetry(t *testing.T) {
 	d.sweep(t.Context())
 	if _, err := d.lookup("retry"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("renewal sweep did not retry owned deletion")
-	}
-}
-
-func TestDriverWaitsForNativePauseAndResumesTheSameGuest(t *testing.T) {
-	f := newLifecycleProvider(t)
-	d := openLifecycleDriver(t, lifecycleOptions(t, f))
-	_, err := d.Create(t.Context(), lifecycleSpec("same-guest"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.mu.Lock()
-	f.getStatus, f.getErrorCode = http.StatusConflict, "other_conflict"
-	f.mu.Unlock()
-	if _, err := d.Get(t.Context(), "same-guest"); err == nil || errors.Is(err, driver.ErrPausePending) {
-		t.Fatalf("unrelated provider response was treated as pause pending: %v", err)
-	}
-	f.mu.Lock()
-	f.getErrorCode = string(driver.StatusPausePending)
-	f.mu.Unlock()
-	if status, err := d.Status(t.Context(), "same-guest"); err != nil || status != driver.StatusPausePending {
-		t.Fatalf("status = %s, %v", status, err)
-	}
-	if err := d.Start(t.Context(), "same-guest"); !errors.Is(err, driver.ErrPausePending) {
-		t.Fatalf("pending start = %v", err)
-	}
-	f.mu.Lock()
-	f.getStatus = 0
-	f.sandboxes["guest-1"].State = "paused"
-	f.mu.Unlock()
-	if status, err := d.Status(t.Context(), "same-guest"); err != nil || status != driver.StatusStopped {
-		t.Fatalf("ready pause = %s, %v", status, err)
-	}
-	if err := d.Start(t.Context(), "same-guest"); err != nil {
-		t.Fatal(err)
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.created != 1 || f.deleted != 0 || f.connected != 1 || f.sandboxes["guest-1"].State != "running" {
-		t.Fatalf("expected one in-place wake: create=%d delete=%d connect=%d", f.created, f.deleted, f.connected)
 	}
 }
 

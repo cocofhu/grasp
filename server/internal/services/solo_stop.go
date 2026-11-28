@@ -140,9 +140,6 @@ func (s *SoloService) Wake(ctx context.Context, id, user string) (*SoloSessionVi
 		return nil, errors.New("solo unavailable")
 	}
 	if err := s.sbx.EnsureSoloRunning(ctx, row.SandboxID); err != nil {
-		if errors.Is(err, sandbox.ErrPausePending) {
-			return nil, soloErr(http.StatusConflict, sandbox.StatusPausePending, "沙箱正在保存快照，请稍后重试")
-		}
 		return nil, soloErr(http.StatusBadGateway, "wake_failed", "%s", truncErr(err))
 	}
 	return s.Get(ctx, id, user)

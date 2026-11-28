@@ -11,18 +11,15 @@ import (
 // other/future drivers may still return this error.
 var ErrLogsUnsupported = errors.New("sandbox logs not supported by this driver")
 
-var ErrPausePending = errors.New("sandbox pause is awaiting confirmation")
-
 // Sandbox lifecycle statuses reported by drivers.
 type Status string
 
 const (
-	StatusRunning      Status = "running"
-	StatusStopped      Status = "stopped"
-	StatusNotFound     Status = "not_found"
-	StatusPending      Status = "pending"
-	StatusPausePending Status = "pause_pending"
-	StatusError        Status = "error"
+	StatusRunning  Status = "running"
+	StatusStopped  Status = "stopped"
+	StatusNotFound Status = "not_found"
+	StatusPending  Status = "pending"
+	StatusError    Status = "error"
 )
 
 // ConfigInject describes optional rules/skills/mcp configuration to seed into
