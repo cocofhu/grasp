@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"sandbox-gateway/internal/driver"
 )
 
 // ErrNotFound identifies an absent provider sandbox without exposing its body.
@@ -411,6 +413,15 @@ func (c *Client) control(ctx context.Context, operation, method, path string, qu
 		ok = ok || status == response.StatusCode
 	}
 	if !ok {
+		if response.StatusCode == http.StatusConflict {
+			var conflict struct {
+				Code string `json:"error_code"`
+			}
+			data, readErr := io.ReadAll(io.LimitReader(response.Body, 4097))
+			if readErr == nil && len(data) <= 4096 && json.Unmarshal(data, &conflict) == nil && conflict.Code == string(driver.StatusPausePending) {
+				return nil, driver.ErrPausePending
+			}
+		}
 		return nil, &APIError{Operation: operation, HTTPStatus: response.StatusCode}
 	}
 	if output != nil {

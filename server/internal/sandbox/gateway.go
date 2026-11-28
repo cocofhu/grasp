@@ -40,6 +40,10 @@ type GatewayHTTPError struct {
 // route must never be mistaken for a missing data-bearing sandbox record.
 var ErrGatewayTransport = errors.New("sandbox gateway transport unavailable")
 
+const StatusPausePending = "pause_pending"
+
+var ErrPausePending = errors.New("sandbox pause is awaiting confirmation")
+
 func (e *GatewayHTTPError) Error() string { return e.message }
 
 // GatewayRecordMissing identifies a missing control-plane record. That alone
@@ -173,6 +177,14 @@ func (g *GatewayClient) doDirect(ctx context.Context, method, path string, body 
 		return fmt.Errorf("read %s %s response: %w", method, path, err)
 	}
 	if resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusConflict {
+			var conflict struct {
+				Code string `json:"error_code"`
+			}
+			if json.Unmarshal(data, &conflict) == nil && conflict.Code == StatusPausePending {
+				return ErrPausePending
+			}
+		}
 		return &GatewayHTTPError{StatusCode: resp.StatusCode,
 			message: fmt.Sprintf("gateway %s %s: %d %s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))}
 	}

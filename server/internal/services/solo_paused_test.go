@@ -213,6 +213,29 @@ func TestSoloWakeWaitsForBridge(t *testing.T) {
 }
 
 func TestSoloWake(t *testing.T) {
+	t.Run("waits for a pending provider pause without releasing the original sandbox", func(t *testing.T) {
+		f := newPausedFixture(t, models.SoloStatusRunning)
+		f.ds.setStatus(f.row.Name, sandbox.StatusPausePending)
+		v, err := f.solo.Get(t.Context(), "session", "alice")
+		if err != nil || v.Sandbox == nil || v.Sandbox.ContainerStatus != sandbox.StatusPausePending || v.Sandbox.Paused {
+			t.Fatalf("pending view = %+v, %v", v, err)
+		}
+		_, err = f.solo.Wake(t.Context(), "session", "alice")
+		var se *SoloError
+		if !errors.As(err, &se) || se.Status != http.StatusConflict || se.Code != sandbox.StatusPausePending {
+			t.Fatalf("pending wake = %v", err)
+		}
+		f.svc.ReleaseVanishedSoloSandboxes(t.Context())
+		f.svc.ReconcileOnStartup(t.Context(), nil)
+		if row, err := f.svc.Get(f.row.ID); err != nil || row.Status != "running" || !f.ds.fg.Has(f.row.Name) {
+			t.Fatalf("pending sandbox after reconcile = %+v, %v", row, err)
+		}
+		f.ds.setStatus(f.row.Name, "stopped")
+		v, err = f.solo.Wake(t.Context(), "session", "alice")
+		if err != nil || v.Sandbox == nil || v.Sandbox.ID != f.row.ID || v.Sandbox.ContainerStatus != "running" {
+			t.Fatalf("wake after durable pause = %+v, %v", v, err)
+		}
+	})
 	t.Run("resumes the same sandbox", func(t *testing.T) {
 		f := newPausedFixture(t, models.SoloStatusRunning)
 		f.ds.setStatus(f.row.Name, "stopped")
