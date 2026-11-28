@@ -165,6 +165,10 @@ func (h *Handlers) PublicPreviewVNC(c *gin.Context) {
 // the desktop shares the owner's browser profile, so a goto elsewhere would
 // reach sites with the owner's logins.
 func publicVncMsgAllowed(m vncClientMsg) bool {
+	switch m.Type {
+	case "clipboard", "clipboard-watch", "clipboard-reset", "clipboard-check":
+		return false
+	}
 	if m.Type != "navigate" || (m.Action != "goto" && m.Action != "open" && m.URL == "") {
 		return true
 	}

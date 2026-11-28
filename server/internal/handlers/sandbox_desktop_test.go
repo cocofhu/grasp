@@ -22,11 +22,12 @@ import (
 )
 
 type desktopFixture struct {
-	db      *gorm.DB
-	r       *gin.Engine
-	h       *Handlers
-	control []map[string]string
-	fail    bool
+	db        *gorm.DB
+	r         *gin.Engine
+	h         *Handlers
+	control   []map[string]string
+	clipboard chan string
+	fail      bool
 }
 
 func newDesktopFixture(t *testing.T) *desktopFixture {
@@ -40,7 +41,7 @@ func newDesktopFixture(t *testing.T) *desktopFixture {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	agents := services.NewAgentService(t.TempDir())
 	sbx := services.NewSandboxService(db, mgr, agents, mcp.NewHost(services.NewArtifactService(db)), services.SandboxOptions{Max: 2, IdleTTL: time.Minute})
-	f := &desktopFixture{db: db}
+	f := &desktopFixture{db: db, clipboard: make(chan string, 1)}
 	f.h = &Handlers{Sbx: sbx, Agents: agents, Solo: services.NewSoloService(db, nil, agents, nil)}
 	f.r = gin.New()
 	f.r.Use(func(c *gin.Context) {
@@ -70,6 +71,16 @@ func (f *desktopFixture) bridge(t *testing.T) (string, int) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			f.control = append(f.control, body)
 			_, _ = w.Write([]byte(`{"mode":"desktop","holder":"` + body["holder"] + `","apps":[]}`))
+		case r.URL.Path == "/api/desktop/clipboard" && r.Method == http.MethodPut:
+			var body struct {
+				Text string `json:"text"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			f.clipboard <- body.Text
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -192,5 +203,45 @@ func TestSandboxDesktopSoloOwnerOnly(t *testing.T) {
 	}
 	if w := f.do(http.MethodPut, "/api/sandboxes/"+id+"/desktop/control", "alice", `{"holder":"user"}`); w.Code != http.StatusOK {
 		t.Fatalf("owner control %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDesktopClipboardWriterRequiresSoloOwner(t *testing.T) {
+	f := newDesktopFixture(t)
+	session := models.SoloSession{ID: "solo-clipboard", UserID: "alice", AgentName: "a", Status: models.SoloStatusRunning}
+	if err := f.db.Create(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	id := f.sandbox(t, models.Sandbox{Purpose: services.SandboxPurposeSolo, ThreadID: session.ID})
+	row, err := f.h.Sbx.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.h.desktopClipboardWriter(row, "bob") != nil {
+		t.Fatal("non-owner received a VNC clipboard writer")
+	}
+	write := f.h.desktopClipboardWriter(row, "alice")
+	if write == nil {
+		t.Fatal("owner did not receive a VNC clipboard writer")
+	}
+	if err := write(t.Context(), "沙箱 🙂"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-f.clipboard:
+		if got != "沙箱 🙂" {
+			t.Fatalf("unexpected clipboard text %q", got)
+		}
+	default:
+		t.Fatal("owner's write did not reach the sandbox")
+	}
+	if err := f.db.Delete(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := write(t.Context(), "expired ownership"); err == nil || len(f.clipboard) != 0 {
+		t.Fatalf("writer must reject after the Solo session is removed, got %v", err)
+	}
+	if f.h.desktopClipboardWriter(&models.Sandbox{Purpose: services.SandboxPurposeSolo}, "alice") != nil {
+		t.Fatal("Solo sandbox without a session received a clipboard writer")
 	}
 }

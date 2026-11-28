@@ -19,6 +19,12 @@ A workflow is a graph of steps and transitions. You can start a published versio
 
 Solo is a task session where you can continue a conversation. Both Solo and workflows execute in sandboxes managed by the gateway. A sandbox provides a workspace, terminal, and optional IDE and app preview. The gateway selects an image or template. Grasp requests environments for sessions and runs as needed. See [Solo sessions](/en/guide/solo/) and [Sandbox lifecycle](/en/help/sandbox-lifecycle/).
 
+### Paste into a remote desktop {#desktop-clipboard}
+
+After taking control of a sandbox Browser or Computer view, select a remote input and press `Ctrl+V` (`⌘V` on macOS) to paste up to 128 KiB of plain text from your device. The paste shortcut uses the sandbox clipboard while the screen keeps focus after a copy or cut shortcut updates it, or after you select **Copy to sandbox clipboard** in the toolbar. Moving focus away gives priority to text from your device again. If your device clipboard has no text, the shortcut tries pasting from the sandbox clipboard.
+
+You can also enter text in the toolbar’s Clipboard dialog and select **Paste into focused window**. To paste into the terminal on a computer sandbox, select **Terminal paste (Ctrl+Shift+V)** first. You can still paste from your device after pressing `Ctrl+C` to interrupt a terminal command.
+
 ## Review workspace changes {#workspace-changes}
 
 Open **Changes** in the toolbar of a Solo session or workflow run to see the branch and line counts for each repository. Select a repository to open its file diffs. The cumulative view compares against the initial checkout and includes changes after the agent commits them. The last archived view remains available after the workflow releases its sandbox. When multiple workspaces are available, use **Workspace** next to the file counts to switch which files and line totals are shown.

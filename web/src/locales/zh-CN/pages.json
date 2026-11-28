@@ -2263,6 +2263,18 @@
         "returnControl": "交还",
         "controlBanner": "你正在操作这个页面，完成后点「交还」",
         "watchOnlyHint": "仅观看 · 点击画面接管，本次点击不会操作页面",
+        "clipboard": {
+          "title": "剪贴板",
+          "takeOverHint": "接管后可使用剪贴板",
+          "shortcutHint": "剪贴板 · 聚焦画面后可用 {shortcut}",
+          "inputLabel": "把本机文本粘贴到这里",
+          "copyToSandbox": "放入沙箱剪贴板",
+          "pasteNow": "粘贴到当前窗口",
+          "terminalPaste": "终端粘贴（Ctrl+Shift+V）",
+          "tooLarge": "单次最多可粘贴 128 KiB 文本，请分段粘贴。",
+          "failed": "无法写入沙箱剪贴板，请重试。",
+          "runtimeOutdated": "请更新沙箱运行时后使用剪贴板。"
+        },
         "usePick": "添加到聊天 ⤴",
         "clearPick": "清除",
         "pickedLabel": "已选出",
