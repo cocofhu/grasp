@@ -1,11 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function mockClipboard(page: Page, replyToCheck = true) {
+async function mockClipboard(page: Page, firstCheck?: 'timeout' | 'remote-once') {
   const clipboardMessages: Record<string, unknown>[] = []
   const remoteKeys: [number, number][] = []
   const resets: number[] = []
   const watched = new Map<number, number>()
   let remoteRevision = 0
+  let checkCount = 0
   await page.routeWebSocket('**/sandbox-vnc/42/ws', socket => {
     socket.onMessage(data => {
       if (typeof data !== 'string') {
@@ -16,9 +17,11 @@ async function mockClipboard(page: Page, replyToCheck = true) {
       if (msg.type === 'clipboard-reset') resets.push(msg.id)
       if (msg.type === 'clipboard-watch') watched.set(msg.id, remoteRevision)
       if (msg.type === 'clipboard-check') {
+        const override = ++checkCount === 1 ? firstCheck : undefined
+        if (override === 'timeout') return
         const before = watched.get(msg.id)
-        const changed = before !== undefined && before !== remoteRevision
-        if (replyToCheck) socket.send(JSON.stringify({ type: 'clipboard-check-result', id: msg.id, changed }))
+        const source = override ?? (before !== undefined && before !== remoteRevision ? 'remote' : 'local')
+        socket.send(JSON.stringify({ type: 'clipboard-check-result', id: msg.id, source, changed: source !== 'local' }))
       }
       if (msg.type !== 'clipboard') return
       clipboardMessages.push(msg)
@@ -89,11 +92,16 @@ test('sandbox copy and an empty local clipboard use the remote paste shortcut', 
   await expect.poll(() => remoteKeys).toEqual(remotePaste)
   expect(clipboardMessages).toHaveLength(0)
 
+  await page.evaluate(() => navigator.clipboard.writeText('New local text in the same focus'))
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect.poll(() => remoteKeys).toEqual([...remotePaste, ...remotePaste])
+  expect(clipboardMessages).toHaveLength(0)
+
   await page.getByPlaceholder('about:blank').focus()
   await canvas.focus()
   await page.evaluate(() => navigator.clipboard.writeText(''))
   await page.keyboard.press('ControlOrMeta+V')
-  await expect.poll(() => remoteKeys).toEqual([...remotePaste, ...remotePaste])
+  await expect.poll(() => remoteKeys).toEqual([...remotePaste, ...remotePaste, ...remotePaste])
   expect(clipboardMessages).toHaveLength(0)
 })
 
@@ -144,19 +152,35 @@ test('interrupting a terminal without changing its clipboard keeps local paste a
   expect(remoteKeys).toHaveLength(0)
 })
 
-test('a delayed clipboard check does not overwrite a remote copy with local text', async ({ page }) => {
-  const { clipboardMessages, remoteKeys, watched, copyInSandbox } = await mockClipboard(page, false)
-  await page.goto('/console.html?tab=novnc')
-  await page.getByTestId('novnc-control-toggle').click()
-  await page.locator('.novnc-canvas-host canvas').focus()
-  await page.evaluate(() => navigator.clipboard.writeText('Local text that should stay on the device'))
-  await page.keyboard.press('Control+c')
-  await expect.poll(() => watched.size).toBe(1)
-  copyInSandbox()
-  await page.keyboard.press('ControlOrMeta+V')
-  await expect.poll(() => remoteKeys).toEqual(remotePaste)
-  expect(clipboardMessages).toHaveLength(0)
-})
+for (const firstCheck of ['timeout', 'remote-once'] as const) {
+  test(`clipboard fallback (${firstCheck}) only applies to the current paste`, async ({ page }) => {
+    const { clipboardMessages, remoteKeys, watched, copyInSandbox } = await mockClipboard(page, firstCheck)
+    await page.goto('/console.html?tab=novnc')
+    await page.getByTestId('novnc-control-toggle').click()
+    const canvas = page.locator('.novnc-canvas-host canvas')
+    await canvas.focus()
+    await page.evaluate(() => navigator.clipboard.writeText('Local text that should stay on the device'))
+    await page.keyboard.press('Control+c')
+    await expect.poll(() => watched.size).toBe(1)
+    copyInSandbox()
+    await page.keyboard.press('ControlOrMeta+V')
+    await expect.poll(() => remoteKeys).toEqual(remotePaste)
+    expect(clipboardMessages).toHaveLength(0)
+
+    const localText = 'New local text after the fallback'
+    await page.evaluate(text => navigator.clipboard.writeText(text), localText)
+    await expect(canvas).toBeFocused()
+    if (firstCheck === 'remote-once') {
+      await page.keyboard.press('a')
+      await expect.poll(() => watched.size).toBe(2)
+    }
+    await page.keyboard.press('ControlOrMeta+V')
+    await expect.poll(() => clipboardMessages).toMatchObject([
+      { type: 'clipboard', text: localText, paste: true, shift: false },
+    ])
+    expect(remoteKeys).toEqual(remotePaste)
+  })
+}
 
 test('paste restores held modifiers before forwarding the next key to noVNC', async ({ page }) => {
   const { clipboardMessages } = await mockClipboard(page)

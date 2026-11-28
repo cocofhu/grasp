@@ -155,6 +155,7 @@ let clipboardCheck: {
   release: ReturnType<PreviewVncChannel['holdOutgoing']>
   timeout: ReturnType<typeof setTimeout>
 } | null = null
+type ClipboardPasteSource = 'local' | 'remote' | 'remote-once'
 type PasteModifier = 'Control' | 'Meta' | 'Shift'
 const screenModifiers = new Map<string, { key: PasteModifier; location: number; suspended: boolean }>()
 let forwardingScreenModifier = false
@@ -269,21 +270,21 @@ function pasteBrowserText(text: string, shift: boolean, shortcut: boolean) {
       id, text, shift,
       release: channel.holdOutgoing(),
       // A missing result may hide a new remote copy. Keep it available for paste.
-      timeout: setTimeout(() => finishClipboardCheck(id, true), 2_400),
+      timeout: setTimeout(() => finishClipboardCheck(id, 'remote-once'), 2_400),
     }
   })
 }
 
-function finishClipboardCheck(id: number, useRemote: boolean) {
+function finishClipboardCheck(id: number, source: ClipboardPasteSource) {
   if (clipboardCheck?.id !== id) return
   const { text, shift, release, timeout } = clipboardCheck
   clipboardCheck = null
   clearTimeout(timeout)
   release(() => {
     if (!clipboardReady.value) return
-    useSandboxClipboard = useRemote
-    if (useRemote) pasteFromSandboxClipboard(shift)
-    else sendClipboard(text, true, shift)
+    useSandboxClipboard = source === 'remote'
+    if (source === 'local') sendClipboard(text, true, shift)
+    else pasteFromSandboxClipboard(shift)
   })
 }
 
@@ -675,7 +676,12 @@ function handleCtrlText(data: string) {
       onClipboardResult(msg.id, msg.ok === true, msg.code)
       break
     case 'clipboard-check-result':
-      finishClipboardCheck(msg.id, msg.changed === true)
+      if (msg.source === 'local' || msg.source === 'remote' || msg.source === 'remote-once') {
+        finishClipboardCheck(msg.id, msg.source)
+      } else if (typeof msg.changed === 'boolean') {
+        // The legacy flag cannot distinguish a confirmed copy from a fallback.
+        finishClipboardCheck(msg.id, msg.changed ? 'remote-once' : 'local')
+      }
       break
     case 'picked':
       inlineTip.value = null

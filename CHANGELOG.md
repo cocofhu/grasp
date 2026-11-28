@@ -58,6 +58,8 @@ All notable public-release changes are documented here.
 
 - 接管沙箱桌面后立即复制，随后粘贴仍会使用远端内容，即使剪贴板状态查询响应较慢。
 
+- 沙箱桌面的剪贴板探测失败或超时时，只有当次快捷键使用远端剪贴板。下一次快捷键恢复正常选择粘贴来源。
+
 - E2B 和 `gateway` 认证通道的沙箱预览重新支持新标签页直连打开、页面取点、浮动聊天抽屉、Live 和应用分享：为网关配置 `preview.expose.subdomain.base_url`（通配子域名，`production` 下要求 https 且与平台不同根域）后，每个预览获得独立的随机子域名链接。预览策略可按网关单独设置（`sandbox.gateways[*].preview_expose`）。注意：多网关混连且未显式设置 `sandbox.private_endpoints: true` 时，`transport: direct` 的网关会重新下发 IP 直链；子域名链接本身即凭证，不随分享链接过期；更换 `base_url` 后旧链接返回 404，旧的通配 DNS 需在边缘撤掉。
 
 - Grasp 和沙箱网关支持 PostgreSQL，可分别通过 `GRASP_DB_DRIVER=postgres` 和 `SBGW_DB_DRIVER=postgres` 启用。SQLite 仍是默认数据库。配置见 [PostgreSQL 部署](CONFIGURATION.md#使用-postgresql)。

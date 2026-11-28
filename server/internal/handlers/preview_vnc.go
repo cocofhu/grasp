@@ -218,8 +218,11 @@ func (h *Handlers) serveDesktopVNC(c *gin.Context, sandboxName, sandboxIP string
 					case "clipboard-reset":
 						clipboard.reset(m.ID)
 					case "clipboard-check":
-						// The client uses "changed" as the instruction to paste from the sandbox.
-						pushJSON(gin.H{"type": "clipboard-check-result", "id": m.ID, "changed": clipboard.shouldPasteRemote(m.ID)})
+						source := clipboard.pasteSource(m.ID)
+						pushJSON(gin.H{
+							"type": "clipboard-check-result", "id": m.ID, "source": source,
+							"changed": source != vncClipboardPasteLocal, // Older clients use this to choose remote paste.
+						})
 					default:
 						h.applyVncMsg(sess.Page(), m, pushJSON)
 					}
@@ -260,6 +263,14 @@ type vncClipboardSnapshot struct {
 	cancel context.CancelFunc
 	state  sandbox.DesktopClipboardState
 }
+
+type vncClipboardPasteSource string
+
+const (
+	vncClipboardPasteLocal      vncClipboardPasteSource = "local"
+	vncClipboardPasteRemote     vncClipboardPasteSource = "remote"
+	vncClipboardPasteRemoteOnce vncClipboardPasteSource = "remote-once"
+)
 
 const vncClipboardStateTimeout = 900 * time.Millisecond
 
@@ -320,9 +331,9 @@ func (o *vncClipboardObservation) reset(id int) {
 	}
 }
 
-func (o *vncClipboardObservation) shouldPasteRemote(id int) bool {
+func (o *vncClipboardObservation) pasteSource(id int) vncClipboardPasteSource {
 	if id < 1 || o.id != id {
-		return false
+		return vncClipboardPasteLocal
 	}
 	before := o.before
 	o.id, o.before = 0, sandbox.DesktopClipboardState{}
@@ -339,13 +350,23 @@ func (o *vncClipboardObservation) shouldPasteRemote(id int) bool {
 		after, err = o.read(ctx, after)
 	}
 	if err != nil || after.Generation == "" {
+		// A later watch needs a baseline newer than the unverified input.
+		o.latest = sandbox.DesktopClipboardState{}
 		o.refresh()
-		return true
+		return vncClipboardPasteRemoteOnce
 	}
 	o.latest = after
-	// An occupied clipboard with no earlier snapshot may already contain the
-	// user's new copy. Pasting directly preserves it.
-	return after.Owned && (after.Generation != before.Generation || after.Revision > before.Revision)
+	switch {
+	case !after.Owned:
+		return vncClipboardPasteLocal
+	case after.Generation != before.Generation:
+		// Preserve an existing remote clipboard when there is no comparable baseline.
+		return vncClipboardPasteRemoteOnce
+	case after.Revision > before.Revision:
+		return vncClipboardPasteRemote
+	default:
+		return vncClipboardPasteLocal
+	}
 }
 
 func writeVncClipboard(ctx context.Context, upstream *websocket.Conn, setText func(context.Context, string) error, m vncClientMsg, reply func(any)) bool {
